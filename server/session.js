@@ -65,6 +65,12 @@ class Session {
     // the last few seconds costs nothing.
     this.floor = 1;
     this.room = null;
+    // Read once at login and refreshed when they change. Both decide the size
+    // of a LOOT ROLL, which happens on every kill — a database read per kill
+    // for two numbers that move a few times a month would be the most
+    // expensive query in the game.
+    this.vipLevel = 0;
+    this.seasonTicket = false;
     this.connectedAt = Date.now();
   }
 
@@ -100,8 +106,13 @@ class Session {
     }
     activeSessions.set(this.telegramId, this.socket.id);
 
-    // Everything the client needs, from the database, in one place. There is
-    // no blob to hand back because there is no blob.
+    // The two numbers that size a loot roll, cached for the session — see the
+    // constructor for why they are not read per kill.
+    await this.refreshVip();
+
+    // Everything the client needs, from the database, in one place. The blob
+    // that comes back with it (savedView) is a projection OUT of these tables,
+    // never a thing read back in.
     return { ...res, state: await this.fullState() };
   }
 
@@ -198,7 +209,13 @@ class Session {
   async pushStats(db = null) {
     const st = await stats.of(db, this.playerId);
     if (!st) return null;
-    this.socket.emit('xpSync', { lvl: st.level, xp: st.xp, xpNext: st.xpNext });
+    // The base figures ride along: applyLevelState reads them, and without
+    // them a level-up raised the level on screen while the character stayed as
+    // strong as it was at level one.
+    this.socket.emit('xpSync', {
+      lvl: st.level, xp: st.xp, xpNext: st.xpNext,
+      baseAtk: st.baseAtk, baseDef: st.baseDef, baseMaxHp: st.baseMaxHp,
+    });
     if (this.room) this.room.setPlayerStats(this.socket.id, st);
     return st;
   }
@@ -218,6 +235,88 @@ class Session {
     const ids = this.room.nearbyPlayerIds(x, y, includeSelf ? null : this.socket.id,
       this.room.laneOf(this.socket.id));
     if (ids.length) this.io.to(ids).emit(event, payload);
+  }
+
+  // ── the shape the client rebuilds a character from ───────────────────────
+  // The client has one function that turns a saved account into a playable
+  // player — restoreFromSave(data) in js/player.js — and it is fed from
+  // authOk.savedData. Sending everything EXCEPT that field left it holding its
+  // own defaults: gold 0, level 1, no inventory, thirty potions it was never
+  // given. Every symptom followed from it. Gold "resets on reload" because it
+  // was never loaded. The potion count is wrong at login and right after the
+  // first use, because the first use is when the server's real number arrives.
+  //
+  // So the blob comes back — as a PROJECTION, in one direction only. It is
+  // built here from the normalised tables, it is never read back, and there is
+  // no handler that accepts it. That is the whole difference from the design
+  // this replaces: the client renders from this, and the server decides from
+  // the tables it was built out of.
+  //
+  // Keeping the client's vocabulary is deliberate. The alternative — teaching
+  // the client the new shape — is a rewrite of the part of the game that draws
+  // everything, to gain nothing a projection does not already give.
+  async savedView(db = null) {
+    const state = await this.fullState(db);
+    const { progress: p, prefs, skills, items: inv, balances, stats: st } = state;
+
+    // Equipment as a slot map of catalog-shaped items, which is what
+    // _rebuildFromCatalog expects on the other side.
+    const equipment = {};
+    for (const [slot, it] of Object.entries(inv.equipment || {})) {
+      if (it) equipment[slot] = { id: it.id, enhance: it.enhance || 0 };
+    }
+
+    return {
+      lvl: p.lvl, xp: p.xp, kills: p.kills,
+      // Base figures, NOT the computed ones. recompute() on the client adds the
+      // equipment and the upgrades itself, so handing it the final atk would
+      // have it count the sword twice and show a number no weapon can produce.
+      baseAtk: st ? st.baseAtk : undefined,
+      baseDef: st ? st.baseDef : undefined,
+      baseMaxHp: st ? st.baseMaxHp : undefined,
+      hp: st ? st.hp : undefined,
+
+      gold: balances.gold,
+      potionBag: p.potionBag || {},
+      hudPotion: prefs.hudPotion || 'pt1',
+      buffs: p.buffs || {},
+
+      inventory: (inv.inventory || []).map(i => ({ id: i.id, enhance: i.enhance || 0, qty: i.qty || 1 })),
+      storage: (inv.storage || []).map(i => ({ id: i.id, enhance: i.enhance || 0, qty: i.qty || 1 })),
+      equipment,
+
+      upgrades: p.upgrades || {},
+      bonusSP: p.bonusSP, keptSP: p.keptSP, rebirths: p.rebirths,
+      starterBonus: !!p.starterBonusClaimed,
+      questIdx: p.questIdx, questKills: p.questKills || {},
+      codex: p.codex || {},
+
+      skillLevels: skills.skillLevels || {},
+      passiveLevels: skills.passiveLevels || {},
+      advSkillLearned: skills.advSkillLearned || {},
+      advSkillActive: skills.advSkillActive || {},
+
+      lang: prefs.lang,
+      autoHpPct: prefs.autoHpPct,
+      autoSkillsOn: prefs.autoSkillsOn,
+      autoSkillOff: prefs.autoSkillOff || {},
+      autoBuffTypes: prefs.autoBuffTypes || {},
+    };
+  }
+
+  // Re-read after anything that can change them: a package purchase, a VIP
+  // claim, a season ticket. Cheap, and rare.
+  async refreshVip(db = null) {
+    try {
+      const progression = require('./db/repos/progression');
+      const v = await progression.vipOf(db, this.playerId);
+      this.vipLevel = v.level || 0;
+      this.seasonTicket = !!v.seasonTicket;
+    } catch (err) {
+      // A failure here costs a loot BONUS, not a loot roll. Falling back to
+      // zero is the safe direction: the player gets the ordinary chance.
+      console.error('[session] refreshVip:', err.message);
+    }
   }
 
   // ── what the client needs to DRAW a floor ────────────────────────────────

@@ -229,10 +229,23 @@ io.on('connection', (socket) => {
     socket.data.username = s.username;
     socket.data.session = s;
     socket.join(`tg_${s.telegramId}`);
+    // savedData is what the client rebuilds a character from — one function,
+    // restoreFromSave, fed from this field and nothing else. Omitting it left
+    // every returning player holding the client's own defaults: no gold, level
+    // one, an empty bag. It is a PROJECTION built from the tables, in one
+    // direction: nothing reads it back, and no handler accepts it.
+    const savedData = await s.savedView();
+    const money = require('./db/repos/money');
+    const bal = res.state.balances || await money.balancesOf(null, s.playerId);
     socket.emit('authOk', {
       username: s.username,
       isNewAccount: res.isNew,
+      savedData,
       ...res.state,
+      // The client keeps these three outside the player object, in globals its
+      // panels read directly.
+      gramBalance: bal.gram,
+      nexumBalance: bal.nexum,
       gramWallet: process.env.GRAM_WALLET || null,
     });
   }

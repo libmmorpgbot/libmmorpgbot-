@@ -29,10 +29,17 @@ const consumables = require('../db/repos/consumables');
 const progression = require('../db/repos/progression');
 const { NC_FACING, NC_AOE_STYLES } = require('../../shared/netcodec');
 const party = require('../party');
+const loot = require('../game/loot');
 const { query } = require('../db');
 const {
   CHAR_DEF, FLOOR_ENEMIES, FEAR_MAX_WAVE, COOP_STAGE_LEVELS,
+  VIP_BONUSES, SEASON_TICKET_DROP_PCT, seasonActive,
 } = require('../../shared/definitions');
+
+// crypto, not Math.random: these rolls decide whether a boss drops a rare box,
+// and a rare box is worth real money on the market. V8's generator has a state
+// recoverable from a handful of outputs.
+const rand = () => require('crypto').randomInt(2 ** 30) / (2 ** 30);
 
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
@@ -121,42 +128,159 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // A kill writes its reward immediately. Not queued, not accumulated: the
   // mob is dead and the xp is owed now, and an unclean disconnect a second
   // later must not undo that.
+   // ── a monster dies ───────────────────────────────────────────────────────
+  // The rewrite credited the reward to the database and told NOBODY. There was
+  // no 'enemyKilled' anywhere in it, and that one omission is every symptom
+  // the players reported:
+  //
+  //   "после смерти не исчезают"  — the corpse is removed when this arrives
+  //   "опыт не идёт с монстров"   — the xp number is drawn from this packet
+  //   "золото возвращается"       — the client's own count is set from it
+  //
+  // The gold and the experience were in the database the whole time. Nothing
+  // was lost; nothing was shown either, which to a player is the same thing.
+  //
+  // Three audiences, and they get different packets:
+  //   the killer   everything — reward, damage, loot
+  //   the party    their share of the same kill
+  //   bystanders   the id and the position, so the body disappears for them too
+  function rollLoot(result, playerLevel) {
+    // The roll happens against a SCRATCH inventory: the loot tables were
+    // written to add straight into the player's array, and the array is not
+    // the player's any more. What comes back is a list, and the repository
+    // decides whether each item fits — an item that does not lands on the
+    // floor rather than being destroyed.
+    const scratch = [];
+    const out = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
+    if (result.arm === 'coop') return out;
+
+    if (result.farmZone) out.items = loot._rollFarmZoneLoot(scratch, result.eid) || [];
+    else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
+    else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl, playerLevel) || [];
+
+    // VIP and the season ticket buy a second roll, not a better one — the same
+    // table, one more chance at it.
+    const bonus = (VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {}).drop || 0;
+    const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
+    const extra = bonus + ticket;
+    if (!result.farmZone && !result.farmZone2 && extra > 0 && rand() * 100 < extra) {
+      out.items.push(...(loot._rollMobLoot([], result.eid, result.rlvl, playerLevel) || []));
+    }
+
+    if (result.isBoss && !result.farmZone2) {
+      // crypto, not Math.random: a rare box is worth real money on the market.
+      const hit = chance => rand() < chance;
+      if (hit(0.50)) { out.boxUncommon = 1; out.items.push({ id: 'box_uncommon', qty: 1 }); }
+      if (hit(0.10)) { out.boxRare = 1;     out.items.push({ id: 'box_rare', qty: 1 }); }
+      if (hit(0.10)) { out.normStone = 1;   out.items.push({ id: 'norm_stone', qty: 1 }); }
+      if (hit(0.01)) { out.blessStone = 1;  out.items.push({ id: 'bless_stone', qty: 1 }); }
+    }
+    return out;
+  }
+
   async function onKill(result) {
     if (!result || !result.killed) return;
-    const idem = `kill:${s.playerId}:${result.enemyUid || result.ex + ':' + result.ey}:${Date.now()}`;
+
+    // Everyone who can see the body, whether or not they are owed anything.
+    // Sent FIRST and outside the transaction: a database hiccup must not leave
+    // a corpse standing on twelve screens.
+    if (s.room && typeof s.room.viewersOfEnemy === 'function') {
+      const others = s.room.viewersOfEnemy(result.enemyUid, s.socket.id);
+      if (others && others.length) {
+        io.to(others).emit('enemyKilled', {
+          id: result.enemyUid, ex: result.ex, ey: result.ey, color: result.color,
+        });
+      }
+    }
+
+    // A guild-war tower is captured rather than killed, and a race boss ends
+    // the round — neither pays a reward.
+    if (result.captured || result.raceBoss) {
+      s.socket.emit('enemyKilled', {
+        id: result.enemyUid, ex: result.ex, ey: result.ey, color: result.color,
+        dmg: result.dmg, isCrit: result.isCrit,
+      });
+      if (result.captured && deps.modes && deps.modes._gwApplyCapture) deps.modes._gwApplyCapture(result);
+      return;
+    }
+
+    // Shares. A party splits the kill; the divisor is the whole party, so
+    // soloing is never worse than grouping by accident.
+    const partyId = party.playerParty.get(s.socket.id);
+    const members = partyId ? party.parties.get(partyId) : null;
+    const mates = members
+      ? [...members.keys()].filter(id => id !== s.socket.id && s.room && s.room.players.has(id))
+      : [];
+    const share = mates.length + 1;
+    const myGold = Math.round((result.gold || 0) / share);
+    const myXp = share > 1 ? Math.max(1, Math.round((result.xp || 0) / share)) : (result.xp || 0);
+
+    // One idempotency key per kill, not per attempt: `Date.now()` in it would
+    // make every retry a fresh grant.
+    const idem = `kill:${s.playerId}:${result.enemyUid}`;
+
     await s.act('killReward', 'itemError', async (t, pid) => {
+      const prog = await players.progressOf(t, pid);
+      const drops = rollLoot(result, prog.lvl);
+
       const reward = await consumables.grantKillReward(t, pid, {
-        gold: result.gold || 0,
-        xp: result.xp || 0,
-        nexum: result.nexum || 0,
-        drops: result.drops || [],
-        idemKey: idem,
+        gold: myGold, xp: myXp, nexum: result.nexum || 0,
+        drops: drops.items, idemKey: idem,
       });
       if (result.enemyName) await progression.bumpQuestKill(t, pid, result.enemyName);
 
-      // A level-up changes combat power, so the room's copy has to follow. This
-      // is the push that used to be a statsUpdate coming the other way.
       if (reward.xp && reward.xp.levelsGained > 0) {
         await stats.refreshBm(t, pid);
         await s.pushStats(t);
         await s.pushProgress(t);
-        // No separate 'levelUp': pushStats already sent xpSync, and the client
-        // draws the burst and the "↑ УРОВЕНЬ" number itself when the level in
-        // that packet is higher than the one it had (applyLevelState,
-        // js/player.js). A second event would have doubled the animation — if
-        // anything had listened for it.
       }
       await s.pushBalances(t);
       if (reward.items.length) await s.pushItems(t);
 
-      // An item that would not fit stays on the floor rather than being
-      // destroyed — grantKillReward reports which, and the room puts it back.
+      // The packet the client draws the kill from. `goldTotal` is the balance
+      // AFTER the credit, because the client displays it verbatim rather than
+      // adding anything itself.
+      s.socket.emit('enemyKilled', {
+        id: result.enemyUid,
+        gold: myGold, goldTotal: reward.gold,
+        xp: myXp, level: reward.xp || null,
+        dmg: result.dmg, isCrit: result.isCrit,
+        ex: result.ex, ey: result.ey, color: result.color,
+        eid: result.eid, rlvl: result.rlvl,
+        items: reward.items.filter(i => !i.dropped),
+        boxUncommon: drops.boxUncommon, boxRare: drops.boxRare,
+        normStone: drops.normStone, blessStone: drops.blessStone,
+        nexum: result.nexum || 0, gram: result.gram || 0,
+      });
+
+      // What would not fit stays on the floor. The reward for a kill is not
+      // owed anywhere else, so it is not destroyed over a missing slot.
       for (const it of reward.items) {
         if (it.dropped && s.room) {
           s.room.spawnWorldDrops([{ id: it.id, qty: it.qty || 1 }], result.ex, result.ey);
         }
       }
     });
+
+    // Party members are paid on their own sessions, each in its own
+    // transaction: one member's full inventory must not undo another's gold.
+    for (const mid of mates) {
+      const mate = deps.sessionForSocketId && deps.sessionForSocketId(mid);
+      if (!mate || !mate.authed) continue;
+      mate.act('killRewardShare', 'itemError', async (t, pid) => {
+        const r = await consumables.grantKillReward(t, pid, {
+          gold: myGold, xp: myXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}`,
+        });
+        await mate.pushBalances(t);
+        if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
+        mate.socket.emit('enemyKilled', {
+          id: result.enemyUid, gold: myGold, goldTotal: r.gold,
+          xp: myXp, level: r.xp || null,
+          ex: result.ex, ey: result.ey, color: result.color,
+          eid: result.eid, rlvl: result.rlvl,
+        });
+      }).catch(() => { /* act reports it; one mate's failure is not the kill's */ });
+    }
   }
 
   safeOn('attack', ({ enemyId } = {}) => {

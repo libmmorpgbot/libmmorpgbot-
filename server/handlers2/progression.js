@@ -169,6 +169,7 @@ module.exports = function registerProgression(s, safeOn) {
         idemKey: `vip_claim:${pid}:${res.tiers.join('-')}`,
       });
     }
+    await s.refreshVip(t);
     await s.pushItems(t); await s.pushBalances(t); await pushAfterStat(t);
     const inv = await require('../db/repos/items').inventoryOf(t, pid);
     s.socket.emit('vipRewardsClaimed', {
@@ -234,6 +235,7 @@ module.exports = function registerProgression(s, safeOn) {
   safeOn('gramShopBuy', ({ pkgId, petId } = {}) => s.act('gramShopBuy', 'gramShopError', async (t, pid) => {
     if (typeof pkgId !== 'string' || !pkgId) return;
     const res = await shopRepo.buyPackage(t, pid, pkgId, petId);
+    await s.refreshVip(t);       // the package may have moved a VIP tier or bought the ticket
     await s.pushItems(t); await s.pushBalances(t); await s.pushProgress(t); await s.pushStats(t);
     s.socket.emit('gramShopResult', {
       pkgId: res.pkgId, price: res.price, gold: res.gold, nexum: res.nexum,

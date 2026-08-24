@@ -92,9 +92,17 @@ function compute(row) {
   // Derived, never stored: baseAtk/baseDef/baseMaxHp are a pure function of
   // class and level, and storing them is what let a crafted save hand itself
   // combat power with no relationship to the level that earned it.
-  let a = (cd.baseAtk + lvl) + row.upg_atk * 1;
-  let d = (cd.baseDef + lvl) + row.upg_def * 1;
-  let h = (cd.baseHP + lvl * 20) + row.upg_hp * 10;
+  // The class's own figures plus level scaling, and NOTHING else — no
+  // upgrades, no equipment, no codex. This is what the client calls baseAtk,
+  // and its recompute() adds the upgrades and the gear on top. Handing it the
+  // final number instead would have it count the sword twice.
+  const baseAtk = cd.baseAtk + lvl;
+  const baseDef = cd.baseDef + lvl;
+  const baseMaxHp = cd.baseHP + lvl * 20;
+
+  let a = baseAtk + row.upg_atk * 1;
+  let d = baseDef + row.upg_def * 1;
+  let h = baseMaxHp + row.upg_hp * 10;
 
   // Codex — flat, right after upgrades, exactly where recompute() puts it.
   // Absent from the server's old computeStats entirely, which is half of why
@@ -138,6 +146,7 @@ function compute(row) {
   return {
     level, xp: Number(row.xp), xpNext: xpToNext(level),
     charClass: row.char_class,
+    baseAtk, baseDef, baseMaxHp,
     atk: a,
     def: d,
     maxHp: h,
