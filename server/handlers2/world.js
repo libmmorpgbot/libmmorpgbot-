@@ -382,11 +382,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const st = await stats.of(t, pid);
     if (!st) return;
     await players.setHp(t, pid, st.maxHp);
-    if (s.room) {
-      s.room.setPlayerHp(s.socket.id, st.maxHp);
-      const spawn = s.room.spawnPoint ? s.room.spawnPoint() : null;
-      if (spawn) s.room.updatePlayerPos(s.socket.id, spawn.x, spawn.y, 'front', false);
-    }
+    // HP only. Room has no `spawnPoint()` — the guard around the call meant it
+    // never ran, so the line read as "move them off the corpse" while doing
+    // nothing. Where a respawn lands is decided one line down: sendGameStart
+    // sends them to floor 1, and enterFloor only restores a stored position
+    // when the stored FLOOR matches, so a death on any other floor already
+    // arrives at the hub's own spawn.
+    if (s.room) s.room.setPlayerHp(s.socket.id, st.maxHp);
     const floor = await sendGameStart(t, 1);
     // Written NOW, not on the twenty-second timer. A disconnect in the seconds
     // after a death would otherwise leave the hall in the database and the
@@ -514,6 +516,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
   safeOn('useTeleportStone', () => s.act('useTeleportStone', 'itemError', async (t, pid) => {
     if (s.floor === 1) fail('Вы уже в зале', 'in_hub');
     if (teleportTimer) fail('Уже произносится телепорт', 'casting');
+    // A dead player must respawn, not recall. forceFloor carries the record's
+    // hp across, so a stone cast from the death screen spent itself and landed
+    // the player in the hub still at zero — the client kept its death overlay
+    // up over a hub it had already been moved to.
+    const me = s.room && s.room.players.get(s.socket.id);
+    if (me && me.hp <= 0) fail('Сначала возродитесь', 'dead');
     const res = await consumables.useTeleportStone(t, pid);
     await s.pushItems(t);
     s.socket.emit('teleportCastStarted', { ms: res.castMs });

@@ -345,6 +345,12 @@ io.on('connection', (socket) => {
     floorIdOf: world.floorIdOf,
     resolveFloor: world.resolveFloor,
     modes: modesRuntime,
+    // handlers2/coop.js destructures this out of `deps` (handlers2/modes.js
+    // takes it off `modes` instead — two files, two conventions). It was in
+    // neither place here, so leaving a co-op run or the elite farm zone called
+    // `undefined(...)` and threw: the run ended, the player stayed in the
+    // instance, and the only trace was an ops alert.
+    _returnToHub: (sid) => (modesRuntime ? modesRuntime._returnToHub(sid) : null),
     parties: party.parties,
     playerParty: party.playerParty,
     _removeFromParty: party.removeFromParty,

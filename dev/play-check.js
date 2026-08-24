@@ -96,6 +96,7 @@ function makeScreen(sock) {
   });
 
   sock.on('gameStart', g => {
+    scr.floor = g.floor;
     scr.enemies.clear();
     if (g.spawn) { scr.x = g.spawn.x; scr.y = g.spawn.y; }
     for (const e of (g.enemies || [])) scr.enemies.set(e.id, { x: e.x, y: e.y, hp: e.hp, alive: e.hp > 0 });
@@ -485,6 +486,45 @@ async function main() {
   a.sock.emit('enterLocation', { target: 'left' });
   await once(a.sock, 'gameStart', 12000).catch(() => null);
   await wait(300);
+
+  // ── death and the walk back ──────────────────────────────────────────────
+  // "При смерти делаешь тп — кидает в то же место, где умер." Two separate
+  // moves are involved and either could put a player back on their own corpse:
+  // the recall stone, and the respawn itself. Both are checked against where
+  // the player ACTUALLY ends up, and against what the database then holds —
+  // because a respawn that looks right on screen and stores the death spot is
+  // the version that bites on the next login.
+  console.log('  ── смерть ──');
+  const deathFloor = a.scr.floor;
+  const diedAt = { x: a.scr.x, y: a.scr.y };
+  // Killed outright rather than waiting to be worn down: what is under test is
+  // where the player comes back, not how long it takes to lose.
+  await pool().query('UPDATE player_progress SET hp = 0 WHERE player_id = $1', [madeId]);
+  const gs = once(a.sock, 'gameStart', 12000).catch(() => null);
+  a.sock.emit('respawn');
+  const revived = await gs;
+  ok(!!revived, 'після воскресіння приходить gameStart');
+  if (revived) {
+    eq(revived.floor, 1, 'воскресіння повертає в хаб');
+    ok(!!revived.spawn, 'і каже, де стати');
+    const moved = revived.spawn
+      ? Math.hypot(revived.spawn.x - diedAt.x, revived.spawn.y - diedAt.y) : 0;
+    ok(!revived.spawn || moved > 200 || deathFloor !== revived.floor,
+      `це не те місце, де помер (${Math.round(moved)}px від трупа)`);
+  }
+  await wait(700);
+  const { rows: after } = await pool().query(
+    'SELECT floor, pos_x, pos_y, hp FROM player_progress WHERE player_id = $1', [madeId]);
+  eq(Number(after[0].floor), 1, 'у базі теж записаний хаб, а не поверх смерті');
+  ok(Number(after[0].hp) > 0, `здоровʼя відновлено (${after[0].hp})`);
+  // The stored position must be the one the player is standing on. Writing the
+  // new floor beside the old coordinates is exactly what put people back on
+  // their corpse on the next login.
+  if (revived && revived.spawn) {
+    const drift = Math.hypot(Number(after[0].pos_x) - revived.spawn.x,
+                             Number(after[0].pos_y) - revived.spawn.y);
+    ok(drift < 80, `збережена позиція = та, де стоїть гравець (${Math.round(drift)}px)`);
+  }
 
   // ── coming back ──────────────────────────────────────────────────────────
   // "Золото слетает при перезагрузке" — the whole session, reopened.
