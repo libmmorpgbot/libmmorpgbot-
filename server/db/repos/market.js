@@ -109,7 +109,16 @@ async function cancel(db, playerId, listingId) {
     UPDATE market_listings SET status = 'cancelled', closed_at = now()
      WHERE id = $1`, [listingId]);
 
-  return { listingId: Number(listingId), itemRowId: Number(rows[0].item_row_id) };
+  const { rows: back } = await query(db,
+    'SELECT id, item_id, enhance, qty FROM player_items WHERE id = $1', [rows[0].item_row_id]);
+  return {
+    listingId: Number(listingId), itemRowId: Number(rows[0].item_row_id),
+    // Named as the client reads them: it prints which item came back.
+    item: back.length
+      ? { rowId: Number(back[0].id), id: back[0].item_id, enhance: back[0].enhance || 0, qty: back[0].qty || 1 }
+      : null,
+    delivered: back.length > 0,
+  };
 }
 
 // ── buy ─────────────────────────────────────────────────────────────────────
@@ -186,9 +195,23 @@ async function buy(db, buyerId, listingId) {
        SET status = 'sold', buyer_id = $2, closed_at = now()
      WHERE id = $1`, [listingId, buyerId]);
 
+  // What the buyer actually received, read back from the row that just moved.
+  // The client shows it — "you bought X" — and without it the confirmation
+  // names nothing.
+  const { rows: got } = await query(db,
+    'SELECT id, item_id, enhance, qty FROM player_items WHERE id = $1', [lot.item_row_id]);
+  const item = got.length
+    ? { rowId: Number(got[0].id), id: got[0].item_id, enhance: got[0].enhance || 0, qty: got[0].qty || 1 }
+    : null;
+
   return {
     listingId: Number(listingId), sellerId, price, fee, payout,
     buyerBalance: paid.balance, itemRowId: Number(lot.item_row_id),
+    // The names the client destructures. `buyerBalance` reached it as
+    // `newBalance: undefined`, which is what the GRAM counter was then set to.
+    item,
+    newBalance: paid.balance,
+    delivered: true,          // it is in the inventory or this threw
   };
 }
 

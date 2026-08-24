@@ -32,7 +32,10 @@ const { activeSessions } = require('./session');
 const world = require('./world');
 const ops = require('./tg-ops');
 const { FLOOR_IDS } = require('./game/floors');
-const { FARM2_DAILY_MINUTES } = require('../shared/definitions');
+const {
+  FARM2_DAILY_MINUTES, WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK,
+  EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
+} = require('../shared/definitions');
 
 const createArena3 = require('./game/arena3');
 const createRace10 = require('./game/race10');
@@ -131,13 +134,44 @@ function safeTimeout(name, fn, ms) {
   }, ms);
 }
 
-// Announcements. The old pair wrote into the global chat; keeping the same
-// shape means the client's existing banner works unchanged.
+// ── announcements ───────────────────────────────────────────────────────────
+// These two are called by EVERY mode — arena, the Tower, the death battle, the
+// guild war — whenever its registration window opens.
+//
+// The rewrite pointed both at 'eventBossAnnounce' / 'eventBossSpawned', which
+// are not general event names: they are the WORLD BOSS's, and the client
+// handles them by setting _evtBossAlive, loading the demon sprite sheet,
+// playing the boss horn and showing "Босс прибыл!". So every arena window
+// opening announced a boss that did not exist, and the Events panel then
+// believed one was standing on the map.
+//
+// Announcements go to the global chat, which every client already renders and
+// which no mode has to be taught about. The world boss keeps its own two
+// events, emitted from where it actually spawns (see scheduleEventBoss).
+const _announced = new Set();
+function announceOnce(key, text) {
+  if (_announced.has(key)) return;
+  _announced.add(key);
+  // A handful of keys per process, but a long-lived one should not grow
+  // without bound either.
+  if (_announced.size > 64) _announced.delete(_announced.values().next().value);
+  if (_io) _io.emit('chatMsg', { username: 'СОБЫТИЕ', text, time: new Date().toISOString() });
+}
+
+const EVENT_NAME = {
+  boss:     'Мировой босс',
+  battle:   'Битва на смерть',
+  race10:   'Кровавая Башня',
+  a3:       'Арена 3х3',
+  guildWar: 'Война гильдий',
+};
+
 function notifyEventSoon(kind, at) {
-  if (_io) _io.emit('eventBossAnnounce', { kind, spawnAt: at });
+  const mins = Math.max(1, Math.round((at - Date.now()) / 60000));
+  announceOnce(`${kind}:soon:${at}`, `${EVENT_NAME[kind] || kind} — через ${mins} мин.`);
 }
 function notifyEventStarted(kind, at) {
-  if (_io) _io.emit('eventBossSpawned', { kind, at });
+  announceOnce(`${kind}:now:${at}`, `${EVENT_NAME[kind] || kind} — началось!`);
 }
 
 // A finished duel, for the history panel. Written outside any transaction the
@@ -319,6 +353,147 @@ function init(io) {
   };
   modes._returnToHub = returnToHub;
   modes._recordPvpHistory = recordPvpHistory;
+
+  // ── the world boss ───────────────────────────────────────────────────────
+  // Room.spawnEventBoss() exists, is correct, and was called by nothing: the
+  // scheduler that summons it four evenings a week did not survive the
+  // rewrite. So the Events panel counted down to a boss that never arrived,
+  // and the arena was never open.
+  //
+  // The boss appears the MOMENT it is summoned — there is no five-minute
+  // countdown between the schedule and the spawn, because that made the
+  // advertised 20:00 mean 20:05. `spawnAt` stays in the wire shape pinned at
+  // zero: the client's countdown UI reads it, and zero is what tells it there
+  // is nothing pending.
+  let wbSpawnTimer = null, wbNotifyTimer = null;
+  const wbNextAt = (from = Date.now()) =>
+    nextEventStartAt(WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, from);
+
+  modes.eventBossState = () => {
+    const room = getRoom(FLOOR_IDS.arena);
+    return {
+      spawnAt: 0,
+      alive: !!(room && room.isEventBossAlive()),
+      // Travels with the rest of the state rather than being computed on the
+      // client from a copy of the schedule that could drift.
+      nextAt: wbNextAt(),
+      drops: room ? room.worldDropSnapshot() : [],
+    };
+  };
+
+  // Whether the arena can be walked into. Up while the boss lives, and for as
+  // long as its loot is still on the floor after — so nobody who was fighting
+  // is locked out of collecting a drop.
+  modes._arenaOpen = () => {
+    const room = getRoom(FLOOR_IDS.arena);
+    if (!room) return false;
+    return room.isEventBossAlive() || room.worldDropSnapshot().length > 0;
+  };
+
+  modes.scheduleEventBoss = () => {
+    const room = getRoom(FLOOR_IDS.arena);
+    if (!room) return { error: 'Мир ещё не инициализирован' };
+    if (room.isEventBossAlive()) return { error: 'Босс уже на карте' };
+    const boss = room.spawnEventBoss();
+    if (!boss) return { error: 'Не удалось призвать босса' };
+    // Everyone, not just the arena: the banner and the horn are how a player
+    // standing in the hub learns it is worth walking in. `x`/`y` are the
+    // client's own visibility test for whether to play the sound.
+    io.emit('eventBossSpawned', { x: boss.x, y: boss.y });
+    return { ok: true, spawnAt: 0 };
+  };
+
+  // Arms the next summon plus its 30-minute warning, then re-arms itself.
+  function wbSchedule() {
+    clearTimeout(wbSpawnTimer);
+    clearTimeout(wbNotifyTimer);
+    const at = wbNextAt();
+    if (!at) return;
+    // Only arm the warning if its moment is still ahead — otherwise a restart
+    // inside the 30-minute window announces "coming soon" the instant the
+    // process boots, so every redeploy would spam everyone.
+    const warnIn = at - EVENT_NOTIFY_BEFORE_MS - Date.now();
+    if (warnIn > 0) wbNotifyTimer = safeTimeout('wbNotify', () => notifyEventSoon('boss', at), warnIn);
+    wbSpawnTimer = safeTimeout('wbSpawn', () => {
+      const r = modes.scheduleEventBoss();
+      // A summon refused because an admin already called it is not worth
+      // announcing — skip the notice and re-arm for next time.
+      if (!r.error) notifyEventStarted('boss', at);
+      wbSchedule();
+    }, Math.max(0, at - Date.now()));
+    if (wbSpawnTimer.unref) wbSpawnTimer.unref();
+    if (wbNotifyTimer && wbNotifyTimer.unref) wbNotifyTimer.unref();
+  }
+  wbSchedule();
+
+  // ── every mode's stake in one swing of a sword ───────────────────────────
+  // A hit is a hit in the open world. Inside a mode it is also a wave counter,
+  // a damage tally, a stage, a captured tower or the end of a run — and each
+  // of those lives in a different module. The old build called five of them by
+  // name from the attack handler; the rewrite's handler called none, which is
+  // not a subtle failure: Страх spawned wave 1 and never wave 2, because
+  // nothing was counting. Co-op never left stage one. The race boss took
+  // damage nobody tallied, so it could not be won.
+  //
+  // Collected here rather than back in the handler because this is the only
+  // file that has all of them in scope, and because the two attack handlers
+  // must not drift apart — the old build's did, subtly, twice.
+  //
+  // Returns true when the caller should stop: only the race boss does that,
+  // and only on the killing hit, because _race10Finish despawns it and the
+  // ordinary reward path would then be paying out for a monster that is gone.
+  modes._onCombatResult = (socketId, enemyId, result, room) => {
+    if (!result) return false;
+
+    // The race boss tallies EVERY hit, not just the last: the winner is whoever
+    // dealt the most damage, which a killing-blow-only count cannot know.
+    if (result.raceBoss) {
+      if (modes._race10.live && modes._race10.bossId === enemyId) {
+        const dmg = (modes._race10.dmg.get(socketId) || 0) + (result.dmg || 0);
+        modes._race10.dmg.set(socketId, dmg);
+        const ranked = [...modes._race10.dmg.values()].sort((a, b) => b - a);
+        io.to(socketId).emit('race10Score', {
+          myDamage: dmg, rank: ranked.indexOf(dmg) + 1, total: modes._race10.dmg.size,
+        });
+      }
+      if (!result.killed) return false;
+      // Visual only — no reward fields. Without it the boss freezes on every
+      // screen, because _race10Finish removes it before the next tick could
+      // ever report hp 0.
+      if (room && room.viewersOfEnemy) {
+        const all = room.viewersOfEnemy(enemyId, null);
+        if (all && all.length) {
+          io.to(all).emit('enemyKilled', { id: enemyId, ex: result.ex, ey: result.ey, color: result.color });
+        }
+      }
+      let winnerId = null, best = -1;
+      modes._race10.dmg.forEach((d, sid) => { if (d > best) { best = d; winnerId = sid; } });
+      modes._race10Finish(winnerId, false);
+      return true;
+    }
+
+    if (!result.killed) return false;
+
+    // Fear and co-op kills still pay through the ordinary reward path — these
+    // only advance the run, so neither gates the rest of the handler.
+    if (result.arm === 'fear') modes._fearTrackKill(socketId, result);
+    else if (result.arm === 'coop') {
+      if (result.isBoss) {
+        modes._coopBossTrackKill(socketId, result)
+          .catch(err => ops.alertError('modes.coopBoss', 'Ошибка награды за босса кооператива', err));
+      } else modes._coopTrackKill(socketId, result);
+    }
+
+    // A floor boss going down is floor-wide news: the client draws the respawn
+    // countdown from it, and the countdown is the only thing that tells a
+    // player whether it is worth waiting.
+    if (result.isBoss && room && Number.isFinite(room.floor)) {
+      io.to(`floor_${room.floor}`).emit('bossStatus', {
+        arm: result.arm, alive: false, respawnAt: result.respawnAt,
+      });
+    }
+    return false;
+  };
 
   modes.farm2MinutesLeft = async (socketId) => {
     const pid = playerIdOf(socketId);

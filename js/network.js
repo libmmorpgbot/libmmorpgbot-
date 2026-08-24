@@ -553,7 +553,11 @@ function netConnect(onReady) {
     _showCharSelect(_savedData);
   });
 
-  socket.on('authError', ({ message }) => { showAuthError(message); });
+  // `msg`, not `message`. Every error channel on this connection is
+  // `{ msg, code }` (session.act, server/session.js) and authError always was
+  // — this handler asked for a field the server has never sent, so a banned
+  // account and a failed Telegram check both showed an empty error box.
+  socket.on('authError', ({ msg } = {}) => { showAuthError(msg); });
 
   // The server allows one live session per account: a second login kicks the
   // first (see loginTelegramWebApp, server/index.js). This is that message.

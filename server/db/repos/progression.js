@@ -22,7 +22,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  VIP_THRESHOLDS, QUEST_DEF, questComplete, seasonActive,
+  VIP_THRESHOLDS, QUEST_DEF, questComplete, seasonActive, ENEMY_DEF, armIndexForLevel,
   SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
   SEASON_PRIZES, SEASON_VIP_PRIZE, SEASON_ENHANCE_SPECIAL_SLOTS,
   SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS, SEASON_ADV_BOOK_POINTS,
@@ -84,19 +84,77 @@ async function claimedSpecialQuests(db, playerId) {
 // purchases, joining a clan). The client used to hold them, so it could walk
 // the whole 60-quest chain in one go by reporting them complete.
 
-async function bumpQuestKill(db, playerId, enemyName) {
-  // jsonb_set on a path that may not exist yet needs the fallback, and doing
-  // it in SQL keeps it one atomic statement — two kills in the same tick both
-  // count, where a read-modify-write in JS would lose one.
+// One counter, up by n. jsonb_set with the create flag, because the path may
+// not exist yet, and in SQL rather than read-modify-write in JS so that two
+// kills landing in the same tick both count.
+async function bumpQuest(db, playerId, key, by = 1) {
+  const n = Math.max(1, Math.floor(Number(by)) || 1);
   const { rows } = await query(db, `
     UPDATE player_progress
        SET quest_kills = jsonb_set(
              quest_kills, ARRAY[$2],
-             to_jsonb(COALESCE((quest_kills ->> $2)::int, 0) + 1), true),
+             to_jsonb(COALESCE((quest_kills ->> $2)::int, 0) + $3::int), true),
            updated_at = now()
      WHERE player_id = $1
-    RETURNING quest_idx, quest_kills`, [playerId, String(enemyName)]);
+    RETURNING quest_idx, quest_kills`, [playerId, String(key), n]);
   return rows.length ? { questIdx: rows[0].quest_idx, questKills: rows[0].quest_kills } : null;
+}
+
+async function questState(db, playerId) {
+  const { rows } = await query(db,
+    'SELECT quest_idx, quest_kills FROM player_progress WHERE player_id = $1', [playerId]);
+  return rows.length ? { questIdx: rows[0].quest_idx, questKills: rows[0].quest_kills } : null;
+}
+
+// ── which counters a kill moves ─────────────────────────────────────────────
+// Only the ACTIVE quest's counters are touched. That is not an optimisation:
+// counting for quests further down the chain would let a player arrive at one
+// already complete, having never seen it.
+//
+// The name matched against is the CATALOG name — 'Крыса страж' — not the
+// decorated one the player reads on screen ('Свирепая Крыса страж'). The rank
+// prefix is a display detail of the monster's level, and quests are written
+// against the species.
+//
+// This whole rule was absent from the rewrite. `bumpQuestKill` existed, was
+// correct, and was called with `result.enemyName` — a field no code path has
+// ever set. Every kill evaluated `if (undefined)` and moved on. Two players
+// spent a day at it: 174k gold earned, quest one of sixty still on zero.
+async function questOnKill(db, playerId, { eid, rlvl } = {}) {
+  const st = await questState(db, playerId);
+  if (!st) return null;
+  const q = QUEST_DEF[Math.max(0, Math.floor(Number(st.questIdx)) || 0)];
+  if (!q) return null;
+
+  if ((q.type === 'kill' || q.type === 'kill_multi') && eid) {
+    const def = ENEMY_DEF.find(e => e.eid === eid);
+    if (def && (q.enemies || []).includes(def.name)) return bumpQuest(db, playerId, def.name, 1);
+    return null;
+  }
+
+  // The legacy floor quests. With one seamless world there is no floor to walk
+  // into any more, so reaching the corridor a kill happened in is what stands
+  // in for clearing it — the same rule the client applied.
+  const arm = rlvl > 0 ? armIndexForLevel(rlvl) : 0;
+  if (q.type === 'dungeon_clear' && arm > q.floor) {
+    const have = Math.max(0, Math.floor(Number((st.questKills || {})['_dungeon_' + q.floor])) || 0);
+    if (have < q.count) return bumpQuest(db, playerId, '_dungeon_' + q.floor, q.count - have);
+    return null;
+  }
+  if (q.type === 'goto_floor' && arm >= q.targetFloor) {
+    return bumpQuest(db, playerId, '_floor_' + q.targetFloor, 1);
+  }
+  return null;
+}
+
+// Counters that are not kills. Each is only moved while the quest that reads
+// it is the active one, for the same reason questOnKill checks.
+async function questOnEvent(db, playerId, type, key, by = 1) {
+  const st = await questState(db, playerId);
+  if (!st) return null;
+  const q = QUEST_DEF[Math.max(0, Math.floor(Number(st.questIdx)) || 0)];
+  if (!q || q.type !== type) return null;
+  return bumpQuest(db, playerId, key, by);
 }
 
 // Advancing the chain is guarded by questComplete() — the same shared function
@@ -113,7 +171,12 @@ async function claimQuest(db, playerId, questIdx) {
 
   const def = QUEST_DEF[questIdx];
   if (!def) err('no_quest', 'Завдання не існує');
-  if (!questComplete(def, { questKills: st.quest_kills, lvl: st.lvl })) {
+  // questComplete(q, kills, lvl) — three arguments, not two. Handing it one
+  // object meant `kills` was the WRAPPER: every `kills[name]` lookup missed,
+  // every count read zero, and `lvl` was undefined so a level quest compared
+  // against 1. No quest of any type could be claimed, ever, regardless of what
+  // the counters held.
+  if (!questComplete(def, st.quest_kills, st.lvl)) {
     err('not_done', 'Завдання ще не виконано');
   }
 
@@ -239,6 +302,32 @@ async function paySeasonReferral(db, friendId, referrerId, friendLevel, season =
      WHERE NOT player_season.ref_paid`, [friendId, season]);
   if (!rowCount) return null;                       // already paid for this friend
   return addSeasonPoints(db, referrerId, SEASON_REF_POINTS, season);
+}
+
+// ── the whole referral payout, from one level-up ────────────────────────────
+// Resolves the referrer from the friend's own row rather than asking a caller
+// to carry it around, so every path that can raise a level can call this the
+// same way. Returns what to tell the referrer, or null when there is nothing
+// to say — which is the usual case, since it pays exactly once ever.
+//
+// Nothing called paySeasonReferral in the rewrite, so an invited friend could
+// reach level 20 and their referrer was never paid and never told.
+async function payReferralOnLevel(db, playerId, newLevel) {
+  if (!(newLevel >= SEASON_REF_LEVEL) || !seasonActive()) return null;
+  const { rows } = await query(db, `
+    SELECT f.username,
+           (SELECT r.id FROM players r WHERE r.telegram_id = f.referred_by) AS referrer_id,
+           f.referred_by
+      FROM players f WHERE f.id = $1`, [playerId]);
+  if (!rows.length || !rows[0].referrer_id) return null;
+  const total = await paySeasonReferral(db, playerId, rows[0].referrer_id, newLevel);
+  if (total === null) return null;
+  return {
+    referrerTelegramId: rows[0].referred_by,
+    points: SEASON_REF_POINTS,
+    friend: rows[0].username,
+    total,
+  };
 }
 
 // The leaderboard. Indexed by (season, points DESC) WHERE points > 0, so this
@@ -450,9 +539,9 @@ async function secondsLeft(db, playerId, mode, budgetSeconds) {
 module.exports = {
   burnItem, burnAllOfRarity, burnBooks, burnValueOf, seasonState,
   claimSpecialQuest, claimedSpecialQuests,
-  bumpQuestKill, claimQuest,
+  bumpQuest, questState, questOnKill, questOnEvent, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,
-  addSeasonPoints, paySeasonReferral, seasonBoard, seasonOf,
+  addSeasonPoints, paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
   takeAttempt, attemptsLeft, spendSeconds, secondsLeft,
   CURRENT_SEASON, ProgressionError,
 };

@@ -90,6 +90,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
       s.room.setPlayerHp(s.socket.id, state.stats.hp);
     }
     s.socket.emit('gameStart', { ...state, ...s.worldPayload(floor) });
+    // The pets already out on this floor, and then ours to everyone else.
+    // Both directions matter: joining a floor should not blank the pets that
+    // were there, and arriving with one should not require the owner to
+    // re-equip it before anybody sees it.
+    if (s.room && s.room.petSnapshot) {
+      s.socket.emit('playerPets', { pets: s.room.petSnapshot() });
+    }
+    s.syncPet(state.items && state.items.equipment);
     return floor;
   }
 
@@ -241,13 +249,34 @@ module.exports = function registerWorld(s, safeOn, deps) {
         gold: myGold, xp: myXp, nexum: result.nexum || 0,
         drops: drops.items, idemKey: idem,
       });
-      if (result.enemyName) await progression.bumpQuestKill(t, pid, result.enemyName);
-      if (reward.xp && reward.xp.levelsGained > 0) await stats.refreshBm(t, pid);
-      return { reward, drops };
+      // The quest chain. `result.enemyName` — the field the rewrite passed here
+      // — has never existed on a kill result, so this branch was dead and the
+      // whole 60-quest chain sat at zero for everyone. The species is decided
+      // from `eid`, which the result does carry.
+      const quest = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
+      if (quest) s.socket.emit('questSync', quest);
+      let refBonus = null;
+      if (reward.xp && reward.xp.levelsGained > 0) {
+        await stats.refreshBm(t, pid);
+        // Crossing level 20 pays whoever invited this player their season
+        // points — once, ever. Nothing called this in the rewrite, so an
+        // invited friend could hit the threshold and the referrer was neither
+        // paid nor told.
+        refBonus = await progression.payReferralOnLevel(t, pid, reward.xp.lvl || 0);
+      }
+      return { reward, drops, refBonus };
     });
     if (!done) return;                      // act reported it; nothing happened
 
-    const { reward, drops } = done;
+    const { reward, drops, refBonus } = done;
+    // The referrer is a different session and may be offline entirely. The
+    // room emit reaches every device they have open and is dropped when there
+    // are none — the points themselves are already committed either way.
+    if (refBonus) {
+      io.to(`tg_${refBonus.referrerTelegramId}`).emit('seasonRefBonus', {
+        points: refBonus.points, friend: refBonus.friend, total: refBonus.total,
+      });
+    }
     // Pushes read the database on their own connection now, which is the point:
     // everything below describes committed state.
     if (reward.xp && reward.xp.levelsGained > 0) {
@@ -286,6 +315,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
         const r = await consumables.grantKillReward(t, pid, {
           gold: myGold, xp: myXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,
         });
+        const mq = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
+        if (mq) mate.socket.emit('questSync', mq);
         await mate.pushBalances(t);
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
         mate.socket.emit('enemyKilled', {
@@ -298,18 +329,41 @@ module.exports = function registerWorld(s, safeOn, deps) {
     }
   }
 
-  safeOn('attack', ({ enemyId } = {}) => {
-    if (!s.room || !s.authed) return;
-    const res = s.room.attackEnemy(s.socket.id, enemyId);
+  // A tower you may not attack answers with a reason. Returning in silence
+  // left the player swinging at a castle that never lost hp and never said
+  // why — which reads as the game being broken rather than as a rule.
+  function immuneMsg(res) {
+    return res.reason === 'no_clan'
+      ? 'Нужен клан, чтобы атаковать замок'
+      : 'Нельзя атаковать свой замок';
+  }
+
+  // Both attack paths do the same four things in the same order, and the old
+  // build's two copies drifted apart twice. One function, called twice.
+  function resolveHit(enemyId, res) {
     if (!res) return;
-    if (res.immune) return;                   // no damage number to draw
+    if (res.immune) { s.socket.emit('guildWarError', { msg: immuneMsg(res) }); return; }
+    // Every mode's stake in this hit — wave counters, the race tally, co-op
+    // stages, the floor boss's respawn clock. Only the race boss's death
+    // claims the hit outright.
+    if (deps.modes && deps.modes._onCombatResult
+        && deps.modes._onCombatResult(s.socket.id, enemyId, res, s.room)) return;
     // A killing blow returns no `hp` — the kill branch has nothing left to
     // report — so sending it anyway set the client's copy to undefined for the
-    // instant between this packet and enemyKilled. Zero is the truth.
+    // instant between this packet and enemyKilled.
     if (!res.killed) {
       s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
+      return;
     }
-    if (res.killed) onKill({ ...res, enemyUid: enemyId });
+    onKill({ ...res, enemyUid: enemyId });
+  }
+
+  safeOn('attack', ({ enemyId, splash } = {}) => {
+    if (!s.room || !s.authed) return;
+    // splash: "Безумие" (advanced deathknight E) — a half-damage hit that
+    // rides along with a real one. Dropping the flag turned it into a second
+    // full-strength attack.
+    resolveHit(enemyId, s.room.attackEnemy(s.socket.id, enemyId, { splash: !!splash }));
   });
 
   safeOn('skillAttack', ({ enemyId, key } = {}) => {
@@ -317,12 +371,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // The multiplier is derived from the slot and the player's own studied
     // level, on this side. The client used to send a number, which is a value
     // somebody edits.
-    const res = s.room.skillAttackEnemy(s.socket.id, enemyId, key);
-    if (!res) return;
-    if (!res.killed) {
-      s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
-    }
-    if (res.killed) onKill({ ...res, enemyUid: enemyId });
+    resolveHit(enemyId, s.room.skillAttackEnemy(s.socket.id, enemyId, key));
   });
 
   // ── death and respawn ────────────────────────────────────────────────────
@@ -365,6 +414,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // people wherever those numbers happened to land.
     const at = s.room && s.room.players.get(s.socket.id);
     await players.savePosition(t, pid, landed, at ? at.x : 0, at ? at.y : 0);
+    // "Войди в Фарм-зону" completes on the transition itself. Unlike the legacy
+    // goto_floor quests — which have no zone of their own and so ride on a kill
+    // inside the right corridor — this one has a real event to hang off.
+    const q = await progression.questOnEvent(t, pid, 'enter_zone', `_zone_${target}`, 1);
+    if (q) s.socket.emit('questSync', q);
   }));
 
   // ── streaming repair ─────────────────────────────────────────────────────

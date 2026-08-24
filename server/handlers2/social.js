@@ -15,6 +15,8 @@
 //     screen.
 
 const clans = require('../db/repos/clans');
+const progression = require('../db/repos/progression');
+const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const stats = require('../db/repos/stats');
 const party = require('../party');
@@ -88,8 +90,12 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // panel from, so an accepted member sees the clan appear without pressing
     // anything — and without the server inventing a second event for it.
     const sock = deps.socketForPlayerId && deps.socketForPlayerId(target);
+    // "Вступи в гильдию" is the joiner's quest, not the leader's — so the
+    // counter moves on the account that was accepted.
+    const q = await progression.questOnEvent(t, target, 'join_guild', '_guild', 1);
     if (sock) {
       sock.emit('clanData', await clans.dataView(t, m.clanId, target));
+      if (q) sock.emit('questSync', q);
     }
   }));
 
@@ -148,9 +154,15 @@ module.exports = function registerSocial(s, safeOn, deps) {
     s.act('clanStorageDeposit', 'clanError', async (t, pid) => {
       const m = await clans.clanOf(t, pid);
       if (!m || typeof itemId !== 'string') return;
-      await clans.deposit(t, pid, m.clanId, itemId, qty);
+      const n = await clans.deposit(t, pid, m.clanId, itemId, qty);
       await s.pushItems(t);
       await pushClanStorage(t);
+      // The storage panel repaints either way, but a deposit into a shared box
+      // is the kind of action a player wants confirmed by name and count —
+      // otherwise the item is simply gone from their bag.
+      s.socket.emit('clanStorageOk', {
+        msg: `Передано в хранилище: ${(n && n.qty) || qty || 1}`,
+      });
     }));
 
   safeOn('clanStorageGive', ({ telegramId, id: itemId, qty } = {}) =>
@@ -158,8 +170,13 @@ module.exports = function registerSocial(s, safeOn, deps) {
       const target = await byTg(t, telegramId);
       const m = await clans.clanOf(t, pid);
       if (!target || !m || typeof itemId !== 'string') return;
-      await clans.allocate(t, pid, m.clanId, target, itemId, qty);
+      const a = await clans.allocate(t, pid, m.clanId, target, itemId, qty);
       await pushClanStorage(t);
+      s.socket.emit('clanStorageOk', { msg: `Выдано: ${(a && a.qty) || qty || 1}` });
+      // And the recipient, if they are online — an allocation waiting in a
+      // panel nobody was told about is one nobody claims.
+      const sock = deps.socketForPlayerId && deps.socketForPlayerId(target);
+      if (sock) sock.emit('clanStorageOk', { msg: 'Вам выдали предмет из хранилища клана' });
     }));
 
   // No payload: the client's button takes everything waiting for it.
@@ -219,6 +236,35 @@ module.exports = function registerSocial(s, safeOn, deps) {
       [pid, s.username, msg]);
     io.emit('chatMsg', { username: s.username, text: msg, time: new Date().toISOString() });
   }));
+
+  // The "translate" button on a chat bubble — global, clan and DM alike; this
+  // only ever sees the text, never which channel it came from. Keyed by reqId
+  // so a reply cannot land on the wrong bubble when several are in flight.
+  //
+  // Not routed through s.act: there is no transaction here, and a refusal must
+  // still come back as translateChatResult. The client marks the bubble as
+  // translating the moment it asks and clears that ONLY on a reply, so
+  // returning in silence leaves it on "…" for the rest of the session — and
+  // the same flag makes a second click a no-op, so there is no retry either.
+  let lastTranslateAt = 0;
+  safeOn('translateChat', async ({ text, target, reqId } = {}) => {
+    if (!s.authed || typeof text !== 'string' || !text) return;
+    const now = Date.now();
+    if (now - lastTranslateAt < 1000) {
+      return s.socket.emit('translateChatResult', { reqId, error: true, reason: 'rate' });
+    }
+    lastTranslateAt = now;
+    const lang = (typeof target === 'string' && /^[a-z]{2}$/.test(target)) ? target : 'en';
+    try {
+      const out = await translate.translateText(text.slice(0, 200), lang);
+      s.socket.emit('translateChatResult', { reqId, text: out });
+    } catch (err) {
+      // Google throttles its free endpoints per IP and every player's click
+      // leaves from this one server address, so this is "come back in a bit",
+      // not a broken message.
+      s.socket.emit('translateChatResult', { reqId, error: true, reason: 'unavailable' });
+    }
+  });
 
   safeOn('chatHistory', () => s.act('chatHistory', 'chatError', async (t) => {
     const { rows } = await query(t, `

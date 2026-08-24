@@ -180,7 +180,23 @@ class Session {
   // wrote, so a push cannot describe a state the database does not hold.
 
   async pushItems(db = null) {
-    this.socket.emit('inventorySync', await items.inventoryOf(db, this.playerId));
+    const inv = await items.inventoryOf(db, this.playerId);
+    this.socket.emit('inventorySync', inv);
+    // A pet is drawn beside its owner on everyone ELSE's screen, and the only
+    // way they learn about it is this event. The old build derived it from the
+    // save blob the client sent; there is no blob any more, so it comes off
+    // the equipment we have just read. Every equip and unequip goes through
+    // pushItems, so this is where it changes.
+    this.syncPet(inv.equipment);
+  }
+
+  // Broadcast only when it CHANGES — a pet is a rare event and this is called
+  // after every inventory write.
+  syncPet(equipment) {
+    if (!this.room || !this.room.setPlayerPet) return;
+    const petId = (equipment && equipment.pet && equipment.pet.id) || null;
+    if (!this.room.setPlayerPet(this.socket.id, petId)) return;
+    this.socket.to(`floor_${this.floor}`).emit('playerPet', { id: this.socket.id, petId });
   }
 
   // Three events, one read. The shipped client keeps gold, GRAM and Liberty in
@@ -351,7 +367,11 @@ class Session {
       spawn: me ? { x: me.x, y: me.y } : undefined,
       enemies: r.enemySnapshot ? r.enemySnapshot(sid) : [],
       bossStatus: r.getBossStatus ? r.getBossStatus() : null,
-      eventBoss: r.eventBossState ? r.eventBossState() : null,
+      // The world boss is scheduled by modes.js, not by the room it stands in
+      // — a Room has no idea what time it is. Reading it off `r` meant this
+      // was null on every packet, so the Events panel had no countdown and no
+      // idea whether a boss was up.
+      eventBoss: m.eventBossState ? m.eventBossState() : null,
       deathBattle: m._dbPublicState
         ? { ...m._dbPublicState(), registered: !!(m._db && m._db.reg.has(sid)) } : null,
       race10: m._race10PublicState

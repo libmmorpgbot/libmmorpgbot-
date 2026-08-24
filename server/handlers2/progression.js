@@ -48,7 +48,7 @@ module.exports = function registerProgression(s, safeOn) {
     return res;
   }
 
-  safeOn('learnSkill', ({ key } = {}) => s.act('learnSkill', 'skillError', async (t, pid) => {
+  safeOn('learnSkill', ({ key } = {}) => s.act('learnSkill', 'progressError', async (t, pid) => {
     if (!SLOTS.has(key)) return;
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
@@ -58,7 +58,7 @@ module.exports = function registerProgression(s, safeOn) {
 
   // Upgrading rolls a chance. The roll is the server's — the old client sent
   // whether it succeeded.
-  safeOn('upgradeSkill', ({ key } = {}) => s.act('upgradeSkill', 'skillError', async (t, pid) => {
+  safeOn('upgradeSkill', ({ key } = {}) => s.act('upgradeSkill', 'progressError', async (t, pid) => {
     if (!SLOTS.has(key)) return;
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
@@ -83,19 +83,19 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('upgradeRolled', { kind: key, ok: success, level });
   }));
 
-  safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'skillError', async (t, pid) => {
+  safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'progressError', async (t, pid) => {
     if (typeof id !== 'string' || !id) return;
     const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
-  safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'skillError', async (t, pid) => {
+  safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'progressError', async (t, pid) => {
     if (typeof id !== 'string' || !id) return;
     const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
-  safeOn('learnAdvSkill', ({ key } = {}) => s.act('learnAdvSkill', 'skillError', async (t, pid) => {
+  safeOn('learnAdvSkill', ({ key } = {}) => s.act('learnAdvSkill', 'progressError', async (t, pid) => {
     if (!SLOTS.has(key)) return;
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
@@ -109,7 +109,7 @@ module.exports = function registerProgression(s, safeOn) {
 
   // Which variant is active decides which damage multiplier the server applies
   // in combat, so it is stored rather than trusted per-cast.
-  safeOn('toggleAdvSkill', ({ key } = {}) => s.act('toggleAdvSkill', 'skillError', async (t, pid) => {
+  safeOn('toggleAdvSkill', ({ key } = {}) => s.act('toggleAdvSkill', 'progressError', async (t, pid) => {
     if (!SLOTS.has(key)) return;
     const cur = await players.skillsOf(t, pid);
     if (!cur.advSkillLearned[key]) fail('Продвинутый навык не изучен', 'not_learned');
@@ -121,7 +121,7 @@ module.exports = function registerProgression(s, safeOn) {
   // The counters are server-written from events the server already sees. The
   // client used to hold them, so it could report the whole 60-quest chain
   // complete in one packet.
-  safeOn('claimQuest', ({ idx } = {}) => s.act('claimQuest', 'questError', async (t, pid) => {
+  safeOn('claimQuest', ({ idx } = {}) => s.act('claimQuest', 'questClaimError', async (t, pid) => {
     const i = Math.floor(Number(idx));
     if (!Number.isSafeInteger(i) || i < 0) return;
     const res = await progression.claimQuest(t, pid, i);
@@ -140,14 +140,31 @@ module.exports = function registerProgression(s, safeOn) {
   }));
 
   // ── special quests ───────────────────────────────────────────────────────
+  // The failure here needs its own event, not the shared error toast: the
+  // client DISABLES the quest button on click and only ever re-enables it from
+  // 'specialQuestError', keyed by questId. A generic toast leaves the button
+  // dead for the rest of the session.
   safeOn('completeSpecialQuest', ({ questId } = {}) =>
-    s.act('completeSpecialQuest', 'questError', async (t, pid) => {
+    s.act('completeSpecialQuest', 'questClaimError', async (t, pid) => {
       const id = Math.floor(Number(questId));
-      if (!Number.isSafeInteger(id) || id <= 0) return;
-      const res = await progression.claimSpecialQuest(t, pid, id);
-      if (res.xp > 0) await players.grantXp(t, pid, res.xp);
-      await s.pushBalances(t); await pushAfterStat(t);
-      s.socket.emit('specialQuestDone', { questId: id, ...res });
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        return s.socket.emit('specialQuestError', { questId: String(questId || ''), reason: 'not_found' });
+      }
+      try {
+        const res = await progression.claimSpecialQuest(t, pid, id);
+        if (res.xp > 0) await players.grantXp(t, pid, res.xp);
+        await s.pushBalances(t); await pushAfterStat(t);
+        // `reward` is the shape onSpecialQuestDone reads (js/quests.js): it
+        // adds reward.nexum to the displayed Liberty balance. Spreading the
+        // repo's flat {gold, xp, nexum} left it undefined.
+        s.socket.emit('specialQuestDone', {
+          questId: id, reward: { gold: res.gold, xp: res.xp, nexum: res.nexum },
+          alreadyDone: false, ...res,
+        });
+      } catch (err) {
+        s.socket.emit('specialQuestError', { questId: String(id), reason: err.code || 'server_error' });
+        throw err;   // act() still reports it and rolls the transaction back
+      }
     }));
 
   // ── VIP ──────────────────────────────────────────────────────────────────
@@ -277,7 +294,22 @@ module.exports = function registerProgression(s, safeOn) {
       minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP,
     });
     await s.pushItems(t); await pushAfterStat(t);
-    s.socket.emit('rebirthDone', res);
+    // The client REBUILDS the character from this packet — level, experience,
+    // the curve, all three base stats and the upgrade map. The repo's return
+    // value carries four of those ten fields, so a rebirth set lvl, xp, xpNext
+    // and every base stat to undefined: the character on screen became NaN
+    // across the board and stayed that way until a reload.
+    const after = await players.progressOf(t, pid);
+    const st = await stats.of(t, pid);
+    s.socket.emit('rebirthDone', {
+      lvl: after.lvl, xp: after.xp, xpNext: st ? st.xpNext : 0,
+      baseAtk: st ? st.baseAtk : undefined,
+      baseDef: st ? st.baseDef : undefined,
+      baseMaxHp: st ? st.baseMaxHp : undefined,
+      upgrades: after.upgrades || {},
+      bonusSP: after.bonusSP, keptSP: after.keptSP, rebirths: after.rebirths,
+      spentReturned: res.spentReturned,
+    });
   }));
 
   safeOn('resetUpgrades', () => s.act('resetUpgrades', 'resetUpgradesError', async (t, pid) => {

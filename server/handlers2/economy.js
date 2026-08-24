@@ -167,10 +167,13 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     if (!entry) return;
     const res = await consumables.buyPotions(t, pid, entry.itemId, qty);
     await s.pushBalances(t);
+    // "Купи 10 зелий" counts here, where the purchase actually happens.
+    const q = await progression.questOnEvent(t, pid, 'buy_potion', '_potion', res.qty);
+    if (q) s.socket.emit('questSync', q);
     s.socket.emit('potionBag', { potionBag: res.potionBag, bought: { id: res.itemId, n: res.qty } });
   }));
 
-  safeOn('sellItem', ({ idx: at, id, enhance, qty = 1 } = {}) => s.act('sellItem', 'shopError', async (t, pid) => {
+  safeOn('sellItem', ({ idx: at, id, enhance, qty = 1 } = {}) => s.act('sellItem', 'sellItemError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, { idx: at, id, enhance }, 'inventory');
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
@@ -209,7 +212,12 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     if (!id) return;
     const res = await market.buy(t, pid, id);
     await pushAll(t);
-    s.socket.emit('marketBought', res);
+    // Buying counts toward VIP, and the panel reads its level from this reply.
+    const vip = await progression.vipOf(t, pid);
+    s.socket.emit('marketBought', {
+      ...res,
+      vipData: { level: vip.level, deposited: vip.deposited, pending: vip.pending },
+    });
 
     // Tell the seller, if they are online. Best-effort: a seller who is
     // offline must not fail someone else's purchase, and their balance is
@@ -222,10 +230,15 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   }));
 
   safeOn('marketBrowse', ({ slot = null, offset = 0 } = {}) => s.act('marketBrowse', 'marketError', async (t) => {
-    s.socket.emit('marketBrowseData', await market.browse(t, {
-      slot: typeof slot === 'string' ? slot : null,
-      offset: idx(offset) || 0,
-    }));
+    // Wrapped, like marketMyListingsData right below. A bare array arrives as
+    // `{ listings: undefined }` on the other side, so the market browser was
+    // empty no matter what was for sale.
+    s.socket.emit('marketBrowseData', {
+      listings: await market.browse(t, {
+        slot: typeof slot === 'string' ? slot : null,
+        offset: idx(offset) || 0,
+      }),
+    });
   }));
 
   safeOn('marketMyListings', () => s.act('marketMyListings', 'marketError', async (t, pid) => {
@@ -233,7 +246,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   }));
 
   safeOn('marketHistory', () => s.act('marketHistory', 'marketError', async (t, pid) => {
-    s.socket.emit('marketHistoryData', await market.history(t, pid));
+    s.socket.emit('marketHistoryData', { entries: await market.history(t, pid) });
   }));
 
   // ── GRAM ─────────────────────────────────────────────────────────────────

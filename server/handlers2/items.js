@@ -129,7 +129,7 @@ module.exports = function registerItems(s, safeOn) {
   // party rules and whether the drop is still on the floor); the repository
   // performs the grant. Splitting it that way keeps the ownership rule in one
   // place and the geometry in another.
-  safeOn('pickupWorldDrop', ({ id } = {}) => s.act('pickupWorldDrop', 'itemError', async (t, pid) => {
+  safeOn('pickupWorldDrop', ({ id } = {}) => s.act('pickupWorldDrop', 'worldDropError', async (t, pid) => {
     if (!s.room) return;
     const claim = s.room.claimDrop(s.socket.id, id);
     if (!claim) return;                       // gone, too far, or not theirs

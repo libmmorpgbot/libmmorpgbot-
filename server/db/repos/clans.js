@@ -213,7 +213,10 @@ async function deposit(db, playerId, clanId, itemId, qty) {
     INSERT INTO clan_storage (clan_id, item_id, qty) VALUES ($1, $2, $3)
     ON CONFLICT (clan_id, item_id) DO UPDATE SET qty = clan_storage.qty + EXCLUDED.qty`,
     [clanId, itemId, n]);
-  return true;
+  // The NORMALISED count, not what was asked for — the caller confirms this
+  // number to the player, and `qty` from the wire has already been floored and
+  // clamped by the time it gets here.
+  return { qty: n };
 }
 
 // The leader earmarks shards for a member. Taken out of the shared pool in the
@@ -233,7 +236,7 @@ async function allocate(db, leaderId, clanId, playerId, itemId, qty) {
   await query(db, `
     INSERT INTO clan_allocations (clan_id, player_id, item_id, qty, allocated_by)
     VALUES ($1, $2, $3, $4, $5)`, [clanId, playerId, itemId, n, leaderId]);
-  return true;
+  return { qty: n };
 }
 
 // The member collects. The allocation row is deleted and the item added in one
@@ -286,7 +289,10 @@ async function claimAll(db, playerId) {
     taken.push({ itemId: r.item_id, qty: r.qty });
   }
   if (!taken.length) err('no_room', 'Звільніть місце в інвентарі');
-  return { taken, blocked };
+  // `items` is the name the client destructures — it sums the quantities to
+  // say how many arrived. As `taken` it read undefined and the toast said
+  // nothing was collected while the inventory filled up.
+  return { items: taken.map(x => ({ id: x.itemId, itemId: x.itemId, qty: x.qty })), taken, blocked };
 }
 
 // The client cancels by naming WHO it was for and WHAT it was, because that is
@@ -339,7 +345,7 @@ async function unlockStorage(db, playerId, clanId, cost) {
 
   await query(db,
     'UPDATE clans SET storage_unlocked = true WHERE id = $1 AND NOT storage_unlocked', [clanId]);
-  return { goldLeft: paid.balance };
+  return { newGold: paid.balance, cost, goldLeft: paid.balance };
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────

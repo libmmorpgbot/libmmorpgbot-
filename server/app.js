@@ -31,6 +31,7 @@ const version = require('./version');
 const party = require('./party');
 const modesLib = require('./modes');
 const maintenance = require('./maintenance');
+const presence = require('./presence');
 let modesRuntime = null;
 const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
 
@@ -240,6 +241,35 @@ io.on('connection', (socket) => {
     const savedData = await s.savedView();
     const money = require('./db/repos/money');
     const bal = res.state.balances || await money.balancesOf(null, s.playerId);
+
+    // ── the six fields the rewrite dropped ────────────────────────────────
+    // The client destructures twelve names out of this packet. The rewrite
+    // sent six of them. Every missing one has a `|| default` behind it on the
+    // other side, so nothing threw and nothing logged — the panels simply drew
+    // a consistent, plausible, wrong world:
+    //
+    //   vipData            VIP 9 rendered as VIP 0, on every single reload,
+    //                      and nine unclaimed tiers shown as nothing to claim
+    //   clanInfo           the clan panel empty for every member — and the
+    //                      client only asks for a refresh if it ALREADY has a
+    //                      clan, so nothing ever populated it
+    //   refLink            the referral link blank
+    //   seasonTicketActive a paid-for x2 season ticket invisible
+    //   topPlayer          nobody wearing the leader's crown
+    //   vipAuras           no VIP glow on anyone
+    //
+    // "VIP не сохраняется после перезагрузки" is this line, not the VIP code:
+    // the database had level 9 the whole time (player_vip is server-written and
+    // was never wrong). It just was not on the wire.
+    const progression = require('./db/repos/progression');
+    const clansRepo = require('./db/repos/clans');
+    const vip = await progression.vipOf(null, s.playerId);
+    const membership = await clansRepo.clanOf(null, s.playerId);
+    const clanInfo = membership
+      ? await clansRepo.dataView(null, membership.clanId, s.playerId)
+      : null;
+    presence.setAura(s.username, vip.level);
+
     socket.emit('authOk', {
       username: s.username,
       isNewAccount: res.isNew,
@@ -250,8 +280,23 @@ io.on('connection', (socket) => {
       gramBalance: bal.gram,
       nexumBalance: bal.nexum,
       gramWallet: process.env.GRAM_WALLET || null,
+      clanInfo,
+      refLink: refLinkFor(s.telegramId),
+      vipData: { level: vip.level, deposited: vip.deposited, pending: vip.pending },
+      seasonTicketActive: !!vip.seasonTicket,
+      topPlayer: presence.topPlayer(),
+      vipAuras: presence.auraUsers(),
       build: version.COMMIT,
     });
+  }
+
+  // The classic deep link, not a Mini App startapp one: it opens the bot's own
+  // chat first, which is where the /start ref_<id> that registers the referral
+  // is actually sent. Telegram requires a manual tap before that message goes
+  // out — a platform anti-spam rule no code here can skip.
+  function refLinkFor(telegramId) {
+    const bot = process.env.TG_BOT_USERNAME || '';
+    return bot ? `https://t.me/${bot}?start=ref_${telegramId}` : '';
   }
 
   safeOn('loginTelegramWebApp', async ({ initData } = {}) => {
@@ -338,6 +383,9 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async (reason) => {
     clearTimeout(authTimer);
     clearInterval(posTimer);
+    // The aura roster is "who is online AND VIP", so leaving takes the glow
+    // with it — otherwise it accumulates every VIP who has ever logged in.
+    if (s.username) presence.clearAura(s.username);
     try { await s.close(reason); } catch (e) { console.error('[disconnect]', e); }
   });
 });
@@ -369,6 +417,10 @@ async function boot() {
   //     opens its registration window while the arena has no room would deploy
   //     its entrants into nothing.
   modesRuntime = modesLib.init(io);
+
+  // 2d. The rating leader's crown and the VIP auras. Both are broadcasts about
+  //     OTHER players, so they need io and nothing else.
+  presence.init(io);
   party.init(io, {
     onLeave: (socketId) => {
       // Leaving a party ends the co-op and farm runs that party was on: both

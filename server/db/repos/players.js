@@ -400,14 +400,31 @@ async function resetUpgrades(db, playerId, cost) {
   });
   if (!paid) throw Object.assign(new Error('Недостаточно Liberty'), { code: 'no_nexum', userMessage: 'Недостаточно Liberty' });
 
+  // kept_sp goes with the map it was covering. It is the part of a previous
+  // rebirth's spend that the rebirth PRESERVED — emptying the upgrades ends
+  // that commitment, so leaving it set means the server keeps charging the
+  // player for upgrades they no longer have. The client already zeroes its own
+  // copy from this reply, so the two would silently disagree about how many
+  // points are spendable, and the server's answer — 'Мало очков навыка!' on a
+  // panel showing points available — is the one that wins.
   await query(db, `
     UPDATE player_progress
        SET upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
            upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
-           updated_at = now()
+           kept_sp = 0, updated_at = now()
      WHERE player_id = $1`, [playerId]);
 
-  return { refunded: Number(rows[0].spent), nexumLeft: paid.balance };
+  // Named as the client reads them. It destructures
+  // { pointsReturned, keptSP, newNexumBalance } — `refunded`/`nexumLeft`
+  // arrived as three undefineds, which set the on-screen Liberty balance to
+  // undefined every time somebody reset their upgrades.
+  return {
+    pointsReturned: Number(rows[0].spent),
+    keptSP: 0,
+    newNexumBalance: paid.balance,
+    refunded: Number(rows[0].spent),      // the old names, for the tests
+    nexumLeft: paid.balance,
+  };
 }
 
 // Telegram id -> internal player id.

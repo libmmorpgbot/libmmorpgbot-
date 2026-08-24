@@ -2772,6 +2772,19 @@ class Room {
     return true;
   }
 
+  // The pet, set directly rather than derived from a save blob. The blob is
+  // gone: equipment is a set of rows now, and the session already knows which
+  // one is in the 'pet' slot. Returns whether it changed, so the caller knows
+  // whether the floor needs telling.
+  setPlayerPet(socketId, petId) {
+    const p = this.players.get(socketId);
+    if (!p) return false;
+    const id = petId || null;
+    if (p.petId === id) return false;
+    p.petId = id;
+    return true;
+  }
+
   // socketId -> equipped pet id, for everyone in the room who has one. Sent
   // to a player as they join so they see the pets that are already out,
   // instead of only ones equipped after they arrived.
