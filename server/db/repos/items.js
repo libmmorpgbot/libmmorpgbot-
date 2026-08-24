@@ -185,45 +185,137 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1 } = {}) {
   return Number(rows[0].id);
 }
 
-// Takes `qty` off a stack, or removes the row outright when it runs out.
-// Returns true only when the full amount was taken — a partial take is not a
-// success, and treating it as one is how a craft consumes three of a material
-// the player only had two of.
-// Decrement and delete are ONE statement, and that is forced by the schema
-// rather than chosen for elegance. player_items has CHECK (qty >= 1), so an
-// "UPDATE to zero, then DELETE the empty row" sequence never reaches the
-// delete: the update itself violates the constraint and throws. Weakening the
-// check to qty >= 0 would have been the easy fix and the wrong one — it would
-// permit a zero-quantity row to exist, which every reader downstream then has
-// to remember to filter out.
+// Takes `qty` units off the player's inventory, across as many rows as it
+// needs, and returns true ONLY when the full amount was taken. A partial take
+// is not a success — treating it as one is how a craft consumes three of a
+// material the player had two of.
 //
-// So the row is either decremented or removed, decided inside the statement by
-// comparing what is there against what is being taken. FOR UPDATE on the
-// target is belt-and-braces under lockPlayer: it makes this correct even if a
-// future caller forgets the lock.
-async function removeQty(db, playerId, itemId, qty = 1, { enhance = null } = {}) {
+// Draining ACROSS ROWS is the correction that matters. The first version took
+// from one row (`ORDER BY id LIMIT 1`), which is right for a stackable — but a
+// non-stackable is one row per copy, so "give me two enhanced swords" found no
+// single row holding two and reported "not enough" to a player holding four.
+// Every gear recipe asks for n:2 of a non-stackable, so every gear recipe was
+// unreachable. The test missed it because the fixture granted qty:2 in ONE row
+// — a shape `add()` never produces for a non-stackable and the game therefore
+// never has.
+//
+// Two ways to name an enhancement, and they are not interchangeable:
+//   enhance     exact — "this row's item", for selling a specific copy
+//   minEnhance  at least — what a recipe means by minEnhance: 8
+// The recipes were counted with `>=` and consumed with no filter at all, so a
+// player with two +8 and five +0 passed the check and paid with the +0 copies,
+// keeping the enhanced ones. That is a craft at a fraction of its price.
+//
+// Lowest qualifying enhancement goes first. When +8 will do, the +12 stays in
+// the bag — the alternative silently eats work the player paid for.
+//
+// Nothing is taken unless everything can be: `plan` is empty when the total
+// falls short, so the caller gets false and an untouched inventory rather than
+// a half-consumed one.
+async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnhance = null } = {}) {
   const { rows } = await query(db, `
-    WITH target AS (
-      SELECT id, qty FROM player_items
+    WITH pool AS (
+      SELECT id, qty, enhance FROM player_items
        WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
-         AND ($4::int IS NULL OR enhance = $4)
-         AND qty >= $3
-       ORDER BY id LIMIT 1
-       FOR UPDATE
+         AND ($4::int IS NULL OR enhance = $4::int)
+         AND ($5::int IS NULL OR enhance >= $5::int)
+    ),
+    avail AS (SELECT COALESCE(sum(qty), 0)::int AS total FROM pool),
+    ranked AS (
+      SELECT id, qty,
+             COALESCE(sum(qty) OVER (ORDER BY enhance, id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0)::int AS taken_before
+        FROM pool
+    ),
+    plan AS (
+      SELECT r.id, r.qty, LEAST(r.qty, $3::int - r.taken_before)::int AS take
+        FROM ranked r, avail a
+       WHERE a.total >= $3::int AND r.taken_before < $3::int
     ),
     gone AS (
       DELETE FROM player_items
-       WHERE id IN (SELECT id FROM target WHERE qty = $3)
-      RETURNING id
+       WHERE id IN (SELECT id FROM plan WHERE take >= qty)
+      RETURNING qty
     ),
     kept AS (
-      UPDATE player_items SET qty = qty - $3
-       WHERE id IN (SELECT id FROM target WHERE qty > $3)
-      RETURNING id
+      UPDATE player_items pi SET qty = pi.qty - p.take
+        FROM plan p WHERE pi.id = p.id AND p.take < p.qty
+      RETURNING p.take AS qty
     )
-    SELECT (SELECT count(*) FROM gone) + (SELECT count(*) FROM kept) AS n`,
-    [playerId, itemId, qty, enhance]);
-  return Number(rows[0].n) === 1;
+    SELECT (COALESCE((SELECT sum(qty) FROM gone), 0)
+          + COALESCE((SELECT sum(qty) FROM kept), 0))::int AS took`,
+    [playerId, itemId, qty, enhance, minEnhance]);
+  return Number(rows[0].took) === Number(qty);
+}
+
+// Takes `n` units of whatever matches a DESCRIPTION rather than an id — "ten
+// skill books, any class" or "thirty non-stackable commons". Two recipes need
+// this and neither can be expressed with removeQty: the advanced-book recycle
+// accepts any mix of the twenty book ids, and class-gear salvage accepts any
+// junk gear of a rarity, which is a catalog property rather than a list.
+//
+// The filter is applied in SQL against item_catalog, so "what counts as junk"
+// is decided by the same table the rest of the server reads. The old version
+// asked the client's copy of the inventory whether an item was stackable, and
+// that copy is attacker-controlled: relabel a stack of potions as non-stackable
+// legendaries and the salvage counts them.
+//
+// Ordering, availability and the all-or-nothing rule are removeQty's, for the
+// same reasons — lowest enhancement first so salvage eats the +0 before the
+// +12, and nothing consumed at all unless the whole amount is there.
+async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null, stackable = null } = {}) {
+  const { rows } = await query(db, `
+    WITH pool AS (
+      SELECT pi.id, pi.qty, pi.enhance
+        FROM player_items pi
+        JOIN item_catalog c ON c.item_id = pi.item_id
+       WHERE pi.player_id = $1 AND pi.container = 'inventory'
+         AND ($3::text[] IS NULL OR pi.item_id = ANY($3::text[]))
+         AND ($4::text   IS NULL OR c.rarity = $4::text)
+         AND ($5::bool   IS NULL OR c.stackable = $5::bool)
+    ),
+    avail AS (SELECT COALESCE(sum(qty), 0)::int AS total FROM pool),
+    ranked AS (
+      SELECT id, qty,
+             COALESCE(sum(qty) OVER (ORDER BY enhance, id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0)::int AS taken_before
+        FROM pool
+    ),
+    plan AS (
+      SELECT r.id, r.qty, LEAST(r.qty, $2::int - r.taken_before)::int AS take
+        FROM ranked r, avail a
+       WHERE a.total >= $2::int AND r.taken_before < $2::int
+    ),
+    gone AS (
+      DELETE FROM player_items WHERE id IN (SELECT id FROM plan WHERE take >= qty)
+      RETURNING qty
+    ),
+    kept AS (
+      UPDATE player_items pi SET qty = pi.qty - p.take
+        FROM plan p WHERE pi.id = p.id AND p.take < p.qty
+      RETURNING p.take AS qty
+    )
+    SELECT (SELECT total FROM avail) AS had,
+           (COALESCE((SELECT sum(qty) FROM gone), 0)
+          + COALESCE((SELECT sum(qty) FROM kept), 0))::int AS took`,
+    [playerId, n, itemIds, rarity, stackable]);
+  return { ok: Number(rows[0].took) === Number(n), had: Number(rows[0].had) };
+}
+
+// Counts without consuming, same filter. A recipe that cannot proceed should
+// say how many the player actually has — "нужно 30, есть 24" is an answer;
+// "не хватает" is a support ticket.
+async function countMatching(db, playerId, { itemIds = null, rarity = null, stackable = null } = {}) {
+  const { rows } = await query(db, `
+    SELECT COALESCE(sum(pi.qty), 0)::int AS n
+      FROM player_items pi
+      JOIN item_catalog c ON c.item_id = pi.item_id
+     WHERE pi.player_id = $1 AND pi.container = 'inventory'
+       AND ($2::text[] IS NULL OR pi.item_id = ANY($2::text[]))
+       AND ($3::text   IS NULL OR c.rarity = $3::text)
+       AND ($4::bool   IS NULL OR c.stackable = $4::bool)`,
+    [playerId, itemIds, rarity, stackable]);
+  return Number(rows[0].n);
 }
 
 // Removes one specific row — used where the caller already identified the
@@ -281,6 +373,7 @@ async function attachFromListing(db, rowId, playerId) {
 }
 
 module.exports = {
+  consumeMatching, countMatching,
   syncCatalog, lockPlayer,
   inventoryOf, usedSlots, hasRoomFor,
   add, removeQty, removeRow, moveTo,

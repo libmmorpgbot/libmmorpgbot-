@@ -14,7 +14,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS,
+  ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
 } = require('../../../shared/definitions');
 
@@ -103,6 +103,28 @@ async function expireBuffs(db, playerId, elapsedSeconds) {
 // by the caller against the same level gates a walk-in uses. Consuming up front
 // is deliberate: a player who cancels mid-cast has still spent it, which is
 // what stops a stone being used to peek at a gate and then refunded.
+// Bought from the merchant for Liberty. The old handler needed an economy
+// lock, a busy counter, a re-read of the session after the charge, a hand-off
+// to whatever socket the account had reconnected on, and a manual refund when
+// that hand-off failed — sixty lines to make a charge and a grant look like one
+// operation. Here they are one, so what is left is the price and the cap.
+async function buyTeleportStone(db, playerId, qty = 1) {
+  const n = Math.max(1, Math.min(99, Math.floor(Number(qty)) || 1));
+  await items.lockPlayer(db, playerId);
+  if (!await items.hasRoomFor(db, playerId, 'teleport_stone')) err('no_room', 'Инвентарь полон');
+
+  const cost = TELEPORT_STONE_PRICE * n;
+  const paid = await money.spend(db, playerId, 'nexum', cost, {
+    reason: 'buy_teleport_stone', refType: 'merchant', refId: 'teleport_stone',
+    idemKey: `tp_buy:${playerId}:${crypto.randomUUID()}`,
+  });
+  if (!paid) err('no_nexum', `Нужно ${cost} Liberty`);
+
+  const rowId = await items.add(db, playerId, 'teleport_stone', { qty: n });
+  if (rowId === null) err('no_room', 'Инвентарь полон');
+  return { qty: n, cost, rowId };
+}
+
 async function useTeleportStone(db, playerId) {
   await items.lockPlayer(db, playerId);
   if (!await items.removeQty(db, playerId, 'teleport_stone', 1)) {
@@ -204,7 +226,7 @@ async function registerCodexItem(db, playerId, setId, slotIdx, rowId) {
 
 module.exports = {
   usePotion, useBuffPotion, expireBuffs,
-  useTeleportStone, pickupDrop, grantKillReward,
+  useTeleportStone, buyTeleportStone, pickupDrop, grantKillReward,
   registerCodexItem,
   HP_POTIONS, BUFF_POTIONS, POTION_CAP, UseError,
 };

@@ -33,7 +33,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ENHANCE_MAX, ENHANCEABLE_SLOTS, MERCHANT_SHOP, ITEM_DEF, BOX_DEF,
+  ENHANCE_MAX, ENHANCEABLE_SLOTS, MERCHANT_SHOP, ITEM_DEF, BOX_DEF, CRAFT_MATS,
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
   ADV_SKILL_BOOK_CRAFT,
@@ -49,6 +49,10 @@ const err = (code, msg) => { throw new CraftError(code, msg); };
 // wrong is already handled inside randomInt.
 const RAND_MAX = 2 ** 30;
 function rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
+
+// Choosing WHICH legendary a salvage or a recycle produces is worth as much
+// as rolling whether it produces one, so it comes from the same source.
+function pickOne(list) { return list[crypto.randomInt(list.length)]; }
 
 // ── enhancement ─────────────────────────────────────────────────────────────
 // Success rate is max(10, 80 - enhance*10) percent, exactly as the live build.
@@ -170,8 +174,13 @@ async function craft(db, playerId, family, index) {
   }
 
   for (const m of rec.mats || []) {
+    // minEnhance, not enhance. _haveMats counts copies at OR ABOVE the required
+    // enhancement, so the take has to mean the same thing — the earlier version
+    // passed no filter at all, which let a player pass the check on two +8 and
+    // pay with two +0, keeping the enhanced pair. Same word, same meaning, both
+    // ends of the operation.
     if (!await items.removeQty(db, playerId, m.id, m.n || 1,
-        { enhance: m.minEnhance ? null : null })) {
+        { minEnhance: m.minEnhance || null })) {
       // Unreachable after _haveMats inside the same transaction, and a throw
       // rather than a return because reaching it means the two disagree.
       err('no_mats', `Не хватает материалов: ${m.id}`);
@@ -188,33 +197,199 @@ async function craft(db, playerId, family, index) {
   return { outcome: 'success', family, index, chance, itemId: rec.itemId, rowId };
 }
 
-// The advanced skill book has its own single recipe rather than a list.
-async function craftAdvSkillBook(db, playerId, key) {
+// The advanced-book recycle: ten regular skill books of ANY class and slot,
+// mixed freely, for one random advanced book at 30%.
+//
+// The first version of this function was wrong in a way worth recording,
+// because the shape of the mistake will recur. It assumed ADV_SKILL_BOOK_CRAFT
+// looked like the other recipes — `{ mats, itemId }` — and it does not; it is
+// `{ count, chance }`, and the pool and the result are both computed rather
+// than listed. So `_haveMats(undefined)` found nothing missing, `rec.itemId`
+// was undefined, and the handler answered "Неизвестная книга" every single
+// time. It never crafted anything, and the suite never called it.
+//
+// The general lesson: a table of recipes is not a schema. Three of the six
+// families here carry a different shape, and treating the odd ones as if they
+// were `gear` produces functions that fail silently rather than loudly.
+async function craftAdvSkillBook(db, playerId) {
   await items.lockPlayer(db, playerId);
-  const rec = ADV_SKILL_BOOK_CRAFT;
-  if (!rec) err('bad_recipe', 'Рецепт не найден');
+  const need = ADV_SKILL_BOOK_CRAFT.count;
 
-  const missing = await _haveMats(db, playerId, rec.mats);
-  if (missing) err('no_mats', `Не хватает материалов: ${missing.id}`);
+  const sourceIds = CRAFT_MATS.filter(m => m.skillKey).map(m => m.id);
+  const advBooks  = CRAFT_MATS.filter(m => m.advSkillKey);
+  if (!sourceIds.length || !advBooks.length) err('bad_recipe', 'Рецепт не найден');
 
-  const itemId = typeof rec.itemIdFor === 'function' ? rec.itemIdFor(key) : rec.itemId;
-  if (!itemId) err('bad_recipe', 'Неизвестная книга');
-  if (!await items.hasRoomFor(db, playerId, itemId)) err('no_room', 'Инвентарь полон');
+  const have = await items.countMatching(db, playerId, { itemIds: sourceIds });
+  if (have < need) err('no_mats', `Нужно ${need} книг навыков (есть ${have})`);
 
-  for (const m of rec.mats || []) {
-    if (!await items.removeQty(db, playerId, m.id, m.n || 1)) err('no_mats', `Не хватает: ${m.id}`);
+  // The result is picked BEFORE the books are taken, so the room check below
+  // is asked about the item that will actually arrive.
+  const out = pickOne(advBooks);
+  if (!await items.hasRoomFor(db, playerId, out.id)) err('no_room', 'Инвентарь полон');
+
+  const { ok } = await items.consumeMatching(db, playerId, need, { itemIds: sourceIds });
+  if (!ok) err('no_mats', `Нужно ${need} книг навыков`);
+
+  // The books are spent either way. That is the recipe, not an accident, and
+  // it is why the answer carries `chance` — a player who loses ten books to a
+  // 30% roll deserves to see the number they were playing against.
+  if (rand() >= ADV_SKILL_BOOK_CRAFT.chance) {
+    return { outcome: 'fail', chance: ADV_SKILL_BOOK_CRAFT.chance, spent: need };
   }
-  const success = (rec.chance == null ? 1 : Number(rec.chance)) >= 1 || rand() < rec.chance;
-  if (!success) return { outcome: 'fail', chance: rec.chance };
-
-  const rowId = await items.add(db, playerId, itemId);
+  const rowId = await items.add(db, playerId, out.id);
   if (rowId === null) err('no_room', 'Инвентарь полон');
-  return { outcome: 'success', itemId, rowId };
+  return { outcome: 'success', chance: ADV_SKILL_BOOK_CRAFT.chance, itemId: out.id, rowId };
 }
 
-// ── boxes ───────────────────────────────────────────────────────────────────
-// A box plus its key produce one item from a rarity table. The roll is the
-// whole value of the box, so it goes through crypto like the rest.
+// ── pet ─────────────────────────────────────────────────────────────────────
+// Liberty in, a random pet of the chosen rarity out. No materials.
+//
+// Everything the old handler did around this — an economy lock, a busy
+// counter, a re-read of the session after the await, a cross-session hand-off
+// to another socket, and a manual refund when that hand-off failed — existed
+// because the charge and the grant were separate writes with an await between
+// them. They are one transaction here, so all of it is gone: if the grant
+// cannot happen the charge never committed, and there is nothing to refund
+// because nothing was taken.
+async function craftPet(db, playerId, rarity) {
+  await items.lockPlayer(db, playerId);
+  const rec = PET_CRAFT_RECIPES.find(r => r.rarity === rarity);
+  if (!rec) err('bad_recipe', 'Неизвестная редкость питомца');
+
+  const candidates = ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity);
+  if (!candidates.length) err('bad_recipe', 'Питомцы этой редкости не найдены');
+
+  const pet = pickOne(candidates);
+  if (!await items.hasRoomFor(db, playerId, pet.id)) err('no_room', 'Инвентарь полон');
+
+  if (rec.nexumCost > 0) {
+    const paid = await money.spend(db, playerId, 'nexum', rec.nexumCost, {
+      reason: 'craft_pet', refType: 'pet', refId: String(rarity),
+      idemKey: `craft_pet:${playerId}:${rarity}:${crypto.randomUUID()}`,
+    });
+    if (!paid) err('no_nexum', 'Недостаточно Liberty');
+  }
+
+  const chance = rec.chance == null ? 1 : Number(rec.chance);
+  if (chance < 1 && rand() >= chance) return { outcome: 'fail', rarity, chance, cost: rec.nexumCost };
+
+  const rowId = await items.add(db, playerId, pet.id);
+  if (rowId === null) err('no_room', 'Инвентарь полон');
+  return { outcome: 'success', rarity, chance, cost: rec.nexumCost, itemId: pet.id, rowId };
+}
+
+// ── material upgrade ────────────────────────────────────────────────────────
+// Twenty of one tier for one of the next, at 80%.
+async function upgradeMat(db, playerId, from) {
+  await items.lockPlayer(db, playerId);
+  const rec = MAT_UPGRADE_RECIPES.find(r => r.from === from);
+  if (!rec) err('bad_recipe', 'Неизвестный рецепт');
+
+  const have = await items.countMatching(db, playerId, { itemIds: [rec.from] });
+  if (have < rec.count) {
+    const def = CRAFT_MATS.find(m => m.id === rec.from);
+    err('no_mats', `Нужно ${rec.count} × ${def ? def.name : rec.from} (есть ${have})`);
+  }
+  if (!await items.hasRoomFor(db, playerId, rec.to)) err('no_room', 'Инвентарь полон');
+
+  if (!await items.removeQty(db, playerId, rec.from, rec.count)) {
+    err('no_mats', `Нужно ${rec.count} × ${rec.from}`);
+  }
+  if (rand() >= rec.chance) {
+    return { outcome: 'fail', from: rec.from, to: rec.to, chance: rec.chance, spent: rec.count };
+  }
+  const rowId = await items.add(db, playerId, rec.to);
+  if (rowId === null) err('no_room', 'Инвентарь полон');
+  return { outcome: 'success', from: rec.from, to: rec.to, chance: rec.chance, itemId: rec.to, rowId };
+}
+
+// ── class cloaks and artifacts ──────────────────────────────────────────────
+// Salvage: N pieces of junk gear at a rarity, plus Liberty, for one random
+// class-flavoured cloak or artifact of that rarity.
+//
+// "Junk gear" is now defined by the catalog — non-stackable, matching rarity —
+// where the old handler asked the CLIENT'S copy of the inventory. That copy is
+// whatever the client last sent, so an item could claim to be a non-stackable
+// legendary and be counted as one. Rarity and stackability are columns here.
+async function craftClassGear(db, playerId, slot, rarity) {
+  await items.lockPlayer(db, playerId);
+  const rec = CLASS_GEAR_SALVAGE_RECIPES.find(r => r.resultSlot === slot && r.resultRarity === rarity);
+  if (!rec) err('bad_recipe', 'Неизвестный рецепт');
+
+  const candidates = ITEM_DEF.filter(d =>
+    d.classItem && d.slot === rec.resultSlot && d.rarity === rec.resultRarity);
+  if (!candidates.length) err('bad_recipe', 'Предметы этой редкости не найдены');
+
+  const filter = { rarity: rec.costRarity, stackable: false };
+  const have = await items.countMatching(db, playerId, filter);
+  if (have < rec.costCount) {
+    err('no_mats', `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${have})`);
+  }
+
+  const out = pickOne(candidates);
+  if (!await items.hasRoomFor(db, playerId, out.id)) err('no_room', 'Инвентарь полон');
+
+  if (rec.nexumCost > 0) {
+    const paid = await money.spend(db, playerId, 'nexum', rec.nexumCost, {
+      reason: 'craft_class_gear', refType: 'salvage', refId: `${slot}:${rarity}`,
+      idemKey: `craft_class:${playerId}:${slot}:${rarity}:${crypto.randomUUID()}`,
+    });
+    if (!paid) err('no_nexum', `Нужно ${rec.nexumCost} Liberty`);
+  }
+
+  // Consumed AFTER the charge, and both inside the transaction — the ordering
+  // no longer decides anything, which is the point. The old handler re-counted
+  // the materials after its await and refunded by hand when the count had
+  // moved; here a shortfall throws and the charge is not there to refund.
+  const { ok } = await items.consumeMatching(db, playerId, rec.costCount, filter);
+  if (!ok) err('no_mats', `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}»`);
+
+  const rowId = await items.add(db, playerId, out.id);
+  if (rowId === null) err('no_room', 'Инвентарь полон');
+  return { outcome: 'success', slot, rarity, cost: rec.nexumCost, itemId: out.id, rowId };
+}
+
+// ── naming a gear recipe by its result ──────────────────────────────────────
+// The client asks for gear by the item it wants, not by a position in a list,
+// and that is the better interface: an index is a promise never to reorder the
+// table. Three lists can produce gear, searched in the order the old handler
+// used so a duplicated id resolves the same way it always has.
+function gearRecipeByItemId(itemId) {
+  const lists = [['gear', GEAR_CRAFT_RECIPES], ['gearTier', GEAR_TIER_CRAFT_RECIPES],
+                 ['unique', UNIQUE_CRAFT_RECIPES]];
+  for (const [family, list] of lists) {
+    const index = list.findIndex(r => r.itemId === itemId);
+    if (index >= 0) return { family, index };
+  }
+  err('bad_recipe', 'Неизвестный рецепт');
+}
+
+// ── the box itself ──────────────────────────────────────────────────────────
+// Keys into a box, at 100%. Distinct from openBox below, which spends the box
+// AND a key to get what is inside — the client calls one `craftBox` and the
+// other `openLootBox`, and confusing the two would quietly delete a player's
+// key hoard.
+async function craftBox(db, playerId, boxId) {
+  await items.lockPlayer(db, playerId);
+  const box = BOX_DEF.find(b => b.id === boxId);
+  if (!box) err('bad_recipe', 'Неизвестный бокс');
+
+  const have = await items.countMatching(db, playerId, { itemIds: [box.keyId] });
+  if (have < box.keyCost) {
+    const keyName = (CRAFT_MATS.find(m => m.id === box.keyId) || {}).name || box.keyId;
+    err('no_mats', `Нужно ${box.keyCost} × ${keyName} (есть ${have})`);
+  }
+  if (!await items.hasRoomFor(db, playerId, box.id)) err('no_room', 'Инвентарь полон');
+
+  if (!await items.removeQty(db, playerId, box.keyId, box.keyCost)) {
+    err('no_mats', `Нужно ${box.keyCost} × ${box.keyId}`);
+  }
+  const rowId = await items.add(db, playerId, box.id);
+  if (rowId === null) err('no_room', 'Инвентарь полон');
+  return { outcome: 'success', boxId: box.id, spent: box.keyCost, rowId };
+}
+
+
 async function openBox(db, playerId, boxId) {
   await items.lockPlayer(db, playerId);
 
@@ -297,5 +472,6 @@ async function sellItem(db, playerId, rowId, qty = 1) {
 
 module.exports = {
   enhance, enhanceRate, craft, craftAdvSkillBook, openBox,
+  craftPet, upgradeMat, craftClassGear, craftBox, gearRecipeByItemId,
   buyFromMerchant, sellItem, recipeOf, rand, CraftError,
 };

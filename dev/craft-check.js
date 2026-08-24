@@ -15,7 +15,11 @@ const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const craft = require('../server/db/repos/craft');
-const { GEAR_CRAFT_RECIPES, MERCHANT_SHOP, BOX_DEF, ITEM_DEF, ENHANCE_MAX } = require('../shared/definitions');
+const {
+  GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
+  MERCHANT_SHOP, BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
+} = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -195,6 +199,185 @@ async function main() {
     eq(await countOf(r2, m.id), before2[m.id], `матеріал ${m.id} НЕ витрачено при невдачі`);
   }
   eq(await countOf(r2, rec.itemId), 0, 'предмет не створився');
+
+  // ── the shape the game actually stores ───────────────────────────────────
+  // Everything above granted materials with give(id, qty), which puts qty in
+  // ONE row. add() only ever does that for a stackable; two swords are two
+  // rows. So the fixture was testing a shape the game cannot produce, and it
+  // hid the fact that every gear recipe was unreachable: they all ask for n:2
+  // of a non-stackable, and the take looked for one row holding two.
+  console.log('  ── реальна форма інвентаря ──');
+  const rows = async (pid, itemId) =>
+    (await pool().query(
+      `SELECT enhance, qty FROM player_items
+        WHERE player_id=$1 AND container='inventory' AND item_id=$2
+        ORDER BY enhance, id`, [pid, itemId])).rows;
+  const giveRows = async (pid, itemId, n, enhance = 0) => {
+    for (let i = 0; i < n; i++) await give(pid, itemId, 1, enhance);
+  };
+
+  const gearMat = rec.mats.find(m => m.minEnhance > 0);
+  const bulkMat = rec.mats.find(m => !m.minEnhance);
+
+  const r3 = await mk('rows');
+  await giveRows(r3, gearMat.id, gearMat.n, gearMat.minEnhance);   // separate rows
+  await give(r3, bulkMat.id, bulkMat.n);
+  await money.credit(null, r3, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx3` });
+  eq((await rows(r3, gearMat.id)).length, gearMat.n,
+    `${gearMat.n} × ${gearMat.id} лежать окремими рядками, як у грі`);
+  eq((await tx(t => craft.craft(t, r3, 'gear', 0))).outcome, 'success',
+    'крафт бере матеріал З КІЛЬКОХ РЯДКІВ — саме це було зламано');
+  eq((await rows(r3, gearMat.id)).length, 0, 'обидва рядки списано');
+
+  // ── minEnhance means the same thing on both ends ─────────────────────────
+  // _haveMats counted copies at or above the requirement; the take applied no
+  // filter at all. A player holding two +8 and four +0 passed the check and
+  // paid with the +0 — keeping the enhanced pair and crafting at a fraction of
+  // the recipe's real price.
+  console.log('  ── заточка матеріалу ──');
+  const r4 = await mk('minenh');
+  await giveRows(r4, gearMat.id, gearMat.n, gearMat.minEnhance);
+  await giveRows(r4, gearMat.id, 4, 0);                              // decoys
+  await give(r4, bulkMat.id, bulkMat.n);
+  await money.credit(null, r4, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx4` });
+
+  eq((await tx(t => craft.craft(t, r4, 'gear', 0))).outcome, 'success', 'крафт пройшов');
+  const left4 = await rows(r4, gearMat.id);
+  eq(left4.length, 4, 'залишилось рівно 4 рядки');
+  ok(left4.every(x => x.enhance === 0),
+    'списано ЗАТОЧЕНІ, а не звичайні — оплачено тим, чого вимагає рецепт');
+
+  // Lowest qualifying enhancement goes first: when +8 satisfies the recipe the
+  // +12 stays in the bag. The alternative silently eats work already paid for.
+  const r5 = await mk('lowest');
+  await giveRows(r5, gearMat.id, gearMat.n, gearMat.minEnhance);
+  await giveRows(r5, gearMat.id, gearMat.n, Math.min(ENHANCE_MAX, gearMat.minEnhance + 4));
+  await give(r5, bulkMat.id, bulkMat.n);
+  await money.credit(null, r5, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx5` });
+  await tx(t => craft.craft(t, r5, 'gear', 0));
+  const left5 = await rows(r5, gearMat.id);
+  ok(left5.length === gearMat.n && left5.every(x => x.enhance > gearMat.minEnhance),
+    `витрачено +${gearMat.minEnhance}, а +${gearMat.minEnhance + 4} лишився цілим`);
+
+  // All or nothing: one short means nothing is taken, not a partial take.
+  const r6 = await mk('partial');
+  await giveRows(r6, gearMat.id, gearMat.n - 1, gearMat.minEnhance);
+  await give(r6, bulkMat.id, bulkMat.n);
+  await money.credit(null, r6, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx6` });
+  eq(await caught(() => tx(t => craft.craft(t, r6, 'gear', 0))), 'no_mats', 'одного не вистачає — відмова');
+  eq((await rows(r6, gearMat.id)).length, gearMat.n - 1, 'НІЧОГО не списано частково');
+  eq(await countOf(r6, bulkMat.id), bulkMat.n, 'другий матеріал теж на місці');
+
+  // ── naming a recipe by its result ────────────────────────────────────────
+  console.log('  ── рецепт за предметом ──');
+  eq(JSON.stringify(craft.gearRecipeByItemId(rec.itemId)), JSON.stringify({ family: 'gear', index: 0 }),
+    'епічний рецеп знайдено в GEAR_CRAFT_RECIPES');
+  eq(craft.gearRecipeByItemId(GEAR_TIER_CRAFT_RECIPES[0].itemId).family, 'gearTier',
+    'тировий рецепт знайдено в GEAR_TIER_CRAFT_RECIPES');
+  eq(await caught(async () => craft.gearRecipeByItemId('НЕМАЄ')), 'bad_recipe',
+    'вигаданий предмет — відмова, а не мовчазний перший рецепт');
+
+  // ── advanced skill book ──────────────────────────────────────────────────
+  // The version this replaces answered "Неизвестная книга" every time, because
+  // it read ADV_SKILL_BOOK_CRAFT as if it had {mats, itemId}. It has {count,
+  // chance}: ten regular books of ANY class, one random advanced book at 30%.
+  console.log('  ── книга просунутого навику ──');
+  const srcIds = CRAFT_MATS.filter(m => m.skillKey).map(m => m.id);
+  const advIds = new Set(CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id));
+  const ab = await mk('advbook');
+
+  eq(await caught(() => tx(t => craft.craftAdvSkillBook(t, ab))), 'no_mats', 'без книг — відмова');
+
+  // Mixed ids on purpose: the recipe says "any ten", and the old client-side
+  // version could only count one id at a time.
+  for (let i = 0; i < ADV_SKILL_BOOK_CRAFT.count; i++) {
+    await give(ab, srcIds[i % srcIds.length], 1);
+  }
+  const abRes = await tx(t => craft.craftAdvSkillBook(t, ab));
+  ok(abRes.outcome === 'success' || abRes.outcome === 'fail',
+    `рецепт відпрацював (${abRes.outcome}, шанс ${abRes.chance})`);
+  eq(await items.countMatching(null, ab, { itemIds: srcIds }), 0,
+    'усі 10 книг списано — вони витрачаються незалежно від кидка');
+  if (abRes.outcome === 'success') {
+    ok(advIds.has(abRes.itemId), `видано книгу 2-ї професії (${abRes.itemId})`);
+  } else {
+    eq(await items.countMatching(null, ab, { itemIds: [...advIds] }), 0, 'при невдачі книги не видано');
+  }
+
+  // ── pet ──────────────────────────────────────────────────────────────────
+  console.log('  ── питомець ──');
+  const petRec = PET_CRAFT_RECIPES[0];
+  const pc = await mk('pet');
+  eq(await caught(() => tx(t => craft.craftPet(t, pc, petRec.rarity))), 'no_nexum',
+    'без Liberty питомця не створити');
+  eq((await invOf(pc)).length, 0, 'нічого не з’явилось');
+
+  await money.credit(null, pc, 'nexum', petRec.nexumCost, { reason: 'seed', idemKey: `${TAG}:pet` });
+  const petRes = await tx(t => craft.craftPet(t, pc, petRec.rarity));
+  eq(petRes.outcome, 'success', 'питомця створено');
+  const petDef = ITEM_DEF.find(d => d.id === petRes.itemId);
+  ok(petDef && petDef.slot === 'pet' && petDef.rarity === petRec.rarity,
+    `це справді питомець потрібної рідкості (${petRes.itemId})`);
+  eq((await money.balancesOf(null, pc)).nexum, 0, 'Liberty списано рівно за рецептом');
+  eq(await caught(() => tx(t => craft.craftPet(t, pc, 'вигадана'))), 'bad_recipe',
+    'вигадана рідкість — відмова');
+
+  // ── material upgrade ─────────────────────────────────────────────────────
+  console.log('  ── апгрейд матеріалів ──');
+  const mu = MAT_UPGRADE_RECIPES[0];
+  const up = await mk('matup');
+  eq(await caught(() => tx(t => craft.upgradeMat(t, up, mu.from))), 'no_mats', 'без матеріалів — відмова');
+  await give(up, mu.from, mu.count - 1);
+  eq(await caught(() => tx(t => craft.upgradeMat(t, up, mu.from))), 'no_mats',
+    `${mu.count - 1} з ${mu.count} — відмова`);
+  eq(await countOf(up, mu.from), mu.count - 1, 'нічого не списано');
+
+  await give(up, mu.from, 1);
+  const muRes = await tx(t => craft.upgradeMat(t, up, mu.from));
+  eq(await countOf(up, mu.from), 0, `${mu.count} списано за будь-якого результату`);
+  eq(await countOf(up, mu.to), muRes.outcome === 'success' ? 1 : 0,
+    `результат збігається з кидком (${muRes.outcome}, шанс ${mu.chance})`);
+
+  // ── class gear salvage ───────────────────────────────────────────────────
+  // "Junk gear" is a catalog property here. The old handler asked the client's
+  // copy of the inventory whether an item was stackable and what rarity it was
+  // — both attacker-controlled, so a stack of potions could be salvaged as
+  // thirty legendaries.
+  console.log('  ── плащі та артефакти ──');
+  // The UNCOMMON recipe, deliberately: 46 stackables in the catalog carry that
+  // rarity and most of them are skill books. If "junk gear" were counted as
+  // "things I own of this rarity" — which is what the client's copy amounted to
+  // — salvaging a cloak would quietly eat the player's book collection. There
+  // is no stackable common at all, so the common recipe cannot prove this and
+  // the first version of this test skipped the check without saying so.
+  const cg = CLASS_GEAR_SALVAGE_RECIPES.find(r => r.costRarity === 'uncommon');
+  const junk = ITEM_DEF.filter(d => !isStackableItem(d) && d.rarity === cg.costRarity);
+  const stackJunk = [...CRAFT_MATS, ...ITEM_DEF, ...BOX_DEF]
+    .find(d => isStackableItem(d) && d.rarity === cg.costRarity);
+  ok(junk.length > 0 && !!stackJunk,
+    `у каталозі є і брухт (${junk.length}), і стековані (${stackJunk && stackJunk.id}) рідкості ${cg.costRarity}`);
+
+  const sv = await mk('salvage');
+  await money.credit(null, sv, 'nexum', cg.nexumCost * 2, { reason: 'seed', idemKey: `${TAG}:sv` });
+
+  eq(await caught(() => tx(t => craft.craftClassGear(t, sv, cg.resultSlot, cg.resultRarity))),
+    'no_mats', 'без брухту — відмова');
+
+  await give(sv, stackJunk.id, cg.costCount + 5);
+  eq(await caught(() => tx(t => craft.craftClassGear(t, sv, cg.resultSlot, cg.resultRarity))),
+    'no_mats', 'стек тієї ж рідкості НЕ зараховується як брухт');
+
+  for (let i = 0; i < cg.costCount; i++) await give(sv, junk[i % junk.length].id, 1);
+  const svRes = await tx(t => craft.craftClassGear(t, sv, cg.resultSlot, cg.resultRarity));
+  eq(svRes.outcome, 'success', 'предмет класу створено');
+  const svDef = ITEM_DEF.find(d => d.id === svRes.itemId);
+  ok(svDef && svDef.classItem && svDef.slot === cg.resultSlot && svDef.rarity === cg.resultRarity,
+    `це справді ${cg.resultSlot} рідкості ${cg.resultRarity} (${svRes.itemId})`);
+  eq(await items.countMatching(null, sv, { rarity: cg.costRarity, stackable: false }), 1,
+    'брухт списано, лишився лише щойно створений предмет');
+  eq(await countOf(sv, stackJunk.id), cg.costCount + 5,
+    'книги НЕ зачеплені — фільтр по колонці каталогу, а не по кількості речей');
+  eq((await money.balancesOf(null, sv)).nexum, cg.nexumCost, 'Liberty списано один раз');
 
   // ── the rolls come from crypto, not Math.random ──────────────────────────
   console.log('  ── випадковість ──');

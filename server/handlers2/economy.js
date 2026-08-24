@@ -15,10 +15,11 @@ const market = require('../db/repos/market');
 const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
 const progression = require('../db/repos/progression');
+const consumables = require('../db/repos/consumables');
 const ops = require('../tg-ops');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, MARKET_FEE_PCT, GEAR_CRAFT_RECIPES,
+  GRAM_MIN_WITHDRAW, MARKET_FEE_PCT, GEAR_CRAFT_RECIPES, ITEM_DEF,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
 
@@ -35,9 +36,18 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   const pushAll = async (t) => { await s.pushItems(t); await s.pushBalances(t); await s.pushStats(t); };
 
   // ── crafting ─────────────────────────────────────────────────────────────
-  // One handler for every recipe family. The old build had six near-identical
-  // ones, each with its own copy of "take the materials, then grant", and the
-  // write ordering had to be correct in all six.
+  // Six families, one repository function each, and the wire names the client
+  // already speaks. The generic `craft` below stays because it is the honest
+  // interface — a family and a recipe — but the client asks for gear by the
+  // ITEM it wants, pets by rarity, salvage by slot, and it will keep doing that
+  // until the client is rewritten. Renaming the events instead would have meant
+  // shipping a server the existing bundle cannot talk to.
+  //
+  // Every one of these answers with the fresh Liberty balance, because that is
+  // what the client's handlers read. `pushBalances` already sent the truth a
+  // line earlier; this is the same number in the shape the UI expects.
+  const nexumOf = async (t, pid) => (await money.balancesOf(t, pid)).nexum;
+
   safeOn('craft', ({ family, index } = {}) => s.act('craft', 'craftError', async (t, pid) => {
     const i = idx(index);
     if (i === null || typeof family !== 'string') return;
@@ -46,11 +56,85 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     s.socket.emit('craftResult', res);
   }));
 
-  safeOn('craftAdvSkillBook', ({ key } = {}) => s.act('craftAdvSkillBook', 'craftError', async (t, pid) => {
-    const res = await craft.craftAdvSkillBook(t, pid, String(key || ''));
+  // Gear, named by the item it produces. Three recipe lists can make gear and
+  // the resolver searches them in the order the old handler did, so an id that
+  // appears twice resolves the way it always has.
+  safeOn('craftGear', ({ itemId } = {}) => s.act('craftGear', 'craftGearError', async (t, pid) => {
+    if (typeof itemId !== 'string' || !itemId) return;
+    const { family, index } = craft.gearRecipeByItemId(itemId);
+    const res = await craft.craft(t, pid, family, index);
     await pushAll(t);
-    s.socket.emit('craftResult', res);
+    s.socket.emit('gearCrafted', {
+      itemId, success: res.outcome === 'success', newNexumBalance: await nexumOf(t, pid),
+    });
   }));
+
+  safeOn('craftPet', ({ rarity } = {}) => s.act('craftPet', 'petCraftError', async (t, pid) => {
+    if (typeof rarity !== 'string' || !rarity) return;
+    const res = await craft.craftPet(t, pid, rarity);
+    await pushAll(t);
+    // The client wants the pet's catalog entry, not just its id — it draws the
+    // reward card from it before the inventory panel is next opened.
+    const pet = res.outcome === 'success' ? ITEM_DEF.find(d => d.id === res.itemId) : null;
+    s.socket.emit('petCrafted', {
+      pet, newNexumBalance: await nexumOf(t, pid), delivered: res.outcome === 'success',
+    });
+  }));
+
+  safeOn('craftClassGear', ({ slot, rarity } = {}) =>
+    s.act('craftClassGear', 'craftClassGearError', async (t, pid) => {
+      if (typeof slot !== 'string' || typeof rarity !== 'string') return;
+      const res = await craft.craftClassGear(t, pid, slot, rarity);
+      await pushAll(t);
+      const item = ITEM_DEF.find(d => d.id === res.itemId) || null;
+      s.socket.emit('classGearCrafted', {
+        item, newNexumBalance: await nexumOf(t, pid), delivered: !!item,
+      });
+    }));
+
+  safeOn('craftMatUpgrade', ({ from } = {}) =>
+    s.act('craftMatUpgrade', 'craftMatUpgradeError', async (t, pid) => {
+      if (typeof from !== 'string' || !from) return;
+      const res = await craft.upgradeMat(t, pid, from);
+      await pushAll(t);
+      s.socket.emit('matUpgraded', { from: res.from, to: res.to, success: res.outcome === 'success' });
+    }));
+
+  safeOn('craftBox', ({ boxId } = {}) => s.act('craftBox', 'craftBoxError', async (t, pid) => {
+    if (typeof boxId !== 'string' || !boxId) return;
+    const res = await craft.craftBox(t, pid, boxId);
+    await pushAll(t);
+    s.socket.emit('boxCrafted', { boxId: res.boxId });
+  }));
+
+  // No payload: the recipe is "any ten skill books" and the result is rolled
+  // here. The version this replaces took a `key` and tried to build the book id
+  // from it, which is not what the table describes — see repos/craft.js.
+  safeOn('craftAdvSkillBook', () =>
+    s.act('craftAdvSkillBook', 'craftAdvSkillBookError', async (t, pid) => {
+      const res = await craft.craftAdvSkillBook(t, pid);
+      await pushAll(t);
+      s.socket.emit('advSkillBookCrafted', {
+        success: res.outcome === 'success', id: res.itemId || null,
+      });
+    }));
+
+  // Enchant stones stopped being craftable before this port, and the refusal is
+  // kept rather than dropped: the button is still in the shipped client, and a
+  // handler that does not exist leaves it spinning with no explanation.
+  safeOn('craftStone', () => {
+    s.socket.emit('craftStoneError', { msg: 'Камни заточки больше не создаются в кузнице' });
+  });
+
+  // ── merchant: teleport stones ────────────────────────────────────────────
+  safeOn('buyTeleportStone', ({ qty } = {}) =>
+    s.act('buyTeleportStone', 'teleportStoneError', async (t, pid) => {
+      const res = await consumables.buyTeleportStone(t, pid, qty);
+      await pushAll(t);
+      s.socket.emit('teleportStoneBought', {
+        qty: res.qty, newNexumBalance: await nexumOf(t, pid), delivered: true,
+      });
+    }));
 
   // ── enhancement ──────────────────────────────────────────────────────────
   // Named by ROW, not by (id, enhance). The old handler searched the inventory
