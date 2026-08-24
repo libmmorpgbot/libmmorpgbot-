@@ -1,5 +1,28 @@
 #!/usr/bin/env node
 'use strict';
+// ── LEGACY: this checks the RETIRED Mongo build ─────────────────────────────
+//
+//   CHECK_LEGACY=1 node dev/storage-race-check.js
+//
+// It lifts its subject out of server/index.js and server/handlers/ — the old
+// build, kept in the tree as a reference while the PostgreSQL one is finished.
+// systemd runs server/app.js, and a reachability walk of the require graph
+// from there loads 57 files and NONE of these: the old build is present, and
+// it is not what runs.
+//
+// So its failures describe code nobody executes, and reading them as live
+// defects is exactly the confusion the two builds sitting side by side
+// creates. The equivalents for the running build are dev/items-check.js,
+// dev/market-check.js, dev/money-check.js and dev/play-check.js.
+//
+// It refuses to run rather than reporting green, because a suite that passes
+// without checking anything is worse than one that is switched off.
+if (!process.env.CHECK_LEGACY) {
+  console.log(`
+  storage-race-check.js — SKIPPED (retired Mongo build; CHECK_LEGACY=1 to run)
+`);
+  process.exit(0);
+}
 // Regression check for the inventory <-> storage rollback race.
 //
 //   node dev/storage-race-check.js

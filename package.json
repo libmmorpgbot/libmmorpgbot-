@@ -1,10 +1,10 @@
 {
   "name": "dungeon-quest",
   "version": "1.0.0",
-  "main": "server/index.js",
+  "main": "server/app.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "nodemon server/index.js",
+    "start": "node server/app.js",
+    "dev": "nodemon server/app.js",
     "dev:local": "node dev/local.js",
     "harness": "node dev/harness.js",
     "lint": "eslint .",
