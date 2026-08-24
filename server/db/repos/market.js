@@ -81,9 +81,14 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
     err('not_owned', 'Предмет перемістився — спробуйте ще раз');
   }
 
+  // What is being sold is written INTO the listing, not only referenced from
+  // it. A record of a trade has to say what was traded — by the time anyone
+  // reads their history the item could be a different enhancement level, in
+  // somebody else's bag, or gone.
   const { rows } = await query(db, `
-    INSERT INTO market_listings (seller_id, item_id, price)
-    VALUES ($1, $2, $3) RETURNING id, created_at`, [playerId, rowId, round2(p)]);
+    INSERT INTO market_listings (seller_id, item_id, price, snap_item_id, snap_enhance, snap_qty)
+    VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
+    [playerId, rowId, round2(p), it.item_id, it.enhance || 0, it.qty || 1]);
 
   return { listingId: Number(rows[0].id), price: round2(p), item: { id: it.item_id, enhance: it.enhance, qty: it.qty } };
 }
@@ -217,10 +222,16 @@ async function buy(db, buyerId, listingId) {
 
 // ── reads ───────────────────────────────────────────────────────────────────
 
+// The live row where there is one, the snapshot where there is not. An active
+// listing always has both and they agree; a closed one may have only the
+// snapshot, because the item it names has since been enhanced away or eaten by
+// a craft.
 const LISTING_COLS = `
   l.id, l.price, l.created_at, l.status,
   s.username AS seller_username, l.seller_id,
-  i.item_id, i.enhance, i.qty,
+  COALESCE(i.item_id, l.snap_item_id)      AS item_id,
+  COALESCE(i.enhance, l.snap_enhance, 0)   AS enhance,
+  COALESCE(i.qty,     l.snap_qty, 1)       AS qty,
   c.name AS item_name, c.rarity, c.slot`;
 
 function _lot(r) {
@@ -273,7 +284,7 @@ async function history(db, playerId, limit = 30) {
       JOIN players       s ON s.id = l.seller_id
  LEFT JOIN players       b ON b.id = l.buyer_id
  LEFT JOIN player_items  i ON i.id = l.item_id
- LEFT JOIN item_catalog  c ON c.item_id = i.item_id
+ LEFT JOIN item_catalog  c ON c.item_id = COALESCE(i.item_id, l.snap_item_id)
      WHERE (l.seller_id = $1 OR l.buyer_id = $1) AND l.status <> 'active'
      ORDER BY l.closed_at DESC NULLS LAST
      LIMIT $2`, [playerId, Math.min(limit, 100)]);
