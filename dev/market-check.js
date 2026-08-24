@@ -126,9 +126,17 @@ async function main() {
   const traders = [];
   for (let i = 0; i < 6; i++) traders.push(await mkPlayer(`t${i}`, 200));
   for (const t of traders) await give(t, 3);
-  const itemsBefore = (await pool().query(
-    `SELECT count(*)::int n FROM player_items WHERE player_id = ANY($1) OR player_id IS NULL`, [traders]
-  )).rows[0].n;
+  // Scoped to THESE traders, and to listings THEY hold. The first version
+  // counted `player_id IS NULL` across the whole table — every item any other
+  // account has ever put up for sale — so the baseline was the traders' 18
+  // plus however many live listings the database happened to hold. One real
+  // listing from an earlier run made this read 19 and fail forever, describing
+  // a lost item that was never lost.
+  const scoped = `
+    SELECT count(*)::int n FROM player_items
+      WHERE player_id = ANY($1) OR (player_id IS NULL AND id IN (
+        SELECT item_id FROM market_listings WHERE seller_id = ANY($1)))`;
+  const itemsBefore = (await pool().query(scoped, [traders])).rows[0].n;
 
   // Everyone lists one, then everyone tries to buy everything, all at once.
   const lots = [];
@@ -142,11 +150,7 @@ async function main() {
   }
   await Promise.all(attempts);
 
-  const itemsAfter = (await pool().query(
-    `SELECT count(*)::int n FROM player_items
-      WHERE player_id = ANY($1) OR (player_id IS NULL AND id IN (
-        SELECT item_id FROM market_listings WHERE seller_id = ANY($1)))`, [traders]
-  )).rows[0].n;
+  const itemsAfter = (await pool().query(scoped, [traders])).rows[0].n;
   eq(itemsAfter, itemsBefore, `після ${attempts.length} одночасних покупок предметів рівно стільки ж (${itemsBefore})`);
 
   // No item may be owned AND listed at the same time — the duplication state.
