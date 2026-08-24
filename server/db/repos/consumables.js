@@ -208,6 +208,18 @@ async function pickupDrop(db, playerId, itemId, qty = 1, enhance = 0) {
 // The old code applied these through three different paths — gold via a
 // pending-spend accumulator, xp via _grantXp, items via _commitServerItems —
 // so a disconnect between them credited some and not others.
+// `gold` and `nexum` in the answer are BALANCES, not amounts — the client
+// displays them verbatim rather than adding anything itself.
+//
+// Returning zero when nothing was credited was the bug behind "золото то есть
+// то нету". A monster that rolls no gold is ordinary and common; every one of
+// them told the client its balance was now zero, and the number on screen
+// vanished until the next monster that happened to pay. Kill a rat, see 6.
+// Kill another, see 0. The database had 6 the whole time.
+//
+// So the balance is read whether or not anything moved. One extra query per
+// kill on the path that already did a write, in exchange for a number that
+// cannot lie.
 async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, drops = [], idemKey }) {
   const out = { gold: 0, xp: null, nexum: 0, items: [] };
 
@@ -220,6 +232,11 @@ async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, drop
     const r = await money.credit(db, playerId, 'nexum', nexum,
       { reason: 'mob_drop', idemKey: `${idemKey}:nexum` });
     out.nexum = r.balance;
+  }
+  if (!(gold > 0) || !(nexum > 0)) {
+    const bal = await money.balancesOf(db, playerId);
+    if (!(gold > 0)) out.gold = bal.gold;
+    if (!(nexum > 0)) out.nexum = bal.nexum;
   }
   if (xp > 0) {
     const players = require('./players');

@@ -27,6 +27,7 @@ const workers = require('./workers');
 const adminAuth = require('./admin-auth');
 const { Session, activeSessions, socketForTelegramId } = require('./session');
 const world = require('./world');
+const version = require('./version');
 const party = require('./party');
 const modesLib = require('./modes');
 const maintenance = require('./maintenance');
@@ -85,7 +86,9 @@ app.use(express.json({ limit: '256kb' }));
 app.get('/health', async (req, res) => {
   let dbOk = false;
   try { await db.query(null, 'SELECT 1'); dbOk = true; } catch { /* reported below */ }
-  const brief = { ok: dbOk, db: dbOk ? 'up' : 'down' };
+  // The build, in the ONE response anyone can reach without credentials.
+  // A bug report against the wrong server costs more than this line saves.
+  const brief = { ok: dbOk, db: dbOk ? 'up' : 'down', build: version.COMMIT, since: version.STARTED_AT };
 
   const tok = (req.headers.authorization || '').replace('Bearer ', '');
   if (!await adminAuth.verify(tok)) return res.json(brief);
@@ -247,6 +250,7 @@ io.on('connection', (socket) => {
       gramBalance: bal.gram,
       nexumBalance: bal.nexum,
       gramWallet: process.env.GRAM_WALLET || null,
+      build: version.COMMIT,
     });
   }
 
@@ -408,8 +412,9 @@ async function boot() {
 
   // 5. Only now.
   await new Promise(r => server.listen(PORT, r));
-  console.log(`listening on ${PORT}`);
-  await ops.send('alerts', `🟢 <b>Сервер запущен</b> · порт ${PORT} · каталог ${synced.synced} предметов`);
+  console.log(`listening on ${PORT} · build ${version.COMMIT}`);
+  await ops.send('alerts',
+    `🟢 <b>Сервер запущен</b> · порт ${PORT} · сборка <code>${version.COMMIT}</code> · каталог ${synced.synced} предметов`);
 }
 
 // ── shutdown ────────────────────────────────────────────────────────────────

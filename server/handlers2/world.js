@@ -288,7 +288,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const res = s.room.attackEnemy(s.socket.id, enemyId);
     if (!res) return;
     if (res.immune) return;                   // no damage number to draw
-    s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
+    // A killing blow returns no `hp` — the kill branch has nothing left to
+    // report — so sending it anyway set the client's copy to undefined for the
+    // instant between this packet and enemyKilled. Zero is the truth.
+    if (!res.killed) {
+      s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
+    }
     if (res.killed) onKill({ ...res, enemyUid: enemyId });
   });
 
@@ -299,7 +304,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // somebody edits.
     const res = s.room.skillAttackEnemy(s.socket.id, enemyId, key);
     if (!res) return;
-    s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
+    if (!res.killed) {
+      s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
+    }
     if (res.killed) onKill({ ...res, enemyUid: enemyId });
   });
 
