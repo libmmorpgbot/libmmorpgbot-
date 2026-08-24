@@ -135,6 +135,48 @@ async function main() {
   const e = await once(sock, 'itemError');
   ok(!!e, 'чужий/неіснуючий рядок відхилено з поясненням');
 
+  // ── the handlers ported in this pass ─────────────────────────────────────
+  console.log('  ── прогресія і соціальне ──');
+
+  // Studying without the book must refuse, and must not silently half-apply.
+  sock.emit('learnSkill', { key: 'Q' });
+  const noBook = await once(sock, 'skillError');
+  ok(!!noBook, 'вивчити навичку без книги — відмова з поясненням');
+
+  // Rating reads a stored column, not thirty numbers derived per row.
+  sock.emit('getRating', { kind: 'players' });
+  const rating = await once(sock, 'rating');
+  ok(Array.isArray(rating.rows), 'рейтинг гравців віддається');
+
+  sock.emit('seasonRating', {});
+  const season = await once(sock, 'seasonRating');
+  ok(season.board && season.me, 'сезонна таблиця і власне місце віддаються');
+
+  // Chat: the message comes back escaped of control characters and bounded.
+  sock.emit('chat', { text: 'привет [31m ' + 'x'.repeat(300) });
+  const msg = await once(sock, 'chatMsg');
+  ok(msg.text.length <= 100, `повідомлення обрізане до ${msg.text.length} символів`);
+  ok(!/[ -]/.test(msg.text), 'керуючі символи вирізані');
+
+  // The cooldown is the security control here: this reaches every player.
+  sock.emit('chat', { text: 'второе подряд' });
+  const flooded = await once(sock, 'chatMsg', 1500).catch(() => null);
+  ok(!flooded, 'друге повідомлення поспіль відкинуто кулдауном');
+
+  // A clan needs gold the account does not have — refusal, and no clan.
+  sock.emit('clanCreate', { name: 'TST', icon: 3 });
+  const clanErr = await once(sock, 'clanError');
+  ok(!!clanErr, `клан без золота — відмова (${clanErr.msg})`);
+
+  sock.emit('clanRequest', {});
+  const clanData = await once(sock, 'clanData');
+  eq(clanData, null, 'клану немає, як і має бути після невдалого створення');
+
+  // A profile is answered from the database, not relayed to the other client.
+  sock.emit('requestPlayerProfile', { playerId });
+  const prof = await once(sock, 'playerProfile');
+  ok(prof.profile && prof.profile.atk > 0, 'публічний профіль порахований сервером');
+
   // ── single session per account ───────────────────────────────────────────
   const second = io(url, { transports: ['websocket'], forceNew: true });
   await once(second, 'connect');

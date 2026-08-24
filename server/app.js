@@ -120,6 +120,14 @@ const HEAVY = new Set([
   'craft', 'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
   'registerCodexSetItem', 'codexSync', 'spendUpgrade', 'usePotion', 'useBuffPotion',
+  'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
+  'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
+  'seasonRating', 'rebirth', 'resetUpgrades', 'getRating',
+  'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
+  'clanDisband', 'clanSetDescription', 'clanSearch', 'clanRequest',
+  'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
+  'clanStorageUnlock', 'clanStorageSync',
+  'chat', 'chatHistory', 'requestPlayerProfile', 'savePrefs',
 ]);
 
 io.on('connection', (socket) => {
@@ -200,6 +208,8 @@ io.on('connection', (socket) => {
   };
   require('./handlers2/items')(s, safeOn, deps);
   require('./handlers2/economy')(s, safeOn, deps);
+  require('./handlers2/progression')(s, safeOn, deps);
+  require('./handlers2/social')(s, safeOn, deps);
 
   // Preferences: the ONLY place a client value reaches the database. Six
   // fields, none of which touches combat or the economy.
