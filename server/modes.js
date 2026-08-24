@@ -40,6 +40,7 @@ const createDeathBattle = require('./game/death-battle');
 const createFear = require('./game/fear');
 const createCoop = require('./game/coop');
 const createFarm2 = require('./game/farm2');
+const createGuildWar = require('./game/guildwar');
 
 // The caps live INSIDE the factories — RACE10_ATTEMPTS, FEAR_ATTEMPTS and
 // COOP_ATTEMPTS are each declared in their own file and returned. Reading them
@@ -204,6 +205,69 @@ function init(io) {
     _lockRace10Daily: (sid) => takeAttempt(sid, 'race10'),
   }));
   Object.assign(modes, createDeathBattle(shared));
+
+  // The castle. Its persistence is handed in — see the comment at the top of
+  // game/guildwar.js for why that file no longer reaches for a model itself.
+  Object.assign(modes, createGuildWar({
+    ...shared,
+    _socketForTelegramId: (tid) => {
+      const sid = activeSessions.get(String(tid));
+      return sid ? io.sockets.sockets.get(sid) : null;
+    },
+    loadCastle: async () => {
+      const { query } = require('./db');
+      // The name and the icon are the CLAN's, joined at read time rather than
+      // copied into this row. A clan that renames itself would otherwise keep
+      // flying its old banner over the castle until the next capture — and a
+      // clan that is deleted would leave a name pointing at nothing.
+      const { rows } = await query(null, `
+        SELECT g.owner_clan_id, g.captured_at, c.name, c.icon
+          FROM guild_war_state g LEFT JOIN clans c ON c.id = g.owner_clan_id
+         WHERE g.key = 'castle'`);
+      if (!rows.length) return null;
+      return {
+        ownerClanId: rows[0].owner_clan_id == null ? null : Number(rows[0].owner_clan_id),
+        ownerClanName: rows[0].name,
+        ownerClanIcon: rows[0].icon,
+        capturedAt: rows[0].captured_at ? new Date(rows[0].captured_at).getTime() : 0,
+      };
+    },
+    saveCastle: async (st) => {
+      const { query } = require('./db');
+      await query(null, `
+        INSERT INTO guild_war_state (key, owner_clan_id, captured_at)
+        VALUES ('castle', $1, to_timestamp($2 / 1000.0))
+        ON CONFLICT (key) DO UPDATE SET
+          owner_clan_id = EXCLUDED.owner_clan_id,
+          captured_at = EXCLUDED.captured_at`,
+        [st.ownerClanId, st.capturedAt || Date.now()]);
+    },
+    // One upsert. The Mongo version was two writes with a race between them:
+    // the second only ran when the first matched nothing, so two grants landing
+    // together could both decide the entry did not exist yet.
+    grantClanStorage: async (clanId, itemId, qty) => {
+      const { query } = require('./db');
+      await query(null, `
+        INSERT INTO clan_storage (clan_id, item_id, qty) VALUES ($1, $2, $3)
+        ON CONFLICT (clan_id, item_id) DO UPDATE SET qty = clan_storage.qty + EXCLUDED.qty`,
+        [clanId, itemId, qty]);
+    },
+    clanForStorage: async (clanId) => {
+      const clans = require('./db/repos/clans');
+      const view = await clans.fullView(null, clanId);
+      if (!view) return null;
+      const { query } = require('./db');
+      const { rows } = await query(null, `
+        SELECT p.telegram_id FROM clan_members m JOIN players p ON p.id = m.player_id
+         WHERE m.clan_id = $1`, [clanId]);
+      return {
+        _id: clanId,
+        storageUnlocked: view.storageUnlocked,
+        storage: view.storage,
+        members: rows.map(r => ({ telegramId: r.telegram_id })),
+      };
+    },
+  }));
   Object.assign(modes, createFear(shared));
   Object.assign(modes, createCoop(shared));
   Object.assign(modes, createFarm2({

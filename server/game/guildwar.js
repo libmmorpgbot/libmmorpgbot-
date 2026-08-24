@@ -9,12 +9,16 @@ const {
   UNIQUE_SHARDS,
 } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
-const ClanModel = require('../models/Clan');
-const GuildWarStateModel = require('../models/GuildWarState');
-
+// Storage is INJECTED. This file used to require two Mongo models directly,
+// which made the last piece of game logic in the tree that could not run
+// without Mongo — and none of what it does with them is Mongo-shaped: load the
+// castle's owner, save it, add shards to a clan's storage, tell that clan.
+// Four functions, handed in, so the schedule and the capture rules stay here
+// and the persistence lives with the rest of the persistence.
 module.exports = function createGuildWar(deps) {
   const {
     io, playerFloorMap, _socketForTelegramId, notifyEventSoon, notifyEventStarted, safeTimeout,
+    loadCastle, saveCastle, grantClanStorage, clanForStorage,
   } = deps;
 
   // ── Война гильдий (Guild War) ────────────────────────────────────────────────
@@ -96,11 +100,10 @@ module.exports = function createGuildWar(deps) {
     _gw.ownerClanName = result.newOwnerClanName;
     _gw.ownerClanIcon = result.newOwnerClanIcon;
     _gw.capturedAt = Date.now();
-    GuildWarStateModel.updateOne(
-      { key: 'castle' },
-      { $set: { ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName, ownerClanIcon: _gw.ownerClanIcon, capturedAt: _gw.capturedAt } },
-      { upsert: true },
-    ).catch(err => console.error('[GuildWarState] persist failed', err));
+    saveCastle({
+      ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName,
+      ownerClanIcon: _gw.ownerClanIcon, capturedAt: _gw.capturedAt,
+    }).catch(err => console.error('[guildwar] persist failed', err));
     io.emit('guildWarCaptured', {
       newOwnerClanName: result.newOwnerClanName, newOwnerClanIcon: result.newOwnerClanIcon,
       prevOwnerClanName: result.prevOwnerClanName,
@@ -119,12 +122,6 @@ module.exports = function createGuildWar(deps) {
   // clan storage credit (e.g. the deposit/allocation-return handlers further
   // down) — factored out here since the income job needs it and there was no
   // shared top-level version yet.
-  async function _grantClanStorage(clanId, id, qty) {
-    const bumped = await ClanModel.updateOne({ _id: clanId, 'storage.id': id }, { $inc: { 'storage.$.qty': qty } });
-    if (!bumped.matchedCount) {
-      await ClanModel.updateOne({ _id: clanId, 'storage.id': { $ne: id } }, { $push: { storage: { id, qty } } });
-    }
-  }
 
   // Pushes a fresh clanStorage payload to every online member — top-level twin
   // of the per-connection _clanStoragePush, needed for the same reason
@@ -167,11 +164,14 @@ module.exports = function createGuildWar(deps) {
   // else in this codebase back-pays offline time.
   async function _gwGrantIncome() {
     if (!_gw.ownerClanId) return;
-    const clan = await ClanModel.findById(_gw.ownerClanId).catch(() => null);
+    // A clan that no longer exists loses the castle rather than holding it
+    // forever: the income would otherwise be paid into nothing every hour.
+    const clan = await clanForStorage(_gw.ownerClanId).catch(() => null);
     if (!clan) { _gw.ownerClanId = null; _gw.ownerClanName = null; _gw.ownerClanIcon = null; return; }
-    const grant = _rollGuildWarIncome();
-    for (const { id, qty } of grant) await _grantClanStorage(clan._id, id, qty);
-    const fresh = await ClanModel.findById(clan._id).catch(() => null);
+    for (const { id, qty } of _rollGuildWarIncome()) {
+      await grantClanStorage(_gw.ownerClanId, id, qty);
+    }
+    const fresh = await clanForStorage(_gw.ownerClanId).catch(() => null);
     if (fresh) _gwStoragePushToClan(fresh);
   }
 
@@ -187,8 +187,20 @@ module.exports = function createGuildWar(deps) {
     _gw.incomeTimer = safeTimeout('gwIncome', _gwIncomeSafe, nextHour - now);
   }
 
+  // Restores the castle's owner at boot. Without it a restart hands the
+  // castle back to nobody and the next window starts from an empty tower —
+  // which is a week of a clan's work undone by a deploy.
+  async function _gwRestore() {
+    const st = await loadCastle().catch(() => null);
+    if (!st) return;
+    _gw.ownerClanId = st.ownerClanId || null;
+    _gw.ownerClanName = st.ownerClanName || null;
+    _gw.ownerClanIcon = st.ownerClanIcon || null;
+    _gw.capturedAt = st.capturedAt || 0;
+  }
+
   return {
     _gw, _gwNextOpenAt, _gwPublicState, _gwSchedule, _gwOpenWindow, _gwCloseWindow,
-    _gwApplyCapture, _gwIncomeSchedule,
+    _gwApplyCapture, _gwIncomeSchedule, _gwRestore,
   };
 };

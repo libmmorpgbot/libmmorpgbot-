@@ -29,6 +29,7 @@ const { Session, activeSessions, socketForTelegramId } = require('./session');
 const world = require('./world');
 const party = require('./party');
 const modesLib = require('./modes');
+const maintenance = require('./maintenance');
 let modesRuntime = null;
 const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
 
@@ -74,6 +75,8 @@ app.use(helmet({
 }));
 app.use(compression());
 app.use(express.json({ limit: '256kb' }));
+// No cookie-parser: admin-auth reads the one cookie it cares about out of the
+// raw header itself, and a dependency for that is a dependency to keep patched.
 
 // Liveness is public; the operational detail below it is not. An uptime monitor
 // must be able to read the first without credentials, and an attacker learns
@@ -117,6 +120,26 @@ app.get('/health/ready', async (_req, res) => {
   try { await db.query(null, 'SELECT 1'); res.json({ ok: true }); }
   catch { res.status(503).json({ ok: false }); }
 });
+
+// ── the client ──────────────────────────────────────────────────────────────
+// Mounted AFTER the health routes so a page named /health could never shadow
+// them, and before nothing else — there is no catch-all, so an unmatched path
+// is a 404 rather than index.html.
+require('./static').mount(app, { floorRooms: world.floorRooms });
+
+// ── the admin panel ─────────────────────────────────────────────────────────
+// Mounted lazily inside boot(), because half of it answers questions about the
+// event modes and those do not exist until the world does.
+function mountAdmin() {
+  require('./routes/admin2')(app, {
+    io,
+    modes: modesRuntime,
+    maintenance,
+    guildWarState: () => (modesRuntime && modesRuntime._gwPublicState ? modesRuntime._gwPublicState() : {}),
+    guildWarOpen: () => modesRuntime && modesRuntime._gwOpenWindow && modesRuntime._gwOpenWindow(),
+    guildWarClose: () => modesRuntime && modesRuntime._gwCloseWindow && modesRuntime._gwCloseWindow(),
+  });
+}
 
 // ── sockets ─────────────────────────────────────────────────────────────────
 
@@ -337,7 +360,13 @@ async function boot() {
       if (modesRuntime._farm2Eliminate) modesRuntime._farm2Eliminate(socketId);
     },
   });
-  console.log('modes: arena3, death battle, race, fear, co-op, elite farm');
+  if (modesRuntime._gwRestore) await modesRuntime._gwRestore();
+  if (modesRuntime._gwSchedule) modesRuntime._gwSchedule();
+  if (modesRuntime._gwIncomeSchedule) modesRuntime._gwIncomeSchedule();
+  console.log('modes: arena3, death battle, race, fear, co-op, elite farm, guild war');
+
+  // 2d. The admin panel, now that the modes it reports on exist.
+  mountAdmin();
 
   // 3. Configuration problems that would otherwise surface as a failed login
   //    or a missing alert.
