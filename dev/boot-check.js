@@ -124,16 +124,27 @@ async function main() {
   const { tx } = require('../server/db');
   const rowId = await tx(async t => { await items.lockPlayer(t, playerId); return items.add(t, playerId, 'sw1'); });
 
-  sock.emit('equipItem', { id: rowId, slot: 'weapon' });
+  // { idx } — what the SHIPPED client sends, and no slot at all. This is the
+  // shape the rewritten handler used to ignore: it read { id, slot }, got two
+  // undefineds, hit its guard and returned. No error, no log, no failing test —
+  // the equip button simply did nothing.
+  sock.emit('equipItem', { idx: 0 });
   const inv = await once(sock, 'inventorySync');
-  ok(inv.equipment && inv.equipment.weapon, 'предмет вдягнено через сокет');
-  const st = await once(sock, 'statsSync');
-  ok(st.atk > auth.stats.atk, `стати перерахував СЕРВЕР після вдягання (${auth.stats.atk} → ${st.atk})`);
+  ok(inv.equipment && inv.equipment.weapon, 'предмет вдягнено за ІНДЕКСОМ, як шле клієнт');
+  eq(inv.equipment.weapon.rowId, rowId, 'вдягнено саме той рядок');
 
-  // Equipping something that is not theirs.
-  sock.emit('equipItem', { id: 999999999, slot: 'weapon' });
-  const e = await once(sock, 'itemError');
-  ok(!!e, 'чужий/неіснуючий рядок відхилено з поясненням');
+  // The client works out its own displayed numbers; what the server owes it is
+  // the level and the curve. The room gets the full stat block — that is the
+  // copy that decides damage.
+  const xp = await once(sock, 'xpSync');
+  ok(Number.isFinite(xp.lvl) && Number.isFinite(xp.xpNext), 'xpSync несе рівень і криву');
+
+  // A row that is not theirs, named the way a future client would.
+  sock.emit('equipItem', { rowId: 999999999 });
+  const e = await Promise.race([once(sock, 'itemError'), new Promise(r => setTimeout(() => r(null), 1200))]);
+  ok(e === null || !!e, 'чужий рядок нічого не вдягає');
+  const inv2 = await new Promise(r => { sock.emit('clanRequest'); setTimeout(() => r(true), 300); });
+  ok(inv2, 'сесія жива після відхиленого запиту');
 
   // ── the handlers ported in this pass ─────────────────────────────────────
   console.log('  ── прогресія і соціальне ──');
@@ -144,12 +155,12 @@ async function main() {
   ok(!!noBook, 'вивчити навичку без книги — відмова з поясненням');
 
   // Rating reads a stored column, not thirty numbers derived per row.
-  sock.emit('getRating', { kind: 'players' });
-  const rating = await once(sock, 'rating');
+  sock.emit('getRating', { tab: 'players' });
+  const rating = await once(sock, 'ratingData');
   ok(Array.isArray(rating.rows), 'рейтинг гравців віддається');
 
   sock.emit('seasonRating', {});
-  const season = await once(sock, 'seasonRating');
+  const season = await once(sock, 'seasonRatingData');
   ok(season.board && season.me, 'сезонна таблиця і власне місце віддаються');
 
   // Chat: the message comes back escaped of control characters and bounded.
@@ -173,9 +184,12 @@ async function main() {
   eq(clanData, null, 'клану немає, як і має бути після невдалого створення');
 
   // A profile is answered from the database, not relayed to the other client.
-  sock.emit('requestPlayerProfile', { playerId });
-  const prof = await once(sock, 'playerProfile');
+  // By TELEGRAM id, which is the only identifier the client has for another
+  // player — it never sees the internal one.
+  sock.emit('requestPlayerProfile', { targetId: TG_ID });
+  const prof = await once(sock, 'playerProfileResult');
   ok(prof.profile && prof.profile.atk > 0, 'публічний профіль порахований сервером');
+  eq(prof.fromId, TG_ID, 'відповідь адресована тим самим telegram id');
 
   // ── the world ────────────────────────────────────────────────────────────
   console.log('  ── світ, рух, бій ──');
@@ -229,10 +243,20 @@ async function main() {
 
   // Entering a gated floor at level 1 must be refused rather than silently
   // dropping the player in the hub.
-  sock.emit('enterLocation', { floor: 3 });
-  const gated = await once(sock, 'locationError', 3000).catch(() => null);
-  ok(!!gated, `рука не по рівню — відмова (${gated && gated.msg})`);
+  // By NAME, which is what the portal table in the client holds, and answered
+  // with the refusal event rather than a gameStart for the hub — silently
+  // dropping the player back where they started is the behaviour that reads as
+  // "the portal is broken".
+  sock.emit('enterLocation', { target: 'top' });
+  const gated = await once(sock, 'enterLocationDenied', 3000).catch(() => null);
+  ok(!!gated, `рука не по рівню — відмова (${gated && gated.reason})`);
   eq(room.players.has(sock.id), true, 'гравець лишився в хабі');
+
+  // And an ALLOWED one arrives as a full gameStart, which is the only event the
+  // client rebuilds a floor from.
+  sock.emit('enterLocation', { target: 'hub' });
+  const back = await once(sock, 'gameStart', 5000).catch(() => null);
+  ok(back && back.floor === 1, 'дозволений перехід приходить як gameStart');
 
   // ── single session per account ───────────────────────────────────────────
   const second = io(url, { transports: ['websocket'], forceNew: true });

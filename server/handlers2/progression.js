@@ -52,7 +52,6 @@ module.exports = function registerProgression(s, safeOn) {
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
     const res = await study(t, pid, 'skill', key, skillBookId(prog.charClass, key), SKILL_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
-    s.socket.emit('skillLearned', { key, level: res.level });
   }));
 
   // Upgrading rolls a chance. The roll is the server's — the old client sent
@@ -79,21 +78,19 @@ module.exports = function registerProgression(s, safeOn) {
     await s.pushItems(t); await pushAfterStat(t);
     // The book is spent either way — that is the cost of the attempt, and
     // saying so explicitly is what stops "it ate my book" being a bug report.
-    s.socket.emit('upgradeRolled', { key, success, level, chance });
+    s.socket.emit('upgradeRolled', { kind: key, ok: success, level });
   }));
 
   safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'skillError', async (t, pid) => {
     if (typeof id !== 'string' || !id) return;
     const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
-    s.socket.emit('passiveLearned', { id, level: res.level });
   }));
 
   safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'skillError', async (t, pid) => {
     if (typeof id !== 'string' || !id) return;
     const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
-    s.socket.emit('passiveLearned', { id, level: res.level });
   }));
 
   safeOn('learnAdvSkill', ({ key } = {}) => s.act('learnAdvSkill', 'skillError', async (t, pid) => {
@@ -122,8 +119,8 @@ module.exports = function registerProgression(s, safeOn) {
   // The counters are server-written from events the server already sees. The
   // client used to hold them, so it could report the whole 60-quest chain
   // complete in one packet.
-  safeOn('claimQuest', ({ questIdx } = {}) => s.act('claimQuest', 'questError', async (t, pid) => {
-    const i = Math.floor(Number(questIdx));
+  safeOn('claimQuest', ({ idx } = {}) => s.act('claimQuest', 'questError', async (t, pid) => {
+    const i = Math.floor(Number(idx));
     if (!Number.isSafeInteger(i) || i < 0) return;
     const res = await progression.claimQuest(t, pid, i);
 
@@ -137,7 +134,7 @@ module.exports = function registerProgression(s, safeOn) {
       if (await items.hasRoomFor(t, pid, itemId)) await items.add(t, pid, itemId);
     }
     await s.pushItems(t); await s.pushBalances(t); await pushAfterStat(t);
-    s.socket.emit('questClaimed', { questIdx: i, nextIdx: res.nextIdx, reward: r });
+    s.socket.emit('questClaimed', { idx: i, nextIdx: res.nextIdx, reward: r });
   }));
 
   // ── special quests ───────────────────────────────────────────────────────
@@ -171,11 +168,15 @@ module.exports = function registerProgression(s, safeOn) {
       });
     }
     await s.pushItems(t); await s.pushBalances(t); await pushAfterStat(t);
-    s.socket.emit('vipClaimed', { tiers: res.tiers, granted: res.granted, gold });
+    const inv = await require('../db/repos/items').inventoryOf(t, pid);
+    s.socket.emit('vipRewardsClaimed', {
+      newInventory: inv.inventory, goldAdded: gold, vipPending: [],
+    });
   }));
 
   safeOn('vipSync', () => s.act('vipSync', 'gramShopError', async (t, pid) => {
-    s.socket.emit('vipData', await progression.vipOf(t, pid));
+    const v = await progression.vipOf(t, pid);
+    s.socket.emit('vipUpdate', { level: v.level, deposited: v.deposited, pending: v.pending });
   }));
 
   // ── season ───────────────────────────────────────────────────────────────
@@ -185,7 +186,7 @@ module.exports = function registerProgression(s, safeOn) {
   safeOn('seasonRating', () => s.act('seasonRating', 'seasonError', async (t, pid) => {
     const board = await progression.seasonBoard(t, { limit: 50 });
     const mine = await progression.seasonOf(t, pid);
-    s.socket.emit('seasonRating', { board, me: mine });
+    s.socket.emit('seasonRatingData', { board, me: mine });
   }));
 
   // ── rebirth and reset ────────────────────────────────────────────────────
@@ -210,20 +211,20 @@ module.exports = function registerProgression(s, safeOn) {
   // ── ratings ──────────────────────────────────────────────────────────────
   // bm is a stored column, recomputed whenever stats change, so the board is
   // an index scan rather than thirty numbers derived per row.
-  safeOn('getRating', ({ kind } = {}) => s.act('getRating', 'ratingError', async (t) => {
+  safeOn('getRating', ({ tab } = {}) => s.act('getRating', 'ratingError', async (t) => {
     const { query } = require('../db');
-    if (kind === 'clans') {
+    if (tab === 'clans') {
       const { rows } = await query(t, `
         SELECT c.id, c.name, c.icon, c.level, c.xp,
                (SELECT count(*)::int FROM clan_members m WHERE m.clan_id = c.id) AS members
           FROM clans c ORDER BY c.xp DESC LIMIT 50`);
-      return s.socket.emit('rating', { kind: 'clans', rows });
+      return s.socket.emit('ratingData', { tab: 'clans', rows });
     }
     const { rows } = await query(t, `
       SELECT p.username, p.bm, pr.lvl
         FROM players p JOIN player_progress pr ON pr.player_id = p.id
        WHERE NOT p.banned AND p.bm > 0
        ORDER BY p.bm DESC LIMIT 50`);
-    s.socket.emit('rating', { kind: 'players', rows });
+    s.socket.emit('ratingData', { tab: 'players', rows });
   }));
 };

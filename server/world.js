@@ -47,8 +47,18 @@ function initFloors(io, onBossDeath = () => {}) {
 
 // Is this floor open to this player, right now? Returns the floor they may
 // actually be on — which is the hub whenever the answer is no.
+// The client names a floor by KEY — 'hub', 'farmZone', 'arena' — because that
+// is what its portal table holds. Accepting the number too costs one line and
+// keeps every internal caller (respawn, the guild-war deploy, the ETL) able to
+// say what it means.
+function floorIdOf(target) {
+  if (typeof target === 'string' && FLOOR_IDS[target] != null) return FLOOR_IDS[target];
+  const n = Number(target);
+  return Number.isFinite(n) ? n : NaN;
+}
+
 function resolveFloor(floorId, progress) {
-  const f = Number(floorId);
+  const f = floorIdOf(floorId);
   if (!Number.isFinite(f) || !STANDABLE.has(f)) return FLOOR_IDS.hub;
   if (f === FLOOR_IDS.hub) return FLOOR_IDS.hub;
   const need = ZONE_LEVEL_REQ[FLOOR_KEY[f]] || 0;
@@ -121,6 +131,6 @@ function statsSnapshot() {
 }
 
 module.exports = {
-  initFloors, enterFloor, resolveFloor, roomOf, stopAll, statsSnapshot,
+  initFloors, enterFloor, resolveFloor, floorIdOf, roomOf, stopAll, statsSnapshot,
   floorRooms, FLOOR_IDS, STANDABLE,
 };

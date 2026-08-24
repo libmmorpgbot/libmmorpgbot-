@@ -18,7 +18,7 @@ const stats = require('../server/db/repos/stats');
 const con = require('../server/db/repos/consumables');
 const {
   ITEM_DEF, CODEX_SETS, REBIRTH_LEVEL, REBIRTH_BONUS_SP,
-  rebirthCostFor, UPGRADE_RESET_COST, codexTotalBonus,
+  rebirthCostFor, UPGRADE_RESET_COST, codexTotalBonus, MERCHANT_SHOP, POTION_CAP,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -42,6 +42,16 @@ const give = (pid, itemId, qty = 1, enh = 0) => tx(async t => {
 const countOf = async (pid, itemId) =>
   (await items.inventoryOf(null, pid)).inventory.filter(i => i.id === itemId).reduce((n, i) => n + i.qty, 0);
 const hpOf = async pid => (await players.progressOf(null, pid)).hp;
+// Healing potions are not inventory rows — see the potion-bag comment in
+// repos/consumables.js. The fixture has to put them where the game keeps them,
+// or it proves usePotion works against a store nothing else writes to.
+const giveP = (pid, itemId, n) => pool().query(
+  `UPDATE player_progress
+      SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text],
+            to_jsonb(COALESCE((potion_bag->>$2)::int, 0) + $3::int))
+    WHERE player_id = $1`, [pid, itemId, n]);
+const bagOf = async (pid, itemId) =>
+  Number((await con.potionBagOf(null, pid))[itemId] || 0);
 const caught = async fn => { try { await fn(); return null; } catch (e) { return e.code || e.message; } };
 
 async function main() {
@@ -57,10 +67,11 @@ async function main() {
   eq(await caught(() => tx(t => con.usePotion(t, p, POT.id))), 'no_potion', 'без зілля — відмова');
   eq(await hpOf(p), 10, 'HP не змінилось');
 
-  await give(p, POT.id, 3);
+  await giveP(p, POT.id, 3);
   const used = await tx(t => con.usePotion(t, p, POT.id));
   eq(used.healed, POT.hp, `зілля вилікувало рівно ${POT.hp} — з каталогу, не з запиту`);
-  eq(await countOf(p, POT.id), 2, 'витрачено одне зілля');
+  eq(await bagOf(p, POT.id), 2, 'витрачено одне зілля');
+  eq(used.left, 2, 'у відповіді той самий залишок, що і в базі');
 
   // The C2 shape: a crafted request carrying an amount. There is no parameter
   // for it, so it cannot reach the heal — and HP must never become NaN.
@@ -73,11 +84,39 @@ async function main() {
   // Healing at full health must not overflow the bar.
   const st = await stats.of(null, p);
   await pool().query('UPDATE player_progress SET hp = $2 WHERE player_id = $1', [p, st.maxHp]);
-  await give(p, POT.id, 1);
+  await giveP(p, POT.id, 1);
   await tx(t => con.usePotion(t, p, POT.id));
   eq(await hpOf(p), st.maxHp, 'на повному HP зілля не переповнює смугу');
 
   eq(await caught(() => tx(t => con.usePotion(t, p, 'sw3'))), 'bad_potion', 'випити меч неможливо');
+
+  // ── the merchant ─────────────────────────────────────────────────────────
+  // It sells nothing but potions, and it fills the same bag usePotion drains.
+  console.log('  ── торговець ──');
+  const sh = await mk('shop');
+  const ENTRY = MERCHANT_SHOP[0];
+  eq(await caught(() => tx(t => con.buyPotions(t, sh, ENTRY.itemId, 3))), 'no_gold',
+    'без золота — відмова');
+  eq(await bagOf(sh, ENTRY.itemId), 0, 'нічого не додалось');
+
+  await money.credit(null, sh, 'gold', ENTRY.price * 10, { reason: 'seed', idemKey: `${TAG}:g` });
+  const bought = await tx(t => con.buyPotions(t, sh, ENTRY.itemId, 3));
+  eq(await bagOf(sh, ENTRY.itemId), 3, 'куплено рівно 3');
+  eq(bought.cost, ENTRY.price * 3, 'списано рівно за 3');
+  eq((await money.balancesOf(null, sh)).gold, ENTRY.price * 7, 'золото зменшилось на ту саму суму');
+
+  eq(await caught(() => tx(t => con.buyPotions(t, sh, 'sw3', 1))), 'not_sold',
+    'торговець не продає мечів');
+
+  // The cap is the reason potions are not rows: 999 of them would be 999 of
+  // 150 inventory slots.
+  await pool().query(
+    `UPDATE player_progress SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text], to_jsonb($3::int))
+      WHERE player_id = $1`, [sh, ENTRY.itemId, POTION_CAP - 1]);
+  eq(await caught(() => tx(t => con.buyPotions(t, sh, ENTRY.itemId, 5))), 'potion_cap',
+    `покупка понад ${POTION_CAP} відхилена`);
+  eq(await bagOf(sh, ENTRY.itemId), POTION_CAP - 1, 'кількість не змінилась');
+  eq((await money.balancesOf(null, sh)).gold, ENTRY.price * 7, 'і золото теж — відмова нічого не коштує');
 
   // ── buff potions ─────────────────────────────────────────────────────────
   console.log('  ── зілля бафів ──');

@@ -164,17 +164,33 @@ class Session {
     this.socket.emit('inventorySync', await items.inventoryOf(db, this.playerId));
   }
 
+  // Three events, one read. The shipped client keeps gold, GRAM and Liberty in
+  // three separate places and listens for three separate names — there is no
+  // 'balanceSync' anywhere in it, so a single tidy event went to nobody and
+  // every balance on screen stayed at whatever it was at login.
   async pushBalances(db = null) {
-    this.socket.emit('balanceSync', await money.balancesOf(db, this.playerId));
+    const b = await money.balancesOf(db, this.playerId);
+    this.socket.emit('goldSync', { gold: b.gold });
+    this.socket.emit('gramBalanceUpdate', { balance: b.gram });
+    this.socket.emit('nexumBalanceUpdate', { balance: b.nexum });
+    return b;
   }
 
   // Stats AND the room's copy of them, together. This is what replaces
   // 'statsUpdate': the number is computed here and pushed down, where before
   // the client computed it and pushed it up.
+  // The room gets the WHOLE computed stat block, because that is what decides
+  // damage. The client gets level, experience and the curve — and works out the
+  // number on its own HUD from the equipment it can already see.
+  //
+  // That split is deliberate rather than a compromise. The client's figure is
+  // decoration; the server's is the one that hits. Sending the server's final
+  // atk as the client's `baseAtk` would have it add the equipment bonuses a
+  // second time and display a number nobody's weapon can produce.
   async pushStats(db = null) {
     const st = await stats.of(db, this.playerId);
     if (!st) return null;
-    this.socket.emit('statsSync', st);
+    this.socket.emit('xpSync', { lvl: st.level, xp: st.xp, xpNext: st.xpNext });
     if (this.room) this.room.setPlayerStats(this.socket.id, st);
     return st;
   }

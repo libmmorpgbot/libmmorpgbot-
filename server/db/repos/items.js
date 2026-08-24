@@ -302,6 +302,71 @@ async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null,
   return { ok: Number(rows[0].took) === Number(n), had: Number(rows[0].had) };
 }
 
+// Turns whatever the client used to name an item into a row id it owns.
+//
+// A row id is the right way to name an item and the rest of this layer uses
+// nothing else. The SHIPPED client does not have one: it addresses items by
+// position in its own copy of the inventory (`{ idx }`), sometimes with the
+// item id and enhancement alongside as a sanity check (`{ idx, id, enhance }`),
+// and for enhancement by identity plus an equipment slot. Handlers written to
+// take a row id therefore received undefined from every one of those, hit their
+// guard clause, and returned silently — a button that does nothing, with no
+// error anywhere. See dev/protocol-check.js.
+//
+// So the position is accepted, but it is only ever a HINT. The list it indexes
+// is the database's, not the client's, and when identity is supplied it must
+// match or the index is discarded and the identity used instead. That is
+// strictly safer than what it replaces: the old handlers spliced an index out
+// of an array the client itself had last written.
+//
+// Ambiguity is not a problem here the way it is for enhancement. Two rows that
+// share (item_id, enhance) are interchangeable by definition — selling or
+// burning "one of them" has one outcome. Enhancement is the exception, because
+// afterwards they are no longer identical, and that is why the client sends the
+// slot for equipped items: an equipped item is unambiguous by its slot.
+async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
+  const direct = Math.floor(Number(ref.rowId));
+  if (Number.isSafeInteger(direct) && direct > 0) {
+    const { rows } = await query(db,
+      `SELECT id FROM player_items WHERE id = $1 AND player_id = $2 AND container = $3`,
+      [direct, playerId, container]);
+    return rows.length ? Number(rows[0].id) : null;
+  }
+
+  // An equipped item is named by its slot, and that is unambiguous.
+  if (container === 'equipment' && typeof ref.slot === 'string' && ref.slot) {
+    const { rows } = await query(db,
+      `SELECT id FROM player_items
+        WHERE player_id = $1 AND container = 'equipment' AND slot = $2`,
+      [playerId, ref.slot]);
+    return rows.length ? Number(rows[0].id) : null;
+  }
+
+  const { rows } = await query(db,
+    `SELECT id, item_id, enhance FROM player_items
+      WHERE player_id = $1 AND container = $2 ORDER BY id`, [playerId, container]);
+  if (!rows.length) return null;
+
+  const wantId = typeof ref.id === 'string' && ref.id ? ref.id : null;
+  const wantEnh = Number.isFinite(Number(ref.enhance)) && ref.enhance !== null
+    ? Math.floor(Number(ref.enhance)) : null;
+  const matches = r =>
+    (wantId === null || r.item_id === wantId) &&
+    (wantEnh === null || r.enhance === wantEnh);
+
+  const i = Math.floor(Number(ref.idx));
+  if (Number.isSafeInteger(i) && i >= 0 && i < rows.length && matches(rows[i])) {
+    return Number(rows[i].id);
+  }
+  // The index was stale or absent. Identity still names the item, and this is
+  // the branch that makes a desynchronised inventory panel harmless instead of
+  // destructive — the old code would have acted on whatever sat at that index.
+  if (wantId === null) return null;
+  const found = rows.find(matches);
+  return found ? Number(found.id) : null;
+}
+
+
 // Counts without consuming, same filter. A recipe that cannot proceed should
 // say how many the player actually has — "нужно 30, есть 24" is an answer;
 // "не хватает" is a support ticket.
@@ -373,7 +438,7 @@ async function attachFromListing(db, rowId, playerId) {
 }
 
 module.exports = {
-  consumeMatching, countMatching,
+  consumeMatching, countMatching, resolveRow,
   syncCatalog, lockPlayer,
   inventoryOf, usedSlots, hasRoomFor,
   add, removeQty, removeRow, moveTo,

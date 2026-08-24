@@ -421,30 +421,12 @@ async function openBox(db, playerId, boxId) {
 
 // ── merchant ────────────────────────────────────────────────────────────────
 
-async function buyFromMerchant(db, playerId, itemId, qty = 1) {
-  await items.lockPlayer(db, playerId);
+// The merchant moved to repos/consumables.js. It sells nothing but healing
+// potions, and those live in player_progress.potion_bag rather than as
+// inventory rows — see the comment there for why 999 potions cannot be 999
+// rows. Leaving a second, item-shaped purchase path here would have been a
+// second place for the same potion to exist.
 
-  const entry = MERCHANT_SHOP.find(e => e.itemId === itemId);
-  if (!entry) err('not_sold', 'Торговец этого не продаёт');
-  const n = Math.max(1, Math.min(999, Math.floor(Number(qty) || 1)));
-  const cost = entry.price * n;
-
-  if (!await items.hasRoomFor(db, playerId, itemId)) err('no_room', 'Инвентарь полон');
-
-  const paid = await money.spend(db, playerId, 'gold', cost, {
-    reason: 'merchant_buy', refType: 'item', refId: itemId,
-    idemKey: `merchant:${playerId}:${itemId}:${crypto.randomUUID()}`,
-  });
-  if (!paid) err('no_gold', 'Недостаточно золота');
-
-  const rowId = await items.add(db, playerId, itemId, { qty: n });
-  if (rowId === null) err('no_room', 'Инвентарь полон');
-  return { itemId, qty: n, cost, goldLeft: paid.balance, rowId };
-}
-
-// Selling is the inverse and takes a row id for the same reason enhance does:
-// "sell the sw3" is ambiguous when two of them differ by enhancement, and the
-// player means the one they clicked.
 async function sellItem(db, playerId, rowId, qty = 1) {
   await items.lockPlayer(db, playerId);
 
@@ -473,5 +455,5 @@ async function sellItem(db, playerId, rowId, qty = 1) {
 module.exports = {
   enhance, enhanceRate, craft, craftAdvSkillBook, openBox,
   craftPet, upgradeMat, craftClassGear, craftBox, gearRecipeByItemId,
-  buyFromMerchant, sellItem, recipeOf, rand, CraftError,
+  sellItem, recipeOf, rand, CraftError,
 };

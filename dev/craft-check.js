@@ -18,7 +18,7 @@ const craft = require('../server/db/repos/craft');
 const {
   GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
-  MERCHANT_SHOP, BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
+  BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -169,21 +169,10 @@ async function main() {
   const validRarities = box.odds.map(o => o.rarity);
   ok(validRarities.includes(opened.rarity), `рідкість із таблиці боксу (${validRarities.join('/')})`);
 
-  // ── merchant ─────────────────────────────────────────────────────────────
-  console.log('  ── торговець ──');
-  const m2 = await mk('shopper');
-  const entry = MERCHANT_SHOP[0];
-  eq(await caught(() => tx(t => craft.buyFromMerchant(t, m2, entry.itemId, 1))), 'no_gold',
-    'купити без золота — відмова');
-  eq(await countOf(m2, entry.itemId), 0, 'предмет не з’явився');
-
-  eq(await caught(() => tx(t => craft.buyFromMerchant(t, m2, 'sw3', 1))), 'not_sold',
-    'купити те, чого торговець не продає, — відмова');
-
-  await money.credit(null, m2, 'gold', entry.price * 5, { reason: 'seed', idemKey: `${TAG}:g` });
-  const bought = await tx(t => craft.buyFromMerchant(t, m2, entry.itemId, 3));
-  eq(await countOf(m2, entry.itemId), 3, 'куплено рівно 3');
-  eq(await gold(m2), entry.price * 5 - entry.price * 3, 'списано рівно за 3');
+  // The merchant moved to repos/consumables.js with the potion bag it fills —
+  // it sold nothing but potions, and those are not inventory rows. Its tests
+  // moved with it (dev/consumables-check.js), rather than being left here to
+  // exercise a function this file no longer owns.
 
   // ── THE INVARIANT: a failed craft consumes nothing ───────────────────────
   console.log('  ── відкат ──');

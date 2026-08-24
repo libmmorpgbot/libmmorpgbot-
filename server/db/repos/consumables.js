@@ -14,7 +14,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE,
+  ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
 } = require('../../../shared/definitions');
 
@@ -35,12 +35,42 @@ const BUFF_POTIONS = new Map(ITEM_DEF.filter(d => d.slot === 'buff_potion').map(
 // maxHp is read through the stats repository so the cap is the same number
 // combat uses; taking it from anywhere else is how a heal ends up able to
 // exceed the health bar it is drawn against.
+// ── the potion bag ──────────────────────────────────────────────────────────
+// Healing potions are NOT inventory rows. They live in player_progress.
+// potion_bag, a jsonb map of id -> count, and that is not a leftover from the
+// old save blob — it is load-bearing. POTION_CAP is 999 and pt1 is not
+// stackable, so as rows a full bag would be 999 of the player's 150 inventory
+// slots. The HUD, the shop's cap and the quick-use key all read the bag.
+//
+// The first version of this file spent potions with items.removeQty, against
+// the inventory. Nothing there ever held one: the ETL carries potion_bag
+// across as potion_bag, and the merchant fills the same map. So every migrated
+// player would have opened the game with a visibly full potion bag and a heal
+// key that answered "Нет такого зелья" — the potions were never lost, they
+// were just being looked for in the wrong place.
+//
+// Both statements below are single UPDATEs with the arithmetic in SQL. Reading
+// the map, changing it in JavaScript and writing it back would lose a
+// concurrent purchase to the last writer.
+async function potionBagOf(db, playerId) {
+  const { rows } = await query(db,
+    'SELECT potion_bag FROM player_progress WHERE player_id = $1', [playerId]);
+  return rows.length ? (rows[0].potion_bag || {}) : {};
+}
+
 async function usePotion(db, playerId, potionId) {
   const def = HP_POTIONS.get(potionId);
   if (!def) err('bad_potion', 'Неизвестное зелье');
 
-  await items.lockPlayer(db, playerId);
-  if (!await items.removeQty(db, playerId, potionId, 1)) err('no_potion', 'Нет такого зелья');
+  // The decrement and the "do you have one" check are the same statement, so
+  // two heal keys pressed together cannot both spend the last potion.
+  const { rows } = await query(db, `
+    UPDATE player_progress
+       SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text],
+             to_jsonb(COALESCE((potion_bag->>$2)::int, 0) - 1))
+     WHERE player_id = $1 AND COALESCE((potion_bag->>$2)::int, 0) >= 1
+    RETURNING COALESCE((potion_bag->>$2)::int, 0) AS left`, [playerId, potionId]);
+  if (!rows.length) err('no_potion', 'Нет такого зелья');
 
   const stats = require('./stats');
   const st = await stats.of(db, playerId);
@@ -48,14 +78,41 @@ async function usePotion(db, playerId, potionId) {
 
   const healed = Math.min(st.maxHp, st.hp + (def.hp || 0));
   await query(db, 'UPDATE player_progress SET hp = $2 WHERE player_id = $1', [playerId, healed]);
-  return { potionId, healed: healed - st.hp, hp: healed, maxHp: st.maxHp };
+  return {
+    potionId, healed: healed - st.hp, hp: healed, maxHp: st.maxHp,
+    left: Number(rows[0].left),
+  };
 }
 
-// ── buff potions ────────────────────────────────────────────────────────────
-// Duration from the catalog. Stored as an absolute expiry in the buffs map
-// rather than a countdown: a countdown has to be ticked by something, and
-// whatever ticks it becomes another thing that can be wrong or stop. An expiry
-// is simply compared against now().
+// The merchant sells potions and nothing else — MERCHANT_SHOP is pt1 and pt2.
+// Gold out, bag up, one transaction, capped in the same statement that does
+// the adding so a burst of clicks cannot walk past the ceiling.
+async function buyPotions(db, playerId, itemId, qty = 1) {
+  const entry = MERCHANT_SHOP.find(e => e.itemId === itemId);
+  if (!entry) err('not_sold', 'Торговец этого не продаёт');
+  const n = Math.max(1, Math.min(POTION_CAP, Math.floor(Number(qty) || 1)));
+
+  const bag = await potionBagOf(db, playerId);
+  const have = Math.max(0, Math.floor(Number(bag[itemId]) || 0));
+  if (have + n > POTION_CAP) err('potion_cap', `Максимум ${POTION_CAP} зелий!`);
+
+  const paid = await money.spend(db, playerId, 'gold', entry.price * n, {
+    reason: 'merchant_buy', refType: 'potion', refId: itemId,
+    idemKey: `merchant:${playerId}:${itemId}:${crypto.randomUUID()}`,
+  });
+  if (!paid) err('no_gold', 'Мало золота!');
+
+  const { rows } = await query(db, `
+    UPDATE player_progress
+       SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text],
+             to_jsonb(LEAST($4::int, COALESCE((potion_bag->>$2)::int, 0) + $3::int)))
+     WHERE player_id = $1
+    RETURNING potion_bag`, [playerId, itemId, n, POTION_CAP]);
+  if (!rows.length) err('no_player', 'Игрок не найден');
+
+  return { itemId, qty: n, cost: entry.price * n, goldLeft: paid.balance, potionBag: rows[0].potion_bag };
+}
+
 async function useBuffPotion(db, playerId, potionId) {
   const def = BUFF_POTIONS.get(potionId);
   if (!def || !def.buffType) err('bad_potion', 'Неизвестное зелье');
@@ -225,7 +282,7 @@ async function registerCodexItem(db, playerId, setId, slotIdx, rowId) {
 }
 
 module.exports = {
-  usePotion, useBuffPotion, expireBuffs,
+  usePotion, buyPotions, potionBagOf, useBuffPotion, expireBuffs,
   useTeleportStone, buyTeleportStone, pickupDrop, grantKillReward,
   registerCodexItem,
   HP_POTIONS, BUFF_POTIONS, POTION_CAP, UseError,

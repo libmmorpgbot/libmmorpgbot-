@@ -148,9 +148,13 @@ async function main() {
   eq((await players.skillsOf(null, s)).passiveLevels.p1, 5, 'пасивка зупинилась на максимумі 5');
 
   // ensure() under a double login.
+  // Tagged, like every other fixture in this file. A bare 'dup1' collides with
+  // the leftovers of any run that died before cleanup — players.username is
+  // UNIQUE — and the suite then fails on the wreckage of the last failure
+  // rather than on anything the code did.
   const both = await Promise.all([
-    tx(t => players.ensure(t, `${TAG}-dup`, 'dup1')),
-    tx(t => players.ensure(t, `${TAG}-dup`, 'dup2')),
+    tx(t => players.ensure(t, `${TAG}-dup`, `${TAG}_dup1`)),
+    tx(t => players.ensure(t, `${TAG}-dup`, `${TAG}_dup2`)),
   ]);
   made.push(both[0].id);
   eq(both[0].id, both[1].id, 'два одночасні логіни дають ОДИН акаунт');

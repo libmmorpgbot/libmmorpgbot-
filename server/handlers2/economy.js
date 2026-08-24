@@ -11,6 +11,7 @@
 // left is: check what the client may name, call the repository, push the truth.
 
 const craft = require('../db/repos/craft');
+const items = require('../db/repos/items');
 const market = require('../db/repos/market');
 const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
@@ -19,7 +20,7 @@ const consumables = require('../db/repos/consumables');
 const ops = require('../tg-ops');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, MARKET_FEE_PCT, GEAR_CRAFT_RECIPES, ITEM_DEF,
+  GRAM_MIN_WITHDRAW, MARKET_FEE_PCT, GEAR_CRAFT_RECIPES, ITEM_DEF, MERCHANT_SHOP,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
 
@@ -47,14 +48,6 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // what the client's handlers read. `pushBalances` already sent the truth a
   // line earlier; this is the same number in the shape the UI expects.
   const nexumOf = async (t, pid) => (await money.balancesOf(t, pid)).nexum;
-
-  safeOn('craft', ({ family, index } = {}) => s.act('craft', 'craftError', async (t, pid) => {
-    const i = idx(index);
-    if (i === null || typeof family !== 'string') return;
-    const res = await craft.craft(t, pid, family, i);
-    await pushAll(t);
-    s.socket.emit('craftResult', res);
-  }));
 
   // Gear, named by the item it produces. Three recipe lists can make gear and
   // the resolver searches them in the order the old handler did, so an id that
@@ -141,44 +134,64 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // for something matching both, which is ambiguous the moment a player holds
   // two of the same item — and it carries a whole investigation path built for
   // when that search found the wrong one.
-  safeOn('enhanceItem', ({ id, stoneType } = {}) => s.act('enhanceItem', 'enhanceError', async (t, pid) => {
-    const row = rowId(id);
-    if (!row) return;
+  // The client names it by identity plus, for something worn, the slot it is
+  // worn in. An equipped item is unambiguous by its slot; two identical items
+  // in the bag are interchangeable UNTIL one is enhanced, which is why the
+  // client sends the slot at all.
+  safeOn('enhanceItem', ({ id, enhance, stoneType, slot } = {}) =>
+    s.act('enhanceItem', 'enhanceError', async (t, pid) => {
+    await items.lockPlayer(t, pid);
+    const row = slot
+      ? await items.resolveRow(t, pid, { slot }, 'equipment')
+      : await items.resolveRow(t, pid, { id, enhance }, 'inventory');
+    if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const res = await craft.enhance(t, pid, row, stoneType === 'bless' ? 'bless' : 'norm');
     await pushAll(t);
     s.socket.emit('enhanceResult', res);
   }));
 
   // ── boxes ────────────────────────────────────────────────────────────────
-  safeOn('openLootBox', ({ boxId } = {}) => s.act('openLootBox', 'craftError', async (t, pid) => {
-    const res = await craft.openBox(t, pid, String(boxId || ''));
+  safeOn('openLootBox', ({ id } = {}) => s.act('openLootBox', 'openBoxError', async (t, pid) => {
+    const res = await craft.openBox(t, pid, String(id || ''));
     await pushAll(t);
     s.socket.emit('boxOpened', res);
   }));
 
   // ── merchant ─────────────────────────────────────────────────────────────
-  safeOn('buyPotion', ({ itemId, qty } = {}) => s.act('buyPotion', 'shopError', async (t, pid) => {
-    const res = await craft.buyFromMerchant(t, pid, String(itemId || ''), qty);
-    await pushAll(t);
-    s.socket.emit('bought', res);
+  // `idx` counts into MERCHANT_SHOP, the table the client renders — not into
+  // anything the client owns, so the position is authoritative here in a way it
+  // never is for an inventory.
+  safeOn('buyPotion', ({ idx: shopIdx, qty } = {}) => s.act('buyPotion', 'goldError', async (t, pid) => {
+    const i = idx(shopIdx);
+    const entry = i === null ? null : MERCHANT_SHOP[i];
+    if (!entry) return;
+    const res = await consumables.buyPotions(t, pid, entry.itemId, qty);
+    await s.pushBalances(t);
+    s.socket.emit('potionBag', { potionBag: res.potionBag, bought: { id: res.itemId, n: res.qty } });
   }));
 
-  safeOn('sellItem', ({ id, qty } = {}) => s.act('sellItem', 'shopError', async (t, pid) => {
-    const row = rowId(id);
-    if (!row) return;
+  safeOn('sellItem', ({ idx: at, id, enhance, qty = 1 } = {}) => s.act('sellItem', 'shopError', async (t, pid) => {
+    await items.lockPlayer(t, pid);
+    const row = await items.resolveRow(t, pid, { idx: at, id, enhance }, 'inventory');
+    if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const res = await craft.sellItem(t, pid, row, qty);
     await pushAll(t);
-    s.socket.emit('sold', res);
+    s.socket.emit('itemSold', { gold: res.gold, newGold: res.goldLeft });
   }));
 
   // ── market ───────────────────────────────────────────────────────────────
-  safeOn('marketList', ({ id, price } = {}) => s.act('marketList', 'marketListError', async (t, pid) => {
-    const row = rowId(id);
-    if (!row) return;
+  // `item` is the client's own copy of the row it wants to sell — the same
+  // object the server pushed, so it carries rowId, id and enhance. Only the
+  // identity is used; every number in it (price floor, rarity, stats) is
+  // re-read from the database.
+  safeOn('marketList', ({ item, price } = {}) => s.act('marketList', 'marketListError', async (t, pid) => {
+    await items.lockPlayer(t, pid);
+    const row = await items.resolveRow(t, pid, item || {}, 'inventory');
+    if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const vip = await progression.vipOf(t, pid);
     const res = await market.list(t, pid, row, price, { vipLevel: vip.level });
     await pushAll(t);
-    s.socket.emit('marketListed', res);
+    s.socket.emit('marketListed', { listing: res.listing || res });
   }));
 
   safeOn('marketCancel', ({ listingId } = {}) => s.act('marketCancel', 'marketError', async (t, pid) => {
@@ -208,19 +221,19 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     }
   }));
 
-  safeOn('marketBrowse', ({ slot, offset } = {}) => s.act('marketBrowse', 'marketError', async (t) => {
-    s.socket.emit('marketLots', await market.browse(t, {
+  safeOn('marketBrowse', ({ slot = null, offset = 0 } = {}) => s.act('marketBrowse', 'marketError', async (t) => {
+    s.socket.emit('marketBrowseData', await market.browse(t, {
       slot: typeof slot === 'string' ? slot : null,
       offset: idx(offset) || 0,
     }));
   }));
 
   safeOn('marketMyListings', () => s.act('marketMyListings', 'marketError', async (t, pid) => {
-    s.socket.emit('marketMine', await market.mine(t, pid));
+    s.socket.emit('marketMyListingsData', { listings: await market.mine(t, pid) });
   }));
 
   safeOn('marketHistory', () => s.act('marketHistory', 'marketError', async (t, pid) => {
-    s.socket.emit('marketHist', await market.history(t, pid));
+    s.socket.emit('marketHistoryData', await market.history(t, pid));
   }));
 
   // ── GRAM ─────────────────────────────────────────────────────────────────
@@ -230,7 +243,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // GRAM, hope the admin is tired".
   safeOn('gramDepositRequest', () => s.act('gramDepositRequest', 'gramError', async (t, pid) => {
     const intent = await gram.createIntent(t, pid);
-    s.socket.emit('gramDepositIntent', intent);
+    s.socket.emit('gramTxCreated', { tx: intent, newBalance: (await money.balancesOf(t, pid)).gram });
   }));
 
   safeOn('gramWithdrawRequest', ({ amount, address } = {}) =>
@@ -243,7 +256,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
         minAmount: GRAM_MIN_WITHDRAW, feePct: _GRAM_WITHDRAW_FEE_PCT,
       });
       await s.pushBalances(t);
-      s.socket.emit('gramWithdrawCreated', req);
+      s.socket.emit('gramTxCreated', { tx: req, newBalance: (await money.balancesOf(t, pid)).gram });
       return req;
     }).then(async (req) => {
       // Posted AFTER the transaction commits. Sending the admin card from
@@ -257,10 +270,4 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     s.socket.emit('gramHistory', { txs: await gram.historyOf(t, pid) });
   }));
 
-  safeOn('balanceHistory', ({ currency } = {}) => s.act('balanceHistory', 'gramError', async (t, pid) => {
-    const cur = ['gold', 'gram', 'nexum'].includes(currency) ? currency : 'gram';
-    // The "where did my GRAM go" answer, which the old model could not give at
-    // all because nothing recorded the movements.
-    s.socket.emit('balanceHistory', { currency: cur, rows: await money.history(t, pid, cur) });
-  }));
 };

@@ -3333,8 +3333,12 @@ class Room {
   returnDrop(drop) {
     if (!drop || !drop.id) return false;
     this.worldDrops.set(drop.id, drop);
-    this.io.to(`floor_${this.floor}`).emit('worldDropSpawned', {
-      id: drop.id, x: drop.x, y: drop.y, item: drop.item || drop,
+    // 'worldDropsSpawned' with a list, which is the event the client renders
+    // drops from. A singular 'worldDropSpawned' reached nobody, so a drop
+    // returned after a refused pickup vanished from every screen while still
+    // sitting on the floor server-side.
+    this.io.to(`floor_${this.floor}`).emit('worldDropsSpawned', {
+      drops: [{ id: drop.id, x: drop.x, y: drop.y, item: drop.item || drop }],
     });
     return true;
   }

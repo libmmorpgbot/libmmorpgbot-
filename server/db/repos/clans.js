@@ -253,6 +253,40 @@ async function claim(db, playerId, allocationId) {
 
 // Returning an unclaimed allocation to the pool — the leader changing their
 // mind, or cleanup before a disband.
+// The shipped client has no allocation id — its button says "забрать всё" and
+// sends an empty payload. So the whole pending list is claimed at once, and a
+// full inventory stops the loop rather than failing it: what fitted is kept,
+// what did not stays allocated. Throwing instead would roll back the items
+// already granted and leave the player pressing a button that never works.
+async function claimAll(db, playerId) {
+  await items.lockPlayer(db, playerId);
+  const { rows } = await query(db, `
+    SELECT id, item_id, qty FROM clan_allocations
+     WHERE player_id = $1 ORDER BY id FOR UPDATE`, [playerId]);
+  if (!rows.length) err('not_found', 'Видач немає');
+
+  const taken = []; let blocked = 0;
+  for (const r of rows) {
+    if (!await items.hasRoomFor(db, playerId, r.item_id)) { blocked++; continue; }
+    if (await items.add(db, playerId, r.item_id, { qty: r.qty }) === null) { blocked++; continue; }
+    await query(db, 'DELETE FROM clan_allocations WHERE id = $1', [r.id]);
+    taken.push({ itemId: r.item_id, qty: r.qty });
+  }
+  if (!taken.length) err('no_room', 'Звільніть місце в інвентарі');
+  return { taken, blocked };
+}
+
+// The client cancels by naming WHO it was for and WHAT it was, because that is
+// what its table shows. Oldest first, so cancelling twice takes two different
+// allocations rather than the same one twice.
+async function allocationIdFor(db, clanId, playerId, itemId) {
+  const { rows } = await query(db, `
+    SELECT id FROM clan_allocations
+     WHERE clan_id = $1 AND player_id = $2 AND item_id = $3
+     ORDER BY id LIMIT 1`, [clanId, playerId, itemId]);
+  return rows.length ? Number(rows[0].id) : null;
+}
+
 async function cancelAllocation(db, leaderId, clanId, allocationId) {
   await _requireLeader(db, leaderId, clanId);
   const { rows } = await query(db, `
@@ -382,6 +416,7 @@ async function _requireNoHeldShards(db, clanId, playerId) {
 }
 
 module.exports = {
+  claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
   addXp, deposit, allocate, claim, cancelAllocation, unlockStorage,
   fullView, clanOf, search, levelFor, ClanError,

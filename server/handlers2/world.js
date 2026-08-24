@@ -33,7 +33,7 @@ const { CHAR_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
 module.exports = function registerWorld(s, safeOn, deps) {
-  const { io, floorRooms, enterFloor } = deps;
+  const { io, floorRooms, enterFloor, floorIdOf, resolveFloor } = deps;
 
   // ── character selection ──────────────────────────────────────────────────
   // The class is written once and never again: setClass has `AND char_class IS
@@ -48,17 +48,28 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Everything the client needs to build the world, from the database. The
     // old gameStart carried a savedData blob the client had sent moments
     // earlier; this carries what is actually stored.
+    await sendGameStart(t, null);
+  }));
+
+  // Login, a floor change and a respawn are the same event to the client: a
+  // full 'gameStart' for wherever it now is. The rewrite had invented
+  // 'floorChanged' and 'respawned' for the latter two, and nothing in the
+  // shipped bundle listens for either — walking through a portal loaded the
+  // new floor's enemies onto a client still drawing the old map.
+  async function sendGameStart(t, wanted) {
     const state = await s.fullState(t);
     // The floor is RE-CHECKED rather than trusted, because the world can have
     // moved on while the player was away — they may have rebirthed below an
     // arm's level requirement, or a timed zone may have closed.
-    const floor = enterFloor(s, state.progress.floor, state.progress);
+    const want = wanted == null ? state.progress.floor : wanted;
+    const floor = enterFloor(s, want, state.progress);
     s.socket.emit('gameStart', {
       ...state,
       floor,
       mapVersion: floorRooms.get(floor) ? floorRooms.get(floor).mapVersion : null,
     });
-  }));
+    return floor;
+  }
 
   // ── movement ─────────────────────────────────────────────────────────────
   // No transaction, no database. The position is written by the session's
@@ -113,7 +124,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
         await stats.refreshBm(t, pid);
         await s.pushStats(t);
         await s.pushProgress(t);
-        s.socket.emit('levelUp', { lvl: reward.xp.lvl, gained: reward.xp.levelsGained });
+        // No separate 'levelUp': pushStats already sent xpSync, and the client
+        // draws the burst and the "↑ УРОВЕНЬ" number itself when the level in
+        // that packet is higher than the one it had (applyLevelState,
+        // js/player.js). A second event would have doubled the animation — if
+        // anything had listened for it.
       }
       await s.pushBalances(t);
       if (reward.items.length) await s.pushItems(t);
@@ -132,7 +147,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (!s.room || !s.authed) return;
     const res = s.room.attackEnemy(s.socket.id, enemyId);
     if (!res) return;
-    if (res.immune) return s.socket.emit('attackImmune', res);
+    if (res.immune) return;                   // no damage number to draw
     s.socket.emit('enemyHurt', { id: enemyId, hp: res.hp, dmg: res.dmg, isCrit: res.isCrit });
     if (res.killed) onKill({ ...res, enemyUid: enemyId });
   });
@@ -156,27 +171,26 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const st = await stats.of(t, pid);
     if (!st) return;
     await players.setHp(t, pid, st.maxHp);
-    const floor = enterFloor(s, 1, { lvl: st.level });    // hub
     if (s.room) {
       s.room.setPlayerHp(s.socket.id, st.maxHp);
       const spawn = s.room.spawnPoint ? s.room.spawnPoint() : null;
       if (spawn) s.room.updatePlayerPos(s.socket.id, spawn.x, spawn.y, 'front', false);
     }
-    s.socket.emit('respawned', { hp: st.maxHp, maxHp: st.maxHp, floor });
+    await sendGameStart(t, 1);
   }));
 
   // ── floors ───────────────────────────────────────────────────────────────
-  safeOn('enterLocation', ({ floor } = {}) => s.act('enterLocation', 'locationError', async (t, pid) => {
-    const f = Math.floor(Number(floor));
-    if (!Number.isSafeInteger(f)) return;
+  // `target` is a floor KEY, which is what the portal table in the client
+  // holds. A refusal is its own event, because the client has a modal for it.
+  safeOn('enterLocation', ({ target } = {}) => s.act('enterLocation', 'locationError', async (t, pid) => {
+    const want = floorIdOf(target);
+    if (!Number.isFinite(want)) return;
     const prog = await players.progressOf(t, pid);
-    const landed = enterFloor(s, f, prog);
-    if (landed !== f) fail('Эта локация вам недоступна', 'gated');
+    if (resolveFloor(want, prog) !== want) {
+      return s.socket.emit('enterLocationDenied', { target, reason: 'level' });
+    }
+    const landed = await sendGameStart(t, want);
     await players.savePosition(t, pid, landed, prog.x || 0, prog.y || 0);
-    s.socket.emit('floorChanged', {
-      floor: landed,
-      mapVersion: floorRooms.get(landed) ? floorRooms.get(landed).mapVersion : null,
-    });
   }));
 
   // ── streaming repair ─────────────────────────────────────────────────────

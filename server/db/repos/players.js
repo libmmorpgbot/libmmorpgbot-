@@ -410,7 +410,22 @@ async function resetUpgrades(db, playerId, cost) {
   return { refunded: Number(rows[0].spent), nexumLeft: paid.balance };
 }
 
+// Telegram id -> internal player id.
+//
+// The shipped client names OTHER players by telegram id everywhere — clanKick,
+// clanApprove, clanStorageGive, requestPlayerProfile. Internally nothing else
+// does: every foreign key points at players.id, which is why the repositories
+// take that. The translation belongs here, at the edge, done once against the
+// database rather than by trusting a client-supplied mapping.
+async function idByTelegram(db, telegramId) {
+  const tg = String(telegramId == null ? '' : telegramId);
+  if (!tg) return null;
+  const { rows } = await query(db, 'SELECT id FROM players WHERE telegram_id = $1', [tg]);
+  return rows.length ? Number(rows[0].id) : null;
+}
+
 module.exports = {
+  idByTelegram,
   byTelegramId, ensure, setUsername,
   progressOf, prefsOf, skillsOf,
   savePrefs, PREF_FIELDS,

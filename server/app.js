@@ -221,6 +221,8 @@ io.on('connection', (socket) => {
     io,
     floorRooms: world.floorRooms,
     enterFloor: world.enterFloor,
+    floorIdOf: world.floorIdOf,
+    resolveFloor: world.resolveFloor,
     // playerId -> socket. Built from the telegram-id map the session already
     // keeps, rather than a second index that could disagree with it.
     socketForPlayerId: (pid) => {
@@ -248,6 +250,11 @@ io.on('connection', (socket) => {
       ops.alert('prefs.junk', 'Клиент шлёт много неизвестных полей настроек',
         `игрок ${s.username}: ${res.ignored} неизвестных ключей`);
     }
+    // Acknowledged with what was actually stored, not with what was sent. The
+    // shipped client saved its preferences inside the progress blob and has no
+    // handler for this yet — it is the replacement for that blob, and the one
+    // surface a client may still write to. See UNHANDLED_BY_DESIGN in
+    // dev/protocol-check.js.
     socket.emit('prefsSync', await players.prefsOf(t, pid));
   }));
 
@@ -298,7 +305,14 @@ async function boot() {
   const w = workers.start({
     notifyPlayer: async (c) => {
       const sock = socketForTelegramId(io, c.telegramId);
-      if (sock) sock.emit('gramCredited', { amount: c.amount, balance: c.balance, memo: c.memo });
+      // Two events the client already handles: the balance it shows, and the
+      // row in the deposit history. 'gramCredited' was a third name for the
+      // same news that nothing listened for, so a confirmed deposit left the
+      // player's screen at the old number until they reloaded.
+      if (sock) {
+        sock.emit('gramBalanceUpdate', { balance: c.balance });
+        sock.emit('gramTxUpdate', { id: c.txId || c.memo, status: 'credited' });
+      }
     },
   });
   console.log(`workers: deposit scan every ${w.deposits}ms`);
