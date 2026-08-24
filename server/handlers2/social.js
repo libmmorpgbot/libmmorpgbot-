@@ -206,10 +206,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
     s.act('requestPlayerProfile', 'profileError', async (t) => {
       const target = id(playerId);
       if (!target) return;
-      const [prog, st] = await Promise.all([
-        players.progressOf(t, target),
-        require('../db/repos/stats').of(t, target),
-      ]);
+      const prog = await players.progressOf(t, target);
+      const st = await require('../db/repos/stats').of(t, target);
       const { rows } = await query(t, 'SELECT username, bm FROM players WHERE id = $1', [target]);
       if (!rows.length || !st) return s.socket.emit('playerProfile', { playerId: target, profile: null });
       s.socket.emit('playerProfile', {

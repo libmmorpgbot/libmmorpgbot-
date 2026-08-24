@@ -183,10 +183,8 @@ module.exports = function registerProgression(s, safeOn) {
   // scan. The Mongo version sorted the whole collection in memory on every
   // call — from a handler any client may fire.
   safeOn('seasonRating', () => s.act('seasonRating', 'seasonError', async (t, pid) => {
-    const [board, mine] = await Promise.all([
-      progression.seasonBoard(t, { limit: 50 }),
-      progression.seasonOf(t, pid),
-    ]);
+    const board = await progression.seasonBoard(t, { limit: 50 });
+    const mine = await progression.seasonOf(t, pid);
     s.socket.emit('seasonRating', { board, me: mine });
   }));
 

@@ -177,6 +177,63 @@ async function main() {
   const prof = await once(sock, 'playerProfile');
   ok(prof.profile && prof.profile.atk > 0, 'публічний профіль порахований сервером');
 
+  // ── the world ────────────────────────────────────────────────────────────
+  console.log('  ── світ, рух, бій ──');
+
+  sock.emit('selectChar', { type: 'deathknight' });
+  const start = await once(sock, 'gameStart', 15000);
+  ok(!!start, 'selectChar повернув gameStart');
+  eq(start.floor, 1, 'новий персонаж стартує в хабі');
+  ok(start.stats && start.stats.charClass === 'deathknight', 'клас записаний і повернувся з бази');
+  ok(start.mapVersion, 'версія карти передана — клієнт тягне геометрію окремо і кешує');
+
+  // A second selectChar must not re-roll the class: setClass has
+  // `AND char_class IS NULL`, so the level cannot be carried into a new class.
+  sock.emit('selectChar', { type: 'mage' });
+  const again = await once(sock, 'gameStart', 15000);
+  eq(again.stats.charClass, 'deathknight', 'повторний selectChar НЕ змінив клас');
+
+  // Movement into geometry must be corrected, not accepted.
+  const world = require('../server/world');
+  const room = world.roomOf(1);
+  ok(!!room, 'кімната хаба існує');
+  const me = room.players.get(sock.id);
+  ok(!!me, 'гравець доданий у кімнату');
+
+  // Find a wall on this floor and walk into it.
+  const { TILE } = require('../shared/definitions');
+  let wall = null;
+  for (let ty = 1; ty < room._dungeon.grid.length && !wall; ty++) {
+    for (let tx = 1; tx < room._dungeon.grid[ty].length; tx++) {
+      const px = tx * TILE + TILE / 2, py = ty * TILE + TILE / 2;
+      if (room._isWall(px, py)) { wall = { x: px, y: py }; break; }
+    }
+  }
+  if (wall) {
+    const wasX = me.x;
+    sock.emit('playerMove', { x: wall.x, y: wall.y, facing: 'front', moving: true });
+    const corr = await once(sock, 'posCorrect', 3000).catch(() => null);
+    ok(!!corr, 'крок у стіну повернув posCorrect замість мовчазного прийняття');
+    eq(me.x, wasX, 'сервер не зрушив гравця в стіну');
+  } else {
+    ok(true, 'стін на цьому поверсі не знайшлось — пропущено');
+  }
+
+  // Ordinary movement is accepted with no correction.
+  const okSpot = room._nearestWalkable(me.x + TILE, me.y);
+  if (okSpot && !okSpot.moved) {
+    sock.emit('playerMove', { x: okSpot.x, y: okSpot.y, facing: 'right', moving: true });
+    const noCorr = await once(sock, 'posCorrect', 800).catch(() => null);
+    ok(!noCorr, 'звичайний крок пройшов без корекції');
+  } else { ok(true, 'вільного сусіднього тайла немає — пропущено'); }
+
+  // Entering a gated floor at level 1 must be refused rather than silently
+  // dropping the player in the hub.
+  sock.emit('enterLocation', { floor: 3 });
+  const gated = await once(sock, 'locationError', 3000).catch(() => null);
+  ok(!!gated, `рука не по рівню — відмова (${gated && gated.msg})`);
+  eq(room.players.has(sock.id), true, 'гравець лишився в хабі');
+
   // ── single session per account ───────────────────────────────────────────
   const second = io(url, { transports: ['websocket'], forceNew: true });
   await once(second, 'connect');

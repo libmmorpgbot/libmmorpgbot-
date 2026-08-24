@@ -301,24 +301,24 @@ async function fullView(db, clanId) {
     [clanId]);
   if (!c.length) return null;
 
-  const [members, apps, storage, allocs] = await Promise.all([
-    query(db, `
+  // Sequential: inside a transaction these share one pg client, which runs one
+  // query at a time — Promise.all here would queue them anyway and warn.
+  const members = await query(db, `
       SELECT m.player_id, m.role, m.joined_at, p.username, p.bm
         FROM clan_members m JOIN players p ON p.id = m.player_id
-       WHERE m.clan_id = $1 ORDER BY (m.role = 'leader') DESC, p.bm DESC`, [clanId]),
-    query(db, `
+       WHERE m.clan_id = $1 ORDER BY (m.role = 'leader') DESC, p.bm DESC`, [clanId]);
+  const apps = await query(db, `
       SELECT a.player_id, a.applied_at, p.username, p.bm
         FROM clan_applications a JOIN players p ON p.id = a.player_id
-       WHERE a.clan_id = $1 ORDER BY a.applied_at`, [clanId]),
-    query(db, `
+       WHERE a.clan_id = $1 ORDER BY a.applied_at`, [clanId]);
+  const storage = await query(db, `
       SELECT s.item_id, s.qty, c.name FROM clan_storage s
         JOIN item_catalog c ON c.item_id = s.item_id
-       WHERE s.clan_id = $1 AND s.qty > 0 ORDER BY s.item_id`, [clanId]),
-    query(db, `
+       WHERE s.clan_id = $1 AND s.qty > 0 ORDER BY s.item_id`, [clanId]);
+  const allocs = await query(db, `
       SELECT a.id, a.player_id, a.item_id, a.qty, a.created_at, p.username
         FROM clan_allocations a JOIN players p ON p.id = a.player_id
-       WHERE a.clan_id = $1 ORDER BY a.created_at`, [clanId]),
-  ]);
+       WHERE a.clan_id = $1 ORDER BY a.created_at`, [clanId]);
 
   const row = c[0];
   return {

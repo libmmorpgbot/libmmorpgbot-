@@ -26,6 +26,7 @@ const ops = require('./tg-ops');
 const workers = require('./workers');
 const adminAuth = require('./admin-auth');
 const { Session, activeSessions, socketForTelegramId } = require('./session');
+const world = require('./world');
 const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
 
 const ROOT = path.join(__dirname, '..');
@@ -93,6 +94,11 @@ app.get('/health', async (req, res) => {
     sessions: activeSessions.size,
     workers: workers.status(),
     ops: ops.status(),
+    // Per-floor tick timings. "Иногда тупит" was unanswerable without these:
+    // nothing recorded whether the 25ms world loop was making its budget.
+    // Reading RESETS the window, so each poll describes the interval since the
+    // last one.
+    rooms: world.statsSnapshot(),
     // Config problems surface HERE rather than at the first failed login,
     // which is the difference between finding out now and finding out from a
     // player.
@@ -128,6 +134,13 @@ const HEAVY = new Set([
   'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
   'clanStorageUnlock', 'clanStorageSync',
   'chat', 'chatHistory', 'requestPlayerProfile', 'savePrefs',
+  'selectChar', 'enterLocation', 'respawn',
+  // NOT here on purpose: mv, playerMove, attack, skillAttack, enemyResync.
+  // Those arrive per frame and belong in the loose bucket — the tight one
+  // would throttle ordinary play, which is a worse outcome than the flood it
+  // would prevent. enemyResync has its own, much tighter bound inside the
+  // handler (40 records per call) because it is cheap to ask for and
+  // expensive to answer.
 ]);
 
 io.on('connection', (socket) => {
@@ -181,6 +194,8 @@ io.on('connection', (socket) => {
       return socket.disconnect(true);
     }
     clearTimeout(authTimer);
+    socket.data.playerId = s.playerId;
+    socket.data.session = s;
     socket.join(`tg_${s.telegramId}`);
     socket.emit('authOk', {
       username: s.username,
@@ -204,12 +219,22 @@ io.on('connection', (socket) => {
   // ── the ported handlers ───────────────────────────────────────────────────
   const deps = {
     io,
-    socketForPlayerId: () => null,   // filled in once the id->socket map lands
+    floorRooms: world.floorRooms,
+    enterFloor: world.enterFloor,
+    // playerId -> socket. Built from the telegram-id map the session already
+    // keeps, rather than a second index that could disagree with it.
+    socketForPlayerId: (pid) => {
+      for (const sk of io.sockets.sockets.values()) {
+        if (sk.data && sk.data.playerId === pid) return sk;
+      }
+      return null;
+    },
   };
   require('./handlers2/items')(s, safeOn, deps);
   require('./handlers2/economy')(s, safeOn, deps);
   require('./handlers2/progression')(s, safeOn, deps);
   require('./handlers2/social')(s, safeOn, deps);
+  require('./handlers2/world')(s, safeOn, deps);
 
   // Preferences: the ONLY place a client value reaches the database. Six
   // fields, none of which touches combat or the economy.
@@ -254,6 +279,12 @@ async function boot() {
   const synced = await db.tx(t => items.syncCatalog(t));
   console.log(`catalog: ${synced.synced} items (${synced.retired} retired)`);
 
+  // 2b. The world. Generated from a fixed seed, so this is deterministic and
+  //     a failure here is a code problem rather than a transient one — which
+  //     is why initFloors throws rather than continuing with a hole in the map.
+  const floors = world.initFloors(io);
+  console.log(`world: ${floors} floors`);
+
   // 3. Configuration problems that would otherwise surface as a failed login
   //    or a missing alert.
   const problems = adminAuth.configProblems();
@@ -286,6 +317,7 @@ async function shutdown(signal) {
   console.log(`${signal}: shutting down`);
 
   workers.stop();
+  world.stopAll();
   // Stop taking new connections first, so the flush below is bounded by the
   // sessions that already exist rather than racing new ones.
   server.close();

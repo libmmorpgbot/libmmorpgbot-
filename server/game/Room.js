@@ -3265,29 +3265,78 @@ class Room {
     return { x: p.x, y: p.y };
   }
 
-  updatePlayerStats(socketId, { atk, def, maxHp }) {
+  // ── setPlayerStats ────────────────────────────────────────────────────────
+  // Replaces updatePlayerStats, which existed to receive numbers the CLIENT
+  // computed and clamp them to a headroom multiplier above what the server
+  // could independently derive (x1.5 ATK, x2.85 DEF).
+  //
+  // That clamp was a guess standing in for knowledge, and it failed in both
+  // directions at once. Too loose: writing any catalog item into
+  // player.equipment in the console let recompute() produce a large number,
+  // and the sender kept the entire headroom permanently with no buff running.
+  // Too tight: the codex bonus was absent from the server's own computeStats,
+  // so an honest player with completed sets had part of an earned bonus eaten
+  // by the same clamp.
+  //
+  // Nothing is clamped here because nothing is guessed. The numbers come from
+  // repos/stats.js, which reads class, level, upgrades, equipped ROWS with
+  // their enhancement, passives, codex, clan and the active buffs — all of
+  // which the server owns. 'statsUpdate' is deleted rather than validated.
+  setPlayerStats(socketId, st) {
+    const p = this.players.get(socketId);
+    if (!p || !st) return;
+    p.atk = st.atk;
+    p.def = st.def;
+    p.critChance = st.critChance;
+    p.critPower = st.critPower;
+    p.atkSpeed = st.atkSpeed;
+    p.hpRegen = st.hpRegen;
+    p.skillPct = st.skillPct || 0;
+    if (st.maxHp > 0 && p.maxHp !== st.maxHp) {
+      p.maxHp = st.maxHp;
+      // Other clients render this player's health bar from maxHp, so a change
+      // has to reach them — that is what _profileRev is for.
+      p._profileRev++;
+    }
+    // Never raises current HP: a stat recomputation is not a heal. Equipping
+    // +HP gear must not top the bar up, and taking it off must not leave the
+    // player above their new maximum.
+    if (p.hp > p.maxHp) p.hp = p.maxHp;
+  }
+
+  // Authoritative HP, from the server's own healing and damage paths.
+  // Separate from setPlayerStats because HP changes far more often and must
+  // not drag a full stat write with it.
+  setPlayerHp(socketId, hp) {
     const p = this.players.get(socketId);
     if (!p) return;
-    const cd = CHAR_DEF[p.type];
-    if (!cd) return;
-    // Anchor the accepted stats to a value the server can independently
-    // derive from the player's own already-sanitized saved equipment/
-    // upgrades/level (see computeStats), not to whatever this same client
-    // claimed last time — a self-referential cap ("min(x, prev*1.5+100)")
-    // ratchets up to its ceiling in ~10 calls regardless of what prev
-    // actually was, since the client controls prev too.
-    const trueBase = computeStats(p._sd || {}, cd, p.type, p.clanAtkBonus);
-    if (atk  >  0) p.atk  = Math.min(atk,  trueBase.atk * ATK_BUFF_HEADROOM);
-    if (def  >= 0) p.def  = Math.min(def,  trueBase.def * DEF_BUFF_HEADROOM);
-    if (maxHp > 0) {
-      const cap = Math.min(maxHp, trueBase.maxHp * HP_BUFF_HEADROOM);
-      p.hp = Math.min(p.hp, cap);
-      if (p.maxHp !== cap) { p.maxHp = cap; p._profileRev++; }
-    }
-    // No skill or item in the game grants a temporary crit bonus — always
-    // the server-derived truth, never whatever the client claims.
-    p.critChance = trueBase.critChance;
-    p.critPower  = trueBase.critPower;
+    const v = Math.max(0, Math.min(p.maxHp, Math.floor(Number(hp) || 0)));
+    if (p.hp === v) return;
+    p.hp = v;
+    this.io.to(`floor_${this.floor}`).emit('playerHurt', { id: socketId, hp: v });
+  }
+
+  // ── claimDrop / returnDrop ────────────────────────────────────────────────
+  // Claiming REMOVES the drop from the floor and hands it to the caller, who
+  // then has to deliver it to a database. If that delivery fails — a full
+  // inventory, a rolled-back transaction — the drop must go BACK, or a refusal
+  // destroys the item.
+  //
+  // The old flow could not express that: the drop was removed and the grant
+  // was a separate write that could fail on its own.
+  claimDrop(socketId, dropId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    return this.claimWorldDrop(dropId, p.x, p.y);
+  }
+
+  returnDrop(drop) {
+    if (!drop || !drop.id) return false;
+    this.worldDrops.set(drop.id, drop);
+    this.io.to(`floor_${this.floor}`).emit('worldDropSpawned', {
+      id: drop.id, x: drop.x, y: drop.y, item: drop.item || drop,
+    });
+    return true;
   }
 
   // Answers the "view profile" (Инфо button) request entirely server-side —

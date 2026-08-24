@@ -97,19 +97,29 @@ class Session {
     return { ...res, state: await this.fullState() };
   }
 
+  // ── Why these reads are sequential, not Promise.all ──────────────────────
+  // A pg Client executes ONE query at a time. Inside a transaction every read
+  // here shares the same client, so Promise.all does not run them in parallel
+  // — it queues them, and emits a deprecation warning that becomes an error in
+  // pg@9. The first version of this file used Promise.all and looked faster
+  // while being exactly as serial.
+  //
+  // On the pool (db === null) they COULD genuinely run in parallel, but then
+  // they would be spread across several connections and no longer see one
+  // consistent snapshot — which for "the whole player, as of now" is the wrong
+  // trade. Sequential is both correct and honest about what it costs.
+  //
   // The authoritative picture. Sent on login and after anything that changes
   // several things at once — the client mirrors it rather than composing its
   // own version, which is what stops the two disagreeing.
   async fullState(db = null) {
-    const [prog, prefs, skills, inv, bal, st] = await Promise.all([
-      players.progressOf(db, this.playerId),
-      players.prefsOf(db, this.playerId),
-      players.skillsOf(db, this.playerId),
-      items.inventoryOf(db, this.playerId),
-      money.balancesOf(db, this.playerId),
-      stats.of(db, this.playerId),
-    ]);
-    return { progress: prog, prefs, skills, items: inv, balances: bal, stats: st };
+    const progress = await players.progressOf(db, this.playerId);
+    const prefs    = await players.prefsOf(db, this.playerId);
+    const skills   = await players.skillsOf(db, this.playerId);
+    const inv      = await items.inventoryOf(db, this.playerId);
+    const balances = await money.balancesOf(db, this.playerId);
+    const st       = await stats.of(db, this.playerId);
+    return { progress, prefs, skills, items: inv, balances, stats: st };
   }
 
   // ── the handler wrapper ──────────────────────────────────────────────────
@@ -170,10 +180,8 @@ class Session {
   }
 
   async pushProgress(db = null) {
-    const [prog, skills] = await Promise.all([
-      players.progressOf(db, this.playerId),
-      players.skillsOf(db, this.playerId),
-    ]);
+    const prog = await players.progressOf(db, this.playerId);
+    const skills = await players.skillsOf(db, this.playerId);
     this.socket.emit('progressSync', { ...prog, ...skills });
   }
 
