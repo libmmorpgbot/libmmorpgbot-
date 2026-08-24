@@ -1,0 +1,5 @@
+# Скрипти й SQL виконуються на Linux. Без цього git на Windows підставляє
+# CRLF, і bash падає з "bad interpreter: /usr/bin/env bash^M" — на сервері,
+# після деплою, а не тут.
+*.sh   text eol=lf
+*.sql  text eol=lf
