@@ -1,0 +1,306 @@
+'use strict';
+// ── Server bootstrap ────────────────────────────────────────────────────────
+// The new entry point. What it does differently from server/index.js is mostly
+// about ORDER: nothing accepts a connection until the things a connection needs
+// are provably ready.
+//
+// The old boot connected to Mongo and started listening in parallel, so a
+// player could log in before the database was up — the code has a comment
+// admitting it ("the server starts accepting connections before Mongo is
+// necessarily up"). A login that lands in that window reads nothing, and the
+// client then persists that nothing back over real progress. Here the listen
+// happens last, after the database answered and the catalog synced.
+
+const path = require('path');
+const http = require('http');
+const express = require('express');
+const helmet = require('helmet');
+const compression = require('compression');
+const { Server } = require('socket.io');
+
+const db = require('./db');
+const items = require('./db/repos/items');
+const players = require('./db/repos/players');
+const stats = require('./db/repos/stats');
+const ops = require('./tg-ops');
+const workers = require('./workers');
+const adminAuth = require('./admin-auth');
+const { Session, activeSessions, socketForTelegramId } = require('./session');
+const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
+
+const ROOT = path.join(__dirname, '..');
+const PORT = Number(process.env.PORT || 3000);
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: process.env.CORS_ORIGIN || '*' },
+  transports: ['websocket'],
+  pingTimeout: 25000,
+  pingInterval: 15000,
+  maxHttpBufferSize: 512 * 1024,
+});
+
+// ── HTTP ────────────────────────────────────────────────────────────────────
+app.set('trust proxy', 1);
+app.use(helmet({
+  frameguard: false,
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      // 'unsafe-inline' and 'unsafe-eval' are still here and still wrong. They
+      // are removable only after the client stops using inline onclick handlers
+      // (82 of them in index.html) and PixiJS's new Function; that is a client
+      // change, scheduled separately. Recording it rather than leaving it to be
+      // rediscovered.
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://telegram.org'],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      workerSrc: ["'self'", 'blob:'],
+      childSrc: ["'self'", 'blob:'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrcAttr: ["'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc: ["'self'", 'wss:', 'ws:', 'https:'],
+      fontSrc: ["'self'", 'data:'],
+      frameSrc: ["'self'", 'https://oauth.telegram.org', 'https://telegram.org'],
+      frameAncestors: ["'self'", 'https://web.telegram.org', 'https://*.web.telegram.org',
+        'https://telegram.org', 'https://*.telegram.org'],
+    },
+  },
+}));
+app.use(compression());
+app.use(express.json({ limit: '256kb' }));
+
+// Liveness is public; the operational detail below it is not. An uptime monitor
+// must be able to read the first without credentials, and an attacker learns
+// nothing useful from "ok" — but tick timings and pool saturation say precisely
+// when the server is already struggling.
+app.get('/health', async (req, res) => {
+  let dbOk = false;
+  try { await db.query(null, 'SELECT 1'); dbOk = true; } catch { /* reported below */ }
+  const brief = { ok: dbOk, db: dbOk ? 'up' : 'down' };
+
+  const tok = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!await adminAuth.verify(tok)) return res.json(brief);
+
+  const mem = process.memoryUsage();
+  res.json({
+    ...brief,
+    uptimeS: Math.round(process.uptime()),
+    heapMb: Math.round(mem.heapUsed / 1048576),
+    rssMb: Math.round(mem.rss / 1048576),
+    sockets: io.engine.clientsCount,
+    sessions: activeSessions.size,
+    workers: workers.status(),
+    ops: ops.status(),
+    // Config problems surface HERE rather than at the first failed login,
+    // which is the difference between finding out now and finding out from a
+    // player.
+    config: adminAuth.configProblems(),
+  });
+});
+
+// Readiness is the one a load balancer should watch. It returns 503 when the
+// database is unreachable — but must NOT be wired to anything that restarts
+// the container: killing the process cannot reach a database it could not
+// reach either, and it drops every player to achieve nothing.
+app.get('/health/ready', async (_req, res) => {
+  try { await db.query(null, 'SELECT 1'); res.json({ ok: true }); }
+  catch { res.status(503).json({ ok: false }); }
+});
+
+// ── sockets ─────────────────────────────────────────────────────────────────
+
+// Rate limiting, unchanged in shape from the build this replaces because the
+// shape was right: three buckets, because the events differ by what they COST
+// the server, not by what they are called.
+const HEAVY = new Set([
+  'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
+  'gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'balanceHistory',
+  'craft', 'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
+  'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
+  'registerCodexSetItem', 'codexSync', 'spendUpgrade', 'usePotion', 'useBuffPotion',
+]);
+
+io.on('connection', (socket) => {
+  const s = new Session(socket);
+
+  const rl = { heavy: { n: 0, at: 0 }, fast: { n: 0, at: 0 } };
+  const bump = (b, max) => {
+    const now = Date.now();
+    if (now > b.at) { b.n = 0; b.at = now + 5000; }
+    return ++b.n <= max;
+  };
+  socket.use((packet, next) => {
+    const ev = packet && packet[0];
+    const ok = HEAVY.has(ev) ? bump(rl.heavy, 40) : bump(rl.fast, 1500);
+    if (!ok) return;                       // dropped silently, over budget
+    next();
+  });
+
+  // safeOn keeps a throwing handler from reaching process scope, where the
+  // uncaughtException handler would take every player's connection down over
+  // one bad packet. s.act() already catches inside a transaction; this is the
+  // backstop for everything outside one.
+  const errAt = new Map();
+  function safeOn(event, handler) {
+    socket.on(event, (...args) => {
+      if (args.length && args[0] === null) args[0] = undefined;
+      try {
+        const r = handler(...args);
+        if (r && typeof r.catch === 'function') r.catch(e => logErr(event, e));
+      } catch (e) { logErr(event, e); }
+    });
+  }
+  function logErr(event, err) {
+    const now = Date.now();
+    if (now - (errAt.get(event) || 0) < 5000) return;   // console.error is sync I/O
+    errAt.set(event, now);
+    console.error(`[socket:${event}]`, err);
+    ops.alertError(`socket.${event}`, `Ошибка в обработчике ${event}`, err);
+  }
+
+  // ── auth ──────────────────────────────────────────────────────────────────
+  // A connection that does not authenticate within the window is closed. The
+  // socket costs memory and a slot; an anonymous one that never logs in is
+  // either a scanner or a broken client.
+  const authTimer = setTimeout(() => { if (!s.authed) socket.disconnect(true); }, 20000);
+
+  async function finishLogin(telegramId, username) {
+    const res = await s.login(String(telegramId), _safeUsername(username, telegramId));
+    if (res.banned) {
+      socket.emit('authError', { msg: 'Аккаунт заблокирован' });
+      return socket.disconnect(true);
+    }
+    clearTimeout(authTimer);
+    socket.join(`tg_${s.telegramId}`);
+    socket.emit('authOk', {
+      username: s.username,
+      isNewAccount: res.isNew,
+      ...res.state,
+      gramWallet: process.env.GRAM_WALLET || null,
+    });
+  }
+
+  safeOn('loginTelegramWebApp', async ({ initData } = {}) => {
+    const v = verifyTelegramWebApp(String(initData || ''));
+    if (!v || !v.user) return socket.emit('authError', { msg: 'Проверка Telegram не пройдена' });
+    await finishLogin(v.user.id, v.user.username || v.user.first_name);
+  });
+
+  safeOn('loginTelegram', async (data = {}) => {
+    if (!verifyTelegramAuth(data)) return socket.emit('authError', { msg: 'Проверка Telegram не пройдена' });
+    await finishLogin(data.id, data.username || data.first_name);
+  });
+
+  // ── the ported handlers ───────────────────────────────────────────────────
+  const deps = {
+    io,
+    socketForPlayerId: () => null,   // filled in once the id->socket map lands
+  };
+  require('./handlers2/items')(s, safeOn, deps);
+  require('./handlers2/economy')(s, safeOn, deps);
+
+  // Preferences: the ONLY place a client value reaches the database. Six
+  // fields, none of which touches combat or the economy.
+  safeOn('savePrefs', ({ prefs } = {}) => s.act('savePrefs', 'prefsError', async (t, pid) => {
+    const res = await players.savePrefs(t, pid, prefs);
+    // An unknown key is expected mid-deploy (an old bundle sending a retired
+    // field) and is counted rather than refused. A LOT of them is not, and
+    // saying so is the difference between expected drift and something
+    // sending us junk.
+    if (res.ignored > 20) {
+      ops.alert('prefs.junk', 'Клиент шлёт много неизвестных полей настроек',
+        `игрок ${s.username}: ${res.ignored} неизвестных ключей`);
+    }
+    socket.emit('prefsSync', await players.prefsOf(t, pid));
+  }));
+
+  // Position is written on a timer, not per step: 40 writes a second per
+  // player, for a value whose worst-case loss is a few metres of walking.
+  const posTimer = setInterval(() => { s.savePosition(); }, 20000);
+  posTimer.unref();
+
+  socket.on('disconnect', async (reason) => {
+    clearTimeout(authTimer);
+    clearInterval(posTimer);
+    try { await s.close(reason); } catch (e) { console.error('[disconnect]', e); }
+  });
+});
+
+// ── boot ────────────────────────────────────────────────────────────────────
+// The order below is the point of this file.
+async function boot() {
+  // 1. The database must answer before anything else is attempted. Failing
+  //    here is a refusal to start, not a warning — a server that boots without
+  //    its database is a server that accepts logins it cannot serve.
+  await db.query(null, 'SELECT 1');
+  console.log('postgres: connected');
+
+  // 2. The catalog must be in place before any item can be granted, because
+  //    player_items references it. Doing this at boot rather than lazily means
+  //    a retired id is discovered now, in the log, rather than by a foreign-key
+  //    error during a player's craft.
+  const synced = await db.tx(t => items.syncCatalog(t));
+  console.log(`catalog: ${synced.synced} items (${synced.retired} retired)`);
+
+  // 3. Configuration problems that would otherwise surface as a failed login
+  //    or a missing alert.
+  const problems = adminAuth.configProblems();
+  if (problems.length) {
+    console.error('[config] ' + problems.join('; '));
+    await ops.send('alerts', `⚠️ <b>Проблемы конфигурации при запуске</b>\n` +
+      problems.map(p => `• ${p}`).join('\n'));
+  }
+
+  // 4. Background work.
+  const w = workers.start({
+    notifyPlayer: async (c) => {
+      const sock = socketForTelegramId(io, c.telegramId);
+      if (sock) sock.emit('gramCredited', { amount: c.amount, balance: c.balance, memo: c.memo });
+    },
+  });
+  console.log(`workers: deposit scan every ${w.deposits}ms`);
+
+  // 5. Only now.
+  await new Promise(r => server.listen(PORT, r));
+  console.log(`listening on ${PORT}`);
+  await ops.send('alerts', `🟢 <b>Сервер запущен</b> · порт ${PORT} · каталог ${synced.synced} предметов`);
+}
+
+// ── shutdown ────────────────────────────────────────────────────────────────
+let _shuttingDown = false;
+async function shutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log(`${signal}: shutting down`);
+
+  workers.stop();
+  // Stop taking new connections first, so the flush below is bounded by the
+  // sessions that already exist rather than racing new ones.
+  server.close();
+  io.close();
+
+  // Positions, in parallel and bounded. Each is one small UPDATE; there is no
+  // unwritten player state to flush, because the session never held any.
+  await Promise.race([
+    Promise.allSettled([...io.sockets.sockets.values()].map(sk =>
+      sk.data && sk.data.session ? sk.data.session.close(signal) : null)),
+    new Promise(r => setTimeout(r, 5000)),
+  ]);
+
+  await db.close();
+  console.log('shutdown complete');
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+if (require.main === module) {
+  boot().catch(err => {
+    console.error('[boot] failed:', err);
+    ops.alertError('boot', 'Сервер НЕ запустился', err).finally(() => process.exit(1));
+  });
+}
+
+module.exports = { app, server, io, boot, shutdown };
