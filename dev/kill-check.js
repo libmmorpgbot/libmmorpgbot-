@@ -72,7 +72,10 @@ async function main() {
   await app.boot();
   console.log('');
 
-  const tgId = 910000001;
+  // Unique per run. A fixed id meant every run shared a player — and
+  // therefore shared idempotency keys with the run before it, which made a
+  // real bug look like a test artefact for an hour.
+  const tgId = 910000000 + (process.pid % 100000);
   const a = await connect(tgId, `${TAG}_hunter`);
   made.push(a.pid);
 
@@ -154,6 +157,10 @@ async function main() {
     killed = k;
     totalGold += k.gold || 0;
     await wait(220);                                    // past the 150ms floor
+    if (process.env.KILL_TRACE) {
+      const now = (await money.balancesOf(null, a.pid)).gold;
+      console.log(`    [trace] ${victim.id} gold=${k.gold} goldTotal=${k.goldTotal} db=${now} sum=${totalGold}`);
+    }
   }
 
   ok(!!killed, "'enemyKilled' надіслано — без нього труп не зникає з екрана");
@@ -176,11 +183,78 @@ async function main() {
     eq(victim.hp, 0, 'монстр справді мертвий на сервері');
   }
 
+  // ── the same spawn, killed twice ─────────────────────────────────────────
+  // An enemy id is stable across respawns. The reward key was
+  // `kill:<player>:<enemy>`, so the ledger already held it the second time and
+  // money.credit correctly treated the kill as a replay — every farmed spawn
+  // silently stopped paying after the first time. "Мобы и не засчитывание".
+  console.log('  ── той самий спавн удруге ──');
+  // A kill that pays nothing proves nothing here, so this hunts for a spawn
+  // that does and then kills THAT one twice. The first version of this test
+  // accepted two zero-gold kills and passed while proving nothing — which is
+  // the same failure as the bug it was written for: a green light with no
+  // evidence behind it.
+  let twice = null;
+  // Twenty-five candidates, not ten: gold is a roll, and ten of them coming up
+  // zero is uncommon rather than impossible. A suite that fails once in a batch
+  // and passes three times alone is a suite nobody will believe on the day it
+  // is right.
+  for (const cand of alive().slice(0, 25)) {
+    const g0 = (await money.balancesOf(null, a.pid)).gold;
+    me.x = cand.x; me.y = cand.y;
+    cand.hp = 1;
+    const p1 = once(b.sock, 'enemyKilled', 8000).catch(() => null);
+    b.sock.emit('attack', { enemyId: cand.id });
+    const k1 = await p1;
+    await wait(450);
+    const g1 = (await money.balancesOf(null, a.pid)).gold;
+    if (!k1 || !(k1.gold > 0)) { await wait(180); continue; }
+
+    // Respawned by hand: the real timer is minutes, and what is under test is
+    // the second kill of the SAME id, not the wait. Repeated until one pays —
+    // gold is a roll, and an assertion that depends on a roll is one that
+    // fails on a day when nothing is wrong.
+    let k2 = null, g2 = g1, gBefore2 = g1;
+    for (let r = 0; r < 8; r++) {
+      gBefore2 = (await money.balancesOf(null, a.pid)).gold;
+      cand.hp = 1;
+      await wait(250);
+      const p2 = once(b.sock, 'enemyKilled', 8000).catch(() => null);
+      b.sock.emit('attack', { enemyId: cand.id });
+      k2 = await p2;
+      await wait(450);
+      g2 = (await money.balancesOf(null, a.pid)).gold;
+      if (k2 && k2.gold > 0) break;
+    }
+    twice = { id: cand.id, k1, k2, g0, g1, gBefore2, g2 };
+    break;
+  }
+
+  ok(!!twice, 'знайшовся спавн, який платить — інакше перевірка нічого не доводить');
+  if (twice) {
+    const { id, k1, k2, g0, g1, gBefore2, g2 } = twice;
+    ok(!!k2, 'друге вбивство того самого id дійшло до клієнта');
+    eq(g1 - g0, k1.gold, `перше вбивство зараховане (+${k1.gold})`);
+    ok(k2 && k2.gold > 0 && g2 - gBefore2 === k2.gold,
+      `ДРУГЕ теж зараховане (+${k2 && k2.gold}) — раніше воно читалось як повтор першого і платило нуль`);
+    ok(k1.at && k2 && k2.at && k1.at !== k2.at,
+      `у кожної смерті власна мітка (${k1.at} ≠ ${k2 && k2.at})`);
+
+    // The decisive one, and it does not depend on a roll: the two kills of the
+    // SAME enemy id wrote two DIFFERENT idempotency keys. Keyed on the id
+    // alone there would be one, and every kill after the first was a replay.
+    const { rows: keys } = await pool().query(
+      `SELECT count(DISTINCT idem_key)::int n FROM ledger
+        WHERE player_id = $1 AND reason = 'mob_kill' AND idem_key LIKE $2`,
+      [a.pid, `kill:${a.pid}:${id}:%`]);
+    ok(keys[0].n >= 2, `на один спавн — різні ключі на різні смерті (${keys[0].n})`);
+  }
+
   // ── a bystander ──────────────────────────────────────────────────────────
   // The body has to vanish for everyone who can see it, and nobody but the
   // killer is paid.
   console.log('  ── свідок ──');
-  const w = await connect(910000002, `${TAG}_watch`);
+  const w = await connect(tgId + 500000, `${TAG}_watch`);
   made.push(w.pid);
   await pool().query('UPDATE player_progress SET lvl = 40 WHERE player_id = $1', [w.pid]);
   w.sock.emit('selectChar', { type: 'mage' });

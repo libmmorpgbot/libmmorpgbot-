@@ -215,11 +215,25 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const myGold = Math.round((result.gold || 0) / share);
     const myXp = share > 1 ? Math.max(1, Math.round((result.xp || 0) / share)) : (result.xp || 0);
 
-    // One idempotency key per kill, not per attempt: `Date.now()` in it would
-    // make every retry a fresh grant.
-    const idem = `kill:${s.playerId}:${result.enemyUid}`;
+    // One key per KILL, not per enemy and not per attempt.
+    //
+    // Keyed on the enemy id alone, a respawning monster paid once and never
+    // again: the id is stable across respawns, so the ledger already held that
+    // key and money.credit correctly treated the second kill as a replay of the
+    // first. Every farmed spawn silently stopped paying — which is what "мобы и
+    // не засчитывание" was.
+    //
+    // `result.at` is stamped inside attackEnemy at the moment of the kill, so it
+    // is the same value across a txRetry — which is the case the key exists for
+    // — and different for every actual kill.
+    const idem = `kill:${s.playerId}:${result.enemyUid}:${result.at || 0}`;
 
-    await s.act('killReward', 'itemError', async (t, pid) => {
+    // The transaction decides what happened; the packet reports it AFTERWARDS.
+    // Emitting from inside meant the client was told its new balance before the
+    // commit — and if anything downstream rolled the transaction back, the
+    // number on screen was one the database never held. A player watching gold
+    // appear and then revert on the next push is describing exactly that.
+    const done = await s.act('killReward', 'itemError', async (t, pid) => {
       const prog = await players.progressOf(t, pid);
       const drops = rollLoot(result, prog.lvl);
 
@@ -228,39 +242,40 @@ module.exports = function registerWorld(s, safeOn, deps) {
         drops: drops.items, idemKey: idem,
       });
       if (result.enemyName) await progression.bumpQuestKill(t, pid, result.enemyName);
-
-      if (reward.xp && reward.xp.levelsGained > 0) {
-        await stats.refreshBm(t, pid);
-        await s.pushStats(t);
-        await s.pushProgress(t);
-      }
-      await s.pushBalances(t);
-      if (reward.items.length) await s.pushItems(t);
-
-      // The packet the client draws the kill from. `goldTotal` is the balance
-      // AFTER the credit, because the client displays it verbatim rather than
-      // adding anything itself.
-      s.socket.emit('enemyKilled', {
-        id: result.enemyUid,
-        gold: myGold, goldTotal: reward.gold,
-        xp: myXp, level: reward.xp || null,
-        dmg: result.dmg, isCrit: result.isCrit,
-        ex: result.ex, ey: result.ey, color: result.color,
-        eid: result.eid, rlvl: result.rlvl,
-        items: reward.items.filter(i => !i.dropped),
-        boxUncommon: drops.boxUncommon, boxRare: drops.boxRare,
-        normStone: drops.normStone, blessStone: drops.blessStone,
-        nexum: result.nexum || 0, gram: result.gram || 0,
-      });
-
-      // What would not fit stays on the floor. The reward for a kill is not
-      // owed anywhere else, so it is not destroyed over a missing slot.
-      for (const it of reward.items) {
-        if (it.dropped && s.room) {
-          s.room.spawnWorldDrops([{ id: it.id, qty: it.qty || 1 }], result.ex, result.ey);
-        }
-      }
+      if (reward.xp && reward.xp.levelsGained > 0) await stats.refreshBm(t, pid);
+      return { reward, drops };
     });
+    if (!done) return;                      // act reported it; nothing happened
+
+    const { reward, drops } = done;
+    // Pushes read the database on their own connection now, which is the point:
+    // everything below describes committed state.
+    if (reward.xp && reward.xp.levelsGained > 0) {
+      await s.pushStats(); await s.pushProgress();
+    }
+    await s.pushBalances();
+    if (reward.items.length) await s.pushItems();
+
+    s.socket.emit('enemyKilled', {
+      id: result.enemyUid, at: result.at,
+      gold: myGold, goldTotal: reward.gold,
+      xp: myXp, level: reward.xp || null,
+      dmg: result.dmg, isCrit: result.isCrit,
+      ex: result.ex, ey: result.ey, color: result.color,
+      eid: result.eid, rlvl: result.rlvl,
+      items: reward.items.filter(i => !i.dropped),
+      boxUncommon: drops.boxUncommon, boxRare: drops.boxRare,
+      normStone: drops.normStone, blessStone: drops.blessStone,
+      nexum: result.nexum || 0, gram: result.gram || 0,
+    });
+
+    // What would not fit stays on the floor. The reward for a kill is not owed
+    // anywhere else, so it is not destroyed over a missing slot.
+    for (const it of reward.items) {
+      if (it.dropped && s.room) {
+        s.room.spawnWorldDrops([{ id: it.id, qty: it.qty || 1 }], result.ex, result.ey);
+      }
+    }
 
     // Party members are paid on their own sessions, each in its own
     // transaction: one member's full inventory must not undo another's gold.
@@ -269,7 +284,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       if (!mate || !mate.authed) continue;
       mate.act('killRewardShare', 'itemError', async (t, pid) => {
         const r = await consumables.grantKillReward(t, pid, {
-          gold: myGold, xp: myXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}`,
+          gold: myGold, xp: myXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,
         });
         await mate.pushBalances(t);
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }

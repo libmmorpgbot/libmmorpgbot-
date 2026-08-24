@@ -3483,7 +3483,12 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
+      // `at` stamps THIS death. An enemy id is stable across respawns — the rat
+      // at e_left_0 carries the same id tomorrow — so anything keyed on the id
+      // alone reads every later kill of that spawn as a repeat of the first.
+      // The reward path keys its idempotency on it, and without this a player
+      // farming one spawn was paid exactly once, ever.
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -3563,7 +3568,12 @@ class Room {
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
-      return { killed: true, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
+      // `at` stamps THIS death. An enemy id is stable across respawns — the rat
+      // at e_left_0 carries the same id tomorrow — so anything keyed on the id
+      // alone reads every later kill of that spawn as a repeat of the first.
+      // The reward path keys its idempotency on it, and without this a player
+      // farming one spawn was paid exactly once, ever.
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
