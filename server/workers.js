@@ -201,14 +201,25 @@ function start(opts = {}) {
   // rather than at the first scheduled tick.
   maintain();
 
-  timers.push(setInterval(() => scanDeposits(opts), DEPOSIT_EVERY_MS));
+  // Reconciliation and partition maintenance are database-only and safe
+  // anywhere. The other two reach OUTSIDE this process — the chain and the
+  // operators' bot — and a test run must not do either: polling getUpdates a
+  // second time takes the live server's withdrawal buttons away from it, and
+  // scanning aims the deposit reader at a wallet holding real money.
   timers.push(setInterval(() => reconcile(), RECONCILE_EVERY_MS));
   timers.push(setInterval(() => maintain(), 6 * 3600 * 1000));
+
+  const live = ops.isLive();
+  if (live) {
+    timers.push(setInterval(() => scanDeposits(opts), DEPOSIT_EVERY_MS));
+    pollOps(opts);
+  } else {
+    console.log('[workers] OPS_LIVE выключен — сканирование депозитов и опрос бота не запущены');
+  }
+
   // unref so these never hold the process open during a shutdown.
   for (const t of timers) t.unref();
-
-  pollOps(opts);
-  return { deposits: DEPOSIT_EVERY_MS, reconcile: RECONCILE_EVERY_MS };
+  return { deposits: live ? DEPOSIT_EVERY_MS : 0, reconcile: RECONCILE_EVERY_MS, live };
 }
 
 function stop() {

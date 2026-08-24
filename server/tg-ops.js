@@ -35,6 +35,20 @@ const TOPICS = {
 // token is not the one players talk to), but not required.
 const TOKEN = process.env.TG_OPS_BOT_TOKEN || process.env.TG_BOT_TOKEN || '';
 
+// ── whether anything actually reaches Telegram ──────────────────────────────
+// Every integration test calls app.boot(), and boot() starts the workers. So
+// each run announced "🟢 Сервер запущен" in the operators' channel, started a
+// SECOND getUpdates poll on the ops bot — Telegram allows exactly one consumer
+// per token, so the live server's withdrawal buttons stopped working — and
+// pointed the deposit scanner at the real wallet.
+//
+// The gate is deny-by-default and cannot be forgotten: production sends,
+// everything else logs to the console. Turning it on for a deliberate test of
+// the ops path is an explicit OPS_LIVE=1, which is a thing someone types on
+// purpose rather than a thing a test forgets to switch off.
+const LIVE = process.env.OPS_LIVE === '1' || process.env.NODE_ENV === 'production';
+function isLive() { return LIVE && !!TOKEN && !!GROUP_ID; }
+
 // Comma-separated. Replaces the single TG_ADMIN_ID: approving payouts is not a
 // one-person job, and the old build could not express a second admin at all.
 const ADMIN_IDS = new Set(
@@ -88,6 +102,12 @@ async function _api(method, body) {
 // withdrawal requests.
 async function send(topic, html, { buttons = null, disablePreview = true } = {}) {
   if (!GROUP_ID) return null;
+  if (!isLive()) {
+    // Printed rather than swallowed: a test that expected an alert should be
+    // able to see that one was raised, and where it would have gone.
+    console.log(`[tg-ops:${topic}] (не отправлено, OPS_LIVE выключен) ${String(html).slice(0, 160)}`);
+    return null;
+  }
   const thread = TOPICS[topic];
   const body = {
     chat_id: GROUP_ID,
@@ -207,6 +227,7 @@ function status() {
 }
 
 module.exports = {
+  isLive,
   send, editMessage, answerCallback, dm,
   alert, alertError,
   isAdmin, adminIds, handleTopicIdCommand, status,

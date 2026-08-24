@@ -51,7 +51,9 @@ async function postDepositCredited(c) {
     `💼 Баланс: <b>${c.balance} GRAM</b>`,
     `🏷 Мемо: <code>${esc(c.memo)}</code>`,
   ];
-  if (c.sender) lines.push(`📬 Отправитель: <code>${esc(String(c.sender).slice(0, 72))}</code>`);
+  // UQ…, not 0:755933… — an operator has to be able to match this against
+  // what their own wallet shows and paste it into Tonviewer.
+  if (c.sender) lines.push(`📬 Отправитель: <code>${esc(ton.friendlyAddress(c.sender))}</code>`);
   if (c.referral) lines.push(`🎁 Рефереру: <b>+${c.referral.amount} GRAM</b>`);
   lines.push(`🕐 ${when(Date.now())}`);
   if (link) lines.push(`\n🔗 <a href="${link}">Транзакция в Tonviewer</a>`);
@@ -81,7 +83,7 @@ async function postUnmatched(u) {
     // truncated so a wall of text cannot push the rest of the card out.
     `🏷 Комментарий: <code>${esc(String(u.comment || '—').slice(0, 80))}</code>`,
   ];
-  if (u.sender) lines.push(`📬 Отправитель: <code>${esc(String(u.sender).slice(0, 72))}</code>`);
+  if (u.sender) lines.push(`📬 Отправитель: <code>${esc(ton.friendlyAddress(u.sender))}</code>`);
   lines.push(`🕐 ${when(Date.now())}`);
   if (link) lines.push(`\n🔗 <a href="${link}">Транзакция в Tonviewer</a>`);
   return ops.send('deposits', lines.join('\n'));

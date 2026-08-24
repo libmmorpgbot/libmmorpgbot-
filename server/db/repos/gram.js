@@ -200,6 +200,36 @@ async function scanOnce({ pageSize = 50, maxPages = 20 } = {}) {
   if (!ourRaw) return { credited: [], unmatched: [], failed: true, reason: 'address_unresolved' };
 
   const wm = await _watermark();
+
+  // ── the first run on a wallet that already has a past ────────────────────
+  // The watermark is a LOGICAL TIME, not a timestamp: an ever-increasing
+  // number the chain assigns to each transaction. Absent, it reads as 0, which
+  // is below every event that has ever happened — so the first scan walked the
+  // wallet's entire history and raised "платёж не зачислен" for every payment
+  // it had ever received. This wallet carries months of them from the build
+  // being replaced: ten alerts in one second, all describing transfers that
+  // were credited correctly a month ago.
+  //
+  // That is worse than noise. An operator who has learned that those alerts
+  // are meaningless is an operator who will scroll past the real one.
+  //
+  // So the first run PLANTS the mark at the newest event and processes
+  // nothing. Everything from that moment on is ours; everything before it
+  // belongs to whatever was running before. Bootstrapping cannot be done in
+  // _watermark() — the starting point has to come from the chain, and a read
+  // that fails must leave the mark unset so the next tick tries again rather
+  // than silently starting from zero.
+  if (!wm) {
+    const probe = await ton.fetchSince(0, { pageSize: 1, maxPages: 1 });
+    if (probe.failed || !probe.highest) {
+      return { credited: [], unmatched: [], failed: true, reason: 'bootstrap_unreadable' };
+    }
+    await _setWatermark(probe.highest);
+    console.log(`[gram] метка сканирования установлена на lt=${probe.highest}; ` +
+                'история кошелька до этого момента не рассматривается');
+    return { credited: [], unmatched: [], failed: false, seen: 0, bootstrapped: probe.highest };
+  }
+
   const { events, highest, clean, failed } = await ton.fetchSince(wm, { pageSize, maxPages });
 
   // ONLY on a clean pass. Advancing past events we could not read would lose
@@ -386,4 +416,8 @@ module.exports = {
   requestWithdraw, markWithdrawPaid, rejectWithdraw, forfeitWithdraw,
   historyOf, openUnmatched, expireStaleIntents,
   MIN_DEPOSIT_TON, REFERRAL_PCT,
+  // Exported for the suite: the watermark's behaviour on an EMPTY key is the
+  // part that decides whether a wallet's past is re-read, and it is not
+  // reachable through scanOnce without a live chain.
+  _watermark,
 };

@@ -212,6 +212,87 @@ async function main() {
   const mine = made.map(Number);
   const drift = (await money.reconcile(null)).filter(r => mine.includes(r.playerId));
   eq(drift.length, 0, 'звірка чиста після всіх депозитів і виведень');
+
+  await addressCheck();
+  await watermarkCheck();
+}
+
+// ── the address a person reads ──────────────────────────────────────────────
+async function addressCheck() {
+  console.log('  ── формат адрес ──');
+  const ton = require('../server/ton');
+
+  // The proof that the checksum is computed correctly: decode a known-good
+  // wallet to its raw form, encode it back, and require the same 48
+  // characters. A wrong CRC would still produce a plausible-looking string.
+  const known = 'UQA7K4dy_mxGUBrEJgpMId7IJhiYNaUiNJyltJReZDuQY5YS';
+  const buf = Buffer.from(known, 'base64url');
+  const raw = (buf[1] === 0xff ? -1 : buf[1]) + ':' + buf.subarray(2, 34).toString('hex');
+  eq(ton.friendlyAddress(raw), known, 'сирий вигляд → UQ і назад дає ту саму адресу');
+  eq(buf.length, 36, 'адреса це 36 байтів: тег, воркчейн, 32 байти хешу, 2 байти суми');
+
+  // TonAPI reports senders raw. Ten alerts full of 0:755933… is what an
+  // operator cannot match against anything.
+  const sender = '0:755933366ad067404be905daa2bcc002c2c2e9cbe0a0d551b3134ae5b179574c';
+  ok(ton.friendlyAddress(sender).startsWith('UQ'),
+    `адреса відправника показується як UQ (${ton.friendlyAddress(sender)})`);
+  ok(ton.friendlyAddress(sender, { bounceable: true }).startsWith('EQ'),
+    'bounceable-варіант дає EQ — це для контрактів');
+
+  // Idempotent, and that matters: an address that arrived friendly must not be
+  // rewritten. Turning someone's EQ into a UQ changes what it means.
+  eq(ton.friendlyAddress(known), known, 'вже дружня адреса не переписується');
+  const eq_addr = ton.friendlyAddress(sender, { bounceable: true });
+  eq(ton.friendlyAddress(eq_addr), eq_addr, 'EQ не перетворюється на UQ');
+
+  eq(ton.friendlyAddress('не-адреса'), 'не-адреса', 'не-адреса показується як є, а не як помилка');
+  eq(ton.friendlyAddress(null), '', 'null не ламає картку');
+  ok(/^UQ.{4}….{6}$/.test(ton.shortAddress(sender)), `скорочення читається (${ton.shortAddress(sender)})`);
+}
+
+// ── the scanner does not re-read a wallet's past ────────────────────────────
+async function watermarkCheck() {
+  console.log('  ── метка сканування ──');
+  const KEY = 'deposit:last_lt';
+
+  // The mark is a LOGICAL TIME — an ever-increasing number the chain assigns
+  // to each transaction — not a timestamp. Getting that wrong is easy and
+  // silent: a mark set to Date.now()/1000 is ~1.8e9 against real values around
+  // 9.9e13, which is below everything and changes nothing while looking fixed.
+  const saved = (await pool().query('SELECT value FROM kv WHERE key = $1', [KEY])).rows[0];
+  ok(!saved || Number(saved.value) > 1e12,
+    `метка це логічний час, а не секунди (${saved && saved.value})`);
+
+  await pool().query('DELETE FROM kv WHERE key = $1', [KEY]);
+  eq(await gram._watermark(), 0, 'відсутня метка читається як 0 — саме тому потрібен bootstrap');
+
+  // The first scan must PLANT the mark and process nothing. Without it, an
+  // empty mark means "read the whole history", and this wallet has months of
+  // it: ten "платёж не зачислен" alerts in one second about payments credited
+  // correctly a month ago. An operator who learns those are meaningless is an
+  // operator who scrolls past the real one.
+  const first = await gram.scanOnce();
+  if (first.reason === 'bootstrap_unreadable') {
+    ok(true, 'ланцюг недоступний — bootstrap відклався до наступного тіку, метка НЕ виставлена');
+    const still = await pool().query('SELECT value FROM kv WHERE key = $1', [KEY]);
+    eq(still.rows.length, 0, 'і не записана нулем, інакше історія прочиталась би вся');
+  } else {
+    ok(first.bootstrapped > 1e12, `перший прохід виставив метку (lt=${first.bootstrapped})`);
+    eq(first.credited.length, 0, 'і не зарахував нічого з історії');
+    eq(first.unmatched.length, 0, 'і не підняв жодного розбору по старих платежах');
+    const now = await pool().query('SELECT value FROM kv WHERE key = $1', [KEY]);
+    eq(Number(now.rows[0].value), first.bootstrapped, 'метка збережена саме на цьому lt');
+
+    // The second pass is the ordinary one and must not repeat the bootstrap.
+    const second = await gram.scanOnce();
+    eq(second.bootstrapped, undefined, 'другий прохід уже звичайний, а не повторний bootstrap');
+  }
+
+  if (saved) {
+    await pool().query(
+      `INSERT INTO kv (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [KEY, saved.value]);
+  }
 }
 
 async function cleanup() {
@@ -224,6 +305,7 @@ async function cleanup() {
   }
   await q('DELETE FROM players WHERE id = ANY($1)', [made]);
 }
+
 
 main()
   .catch(err => { fail++; failures.push('НЕОБРОБЛЕНА ПОМИЛКА'); console.error('\n', err); })

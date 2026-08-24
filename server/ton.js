@@ -29,6 +29,67 @@ const KEY = process.env.TONAPI_KEY || '';
 // noisier and the poll budget smaller.
 const HTTP_TIMEOUT_MS = 15000;
 
+
+// ── raw address → the form a person recognises ──────────────────────────────
+// TonAPI reports a sender as `0:755933366ad0…` — the raw workchain:hash pair.
+// Correct, and unreadable: an operator looking at an alert cannot match it
+// against the `UQ…` their wallet shows them, cannot paste it into Tonviewer's
+// search, and cannot tell two senders apart at a glance.
+//
+// The friendly form is the same 33 bytes with a tag and a checksum, in
+// base64url:
+//
+//   [tag][workchain][32-byte hash][CRC16-CCITT of the previous 34]
+//
+// The tag says how the network should treat a message that cannot be
+// delivered. 0x51 is non-bounceable — the `UQ` prefix, and what a wallet shows
+// for an ordinary account, because a payment to a person should stay put
+// rather than come back. 0x11 is bounceable, `EQ`, used for contracts.
+//
+// The checksum is the reason the friendly form exists at all: a mistyped
+// character fails to decode instead of sending money to nobody.
+function _crc16(buf) {
+  // CRC16-CCITT (XModem), polynomial 0x1021, which is what TON specifies.
+  let crc = 0;
+  for (const b of buf) {
+    crc ^= b << 8;
+    for (let i = 0; i < 8; i++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+  }
+  return crc;
+}
+
+function friendlyAddress(raw, { bounceable = false, testnet = false } = {}) {
+  const s = String(raw || '').trim();
+  // Already friendly: hand it back untouched rather than round-tripping it,
+  // which would silently rewrite an EQ someone gave us into a UQ.
+  if (/^[UEk0-9][QF][A-Za-z0-9_-]{46}$/.test(s)) return s;
+
+  const m = /^(-?\d+):([0-9a-fA-F]{64})$/.exec(s);
+  if (!m) return s;                       // not an address — show it as it came
+
+  const wc = Number(m[1]);
+  const hash = Buffer.from(m[2], 'hex');
+  let tag = bounceable ? 0x11 : 0x51;
+  if (testnet) tag |= 0x80;
+
+  const body = Buffer.alloc(34);
+  body[0] = tag;
+  body[1] = wc < 0 ? 0xff : wc & 0xff;    // -1 (masterchain) is stored as 0xff
+  hash.copy(body, 2);
+
+  const out = Buffer.alloc(36);
+  body.copy(out, 0);
+  out.writeUInt16BE(_crc16(body), 34);
+  return out.toString('base64url');
+}
+
+// Shortened for a card that has to stay readable on a phone. The middle is
+// what carries no meaning to a human; the ends are what they compare.
+function shortAddress(raw, keep = 6) {
+  const a = friendlyAddress(raw);
+  return a.length > keep * 2 + 3 ? `${a.slice(0, keep)}…${a.slice(-keep)}` : a;
+}
+
 function validAddress(a) {
   return typeof a === 'string' && ADDR_RE.test(a.trim());
 }
@@ -203,6 +264,7 @@ function explorerLink(txId) {
 }
 
 module.exports = {
+  friendlyAddress, shortAddress,
   validAddress, resolveRaw, ourAddressRaw,
   fetchEvents, fetchSince, parseAction, incomingFrom, explorerLink,
   norm,
