@@ -5348,8 +5348,10 @@ function _guildWarBodyHTML() {
     : (st.nextAt ? _fmtEventEta(st.nextAt - Date.now()) : '—');
   const phaseTxt = open ? t('guildWarPhaseOpen') : t('guildWarPhaseClosed');
   const note = open ? t('guildWarNoteOpen') : (st.nextAt ? _fmtEventWhen(st.nextAt) : '');
+  // Escaped: a clan's name is typed by its founder, and this panel shows it to
+  // everyone on the server. It is the one place a clan name reaches innerHTML.
   const ownerLine = st.ownerClanName
-    ? `<div class="db-count">${t('guildWarOwnerLbl')}: <b>${st.ownerClanName}</b></div>`
+    ? `<div class="db-count">${t('guildWarOwnerLbl')}: <b>${_escHtml(st.ownerClanName)}</b></div>`
     : `<div class="db-count">${t('guildWarNoOwnerLbl')}</div>`;
 
   return `

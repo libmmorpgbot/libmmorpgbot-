@@ -30,7 +30,9 @@ const progression = require('../db/repos/progression');
 const { NC_FACING, NC_AOE_STYLES } = require('../../shared/netcodec');
 const party = require('../party');
 const { query } = require('../db');
-const { CHAR_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
+const {
+  CHAR_DEF, FLOOR_ENEMIES, FEAR_MAX_WAVE, COOP_STAGE_LEVELS,
+} = require('../../shared/definitions');
 
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
@@ -80,13 +82,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
       s.room.setPlayerStats(s.socket.id, state.stats);
       s.room.setPlayerHp(s.socket.id, state.stats.hp);
     }
-    s.socket.emit('gameStart', {
-      ...state,
-      floor,
-      mapVersion: floorRooms.get(floor) ? floorRooms.get(floor).mapVersion : null,
-    });
+    s.socket.emit('gameStart', { ...state, ...s.worldPayload(floor) });
     return floor;
   }
+
 
   // ── movement ─────────────────────────────────────────────────────────────
   // No transaction, no database. The position is written by the session's

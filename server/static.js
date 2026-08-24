@@ -101,6 +101,65 @@ function mount(app, { floorRooms }) {
     res.send(room.mapPayload);
   });
 
+  // ── the bot's own name ───────────────────────────────────────────────────
+  // The login screen builds a t.me link from it. Resolved once from getMe and
+  // then cached in memory — the old route hit Telegram on every miss, which is
+  // a third-party call on the path of the first page a player ever sees.
+  //
+  // Answered as 503 rather than a guess when the token is missing or Telegram
+  // is down: a link to the wrong bot is worse than no link.
+  let botName = process.env.TG_BOT_USERNAME || null;
+  let botPending = null;
+  app.get('/tg-botname', async (_req, res) => {
+    if (botName) return res.json({ username: botName });
+    const token = process.env.TG_BOT_TOKEN;
+    if (!token) return res.status(503).json({ error: 'bot not resolved' });
+    try {
+      // One in-flight request, however many callers: a burst of logins after a
+      // restart would otherwise all miss the cache together.
+      botPending = botPending || fetch(`https://api.telegram.org/bot${token}/getMe`)
+        .then(r => r.json())
+        .finally(() => { botPending = null; });
+      const d = await botPending;
+      if (!d || !d.ok) return res.status(503).json({ error: 'bot not resolved' });
+      botName = d.result.username;
+      res.json({ username: botName });
+    } catch {
+      res.status(503).json({ error: 'bot not resolved' });
+    }
+  });
+
+  // ── local development ────────────────────────────────────────────────────
+  // Signs a Telegram initData for a made-up account so the game can be opened
+  // in an ordinary browser. OFF unless DEV_LOCAL is set, and refuses outright
+  // when NODE_ENV is production even if it is: this route mints a login, and
+  // the only thing standing between it and anyone's account is that it is not
+  // mounted. A flag that can be set by accident is not enough — both have to
+  // agree.
+  if (process.env.DEV_LOCAL === '1' && process.env.NODE_ENV !== 'production') {
+    const crypto = require('crypto');
+    console.log('DEV_LOCAL: /dev/init-data enabled — local browser login');
+    app.get('/dev/init-data', (req, res) => {
+      const token = process.env.TG_BOT_TOKEN;
+      if (!token) return res.status(503).json({ error: 'TG_BOT_TOKEN not set' });
+      const username = (String(req.query.dev || 'dev').slice(0, 32).replace(/[^\w-]/g, '')) || 'dev';
+      // Derived from the name rather than random, so reopening the page comes
+      // back to the SAME account and yesterday's character is still there.
+      const telegramId = '9' + parseInt(
+        crypto.createHash('sha1').update(username).digest('hex').slice(0, 10), 16).toString().slice(0, 9);
+      const params = new URLSearchParams({
+        user: JSON.stringify({ id: Number(telegramId), username, first_name: username }),
+        auth_date: String(Math.floor(Date.now() / 1000)),
+        query_id: 'DEV',
+      });
+      const checkStr = [...params.entries()].sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}=${v}`).join('\n');
+      const secret = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+      params.set('hash', crypto.createHmac('sha256', secret).update(checkStr).digest('hex'));
+      res.json({ initData: params.toString() });
+    });
+  }
+
   // ── pages ────────────────────────────────────────────────────────────────
   app.get(Object.keys(PAGES), (req, res) => {
     if (PAGES[req.path] === 'index.html') {

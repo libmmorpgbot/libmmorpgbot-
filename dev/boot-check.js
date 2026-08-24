@@ -192,6 +192,28 @@ async function main() {
   sock.emit('selectChar', { type: 'deathknight' });
   const start = await once(sock, 'gameStart', 15000);
   ok(!!start, 'selectChar повернув gameStart');
+
+  // ── the SHAPE of the reply ───────────────────────────────────────────────
+  // Nothing static can check this. protocol-check compares event names and the
+  // keys of what the CLIENT sends; what the server sends back is only
+  // verifiable by something that reads it the way the client does.
+  //
+  // The rewrite sent gameStart with the player's half only — no spawn point,
+  // no enemy snapshot, no mode state. The client destructures all of it in one
+  // statement, so it got six undefineds, never finished starting, and sat on
+  // the character select with a live socket behind it. Found by opening the
+  // game in a browser; kept honest by the list below.
+  for (const k of ['floor', 'mapVersion', 'spawn', 'enemies', 'bossStatus',
+                   'deathBattle', 'race10', 'arena3', 'guildWar']) {
+    ok(k in start, `gameStart несе '${k}' — клієнт читає його одним деструктуруванням`);
+  }
+  ok(start.spawn && Number.isFinite(start.spawn.x) && Number.isFinite(start.spawn.y),
+    `точка появи справжня (${start.spawn && start.spawn.x}, ${start.spawn && start.spawn.y})`);
+  ok(Array.isArray(start.enemies), 'знімок ворогів — масив, навіть коли їх немає');
+  ok(typeof start.mapVersion === 'string' && start.mapVersion.length > 0,
+    `версія карти є (${start.mapVersion}) — без неї клієнт не витягне геометрію`);
+  ok(start.progress && start.items && start.balances && start.stats,
+    'і половина гравця теж на місці — прогрес, речі, баланси, стати');
   eq(start.floor, 1, 'новий персонаж стартує в хабі');
   ok(start.stats && start.stats.charClass === 'deathknight', 'клас записаний і повернувся з бази');
   ok(start.mapVersion, 'версія карти передана — клієнт тягне геометрію окремо і кешує');

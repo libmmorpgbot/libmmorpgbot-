@@ -220,6 +220,52 @@ class Session {
     if (ids.length) this.io.to(ids).emit(event, payload);
   }
 
+  // ── what the client needs to DRAW a floor ────────────────────────────────
+  // As opposed to everything it needs to know about the PLAYER, which is
+  // fullState. gameStart carries both, and the rewrite sent only the second
+  // half — so the packet arrived with no spawn point, no enemy snapshot and no
+  // mode state, the client destructured six undefineds, and the screen stayed
+  // on the character select with a live socket behind it.
+  //
+  // No static check can see this. dev/protocol-check.js compares event NAMES
+  // and the keys of what the client SENDS; the shape of a REPLY is only
+  // verifiable by a client actually reading it. That is what dev/live-check.js
+  // is for.
+  //
+  // Every mode answers "is this player in it", because the client resumes a
+  // run from this packet: a reconnect mid-wave has to come back into the wave
+  // rather than to an empty hub.
+  worldPayload(floor, room = null, modes = null) {
+    const r = room || this.room;
+    if (!r) return { floor, mapVersion: null };
+    const sid = this.socket.id;
+    const me = r.players.get(sid);
+    const m = modes || require('./modes').modes || {};
+    const { FEAR_MAX_WAVE, COOP_STAGE_LEVELS } = require('../shared/definitions');
+    const inFear = m._fear && m._fear.get(sid);
+    const inCoop = m._coop && m._coop.get(sid);
+    return {
+      floor,
+      mapVersion: r.mapVersion,
+      spawn: me ? { x: me.x, y: me.y } : undefined,
+      enemies: r.enemySnapshot ? r.enemySnapshot(sid) : [],
+      bossStatus: r.getBossStatus ? r.getBossStatus() : null,
+      eventBoss: r.eventBossState ? r.eventBossState() : null,
+      deathBattle: m._dbPublicState
+        ? { ...m._dbPublicState(), registered: !!(m._db && m._db.reg.has(sid)) } : null,
+      race10: m._race10PublicState
+        ? { ...m._race10PublicState(), registered: !!(m._race10 && m._race10.queue.has(sid)) } : null,
+      arena3: m._a3PublicState
+        ? { ...m._a3PublicState(), registered: !!(m._a3 && m._a3.queue.has(sid)) } : null,
+      guildWar: m._gwPublicState ? m._gwPublicState() : null,
+      fear: inFear ? { inRun: true, wave: inFear.wave, maxWave: FEAR_MAX_WAVE } : null,
+      coop: inCoop && inCoop.room
+        ? { inRun: true, stage: inCoop.room.coopStage(), maxStage: COOP_STAGE_LEVELS.length }
+        : null,
+      farm2: m._farm2 && m._farm2.has(sid) ? { inRun: true } : null,
+    };
+  }
+
   // ── moved by the server, not by the player ───────────────────────────────
   // A mode deploying its entrants, a run ending, the guild-war window closing:
   // all of them move a player to a floor they may not be able to walk into. The
@@ -280,8 +326,7 @@ class Session {
     // the caller needs its answer now and the client can afford one tick.
     this.fullState(null)
       .then(state => this.socket.emit('gameStart', {
-        ...state, floor: target,
-        mapVersion: dest.mapVersion == null ? null : dest.mapVersion,
+        ...state, ...this.worldPayload(target, dest),
       }))
       .catch(err => console.error('[session] forceFloor push:', err.message));
 

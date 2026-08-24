@@ -636,7 +636,7 @@ function _renderCreate(el) {
       <div class="clan-form-title">${typeof t === 'function' ? t('clanCreateTitle') : 'Создать клан'}</div>
       <div class="clan-form-label" style="color:${canAfford ? '#e3941d' : '#da4658'}">${typeof t === 'function' ? t('clanCostLbl') : 'Стоимость'}: ${CLAN_CREATE_COST} ${typeof t === 'function' ? t('npcGoldLbl').toLowerCase() : 'золота'} ${canAfford ? '' : (typeof t === 'function' ? t('clanNotEnough') : '(не хватает)')}</div>
       <div class="clan-form-label" style="margin-top:10px">${typeof t === 'function' ? t('clanNameLbl') : 'Название (до 10 символов)'}</div>
-      <input class="clan-input" id="clan-name-inp" maxlength="10" placeholder="${typeof t === 'function' ? t('clanNamePlaceholder') : 'Название...'}" value="${_clanNewName}"
+      <input class="clan-input" id="clan-name-inp" maxlength="10" placeholder="${typeof t === 'function' ? t('clanNamePlaceholder') : 'Название...'}" value="${_escAttr(_clanNewName)}"
              oninput="_clanNewName=this.value;_clanUpdatePreview()">
       <div class="clan-form-label" style="margin-top:14px">${typeof t === 'function' ? t('clanIconLbl') : 'Иконка клана'}</div>
       <div class="clan-icon-preview" onclick="_clanPickIcon()">
@@ -1077,9 +1077,10 @@ function showClanLevelUp(level) {
 }
 
 // ── Helpers ───────────────────────────────────────────────
-function _esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+// One escaper, not two near-copies. This was the same four lines as _escHtml
+// in network.js, and two copies of a security rule is one copy that will not
+// be updated the day the rule changes.
+function _esc(s) { return _escHtml(String(s == null ? '' : s)); }
 
 // Called from network.js when server pushes clan state
 function onClanData(data) {
