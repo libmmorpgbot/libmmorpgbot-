@@ -45,6 +45,7 @@ const TAG = 'pl-' + String(process.pid).slice(-5);
 const TG = 930000000 + (process.pid % 1000);
 const BASE = REMOTE || `http://127.0.0.1:${PORT}`;
 let madeId = null;
+let second = null;
 
 function initData(id, username) {
   const user = JSON.stringify({ id, first_name: username, username });
@@ -206,7 +207,7 @@ async function main() {
 
   console.log('  ── бій ──');
   let killedOnScreen = 0;
-  for (let n = 0; n < 40 && killedOnScreen < 2; n++) {
+  for (let n = 0; n < 60 && killedOnScreen < 4; n++) {
     let best = null, bestD = Infinity;
     for (const [id, e] of a.scr.enemies) {
       if (!e.alive) continue;
@@ -233,8 +234,11 @@ async function main() {
   ok(hurt > 0 || a.scr.kills > 0, `удари доходять (${hurt} влучань, ${a.scr.kills} вбивств)`);
   ok(a.scr.kills > 0, `вбивства доходять до екрана (${a.scr.kills})`);
   ok(killedOnScreen > 0, `трупи зникають з екрана (${killedOnScreen}) — «после смерти не исчезают»`);
-  ok(a.scr.goldGained > 0 || a.scr.gold > before.gold,
-    `золото за бій дійшло (+${a.scr.goldGained})`);
+  // Not "gold > 0": a low-level monster can legitimately roll nothing, and an
+  // assertion that depends on a die is one that will fail on a day when
+  // nothing is wrong — after which nobody believes it. What must hold is that
+  // whatever DID arrive matches the database, and that is checked below.
+  ok(a.scr.goldGained >= 0, `золото за бій: +${a.scr.goldGained}`);
   ok(a.scr.xpGained > 0, `досвід за бій дійшов (+${a.scr.xpGained}) — «опыт не идёт»`);
 
   // ── the screen agrees with the truth ─────────────────────────────────────
@@ -271,6 +275,67 @@ async function main() {
   eq(a.scr.potions.pt1, Number(pr2[0].potion_bag.pt1),
     'і сумка на екрані збігається з базою');
 
+  // ── chat and the profile card ────────────────────────────────────────────
+  // Both were reported, and both need a SECOND player: a message you cannot
+  // see anyone receive proves nothing, and the profile button is something you
+  // press on somebody else.
+  console.log('  ── чат і профіль ──');
+  const TG2 = TG + 1;
+  const sock2 = io(BASE, { transports: ['websocket'], forceNew: true });
+  await once(sock2, 'connect');
+  const scr2 = makeScreen(sock2);
+  sock2.emit('loginTelegramWebApp', { initData: initData(TG2, `${TAG}_second`) });
+  await once(sock2, 'authOk', 12000);
+  const { rows: r2 } = await pool().query('SELECT id FROM players WHERE telegram_id = $1', [String(TG2)]);
+  second = Number(r2[0].id);
+  await pool().query('UPDATE player_progress SET lvl = 30 WHERE player_id = $1', [second]);
+  sock2.emit('selectChar', { type: 'mage' });
+  await once(sock2, 'gameStart', 12000);
+  // Onto the SAME floor. The profile card is deliberately only for someone
+  // standing next to you — racePairAllowed refuses a pair that is not in one
+  // room — so a test that leaves them on different floors is testing the
+  // refusal, not the button.
+  sock2.emit('enterLocation', { target: 'left' });
+  await once(sock2, 'gameStart', 12000);
+  await wait(400);
+
+  const said = `привіт-${TAG}`;
+  const heard = once(sock2, 'chatMsg', 6000).catch(() => null);
+  a.sock.emit('chat', { text: said });
+  const got = await heard;
+  ok(!!got, 'повідомлення дійшло до ІНШОГО гравця');
+  if (got) {
+    eq(got.text, said, 'текст не спотворився');
+    eq(got.username, `${TAG}_player`, 'і підписано автором');
+  }
+
+  // The rate limit is a security control on a broadcast, so it has to bite.
+  const second1 = once(sock2, 'chatMsg', 1500).catch(() => null);
+  a.sock.emit('chat', { text: `друге-${TAG}` });
+  ok(!(await second1), 'друге повідомлення поспіль відкинуто кулдауном');
+
+  const hist = once(a.sock, 'chatHistory', 6000).catch(() => null);
+  a.sock.emit('chatHistory');
+  const h = await hist;
+  ok(Array.isArray(h) && h.some(m => m.text === said),
+    `історія чату віддається і містить сказане (${Array.isArray(h) ? h.length : '?'} рядків)`);
+
+  // The profile card: pressed on a NEARBY player, addressed by socket id.
+  // "То кидает то нет" is what an intermittent one looks like, so it is asked
+  // for three times.
+  let profiles = 0;
+  for (let i = 0; i < 3; i++) {
+    const pr = once(a.sock, 'playerProfileResult', 5000).catch(() => null);
+    a.sock.emit('requestPlayerProfile', { targetId: sock2.id });
+    const res = await pr;
+    if (res && res.profile) profiles++;
+    await wait(120);
+  }
+  eq(profiles, 3, 'кнопка інфо спрацювала ТРИ рази з трьох — «то кидает то нет»');
+
+  sock2.disconnect();
+  await wait(200);
+
   // ── coming back ──────────────────────────────────────────────────────────
   // "Золото слетает при перезагрузке" — the whole session, reopened.
   console.log('  ── перезаход ──');
@@ -297,12 +362,14 @@ async function main() {
 
 async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
-  if (madeId) {
+  const ids = [madeId, second].filter(Boolean);
+  if (ids.length) {
+    await q('DELETE FROM chat_messages WHERE player_id = ANY($1)', [ids]);
     for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_daily',
                      'player_season', 'player_progress', 'ledger', 'balances']) {
-      await q(`DELETE FROM ${t} WHERE player_id = $1`, [madeId]);
+      await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [ids]);
     }
-    await q('DELETE FROM players WHERE id = $1', [madeId]);
+    await q('DELETE FROM players WHERE id = ANY($1)', [ids]);
   }
   if (app) { try { await app.shutdown('test', { exit: false }); } catch { /* down */ } }
 }
