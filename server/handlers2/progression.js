@@ -20,6 +20,7 @@ const stats = require('../db/repos/stats');
 const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, REBIRTH_LEVEL, REBIRTH_BONUS_SP,
   rebirthCostFor, UPGRADE_RESET_COST, SKILL_UPGRADE_CHANCE,
+  SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
 } = require('../../shared/definitions');
 const shop = require('../shop');
@@ -35,13 +36,23 @@ module.exports = function registerProgression(s, safeOn) {
   // version's "my passive rolled back" reports came from these being two
   // steps: the book was spent, the level was written into a client-owned map,
   // and a save arriving from a stale client wrote the old map back over it.
-  async function study(t, pid, kind, key, bookId, max) {
+  // ── the price is in shared/definitions.js, and both sides must read it ───
+  // The client greys the button out until you hold SKILL_STUDY_COST (1),
+  // SKILL_UPGRADE_COST (2) or ADV_SKILL_STUDY_COST (5) copies of the book, and
+  // then shows the count going down by that many. Every handler here charged
+  // exactly one, so an advanced skill cost five books on screen and one in the
+  // database — the panel and the bag disagreed from the moment of the click,
+  // which is what "я активировал, а книги на месте / навыка нет" describes
+  // from either side of the discrepancy.
+  async function study(t, pid, kind, key, bookId, max, cost = SKILL_STUDY_COST) {
     const current = (await players.skillsOf(t, pid));
     const map = kind === 'passive' ? current.passiveLevels : current.skillLevels;
     if ((map[key] || 0) >= max) fail('Уже максимальный уровень', 'maxed');
 
     await items.lockPlayer(t, pid);
-    if (!await items.removeQty(t, pid, bookId, 1)) fail('Нет нужной книги', 'no_book');
+    if (!await items.removeQty(t, pid, bookId, cost)) {
+      fail(`Нужно книг: ${cost}`, 'no_book');
+    }
 
     const res = await players.bumpSkill(t, pid, kind, key);
     if (!res.changed) fail('Уже максимальный уровень', 'maxed');
@@ -65,7 +76,9 @@ module.exports = function registerProgression(s, safeOn) {
 
     await items.lockPlayer(t, pid);
     const bookId = skillBookId(prog.charClass, key);
-    if (!await items.removeQty(t, pid, bookId, 1)) fail('Нет нужной книги', 'no_book');
+    if (!await items.removeQty(t, pid, bookId, SKILL_UPGRADE_COST)) {
+      fail(`Нужно книг: ${SKILL_UPGRADE_COST}`, 'no_book');
+    }
 
     // crypto, not Math.random: this decides whether a book is consumed for
     // nothing, and a book is a tradeable item.
@@ -89,9 +102,13 @@ module.exports = function registerProgression(s, safeOn) {
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
+  // Studying a passive costs one book; raising it costs two — the same split
+  // the client applies (studyPassiveSkill / upgradePassiveSkillWithBook,
+  // js/ui.js). These two handlers shared one body and one price.
   safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'progressError', async (t, pid) => {
     if (typeof id !== 'string' || !id) return;
-    const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
+    const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL,
+      SKILL_UPGRADE_COST);
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
@@ -100,8 +117,8 @@ module.exports = function registerProgression(s, safeOn) {
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
     await items.lockPlayer(t, pid);
-    if (!await items.removeQty(t, pid, advSkillBookId(prog.charClass, key), 1)) {
-      fail('Нет книги продвинутого навыка', 'no_book');
+    if (!await items.removeQty(t, pid, advSkillBookId(prog.charClass, key), ADV_SKILL_STUDY_COST)) {
+      fail(`Нужно книг продвинутого навыка: ${ADV_SKILL_STUDY_COST}`, 'no_book');
     }
     await players.setSkillLevel(t, pid, 'adv_learned', key, 1);
     await s.pushItems(t); await pushAfterStat(t);

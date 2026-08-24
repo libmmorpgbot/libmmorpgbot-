@@ -60,6 +60,7 @@ const once = (sock, ev, ms = 8000) => new Promise((res, rej) => {
   sock.once(ev, d => { clearTimeout(to); res(d); });
 });
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const wait0 = w => `хвиля ${w.wave}/${w.maxWave}`;
 
 // ── the screen ──────────────────────────────────────────────────────────────
 // Everything below is updated ONLY from packets, exactly as the client updates
@@ -122,6 +123,14 @@ function makeScreen(sock) {
     scr.xpGained += k.xp || 0;
   });
   sock.on('enemiesRemoved', ({ ids } = {}) => { for (const id of (ids || [])) scr.enemies.delete(id); });
+  // Which species died. The kill packet carries `eid`, which is what lets the
+  // quest section below pick a quest the bot can actually finish.
+  scr.killedEids = [];
+  sock.on('enemyKilled', k => { if (k && k.eid) scr.killedEids.push(k.eid); });
+  scr.questSyncs = [];
+  sock.on('questSync', q => scr.questSyncs.push(q));
+  scr.fearWaves = [];
+  sock.on('fearWave', w => scr.fearWaves.push(w));
   return scr;
 }
 
@@ -147,6 +156,19 @@ async function main() {
   madeId = Number(rows[0].id);
 
   ok(!!a.auth.savedData, 'клієнт отримав savedData — без нього персонаж порожній');
+
+  // ── the packet the client destructures TWELVE names out of ───────────────
+  // Six of them were missing, and every one has a `|| default` behind it, so
+  // nothing threw: VIP 9 drew as VIP 0 on every reload, the clan panel was
+  // empty for every member, the referral link was blank. Presence of the KEY
+  // is the assertion — the values are per-account and mostly zero for a fresh
+  // one, and it is the key's absence that produced every symptom.
+  for (const k of ['vipData', 'refLink', 'seasonTicketActive', 'vipAuras', 'clanInfo']) {
+    ok(k in a.auth, `authOk несе '${k}' — без нього панель малює свій дефолт`);
+  }
+  ok(a.auth.vipData && typeof a.auth.vipData.level === 'number'
+     && Array.isArray(a.auth.vipData.pending),
+    'vipData має рівень і список незібраних нагород');
   eq(a.scr.potions.pt1, 30, `на екрані 30 зіль (${JSON.stringify(a.scr.potions)})`);
   eq(a.scr.lvl, 1, 'рівень 1');
 
@@ -263,6 +285,83 @@ async function main() {
   // the server has TOLD it.
   ok(a.scr.lvl >= 1, `рівень на екрані (${a.scr.lvl})`);
 
+  // ── the quest chain ──────────────────────────────────────────────────────
+  // Two players earned 174,000 gold between them with quest 1 of 60 still
+  // reading zero of ten. The counter was bumped from `result.enemyName` — a
+  // field nothing has ever set — so `if (undefined)` skipped it on every kill
+  // the game has ever resolved.
+  //
+  // The quest is chosen from what the bot ACTUALLY KILLED a moment ago, which
+  // is the only way to make this deterministic: the arm it walks through is
+  // whatever the world generated, and asserting against a hard-coded species
+  // would be asserting about the map.
+  console.log('  ── квести ──');
+  const { QUEST_DEF: QD, ENEMY_DEF: ED } = require('../shared/definitions');
+  const killedNames = new Set(a.scr.killedEids
+    .map(eid => (ED.find(e => e.eid === eid) || {}).name).filter(Boolean));
+  const qIdx = QD.findIndex(q => q.type === 'kill'
+    && (q.enemies || []).some(n => killedNames.has(n)));
+  if (qIdx < 0) {
+    ok(false, `не знайшлось квесту під убитих (${[...killedNames].join(', ') || 'нікого'})`);
+  } else {
+    const qDef = QD[qIdx];
+    await pool().query(
+      `UPDATE player_progress SET quest_idx = $2, quest_kills = '{}'::jsonb WHERE player_id = $1`,
+      [madeId, qIdx]);
+    a.scr.questSyncs.length = 0;
+
+    // One more kill of that species, through the same attack handler a player
+    // uses. Hunted for rather than assumed nearby: another player clearing the
+    // area is not a failure of the quest chain.
+    const wantEids = new Set(qDef.enemies.map(n => (ED.find(e => e.name === n) || {}).eid));
+    let questKill = false;
+    for (let n = 0; n < 200 && !questKill; n++) {
+      let best = null, bestD = Infinity;
+      for (const [id, e] of a.scr.enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.x - a.scr.x, e.y - a.scr.y);
+        if (d < bestD) { bestD = d; best = id; }
+      }
+      if (!best) { await wait(200); continue; }
+      if (bestD > 300) {
+        const e = a.scr.enemies.get(best);
+        const dx = e.x - a.scr.x, dy = e.y - a.scr.y, d = Math.hypot(dx, dy) || 1;
+        a.scr.x += (dx / d) * 5; a.scr.y += (dy / d) * 5;
+        a.sock.emit('mv', [Math.round(a.scr.x * 2), Math.round(a.scr.y * 2), 0, 100, 1]);
+        await wait(30);
+        continue;
+      }
+      const seen = a.scr.killedEids.length;
+      a.sock.emit('attack', { enemyId: best });
+      await wait(170);
+      for (let i = seen; i < a.scr.killedEids.length; i++) {
+        if (wantEids.has(a.scr.killedEids[i])) questKill = true;
+      }
+    }
+    ok(questKill, `бот убив «${qDef.enemies[0]}» — ціль завдання «${qDef.title}»`);
+    await wait(500);
+
+    const { rows: qrow } = await pool().query(
+      'SELECT quest_kills FROM player_progress WHERE player_id = $1', [madeId]);
+    const counted = qDef.enemies.reduce((n, name) =>
+      n + (Number((qrow[0].quest_kills || {})[name]) || 0), 0);
+    ok(counted > 0, `лічильник завдання зрушив у базі (${counted}/${qDef.count})`);
+    ok(a.scr.questSyncs.length > 0,
+      `клієнт дізнався про це (questSync ×${a.scr.questSyncs.length})`);
+
+    // And the claim itself — the second, independent bug. questComplete takes
+    // three arguments and was called with two, so `kills` was the wrapper
+    // object and every lookup read zero: no quest could be claimed, ever.
+    await pool().query(
+      `UPDATE player_progress SET quest_kills = jsonb_build_object($2::text, $3::int)
+        WHERE player_id = $1`, [madeId, qDef.enemies[0], qDef.count]);
+    const claimed = once(a.sock, 'questClaimed', 6000).catch(() => null);
+    a.sock.emit('claimQuest', { idx: qIdx });
+    const cl = await claimed;
+    ok(!!cl, 'завдання здається — раніше воно відмовляло за будь-яких лічильників');
+    if (cl) eq(cl.nextIdx, qIdx + 1, 'ланцюжок просунувся на наступне завдання');
+  }
+
   // ── drinking ─────────────────────────────────────────────────────────────
   console.log('  ── зілля ──');
   const potsBefore = a.scr.potions.pt1;
@@ -336,6 +435,57 @@ async function main() {
   sock2.disconnect();
   await wait(200);
 
+  // ── Страх: the second wave ───────────────────────────────────────────────
+  // "Страх после первой волны монстры больше не появляются". Wave 1 is spawned
+  // on entry; every wave after it is spawned by _fearTrackKill, and nothing in
+  // the rewrite called _fearTrackKill. The run stood still forever.
+  console.log('  ── Страх ──');
+  a.scr.fearWaves.length = 0;
+  // A refusal and a first wave are both answers; racing the refusal against a
+  // TIMEOUT is not — the timeout resolves null, wins, and reads as "no wave"
+  // even when the run started fine.
+  let fearRefusal = null;
+  a.sock.once('fearError', e => { fearRefusal = e && e.msg; });
+  const w1 = once(a.sock, 'fearWave', 12000).catch(() => null);
+  a.sock.emit('fearEnter');
+  const wave1 = await w1;
+  if (!wave1) {
+    ok(false, `у Страх не пустило: ${fearRefusal || 'без відповіді'}`);
+  } else {
+    ok(wave1 && wave1.wave === 1, `перша хвиля почалась (${wave1 && wait0(wave1)})`);
+    await wait(600);
+    // Clear it. Wave 1 is global monster level 1 against a level-30 character,
+    // so this is a matter of reaching them, not of surviving them.
+    let wave2 = null;
+    for (let n = 0; n < 900 && !wave2; n++) {
+      let best = null, bestD = Infinity;
+      for (const [id, e] of a.scr.enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.x - a.scr.x, e.y - a.scr.y);
+        if (d < bestD) { bestD = d; best = id; }
+      }
+      if (!best) { await wait(120); }
+      else if (bestD > 300) {
+        const e = a.scr.enemies.get(best);
+        const dx = e.x - a.scr.x, dy = e.y - a.scr.y, d = Math.hypot(dx, dy) || 1;
+        a.scr.x += (dx / d) * 6; a.scr.y += (dy / d) * 6;
+        a.sock.emit('mv', [Math.round(a.scr.x * 2), Math.round(a.scr.y * 2), 0, 100, 1]);
+        await wait(28);
+      } else {
+        a.sock.emit('attack', { enemyId: best });
+        await wait(120);
+      }
+      wave2 = a.scr.fearWaves.find(w => w.wave >= 2) || null;
+    }
+    ok(!!wave2, `друга хвиля прийшла${wave2 ? ` (хвиля ${wave2.wave})` : ''} — «после первой волны монстры больше не появляются»`);
+  }
+  // Out of the instance. A Страх run is a PRIVATE room that nobody else can
+  // see into, so anything left running here would fail every later section
+  // that needs two players in one place.
+  a.sock.emit('enterLocation', { target: 'left' });
+  await once(a.sock, 'gameStart', 12000).catch(() => null);
+  await wait(300);
+
   // ── coming back ──────────────────────────────────────────────────────────
   // "Золото слетает при перезагрузке" — the whole session, reopened.
   console.log('  ── перезаход ──');
@@ -346,7 +496,13 @@ async function main() {
   await wait(500);
 
   const b = await connect(`${TAG}_player`);
-  eq(b.scr.gold, db.gold || 0, `золото на місці після перезаходу (${b.scr.gold})`);
+  // Re-read: `db` was sampled before the quest and Страх sections, both of
+  // which legitimately pay. The claim being tested is "what was stored comes
+  // back", not "the number never moved".
+  const { rows: balNow } = await pool().query(
+    `SELECT amount FROM balances WHERE player_id = $1 AND currency = 'gold'`, [madeId]);
+  const goldNow = balNow.length ? Number(balNow[0].amount) : 0;
+  eq(b.scr.gold, goldNow, `золото на місці після перезаходу (${b.scr.gold})`);
   eq(b.scr.lvl, pr[0].lvl, `після перезаходу рівень з бази (${b.scr.lvl})`);
   eq(b.scr.potions.pt1, potsBeforeReload, 'зілля на місці');
   ok(b.scr.inventory.length >= 0, `інвентар прийшов (${b.scr.inventory.length} предметів)`);
