@@ -308,7 +308,28 @@ async function markWithdrawPaid(db, txId, adminTgId, paidTxHash = null) {
   return rows.length ? { playerId: Number(rows[0].player_id), amount: Number(rows[0].amount), address: rows[0].address } : null;
 }
 
-// Refused — the GRAM goes back. Its own idem key so a double press refunds once.
+// ── the two ways to cancel ──────────────────────────────────────────────────
+// They are separate functions rather than one with a flag, because the flag
+// would be the single most consequential argument in this file and the easiest
+// to pass wrongly. The GRAM already left the player's balance when they
+// submitted; one of these puts it back and the other does not.
+
+// Отменить (забрать) — the payout does not happen and the GRAM stays gone. For
+// a fraudulent request or an account being closed out. No credit at all, so
+// there is no idem key: the state change IS the whole effect, and the
+// `status = 'pending'` filter makes it once-only.
+async function forfeitWithdraw(db, txId, adminTgId, note = null) {
+  const { rows } = await query(db, `
+    UPDATE gram_tx SET status = 'forfeited', decided_by = $2, decided_at = now(),
+                       admin_note = COALESCE($3, admin_note)
+     WHERE id = $1 AND type = 'withdraw' AND status = 'pending'
+    RETURNING player_id, amount`, [txId, String(adminTgId), note]);
+  if (!rows.length) return null;
+  return { playerId: Number(rows[0].player_id), amount: Number(rows[0].amount), refunded: false };
+}
+
+// Отменить (вернуть) — the GRAM goes back. Its own idem key so a double press
+// refunds once.
 async function rejectWithdraw(db, txId, adminTgId, reason = null) {
   const { rows } = await query(db, `
     UPDATE gram_tx SET status = 'rejected', decided_by = $2, decided_at = now()
@@ -362,7 +383,7 @@ async function expireStaleIntents(db) {
 
 module.exports = {
   createIntent, scanOnce, classify, creditOnce, recordUnmatched,
-  requestWithdraw, markWithdrawPaid, rejectWithdraw,
+  requestWithdraw, markWithdrawPaid, rejectWithdraw, forfeitWithdraw,
   historyOf, openUnmatched, expireStaleIntents,
   MIN_DEPOSIT_TON, REFERRAL_PCT,
 };

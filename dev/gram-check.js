@@ -171,6 +171,43 @@ async function main() {
     'дві адміни натиснули «виплачено» — зараховується один раз');
   eq(await bal(w), 70, 'виплата не повертає і не списує повторно');
 
+  // ── the three ways a withdrawal ends ─────────────────────────────────────
+  console.log('  ── три кнопки адміна ──');
+  const cards = require('../server/ops-cards');
+
+  // «Отменить (забрать)» — the payout does not happen and the GRAM does NOT
+  // come back. The whole reason it is a separate function from reject().
+  const req3 = await tx(t => gram.requestWithdraw(t, w, 20, ADDR, opts));
+  eq(await bal(w), 50, 'заявка списала кошти');
+  const kept = await tx(t => gram.forfeitWithdraw(t, req3.id, '1199957588', 'фрод'));
+  ok(kept && kept.refunded === false, 'відмова із утриманням повідомляє refunded=false');
+  eq(await bal(w), 50, 'кошти НЕ повернулись — саме цього й хотіли');
+  eq(await tx(t => gram.forfeitWithdraw(t, req3.id, '1199957588')), null, 'повторне натискання — no-op');
+  eq(await bal(w), 50, 'і після повтору баланс не змінився');
+
+  // A decided request cannot be decided again by a different button — two
+  // admins pressing different things within the same second.
+  const req4 = await tx(t => gram.requestWithdraw(t, w, 15, ADDR, opts));
+  const [a, b] = await Promise.all([
+    tx(t => gram.markWithdrawPaid(t, req4.id, '111')).catch(() => null),
+    tx(t => gram.rejectWithdraw(t, req4.id, '222')).catch(() => null),
+  ]);
+  eq([a, b].filter(Boolean).length, 1, 'два адміни натиснули РІЗНІ кнопки — спрацювала одна');
+  const { rows: st4 } = await pool().query('SELECT status FROM gram_tx WHERE id=$1', [req4.id]);
+  ok(['confirmed', 'rejected'].includes(st4[0].status), `статус визначений однозначно (${st4[0].status})`);
+
+  // The card must stay readable after the decision: the buttons go, the
+  // outcome and the admin arrive, and nothing that was there before is lost.
+  const w3 = await cards.loadWithdraw(req3.id, opts.feePct);
+  const before = cards.withdrawCard({ ...w3, status: 'pending' });
+  const after = cards.withdrawCard(w3, { decided: true });
+  ok(before.includes('Исполняется'), 'до рішення картка каже «Исполняется»');
+  ok(after.includes('удержаны'), 'після — каже, що кошти утримані');
+  ok(after.includes(ADDR), 'адрес лишився в картці після рішення');
+  ok(after.includes('1199957588'), 'у картці видно, ЯКИЙ адмін вирішив');
+  ok(after.includes('Создана'), 'час створення лишився');
+  eq(cards.withdrawButtons(req3.id).length, 3, 'кнопок рівно три');
+
   // ── the ledger still explains every balance ──────────────────────────────
   const mine = made.map(Number);
   const drift = (await money.reconcile(null)).filter(r => mine.includes(r.playerId));
