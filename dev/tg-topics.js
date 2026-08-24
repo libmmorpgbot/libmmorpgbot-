@@ -60,6 +60,30 @@ async function api(method, params = {}) {
     }
   }
 
+  // Who may press the money buttons. Read from the GROUP rather than trusted
+  // from a config file: the answer to "who are the admins" should come from
+  // the same place the permission actually lives, so adding someone in
+  // Telegram and forgetting the env var cannot silently grant or withhold it.
+  //
+  // Bots are filtered out — @Liblogsbot is an administrator of this group
+  // itself, and it must never end up in the list of humans allowed to approve
+  // a payout.
+  if (GROUP) {
+    const admins = await api('getChatAdministrators', { chat_id: GROUP });
+    if (admins.ok) {
+      const humans = admins.result.filter(a => a.user && !a.user.is_bot);
+      console.log('Адміністратори групи:\n');
+      for (const a of humans) {
+        const u = a.user;
+        const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+        console.log(`  ${String(u.id).padStart(12)}  ${u.username ? '@' + u.username : '(без ніка)'}  ${name}  [${a.status}]`);
+      }
+      console.log(`\nTG_ADMIN_IDS=${humans.map(a => a.user.id).join(',')}\n`);
+    } else {
+      console.log(`getChatAdministrators не вдався: ${admins.description}\n`);
+    }
+  }
+
   // allowed_updates is left wide so a service message about a created topic is
   // not filtered out before we see it.
   const upd = await api('getUpdates', { limit: 100, timeout: 0 });
