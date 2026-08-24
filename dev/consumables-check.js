@@ -64,7 +64,14 @@ async function main() {
   const POT = ITEM_DEF.find(d => d.slot === 'use' && d.hp);
   await pool().query('UPDATE player_progress SET hp = 10 WHERE player_id = $1', [p]);
 
-  eq(await caught(() => tx(t => con.usePotion(t, p, POT.id))), 'no_potion', 'без зілля — відмова');
+  // A new character now begins with a full bag — that grant used to come from
+  // the CLIENT's default player object and was lost when the client stopped
+  // owning state (migration 007). The suite has to start from what the game
+  // actually gives, not from an assumption of nothing.
+  eq(await bagOf(p, POT.id), 30, 'новий персонаж починає з 30 зіллями');
+
+  await pool().query(`UPDATE player_progress SET potion_bag = '{}'::jsonb WHERE player_id = $1`, [p]);
+  eq(await caught(() => tx(t => con.usePotion(t, p, POT.id))), 'no_potion', 'з порожньою сумкою — відмова');
   eq(await hpOf(p), 10, 'HP не змінилось');
 
   await giveP(p, POT.id, 3);
@@ -95,6 +102,9 @@ async function main() {
   console.log('  ── торговець ──');
   const sh = await mk('shop');
   const ENTRY = MERCHANT_SHOP[0];
+  // Emptied first: the merchant's arithmetic is what is under test, and
+  // starting from the free 30 would hide an off-by-one behind them.
+  await pool().query(`UPDATE player_progress SET potion_bag = '{}'::jsonb WHERE player_id = $1`, [sh]);
   eq(await caught(() => tx(t => con.buyPotions(t, sh, ENTRY.itemId, 3))), 'no_gold',
     'без золота — відмова');
   eq(await bagOf(sh, ENTRY.itemId), 0, 'нічого не додалось');
