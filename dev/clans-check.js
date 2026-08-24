@@ -14,7 +14,9 @@ const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const clans = require('../server/db/repos/clans');
-const { CLAN_MAX_MEMBERS, CLAN_CREATE_COST, UNIQUE_SHARDS } = require('../shared/definitions');
+const {
+  CLAN_MAX_MEMBERS, CLAN_CREATE_COST, UNIQUE_SHARDS, CLAN_STORAGE_MIN_DAYS,
+} = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -40,6 +42,12 @@ const shardsOf = async pid => {
   const inv = await items.inventoryOf(null, pid);
   return (inv.inventory.find(i => i.id === SHARD) || { qty: 0 }).qty;
 };
+
+// Moves every membership in a clan back in time, so the days-in-clan rule can
+// be satisfied without the suite sleeping for a week.
+const backdateJoin = (clanId, days) => pool().query(
+  `UPDATE clan_members SET joined_at = now() - ($2 || ' days')::interval WHERE clan_id = $1`,
+  [clanId, String(days)]);
 
 async function main() {
   console.log(`\nclans-check  (${TAG})\n`);
@@ -103,8 +111,25 @@ async function main() {
   eq((await clans.fullView(null, c.clanId)).members.length, CLAN_MAX_MEMBERS,
     `учасників рівно ${CLAN_MAX_MEMBERS}, не ${CLAN_MAX_MEMBERS + 1}`);
 
-  // ── storage: shards are conserved ────────────────────────────────────────
+  // ── storage: the days-in-clan rule ───────────────────────────────────────
+  // CLAN_STORAGE_MIN_DAYS counts a MEMBER'S days in the clan, not the clan's
+  // own age. The rule exists so that joining, emptying the storage and leaving
+  // takes a week rather than a minute — a version that gated on the clan's age
+  // reads almost the same and stops nothing.
   await giveShards(m1, 100);
+  eq(await caught(() => tx(t => clans.deposit(t, m1, c.clanId, SHARD, 10))), 'too_new',
+    `учасник, який щойно вступив, до сховища не допущений (треба ${CLAN_STORAGE_MIN_DAYS} днів)`);
+  eq(await shardsOf(m1), 100, 'відмова нічого не забрала');
+  eq((await clans.storageView(null, c.clanId, m1)).canUse, false,
+    'панель показує, що складом ще не можна користуватись');
+
+  // Backdated so the rest of the storage tests can run. Everything below is
+  // about conservation, which is a different property from access.
+  await backdateJoin(c.clanId, CLAN_STORAGE_MIN_DAYS + 1);
+  eq((await clans.storageView(null, c.clanId, m1)).canUse, true,
+    'через потрібну кількість днів доступ відкривається');
+
+  // ── storage: shards are conserved ────────────────────────────────────────
   eq(await caught(() => tx(t => clans.deposit(t, m1, c.clanId, 'sw1', 1))), 'not_shard',
     'у сховище приймаються лише Осколки');
   eq(await caught(() => tx(t => clans.deposit(t, m1, c.clanId, SHARD, 999))), 'not_enough',

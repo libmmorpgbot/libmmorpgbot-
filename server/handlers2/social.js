@@ -15,6 +15,7 @@
 //     screen.
 
 const clans = require('../db/repos/clans');
+const chat = require('../db/repos/chat');
 const players = require('../db/repos/players');
 const { query } = require('../db');
 const { _sanitizeName, _sanitizeClanDesc } = require('../security');
@@ -41,9 +42,21 @@ module.exports = function registerSocial(s, safeOn, deps) {
   async function pushClan(t) {
     const membership = await clans.clanOf(t, s.playerId);
     if (!membership) return s.socket.emit('clanData', null);
-    const view = await clans.fullView(t, membership.clanId);
-    s.socket.emit('clanData', { ...view, myRole: membership.role });
-    return view;
+    // The shape the client's panel renders: members and applications keyed by
+    // telegram id, because that is the only identifier it ever sees, and _id
+    // because that is what its buttons carry.
+    s.socket.emit('clanData', await clans.dataView(t, membership.clanId, s.playerId));
+    return membership;
+  }
+
+  // The storage is its own panel and its own event. It is not a subset of
+  // clanData: it carries the days-in-clan rule, the unlock price, and the
+  // allocation list filtered to what THIS player may see.
+  async function pushClanStorage(t) {
+    const membership = await clans.clanOf(t, s.playerId);
+    if (!membership) return s.socket.emit('clanStorage', null);
+    s.socket.emit('clanStorage', await clans.storageView(t, membership.clanId, s.playerId));
+    return membership;
   }
 
   // ── membership ───────────────────────────────────────────────────────────
@@ -74,8 +87,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // anything — and without the server inventing a second event for it.
     const sock = deps.socketForPlayerId && deps.socketForPlayerId(target);
     if (sock) {
-      const view = await clans.fullView(t, m.clanId);
-      sock.emit('clanData', { ...view, myRole: 'member' });
+      sock.emit('clanData', await clans.dataView(t, m.clanId, target));
     }
   }));
 
@@ -136,7 +148,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
       if (!m || typeof itemId !== 'string') return;
       await clans.deposit(t, pid, m.clanId, itemId, qty);
       await s.pushItems(t);
-      await pushClan(t);
+      await pushClanStorage(t);
     }));
 
   safeOn('clanStorageGive', ({ telegramId, id: itemId, qty } = {}) =>
@@ -145,7 +157,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
       const m = await clans.clanOf(t, pid);
       if (!target || !m || typeof itemId !== 'string') return;
       await clans.allocate(t, pid, m.clanId, target, itemId, qty);
-      await pushClan(t);
+      await pushClanStorage(t);
     }));
 
   // No payload: the client's button takes everything waiting for it.
@@ -153,7 +165,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     s.act('clanStorageClaim', 'clanError', async (t, pid) => {
       const res = await clans.claimAll(t, pid);
       await s.pushItems(t);
-      await pushClan(t);
+      await pushClanStorage(t);
       s.socket.emit('clanStorageClaimed', res);
     }));
 
@@ -166,7 +178,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
       const a = await clans.allocationIdFor(t, m.clanId, target, itemId);
       if (!a) return;
       await clans.cancelAllocation(t, pid, m.clanId, a);
-      await pushClan(t);
+      await pushClanStorage(t);
     }));
 
   safeOn('clanStorageUnlock', () => s.act('clanStorageUnlock', 'clanError', async (t, pid) => {
@@ -175,11 +187,13 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const { CLAN_STORAGE_UNLOCK_GOLD } = require('../../shared/definitions');
     const res = await clans.unlockStorage(t, pid, m.clanId, CLAN_STORAGE_UNLOCK_GOLD);
     await s.pushBalances(t);
-    await pushClan(t);
+    await pushClanStorage(t);
     s.socket.emit('clanStorageUnlocked', res);
   }));
 
-  safeOn('clanStorageSync', () => s.act('clanStorageSync', 'clanError', async (t) => { await pushClan(t); }));
+  safeOn('clanStorageSync', () => s.act('clanStorageSync', 'clanStorageError', async (t) => {
+    await pushClanStorage(t);
+  }));
 
   // ── chat ─────────────────────────────────────────────────────────────────
   // Rate limited per socket, and the limit is the security control: this
@@ -212,6 +226,75 @@ module.exports = function registerSocial(s, safeOn, deps) {
       username: r.username, text: r.text, time: r.created_at,
     })));
   }));
+
+
+  // ── clan chat ────────────────────────────────────────────────────────────
+  // The cooldown is SHARED with the global chat below, deliberately: it is one
+  // person's rate of speech, not a per-channel allowance. Two counters would
+  // let the same player post twice as often by alternating channels.
+  safeOn('clanChat', ({ text } = {}) => s.act('clanChat', 'chatError', async (t, pid) => {
+    if (typeof text !== 'string') return;
+    const now = Date.now();
+    if (now - lastChatAt < CHAT_COOLDOWN_MS) return;
+    const msg = _sanitizeName(text.trim()).slice(0, MAX_LEN);
+    if (!msg) return;
+
+    const m = await clans.clanOf(t, pid);
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
+    lastChatAt = now;
+
+    const posted = await chat.postClan(t, m.clanId, pid, s.username, msg);
+    // Delivered to the members who are online, by looking up each one's socket
+    // — the same list the panel is built from, so a member who joined a second
+    // ago is included and one who left is not.
+    const view = await clans.fullView(t, m.clanId);
+    for (const member of (view.members || [])) {
+      const sock = deps.socketForPlayerId && deps.socketForPlayerId(member.playerId);
+      if (sock) sock.emit('clanChatMsg', { username: posted.username, text: posted.text });
+    }
+  }));
+
+  safeOn('clanChatHistory', () => s.act('clanChatHistory', 'chatError', async (t, pid) => {
+    const m = await clans.clanOf(t, pid);
+    s.socket.emit('clanChatHistory', {
+      messages: m ? await chat.clanHistory(t, m.clanId) : [],
+    });
+  }));
+
+  // ── direct messages ──────────────────────────────────────────────────────
+  // Stored once per conversation rather than once per participant, so the two
+  // sides cannot drift — and stored at all, which is new: the history was a
+  // Map in the process and every restart erased every conversation.
+  safeOn('privMsg', ({ toUsername, text } = {}) => s.act('privMsg', 'privMsgError', async (t, pid) => {
+    if (typeof text !== 'string' || typeof toUsername !== 'string') return;
+    const now = Date.now();
+    if (now - lastChatAt < CHAT_COOLDOWN_MS) return;
+    const msg = _sanitizeName(text.trim()).slice(0, MAX_LEN);
+    if (!msg) return;
+
+    const target = await chat.playerByUsername(t, toUsername);
+    if (!target) fail(`Пользователь @${toUsername} не найден`, 'no_user');
+    if (target.id === pid) fail('Нельзя написать самому себе', 'self');
+    lastChatAt = now;
+
+    const posted = await chat.sendDirect(t, pid, s.username, target.id, msg);
+    // Both sides see the thread named by the OTHER person, which is how the
+    // client indexes its conversation list.
+    s.socket.emit('privMsg', { withUsername: target.username, username: s.username, text: posted.text });
+    const sock = deps.socketForPlayerId && deps.socketForPlayerId(target.id);
+    if (sock) sock.emit('privMsg', { withUsername: s.username, username: s.username, text: posted.text });
+  }));
+
+  safeOn('privMsgHistory', ({ withUsername } = {}) =>
+    s.act('privMsgHistory', 'privMsgError', async (t, pid) => {
+      if (typeof withUsername !== 'string') return;
+      const target = await chat.playerByUsername(t, withUsername);
+      if (!target) fail(`Пользователь @${withUsername} не найден`, 'no_user');
+      s.socket.emit('privMsgHistory', {
+        withUsername: target.username,
+        messages: await chat.directHistory(t, pid, target.id),
+      });
+    }));
 
   // ── public profile ───────────────────────────────────────────────────────
   // Answered from the database, not relayed to the target's client. The old

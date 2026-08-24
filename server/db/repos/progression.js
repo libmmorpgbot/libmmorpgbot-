@@ -23,7 +23,11 @@ const items = require('./items');
 const money = require('./money');
 const {
   VIP_THRESHOLDS, QUEST_DEF, questComplete, seasonActive,
-  SEASON_REF_POINTS, SEASON_REF_LEVEL,
+  SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
+  SEASON_PRIZES, SEASON_VIP_PRIZE, SEASON_ENHANCE_SPECIAL_SLOTS,
+  SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS, SEASON_ADV_BOOK_POINTS,
+  SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS, SEASON_REBIRTH_POINTS,
+  SEASON_SHOP_POINTS_PER_GRAM, CRAFT_MATS,
 } = require('../../../shared/definitions');
 
 class ProgressionError extends Error {
@@ -275,6 +279,129 @@ async function seasonOf(db, playerId, season = CURRENT_SEASON) {
 // The upsert below is the whole rule: `used + 1 <= limit` inside the WHERE
 // means "take an attempt if one is left" is a single decision. Zero rows back
 // means none was left, and nothing was spent.
+
+// ── burning for season points ───────────────────────────────────────────────
+// Gear is destroyed outright: no gold, no materials back, only points. So the
+// two writes — the item gone, the points added — have to be one thing. The old
+// handler could not make them one, and its comment says exactly what it chose
+// instead:
+//
+//     "Points FIRST. The destruction used to be committed before this await,
+//      so a failed points write burned the item for nothing. Awarding first
+//      means the worst case is points credited for a burn that then didn't
+//      happen, which the player can simply redo."
+//
+// That is a well-reasoned choice between two bad outcomes, and inside a
+// transaction there is no choice to make: either both happen or neither does.
+// The re-resolution after the await, the index re-check, the desync branch that
+// pushed the whole inventory back and logged 'season_burn_desync' — all of it
+// was scaffolding for a gap that no longer exists.
+//
+// The VALUE comes from item_catalog, never from the request. A crafted burn
+// claiming a common is an uncommon is the difference between 1 point and 5.
+
+// What one row is worth. Non-stackable only: books have their own flat rate,
+// and materials are worth nothing.
+async function burnValueOf(db, playerId, rowId) {
+  const { rows } = await query(db, `
+    SELECT pi.id, pi.item_id, c.rarity, c.stackable
+      FROM player_items pi JOIN item_catalog c ON c.item_id = pi.item_id
+     WHERE pi.id = $1 AND pi.player_id = $2 AND pi.container = 'inventory'`,
+    [rowId, playerId]);
+  if (!rows.length) return null;
+  const r = rows[0];
+  if (r.stackable) return null;
+  return { itemId: r.item_id, rarity: r.rarity, points: SEASON_BURN_POINTS[r.rarity] || 0 };
+}
+
+async function burnItem(db, playerId, rowId) {
+  if (!seasonActive()) err('season_over', 'Сезон завершён');
+  await items.lockPlayer(db, playerId);
+
+  const v = await burnValueOf(db, playerId, rowId);
+  if (!v) err('not_found', 'Предмет не найден — список обновлён');
+  if (!v.points) err('cannot_burn', 'Этот предмет нельзя сжечь');
+
+  const { rowCount } = await query(db,
+    'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
+  if (!rowCount) err('not_found', 'Предмет не найден — список обновлён');
+
+  const total = await addSeasonPoints(db, playerId, v.points);
+  return { burned: 1, points: v.points, total: total == null ? 0 : total, itemId: v.itemId };
+}
+
+// Everything of one rarity, in one statement. The old version collected the
+// indices, awaited the points write, then re-checked each index on the way back
+// because the array could have moved — a loop that could half-finish. This
+// deletes exactly the rows it counted, because it counts and deletes in the
+// same statement.
+async function burnAllOfRarity(db, playerId, rarity) {
+  if (!seasonActive()) err('season_over', 'Сезон завершён');
+  const per = SEASON_BURN_POINTS[rarity];
+  if (!per) err('cannot_burn', 'Эту редкость нельзя сжечь');
+  await items.lockPlayer(db, playerId);
+
+  const { rows } = await query(db, `
+    DELETE FROM player_items pi
+     USING item_catalog c
+     WHERE c.item_id = pi.item_id
+       AND pi.player_id = $1 AND pi.container = 'inventory'
+       AND NOT c.stackable AND c.rarity = $2
+    RETURNING pi.id`, [playerId, rarity]);
+  if (!rows.length) err('nothing', 'Нечего сжигать');
+
+  const points = rows.length * per;
+  const total = await addSeasonPoints(db, playerId, points);
+  return { burned: rows.length, points, total: total == null ? 0 : total };
+}
+
+// Books are stackable, so they are addressed by id and count rather than by
+// row, and they pay a flat rate whichever book it is.
+async function burnBooks(db, playerId, itemId, qty) {
+  if (!seasonActive()) err('season_over', 'Сезон завершён');
+  const def = CRAFT_MATS.find(m => m.id === itemId);
+  if (!def || !(def.skillKey || def.passiveId || def.advSkillKey)) {
+    err('cannot_burn', 'Эту вещь нельзя сжечь');
+  }
+  await items.lockPlayer(db, playerId);
+
+  const have = await items.countMatching(db, playerId, { itemIds: [itemId] });
+  if (!have) err('not_found', 'Предмет не найден — список обновлён');
+  const n = Math.max(1, Math.min(Math.floor(Number(qty)) || 1, have));
+
+  if (!await items.removeQty(db, playerId, itemId, n)) {
+    err('not_found', 'Предмет не найден — список обновлён');
+  }
+  const points = n * SEASON_BOOK_BURN_POINTS;
+  const total = await addSeasonPoints(db, playerId, points);
+  return { burned: n, points, total: total == null ? 0 : total };
+}
+
+// Everything the season tab renders from, in the shape the client already
+// merges into its own copy. The constants ride along because the client draws
+// the whole "what is worth how much" table from them.
+async function seasonState(db, playerId) {
+  const mine = await seasonOf(db, playerId);
+  return {
+    endAt: SEASON_END_AT,
+    active: seasonActive(),
+    points: mine.points,
+    place: mine.place,
+    minRatingPoints: SEASON_RATING_MIN_POINTS,
+    prizes: SEASON_PRIZES,
+    vipPrize: SEASON_VIP_PRIZE,
+    enhanceSpecialSlots: [...SEASON_ENHANCE_SPECIAL_SLOTS],
+    enhanceSpecial: SEASON_ENHANCE_SPECIAL_POINTS,
+    enhanceGear: SEASON_ENHANCE_GEAR_POINTS,
+    advBookPoints: SEASON_ADV_BOOK_POINTS,
+    burn: SEASON_BURN_POINTS,
+    bookBurnPoints: SEASON_BOOK_BURN_POINTS,
+    ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
+    rebirthPoints: SEASON_REBIRTH_POINTS,
+    shopPointsPerGram: SEASON_SHOP_POINTS_PER_GRAM,
+  };
+}
+
 async function takeAttempt(db, playerId, mode, limit) {
   const { rows } = await query(db, `
     INSERT INTO player_daily (player_id, day, mode, used)
@@ -321,6 +448,7 @@ async function secondsLeft(db, playerId, mode, budgetSeconds) {
 }
 
 module.exports = {
+  burnItem, burnAllOfRarity, burnBooks, burnValueOf, seasonState,
   claimSpecialQuest, claimedSpecialQuests,
   bumpQuestKill, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,

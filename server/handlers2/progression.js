@@ -14,6 +14,8 @@
 const players = require('../db/repos/players');
 const progression = require('../db/repos/progression');
 const items = require('../db/repos/items');
+const shopRepo = require('../db/repos/shop');
+const consumables = require('../db/repos/consumables');
 const stats = require('../db/repos/stats');
 const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, REBIRTH_LEVEL, REBIRTH_BONUS_SP,
@@ -187,6 +189,80 @@ module.exports = function registerProgression(s, safeOn) {
     const board = await progression.seasonBoard(t, { limit: 50 });
     const mine = await progression.seasonOf(t, pid);
     s.socket.emit('seasonRatingData', { board, me: mine });
+  }));
+
+
+  // ── season ───────────────────────────────────────────────────────────────
+  // Burning destroys gear for points — no gold back, no materials. The old
+  // handler could not make the destruction and the award one write, so it
+  // chose the lesser of two bad outcomes and documented the choice: award
+  // first, because points for a burn that did not happen can be redone, while
+  // a burn with no points cannot. Inside a transaction there is no choice.
+  safeOn('seasonSync', () => s.act('seasonSync', 'seasonError', async (t, pid) => {
+    s.socket.emit('seasonState', await progression.seasonState(t, pid));
+  }));
+
+  async function afterBurn(t, pid, res) {
+    await s.pushItems(t);
+    await s.pushStats(t);
+    s.socket.emit('seasonBurned', { burned: res.burned, points: res.points, total: res.total });
+    s.socket.emit('seasonState', await progression.seasonState(t, pid));
+  }
+
+  // By identity, resolved against the DATABASE's list. The old version took an
+  // index into the array the client itself had last written and spliced it —
+  // and burning is irreversible, so addressing the wrong slot destroys the
+  // wrong item. It carried a 'season_burn_desync' log line for exactly that.
+  safeOn('seasonBurn', ({ idx, id, enhance } = {}) => s.act('seasonBurn', 'seasonBurnError', async (t, pid) => {
+    await items.lockPlayer(t, pid);
+    const row = await items.resolveRow(t, pid, { idx, id, enhance }, 'inventory');
+    if (!row) fail('Предмет не найден — список обновлён', 'not_found');
+    await afterBurn(t, pid, await progression.burnItem(t, pid, row));
+  }));
+
+  safeOn('seasonBurnAll', ({ rarity } = {}) => s.act('seasonBurnAll', 'seasonBurnError', async (t, pid) => {
+    if (typeof rarity !== 'string' || !rarity) return;
+    await afterBurn(t, pid, await progression.burnAllOfRarity(t, pid, rarity));
+  }));
+
+  safeOn('seasonBurnBook', ({ id, qty } = {}) => s.act('seasonBurnBook', 'seasonBurnError', async (t, pid) => {
+    if (typeof id !== 'string' || !id) return;
+    await afterBurn(t, pid, await progression.burnBooks(t, pid, id, qty));
+  }));
+
+  // ── the GRAM shop ────────────────────────────────────────────────────────
+  safeOn('gramShopBuy', ({ pkgId, petId } = {}) => s.act('gramShopBuy', 'gramShopError', async (t, pid) => {
+    if (typeof pkgId !== 'string' || !pkgId) return;
+    const res = await shopRepo.buyPackage(t, pid, pkgId, petId);
+    await s.pushItems(t); await s.pushBalances(t); await s.pushProgress(t); await s.pushStats(t);
+    s.socket.emit('gramShopResult', {
+      pkgId: res.pkgId, price: res.price, gold: res.gold, nexum: res.nexum,
+      bonusSP: res.bonusSP, seasonTicket: res.seasonTicket,
+      items: res.granted.map(g => ({ id: g.itemId, qty: g.qty, enhance: g.enhance })),
+      newBalance: res.gramLeft, delivered: true,
+    });
+    if (res.vip) {
+      s.socket.emit('vipUpdate', {
+        level: res.vip.level, deposited: res.vip.deposited, pending: res.vip.pending,
+      });
+    }
+    if (res.seasonPoints > 0) {
+      const st = await progression.seasonOf(t, pid);
+      s.socket.emit('seasonEventDone', { task: 'shop_buy', points: res.seasonPoints, total: st.points });
+    }
+  }));
+
+  // ── the starter kit ──────────────────────────────────────────────────────
+  safeOn('starterBonusClaim', () => s.act('starterBonusClaim', 'starterBonusError', async (t, pid) => {
+    await shopRepo.claimStarterBonus(t, pid);
+    await s.pushItems(t); await s.pushStats(t);
+    s.socket.emit('potionBag', { potionBag: await consumables.potionBagOf(t, pid) });
+    s.socket.emit('starterBonusDone', {});
+  }));
+
+  // ── referrals ────────────────────────────────────────────────────────────
+  safeOn('getReferrals', () => s.act('getReferrals', 'gramError', async (t, pid) => {
+    s.socket.emit('refData', await shopRepo.referralsOf(t, pid));
   }));
 
   // ── rebirth and reset ────────────────────────────────────────────────────

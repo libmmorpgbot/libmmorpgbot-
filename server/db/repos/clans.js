@@ -23,7 +23,7 @@ const items = require('./items');
 const money = require('./money');
 const {
   CLAN_MAX_MEMBERS, CLAN_CREATE_COST, CLAN_DESC_MAX_CHARS, CLAN_LEVELS,
-  CLAN_STORAGE_MIN_DAYS, UNIQUE_SHARDS,
+  CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD, UNIQUE_SHARDS,
 } = require('../../../shared/definitions');
 
 class ClanError extends Error {
@@ -200,6 +200,11 @@ async function deposit(db, playerId, clanId, itemId, qty) {
 
   await items.lockPlayer(db, playerId);
   await _requireMember(db, playerId, clanId);
+  // The days-in-clan rule applies to putting in as well as taking out. A mule
+  // that can deposit but not withdraw is still a mule with an extra step.
+  if (!await canUseStorage(db, clanId, playerId)) {
+    err('too_new', `Сховище доступне з ${CLAN_STORAGE_MIN_DAYS} днів у клані`);
+  }
 
   if (!await items.removeQty(db, playerId, itemId, n)) {
     err('not_enough', 'У вас стільки немає');
@@ -236,6 +241,10 @@ async function allocate(db, leaderId, clanId, playerId, itemId, qty) {
 // record, or clear it and fail to deliver.
 async function claim(db, playerId, allocationId) {
   await items.lockPlayer(db, playerId);
+  const m = await clanOf(db, playerId);
+  if (m && !await canUseStorage(db, m.clanId, playerId)) {
+    err('too_new', `Сховище доступне з ${CLAN_STORAGE_MIN_DAYS} днів у клані`);
+  }
   const { rows } = await query(db, `
     SELECT id, item_id, qty FROM clan_allocations
      WHERE id = $1 AND player_id = $2 FOR UPDATE`, [allocationId, playerId]);
@@ -260,6 +269,10 @@ async function claim(db, playerId, allocationId) {
 // already granted and leave the player pressing a button that never works.
 async function claimAll(db, playerId) {
   await items.lockPlayer(db, playerId);
+  const mem = await clanOf(db, playerId);
+  if (mem && !await canUseStorage(db, mem.clanId, playerId)) {
+    err('too_new', `Сховище доступне з ${CLAN_STORAGE_MIN_DAYS} днів у клані`);
+  }
   const { rows } = await query(db, `
     SELECT id, item_id, qty FROM clan_allocations
      WHERE player_id = $1 ORDER BY id FOR UPDATE`, [playerId]);
@@ -310,6 +323,10 @@ async function unlockStorage(db, playerId, clanId, cost) {
   if (!c.length) err('no_clan', 'Клан не знайдено');
   if (c[0].storage_unlocked) err('already', 'Сховище вже відкрито');
 
+  // The CLAN's age, which is a different rule from the member's days above —
+  // this one stops a clan founded five minutes ago from having a storage at
+  // all, and canUseStorage stops a member who joined five minutes ago from
+  // using one that exists.
   const ageDays = (Date.now() - new Date(c[0].created_at).getTime()) / 86400000;
   if (ageDays < CLAN_STORAGE_MIN_DAYS) {
     err('too_young', `Сховище відкривається клану від ${CLAN_STORAGE_MIN_DAYS} днів`);
@@ -326,6 +343,113 @@ async function unlockStorage(db, playerId, clanId, cost) {
 }
 
 // ── reads ───────────────────────────────────────────────────────────────────
+
+// ── who may touch the storage ───────────────────────────────────────────────
+// CLAN_STORAGE_MIN_DAYS counts a MEMBER'S days in the clan, not the clan's own
+// age. The rewrite had it on the clan, which reads almost the same and blocks
+// nothing: the rule exists so that joining, emptying the storage and leaving
+// takes a week rather than a minute. A clan that is old enough would have let
+// a member who joined an hour ago do exactly that.
+//
+// A member row with no joined_at is treated as "here since the beginning"
+// rather than locked out forever — same as the build this replaces, and the
+// safer direction for a value that only migrated data can be missing.
+async function memberDaysIn(db, clanId, playerId) {
+  const { rows } = await query(db,
+    'SELECT joined_at FROM clan_members WHERE clan_id = $1 AND player_id = $2', [clanId, playerId]);
+  if (!rows.length) return null;
+  if (!rows[0].joined_at) return Infinity;
+  return (Date.now() - new Date(rows[0].joined_at).getTime()) / 86400000;
+}
+
+async function canUseStorage(db, clanId, playerId) {
+  const d = await memberDaysIn(db, clanId, playerId);
+  return (d == null ? -1 : d) >= CLAN_STORAGE_MIN_DAYS;
+}
+
+// ── the two panels, in the shapes the client renders ────────────────────────
+// The client keys members, applications and allocations by TELEGRAM id — it
+// never sees an internal one — so the views carry both: telegramId for the
+// buttons, playerId for anything the server does next with the answer.
+const _shard = id => UNIQUE_SHARDS.find(x => x.id === id) || null;
+
+async function dataView(db, clanId, playerId) {
+  const view = await fullView(db, clanId);
+  if (!view) return null;
+  const { rows: tg } = await query(db, `
+    SELECT m.player_id, p.telegram_id FROM clan_members m
+      JOIN players p ON p.id = m.player_id WHERE m.clan_id = $1`, [clanId]);
+  const tgOf = new Map(tg.map(r => [Number(r.player_id), r.telegram_id]));
+
+  const { rows: appTg } = await query(db, `
+    SELECT a.player_id, p.telegram_id FROM clan_applications a
+      JOIN players p ON p.id = a.player_id WHERE a.clan_id = $1`, [clanId]);
+  for (const r of appTg) tgOf.set(Number(r.player_id), r.telegram_id);
+
+  const myRole = (view.members.find(m => m.playerId === playerId) || {}).role || null;
+  return {
+    _id: view.id, id: view.id,
+    name: view.name, icon: view.icon, description: view.description,
+    level: view.level, xp: view.xp,
+    members: view.members.map(m => ({
+      telegramId: tgOf.get(m.playerId), playerId: m.playerId,
+      username: m.username, role: m.role, bm: m.bm, joinedAt: m.joinedAt,
+    })),
+    // Only a leader sees the queue, same as before: it carries the usernames
+    // of people who have not joined anything yet.
+    applications: myRole === 'leader'
+      ? view.applications.map(a => ({
+          telegramId: tgOf.get(a.playerId), playerId: a.playerId, username: a.username, bm: a.bm,
+        }))
+      : [],
+    myRole,
+  };
+}
+
+async function storageView(db, clanId, playerId) {
+  const view = await fullView(db, clanId);
+  if (!view) return null;
+  const isLeader = (view.members.find(m => m.playerId === playerId) || {}).role === 'leader';
+  const days = await memberDaysIn(db, clanId, playerId);
+
+  const { rows: tg } = await query(db, `
+    SELECT m.player_id, m.joined_at, p.telegram_id FROM clan_members m
+      JOIN players p ON p.id = m.player_id WHERE m.clan_id = $1`, [clanId]);
+  const tgOf = new Map(tg.map(r => [Number(r.player_id), r.telegram_id]));
+  const daysOf = new Map(tg.map(r => [Number(r.player_id),
+    r.joined_at ? (Date.now() - new Date(r.joined_at).getTime()) / 86400000 : Infinity]));
+
+  const named = id => {
+    const d = _shard(id);
+    return { name: d ? d.name : id, img: d ? d.img : null };
+  };
+
+  return {
+    minDays: CLAN_STORAGE_MIN_DAYS,
+    daysIn: days === Infinity ? null : Math.floor(Math.max(0, days || 0)),
+    canUse: (days == null ? -1 : days) >= CLAN_STORAGE_MIN_DAYS,
+    unlocked: !!view.storageUnlocked,
+    unlockCost: CLAN_STORAGE_UNLOCK_GOLD,
+    isLeader,
+    storage: view.storage.map(e => ({ id: e.id, qty: e.qty, ...named(e.id) })),
+    // A member sees only what is waiting for them; a leader sees everything,
+    // because a leader is who cancels an allocation.
+    allocations: view.allocations
+      .filter(a => isLeader || a.playerId === playerId)
+      .map(a => ({
+        telegramId: tgOf.get(a.playerId), playerId: a.playerId, username: a.username,
+        id: a.id_item, allocationId: a.id, qty: a.qty, at: a.at, ...named(a.id_item),
+      })),
+    // Who a leader may allocate TO: members who have been here long enough.
+    // Offering the others would be offering a button that refuses.
+    members: isLeader
+      ? view.members
+          .filter(m => (daysOf.get(m.playerId) ?? -1) >= CLAN_STORAGE_MIN_DAYS)
+          .map(m => ({ telegramId: tgOf.get(m.playerId), playerId: m.playerId, username: m.username }))
+      : [],
+  };
+}
+
 
 // The whole clan panel in one round trip. The old version issued a query per
 // member to resolve names — an N+1 that ran every time anyone opened the tab.
@@ -416,6 +540,7 @@ async function _requireNoHeldShards(db, clanId, playerId) {
 }
 
 module.exports = {
+  dataView, storageView, memberDaysIn, canUseStorage,
   claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
   addXp, deposit, allocate, claim, cancelAllocation, unlockStorage,
