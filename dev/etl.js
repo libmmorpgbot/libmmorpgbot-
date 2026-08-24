@@ -58,6 +58,21 @@ const lost = {
   txSkipped: [],
 };
 
+// Seconds-remaining -> the moment it ends. A value that is already an expiry
+// (a re-run over migrated data) is left alone: thirteen digits is a timestamp,
+// four is a countdown.
+function _buffsToExpiry(raw, now = Date.now()) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (n > 1e11) { if (n > now) out[k] = Math.floor(n); continue; }
+    out[k] = now + Math.min(n, 86400) * 1000;
+  }
+  return out;
+}
+
 const num = (v, d = 0) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : d;
@@ -112,7 +127,12 @@ function progressRow(sd) {
     y: Number.isFinite(num(sd.y, NaN)) ? num(sd.y) : null,
     questIdx: Math.max(0, int(sd.questIdx)),
     questKills: (sd.questKills && typeof sd.questKills === 'object' && !Array.isArray(sd.questKills)) ? sd.questKills : {},
-    buffs: (sd.buffs && typeof sd.buffs === 'object' && !Array.isArray(sd.buffs)) ? sd.buffs : {},
+    // The old save held SECONDS REMAINING; the column now holds the millisecond
+    // a buff ends. Carrying the number across verbatim would read as an expiry
+    // in January 1970 — every buff dead on arrival — or, if the reader were
+    // ever changed back, as a buff that never ends. Converted at the boundary,
+    // where the two meanings meet.
+    buffs: _buffsToExpiry(sd.buffs),
     potionBag: (sd.potionBag && typeof sd.potionBag === 'object' && !Array.isArray(sd.potionBag)) ? sd.potionBag : {},
     codex: (sd.codex && typeof sd.codex === 'object' && !Array.isArray(sd.codex)) ? sd.codex : {},
     starterBonus: !!sd.starterBonus,

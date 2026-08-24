@@ -131,10 +131,15 @@ function compute(row) {
   // Temporary buffs. The server owns these too (player_progress.buffs, written
   // by usePotion), which is what removes the last reason the clamp existed:
   // there is no longer anything about a player's power the server cannot see.
+  // `> 0` was true for every buff ever drunk, because the column held seconds
+  // remaining and nothing decremented them. It holds the millisecond a buff
+  // ENDS now, so the question is whether that moment is still ahead.
   const buffs = row.buffs || {};
-  if (buffs.hp       > 0) h = Math.floor(h * 1.10);
-  if (buffs.atk      > 0) a = Math.floor(a * 1.20);
-  if (buffs.atkspeed > 0) extraAS += (cd.atkSpeed || 0) * 0.20;
+  const now = Date.now();
+  const buffOn = t => Number(buffs[t] || 0) > now;
+  if (buffOn('hp'))       h = Math.floor(h * 1.10);
+  if (buffOn('atk'))      a = Math.floor(a * 1.20);
+  if (buffOn('atkspeed')) extraAS += (cd.atkSpeed || 0) * 0.20;
 
   a = Math.floor(a * (1 + pt.atkPct));
   d = Math.floor(d * (1 + pt.defPct));

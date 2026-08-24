@@ -279,7 +279,9 @@ class Session {
       gold: balances.gold,
       potionBag: p.potionBag || {},
       hudPotion: prefs.hudPotion || 'pt1',
-      buffs: p.buffs || {},
+      // Seconds remaining, not the stored expiry: the client decrements its
+      // own copy every frame to animate the bar.
+      buffs: require('./db/repos/consumables').buffsRemaining(p.buffs),
 
       inventory: (inv.inventory || []).map(i => ({ id: i.id, enhance: i.enhance || 0, qty: i.qty || 1 })),
       storage: (inv.storage || []).map(i => ({ id: i.id, enhance: i.enhance || 0, qty: i.qty || 1 })),

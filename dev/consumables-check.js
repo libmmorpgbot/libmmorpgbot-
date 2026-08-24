@@ -141,14 +141,33 @@ async function main() {
   const r2 = await tx(t => con.useBuffPotion(t, b, BP.id));
   eq(r2.seconds, BP.buffDur * 2, 'повторне зілля ПОДОВЖУЄ, а не замінює');
 
-  // The cap: drinking a whole stack must not produce a permanent buff.
+  // The cap: drinking a whole stack must not produce a permanent buff. The
+  // ceiling is four durations from NOW, so it is checked in seconds remaining
+  // rather than against the stored millisecond.
   for (let i = 0; i < 6; i++) await tx(t => con.useBuffPotion(t, b, BP.id));
-  const capped = (await players.progressOf(null, b)).buffs[BP.buffType];
-  eq(capped, BP.buffDur * 4, `стек зілль обмежений стелею ${BP.buffDur * 4} с — постійного бафа не буде`);
+  const cappedLeft = con.buffsRemaining(
+    (await players.progressOf(null, b)).buffs)[BP.buffType];
+  ok(cappedLeft <= BP.buffDur * 4 && cappedLeft > BP.buffDur * 4 - 5,
+    `стек зілль обмежений стелею ${BP.buffDur * 4} с (${cappedLeft}) — постійного бафа не буде`);
 
-  // Expiry actually removes it.
-  await tx(t => con.expireBuffs(t, b, BP.buffDur * 4));
-  eq(Object.keys((await players.progressOf(null, b)).buffs).length, 0, 'баф, що вийшов, зник із карти');
+  // Buffs are EXPIRIES now, not countdowns — see repos/consumables.js. The
+  // shape this replaces needed a ticker, the ticker was never called, and a
+  // buff drunk once lasted forever.
+  const stored = (await pool().query(
+    'SELECT buffs FROM player_progress WHERE player_id = $1', [b])).rows[0].buffs;
+  ok(Number(stored[BP.buffType]) > Date.now() + BP.buffDur * 500,
+    'у базі лежить МОМЕНТ закінчення, а не зворотний відлік');
+  ok(con.buffActive(stored, BP.buffType), 'баф зараз активний');
+  ok(!con.buffActive({ [BP.buffType]: Date.now() - 1000 }, BP.buffType),
+    'а прострочений — ні, і для цього нічого не треба «тікати»');
+
+  // The wire format stays seconds: the client decrements its own copy each
+  // frame to animate the bar.
+  const left = con.buffsRemaining(stored);
+  ok(left[BP.buffType] > 0 && left[BP.buffType] <= BP.buffDur * 4,
+    `на дріт іде залишок у секундах (${left[BP.buffType]})`);
+  eq(Object.keys(con.buffsRemaining({ old: Date.now() - 5000 })).length, 0,
+    'прострочені взагалі не потрапляють на дріт');
 
   // ── teleport stone ───────────────────────────────────────────────────────
   console.log('  ── камінь телепорту ──');

@@ -121,37 +121,66 @@ async function useBuffPotion(db, playerId, potionId) {
   if (!await items.removeQty(db, playerId, potionId, 1)) err('no_potion', 'Нет такого зелья');
 
   const dur = Math.max(1, Math.floor(Number(def.buffDur) || 600));
-  // Re-drinking EXTENDS rather than replaces, and is capped — otherwise a
-  // player with a stack of two hundred can hold a permanent buff, which is a
-  // different game from the one the durations were balanced for.
+  // Re-drinking EXTENDS rather than replaces, and the ceiling is four
+  // durations from NOW — otherwise a player with a stack of two hundred holds
+  // a permanent buff, which is a different game from the one the numbers were
+  // balanced for. Extending from `now` rather than from the stored value is
+  // what keeps an expired buff from adding to a time already in the past.
   const { rows } = await query(db, `
     UPDATE player_progress
        SET buffs = jsonb_set(buffs, ARRAY[$2],
              to_jsonb(LEAST(
-               GREATEST(COALESCE((buffs ->> $2)::int, 0), 0) + $3::int,
-               $4::int)), true),
+               GREATEST(COALESCE((buffs ->> $2)::numeric, 0), $5::numeric) + $3::numeric,
+               $5::numeric + $4::numeric)::bigint), true),
            updated_at = now()
      WHERE player_id = $1
-    RETURNING buffs`, [playerId, def.buffType, dur, dur * 4]);
+    RETURNING buffs`,
+    [playerId, def.buffType, dur * 1000, dur * 4 * 1000, Date.now()]);
   if (!rows.length) err('no_player', 'Игрок не найден');
-  return { potionId, buffType: def.buffType, seconds: rows[0].buffs[def.buffType], buffs: rows[0].buffs };
+  const left = buffsRemaining(rows[0].buffs);
+  return { potionId, buffType: def.buffType, seconds: left[def.buffType] || 0, buffs: left };
 }
 
 // Expires whatever has run out. Called on a timer and on login, so a buff that
 // ended while the player was offline is gone when they come back rather than
 // resuming.
-async function expireBuffs(db, playerId, elapsedSeconds) {
-  const el = Math.max(0, Math.floor(Number(elapsedSeconds) || 0));
-  if (!el) return null;
+// ── buffs are expiries, not countdowns ──────────────────────────────────────
+// Stored as the epoch millisecond a buff ENDS. Nothing has to tick, a restart
+// cannot lose time, and "how long is left" is a subtraction.
+//
+// It used to be seconds-remaining with an expireBuffs() to decrement them, and
+// expireBuffs was called from exactly one place: its own test. A buff drunk
+// once lasted forever, every reload showed the full ten minutes again, and a
+// single potion bought a permanent stat bonus.
+//
+// The WIRE format is still seconds, because the client decrements its own copy
+// every frame to animate the bar. Only the storage changed.
+function buffsRemaining(buffs, now = Date.now()) {
+  const out = {};
+  for (const [type, until] of Object.entries(buffs || {})) {
+    const left = Math.ceil((Number(until) - now) / 1000);
+    if (left > 0) out[type] = left;
+  }
+  return out;
+}
+
+// Whether a named buff is running right now. The one question stats.js asks.
+function buffActive(buffs, type, now = Date.now()) {
+  return Number((buffs || {})[type] || 0) > now;
+}
+
+// Housekeeping only: an expired entry costs nothing to leave, but a row that
+// accumulates every buff a player ever drank is a row that grows forever.
+async function pruneBuffs(db, playerId) {
   const { rows } = await query(db, `
     UPDATE player_progress
        SET buffs = COALESCE((
-             SELECT jsonb_object_agg(k, to_jsonb(v - $2))
-               FROM jsonb_each_text(buffs) AS e(k, val),
-                    LATERAL (SELECT val::int AS v) AS c
-              WHERE v - $2 > 0), '{}'::jsonb)
+             SELECT jsonb_object_agg(k, val::jsonb)
+               FROM jsonb_each_text(buffs) AS e(k, val)
+              WHERE (val)::numeric > (EXTRACT(EPOCH FROM now()) * 1000)
+           ), '{}'::jsonb)
      WHERE player_id = $1
-    RETURNING buffs`, [playerId, el]);
+    RETURNING buffs`, [playerId]);
   return rows.length ? rows[0].buffs : null;
 }
 
@@ -299,7 +328,8 @@ async function registerCodexItem(db, playerId, setId, slotIdx, rowId) {
 }
 
 module.exports = {
-  usePotion, buyPotions, potionBagOf, useBuffPotion, expireBuffs,
+  usePotion, buyPotions, potionBagOf, useBuffPotion,
+  buffsRemaining, buffActive, pruneBuffs,
   useTeleportStone, buyTeleportStone, pickupDrop, grantKillReward,
   registerCodexItem,
   HP_POTIONS, BUFF_POTIONS, POTION_CAP, UseError,

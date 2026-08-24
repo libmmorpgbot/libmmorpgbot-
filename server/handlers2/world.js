@@ -323,7 +323,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const spawn = s.room.spawnPoint ? s.room.spawnPoint() : null;
       if (spawn) s.room.updatePlayerPos(s.socket.id, spawn.x, spawn.y, 'front', false);
     }
-    await sendGameStart(t, 1);
+    const floor = await sendGameStart(t, 1);
+    // Written NOW, not on the twenty-second timer. A disconnect in the seconds
+    // after a death would otherwise leave the hall in the database and the
+    // corpse's coordinates beside it — which is a player who logs back in
+    // standing where they died, on the floor they left.
+    const at = s.room && s.room.players.get(s.socket.id);
+    await players.savePosition(t, pid, floor, at ? at.x : 0, at ? at.y : 0);
   }));
 
   // ── floors ───────────────────────────────────────────────────────────────
@@ -337,7 +343,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
       return s.socket.emit('enterLocationDenied', { target, reason: 'level' });
     }
     const landed = await sendGameStart(t, want);
-    await players.savePosition(t, pid, landed, prog.x || 0, prog.y || 0);
+    // Where the player ACTUALLY IS on the new floor, not where they were on
+    // the old one. Writing the new floor beside the old coordinates meant the
+    // next login read a position that belongs to a different map — and
+    // enterFloor trusts a stored position when the floor matches, so it dropped
+    // people wherever those numbers happened to land.
+    const at = s.room && s.room.players.get(s.socket.id);
+    await players.savePosition(t, pid, landed, at ? at.x : 0, at ? at.y : 0);
   }));
 
   // ── streaming repair ─────────────────────────────────────────────────────

@@ -65,6 +65,7 @@ async function main() {
     vipLevel: 3, vipDeposited: 42.5, vipPending: [2, 3],
     seasonTicket: true, seasonPoints2: 8400,
     lang: 'uk', autoHpPct: 0.8, floor: 3, x: 1200, y: 900,
+    buffs: { atk: 300, gone: 0 },
     questIdx: 17, questKills: { 'Крыса страж': 6 },
   });
   ok(!full.skipped, 'акаунт перенесено');
@@ -106,6 +107,15 @@ async function main() {
   const { rows: seas } = await pool().query(
     'SELECT points FROM player_season WHERE player_id=$1', [full.playerId]);
   eq(Number(seas[0].points), 8400, 'сезонні очки збережені');
+
+  // Buffs cross a meaning boundary: the old save counted seconds down, the
+  // column names the moment a buff ends. Carried across verbatim they would be
+  // expiries in 1970 — every buff dead on arrival.
+  const { rows: bf } = await pool().query(
+    'SELECT buffs FROM player_progress WHERE player_id = $1', [full.playerId]);
+  ok(Number(bf[0].buffs.atk) > Date.now(),
+    `баф перенесено як момент закінчення в майбутньому (${bf[0].buffs.atk})`);
+  ok(bf[0].buffs.gone === undefined, 'уже прострочений баф не переносився');
 
   const pf = await players.prefsOf(null, full.playerId);
   eq(pf.lang, 'uk', 'мова збережена');

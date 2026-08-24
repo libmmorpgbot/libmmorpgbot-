@@ -148,10 +148,26 @@ async function main() {
   console.log('  ── бафи ──');
   const bf = await mk('buff');
   const plain = await stats.of(null, bf);
-  await pool().query(`UPDATE player_progress SET buffs = '{"atk":300,"hp":300}'::jsonb WHERE player_id=$1`, [bf]);
+  // Expiries, not countdowns — see migration 008. Writing `300` here used to
+  // mean "300 seconds left"; it now means "ended in 1970", and the atk
+  // assertion passed anyway because ×1.20 of a small number floors to itself.
+  // A test that passes for the wrong reason is the reason to state the units.
+  const until = Date.now() + 300000;
+  await pool().query(
+    `UPDATE player_progress SET buffs = $2::jsonb WHERE player_id = $1`,
+    [bf, JSON.stringify({ atk: until, hp: until })]);
   const buffed = await stats.of(null, bf);
   eq(buffed.atk, Math.floor(plain.atk * 1.20), 'баф на атаку рахує СЕРВЕР (×1.20)');
   eq(buffed.maxHp, Math.floor(plain.maxHp * 1.10), 'баф на HP рахує сервер (×1.10)');
+
+  // The half that matters more: a buff whose moment has passed does nothing,
+  // and needs nobody to have swept it up.
+  await pool().query(
+    `UPDATE player_progress SET buffs = $2::jsonb WHERE player_id = $1`,
+    [bf, JSON.stringify({ atk: Date.now() - 1000, hp: Date.now() - 1000 })]);
+  const expired = await stats.of(null, bf);
+  eq(expired.atk, plain.atk, 'прострочений баф на атаку не діє');
+  eq(expired.maxHp, plain.maxHp, 'прострочений баф на HP не діє — раніше він діяв вічно');
 
   // ── clan bonus ───────────────────────────────────────────────────────────
   console.log('  ── бонус клану ──');
