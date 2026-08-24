@@ -97,6 +97,14 @@ async function main() {
   ok(auth.stats && auth.stats.atk > 0, `стати ПОРАХОВАНІ СЕРВЕРОМ (atk ${auth.stats && auth.stats.atk})`);
   ok(auth.prefs && auth.prefs.lang === 'ru', 'налаштування прийшли з бази');
 
+  // A new character starts able to heal. Nobody ever granted these: the
+  // client's default player object carried potionBag: { pt1: 30 }, and the
+  // first saveProgress wrote that default in as if it had been earned. When
+  // the client stopped owning state the grant went with it, and every new
+  // player arrived with an empty bag. It is a column default now.
+  ok(auth.progress && auth.progress.potionBag && auth.progress.potionBag.pt1 === 30,
+    `новий гравець починає з 30 зіллями (${JSON.stringify(auth.progress && auth.progress.potionBag)})`);
+
   // ── the only client-writable surface ─────────────────────────────────────
   sock.emit('savePrefs', { prefs: { lang: 'uk', autoHpPct: 0.7 } });
   const prefs = await once(sock, 'prefsSync');
