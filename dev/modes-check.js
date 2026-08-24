@@ -31,6 +31,13 @@ const crypto = require('crypto');
 
 const PORT = Number(process.env.MODES_PORT || 3131);
 process.env.PORT = String(PORT);
+// This process must not reach the operators' bot. It boots the real server,
+// and boot() starts the workers: a second getUpdates poll takes the withdrawal
+// buttons away from the live server, and the deposit scanner would be aimed at
+// a wallet holding real money. dev/sync.sh sets these too — both, because a
+// run started any other way has to be just as safe.
+process.env.OPS_LIVE = '0';
+process.env.NODE_ENV = 'test';
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 
 const { pool, close, tx, query } = require('../server/db');

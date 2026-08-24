@@ -30,6 +30,19 @@ if [ $# -gt 0 ]; then
   # printf %q, not "$*": the arguments carry parentheses, quotes and $ signs,
   # and pasting them raw into a remote shell string gets them reparsed there.
   CMD=$(printf '%q ' "$@")
+  # The env file is the PRODUCTION one — it is where the database URL and the
+  # pinned CA live, and there is deliberately no second copy to drift from it.
+  # But it also says NODE_ENV=production and OPS_LIVE=1, and a test inheriting
+  # those talks to the real operators' bot: every run announced itself in the
+  # channel and started a second getUpdates poll, which takes the withdrawal
+  # buttons away from the live server for as long as it lasts.
+  #
+  # So the two variables that decide "may this process reach outside itself"
+  # are overridden after sourcing. Loading production config and then declaring
+  # this is not production is the honest shape of it: the test needs the same
+  # database, and must not have the same reach.
   ssh -i "$KEY" -o BatchMode=yes "$HOST" \
-    "cd $DEST && set -a && . /srv/liberty/env && set +a && $CMD"
+    "cd $DEST && set -a && . /srv/liberty/env && set +a \
+     && export NODE_ENV=test OPS_LIVE=0 \
+     && $CMD"
 fi

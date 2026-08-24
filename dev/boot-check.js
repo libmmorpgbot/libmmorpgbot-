@@ -9,6 +9,13 @@
 // except the fact that the player is a script — which is the only way to know
 // the wiring is right rather than each piece being right on its own.
 
+// This process must not reach the operators' bot. It boots the real server,
+// and boot() starts the workers: a second getUpdates poll takes the withdrawal
+// buttons away from the live server, and the deposit scanner would be aimed at
+// a wallet holding real money. dev/sync.sh sets these too — both, because a
+// run started any other way has to be just as safe.
+process.env.OPS_LIVE = '0';
+process.env.NODE_ENV = 'test';
 const crypto = require('crypto');
 const path = require('path');
 
@@ -104,6 +111,26 @@ async function main() {
   // player arrived with an empty bag. It is a column default now.
   ok(auth.progress && auth.progress.potionBag && auth.progress.potionBag.pt1 === 30,
     `новий гравець починає з 30 зіллями (${JSON.stringify(auth.progress && auth.progress.potionBag)})`);
+
+  // ── this process must not reach the operators' bot ───────────────────────
+  // Checked here rather than trusted, because the first version of this gate
+  // was correct and still failed: dev/sync.sh sources the PRODUCTION env file
+  // — that is where the database URL and the pinned CA live — so every test
+  // inherited NODE_ENV=production and OPS_LIVE=1 and announced itself in the
+  // channel anyway. A gate nobody verifies is a gate that is open.
+  const ops = require('../server/tg-ops');
+  ok(!ops.isLive(),
+    'шлюз до Telegram закритий — цей процес не пише в опс-канал і не опитує бота');
+
+  const w = require('../server/workers');
+  ok(typeof w.status === 'function' && w.status().live !== true,
+    'воркери знають, що назовні їм не можна');
+
+  // The override has to beat production, not merely differ from it: the env
+  // file says production and this file says no, and no has to win.
+  process.env.NODE_ENV = 'production';
+  ok(!ops.isLive(), 'OPS_LIVE=0 сильніший за NODE_ENV=production');
+  process.env.NODE_ENV = 'test';
 
   // ── the only client-writable surface ─────────────────────────────────────
   sock.emit('savePrefs', { prefs: { lang: 'uk', autoHpPct: 0.7 } });

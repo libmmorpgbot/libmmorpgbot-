@@ -232,6 +232,10 @@ function stop() {
 // "check the logs".
 function status() {
   return {
+    // Whether this process is allowed to reach outside itself at all. On the
+    // /health page it answers "is the deposit scanner actually running", which
+    // used to be unanswerable without reading the logs.
+    live: ops.isLive(),
     depositScanFailStreak: _failStreak,
     scanning: _scanning,
     opsPolling: _polling,

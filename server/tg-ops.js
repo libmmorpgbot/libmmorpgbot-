@@ -46,8 +46,15 @@ const TOKEN = process.env.TG_OPS_BOT_TOKEN || process.env.TG_BOT_TOKEN || '';
 // everything else logs to the console. Turning it on for a deliberate test of
 // the ops path is an explicit OPS_LIVE=1, which is a thing someone types on
 // purpose rather than a thing a test forgets to switch off.
-const LIVE = process.env.OPS_LIVE === '1' || process.env.NODE_ENV === 'production';
-function isLive() { return LIVE && !!TOKEN && !!GROUP_ID; }
+// Read at CALL time, not at module load. A constant computed on require()
+// depends on whether the caller set the variable before or after the first
+// import of this file — an ordering nobody can see and every test would get
+// wrong once. A function has no such trap.
+function isLive() {
+  const on = process.env.OPS_LIVE === '1'
+    || (process.env.OPS_LIVE !== '0' && process.env.NODE_ENV === 'production');
+  return on && !!TOKEN && !!GROUP_ID;
+}
 
 // Comma-separated. Replaces the single TG_ADMIN_ID: approving payouts is not a
 // one-person job, and the old build could not express a second admin at all.
