@@ -70,8 +70,12 @@ function resolveFloor(floorId, progress) {
 // the level gate applied. Returns the floor they LANDED on, which the caller
 // compares against what was asked for to tell "you moved" from "you were
 // refused and are still in the hub".
-function enterFloor(session, wantedFloor, progress) {
-  const target = resolveFloor(wantedFloor, progress);
+// `force` skips the level gate, and only the SERVER may pass it: a mode
+// deploying its entrants into the arena, a run ending and sending everyone
+// home, the guild-war window opening. A player request never reaches this with
+// force set — enterLocation checks resolveFloor itself and refuses.
+function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
+  const target = force ? floorIdOf(wantedFloor) : resolveFloor(wantedFloor, progress);
   const room = floorRooms.get(target);
   if (!room) return session.floor;
 
@@ -87,6 +91,18 @@ function enterFloor(session, wantedFloor, progress) {
       progress && progress.clanAtkBonus, session.telegramId,
       progress && progress.clanId,
     );
+    // The CLASS, without which the room has a player record with no `type`:
+    // no sprite for anyone else to draw, no class multipliers in combat, and
+    // the event modes refusing entry with "Выберите персонажа" to someone who
+    // chose one months ago. addPlayer alone does not set it, and nothing was
+    // calling this.
+    //
+    // No savedStats argument, deliberately: that path recomputes combat power
+    // from a client blob. The numbers arrive immediately afterwards from
+    // pushStats, which computed them here.
+    if (progress && progress.charClass) {
+      room.setPlayerChar(session.socket.id, progress.charClass);
+    }
     session.socket.join(`floor_${target}`);
     session.room = room;
     session.floor = target;

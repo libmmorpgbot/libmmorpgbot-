@@ -186,11 +186,6 @@ async function main() {
   // A profile is answered from the database, not relayed to the other client.
   // By TELEGRAM id, which is the only identifier the client has for another
   // player — it never sees the internal one.
-  sock.emit('requestPlayerProfile', { targetId: TG_ID });
-  const prof = await once(sock, 'playerProfileResult');
-  ok(prof.profile && prof.profile.atk > 0, 'публічний профіль порахований сервером');
-  eq(prof.fromId, TG_ID, 'відповідь адресована тим самим telegram id');
-
   // ── the world ────────────────────────────────────────────────────────────
   console.log('  ── світ, рух, бій ──');
 
@@ -211,6 +206,24 @@ async function main() {
   const world = require('../server/world');
   const room = world.roomOf(1);
   ok(!!room, 'кімната хаба існує');
+
+  // By SOCKET id — the id the client has for whoever it is standing next to.
+  // It is not a telegram id, and the rewrite read it as one, so the profile
+  // button answered "no such player" every time. Asking for one's own is the
+  // cheapest way to have a known-good target.
+  sock.emit('requestPlayerProfile', { targetId: sock.id });
+  const prof = await once(sock, 'playerProfileResult');
+  ok(prof.profile && prof.profile.atk > 0, 'публічний профіль порахований сервером');
+  eq(prof.fromId, sock.id, 'відповідь адресована тим самим socket id');
+  ok(prof.profile && prof.profile.equipment !== undefined,
+    'екіпіровка у профілі прийшла з бази, а не з блоба клієнта');
+
+  // A socket that is not in the room at all gets an empty answer rather than
+  // silence — the panel has a "нет данных" state and needs to reach it.
+  sock.emit('requestPlayerProfile', { targetId: 'НЕМАЄ_ТАКОГО' });
+  const none = await once(sock, 'playerProfileResult');
+  eq(none.profile, null, 'неіснуючий гравець — порожня відповідь, а не тиша');
+
   const me = room.players.get(sock.id);
   ok(!!me, 'гравець доданий у кімнату');
 

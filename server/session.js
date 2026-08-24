@@ -45,9 +45,17 @@ const ops = require('./tg-ops');
 // second process appears; nothing else here needs to.
 const activeSessions = new Map();
 
+// Floors whose rooms are created per run rather than once at boot. Their
+// players stay out of the `floor_N` broadcast group, because two simultaneous
+// runs on the same floor id would otherwise see each other's traffic.
+const INSTANCED_FLOORS = new Set([11, 12, 13]);   // fear, coop, farmZone2
+
 class Session {
-  constructor(socket) {
+  constructor(socket, io = null) {
     this.socket = socket;
+    // The server, for the broadcasts that are not to this one client. Passed
+    // in rather than required, so a test can drive a session without one.
+    this.io = io || (socket && socket.server) || null;
     this.playerId = null;
     this.telegramId = null;
     this.username = null;
@@ -199,6 +207,85 @@ class Session {
     const prog = await players.progressOf(db, this.playerId);
     const skills = await players.skillsOf(db, this.playerId);
     this.socket.emit('progressSync', { ...prog, ...skills });
+  }
+
+  // Everyone who can see this point, optionally including the sender. The
+  // event modes and the skill visuals both broadcast this way rather than to
+  // the whole floor: a spell effect is worth a packet to the twelve people who
+  // can see it and not to the two hundred who cannot.
+  emitNearby(x, y, event, payload, includeSelf = false) {
+    if (!this.room) return;
+    const ids = this.room.nearbyPlayerIds(x, y, includeSelf ? null : this.socket.id,
+      this.room.laneOf(this.socket.id));
+    if (ids.length) this.io.to(ids).emit(event, payload);
+  }
+
+  // ── moved by the server, not by the player ───────────────────────────────
+  // A mode deploying its entrants, a run ending, the guild-war window closing:
+  // all of them move a player to a floor they may not be able to walk into. The
+  // level gate is skipped, and skipping it is why this is a separate method
+  // rather than a flag on the handler — a client request cannot reach it.
+  //
+  // Returns the player's room record so the caller knows where they landed,
+  // which is what every mode's "returned to hub at x,y" answer is built from.
+  forceFloor(floorId, { pos = null, room = null } = {}) {
+    if (!this.authed || !this.room) return null;
+    const world = require('./world');
+    const target = world.floorIdOf(floorId);
+    if (!Number.isFinite(target)) return null;
+
+    // Fear, co-op and the elite farm zone are INSTANCED: each run gets its own
+    // Room that is not in floorRooms, and its players do not join the
+    // `floor_N` broadcast group — a run is private to its participants, and
+    // joining would put every simultaneous run on one channel.
+    const dest = room || world.roomOf(target);
+    if (!dest) return null;
+    if (dest === this.room) return this.room.players.get(this.socket.id) || null;
+
+    // Everything the new room needs, taken from the record the OLD room
+    // already holds. This is the reason forceFloor can be synchronous, and a
+    // synchronous answer is what the modes need — they have to know where the
+    // entrant landed before they can scatter the rest of the team around them.
+    // Re-reading the database here would make every deploy a round trip and
+    // hand back a player who is not in a room yet.
+    const was = this.room.players.get(this.socket.id);
+    if (!was || !was.type) return null;            // no character chosen yet
+
+    this.room.removePlayer(this.socket.id);
+    this.socket.to(`floor_${this.floor}`).emit('playerLeft', { id: this.socket.id });
+    if (!INSTANCED_FLOORS.has(this.floor)) this.socket.leave(`floor_${this.floor}`);
+
+    dest.addPlayer(this.socket.id, this.username, was.clanName, was.clanIcon,
+      was.clanAtkBonus, this.telegramId, was.clanId);
+    dest.setPlayerChar(this.socket.id, was.type);
+    dest.setPlayerStats(this.socket.id, {
+      level: was.lvl, atk: was.atk, def: was.def, maxHp: was.maxHp,
+      critChance: was.critChance, critPower: was.critPower,
+      atkSpeed: was.atkSpeed, hpRegen: was.hpRegen, skillPct: was.skillPct,
+    });
+    dest.setPlayerHp(this.socket.id, was.hp);
+
+    this.floor = target;
+    this.room = dest;
+    if (!INSTANCED_FLOORS.has(target)) this.socket.join(`floor_${target}`);
+
+    const p = dest.players.get(this.socket.id);
+    if (p && pos && dest.canStandAt(pos.x, pos.y)) { p.x = pos.x; p.y = pos.y; }
+
+    this.socket.to(`floor_${target}`).emit('playerJoined', { id: this.socket.id, username: this.username });
+    this.socket.to(`floor_${target}`).emit('playerChar', { id: this.socket.id, type: was.type });
+
+    // The client rebuilds a floor from gameStart and nothing else, so a move it
+    // did not ask for still has to arrive as one. Sent after the fact, because
+    // the caller needs its answer now and the client can afford one tick.
+    this.fullState(null)
+      .then(state => this.socket.emit('gameStart', {
+        ...state, floor: target,
+        mapVersion: dest.mapVersion == null ? null : dest.mapVersion,
+      }))
+      .catch(err => console.error('[session] forceFloor push:', err.message));
+
+    return p || null;
   }
 
   // ── position ─────────────────────────────────────────────────────────────

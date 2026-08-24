@@ -27,6 +27,9 @@ const workers = require('./workers');
 const adminAuth = require('./admin-auth');
 const { Session, activeSessions, socketForTelegramId } = require('./session');
 const world = require('./world');
+const party = require('./party');
+const modesLib = require('./modes');
+let modesRuntime = null;
 const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
 
 const ROOT = path.join(__dirname, '..');
@@ -144,7 +147,7 @@ const HEAVY = new Set([
 ]);
 
 io.on('connection', (socket) => {
-  const s = new Session(socket);
+  const s = new Session(socket, io);
 
   const rl = { heavy: { n: 0, at: 0 }, fast: { n: 0, at: 0 } };
   const bump = (b, max) => {
@@ -194,7 +197,13 @@ io.on('connection', (socket) => {
       return socket.disconnect(true);
     }
     clearTimeout(authTimer);
+    // Everything another connection may need to know about this one without
+    // going through the database. `username` in particular: a party invite is
+    // addressed to a socket and has to name the person behind it, and the
+    // handler that does so was reading a field nothing set.
     socket.data.playerId = s.playerId;
+    socket.data.telegramId = s.telegramId;
+    socket.data.username = s.username;
     socket.data.session = s;
     socket.join(`tg_${s.telegramId}`);
     socket.emit('authOk', {
@@ -223,6 +232,23 @@ io.on('connection', (socket) => {
     enterFloor: world.enterFloor,
     floorIdOf: world.floorIdOf,
     resolveFloor: world.resolveFloor,
+    modes: modesRuntime,
+    parties: party.parties,
+    playerParty: party.playerParty,
+    _removeFromParty: party.removeFromParty,
+    safeTimeout: (name, fn, ms) => setTimeout(() => {
+      try { fn(); } catch (err) { ops.alertError(`timer.${name}`, `Ошибка в таймере ${name}`, err); }
+    }, ms),
+    safeInterval: (name, fn, ms) => setInterval(() => {
+      try { fn(); } catch (err) { ops.alertError(`timer.${name}`, `Ошибка в таймере ${name}`, err); }
+    }, ms),
+    // A socket id to the session behind it. The event modes and the profile
+    // card both address other players this way, because a socket id is what
+    // the client has for whoever it is standing next to.
+    sessionForSocketId: (sid) => {
+      const sk = io.sockets.sockets.get(sid);
+      return sk && sk.data ? sk.data.session : null;
+    },
     // playerId -> socket. Built from the telegram-id map the session already
     // keeps, rather than a second index that could disagree with it.
     socketForPlayerId: (pid) => {
@@ -232,11 +258,17 @@ io.on('connection', (socket) => {
       return null;
     },
   };
+  // A latency probe. One line, and it is the reason a player can tell whether
+  // the lag they are seeing is theirs or the server's.
+  socket.on('_ping', t0 => socket.emit('_pong', t0));
+
   require('./handlers2/items')(s, safeOn, deps);
   require('./handlers2/economy')(s, safeOn, deps);
   require('./handlers2/progression')(s, safeOn, deps);
   require('./handlers2/social')(s, safeOn, deps);
   require('./handlers2/world')(s, safeOn, deps);
+  require('./handlers2/modes')(s, safeOn, deps);
+  require('./handlers2/coop')(s, safeOn, deps);
 
   // Preferences: the ONLY place a client value reaches the database. Six
   // fields, none of which touches combat or the economy.
@@ -292,6 +324,21 @@ async function boot() {
   const floors = world.initFloors(io);
   console.log(`world: ${floors} floors`);
 
+  // 2c. The event modes. Their schedules start here, which is why this is after
+  //     the floors exist and before the first player can connect: a mode that
+  //     opens its registration window while the arena has no room would deploy
+  //     its entrants into nothing.
+  modesRuntime = modesLib.init(io);
+  party.init(io, {
+    onLeave: (socketId) => {
+      // Leaving a party ends the co-op and farm runs that party was on: both
+      // modes are gated on the party existing.
+      modesRuntime._coopEliminate(socketId);
+      if (modesRuntime._farm2Eliminate) modesRuntime._farm2Eliminate(socketId);
+    },
+  });
+  console.log('modes: arena3, death battle, race, fear, co-op, elite farm');
+
   // 3. Configuration problems that would otherwise surface as a failed login
   //    or a missing alert.
   const problems = adminAuth.configProblems();
@@ -325,7 +372,11 @@ async function boot() {
 
 // ── shutdown ────────────────────────────────────────────────────────────────
 let _shuttingDown = false;
-async function shutdown(signal) {
+// `exit` is false when a test calls this: the process has to survive long
+// enough to print its own summary. A signal still exits, because that is what
+// a signal means — and the first version exited unconditionally, so every
+// integration test ended before it could say whether it had passed.
+async function shutdown(signal, { exit = true } = {}) {
   if (_shuttingDown) return;
   _shuttingDown = true;
   console.log(`${signal}: shutting down`);
@@ -347,7 +398,7 @@ async function shutdown(signal) {
 
   await db.close();
   console.log('shutdown complete');
-  process.exit(0);
+  if (exit) process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));

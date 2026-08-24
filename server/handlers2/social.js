@@ -16,10 +16,12 @@
 
 const clans = require('../db/repos/clans');
 const chat = require('../db/repos/chat');
+const stats = require('../db/repos/stats');
+const party = require('../party');
 const players = require('../db/repos/players');
 const { query } = require('../db');
 const { _sanitizeName, _sanitizeClanDesc } = require('../security');
-const { CLAN_CREATE_COST } = require('../../shared/definitions');
+const { CLAN_CREATE_COST, CHAR_DEF } = require('../../shared/definitions');
 
 const id = v => {
   const n = Math.floor(Number(v));
@@ -228,6 +230,119 @@ module.exports = function registerSocial(s, safeOn, deps) {
   }));
 
 
+
+  // ── party ────────────────────────────────────────────────────────────────
+  // Held in memory by socket id, and that is right: a party is a property of
+  // who is connected, not of an account. Ported unchanged in behaviour from
+  // server/handlers/chat.js.
+  safeOn('partyInvite', ({ targetId } = {}) => {
+    if (!s.authed || typeof targetId !== 'string') return;
+    if (party.playerParty.has(targetId)) return;              // already in one
+    const mine = party.playerParty.get(s.socket.id);
+    if (mine) {
+      const members = party.parties.get(mine);
+      if (members && members.size >= party.PARTY_MAX) return;
+    }
+    const targetSock = deps.io.sockets.sockets.get(targetId);
+    if (!targetSock || !targetSock.data || !targetSock.data.username) return;
+    // Race lanes are private, so an invitation cannot be used to find out who
+    // is in the tower with you.
+    if (s.room && typeof s.room.racePairAllowed === 'function'
+        && !s.room.racePairAllowed(s.socket.id, targetId)) return;
+    targetSock.emit('partyInviteReceived', { fromId: s.socket.id, fromName: s.username });
+  });
+
+  safeOn('partyAccept', ({ fromId } = {}) => {
+    if (!s.authed || typeof fromId !== 'string') return;
+    if (party.playerParty.has(s.socket.id)) return;
+    const fromSock = deps.io.sockets.sockets.get(fromId);
+    if (!fromSock) return;
+
+    const existing = party.playerParty.get(fromId);
+    let members;
+    let partyId;
+    if (existing) {
+      members = party.parties.get(existing);
+      if (!members || members.size >= party.PARTY_MAX) return;
+      partyId = existing;
+      members.set(s.socket.id, s.username);
+      party.playerParty.set(s.socket.id, partyId);
+    } else {
+      partyId = `${fromId}_${s.socket.id}`;
+      members = new Map();
+      members.set(fromId, (fromSock.data && fromSock.data.username) || fromId.slice(0, 6));
+      members.set(s.socket.id, s.username);
+      party.parties.set(partyId, members);
+      party.playerParty.set(fromId, partyId);
+      party.playerParty.set(s.socket.id, partyId);
+    }
+
+    const all = [];
+    members.forEach((name, id) => all.push({ id, name }));
+    for (const m of all) {
+      deps.io.to(m.id).emit('partyUpdated', { members: all.filter(r => r.id !== m.id) });
+    }
+  });
+
+  safeOn('partyDecline', ({ fromId } = {}) => {
+    if (!s.authed || typeof fromId !== 'string') return;
+    const fromSock = deps.io.sockets.sockets.get(fromId);
+    if (fromSock) fromSock.emit('partyInviteDeclined', { byName: s.username });
+  });
+
+  safeOn('partyLeave', () => {
+    const partyId = party.playerParty.get(s.socket.id);
+    if (partyId) party.removeFromParty(partyId, s.socket.id);
+  });
+
+  // The warlock's R heals the party. The AMOUNT is the server's now: the old
+  // handler took it from the request and clamped it to 9999, which is a heal
+  // whose size the client chooses — and 9999 is more health than anything in
+  // the game has. It is derived here from the same three inputs the client
+  // uses to draw its own number, so the two agree without either trusting the
+  // other.
+  //
+  // The 2-second floor between casts stays. It is not the real cooldown (25s
+  // on the client); it is what makes spamming the socket pointless.
+  const HEAL_PARTY_CD_MS = 2000;
+  let lastHealAt = 0;
+
+  safeOn('healParty', () => s.act('healParty', 'itemError', async (t, pid) => {
+    const partyId = party.playerParty.get(s.socket.id);
+    if (!partyId || !s.room) return;
+    const members = party.parties.get(partyId);
+    if (!members) return;
+
+    const now = Date.now();
+    if (now - lastHealAt < HEAL_PARTY_CD_MS) return;
+
+    const healer = s.room.players.get(s.socket.id);
+    if (!healer || healer.hp <= 0) return;                 // the dead do not cast
+
+    const st = await stats.of(t, pid);
+    if (!st || st.charClass !== 'warlock') return;         // only the warlock has this
+    const sk = await players.skillsOf(t, pid);
+    const adv = !!(sk.advSkillLearned.R && sk.advSkillActive.R);
+    const pct = adv ? 0.20 : 0.10;
+    const mult = (1 + (sk.skillLevels.R || 0) * 0.01) * (1 + (st.skillPct || 0));
+    const amount = Math.max(1, Math.round(st.maxHp * pct * mult));
+    lastHealAt = now;
+
+    for (const [sid] of members) {
+      if (sid === s.socket.id) continue;
+      const p = s.room.players.get(sid);
+      if (!p || p.hp <= 0) continue;                       // no resurrecting
+      // Only members actually standing with the healer, and only on this floor
+      // — the room's own proximity rule, unchanged.
+      if (typeof s.room.arePlayersNear === 'function'
+          && !s.room.arePlayersNear(s.socket.id, sid)) continue;
+      const before = p.hp;
+      s.room.setPlayerHp(sid, Math.min(p.maxHp, p.hp + amount));
+      const healed = Math.round(p.hp - before);
+      if (healed > 0) deps.io.to(sid).emit('healPartyMember', { amount: healed });
+    }
+  }));
+
   // ── clan chat ────────────────────────────────────────────────────────────
   // The cooldown is SHARED with the global chat below, deliberately: it is one
   // person's rate of speech, not a per-channel allowance. Two counters would
@@ -300,23 +415,48 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // Answered from the database, not relayed to the target's client. The old
   // version asked the other player's socket and could go unanswered forever if
   // they were slow, on a menu, or gone.
+  // `targetId` is the other player's SOCKET id — the id the client has for
+  // whoever it is standing next to. It is not a telegram id and never was; the
+  // rewrite read it as one, so the profile button answered "no such player"
+  // every time.
+  //
+  // The numbers come from the database rather than from Room.publicProfile,
+  // which builds them out of `p._sd` — the client's own last save blob. That
+  // blob is exactly what this rewrite removed, so a profile read from it would
+  // be a profile a player can write.
   safeOn('requestPlayerProfile', ({ targetId } = {}) =>
     s.act('requestPlayerProfile', 'profileError', async (t) => {
-      const target = await byTg(t, targetId);
-      if (!target) return;
+      const empty = { fromId: targetId, fromName: null, profile: null };
+      if (typeof targetId !== 'string' || !s.room) return s.socket.emit('playerProfileResult', empty);
+      // During a race the lanes are private: opponents must not be able to
+      // scout each other's gear mid-run.
+      if (typeof s.room.racePairAllowed === 'function'
+          && !s.room.racePairAllowed(s.socket.id, targetId)) {
+        return s.socket.emit('playerProfileResult', empty);
+      }
+      const other = deps.sessionForSocketId && deps.sessionForSocketId(targetId);
+      if (!other || !other.authed) return s.socket.emit('playerProfileResult', empty);
+
+      const target = other.playerId;
       const prog = await players.progressOf(t, target);
       const st = await require('../db/repos/stats').of(t, target);
+      const inv = await require('../db/repos/items').inventoryOf(t, target);
       const { rows } = await query(t, 'SELECT username, bm FROM players WHERE id = $1', [target]);
-      if (!rows.length || !st) {
-        return s.socket.emit('playerProfileResult', { fromId: targetId, fromName: null, profile: null });
-      }
+      if (!rows.length || !st) return s.socket.emit('playerProfileResult', empty);
+
+      const cd = CHAR_DEF[st.charClass] || {};
       s.socket.emit('playerProfileResult', {
-        fromId: targetId, fromName: rows[0].username,
+        fromId: targetId,
+        fromName: rows[0].username,
         profile: {
-          username: rows[0].username, bm: rows[0].bm,
-          lvl: st.level, charClass: st.charClass,
-          atk: st.atk, def: st.def, maxHp: st.maxHp,
-          rebirths: prog.rebirths,
+          name: rows[0].username, bm: rows[0].bm,
+          charIcon: cd.icon || null, charColor: cd.color || null,
+          className: cd.name || st.charClass,
+          lvl: st.level, rebirths: prog.rebirths,
+          hp: Math.ceil(st.hp), maxHp: st.maxHp,
+          atk: st.atk, def: st.def, atkSpeed: st.atkSpeed,
+          critChance: st.critChance, critPower: st.critPower, hpRegen: st.hpRegen,
+          equipment: inv.equipment,
         },
       });
     }));

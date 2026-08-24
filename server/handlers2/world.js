@@ -27,12 +27,21 @@ const players = require('../db/repos/players');
 const stats = require('../db/repos/stats');
 const consumables = require('../db/repos/consumables');
 const progression = require('../db/repos/progression');
-const { NC_FACING } = require('../../shared/netcodec');
+const { NC_FACING, NC_AOE_STYLES } = require('../../shared/netcodec');
+const party = require('../party');
+const { query } = require('../db');
 const { CHAR_DEF, FLOOR_ENEMIES } = require('../../shared/definitions');
 
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
+// Projectile shapes the client may ask other clients to draw. A closed set,
+// because it is interpolated into a sprite lookup on the receiving side.
+const PROJ_TYPES = new Set(['arrow', 'ball']);
+
 module.exports = function registerWorld(s, safeOn, deps) {
+  // One cast at a time per connection. Held here rather than on the session so
+  // it is cleared with the handlers when the socket goes.
+  let teleportTimer = null;
   const { io, floorRooms, enterFloor, floorIdOf, resolveFloor } = deps;
 
   // ── character selection ──────────────────────────────────────────────────
@@ -63,6 +72,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // arm's level requirement, or a timed zone may have closed.
     const want = wanted == null ? state.progress.floor : wanted;
     const floor = enterFloor(s, want, state.progress);
+    // The room's copy of the numbers, immediately after the join. enterFloor
+    // sets the class from the catalog's base figures; these are the ones that
+    // decide damage, and a player who joined a floor without them fought at
+    // their class's level-1 baseline until the next equip.
+    if (s.room && state.stats) {
+      s.room.setPlayerStats(s.socket.id, state.stats);
+      s.room.setPlayerHp(s.socket.id, state.stats.hp);
+    }
     s.socket.emit('gameStart', {
       ...state,
       floor,
@@ -201,6 +218,117 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (!s.room || !Array.isArray(ids)) return;
     s.room.resendEnemies(s.socket.id, ids.slice(0, 40));
   });
+
+
+  // ── the map ──────────────────────────────────────────────────────────────
+  // Geometry, on request. Sent separately from gameStart and cached by the
+  // client against mapVersion, because it is the largest thing a floor change
+  // moves and it changes only when the world is regenerated.
+  safeOn('worldMapInline', () => {
+    if (s.room) s.socket.emit('worldMap', s.room.mapPayload);
+  });
+
+  // ── skill visuals ────────────────────────────────────────────────────────
+  // A projectile and an area effect are DRAWINGS. They carry no damage — that
+  // is decided by attack/skillAttack against the room — so the numbers here
+  // are bounded to keep one client from asking every other client to render
+  // something absurd, and nothing more is checked.
+  const num = (v, lo, hi, d) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d;
+  };
+  const color = (v) => (typeof v === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : '#ffffff');
+
+  safeOn('spawnProj', (data) => {
+    if (!s.room || !data || typeof data !== 'object') return;
+    s.room.queueProjectile(s.socket.id, {
+      x: num(data.x, -1e5, 1e5, 0), y: num(data.y, -1e5, 1e5, 0),
+      vx: num(data.vx, -5000, 5000, 0), vy: num(data.vy, -5000, 5000, 0),
+      size: num(data.size, 1, 64, 5), life: num(data.life, 0, 10, 1.5),
+      color: color(data.color),
+      projType: PROJ_TYPES.has(data.projType) ? data.projType : 'ball',
+    });
+  });
+
+  safeOn('spawnAoe', (data) => {
+    if (!s.room || !data || typeof data !== 'object') return;
+    s.room.queueAoe(s.socket.id, {
+      x: num(data.x, -1e5, 1e5, 0), y: num(data.y, -1e5, 1e5, 0),
+      r: num(data.r, 1, 400, 80),
+      style: NC_AOE_STYLES.includes(data.style) ? data.style : 'classic',
+      color: color(data.color), color2: color(data.color2 || data.color),
+    });
+  });
+
+  // A crowd-control effect on a monster. The DURATION is bounded here, and the
+  // room decides whether the effect applies at all — the client is saying
+  // "my skill landed", not "this monster is now stunned for ten seconds".
+  safeOn('skillEffect', ({ enemyId, enemyIds, type, duration } = {}) => {
+    if (!s.room) return;
+    const dur = num(duration, 0, 10, 0);
+    if (enemyId) s.room.applySkillEffect(enemyId, type, dur);
+    if (Array.isArray(enemyIds)) s.room.applySkillEffectMany(enemyIds.slice(0, 40), type, dur);
+    const me = s.room.players.get(s.socket.id);
+    if (me) s.emitNearby(me.x, me.y, 'enemyCC', { enemyId, enemyIds, type, duration: dur });
+  });
+
+  // The rogue's stealth ending. Only ever clears the flag — a client cannot
+  // ask to BECOME invisible, which is what the event name suggests and what it
+  // must never do: the room hides a player from the enemy AI while it is set.
+  safeOn('playerInvis', () => {
+    if (!s.room) return;
+    const p = s.room.players.get(s.socket.id);
+    if (p) p._invis = false;
+  });
+
+  // A party-wide shield, drawn on everyone standing with the caster.
+  safeOn('faithShield', ({ duration } = {}) => {
+    if (!s.room) return;
+    const partyId = party.playerParty.get(s.socket.id);
+    const members = partyId ? party.parties.get(partyId) : null;
+    if (!members) return;
+    const dur = num(duration, 0, 30, 0);
+    for (const [mid] of members) {
+      if (mid === s.socket.id) continue;
+      if (typeof s.room.arePlayersNear === 'function'
+          && !s.room.arePlayersNear(s.socket.id, mid)) continue;
+      deps.io.to(mid).emit('faithShieldBuff', { duration: dur });
+    }
+  });
+
+  // ── the teleport stone ───────────────────────────────────────────────────
+  // Consumed when the cast STARTS, and the recall arrives as an ordinary
+  // gameStart when the timer fires. Consuming up front is what stops a stone
+  // being used to peek at a gate and then refunded by cancelling.
+  safeOn('useTeleportStone', () => s.act('useTeleportStone', 'itemError', async (t, pid) => {
+    if (s.floor === 1) fail('Вы уже в зале', 'in_hub');
+    if (teleportTimer) fail('Уже произносится телепорт', 'casting');
+    const res = await consumables.useTeleportStone(t, pid);
+    await s.pushItems(t);
+    s.socket.emit('teleportCastStarted', { ms: res.castMs });
+
+    // The player is held still for the duration by the room; this timer only
+    // performs the recall. A disconnect mid-cast simply never fires it — the
+    // stone is spent, which is the same outcome as cancelling.
+    teleportTimer = setTimeout(() => {
+      teleportTimer = null;
+      if (!s.authed || !s.room) return;
+      s.forceFloor(1);
+    }, res.castMs);
+  }));
+
+  // ── PvP history ──────────────────────────────────────────────────────────
+  safeOn('getPvpHistory', () => s.act('getPvpHistory', 'profileError', async (t, pid) => {
+    const { rows } = await query(t, `
+      SELECT kind, mode, opponent, won, reward, created_at FROM pvp_history
+       WHERE player_id = $1 ORDER BY id DESC LIMIT 50`, [pid]);
+    s.socket.emit('pvpHistoryResult', {
+      history: rows.map(r => ({
+        kind: r.kind, mode: r.mode, opponent: r.opponent,
+        won: r.won, reward: r.reward, at: r.created_at,
+      })),
+    });
+  }));
 
   safeOn('mapView', ({ open } = {}) => {
     if (!s.room) return;

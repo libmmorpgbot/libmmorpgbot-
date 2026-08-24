@@ -130,10 +130,14 @@ for (const f of [...listJs('js'), 'index.html']) {
 const serverOn = new Map();      // event -> Set(keys read from the payload)
 for (const f of [...listJs('server/handlers2'), 'server/app.js']) {
   const src = read(f);
-  const re = /(?:safeOn|socket\.on)\(\s*'([A-Za-z0-9_]+)'\s*,\s*(?:async\s*)?\(([^)]*)\)/g;
+  // `(data) => ...`, `data => ...` and `() => ...` are all handlers. Requiring
+  // the parentheses missed every one written without them — _ping among them,
+  // which then read as unhandled.
+  const re = /(?:safeOn|socket\.on)\(\s*'([A-Za-z0-9_]+)'\s*,\s*(?:async\s*)?(\([^)]*\)|[A-Za-z_$][\w$]*)/g;
   let m;
   while ((m = re.exec(src))) {
-    const arg = m[2].trim();
+    let arg = m[2].trim();
+    if (arg.startsWith('(')) arg = arg.slice(1, -1).trim();
     const keys = new Set();
     if (arg.startsWith('{')) {
       // The MATCHING brace, not the last one. Every handler is written
@@ -208,7 +212,10 @@ console.log('  ── сервер → клієнт ──');
 const clientOn = new Set();
 for (const f of [...listJs('js'), 'index.html']) {
   const src = read(f);
-  const re = /(?:socket|s)\s*\.\s*on\(\s*'([A-Za-z0-9_]+)'/g;
+  // `once` is listening too. worldMap is requested and awaited exactly once
+  // per floor, with socket.once — reading only `.on` reported the server as
+  // shouting into the void about the one event the client asks for by name.
+  const re = /(?:socket|s)\s*\.\s*(?:on|once)\(\s*'([A-Za-z0-9_]+)'/g;
   let m;
   while ((m = re.exec(src))) clientOn.add(m[1]);
 }

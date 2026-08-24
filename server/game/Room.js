@@ -3285,6 +3285,11 @@ class Room {
   setPlayerStats(socketId, st) {
     const p = this.players.get(socketId);
     if (!p || !st) return;
+    // The level rides along because the room is where anything synchronous
+    // asks for it — the event modes gate entry on it, and reading it from the
+    // database inside a "may I register" check would make the check async for
+    // no gain. It is the server's own number either way.
+    if (st.level > 0) p.lvl = st.level;
     p.atk = st.atk;
     p.def = st.def;
     p.critChance = st.critChance;
