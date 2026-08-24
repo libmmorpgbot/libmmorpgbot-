@@ -226,6 +226,12 @@ async function main() {
       g2 = (await money.balancesOf(null, a.pid)).gold;
       if (k2 && k2.gold > 0) break;
     }
+    // Eight zero-gold rolls in a row is unlikely but not impossible, and the
+    // assertions below are about the LEDGER — which only gets a row when gold
+    // moved. Move to the next candidate rather than asserting against a die:
+    // that is the exact mistake this file was rewritten to stop making, and it
+    // came back as one failure per three-run batch.
+    if (!k2 || !(k2.gold > 0)) { await wait(180); continue; }
     twice = { id: cand.id, k1, k2, g0, g1, gBefore2, g2 };
     break;
   }

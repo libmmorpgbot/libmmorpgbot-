@@ -32,6 +32,7 @@ const party = require('./party');
 const modesLib = require('./modes');
 const maintenance = require('./maintenance');
 const presence = require('./presence');
+const modeRewards = require('./mode-rewards');
 let modesRuntime = null;
 const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
 
@@ -232,6 +233,28 @@ io.on('connection', (socket) => {
     socket.data.telegramId = s.telegramId;
     socket.data.username = s.username;
     socket.data.session = s;
+    // ── how a MODE moves this player ─────────────────────────────────────
+    // Every instanced mode deploys its entrants by reaching into their
+    // connection: `sock.data._forceEnterLocation(floor, { pos, room })`. There
+    // are fifteen of those calls across arena3, the death battle, the Tower,
+    // the guild war, co-op and the elite farm — and every one is written with
+    // `?.()`, so when nothing assigned this they all evaluated to undefined
+    // and did nothing at all. Silently: optional call, falsy result, and each
+    // caller's own "could not deploy" branch.
+    //
+    // The effect is not subtle. Co-op refused every entry. The 3v3 arena, the
+    // death battle and the Кровавая Башня each opened a registration window,
+    // took the attempt, and then deployed nobody. The guild-war window closed
+    // without sending anyone home.
+    //
+    // forceFloor is the session's own synchronous move — it is what the modes
+    // need, because they have to know where an entrant landed before they can
+    // scatter the rest of the team around them.
+    socket.data._forceEnterLocation = (target, opts) => s.forceFloor(target, opts);
+    // And what a mode PAYS. Four more closures the modes call through
+    // `sock.data`, and the rewrite assigned none of them either — see
+    // server/mode-rewards.js.
+    modeRewards.attach(socket, s);
     socket.join(`tg_${s.telegramId}`);
     // savedData is what the client rebuilds a character from — one function,
     // restoreFromSave, fed from this field and nothing else. Omitting it left
@@ -239,6 +262,10 @@ io.on('connection', (socket) => {
     // one, an empty bag. It is a PROJECTION built from the tables, in one
     // direction: nothing reads it back, and no handler accepts it.
     const savedData = await s.savedView();
+    if (!savedData) {
+      socket.emit('authError', { msg: 'Аккаунт недоступен — попробуйте войти снова' });
+      return socket.disconnect(true);
+    }
     const money = require('./db/repos/money');
     const bal = res.state.balances || await money.balancesOf(null, s.playerId);
 

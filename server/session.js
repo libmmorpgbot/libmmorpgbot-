@@ -273,6 +273,13 @@ class Session {
   // everything, to gain nothing a projection does not already give.
   async savedView(db = null) {
     const state = await this.fullState(db);
+    // players.ensure creates every one of these rows, so a null here means the
+    // account was deleted between the ensure and this read — an admin deleting
+    // someone mid-session, or a test cleaning up under a reconnect. It is a
+    // refused login, not a crash inside one: the old behaviour threw out of
+    // finishLogin and reported an internal error to the ops channel for what
+    // is a legitimate race.
+    if (!state.progress) return null;
     const { progress: p, prefs, skills, items: inv, balances, stats: st } = state;
 
     // Equipment as a slot map of catalog-shaped items, which is what

@@ -177,16 +177,47 @@ function notifyEventStarted(kind, at) {
 // A finished duel, for the history panel. Written outside any transaction the
 // caller may hold, because it is a record of something that already happened
 // and must not be able to roll a reward back.
-async function recordPvpHistory(socketId, row) {
-  const pid = playerIdOf(socketId);
+// ── two calling conventions, because there are two callers ──────────────────
+//
+//   _pvpEliminate  (socketId, { kind, mode, opponent })   — this file
+//   every mode     (telegramId, kind, mode, opponent)     — server/game/*.js
+//
+// Seven call sites use the second form, and the rewrite only implemented the
+// first. Every one of them therefore looked up a TELEGRAM id in a table of
+// SOCKET ids, got nothing, and returned before writing — so even once the
+// missing columns are added, the duel history would still record only the
+// deaths that happen outside a mode.
+//
+// Rather than editing seven verbatim-ported call sites, the function accepts
+// both. Which it got is unambiguous: the second argument is a string in the
+// positional form and an object in the other.
+async function recordPvpHistory(who, rowOrKind, mode, opponent) {
+  const row = (typeof rowOrKind === 'string')
+    ? { kind: rowOrKind, mode, opponent }
+    : (rowOrKind || {});
+
+  // A socket id if we hold one, otherwise the account behind a telegram id.
+  let pid = playerIdOf(who);
+  if (!pid) {
+    const sid = activeSessions.get(String(who));
+    if (sid) pid = playerIdOf(sid);
+  }
   if (!pid) return;
+
+  // 'win'/'lose' are the outcome of a MATCH; 'kill'/'death' are single events
+  // inside one. Only the first pair has a verdict, and the column is nullable
+  // so "no verdict" stays distinct from "lost".
+  const won = row.won != null ? row.won === true
+            : row.kind === 'win' ? true
+            : row.kind === 'lose' ? false
+            : null;
   try {
     const { query } = require('./db');
     await query(null, `
       INSERT INTO pvp_history (player_id, kind, mode, opponent, won, reward)
       VALUES ($1, $2, $3, $4, $5, $6)`,
       [pid, row.kind || 'duel', row.mode || 'pvp', row.opponent || null,
-       row.won === true, row.reward == null ? null : String(row.reward)]);
+       won, row.reward == null ? null : String(row.reward)]);
   } catch (err) {
     console.error('[modes] pvp history:', err.message);
   }
@@ -216,7 +247,20 @@ function init(io) {
   const shared = {
     io,
     getRoom,
-    playerFloorMap: { get: (sid) => { const s = sessionOf(sid); return s ? s.floor : null; } },
+    // Read as a map AND iterated as one: _gwCloseWindow walks every connection
+    // to send whoever is standing in the castle home. A stub with only `.get`
+    // threw `playerFloorMap is not iterable` from inside a timer, so the guild
+    // war never closed — the log is the only place it appeared.
+    playerFloorMap: {
+      get: (sid) => { const s = sessionOf(sid); return s ? s.floor : null; },
+      [Symbol.iterator]: function* () {
+        if (!_io) return;
+        for (const sock of _io.sockets.sockets.values()) {
+          const s = sock.data && sock.data.session;
+          if (s && s.authed) yield [sock.id, s.floor];
+        }
+      },
+    },
     logPlayer: () => {},                       // player_logs is written by the session
     _recordPvpHistory: recordPvpHistory,
     _returnToHub: returnToHub,

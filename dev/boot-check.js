@@ -185,8 +185,10 @@ async function main() {
   console.log('  ── прогресія і соціальне ──');
 
   // Studying without the book must refuse, and must not silently half-apply.
+  // 'progressError', not 'skillError' — that is the channel the shipped client
+  // listens on, and the handlers were speaking on one nobody hears.
   sock.emit('learnSkill', { key: 'Q' });
-  const noBook = await once(sock, 'skillError');
+  const noBook = await once(sock, 'progressError');
   ok(!!noBook, 'вивчити навичку без книги — відмова з поясненням');
 
   // Rating reads a stored column, not thirty numbers derived per row.
