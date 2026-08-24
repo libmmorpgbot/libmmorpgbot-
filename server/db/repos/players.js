@@ -326,6 +326,90 @@ async function bumpSkill(db, playerId, kind, key) {
   return rows.length ? { level: rows[0].level, changed: true } : { level: max, changed: false };
 }
 
+// ── rebirth ─────────────────────────────────────────────────────────────────
+// Resets the character to level 1 and grants permanent bonus skill points, in
+// exchange for a materials cost that grows with how many rebirths have already
+// happened. Everything in one transaction: the old handler consumed materials,
+// then reset the level, then granted the points, and a failure between any two
+// of those left a character that had paid and not been reset — or reset twice.
+//
+// keptSP is the subtlety. Points already spent on upgrades are PRESERVED across
+// a rebirth, so the reset must not simply zero the upgrades: it moves what was
+// committed into kept_sp, leaving the total the player controls unchanged.
+// Getting that wrong in either direction either steals progression or doubles it.
+async function rebirth(db, playerId, cost, { minLevel, bonusSp }) {
+  const items = require('./items');
+  await items.lockPlayer(db, playerId);
+
+  const { rows } = await query(db, `
+    SELECT lvl, rebirths, bonus_sp, kept_sp,
+           upg_atk + upg_def + upg_hp + upg_atk_speed
+         + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
+      FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
+  if (!rows.length) throw Object.assign(new Error('Игрок не найден'), { code: 'no_player' });
+  const st = rows[0];
+  if (st.lvl < minLevel) {
+    throw Object.assign(new Error(`Нужен ${minLevel} уровень`), { code: 'low_level', userMessage: `Нужен ${minLevel} уровень` });
+  }
+
+  for (const [itemId, need] of Object.entries(cost)) {
+    if (!await items.removeQty(db, playerId, itemId, need)) {
+      throw Object.assign(new Error(`Не хватает: ${itemId}`), { code: 'no_mats', userMessage: `Не хватает материалов: ${itemId}` });
+    }
+  }
+
+  const { rows: out } = await query(db, `
+    UPDATE player_progress
+       SET lvl = 1, xp = 0,
+           rebirths = rebirths + 1,
+           bonus_sp = bonus_sp + $2,
+           -- what was already committed stays committed, as kept points
+           kept_sp  = kept_sp + $3,
+           upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
+           upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
+           updated_at = now()
+     WHERE player_id = $1
+    RETURNING rebirths, bonus_sp, kept_sp`, [playerId, bonusSp, Number(st.spent)]);
+
+  return {
+    rebirths: out[0].rebirths, bonusSP: out[0].bonus_sp, keptSP: out[0].kept_sp,
+    lvl: 1, spentReturned: Number(st.spent),
+  };
+}
+
+// ── resetUpgrades ───────────────────────────────────────────────────────────
+// Refunds every spent point for a Nexum fee. `spent > 0` is checked inside the
+// same transaction as the charge, so a double-click cannot pay twice for one
+// reset — the second finds nothing spent.
+async function resetUpgrades(db, playerId, cost) {
+  const money = require('./money');
+
+  const { rows } = await query(db, `
+    SELECT upg_atk + upg_def + upg_hp + upg_atk_speed
+         + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
+      FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
+  if (!rows.length) throw Object.assign(new Error('Игрок не найден'), { code: 'no_player' });
+  if (Number(rows[0].spent) <= 0) {
+    throw Object.assign(new Error('Улучшений нет'), { code: 'nothing', userMessage: 'Улучшений нет — сбрасывать нечего' });
+  }
+
+  const paid = await money.spend(db, playerId, 'nexum', cost, {
+    reason: 'upgrade_reset', refType: 'player', refId: String(playerId),
+    // Random per attempt: resetting twice on purpose is two legitimate resets.
+    idemKey: `upgrade_reset:${playerId}:${require('crypto').randomUUID()}`,
+  });
+  if (!paid) throw Object.assign(new Error('Недостаточно Liberty'), { code: 'no_nexum', userMessage: 'Недостаточно Liberty' });
+
+  await query(db, `
+    UPDATE player_progress
+       SET upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
+           upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
+           updated_at = now()
+     WHERE player_id = $1`, [playerId]);
+
+  return { refunded: Number(rows[0].spent), nexumLeft: paid.balance };
+}
+
 module.exports = {
   byTelegramId, ensure, setUsername,
   progressOf, prefsOf, skillsOf,
@@ -333,4 +417,5 @@ module.exports = {
   savePosition, setHp, setClass,
   grantXp, spendUpgrade,
   setSkillLevel, bumpSkill,
+  rebirth, resetUpgrades,
 };

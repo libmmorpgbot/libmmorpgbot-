@@ -1492,6 +1492,30 @@ class Room {
     return !!race && a.x >= race.bossRoomX0 && b.x >= race.bossRoomX0;
   }
 
+  // Nearest standable point to (x, y), searched outward in rings of whole
+  // tiles. Used by every path that PLACES a player rather than moving them —
+  // spawn, respawn, teleport, arena deploy — so a destination that happens to
+  // fall on geometry becomes the nearest valid spot instead of a player stuck
+  // inside a wall.
+  //
+  // Bounded at 8 tiles: past that the destination is wrong in a way nudging
+  // cannot fix, and the caller should be told rather than have the player
+  // silently relocated across the map.
+  _nearestWalkable(x, y, maxRings = 8) {
+    if (!this._isWall(x, y)) return { x, y, moved: false };
+    for (let r = 1; r <= maxRings; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          // Ring only — the interior was covered by a smaller r.
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          const nx = x + dx * TILE, ny = y + dy * TILE;
+          if (!this._isWall(nx, ny)) return { x: nx, y: ny, moved: true };
+        }
+      }
+    }
+    return null;
+  }
+
   _hasLOS(x1, y1, x2, y2) {
     const dx = x2 - x1, dy = y2 - y1;
     const len = Math.hypot(dx, dy);
@@ -2805,6 +2829,34 @@ class Room {
     // them nothing. Only sustained travel faster than the cap drains it faster
     // than it refills, and that is the only thing this can ever flag.
     if (_MOVE_GUARD !== 'off' && !this._checkMoveBudget(socketId, p, x, y)) return;
+    // ── Walkability ─────────────────────────────────────────────────────────
+    // Until now the server accepted ANY finite coordinate that fit the speed
+    // budget and never asked whether a player could stand there. That is the
+    // "кинуло в стену" report: the client's own collision is a per-axis check
+    // against the destination with no swept test, so one oversized step — a
+    // lag spike, a teleport pad, a respawn landing on geometry — puts the
+    // character inside a wall, and the server writes it down as fact. From
+    // then on every other client renders them in the wall too, and the enemy
+    // AI happily walks up to them through it.
+    //
+    // The grid is right here (_isWall is already used for line of sight), so
+    // the check costs one array lookup. What it must NOT do is trap anyone:
+    //
+    //   • a player ALREADY inside a wall is allowed to move anywhere, because
+    //     refusing would pin them there permanently — the exact bug, made
+    //     worse. Any move out is an improvement, and the next one lands on
+    //     the normal rule again.
+    //   • only the centre point is tested, not the body radius. A stricter
+    //     test rejects legitimate movement along a corridor wall, and a
+    //     refused step that looks legal is a worse experience than the rare
+    //     clipped corner it would prevent.
+    //
+    // Returns the last good position so the caller can correct the client
+    // rather than letting the two silently disagree about where the player is.
+    if (this._isWall(x, y) && !this._isWall(p.x, p.y)) {
+      p._wallRefusals = (p._wallRefusals || 0) + 1;
+      return { refused: 'wall', x: p.x, y: p.y };
+    }
     // undefined means a client still running the pre-authoritative-flag
     // bundle (mid-rollout, tab open since before the deploy) — its 'mv'
     // packet has no 5th element at all. Leaving p.moving untouched in that

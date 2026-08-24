@@ -4300,12 +4300,49 @@ server.listen(PORT, () => {
 });
 
 // ── Error handlers ────────────────────────────────────────────────────────────
+// A rejected promise nobody handled. Unlike uncaughtException this does NOT
+// mean the process is unsound — it usually means one handler forgot a .catch —
+// so it logs and continues. But it went only to the console before, where
+// nobody reads it, which is how a handler that has been quietly failing for a
+// week gets discovered by a player report instead of by us. The alert
+// collapses by key, so a rejection inside a loop is one message and a count.
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
+  try {
+    require('./tg-ops').alertError('unhandled.rejection', 'Необработанная ошибка в обработчике', reason);
+  } catch { /* never let reporting be the failure */ }
 });
+// A throw that reached process scope means the state of this process is now
+// UNDEFINED — some invariant broke somewhere and nothing caught it. The old
+// handler logged, then waited two seconds before exiting, and during those two
+// seconds the server kept accepting socket events and kept writing to the
+// database. That is a window in which corruption gets persisted, and it is the
+// worst possible moment to still be taking work.
+//
+// So: stop taking work first, THEN allow the already-started writes to finish,
+// THEN die. The two seconds are for draining, not for serving.
+let _fatal = false;
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
-  // Give in-flight saves 2s to complete, then exit so the process manager restarts us
+  // A second throw while dying must not restart the clock or re-run the
+  // teardown — that turns a crash into a hang.
+  if (_fatal) return;
+  _fatal = true;
+
+  // Each guarded separately: one of these failing is entirely plausible in a
+  // process that has already thrown, and it must not stop the others.
+  try { server.close(); } catch (e) { console.error('[fatal] server.close:', e.message); }
+  try { io.close(); } catch (e) { console.error('[fatal] io.close:', e.message); }
+  try { floorRooms.forEach(r => r._stopLoop()); } catch (e) { console.error('[fatal] rooms:', e.message); }
+
+  // Tell the admins, best-effort and without awaiting: an alert that hangs
+  // would hold the process open past the exit timer.
+  try {
+    require('./tg-ops').alertError('fatal.uncaught', 'Сервер упал — процесс перезапускается', err, {
+      uptimeS: Math.round(process.uptime()),
+    });
+  } catch { /* alerting must never be the thing that breaks */ }
+
   setTimeout(() => process.exit(1), 2000).unref();
 });
 
