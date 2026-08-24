@@ -60,14 +60,19 @@ async function api(method, params = {}) {
     }
   }
 
-  // Who may press the money buttons. Read from the GROUP rather than trusted
-  // from a config file: the answer to "who are the admins" should come from
-  // the same place the permission actually lives, so adding someone in
-  // Telegram and forgetting the env var cannot silently grant or withhold it.
+  // Listed for CONVENIENCE, to find the ids once. The running server does NOT
+  // read this — TG_ADMIN_IDS is a fixed list in the environment.
   //
-  // Bots are filtered out — @Liblogsbot is an administrator of this group
-  // itself, and it must never end up in the list of humans allowed to approve
-  // a payout.
+  // An earlier version of this comment argued the opposite: that permission
+  // should be read from the group, so nobody could forget to update a config
+  // file. That was wrong, and the reason is worth stating. Being a Telegram
+  // group administrator and being allowed to move other people's money are
+  // different things. Deriving one from the other means adding a moderator to
+  // the logs group silently grants them payout approval — an escalation nobody
+  // performed deliberately and nobody would see.
+  //
+  // Bots are filtered out regardless: @Liblogsbot administrates this group
+  // itself and must never appear among the humans.
   if (GROUP) {
     const admins = await api('getChatAdministrators', { chat_id: GROUP });
     if (admins.ok) {
@@ -103,9 +108,19 @@ async function api(method, params = {}) {
     if (GROUP && String(m.chat.id) !== GROUP) continue;
     const tid = m.message_thread_id;
     if (!tid) continue;
+    // Three sources, in descending order of reliability. forum_topic_created
+    // carries the real name but only exists if the bot was in the group when
+    // the topic was made — which is the common case for it NOT to be there,
+    // since a bot is usually added afterwards.
     const created = m.forum_topic_created;
-    if (created && created.name) topics.set(tid, created.name);
-    else if (!topics.has(tid)) topics.set(tid, '(назва невідома — з повідомлення в топіку)');
+    if (created && created.name) { topics.set(tid, created.name); continue; }
+    // Falling back to the message TEXT is what makes this work without that
+    // service message: an admin posting the word "депозиты" in the deposits
+    // topic identifies it just as well, and takes thirty seconds.
+    const text = String(m.text || m.caption || '').trim();
+    const prev = topics.get(tid);
+    if (text && (!prev || prev.startsWith('('))) topics.set(tid, text.slice(0, 40));
+    else if (!prev) topics.set(tid, '(порожнє повідомлення — назву не видно)');
   }
 
   if (!topics.size) {
