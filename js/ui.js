@@ -3905,7 +3905,7 @@ function enhanceEqItem(slot, stoneType) {
 // wrote the new inventory/equipment into `player` — this only handles the
 // user-facing side: toast, and reopening the item modal at its new state (or
 // closing it, on a burn).
-function onEnhanceResult({ id, slot, outcome, newEnhance } = {}) {
+function onEnhanceResult({ id, slot, outcome, newEnhance, rowId } = {}) {
   if (!player) return;
   if (outcome === 'success') {
     dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: newEnhance }), '#e69419');
@@ -3919,7 +3919,15 @@ function onEnhanceResult({ id, slot, outcome, newEnhance } = {}) {
   } else if (slot) {
     openEqItemModal(slot);
   } else {
-    const idx = player.inventory.findIndex(i => i && i.id === id && (i.enhance || 0) === newEnhance);
+    // By row when the server named one — the inventory can hold two copies of
+    // the same item at the same level, and identity alone reopens whichever
+    // comes first. Identity stays as the fallback.
+    let idx = rowId != null
+      ? player.inventory.findIndex(i => i && i.rowId === rowId)
+      : -1;
+    if (idx < 0) {
+      idx = player.inventory.findIndex(i => i && i.id === id && (i.enhance || 0) === newEnhance);
+    }
     if (idx >= 0) openInvItemModal(idx);
   }
 }

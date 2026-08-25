@@ -100,7 +100,40 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
         VALUES ($1, $2, $3) RETURNING id, created_at`,
         [playerId, rowId, round2(p)]);
 
-  return { listingId: Number(rows[0].id), price: round2(p), item: { id: it.item_id, enhance: it.enhance, qty: it.qty } };
+  // Read back through the SAME shape browse() and mine() use. This used to
+  // return `{ listingId, price, item: { id, enhance, qty } }` — no `id`, no
+  // item name, no rarity, no slot — and the client unshifts it straight into
+  // its "my lots" list and draws it. So a lot you had just listed showed with
+  // no icon and no name until you left the tab and came back, at which point
+  // mine() supplied the real record: "только выставил — нет иконки; если на
+  // другую страницу и назад — проявляются".
+  //
+  // It was worse than a missing icon. The client removes a cancelled lot with
+  // `_marketMine.filter(l => l.id !== listingId)`, and this record had no `id`
+  // at all — so cancelling a lot listed in the same session left it on screen.
+  //
+  // One extra read on an action a player performs a few times an hour, in
+  // exchange for every path answering with one shape.
+  const id = Number(rows[0].id);
+  const lot = await byId(db, id);
+  // `listingId` kept alongside `id`: callers written against the old return
+  // shape (dev/market-check.js among them) name it that way, and breaking them
+  // to rename a field would be a change with no benefit to anyone.
+  return lot
+    ? { ...lot, listingId: id }
+    : { id, listingId: id, price: round2(p), item: { id: it.item_id, enhance: it.enhance, qty: it.qty } };
+}
+
+// One listing, in the shape every other read answers with.
+async function byId(db, listingId) {
+  const { rows } = await query(db, `
+    SELECT ${await listingCols()}
+      FROM market_listings l
+      JOIN players      s ON s.id = l.seller_id
+      LEFT JOIN player_items i ON i.id = l.item_id
+      LEFT JOIN item_catalog c ON c.item_id = ${await catalogJoin()}
+     WHERE l.id = $1`, [listingId]);
+  return rows.length ? _lot(rows[0]) : null;
 }
 
 // ── cancel ──────────────────────────────────────────────────────────────────
@@ -316,4 +349,4 @@ async function history(db, playerId, limit = 30) {
   return rows.map(r => ({ ..._lot(r), buyerId: r.buyer_id ? Number(r.buyer_id) : null, buyerUsername: r.buyer_username, closedAt: r.closed_at }));
 }
 
-module.exports = { list, cancel, buy, browse, mine, history, MarketError };
+module.exports = { list, cancel, buy, browse, mine, history, byId, MarketError };

@@ -90,11 +90,17 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
   }
 
   if (session.room !== room) {
+    // The clan comes off the SESSION, not off `progress`. player_progress has
+    // no clan columns — a clan is a row in clan_members — so these three
+    // arguments were undefined on every entry since the rewrite, and the tag
+    // over a player's head was null for everyone. Two people in two clans
+    // standing beside each other saw nothing over either head.
+    const clan = session.clan || null;
     room.addPlayer(
       session.socket.id, session.username,
-      progress && progress.clanName, progress && progress.clanIcon,
-      progress && progress.clanAtkBonus, session.telegramId,
-      progress && progress.clanId,
+      clan && clan.name, clan && clan.icon,
+      (clan && clan.atkBonus) || 0, session.telegramId,
+      clan && clan.clanId,
     );
     // The CLASS, without which the room has a player record with no `type`:
     // no sprite for anyone else to draw, no class multipliers in combat, and

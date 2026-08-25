@@ -153,7 +153,27 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const res = await craft.enhance(t, pid, row, stoneType === 'bless' ? 'bless' : 'norm');
     await pushAll(t);
-    s.socket.emit('enhanceResult', res);
+    // NAMED FIELDS, not the repository's own object. The client reads
+    // `{ id, slot, outcome, newEnhance }` and this used to forward
+    // `{ outcome, rowId, from, to, rate }` — so `newEnhance` was undefined,
+    // the toast said "Заточка +undefined", and the lookup that reopens the
+    // item card (`findIndex(i => i.id === undefined ...)`) found nothing and
+    // silently returned. The stone was spent and the item was enhanced;
+    // nothing on screen moved. "Все работает правильно, просто ui не меняется."
+    //
+    // It also explains why reply-shape-check never caught it: that checker
+    // reads the KEYS of an emitted object literal, and this emitted a
+    // variable, so it counted as unverifiable rather than as a mismatch.
+    s.socket.emit('enhanceResult', {
+      outcome: res.outcome,
+      id: res.itemId,
+      rowId: res.rowId,
+      slot: slot || null,
+      from: res.from,
+      to: res.to,
+      newEnhance: res.to,
+      rate: res.rate,
+    });
   }));
 
   // ── boxes ────────────────────────────────────────────────────────────────

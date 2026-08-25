@@ -62,6 +62,25 @@ async function main() {
   eq(view.members.length, 1, 'засновник — єдиний учасник');
   eq(view.members[0].role, 'leader', 'він лідер');
 
+  // ── the badge over a player's head ───────────────────────────────────────
+  // clanOf answers { clanId, role } and Room.addPlayer wants a NAME and an
+  // ICON. It was handed progress.clanName — and player_progress has no clan
+  // columns, because a clan is a row in clan_members, not a property of
+  // progress. So every player joined every room with clanName undefined and
+  // nobody has ever seen anybody's clan tag: "клани користувачів не показує",
+  // two people in two clans standing next to each other, nothing over either
+  // head.
+  const badge = await clans.badgeOf(null, leader);
+  ok(!!badge, 'значок клану читається');
+  eq(badge && badge.name, `${TAG.slice(-4)}A`, 'у ньому імʼя клану — те, що малюється над головою');
+  eq(badge && badge.icon, 3, 'і його іконка');
+  eq(badge && badge.clanId, c.clanId, 'і той самий клан');
+  ok(badge && Number.isFinite(badge.atkBonus), `і бонус атаки за рівень (${badge && badge.atkBonus}%)`);
+
+  const noClan = await mk('solo', 10);
+  eq(await clans.badgeOf(null, noClan), null, 'у безклановного значка немає');
+
+
   eq(await caught(() => tx(t => clans.create(t, leader, `${TAG.slice(-4)}B`, 3))), 'in_clan',
     'створити другий клан, будучи в клані, неможливо');
 

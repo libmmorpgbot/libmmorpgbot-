@@ -325,6 +325,29 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
           расписания и продолжают начисляться, даже когда локация закрыта.
         </div>
       </div>
+      <div class="card">
+        <h3>⚔ Арена 3х3</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="a3-status">—</div>
+        <div class="action-grid">
+          <button class="btn btn-primary" id="a3-open-btn" onclick="openArena3()">Открыть сейчас</button>
+          <button class="btn btn-red" id="a3-close-btn" onclick="closeArena3()">Закрыть сейчас</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Обычно по расписанию. Окно набора открывается немедленно; бой стартует,
+          как только наберётся две команды.
+        </div>
+      </div>
+      <div class="card">
+        <h3>♻ Сброс ежедневных попыток</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
+          Возвращает попытку ВСЕМ игрокам сразу — для проверки режима или после сбоя.
+        </div>
+        <div class="action-grid">
+          <button class="btn btn-primary" onclick="resetModeAll('fear')">Страх — всем</button>
+          <button class="btn btn-primary" onclick="resetModeAll('coop')">Сотрудничество — всем</button>
+          <button class="btn btn-gray" onclick="clearBossDrops()">Убрать лут босса с пола</button>
+        </div>
+      </div>
       <div class="tops-grid" id="tops-grid">
         <div class="top-card"><h4>🏆 По BM</h4><div id="top-bm"></div></div>
         <div class="top-card"><h4>⚡ По уровню</h4><div id="top-lvl"></div></div>
@@ -692,6 +715,7 @@ async function loadDashboard() {
   loadDeathBattle();
   loadRace10();
   loadGuildWar();
+  loadArena3();
 }
 
 // ── Технические работы ─────────────────────────────────────
@@ -859,6 +883,70 @@ async function closeRace10() {
   loadRace10();
 }
 
+// ── Арена 3х3 ──────────────────────
+async function loadArena3() {
+  const el = document.getElementById('a3-status');
+  const openBtn = document.getElementById('a3-open-btn');
+  const closeBtn = document.getElementById('a3-close-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/arena3')).json();
+    let txt, live = false;
+    if (d.live) { txt = 'Бой идёт'; live = true; }
+    else if (d.phase === 'open' || d.phase === 'reg') {
+      txt = 'Набор открыт · в очереди ' + (d.queued || 0);
+      live = true;
+    } else {
+      txt = 'Закрыта';
+      if (d.nextAt) txt += ' · по расписанию: ' + new Date(d.nextAt).toLocaleString('ru-RU');
+    }
+    el.textContent = txt;
+    if (openBtn)  { openBtn.disabled = live;   openBtn.style.opacity  = live  ? '.5' : '1'; }
+    if (closeBtn) { closeBtn.disabled = !live; closeBtn.style.opacity = !live ? '.5' : '1'; }
+  } catch (e) { el.textContent = '—'; }
+}
+
+async function openArena3() {
+  if (!confirm('Открыть набор на Арену 3х3 сейчас, вне расписания?')) return;
+  try {
+    const r = await api('/admin/arena3/open', { method: 'POST' });
+    const d = await r.json();
+    toast(r.ok ? 'Набор открыт' : (d.error || 'Ошибка'), r.ok);
+  } catch (e) { toast('Ошибка', false); }
+  loadArena3();
+}
+
+async function closeArena3() {
+  if (!confirm('Закрыть набор на Арену 3х3?')) return;
+  try {
+    const r = await api('/admin/arena3/close', { method: 'POST' });
+    const d = await r.json();
+    toast(r.ok ? 'Набор закрыт' : (d.error || 'Ошибка'), r.ok);
+  } catch (e) { toast('Ошибка', false); }
+  loadArena3();
+}
+
+// ── Сброс попыток и уборка лута ────────
+async function resetModeAll(mode) {
+  const name = mode === 'fear' ? 'Страх' : 'Сотрудничество';
+  if (!confirm('Вернуть попытку «' + name + '» ВСЕМ игрокам?')) return;
+  try {
+    const r = await api('/admin/' + mode + '/reset-all', { method: 'POST' });
+    const d = await r.json();
+    toast(r.ok ? ('Возвращено попыток: ' + (d.attemptsRestored || 0)) : (d.error || 'Ошибка'), r.ok);
+  } catch (e) { toast('Ошибка', false); }
+}
+
+async function clearBossDrops() {
+  if (!confirm('Убрать весь лут босса с пола арены? Вернуть его будет нельзя.')) return;
+  try {
+    const r = await api('/admin/event-boss/clear-drops', { method: 'POST' });
+    const d = await r.json();
+    toast(r.ok ? ('Убрано куч: ' + (d.cleared || 0)) : (d.error || 'Ошибка'), r.ok);
+  } catch (e) { toast('Ошибка', false); }
+  loadEventBoss();
+}
+
 // ── Война гильдий ─────────────────────────────────────────
 async function loadGuildWar() {
   const el = document.getElementById('gw-status');
@@ -901,6 +989,7 @@ async function closeGuildWar() {
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadGuildWar();
+  loadArena3();
 }
 
 function refreshOnline() {

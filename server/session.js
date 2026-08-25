@@ -93,6 +93,8 @@ class Session {
     // expensive query in the game.
     this.vipLevel = 0;
     this.seasonTicket = false;
+    // { clanId, name, icon, level, atkBonus } or null — see refreshClan.
+    this.clan = null;
     this.connectedAt = Date.now();
   }
 
@@ -131,6 +133,7 @@ class Session {
     // The two numbers that size a loot roll, cached for the session — see the
     // constructor for why they are not read per kill.
     await this.refreshVip();
+    await this.refreshClan();
 
     // Everything the client needs, from the database, in one place. The blob
     // that comes back with it (savedView) is a projection OUT of these tables,
@@ -363,6 +366,36 @@ class Session {
 
   // Re-read after anything that can change them: a package purchase, a VIP
   // claim, a season ticket. Cheap, and rare.
+  // ── the clan badge ───────────────────────────────────────────────────────
+  // Name and icon, for the tag drawn over this player's head on everyone
+  // else's screen. Cached on the session for the same reason vipLevel is: it
+  // is read on every floor entry and changes a few times in an account's life.
+  //
+  // It has to be cached SOMEWHERE, and the place it was being read from —
+  // `progress.clanName` — does not exist. player_progress has no clan columns,
+  // because a clan is not a property of progress; it is a row in clan_members.
+  // So Room.addPlayer received undefined for the name and the icon on every
+  // entry, and nobody has ever seen anybody's clan tag.
+  async refreshClan(db = null) {
+    try {
+      const clansRepo = require('./db/repos/clans');
+      this.clan = await clansRepo.badgeOf(db, this.playerId);
+    } catch (err) {
+      // A missing badge costs a label, not a capability. The one thing it
+      // must not do is stop the login.
+      console.error('[session] refreshClan:', err.message);
+      this.clan = null;
+    }
+    // The room the player is standing in right now, if any — leaving or
+    // joining a clan must show up without a relog.
+    if (this.room && this.room.setPlayerClan) {
+      const c = this.clan;
+      this.room.setPlayerClan(this.socket.id,
+        c && c.name, c && c.icon, (c && c.atkBonus) || 0, c && c.clanId);
+    }
+    return this.clan;
+  }
+
   async refreshVip(db = null) {
     try {
       const progression = require('./db/repos/progression');
@@ -481,8 +514,11 @@ class Session {
     this.socket.to(`floor_${this.floor}`).emit('playerLeft', { id: this.socket.id });
     if (!INSTANCED_FLOORS.has(this.floor)) this.socket.leave(`floor_${this.floor}`);
 
-    dest.addPlayer(this.socket.id, this.username, was.clanName, was.clanIcon,
-      was.clanAtkBonus, this.telegramId, was.clanId);
+    // `was` is the room record being left, which carries whatever it was given
+    // — undefined, until this fix. The session is the source.
+    const clan = this.clan || null;
+    dest.addPlayer(this.socket.id, this.username, clan && clan.name, clan && clan.icon,
+      (clan && clan.atkBonus) || 0, this.telegramId, clan && clan.clanId);
     dest.setPlayerChar(this.socket.id, was.type);
     dest.setPlayerStats(this.socket.id, {
       level: was.lvl, atk: was.atk, def: was.def, maxHp: was.maxHp,

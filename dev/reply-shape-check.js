@@ -99,6 +99,35 @@ function literalKeys(lit) {
 // Only the destructured form is understood. `(data) => …` hands the whole
 // object to a body this tool would have to interpret, so those are counted and
 // reported as unchecked rather than silently passed.
+// The parameter destructure of a top-level client function, by name. Used to
+// follow a handler that hands its payload straight to one — see the comment at
+// the delegation branch below.
+const _clientSrc = [];
+for (const dir of CLIENT) {
+  for (const file of walk(path.join(ROOT, dir))) {
+    _clientSrc.push(strip(fs.readFileSync(file, 'utf8')));
+  }
+}
+// Found by scanning rather than by a built regex: `new RegExp('function\s+'
+// + name)` is a string literal, so the backslash-s is just an `s` unless it is
+// doubled, and the pattern quietly becomes `functions+onClanData`. Plain
+// indexOf has no escaping to get wrong.
+function destructureOf(fnName) {
+  const needle = `function ${fnName}(`;
+  for (const src of _clientSrc) {
+    const at = src.indexOf(needle);
+    if (at < 0) continue;
+    // The parameter list must OPEN with a destructure for the shape to be
+    // readable; `function f(data)` tells us nothing.
+    const open = src.indexOf('{', at + needle.length - 1);
+    if (open < 0 || src.slice(at + needle.length, open).trim() !== '') continue;
+    const lit = braceSpan(src, open);
+    if (!lit) continue;
+    return new Set(literalKeys(lit).keys);
+  }
+  return null;
+}
+
 const clientReads = new Map();   // event -> { keys:Set, files:Set }
 const clientOpaque = new Map();  // event -> Set(files)
 
@@ -120,8 +149,37 @@ for (const dir of CLIENT) {
         keys.forEach(k => rec.keys.add(k));
         rec.files.add(rel);
       } else {
-        if (!clientOpaque.has(event)) clientOpaque.set(event, new Set());
-        clientOpaque.get(event).add(rel);
+        // ── one hop further ─────────────────────────────────────────────────
+        // `s.on('enhanceResult', (data) => onEnhanceResult(data))` destructures
+        // nothing HERE, and this counted it as opaque and moved on. The
+        // destructure is one line away, in the function it hands the payload
+        // to — and that is where the contract actually lives.
+        //
+        // It cost a real bug. The server emitted `{ outcome, rowId, from, to,
+        // rate }`; onEnhanceResult reads `{ id, slot, outcome, newEnhance }`.
+        // So the enhancement toast said "+undefined" and the item card never
+        // reopened — "все работает правильно, просто ui не меняется" — while
+        // this file reported 134 clean and counted the event as unchecked.
+        //
+        // Only the simple shape is followed: a body that is exactly one call
+        // passing the payload straight through. Anything else stays opaque,
+        // because guessing is how a checker starts lying.
+        // Written without a backreference: the payload name and the argument
+        // are captured separately and compared in code. A backslash-1 inside a
+        // regex literal is one transcription slip from silently matching nothing,
+        // which is exactly how this branch did nothing on its first run.
+        const call = /^\(?\s*(\w+)\s*\)?\s*=>\s*\{?\s*(?:if\s*\([^)]*\)\s*)?(\w+)\s*\(\s*(\w+)\s*\)/
+          .exec(after);
+        const fnKeys = (call && call[3] === call[1]) ? destructureOf(call[2]) : null;
+        if (fnKeys && fnKeys.size) {
+          if (!clientReads.has(event)) clientReads.set(event, { keys: new Set(), files: new Set() });
+          const rec = clientReads.get(event);
+          fnKeys.forEach(k => rec.keys.add(k));
+          rec.files.add(rel);
+        } else {
+          if (!clientOpaque.has(event)) clientOpaque.set(event, new Set());
+          clientOpaque.get(event).add(rel);
+        }
       }
     }
   }

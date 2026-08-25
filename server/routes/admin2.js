@@ -1075,6 +1075,45 @@ module.exports = function registerAdminRoutes(app, deps) {
   modeCtl('/admin/guildwar/open',  () => need('_gwOpenWindow')(Date.now()), 'guildwar_open');
   modeCtl('/admin/guildwar/close', () => need('_gwCloseWindow')(), 'guildwar_close');
 
+  // ── the arena, 3v3 ───────────────────────────────────────────────────────
+  // The one scheduled event with no way to start it by hand: "остальные
+  // события я запустить не могу". Its window opens on a schedule like the
+  // others and there was simply no endpoint.
+  app.get('/admin/arena3', guard, (req, res) =>
+    res.json(modes._a3PublicState ? modes._a3PublicState() : {}));
+  modeCtl('/admin/arena3/open',  () => need('_a3OpenWindow')(Date.now()), 'arena3_open');
+  modeCtl('/admin/arena3/close', () => need('_a3CloseWindow')(), 'arena3_close');
+
+  // ── Страх, one player at a time ──────────────────────────────────────────
+  // Not an event with a window: a player walks in when they choose and spends
+  // a daily attempt. What an operator actually needs is to GIVE the attempt
+  // back, which is the reset that already exists per player — this does it for
+  // everybody at once, which is what "запустить Страх" means in practice.
+  modeCtl('/admin/fear/reset-all', async () => {
+    const { rowCount } = await query(null,
+      `DELETE FROM player_daily WHERE day = CURRENT_DATE AND mode = 'fear'`);
+    return { attemptsRestored: rowCount };
+  }, 'fear_reset_all');
+  modeCtl('/admin/coop/reset-all', async () => {
+    const { rowCount } = await query(null,
+      `DELETE FROM player_daily WHERE day = CURRENT_DATE AND mode = 'coop'`);
+    return { attemptsRestored: rowCount };
+  }, 'coop_reset_all');
+
+  // The world boss's loot, swept off the floor. A summon that went wrong
+  // leaves sixty piles lying in the arena for their full lifetime.
+  modeCtl('/admin/event-boss/clear-drops', () => {
+    const world = require('../world');
+    const arena = world.roomOf(world.FLOOR_IDS.arena);
+    if (!arena) throw Object.assign(new Error('no arena'), { userMessage: 'Арена недоступна' });
+    // claimWorldDrop is the same call a pickup makes, so each pile leaves the
+    // floor the way it normally would — the clients watching get their
+    // 'worldDropTaken' and the piles disappear from every screen.
+    const drops = arena.worldDropSnapshot();
+    for (const d of drops) arena.claimWorldDrop(d.id, d.x, d.y);
+    return { cleared: drops.length };
+  }, 'boss_clear_drops');
+
   // ── maintenance ──────────────────────────────────────────────────────────
   app.get('/admin/maintenance', guard, (req, res) => res.json({ on: maintenance.isOn() }));
   app.post('/admin/maintenance/on', guard, csrf, async (req, res) => {

@@ -23,7 +23,7 @@ const items = require('./items');
 const money = require('./money');
 const {
   CLAN_MAX_MEMBERS, CLAN_CREATE_COST, CLAN_DESC_MAX_CHARS, CLAN_LEVELS,
-  CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD, UNIQUE_SHARDS,
+  CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD, UNIQUE_SHARDS, clanAtkBonusPct,
 } = require('../../../shared/definitions');
 
 class ClanError extends Error {
@@ -507,6 +507,32 @@ async function clanOf(db, playerId) {
   return rows.length ? { clanId: Number(rows[0].clan_id), role: rows[0].role } : null;
 }
 
+// The badge that hangs over a player's head: name, icon, and the attack bonus
+// their clan's level grants. One join, read at login and whenever membership
+// changes.
+//
+// clanOf answers `{ clanId, role }` and nothing else, and Room.addPlayer wants
+// a name and an icon — so it was handed `progress.clanName`, which does not
+// exist: player_progress has no clan columns, because a clan is not a property
+// of progress. Every player therefore joined every room with clanName null,
+// and no one has ever seen anyone else's clan tag. Two people in two clans
+// standing next to each other saw nothing over either head.
+async function badgeOf(db, playerId) {
+  const { rows } = await query(db, `
+    SELECT c.id, c.name, c.icon, c.xp
+      FROM clan_members m JOIN clans c ON c.id = m.clan_id
+     WHERE m.player_id = $1`, [playerId]);
+  if (!rows.length) return null;
+  const level = levelFor(Number(rows[0].xp));
+  return {
+    clanId: Number(rows[0].id),
+    name: rows[0].name,
+    icon: rows[0].icon,
+    level,
+    atkBonus: clanAtkBonusPct(level),
+  };
+}
+
 async function search(db, term, limit = 20) {
   const { rows } = await query(db, `
     SELECT c.id, c.name, c.icon, c.xp, c.level,
@@ -550,5 +576,5 @@ module.exports = {
   claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
   addXp, deposit, allocate, claim, cancelAllocation, unlockStorage,
-  fullView, clanOf, search, levelFor, ClanError,
+  fullView, clanOf, badgeOf, search, levelFor, ClanError,
 };

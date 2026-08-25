@@ -44,6 +44,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // round trip for the whole panel — the old version issued a query per member
   // to resolve names, every time anyone opened the tab.
   async function pushClan(t) {
+    // The tag over this player's head, in every room, refreshed here — this is
+    // the one place every membership change funnels through. Without it a
+    // player who just founded a clan wears no tag until they relog.
+    await s.refreshClan(t);
     const membership = await clans.clanOf(t, s.playerId);
     if (!membership) return s.socket.emit('clanData', null);
     // The shape the client's panel renders: members and applications keyed by
@@ -94,6 +98,9 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // counter moves on the account that was accepted.
     const q = await progression.questOnEvent(t, target, 'join_guild', '_guild', 1);
     if (sock) {
+      // Their tag, on their session — this handler runs on the LEADER's, so
+      // without this the new member wears nothing until they relog.
+      if (sock.data && sock.data.session) await sock.data.session.refreshClan(t);
       sock.emit('clanData', await clans.dataView(t, m.clanId, target));
       if (q) sock.emit('questSync', q);
     }
@@ -114,11 +121,15 @@ module.exports = function registerSocial(s, safeOn, deps) {
     await clans.kick(t, pid, m.clanId, target);
     await pushClan(t);
     const sock = deps.socketForPlayerId && deps.socketForPlayerId(target);
-    if (sock) sock.emit('clanData', null);
+    if (sock) {
+      if (sock.data && sock.data.session) await sock.data.session.refreshClan(t);
+      sock.emit('clanData', null);
+    }
   }));
 
   safeOn('clanLeave', () => s.act('clanLeave', 'clanError', async (t, pid) => {
     await clans.leave(t, pid);
+    await s.refreshClan(t);          // the tag comes off now, not on relog
     s.socket.emit('clanData', null);
   }));
 
@@ -126,6 +137,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const m = await clans.clanOf(t, pid);
     if (!m) return;
     await clans.disband(t, pid, m.clanId);
+    await s.refreshClan(t);
     s.socket.emit('clanData', null);
   }));
 

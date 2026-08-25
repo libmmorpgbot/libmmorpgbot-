@@ -98,15 +98,15 @@ async function enhance(db, playerId, rowId, stoneType) {
 
   if (success) {
     await query(db, 'UPDATE player_items SET enhance = enhance + 1 WHERE id = $1', [rowId]);
-    return { outcome: 'success', rowId, from: it.enhance, to: it.enhance + 1, rate };
+    return { outcome: 'success', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance + 1, rate };
   }
   if (stoneType === 'bless') {
-    return { outcome: 'fail', rowId, from: it.enhance, to: it.enhance, rate };
+    return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance, rate };
   }
   // Burned. The row is deleted, which is what makes the loss real rather than
   // a flag some later read has to remember to honour.
   await query(db, 'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
-  return { outcome: 'burned', rowId, from: it.enhance, to: null, rate };
+  return { outcome: 'burned', rowId, itemId: it.item_id, from: it.enhance, to: null, rate };
 }
 
 function _slotOf(itemId) {

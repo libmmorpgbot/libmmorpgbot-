@@ -611,6 +611,29 @@ async function boot() {
     },
   });
   if (modesRuntime._gwRestore) await modesRuntime._gwRestore();
+
+  // ── the castle itself ────────────────────────────────────────────────────
+  // Room.spawnGuildWarTower has existed the whole time and NOTHING has ever
+  // called it. The old build spawned it while building the floor's Room
+  // (`if (f === FLOOR_IDS.guildWar) room.spawnGuildWarTower(_gw)`); the
+  // rewrite moved room creation into world.initFloors and left this behind.
+  //
+  // So the Guild War zone opened on schedule, players walked in, and there was
+  // nothing there to fight over — "замка в битвах гільдій нема", "башни нету
+  // короче". The whole mode is a fight for one structure, and the structure
+  // was never placed.
+  //
+  // AFTER _gwRestore, so the tower is handed the owner that survived the
+  // restart instead of standing unclaimed every time the process starts.
+  const gwRoom = world.roomOf(world.FLOOR_IDS.guildWar);
+  if (gwRoom && gwRoom.spawnGuildWarTower && modesRuntime._gw) {
+    const tower = gwRoom.spawnGuildWarTower(modesRuntime._gw);
+    console.log(`guild war: замок ${tower ? 'на месте' : 'НЕ создан'}`
+      + `${tower && tower.ownerClanName ? ` · владеет «${tower.ownerClanName}»` : ' · ничей'}`);
+  } else {
+    console.error('[boot] замок Войны гильдий не создан — комната или режим недоступны');
+  }
+
   if (modesRuntime._gwSchedule) modesRuntime._gwSchedule();
   if (modesRuntime._gwIncomeSchedule) modesRuntime._gwIncomeSchedule();
   console.log('modes: arena3, death battle, race, fear, co-op, elite farm, guild war');
