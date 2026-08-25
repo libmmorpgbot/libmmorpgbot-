@@ -77,6 +77,29 @@ const SECRETS = [
 function scrub(text) {
   let s = String(text == null ? '' : text);
   for (const re of SECRETS) s = s.replace(re, '«скрыто»');
+
+  // ── unreadable input must not become an unreadable alert ─────────────────
+  // U+FFFD is what a decoder leaves behind when the bytes it was given were
+  // not the encoding it was told: a message that arrives as replacement
+  // characters reaches the group as a row of question marks nobody can read,
+  // copy or search for. It happened on the very first live test of this path —
+  // curl on Windows handed the body over in the system codepage and express
+  // decoded it as UTF-8.
+  //
+  // The count is kept, because "the text was mangled" is itself the useful
+  // fact: silently deleting the marks would turn a garbled report into a
+  // plausible-looking short one.
+  const broken = (s.match(/�/g) || []).length;
+  if (broken) {
+    s = s.replace(/�+/g, '');
+    s += `\n<i>(${broken} символов не удалось прочитать — отправитель прислал не UTF-8)</i>`;
+  }
+
+  // C0 control characters other than newline. A stray \x00 or \x1b makes
+  // Telegram reject the whole message, which silently loses the alert it was
+  // carrying — the same failure mode esc() exists to prevent.
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
   return s;
 }
 

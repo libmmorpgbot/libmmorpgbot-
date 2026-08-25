@@ -113,6 +113,36 @@ async function main() {
     'токен у тексті помилки вирізано — інакше алерт про збій віддає бота');
   ok(/скрыто/.test(sent[0].text), 'і на його місці стоїть позначка');
 
+  // ── text that arrived broken must not leave broken ───────────────────
+  // The first live test of the client-error path produced exactly this: curl
+  // on Windows handed the body to a native binary in the system codepage,
+  // express decoded it as UTF-8, and every Cyrillic character became U+FFFD.
+  // What reached the group was a row of question marks — unreadable, and
+  // impossible even to paste anywhere to ask about.
+  //
+  // The characters are built by code point rather than typed: a literal
+  // replacement character in a source file is exactly the thing that does not
+  // survive being copied around, which is half of why this was confusing.
+  console.log('');
+  console.log('  ── нечитабельний текст ──');
+  const FFFD = String.fromCharCode(0xFFFD);
+  sent.length = 0;
+  await ops.alert(`${TAG}.mojibake`, 'Помилка',
+    `Не${FFFD}${FFFD}${FFFD}удалось купить лот`);
+  ok(sent[0].text.indexOf(FFFD) === -1,
+    'символи-замінники прибрано з повідомлення');
+  ok(/не удалось прочитать/.test(sent[0].text),
+    'але сказано, що текст прийшов побитим — інакше обрізане виглядало б цілим');
+
+  sent.length = 0;
+  const NUL = String.fromCharCode(0), ESC = String.fromCharCode(27);
+  await ops.alert(`${TAG}.ctrl`, 'Керуючі символи',
+    `до${NUL}після${ESC}кінець`);
+  ok(sent[0].text.indexOf(NUL) === -1 && sent[0].text.indexOf(ESC) === -1,
+    'керуючі символи вирізано — з ними Telegram відхиляє все повідомлення');
+  ok(/до/.test(sent[0].text) && /кінець/.test(sent[0].text),
+    'а сам текст лишився');
+
   // ── a storm is collapsed, and then FLUSHED ───────────────────────────────
   // The half that did not exist: everything between the reporting steps used
   // to be counted and thrown away.
