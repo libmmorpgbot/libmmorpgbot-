@@ -538,8 +538,17 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
   // ── PvP history ──────────────────────────────────────────────────────────
   safeOn('getPvpHistory', () => s.act('getPvpHistory', 'profileError', async (t, pid) => {
+    // Same two schemas as the write side (see recordPvpHistory, modes.js).
+    // Selecting a column that is not there throws, and this handler's error
+    // channel is 'profileError' — which no client listens for — so the panel
+    // was empty for two independent reasons, neither of which reached anyone.
+    const { hasColumn } = require('../db');
+    const outcome = await hasColumn('pvp_history', 'won');
+    const cols = outcome
+      ? 'kind, mode, opponent, won, reward, created_at'
+      : 'kind, mode, opponent, NULL::boolean AS won, NULL::text AS reward, created_at';
     const { rows } = await query(t, `
-      SELECT kind, mode, opponent, won, reward, created_at FROM pvp_history
+      SELECT ${cols} FROM pvp_history
        WHERE player_id = $1 ORDER BY id DESC LIMIT 50`, [pid]);
     s.socket.emit('pvpHistoryResult', {
       history: rows.map(r => ({

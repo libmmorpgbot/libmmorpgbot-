@@ -212,12 +212,24 @@ async function recordPvpHistory(who, rowOrKind, mode, opponent) {
             : row.kind === 'lose' ? false
             : null;
   try {
-    const { query } = require('./db');
-    await query(null, `
-      INSERT INTO pvp_history (player_id, kind, mode, opponent, won, reward)
-      VALUES ($1, $2, $3, $4, $5, $6)`,
-      [pid, row.kind || 'duel', row.mode || 'pvp', row.opponent || null,
-       won, row.reward == null ? null : String(row.reward)]);
+    const { query, hasColumn } = require('./db');
+    // `won` and `reward` are added by migration 009. Until it runs, the row is
+    // still worth writing without them — a duel that happened is a fact, and
+    // the alternative was the whole INSERT raising 42703 and being swallowed,
+    // which is how this table stayed empty since the day it was created.
+    const outcome = await hasColumn('pvp_history', 'won');
+    if (outcome) {
+      await query(null, `
+        INSERT INTO pvp_history (player_id, kind, mode, opponent, won, reward)
+        VALUES ($1, $2, $3, $4, $5, $6)`,
+        [pid, row.kind || 'duel', row.mode || 'pvp', row.opponent || null,
+         won, row.reward == null ? null : String(row.reward)]);
+    } else {
+      await query(null, `
+        INSERT INTO pvp_history (player_id, kind, mode, opponent)
+        VALUES ($1, $2, $3, $4)`,
+        [pid, row.kind || 'duel', row.mode || 'pvp', row.opponent || null]);
+    }
   } catch (err) {
     console.error('[modes] pvp history:', err.message);
   }
