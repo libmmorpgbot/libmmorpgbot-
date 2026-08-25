@@ -226,6 +226,17 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const sellerSock = deps.socketForPlayerId && deps.socketForPlayerId(res.sellerId);
     if (sellerSock) {
       sellerSock.emit('marketSold', { listingId: res.listingId, payout: res.payout, fee: res.fee });
+      // And the money. The payout was credited inside the transaction above,
+      // but the seller was only TOLD that a sale happened — their GRAM counter
+      // kept the number it had at login until they reloaded the game.
+      //
+      // Through the seller's own session, so the balance is read from the
+      // database and pushed the one way every other balance is.
+      const sellerSess = sellerSock.data && sellerSock.data.session;
+      if (sellerSess && sellerSess.authed) {
+        sellerSess.pushBalances().catch(err =>
+          console.error('[marketBuy] seller balance:', err.message));
+      }
     }
   }));
 

@@ -659,9 +659,32 @@ module.exports = function registerAdminRoutes(app, deps) {
   app.get('/admin/race10', guard, (_req, res) =>
     res.json(modes._race10PublicState ? modes._race10PublicState() : {}));
 
-  app.get('/admin/event-boss', guard, (_req, res) =>
+  // ── the world boss ───────────────────────────────────────────────────────
+  // This route was wired to _dbPublicState / _dbOpenReg — the DEATH BATTLE.
+  // Two different events under one old name, so the panel's "Мировой босс"
+  // card reported the death battle's registration state and its button opened
+  // that registration. The card even reads `dropsOnGround`, which only the
+  // world boss has.
+  app.get('/admin/event-boss', guard, (_req, res) => {
+    const st = modes.eventBossState ? modes.eventBossState() : {};
+    res.json({
+      alive: !!st.alive,
+      spawnAt: st.spawnAt || 0,
+      nextAt: st.nextAt || 0,
+      dropsOnGround: (st.drops || []).length,
+    });
+  });
+  modeCtl('/admin/event-boss', () => {
+    const r = modes.scheduleEventBoss ? modes.scheduleEventBoss() : { error: 'режимы не готовы' };
+    if (r && r.error) throw Object.assign(new Error(r.error), { userMessage: r.error });
+    return r;
+  }, 'world_boss_summon');
+
+  // ── the death battle ─────────────────────────────────────────────────────
+  // Its own route now, under its own name.
+  app.get('/admin/death-battle', guard, (_req, res) =>
     res.json(modes._dbPublicState ? modes._dbPublicState() : {}));
-  modeCtl('/admin/event-boss', () => modes._dbOpenReg && modes._dbOpenReg(), 'event_boss_open');
+  modeCtl('/admin/death-battle', () => modes._dbOpenReg && modes._dbOpenReg(), 'death_battle_open');
 
   app.get('/admin/guildwar', guard, (_req, res) => res.json(deps.guildWarState ? deps.guildWarState() : {}));
   modeCtl('/admin/guildwar/open',  () => deps.guildWarOpen && deps.guildWarOpen(), 'guildwar_open');

@@ -291,6 +291,15 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         </div>
       </div>
       <div class="card">
+        <h3>🗡 Битва на смерть</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="dbattle-status">—</div>
+        <button class="btn btn-primary" id="dbattle-btn" onclick="openDeathBattle()">Открыть регистрацию</button>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Обычно по расписанию. Кнопка открывает то же окно регистрации немедленно —
+          бой стартует через 5 минут со всеми, кто успел записаться.
+        </div>
+      </div>
+      <div class="card">
         <h3>🗼 Кровавая Башня</h3>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="race10-status">—</div>
         <div class="action-grid">
@@ -598,6 +607,7 @@ async function loadDashboard() {
   } catch(e) { console.error(e); }
   loadMaintenance();
   loadEventBoss();
+  loadDeathBattle();
   loadRace10();
   loadGuildWar();
 }
@@ -682,6 +692,40 @@ async function summonEventBoss() {
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadEventBoss();
+}
+
+// ── Битва на смерть ──────────────────────────────────────
+// Its own card and its own route. It used to share /admin/event-boss with the
+// world boss, so the boss card showed the battle's registration and its button
+// opened it.
+async function loadDeathBattle() {
+  const el = document.getElementById('dbattle-status');
+  const btn = document.getElementById('dbattle-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/death-battle')).json();
+    let txt = '⚪ Не идёт', busy = false;
+    if (d.phase === 'reg') {
+      const left = Math.max(0, Math.round(((d.startAt || 0) - Date.now()) / 1000));
+      txt = '🟡 Регистрация · ' + (d.count || 0) + ' чел · старт через '
+          + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+      busy = true;
+    } else if (d.phase === 'live') { txt = '🔴 Бой идёт · живых ' + (d.count || 0); busy = true; }
+    else if (d.nextAt) txt = '⚪ Следующая ' + new Date(d.nextAt).toLocaleString();
+    el.textContent = txt;
+    if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '.5' : '1'; }
+  } catch (e) { el.textContent = '—'; }
+}
+
+async function openDeathBattle() {
+  if (!confirm('Открыть регистрацию на битву на смерть? Старт через 5 минут.')) return;
+  try {
+    const r = await api('/admin/death-battle', { method: 'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Регистрация открыта');
+    else toast(d.error || 'Ошибка', false);
+  } catch (e) { toast('Ошибка', false); }
+  loadDeathBattle();
 }
 
 // ── Кровавая Башня ──────────────────────────────────────

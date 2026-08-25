@@ -6389,7 +6389,7 @@ function onMarketMyListingsData(listings) {
   if (_marketTab === 'mine') _renderMarketBody();
 }
 function onMarketHistoryData(entries) {
-  _marketHist = entries;
+  _marketHist = _marketEnrich(entries);
   _marketLoaded.history = true;
   if (_marketTab === 'history') _renderMarketBody();
 }

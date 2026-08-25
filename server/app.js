@@ -320,6 +320,23 @@ io.on('connection', (socket) => {
       vipAuras: presence.auraUsers(),
       build: version.COMMIT,
     });
+
+    // ── the season, at login ──────────────────────────────────────────────
+    // The HUD's season-ticket chip needs BOTH `seasonTicketActive` (which
+    // arrives above) AND `_seasonState.active`, and the season state only
+    // reached the client when it opened the Season panel. So a paid-for ticket
+    // vanished on every reload and came back the moment you looked at the
+    // panel and closed it — reported in exactly those words.
+    //
+    // Sent as its own event rather than folded into authOk because the client
+    // already has a handler that merges it, and one shape is easier to keep
+    // right than two.
+    try {
+      socket.emit('seasonState', await progression.seasonState(null, s.playerId));
+    } catch (err) {
+      // A missing season panel is not a reason to fail a login.
+      console.error('[login] seasonState:', err.message);
+    }
   }
 
   // The classic deep link, not a Mini App startapp one: it opens the bot's own

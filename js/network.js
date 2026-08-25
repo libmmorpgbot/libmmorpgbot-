@@ -1489,6 +1489,21 @@ function netConnect(onReady) {
   // between being targeted and the tap landing — too rare and too late to
   // usefully react to, so there's nothing to show for it.
   socket.on('playerProfileResult', ({ fromName, profile }) => {
+    // The server sends each equipped piece as identity only — id, enhance,
+    // qty — because everything else is a catalog fact this client already
+    // holds. The card draws `it.name` and `_itemIcon(it)`, so without the
+    // catalog entry every slot read "undefined" under a grey arrow, which is
+    // what the profile looked like for everyone.
+    //
+    // Rebuilt exactly as the inventory is, so a sword in somebody's profile
+    // looks like the same sword in your own bag.
+    if (profile && profile.equipment && typeof _rebuildFromCatalog === 'function') {
+      const eq = {};
+      for (const [slot, it] of Object.entries(profile.equipment)) {
+        eq[slot] = it ? (_rebuildFromCatalog(it) || it) : it;
+      }
+      profile = { ...profile, equipment: eq };
+    }
     if (profile && typeof showPeerProfileModal === 'function') showPeerProfileModal(fromName, profile);
   });
 

@@ -1087,16 +1087,29 @@ function update(dt, realDt) {
     const spd    = e.spd    || 70;
     const sz     = e.size   || 16;
 
-    // Same rule the server uses (see the aggro test in Room.js's tick loop):
-    // distance alone isn't enough, the enemy has to actually be able to see
-    // the target. Without the line-of-sight check this woke up enemies on the
-    // far side of a wall, which the server never does — so the prediction
-    // below would shove them into that wall while the server held them still,
-    // and they'd play their run animation on the spot indefinitely.
-    // Only tested while not already aggro'd, so the raycast doesn't run every
-    // frame for enemies already chasing.
-    if (!e.aggro && dp < aggroR && hasLOS(e.x, e.y, closestTgt.x, closestTgt.y)) e.aggro = true;
-    if (dp > aggroR * 2.2) e.aggro = false;
+    // ── aggro is the SERVER's answer, not a guess ────────────────────────
+    // This used to decide for itself: distance plus line of sight, meant to
+    // mirror the server's own test. It cannot mirror it, because the server
+    // knows things this side is never told.
+    //
+    // The elite farm zone is the clearest case. Its monsters deliberately do
+    // NOT wake on proximity — a pack wakes together when one of them is hit
+    // (_wakePack, Room.js) — and nothing on the wire says which enemies those
+    // are. So walking up to one lit it up here as awake while the server kept
+    // it asleep: it stood there "reacting" and did nothing, and the moment it
+    // was actually hit the server's real position and state arrived at once
+    // and it lurched. "Не реагує на мене, потім по ньому стріляю, а він
+    // тепнеться до мене" — both halves of that, from one guess.
+    //
+    // Nothing is lost by deleting it. `aggro` arrives in every delta, and an
+    // aggro'd enemy is re-sent every cast precisely so this side stays
+    // reconciled. The two places that read it — the chase below and the walk
+    // animation (pixi-world.js) — are both gated on _srvMoving/_moveTimer
+    // anyway, which only a server packet ever sets.
+    //
+    // The de-aggro line went with it, for the same reason: the leash is the
+    // server's rule, measured from a spawn point that is not sent over the
+    // wire at all.
 
     if ((e.stunTimer || 0) > 0) {
       if (e.targetX !== undefined) {
