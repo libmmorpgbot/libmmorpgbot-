@@ -138,12 +138,18 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // worn in. An equipped item is unambiguous by its slot; two identical items
   // in the bag are interchangeable UNTIL one is enhanced, which is why the
   // client sends the slot at all.
-  safeOn('enhanceItem', ({ id, enhance, stoneType, slot } = {}) =>
+  safeOn('enhanceItem', ({ id, enhance, stoneType, slot, rowId } = {}) =>
     s.act('enhanceItem', 'enhanceError', async (t, pid) => {
     await items.lockPlayer(t, pid);
+    // rowId FIRST. Two copies of one item at the same enhancement are
+    // interchangeable for selling and equipping, and they stop being
+    // interchangeable the moment one of them is enhanced — so this is the one
+    // action where "whichever row matches" is the wrong answer. It is also the
+    // action a player watches closely, which is why it was noticed as "точишь
+    // одну вещь, и всё что на неё похоже точится вместе с ней".
     const row = slot
       ? await items.resolveRow(t, pid, { slot }, 'equipment')
-      : await items.resolveRow(t, pid, { id, enhance }, 'inventory');
+      : await items.resolveRow(t, pid, { rowId, id, enhance }, 'inventory');
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const res = await craft.enhance(t, pid, row, stoneType === 'bless' ? 'bless' : 'norm');
     await pushAll(t);

@@ -979,6 +979,19 @@ function _rebuildFromCatalog(it) {
   const item = { ...base };
   if (it.enhance != null) item.enhance = it.enhance;
   if (it.qty != null) item.qty = it.qty;
+  // WHICH copy this is. The catalog knows what a Ring of Ash is; only the
+  // database knows which of your three you are pointing at, and this rebuild
+  // used to throw that away — so the client could name an item only by
+  // (id, enhance), and the server had to pick whichever row matched first.
+  //
+  // For selling or equipping that is harmless: two rows with the same id and
+  // the same enhancement are interchangeable. For ENHANCEMENT it is not, and
+  // that is the bug — "точишь одну вещь, и всё похожее точится вместе с ней".
+  // With two +2 copies the server enhanced the first row it found, which is
+  // not the one the player clicked; enhance again and it found the other. Both
+  // climbed. Six item types on one live account are sitting in exact pairs
+  // because of it.
+  if (it.rowId != null) item.rowId = it.rowId;
   return item;
 }
 

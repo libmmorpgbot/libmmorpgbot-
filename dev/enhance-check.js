@@ -164,6 +164,75 @@ async function main() {
     ok(!await rowOf(c), 'предмет пішов з інвентаря');
   }
 
+  // ── ЯКА САМЕ з двох однакових ───────────────────────────────────────────
+  // "Одну вещь точишь, и всё что на неё похоже точится вместе с ней."
+  //
+  // Two identical copies at the same enhancement are interchangeable for
+  // selling and equipping, and they STOP being interchangeable the moment one
+  // is enhanced. The client could not say which it meant —
+  // _rebuildFromCatalog copied the catalog entry plus enhance and qty and
+  // dropped rowId — so the server matched on (id, enhance) and took whichever
+  // row came first. Enhance again and it took the other. Both climbed, one
+  // click apart, and the player watched every copy rise together.
+  //
+  // Blessed stones throughout: a blessed failure changes nothing, so what this
+  // measures is which ROW moved and nothing else.
+  console.log('');
+  console.log('  ── дві однакові речі ──');
+  const d = await mk('d');
+  await tx(t => items.add(t, d, GEAR));
+  await tx(t => items.add(t, d, GEAR));
+  await tx(async (t) => { for (let i = 0; i < 30; i++) await items.add(t, d, 'bless_stone'); });
+
+  const bothRows = async (pid) => {
+    const { rows } = await pool().query(
+      `SELECT id, enhance FROM player_items
+        WHERE player_id = $1 AND item_id = $2 AND container = 'inventory'
+        ORDER BY id`, [pid, GEAR]);
+    return rows.map(r => ({ id: Number(r.id), enhance: r.enhance }));
+  };
+
+  const pair = await bothRows(d);
+  eq(pair.length, 2, 'у гравця дві однакові речі, окремими рядками');
+  const target = pair[1].id;          // the SECOND — a first-row match would miss it
+  const other  = pair[0].id;
+
+  const named = await txRetry(t =>
+    items.resolveRow(t, d, { rowId: target, id: GEAR }, 'inventory'));
+  eq(named, target, 'resolveRow повертає саме той рядок, який назвали');
+
+  let moved = 0;
+  for (let i = 0; i < 12 && moved < 3; i++) {
+    const res = await txRetry(t => craft.enhance(t, d, target, 'bless'));
+    if (res.outcome === 'success') moved++;
+  }
+
+  const after = await bothRows(d);
+  const t2 = after.find(r => r.id === target);
+  const o2 = after.find(r => r.id === other);
+  ok(t2 && t2.enhance > 0, `заточилась саме та річ (+${t2 && t2.enhance})`);
+  eq(o2 && o2.enhance, 0,
+    `а друга однакова лишилась +0 — саме це і був баг (+${o2 && o2.enhance})`);
+
+  // The shape the bug took: named by IDENTITY alone, the server answers with
+  // the first matching row, which is not the one that was clicked.
+  const e = await mk('e');
+  await tx(t => items.add(t, e, GEAR));
+  await tx(t => items.add(t, e, GEAR));
+  const eRows = await bothRows(e);
+  const byIdentity = await txRetry(t =>
+    items.resolveRow(t, e, { id: GEAR, enhance: 0 }, 'inventory'));
+  eq(byIdentity, eRows[0].id,
+    'без rowId сервер бере ПЕРШИЙ збіг — не той, на який натиснули');
+
+  // A row id that no longer exists must not break the click: identity still
+  // names what the player meant.
+  const stale = await txRetry(t =>
+    items.resolveRow(t, e, { rowId: 999999999, id: GEAR, enhance: 0 }, 'inventory'));
+  eq(stale, eRows[0].id,
+    'застарілий rowId відкочується на впізнання, а не відмовляє');
+
+
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);
 }

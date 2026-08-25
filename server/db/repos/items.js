@@ -342,7 +342,12 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
     const { rows } = await query(db,
       `SELECT id FROM player_items WHERE id = $1 AND player_id = $2 AND container = $3`,
       [direct, playerId, container]);
-    return rows.length ? Number(rows[0].id) : null;
+    if (rows.length) return Number(rows[0].id);
+    // Falls THROUGH rather than refusing. A row id can go stale honestly — the
+    // item was sold, burned or equipped from another tab between the render
+    // and the click — and identity below still names what the player meant.
+    // Returning null here would turn every such click into "Предмет не найден"
+    // where the old identity-only path quietly worked.
   }
 
   // An equipped item is named by its slot, and that is unambiguous.

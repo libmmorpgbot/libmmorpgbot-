@@ -3057,8 +3057,13 @@ function netCraftGear(itemId) {
   if (socket?.connected) socket.emit('craftGear', { itemId });
 }
 
-function netEnhanceItem(id, enhance, stoneType, slot) {
-  if (socket?.connected) socket.emit('enhanceItem', { id, enhance, stoneType, slot: slot || null });
+function netEnhanceItem(id, enhance, stoneType, slot, rowId) {
+  if (socket?.connected) {
+    // id/enhance still travel: they are the fallback when a rowId has gone
+    // stale (the item was sold or burned on another connection), and the
+    // server checks them against the row it resolves.
+    socket.emit('enhanceItem', { id, enhance, stoneType, slot: slot || null, rowId: rowId || null });
+  }
 }
 
 function netCraftBox(boxId) {

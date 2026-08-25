@@ -3803,7 +3803,10 @@ function enhanceItem(idx, stoneType) {
   if (enh >= _ENH_MAX) return;
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   if (_enhStoneQty(stoneId) <= 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
-  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, null);
+  // rowId names the exact copy. Without it the server matched on (id, enhance)
+  // and enhanced whichever row came first, which is how enhancing one item
+  // walked every identical one up alongside it.
+  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, null, it.rowId);
 }
 
 function openEqItemModal(slot) {
