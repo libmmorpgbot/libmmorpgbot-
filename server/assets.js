@@ -101,6 +101,12 @@ const INDEX_HTML = (() => {
 const jsBundleGz = zlib.gzipSync(jsBundleCode, { level: 9 });
 
 module.exports = {
+  // The two intermediate forms are exported for dev/bundle-check.js, which
+  // asks a JavaScript engine to parse both. A duplicate `let` across two of
+  // the concatenated files is an early error that rejects the WHOLE script —
+  // blank page, no HUD, no login — and nothing else in the project ever hands
+  // this text to a parser.
+  jsBundleRaw, jsBundle,
   jsBundleCode, jsBundleGz, jsBundleHash, jsBundleEtag,
   JS_BUNDLE_PATH, JS_MAP_PATH, jsBundleMap,
   cssBundle, cssHash, CSS_PATH,

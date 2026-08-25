@@ -70,10 +70,10 @@ let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
 // When the world last drew a frame, and whether there is a renderer at all.
 // The watchdog in js/game.js reads both: a blank world with a working HUD is
 // exactly what these two tell apart from a working one.
-let _lastRenderTs = 0;
+let _pixiLastRender = 0;
 let _ctxLost = false;
 function pixiAlive() { return !!_pixiApp && !_ctxLost; }
-function pixiLastRenderTs() { return _lastRenderTs; }
+function pixiLastRenderTs() { return _pixiLastRender; }
 
 // Everything holding a GPU object. After a lost context or a failed renderer
 // these all point at resources that no longer exist, and calling destroy() on
@@ -1552,7 +1552,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   // Stamped BEFORE the work, not after: if this frame throws halfway through,
   // the renderer is still alive and the watchdog must not mistake one bad
   // frame for a dead context.
-  _lastRenderTs = ts;
+  _pixiLastRender = ts;
 
   const bgCol = theme ? theme.bg : '#060610';
   if (bgCol !== _lastBgColor) { pixiSetBg(bgCol); _lastBgColor = bgCol; }
