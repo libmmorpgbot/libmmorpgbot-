@@ -2747,6 +2747,13 @@ function loop(ts) {
     _profRender = _t2 - _t1;
   } catch (err) {
     console.error('[loop] frame crashed, continuing:', err);
+    // A frame that throws once is noise; a frame that throws every frame is a
+    // broken game that still looks alive, because the loop keeps rescheduling.
+    // Reported through the same throttled path as everything else — the server
+    // collapses repeats, so 60 identical failures a second become one alert.
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('frame', err && err.message, err && err.stack);
+    }
   } finally {
     _profSocketEvtsSnap = _profSocketEvts; _profSocketEvts = 0;
     _profSocketMsSnap = _profSocketMs; _profSocketMs = 0;
@@ -2760,6 +2767,10 @@ window.addEventListener('beforeunload', () => { netSaveProgressNow(); });
 // goes to background (tab switch, screen lock, app switcher)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { netSaveProgressNow(); return; }
+  // Coming back, the last render timestamp is as old as the time spent away —
+  // the watchdog has to be told when the clock started running again, or it
+  // reads a paused tab as a dead renderer.
+  _visibleSince = performance.now();
   // Coming back to the foreground: requestAnimationFrame (and with it,
   // update()/render()) is paused for the entire time the tab is hidden, but
   // socket messages still get processed as they arrive, so a fatal
@@ -2769,6 +2780,103 @@ document.addEventListener('visibilitychange', () => {
   // network.js for the main fix) and leaves hp at 0 without state following.
   if (player && player.hp <= 0 && state !== 'dead' && typeof playerDie === 'function') playerDie();
 });
+
+// ── the blank-world watchdog ────────────────────────────────────────────────
+// Two failures produce the same picture — a grey rectangle under a working
+// HUD — and neither announced itself:
+//
+//   * the renderer never came up (WebGL refused a context at startup)
+//   * the renderer came up and then lost its context (backgrounded WebView,
+//     GPU process restart, memory pressure)
+//
+// Both are recoverable by building a new renderer, and both are transient, so
+// retrying is the right response rather than an apology. The attempts back off
+// and stop, because a device that genuinely cannot do WebGL should not be made
+// to try forever — at that point the player is told, once, instead of being
+// left to guess at a grey screen.
+let _pixiRetries = 0;
+let _pixiRetryTimer = null;
+const _PIXI_MAX_RETRIES = 5;
+
+function _pixiRetry(canvasEl, err) {
+  if (_pixiRetryTimer) return;
+  if (_pixiRetries === 0 && typeof window.__reportClientError === 'function') {
+    // Reported on the FIRST failure, with the device's own explanation, so a
+    // phone that cannot start the world is visible in the alerts topic rather
+    // than only in a screenshot somebody happens to send.
+    window.__reportClientError('pixi-init',
+      `${(err && err.message) || 'WebGL недоступен'} — ${pixiWebglDiagnosis(canvasEl)}`,
+      err && err.stack);
+  }
+  if (_pixiRetries >= _PIXI_MAX_RETRIES) {
+    _pixiGiveUp();
+    return;
+  }
+  // 400ms, 800ms, 1.6s, 3.2s, 6.4s — long enough for a GPU process to come
+  // back, short enough that a player who is already looking at the screen sees
+  // it fix itself.
+  const delay = 400 * Math.pow(2, _pixiRetries++);
+  _pixiRetryTimer = setTimeout(() => {
+    _pixiRetryTimer = null;
+    if (pixiRecover(canvasEl)) {
+      _pixiRetries = 0;
+      // The tile cache is keyed to the renderer that just died; without this
+      // the world comes back empty even though it is drawing again.
+      buildTileCanvas();
+      // Deliberately silent. A player who was looking at a grey screen sees the
+      // world appear, which is the whole message; a banner explaining what just
+      // fixed itself is noise.
+    } else {
+      _pixiRetry(canvasEl, null);
+    }
+  }, delay);
+}
+
+function _pixiGiveUp() {
+  if (typeof window.__reportClientError === 'function') {
+    window.__reportClientError('pixi-dead',
+      `сдались после ${_PIXI_MAX_RETRIES} попыток — ${pixiWebglDiagnosis(canvas)}`);
+  }
+  // Its own element, drawn over everything. showAuthError() writes into the
+  // LOGIN screen's error line, which nobody in the game can see — the message
+  // has to appear where the grey rectangle is. Shown once: a second banner
+  // stacked on the first says nothing new.
+  if (document.getElementById('gfx-dead')) return;
+  const box = document.createElement('div');
+  box.id = 'gfx-dead';
+  box.style.cssText = 'position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);'
+    + 'max-width:80vw;background:#2a1616;border:1px solid #b05a5a;color:#e8c4c4;'
+    + 'padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.45;'
+    + 'text-align:center;z-index:99999';
+  box.textContent = 'Графика не запустилась на этом устройстве. '
+    + 'Закройте и откройте игру заново — если не поможет, перезапустите Telegram.';
+  document.body.appendChild(box);
+}
+
+// Checked once a second, not every frame: the question is "has the world drawn
+// at all recently", and asking it 60 times a second answers it no better.
+//
+// Every condition below is a case where NOT drawing is correct, and each one
+// would otherwise be a false alarm that restarts a perfectly healthy renderer:
+//
+//   select        — character selection, the world is deliberately hidden
+//   activeTab     — a menu is open and render() returns before the world (see
+//                   the early return at the top of render())
+//   document.hidden — requestAnimationFrame is paused by the browser
+//   _visibleSince — just came back from the background, where the last render
+//                   timestamp is by definition old
+let _visibleSince = 0;
+function _pixiWatchdog() {
+  if (!canvas) return;
+  if (_pixiRetryTimer) return;                       // a retry is already in flight
+  if (state === 'select') return;
+  if (activeTab !== 0) return;
+  if (document.hidden) return;
+  if (performance.now() - _visibleSince < 4000) return;
+  if (pixiAlive() && performance.now() - pixiLastRenderTs() < 4000) return;
+  console.error('[pixi] мир не рисовался 4с — перезапуск рендерера');
+  _pixiRetry(canvas, new Error('мир не рисовался 4 секунды'));
+}
 
 window.addEventListener('load', () => {
   canvas = document.getElementById('canvas');
@@ -2784,10 +2892,21 @@ window.addEventListener('load', () => {
   // and lets the rest of startup continue; the world stays blank and the
   // in-loop try/catch (see loop()) keeps every later pixi call from being
   // fatal, but HUD and input still come up instead of a completely dead page.
+  // ── and if it fails, it is TRIED AGAIN ────────────────────────────────────
+  // The guard above was right about the cause and wrong about what to do
+  // next: it logged once and left the world blank for the rest of the
+  // session. Every reason WebGL refuses a context here is transient —
+  // the browser's live-context cap still holding the previous run's context,
+  // the GPU process restarting, a moment of memory pressure — so the answer
+  // is to wait a moment and ask again, not to give up on the first no.
+  //
+  // "Деколи запускаєшся і просто сірий екран замість візуалу гри, ну UI є" is
+  // exactly this: the HUD is a separate 2D canvas and comes up regardless.
   try {
     pixiInit(canvas);
   } catch (err) {
-    console.error('[pixiInit] failed, world will not render:', err);
+    console.error('[pixiInit] failed, retrying:', err);
+    _pixiRetry(canvas, err);
   }
 
   const resize = () => {
@@ -2817,5 +2936,10 @@ window.addEventListener('load', () => {
   window.addEventListener('resize', resize);
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
+  // Startup gets the same grace as coming back from the background: the world
+  // cannot have drawn yet, and a watchdog that fires before the first frame
+  // would restart a renderer that was never given a chance.
+  _visibleSince = performance.now();
+  setInterval(_pixiWatchdog, 1000);
   requestAnimationFrame(ts => { _loopTs = ts; requestAnimationFrame(loop); });
 });

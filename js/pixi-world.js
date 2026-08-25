@@ -67,6 +67,93 @@ const _petTex = {};        // petId|animKey    → PIXI.Texture[]
 let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
 
 // ── init ──────────────────────────────────────────────────
+// When the world last drew a frame, and whether there is a renderer at all.
+// The watchdog in js/game.js reads both: a blank world with a working HUD is
+// exactly what these two tell apart from a working one.
+let _lastRenderTs = 0;
+let _ctxLost = false;
+function pixiAlive() { return !!_pixiApp && !_ctxLost; }
+function pixiLastRenderTs() { return _lastRenderTs; }
+
+// Everything holding a GPU object. After a lost context or a failed renderer
+// these all point at resources that no longer exist, and calling destroy() on
+// them throws — the old context is gone, there is nothing left to free. So
+// they are DROPPED, not destroyed, and rebuilt on demand like they were on a
+// cold start.
+function _dropGpuState() {
+  _enemyPool.clear();
+  _otherPool.clear();
+  _npcPool.clear();
+  _petPool.clear();
+  _chunkSprCache.clear();
+  for (const cache of [_pTex, _eTex, _npcTex, _petTex]) {
+    Object.keys(cache).forEach(k => delete cache[k]);
+  }
+  _npcNames.length = 0;
+  _dmgActive.length = 0;
+  _dmgPool.length = 0;
+  _plSpr = null; _plGfx = null; _plAura = null;
+  _petLoadedFor = null;
+  _lastBgColor = null;
+}
+
+// Build a renderer again on the same canvas element. Returns true if there is
+// a working world afterwards.
+//
+// Why this exists: WebGL context creation fails for reasons that have nothing
+// to do with this code and everything to do with the device — the browser caps
+// how many live contexts a page may hold, the GPU process restarts under
+// memory pressure, and a WebView that has been backgrounded can come back with
+// its context gone. Each of those is TRANSIENT, and each of them used to leave
+// the game permanently blank behind a perfectly working HUD, because pixiInit
+// threw once at startup, was logged to a console nobody reads, and was never
+// tried again.
+function pixiRecover(canvasEl) {
+  try {
+    if (_pixiApp) {
+      // Do not touch the stage — its contents belong to the dead context.
+      try { _pixiApp.destroy(false, { children: false }); } catch (e) { /* already gone */ }
+    }
+  } finally {
+    _pixiApp = null;
+  }
+  _dropGpuState();
+  _ctxLost = false;
+  try {
+    pixiInit(canvasEl);
+    return true;
+  } catch (err) {
+    _pixiApp = null;
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('pixi-recover', err && err.message, err && err.stack);
+    }
+    return false;
+  }
+}
+
+// Why WebGL refused, in words that identify the device rather than the line of
+// code. "Cannot read properties of null" says nothing; "no webgl2, no webgl,
+// Adreno 610" says which phones are affected.
+function pixiWebglDiagnosis(canvasEl) {
+  const out = [];
+  try {
+    const probe = document.createElement('canvas');
+    const gl2 = probe.getContext('webgl2');
+    const gl1 = gl2 || probe.getContext('webgl') || probe.getContext('experimental-webgl');
+    out.push(gl2 ? 'webgl2 ok' : 'no webgl2');
+    out.push(gl1 ? 'webgl1 ok' : 'no webgl1');
+    if (gl1) {
+      const info = gl1.getExtension('WEBGL_debug_renderer_info');
+      if (info) out.push(String(gl1.getParameter(info.UNMASKED_RENDERER_WEBGL)).slice(0, 80));
+      if (gl1.isContextLost && gl1.isContextLost()) out.push('probe context already lost');
+    }
+    if (canvasEl) out.push(`canvas ${canvasEl.clientWidth}x${canvasEl.clientHeight}`);
+  } catch (err) {
+    out.push('probe threw: ' + (err && err.message));
+  }
+  return out.join(' · ');
+}
+
 function pixiInit(canvasEl) {
   _pixiApp = new PIXI.Application({
     view: canvasEl,
@@ -103,6 +190,33 @@ function pixiInit(canvasEl) {
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
+
+  // ── losing the context, and getting it back ──────────────────────────────
+  // A WebView takes the GPU context away when it is backgrounded, when memory
+  // is short, or when the GPU process restarts. Without a listener the page
+  // just stops drawing: the HUD is a separate 2D canvas and keeps working, so
+  // what a player sees is a grey rectangle with a perfectly normal interface
+  // on top of it — "просто сірий екран замість візуалу гри".
+  //
+  // preventDefault() on the lost event is not optional. It is what tells the
+  // browser this page intends to recover; without it `webglcontextrestored`
+  // is NEVER fired, and the grey screen is permanent by specification.
+  if (!canvasEl.__pixiCtxHooked) {
+    canvasEl.__pixiCtxHooked = true;
+    canvasEl.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      _ctxLost = true;
+      if (typeof window.__reportClientError === 'function') {
+        window.__reportClientError('pixi-context', 'WebGL context lost');
+      }
+    });
+    canvasEl.addEventListener('webglcontextrestored', () => {
+      // Rebuilt from scratch rather than resumed: every texture and buffer
+      // uploaded to the old context is gone, and the pools still hold handles
+      // to them.
+      if (pixiRecover(canvasEl) && typeof buildTileCanvas === 'function') buildTileCanvas();
+    });
+  }
 }
 
 function pixiClearEntityPools() {
@@ -1434,7 +1548,11 @@ function _updatePets(dt) {
 // ── main render entry ─────────────────────────────────────
 
 function pixiWorldRender(dt, ts, camX, camY, theme) {
-  if (!_pixiApp) return;
+  if (!_pixiApp || _ctxLost) return;
+  // Stamped BEFORE the work, not after: if this frame throws halfway through,
+  // the renderer is still alive and the watchdog must not mistake one bad
+  // frame for a dead context.
+  _lastRenderTs = ts;
 
   const bgCol = theme ? theme.bg : '#060610';
   if (bgCol !== _lastBgColor) { pixiSetBg(bgCol); _lastBgColor = bgCol; }
