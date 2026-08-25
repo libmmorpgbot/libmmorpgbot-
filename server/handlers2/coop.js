@@ -492,11 +492,25 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
             _farm2CascadeCheck(farm2Room, allIds);
           }, minutesLeft[i] * 60000);
           run.minuteTimer = safeInterval('farm2Min_' + sid, () => {
-            run.chargedMin += 1;
             // Charged against the ACCOUNT, not the connection — a reconnect
             // mid-run used to start the budget over.
-            const tid = modes._socketTid && modes._socketTid(sid);
-            if (tid) modes._lockFarm2MinutesFor(tid, 1);
+            //
+            // `run.telegramId`, not a socket→account lookup. The lookup was
+            // the thing that made this whole ticker inert: it went through
+            // `modes._socketTid`, which is a dep passed into the farm2 factory
+            // and has never been a property of `modes`. And it would have been
+            // the wrong source anyway — a player who reconnects mid-run has a
+            // new socket id, so resolving the OLD one gives nothing, which is
+            // exactly the reconnect case the comment above is about.
+            // _farm2SettleMinutes already bills from run.telegramId.
+            //
+            // chargedMin is incremented only after the charge is actually
+            // made. Incrementing it first told settlement the minute had been
+            // paid for, so the remainder came out at zero and nobody was ever
+            // billed for anything.
+            if (run.telegramId == null) return;
+            modes._lockFarm2MinutesFor(run.telegramId, 1);
+            run.chargedMin += 1;
           }, 60000);
           _farm2.set(sid, run);
         });

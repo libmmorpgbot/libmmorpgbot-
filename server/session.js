@@ -410,7 +410,21 @@ class Session {
       // — a Room has no idea what time it is. Reading it off `r` meant this
       // was null on every packet, so the Events panel had no countdown and no
       // idea whether a boss was up.
-      eventBoss: m.eventBossState ? m.eventBossState() : null,
+      //
+      // But `drops` is the exception, and it has to be overridden here.
+      // eventBossState() reports the ARENA's floor loot, because that is where
+      // the boss stands and that is the number the admin panel wants. The
+      // client rebuilds its entire ground-loot map from this field on every
+      // gameStart — so walking out of the arena into the hub redrew the boss's
+      // sixty piles on the hub floor, at the arena's coordinates, unpickable
+      // because the hub room has never heard of them. "Вийшли в лоббі і там
+      // весь лут з боса валявся."
+      //
+      // Ground loot is a property of the floor you are standing on. Whatever
+      // is on THIS floor is what this player is told about.
+      eventBoss: m.eventBossState
+        ? { ...m.eventBossState(), drops: r.worldDropSnapshot ? r.worldDropSnapshot() : [] }
+        : null,
       deathBattle: m._dbPublicState
         ? { ...m._dbPublicState(), registered: !!(m._db && m._db.reg.has(sid)) } : null,
       race10: m._race10PublicState

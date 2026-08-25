@@ -134,9 +134,25 @@ module.exports = function registerItems(s, safeOn) {
     const claim = s.room.claimDrop(s.socket.id, id);
     if (!claim) return;                       // gone, too far, or not theirs
     try {
-      await consumables.pickupDrop(t, pid, claim.id, claim.qty || 1, claim.enhance || 0);
+      // THE DROP AND THE ITEM ARE TWO DIFFERENT THINGS. A drop is a pile on
+      // the floor: `{ id: 'wd_7', x, y, item, expiresAt }`. What goes into an
+      // inventory is `claim.item` — `{ id: 'key_uncommon', qty, enhance }`.
+      //
+      // This passed `claim.id`, so every pickup asked the catalog for an item
+      // called "wd_7". hasRoomFor answers false for an id it does not know,
+      // and pickupDrop reports that as 'Инвентарь полон' — so a boss killed by
+      // a party dropped sixty piles that every one of them was told they had
+      // no room for, with a full inventory of two items. `qty` and `enhance`
+      // were read off the drop as well, where they have never existed: even a
+      // pickup that had somehow worked would have delivered one unenhanced
+      // copy of a ten-item stack.
+      const it = claim.item || {};
+      if (!it.id) throw Object.assign(new Error('drop has no item'), {
+        userMessage: 'Эта добыча повреждена — сообщите админам',
+      });
+      await consumables.pickupDrop(t, pid, it.id, it.qty || 1, it.enhance || 0);
       await push(t);
-      s.socket.emit('worldDropPicked', { id, item: claim.item || claim, delivered: true });
+      s.socket.emit('worldDropPicked', { id, item: it, delivered: true });
     } catch (err) {
       // Put it back on the floor: a refused pickup must not destroy the drop,
       // and the transaction rolling back does not un-claim it in the room.

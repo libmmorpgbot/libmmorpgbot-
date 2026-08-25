@@ -361,20 +361,36 @@ function init(io) {
   }));
   Object.assign(modes, createFear(shared));
   Object.assign(modes, createCoop(shared));
-  Object.assign(modes, createFarm2({
-    ...shared,
-    _lockFarm2MinutesFor: (tid, minutes) => {
-      // Charged against the PLAYER, not the connection: a reconnect mid-run
-      // used to start the budget over, because the old counter hung off the
-      // socket. The budget itself is the cap, so a run that overruns it is
-      // clamped rather than allowed to go negative.
-      const sid = activeSessions.get(String(tid));
-      const pid = sid ? playerIdOf(sid) : null;
-      if (!pid || !(minutes > 0)) return;
-      tx(t => progression.spendSeconds(t, pid, 'farm2', minutes * 60, FARM2_DAILY_MINUTES * 60))
-        .catch(err => ops.alertError('modes.farm2', 'Не удалось списать минуты фарма', err));
-    },
-  }));
+  // Named and kept, rather than written inline into the factory's deps. It has
+  // TWO callers — farm2.js settles the last partial minute with it, and the
+  // per-minute ticker in handlers2/coop.js charges the whole ones — and the
+  // second could not reach it: a dep passed INTO a factory is in that
+  // factory's closure, not on `modes`, so `modes._lockFarm2MinutesFor` was
+  // undefined and `modes._socketTid` with it.
+  //
+  // The ticker's line was `if (tid) modes._lockFarm2MinutesFor(tid, 1)` behind
+  // `const tid = modes._socketTid && modes._socketTid(sid)` — guarded, so it
+  // never threw and never ran. But the ticker also did `run.chargedMin += 1`,
+  // which is what _farm2SettleMinutes subtracts from the elapsed time at the
+  // end of a run. So the run claimed to have paid for every minute, settlement
+  // computed nothing left owing, and the elite farm zone's daily allowance was
+  // never spent by anyone. The gate has been open since the rewrite.
+  const _lockFarm2MinutesFor = (tid, minutes) => {
+    // Charged against the PLAYER, not the connection: a reconnect mid-run
+    // used to start the budget over, because the old counter hung off the
+    // socket. The budget itself is the cap, so a run that overruns it is
+    // clamped rather than allowed to go negative.
+    const sid = activeSessions.get(String(tid));
+    const pid = sid ? playerIdOf(sid) : null;
+    if (!pid || !(minutes > 0)) return;
+    tx(t => progression.spendSeconds(t, pid, 'farm2', minutes * 60, FARM2_DAILY_MINUTES * 60))
+      .catch(err => ops.alertError('modes.farm2', 'Не удалось списать минуты фарма', err));
+  };
+  Object.assign(modes, createFarm2({ ...shared, _lockFarm2MinutesFor }));
+  // On the runtime as well as in the closure, because a caller outside this
+  // file has no other way to reach it.
+  modes._lockFarm2MinutesFor = _lockFarm2MinutesFor;
+  modes._socketTid = socketTid;
 
   // ── the two cross-mode predicates ───────────────────────────────────────
   // Every mode has its own freeze window and its own idea of what elimination
