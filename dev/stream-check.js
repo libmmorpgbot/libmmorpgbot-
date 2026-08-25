@@ -108,6 +108,27 @@ function main() {
   ok(d2.enemies.every(e => typeof e.id === 'string' && e.id.length > 0),
     'і дельти теж розшифровуються — handle вже відомий');
 
+  // ── and the OTHER thing _eKnown answers ──────────────────────────────────
+  // viewersOfEnemy reads the same map to decide who is told a corpse fell. A
+  // player who has the enemy on screen must be in that answer from the moment
+  // they arrive — not one cast later — or a monster dying in the gap stands
+  // there dead on their screen.
+  //
+  // This is here because removing the snapshot's _eKnown write to fix the
+  // handle bug broke exactly this, and kill-check caught it. The two questions
+  // live in one map and have to be asked separately.
+  console.log('');
+  console.log('  ── свідок бачить труп ──');
+  const room1b = new Room(2, io, {}, null);
+  const w = join(room1b, 'w');
+  const near = room1b.enemies.find(e => e.hp > 0 && !e.isBoss);
+  w.x = near.x; w.y = near.y;
+  room1b.enemySnapshot('w');                        // they just arrived
+  const viewers = room1b.viewersOfEnemy(near.id, 'somebody-else');
+  ok(viewers.includes('w'),
+    'щойно прибулий гравець уже рахується глядачем — інакше труп лишиться стояти');
+  room1b._stopLoop();
+
   // ── the same, on a floor CHANGE ──────────────────────────────────────────
   // Not just first login: every portal does this. The client resets its map
   // on each gameStart, so each arrival needs its own full cast.

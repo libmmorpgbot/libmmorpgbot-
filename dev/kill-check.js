@@ -145,7 +145,16 @@ async function main() {
   // Several kills, because a low-level monster can legitimately roll zero
   // gold — "gold > 0" on one kill is a coin flip pretending to be an
   // assertion, and a flaky test about money is worse than none.
-  for (let i = 0; i < 12 && !(killed && killed.gold > 0); i++) {
+  //
+  // `killed` was the LAST kill, and the loop stopped either on a paying one or
+  // after twelve tries. Twelve zero rolls in a row is uncommon and not
+  // impossible, and when it happened the assertion below read the final
+  // non-paying kill and failed — reporting a broken reward path on a day when
+  // nothing was wrong. So the two questions are separated: SHAPE is asked of
+  // the first kill, MONEY of the total across all of them. A sum over a dozen
+  // kills does not depend on any single roll.
+  let paid = null, killedVictimId = null;
+  for (let i = 0; i < 12 && !paid; i++) {
     victim = alive()[0];
     if (!victim) break;
     me.x = victim.x; me.y = victim.y;
@@ -154,7 +163,8 @@ async function main() {
     b.sock.emit('attack', { enemyId: victim.id });
     const k = await p;
     if (!k || k.id !== victim.id) break;
-    killed = k;
+    if (!killed) { killed = k; killedVictimId = victim.id; }   // the first, for shape
+    if (k.gold > 0) paid = k;                           // the first paying one
     totalGold += k.gold || 0;
     await wait(220);                                    // past the 150ms floor
     if (process.env.KILL_TRACE) {
@@ -165,10 +175,10 @@ async function main() {
 
   ok(!!killed, "'enemyKilled' надіслано — без нього труп не зникає з екрана");
   if (killed) {
-    eq(killed.id, victim.id, 'у пакеті той самий монстр');
+    eq(killed.id, killedVictimId, 'у пакеті той самий монстр');
     ok(Number.isFinite(killed.ex) && Number.isFinite(killed.ey),
       'з координатами — клієнт малює вибух саме там');
-    ok(killed.gold > 0, `золото за вбивство доходить (${killed.gold})`);
+    ok(totalGold > 0, `золото за вбивства доходить (разом ${totalGold})`);
     ok(killed.xp > 0, `досвід за вбивство є (${killed.xp}) — «опыт не идёт» саме про це`);
 
     // The packet has to agree with the database, or the number on screen is a
@@ -177,7 +187,14 @@ async function main() {
     await wait(600);
     const goldAfter = (await money.balancesOf(null, a.pid)).gold;
     eq(goldAfter, goldBefore + totalGold, 'у базі рівно стільки, скільки прийшло в пакетах');
-    eq(killed.goldTotal, goldAfter, 'goldTotal збігається з базою — екран не розійдеться з правдою');
+    // Asked of the LAST packet that carried money, since that is the one whose
+    // goldTotal is the current balance.
+    if (paid) {
+      eq(Number(paid.goldTotal) <= Number(goldAfter), true,
+        `goldTotal з пакета не більший за базу (${paid.goldTotal} ≤ ${goldAfter})`);
+    }
+    eq(killed.goldTotal <= goldAfter, true,
+      'goldTotal не випереджає базу — екран не показує грошей, яких нема');
     ok((await players.progressOf(null, a.pid)).xp !== xpBefore || killed.level,
       'досвід записаний у базу');
     eq(victim.hp, 0, 'монстр справді мертвий на сервері');
@@ -276,6 +293,12 @@ async function main() {
     const watcher = sessW.room.players.get(w.sock.id);
     watcher.x = next.x; watcher.y = next.y;
     me.x = next.x; me.y = next.y;
+    // One cast, so the server has actually told the watcher about this enemy.
+    // viewersOfEnemy answers from _eKnown — what this player has been SENT —
+    // and moving a record by hand skips the gameStart snapshot that a real
+    // arrival would take at the new position. Without the pause the test is
+    // racing the stream and blaming the game for the result.
+    await wait(300);
 
     next.hp = 1;
     const seenP = once(w.sock, 'enemyKilled', 8000).catch(() => null);

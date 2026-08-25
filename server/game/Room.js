@@ -1345,31 +1345,37 @@ class Room {
   // except an instance's own boss (race10) to everyone NOT in it, and vice
   // versa, same as the live stream.
   //
-  // ── it does NOT mark them known ─────────────────────────────────────────
-  // It used to, to save the first cast from repeating everything as "first
-  // sight". That saving cost up to a minute of frozen monsters on every
-  // arrival, and it is the whole of "перший раз як приходиш вони деякий час
-  // не реагують, потім тепаються до тебе, потім вже нормально".
+  // ── _eKnown means TWO things, and they are not the same ─────────────────
+  // This map answers two questions, and conflating them cost a minute of
+  // frozen monsters on every arrival:
   //
-  // The reason is that these two channels are not the same channel. This
-  // snapshot rides on gameStart as JSON, naming each enemy by its string id.
-  // The live stream is BINARY, and names enemies by a small numeric handle
-  // (shared/netcodec.js) whose handle→id mapping is established only by a
-  // FULL entry in that binary stream. The client clears that mapping on every
-  // gameStart, correctly — handles are scoped to the room it just left.
+  //   "does this player know this enemy exists?"  — viewersOfEnemy asks this,
+  //      to decide who is told the corpse fell. A player who has the enemy on
+  //      screen must be told, or it stands there dead.
   //
-  // So marking these known told _collectEnemiesFor to send handle-only deltas
-  // for enemies whose handles the client could not resolve. The decoder's
-  // answer to an unknown handle is to skip the entry, silently. The monsters
-  // stayed painted wherever the snapshot left them, took no damage on screen,
-  // and reacted to nothing — until ENEMY_REFRESH_CASTS came round, which is
-  // 1200 casts, once a minute, staggered per enemy. Then each one popped to
-  // where it had really been all along, one at a time. After that the mapping
-  // existed and everything behaved.
+  //   "can this player's DECODER resolve this enemy's handle?" — the delta
+  //      stream asks this. The stream is binary and names enemies by a small
+  //      numeric handle, and the handle→id mapping is established ONLY by a
+  //      full entry in that stream (shared/netcodec.js). The client clears the
+  //      mapping on every gameStart, correctly: handles belong to the room it
+  //      just left.
   //
-  // The client's own repair path could not help: _queueEnemyResync only fires
-  // for an enemy it has no record of, and it had a record — from this
-  // snapshot. Nothing was missing. Only undecodable.
+  // This snapshot rides on gameStart as JSON. It answers the first question
+  // and not the second. Marking these entries plainly "known" therefore told
+  // _collectEnemiesFor to send handle-only deltas for handles the client could
+  // not resolve, and the decoder's answer to an unknown handle is to skip the
+  // entry — silently. The monsters stayed painted wherever the snapshot left
+  // them, took no damage on screen and reacted to nothing, until
+  // ENEMY_REFRESH_CASTS came round: 1200 casts, once a minute, staggered per
+  // enemy. Then each popped to where it had really been, one at a time.
+  //
+  // The client's own repair could not help either: _queueEnemyResync fires
+  // only for an enemy it has no record of, and it had one — from here.
+  // Nothing was missing. Only undecodable.
+  //
+  // So the entry is written with `full: false`: known for the first question,
+  // not yet established for the second. _pushEnemyEntry sends a full record
+  // the first time it sees that, and a delta from then on.
   enemySnapshot(socketId) {
     const p = socketId != null ? this.players.get(socketId) : null;
     const out = [];
@@ -1393,6 +1399,12 @@ class Room {
         name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
         aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
       });
+      // Known — but `full: false`. See the two meanings of _eKnown above.
+      if (p) {
+        p._eKnown.set(e.id, {
+          x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: this._tickNo, full: false,
+        });
+      }
     }
     return out;
   }
@@ -2426,9 +2438,12 @@ class Room {
     // before the stagger — on the raw value an enemy with an odd _idx would
     // never satisfy the modulo and would never be refreshed at all.
     const stale = ((castId >> 1) + (e._idx || 0)) % ENEMY_REFRESH_CASTS === 0;
-    if (!k || stale) {
+    // `!k.full` is the arrival case: the player has this enemy from the JSON
+    // snapshot but their decoder has never seen its handle. A delta now would
+    // be dropped on the floor. See enemySnapshot.
+    if (!k || !k.full || stale) {
       out.push(_fullEnemyEntry(e));
-      known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: castId });
+      known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: castId, full: true });
       return;
     }
     k.seen = castId;
