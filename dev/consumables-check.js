@@ -138,17 +138,29 @@ async function main() {
   eq(r1.buffType, BP.buffType, 'тип бафа з каталогу');
   eq(r1.seconds, BP.buffDur, `тривалість ${BP.buffDur} с — з каталогу`);
 
-  const r2 = await tx(t => con.useBuffPotion(t, b, BP.id));
-  eq(r2.seconds, BP.buffDur * 2, 'повторне зілля ПОДОВЖУЄ, а не замінює');
+  // ── one potion, one duration ─────────────────────────────────────────────
+  // The item reads "+20% атаки на 10 мин" and that is the entire rule. A
+  // version of this let a second potion EXTEND the first up to four
+  // durations, and the report was immediate and exact: "банки бафов теперь
+  // почему то на 40 минут" — ten times four, the ceiling, on screen.
+  const bagBefore = await countOf(b, BP.id);
+  eq(await caught(() => tx(t => con.useBuffPotion(t, b, BP.id))), 'already_active',
+    'друге зілля того ж типу відхилено, поки баф іде');
+  eq(await countOf(b, BP.id), bagBefore, 'і зілля лишилось у сумці — відмова нічого не коштує');
 
-  // The cap: drinking a whole stack must not produce a permanent buff. The
-  // ceiling is four durations from NOW, so it is checked in seconds remaining
-  // rather than against the stored millisecond.
-  for (let i = 0; i < 6; i++) await tx(t => con.useBuffPotion(t, b, BP.id));
-  const cappedLeft = con.buffsRemaining(
+  const stillLeft = con.buffsRemaining(
     (await players.progressOf(null, b)).buffs)[BP.buffType];
-  ok(cappedLeft <= BP.buffDur * 4 && cappedLeft > BP.buffDur * 4 - 5,
-    `стек зілль обмежений стелею ${BP.buffDur * 4} с (${cappedLeft}) — постійного бафа не буде`);
+  ok(stillLeft <= BP.buffDur && stillLeft > BP.buffDur - 5,
+    `тривалість лишилась ${BP.buffDur} с (${stillLeft}), а не накопичилась`);
+
+  // An EXPIRED buff of the same type may be re-drunk, and gives exactly one
+  // duration again — never the leftover plus one.
+  await pool().query(
+    `UPDATE player_progress SET buffs = jsonb_set(buffs, ARRAY[$2], to_jsonb(($3)::bigint))
+      WHERE player_id = $1`, [b, BP.buffType, Date.now() - 1000]);
+  const reDrunk = await tx(t => con.useBuffPotion(t, b, BP.id));
+  ok(reDrunk.seconds <= BP.buffDur && reDrunk.seconds > BP.buffDur - 5,
+    `після закінчення пʼється знову і дає рівно ${BP.buffDur} с (${reDrunk.seconds})`);
 
   // Buffs are EXPIRIES now, not countdowns — see repos/consumables.js. The
   // shape this replaces needed a ticker, the ticker was never called, and a

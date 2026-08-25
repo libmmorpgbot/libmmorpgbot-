@@ -1345,8 +1345,31 @@ class Room {
   // except an instance's own boss (race10) to everyone NOT in it, and vice
   // versa, same as the live stream.
   //
-  // Also records what it sent in the player's _eKnown, so the first tick
-  // after this doesn't immediately repeat all of it as "first sight".
+  // ── it does NOT mark them known ─────────────────────────────────────────
+  // It used to, to save the first cast from repeating everything as "first
+  // sight". That saving cost up to a minute of frozen monsters on every
+  // arrival, and it is the whole of "перший раз як приходиш вони деякий час
+  // не реагують, потім тепаються до тебе, потім вже нормально".
+  //
+  // The reason is that these two channels are not the same channel. This
+  // snapshot rides on gameStart as JSON, naming each enemy by its string id.
+  // The live stream is BINARY, and names enemies by a small numeric handle
+  // (shared/netcodec.js) whose handle→id mapping is established only by a
+  // FULL entry in that binary stream. The client clears that mapping on every
+  // gameStart, correctly — handles are scoped to the room it just left.
+  //
+  // So marking these known told _collectEnemiesFor to send handle-only deltas
+  // for enemies whose handles the client could not resolve. The decoder's
+  // answer to an unknown handle is to skip the entry, silently. The monsters
+  // stayed painted wherever the snapshot left them, took no damage on screen,
+  // and reacted to nothing — until ENEMY_REFRESH_CASTS came round, which is
+  // 1200 casts, once a minute, staggered per enemy. Then each one popped to
+  // where it had really been all along, one at a time. After that the mapping
+  // existed and everything behaved.
+  //
+  // The client's own repair path could not help: _queueEnemyResync only fires
+  // for an enemy it has no record of, and it had a record — from this
+  // snapshot. Nothing was missing. Only undecodable.
   enemySnapshot(socketId) {
     const p = socketId != null ? this.players.get(socketId) : null;
     const out = [];
@@ -1370,7 +1393,6 @@ class Room {
         name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
         aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
       });
-      if (p) p._eKnown.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: this._tickNo });
     }
     return out;
   }

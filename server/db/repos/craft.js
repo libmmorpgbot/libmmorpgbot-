@@ -80,6 +80,11 @@ async function enhance(db, playerId, rowId, stoneType) {
     err('not_enhanceable', 'Этот предмет нельзя точить');
   }
   if (it.enhance >= ENHANCE_MAX) err('maxed', 'Уже максимальная заточка');
+  // BEFORE the stone. A normal stone can burn this row, and if the burn is
+  // going to be refused by a foreign key the whole transaction rolls back —
+  // refunding the stone and leaving the item intact. That is a free attempt,
+  // repeatable to +15. Checked here, nothing is spent and nothing rolls back.
+  if (stoneType !== 'bless') await items.assertDestroyable(db, rowId);
 
   // The stone is consumed whether the roll succeeds or not — that is the cost
   // of the attempt, and taking it first means a failed roll cannot leave the
@@ -437,6 +442,9 @@ async function sellItem(db, playerId, rowId, qty = 1) {
      FOR UPDATE`, [rowId, playerId]);
   if (!rows.length) err('not_found', 'Предмет не найден');
   const it = rows[0];
+  // Named before removeQty, which leaves such a row out of its pool entirely
+  // and would answer "Предмет не найден" for an item sitting in plain sight.
+  await items.assertDestroyable(db, rowId);
 
   const def = ITEM_DEF.find(d => d.id === it.item_id);
   const unit = def && def.price ? Math.floor(def.price / 2) : 1;

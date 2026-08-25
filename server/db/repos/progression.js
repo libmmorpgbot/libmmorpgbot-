@@ -411,6 +411,10 @@ async function burnItem(db, playerId, rowId) {
   if (!v) err('not_found', 'Предмет не найден — список обновлён');
   if (!v.points) err('cannot_burn', 'Этот предмет нельзя сжечь');
 
+  // Refused here rather than by the foreign key three statements later, where
+  // the rollback would take the season points back out with it.
+  await items.assertDestroyable(db, rowId);
+
   const { rowCount } = await query(db,
     'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
   if (!rowCount) err('not_found', 'Предмет не найден — список обновлён');
@@ -436,7 +440,14 @@ async function burnAllOfRarity(db, playerId, rarity) {
      WHERE c.item_id = pi.item_id
        AND pi.player_id = $1 AND pi.container = 'inventory'
        AND NOT c.stackable AND c.rarity = $2
-    RETURNING pi.id`, [playerId, rarity]);
+       -- Anything a past trade still names cannot be deleted while the
+       -- reference blocks (see items.assertDestroyable). Skipping those rows
+       -- burns everything else instead of failing the whole batch — and once
+       -- migration 010 makes the reference releasable, the sub-select is
+       -- simply never true.
+       AND ($3::bool = false OR NOT EXISTS (
+             SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
+    RETURNING pi.id`, [playerId, rarity, await items.marketRefBlocksDelete(db)]);
   if (!rows.length) err('nothing', 'Нечего сжигать');
 
   const points = rows.length * per;

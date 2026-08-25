@@ -19,7 +19,7 @@
 // the existing modules rather than restated, so the rewrite cannot quietly
 // change the economy.
 
-const { query } = require('../index');
+const { query, hasColumn } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const { MARKET_FEE_PCT, MARKET_MAX_PRICE, MARKET_LIST_COOLDOWN_MS, _marketMinPrice } =
@@ -85,10 +85,20 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
   // it. A record of a trade has to say what was traded — by the time anyone
   // reads their history the item could be a different enhancement level, in
   // somebody else's bag, or gone.
-  const { rows } = await query(db, `
-    INSERT INTO market_listings (seller_id, item_id, price, snap_item_id, snap_enhance, snap_qty)
-    VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
-    [playerId, rowId, round2(p), it.item_id, it.enhance || 0, it.qty || 1]);
+  //
+  // Written only when the columns are there. Migration 010 adds them and needs
+  // a credential the application does not hold, so this build has to run
+  // correctly on either schema — see hasColumn (server/db/index.js).
+  const snap = await hasColumn('market_listings', 'snap_item_id');
+  const { rows } = snap
+    ? await query(db, `
+        INSERT INTO market_listings (seller_id, item_id, price, snap_item_id, snap_enhance, snap_qty)
+        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
+        [playerId, rowId, round2(p), it.item_id, it.enhance || 0, it.qty || 1])
+    : await query(db, `
+        INSERT INTO market_listings (seller_id, item_id, price)
+        VALUES ($1, $2, $3) RETURNING id, created_at`,
+        [playerId, rowId, round2(p)]);
 
   return { listingId: Number(rows[0].id), price: round2(p), item: { id: it.item_id, enhance: it.enhance, qty: it.qty } };
 }
@@ -226,13 +236,28 @@ async function buy(db, buyerId, listingId) {
 // listing always has both and they agree; a closed one may have only the
 // snapshot, because the item it names has since been enhanced away or eaten by
 // a craft.
-const LISTING_COLS = `
+//
+// Two forms, because migration 010 may not have run yet — the older one simply
+// has no snapshot to fall back to, and a closed lot whose item is gone shows
+// blank instead of what it was.
+const COLS_SNAP = `
   l.id, l.price, l.created_at, l.status,
   s.username AS seller_username, l.seller_id,
   COALESCE(i.item_id, l.snap_item_id)      AS item_id,
   COALESCE(i.enhance, l.snap_enhance, 0)   AS enhance,
   COALESCE(i.qty,     l.snap_qty, 1)       AS qty,
   c.name AS item_name, c.rarity, c.slot`;
+const COLS_PLAIN = `
+  l.id, l.price, l.created_at, l.status,
+  s.username AS seller_username, l.seller_id,
+  i.item_id, i.enhance, i.qty,
+  c.name AS item_name, c.rarity, c.slot`;
+const listingCols = async () =>
+  (await hasColumn('market_listings', 'snap_item_id')) ? COLS_SNAP : COLS_PLAIN;
+const catalogJoin = async () =>
+  (await hasColumn('market_listings', 'snap_item_id'))
+    ? 'COALESCE(i.item_id, l.snap_item_id)'
+    : 'i.item_id';
 
 function _lot(r) {
   return {
@@ -250,7 +275,7 @@ function _lot(r) {
 // N+1 that made browsing the market a per-row round trip.
 async function browse(db, { limit = 100, offset = 0, slot = null } = {}) {
   const { rows } = await query(db, `
-    SELECT ${LISTING_COLS}
+    SELECT ${await listingCols()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       JOIN player_items i ON i.id = l.item_id
@@ -263,7 +288,7 @@ async function browse(db, { limit = 100, offset = 0, slot = null } = {}) {
 
 async function mine(db, playerId) {
   const { rows } = await query(db, `
-    SELECT ${LISTING_COLS}
+    SELECT ${await listingCols()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       JOIN player_items i ON i.id = l.item_id
@@ -278,13 +303,13 @@ async function mine(db, playerId) {
 // survive the thing it describes.
 async function history(db, playerId, limit = 30) {
   const { rows } = await query(db, `
-    SELECT ${LISTING_COLS}, l.buyer_id, l.closed_at,
+    SELECT ${await listingCols()}, l.buyer_id, l.closed_at,
            b.username AS buyer_username
       FROM market_listings l
       JOIN players       s ON s.id = l.seller_id
  LEFT JOIN players       b ON b.id = l.buyer_id
  LEFT JOIN player_items  i ON i.id = l.item_id
- LEFT JOIN item_catalog  c ON c.item_id = COALESCE(i.item_id, l.snap_item_id)
+ LEFT JOIN item_catalog  c ON c.item_id = ${await catalogJoin()}
      WHERE (l.seller_id = $1 OR l.buyer_id = $1) AND l.status <> 'active'
      ORDER BY l.closed_at DESC NULLS LAST
      LIMIT $2`, [playerId, Math.min(limit, 100)]);

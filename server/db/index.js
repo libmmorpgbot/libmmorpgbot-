@@ -257,4 +257,27 @@ async function close() {
   await p.end().catch(err => console.error('[db] close:', err.message));
 }
 
-module.exports = { pool, query, tx, txRetry, stats, close, POOL_MAX };
+// ── asking the database what shape it is ────────────────────────────────────
+// Schema migrations need a credential the application deliberately does not
+// have (liberty_app has no DDL rights, and that is the right call for a process
+// that handles real money). So there are moments where the code is ready and
+// the schema is not, and a build that simply assumed the newer one would take
+// the game down rather than improve it.
+//
+// This lets a module ask, once, and branch. Cached because the answer cannot
+// change without a restart — a migration is applied while the service is
+// stopped — and because it is read on paths as hot as consuming an item.
+const _cols = new Map();
+async function hasColumn(table, column) {
+  const key = `${table}.${column}`;
+  if (_cols.has(key)) return _cols.get(key);
+  const { rows } = await query(null, `
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = $1 AND column_name = $2`, [table, column]);
+  const has = rows.length > 0;
+  _cols.set(key, has);
+  return has;
+}
+function _forgetSchemaCache() { _cols.clear(); }
+
+module.exports = { pool, query, tx, txRetry, stats, close, POOL_MAX, hasColumn, _forgetSchemaCache };

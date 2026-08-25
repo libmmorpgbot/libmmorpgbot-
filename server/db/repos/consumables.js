@@ -121,22 +121,34 @@ async function useBuffPotion(db, playerId, potionId) {
   if (!await items.removeQty(db, playerId, potionId, 1)) err('no_potion', 'Нет такого зелья');
 
   const dur = Math.max(1, Math.floor(Number(def.buffDur) || 600));
-  // Re-drinking EXTENDS rather than replaces, and the ceiling is four
-  // durations from NOW — otherwise a player with a stack of two hundred holds
-  // a permanent buff, which is a different game from the one the numbers were
-  // balanced for. Extending from `now` rather than from the stored value is
-  // what keeps an expired buff from adding to a time already in the past.
+  const now = Date.now();
+
+  // ── one potion, one duration ─────────────────────────────────────────────
+  // The item says "+20% атаки на 10 мин" and that is the whole rule: while a
+  // buff of this type is running you cannot drink another, and when you can,
+  // you get exactly buffDur.
+  //
+  // The version this replaces let a second potion EXTEND the first, up to four
+  // durations. Nobody asked for that, and it contradicts the text on the item
+  // the player is holding — the report was simply "банки бафов теперь почему
+  // то на 40 минут", which is 10 × 4: the ceiling, reached and displayed.
+  //
+  // Refusing while active is also what stops the potion being spent for
+  // nothing, which is the failure mode the old build guarded against with the
+  // same check ("Уже активно!", handlers/items.js).
   const { rows } = await query(db, `
     UPDATE player_progress
-       SET buffs = jsonb_set(buffs, ARRAY[$2],
-             to_jsonb(LEAST(
-               GREATEST(COALESCE((buffs ->> $2)::numeric, 0), $5::numeric) + $3::numeric,
-               $5::numeric + $4::numeric)::bigint), true),
+       SET buffs = jsonb_set(buffs, ARRAY[$2], to_jsonb(($3::numeric + $4::numeric)::bigint), true),
            updated_at = now()
      WHERE player_id = $1
+       AND COALESCE((buffs ->> $2)::numeric, 0) <= $3::numeric
     RETURNING buffs`,
-    [playerId, def.buffType, dur * 1000, dur * 4 * 1000, Date.now()]);
-  if (!rows.length) err('no_player', 'Игрок не найден');
+    [playerId, def.buffType, now, dur * 1000]);
+  // Zero rows means the WHERE did not match: the buff is still running. The
+  // potion has already been taken out of the bag by removeQty above, so this
+  // has to throw rather than return — the throw rolls the whole transaction
+  // back and the potion stays where it was.
+  if (!rows.length) err('already_active', 'Этот бафф уже активен');
   const left = buffsRemaining(rows[0].buffs);
   return { potionId, buffType: def.buffType, seconds: left[def.buffType] || 0, buffs: left };
 }

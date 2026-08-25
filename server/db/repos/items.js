@@ -213,12 +213,21 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1 } = {}) {
 // falls short, so the caller gets false and an untouched inventory rather than
 // a half-consumed one.
 async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnhance = null } = {}) {
+  // A row a past trade still names cannot be deleted while the reference
+  // blocks (see assertDestroyable). Such a row is left out of the pool
+  // entirely rather than drained part-way, because a plan that ends in
+  // `take >= qty` on it would raise 23503 and roll the caller's whole
+  // transaction back — refunding whatever it had already spent. Once
+  // migration 010 makes the reference releasable this is never true.
+  const guard = await marketRefBlocksDelete(db);
   const { rows } = await query(db, `
     WITH pool AS (
-      SELECT id, qty, enhance FROM player_items
+      SELECT id, qty, enhance FROM player_items pi
        WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
          AND ($4::int IS NULL OR enhance = $4::int)
          AND ($5::int IS NULL OR enhance >= $5::int)
+         AND ($6::bool = false OR NOT EXISTS (
+               SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
     ),
     avail AS (SELECT COALESCE(sum(qty), 0)::int AS total FROM pool),
     ranked AS (
@@ -244,7 +253,7 @@ async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnh
     )
     SELECT (COALESCE((SELECT sum(qty) FROM gone), 0)
           + COALESCE((SELECT sum(qty) FROM kept), 0))::int AS took`,
-    [playerId, itemId, qty, enhance, minEnhance]);
+    [playerId, itemId, qty, enhance, minEnhance, guard]);
   return Number(rows[0].took) === Number(qty);
 }
 
@@ -264,6 +273,7 @@ async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnh
 // same reasons — lowest enhancement first so salvage eats the +0 before the
 // +12, and nothing consumed at all unless the whole amount is there.
 async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null, stackable = null } = {}) {
+  const guard = await marketRefBlocksDelete(db);
   const { rows } = await query(db, `
     WITH pool AS (
       SELECT pi.id, pi.qty, pi.enhance
@@ -273,6 +283,8 @@ async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null,
          AND ($3::text[] IS NULL OR pi.item_id = ANY($3::text[]))
          AND ($4::text   IS NULL OR c.rarity = $4::text)
          AND ($5::bool   IS NULL OR c.stackable = $5::bool)
+         AND ($6::bool = false OR NOT EXISTS (
+               SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
     ),
     avail AS (SELECT COALESCE(sum(qty), 0)::int AS total FROM pool),
     ranked AS (
@@ -298,7 +310,7 @@ async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null,
     SELECT (SELECT total FROM avail) AS had,
            (COALESCE((SELECT sum(qty) FROM gone), 0)
           + COALESCE((SELECT sum(qty) FROM kept), 0))::int AS took`,
-    [playerId, n, itemIds, rarity, stackable]);
+    [playerId, n, itemIds, rarity, stackable, guard]);
   return { ok: Number(rows[0].took) === Number(n), had: Number(rows[0].had) };
 }
 
@@ -383,9 +395,66 @@ async function countMatching(db, playerId, { itemIds = null, rarity = null, stac
   return Number(rows[0].n);
 }
 
+// ── a destroyed item and the trades it was in ───────────────────────────────
+// market_listings.item_id references player_items(id), and — before migration
+// 010 — the reference is `NO ACTION`: the database REFUSES to delete a row any
+// listing still names, including a listing that was sold or cancelled months
+// ago. Everything that destroys an item hits it: enhancing and burning,
+// selling, feeding a craft, burning for season points.
+//
+// The refusal is what the players saw, and it was worse than an error:
+//
+//   "я в маркет закинул предмет и снял, теперь он думает что он в маркете и
+//    не даёт точить, но если много раз нажимать можно вплоть до +15 заточить
+//    не ломая"
+//
+// Exactly right, and the second half is the serious one. Enhancement runs in a
+// transaction: the stone is taken, the roll fails, the DELETE raises 23503, and
+// the WHOLE transaction rolls back — stone refunded, item intact. So a failed
+// roll costs nothing and an item that has ever been listed can be taken to +15
+// for free. A live economy exploit produced by a foreign key.
+//
+// This asks the database what its own constraint does, once, and caches it:
+//
+//   NO ACTION / RESTRICT   the reference blocks — refuse the destruction up
+//                          front, with a reason, before anything is spent.
+//                          Nothing is rolled back, so there is nothing to
+//                          exploit.
+//   SET NULL               migration 010 has run: the reference releases
+//                          itself and the trade history keeps its own snapshot
+//                          of what was sold. Nothing to check.
+//
+// Reading `delete_rule` rather than a version flag means the code cannot be
+// wrong about which schema it is talking to.
+let _fkBlocks = null;
+async function marketRefBlocksDelete(db) {
+  if (_fkBlocks !== null) return _fkBlocks;
+  const { rows } = await query(db, `
+    SELECT delete_rule FROM information_schema.referential_constraints
+     WHERE constraint_name = 'market_listings_item_id_fkey'`);
+  // No constraint at all is also "does not block".
+  _fkBlocks = rows.length ? !/SET NULL/i.test(rows[0].delete_rule) : false;
+  return _fkBlocks;
+}
+
+// Throws when this row cannot be destroyed because a past trade still names
+// it. Called BEFORE anything is spent — that ordering is the whole point.
+async function assertDestroyable(db, rowId) {
+  if (!await marketRefBlocksDelete(db)) return;
+  const { rows } = await query(db,
+    'SELECT 1 FROM market_listings WHERE item_id = $1 LIMIT 1', [rowId]);
+  if (rows.length) {
+    throw Object.assign(new Error('listed'), {
+      code: 'was_listed',
+      userMessage: 'Этот предмет был на рынке — операция станет доступна после обновления базы',
+    });
+  }
+}
+
 // Removes one specific row — used where the caller already identified the
 // exact item (an equipped piece, a listing's item) rather than "one of these".
 async function removeRow(db, rowId, playerId) {
+  await assertDestroyable(db, rowId);
   const { rowCount } = await query(db,
     'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
   return rowCount === 1;
@@ -442,6 +511,7 @@ module.exports = {
   syncCatalog, lockPlayer,
   inventoryOf, usedSlots, hasRoomFor,
   add, removeQty, removeRow, moveTo,
+  assertDestroyable, marketRefBlocksDelete,
   detachForListing, attachFromListing,
   SERVER_INV_MAX,
 };
