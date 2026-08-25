@@ -687,11 +687,22 @@ function initInput() {
     }
   });
   window.addEventListener('keyup', e => { keys[e.key] = false; });
-  canvas.addEventListener('touchstart',  onTS, { passive: false });
-  canvas.addEventListener('touchmove',   onTM, { passive: false });
-  canvas.addEventListener('touchend',    onTE);
-  canvas.addEventListener('touchcancel', onTC);
-  canvas.addEventListener('mousedown',   onMD);
+  bindCanvasInput(canvas);
   window.addEventListener('mousemove',   onMM);
   window.addEventListener('mouseup',     onMU);
+}
+
+// The five listeners that live on the CANVAS ELEMENT rather than on window.
+// Split out because the element can be replaced at runtime: recovering from a
+// lost WebGL context means building the renderer on a fresh canvas (a used one
+// cannot be given a working context back — see pixiRecover), and a fresh
+// element has none of these. Without rebinding, the world would come back and
+// the joystick would not.
+function bindCanvasInput(el) {
+  if (!el) return;
+  el.addEventListener('touchstart',  onTS, { passive: false });
+  el.addEventListener('touchmove',   onTM, { passive: false });
+  el.addEventListener('touchend',    onTE);
+  el.addEventListener('touchcancel', onTC);
+  el.addEventListener('mousedown',   onMD);
 }

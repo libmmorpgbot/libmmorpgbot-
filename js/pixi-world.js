@@ -108,31 +108,6 @@ function _dropGpuState() {
 // the game permanently blank behind a perfectly working HUD, because pixiInit
 // threw once at startup, was logged to a console nobody reads, and was never
 // tried again.
-// ── is the context ready to be built on ─────────────────────────────────────
-// 'webglcontextrestored' fires when the browser has decided to give the
-// context back — NOT necessarily when it is usable. Building a renderer in
-// that gap produces:
-//
-//   Invalid value of `0` passed to `checkMaxIfStatementsInShader`
-//
-// which is Pixi reading MAX_TEXTURE_IMAGE_UNITS off a context that answers
-// zero to everything. That is exactly what the first live context loss did:
-// the restore handler rebuilt immediately, threw, reported, and left the world
-// blank until the watchdog picked it up a second later.
-//
-// So the context is asked whether it means it. A canvas hands back the SAME
-// context object forever, so this probes the real one rather than a copy.
-function _ctxUsable(canvasEl) {
-  try {
-    const gl = canvasEl.getContext('webgl2') || canvasEl.getContext('webgl');
-    if (!gl || (gl.isContextLost && gl.isContextLost())) return false;
-    // Zero here is the signature of a context that exists but is not ready.
-    return Number(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS)) > 0;
-  } catch (e) {
-    return false;
-  }
-}
-
 // Whether this device can do WebGL at all, asked on a THROWAWAY canvas so the
 // answer is about the device rather than about one element's state. An iPhone
 // with WebGL disabled answers no here and will answer no in five seconds too:
@@ -148,35 +123,57 @@ function pixiWebglSupported() {
   }
 }
 
-function pixiRecover(canvasEl) {
-  try {
-    if (_pixiApp) {
-      // Do not touch the stage — its contents belong to the dead context.
-      try { _pixiApp.destroy(false, { children: false }); } catch (e) { /* already gone */ }
-    }
-  } finally {
-    _pixiApp = null;
+// Rebuild the world renderer. Returns the canvas element it is now drawing on,
+// or null if it could not.
+//
+// ON A FRESH ELEMENT, ALWAYS. This is the part that took two attempts to get
+// right, and the reason is in PixiJS: ContextSystem.destroy() ends with
+//
+//   gl.getExtension('WEBGL_lose_context')?.loseContext()
+//
+// So destroying the old renderer TAKES THE CONTEXT AWAY — which, when you are
+// destroying it because the context was just restored, means you have thrown
+// away the thing you were recovering. Nothing asks the browser for it a second
+// time, so every retry after that found it lost and the world stayed blank
+// through all five of them. That is what the live test showed: `isContextLost()`
+// still true long after `restoreContext()` had been called and had worked.
+//
+// Not destroying is not an option either: the old renderer keeps its own
+// webglcontextlost/restored listeners on the element and would re-initialise
+// itself on top of the new one.
+//
+// A canvas element gets exactly one context in its lifetime and can never be
+// handed a different one. So the element is replaced. cloneNode(false) carries
+// the id, class and styling across and brings none of the listeners, none of
+// the history, and no context at all — which is precisely what is wanted.
+function pixiRecover(oldCanvas) {
+  const alive = _pixiApp && !_ctxLost;
+  const app = _pixiApp;
+  _pixiApp = null;
+  // Only worth destroying while the context still works — that is the case
+  // where it frees something. After a loss there is nothing left to free.
+  if (app && alive) {
+    try { app.destroy(false, { children: false }); } catch (e) { /* already gone */ }
   }
   _dropGpuState();
 
-  // Not ready yet. Returning false rather than throwing is the difference
-  // between "try again in a moment", which is what this is, and "something is
-  // wrong", which it is not — the caller's backoff handles it and nobody is
-  // alerted about a context that is still waking up.
-  if (!_ctxUsable(canvasEl)) return false;
+  if (!oldCanvas || !oldCanvas.parentNode) return null;
+  if (!pixiWebglSupported()) return null;
+
+  const fresh = oldCanvas.cloneNode(false);
+  oldCanvas.parentNode.replaceChild(fresh, oldCanvas);
 
   _ctxLost = false;
   try {
-    pixiInit(canvasEl);
-    return true;
+    pixiInit(fresh);
+    return fresh;
   } catch (err) {
     _pixiApp = null;
-    // Only worth a report if the device CAN do WebGL — otherwise this is the
-    // known-unsupported case and _pixiGiveUp says so once, in its own words.
-    if (pixiWebglSupported() && typeof window.__reportClientError === 'function') {
+    _ctxLost = true;
+    if (typeof window.__reportClientError === 'function') {
       window.__reportClientError('pixi-recover', err && err.message, err && err.stack);
     }
-    return false;
+    return null;
   }
 }
 
@@ -268,16 +265,12 @@ function pixiInit(canvasEl) {
       // uploaded to the old context is gone, and the pools still hold handles
       // to them.
       //
-      // Through the retry path rather than straight into pixiRecover. The
-      // restored context is routinely not usable in the same tick the event
-      // fires, and the first live loss proved it — an immediate rebuild threw
-      // inside Pixi's shader setup. The backoff tries again at 400ms, 800ms
-      // and so on, which is all this needs.
-      if (pixiRecover(canvasEl)) {
-        if (typeof buildTileCanvas === 'function') buildTileCanvas();
-      } else if (typeof _pixiRetry === 'function') {
-        _pixiRetry(canvasEl, null);
-      }
+      // Through the one entry point in game.js, which owns what has to happen
+      // AROUND the renderer: the `canvas` global points at the old element,
+      // the input listeners are attached to it, and the tile cache belongs to
+      // the renderer that just died. Rebuilding the renderer alone would give
+      // back a world nobody could move around in.
+      if (typeof _pixiRebuild === 'function') _pixiRebuild();
     });
   }
 }

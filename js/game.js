@@ -2797,6 +2797,28 @@ document.addEventListener('visibilitychange', () => {
 let _pixiRetries = 0;
 let _pixiRetryTimer = null;
 const _PIXI_MAX_RETRIES = 5;
+// resize() is defined inside the load listener because it closes over the app
+// element; a rebuild needs to call it, so it is published here.
+let _doResize = null;
+
+// The one place a renderer is rebuilt. pixiRecover replaces the canvas ELEMENT
+// (a used one can never be handed a working context again), so everything
+// pointing at the old element has to be moved across: the `canvas` global, the
+// five input listeners bound to it, the renderer's size, and the tile cache,
+// whose GPU textures died with the old context.
+//
+// Rebuilding the renderer without this leaves a world that draws and does not
+// respond — which would read as a worse bug than the blank screen it fixed.
+function _pixiRebuild() {
+  const fresh = pixiRecover(canvas);
+  if (!fresh) return false;
+  canvas = fresh;
+  if (typeof bindCanvasInput === 'function') bindCanvasInput(canvas);
+  if (_doResize) _doResize();
+  buildTileCanvas();
+  _pixiRetries = 0;
+  return true;
+}
 
 function _pixiRetry(canvasEl, err) {
   if (_pixiRetryTimer) return;
@@ -2838,17 +2860,10 @@ function _pixiRetry(canvasEl, err) {
   const delay = 400 * Math.pow(2, _pixiRetries++);
   _pixiRetryTimer = setTimeout(() => {
     _pixiRetryTimer = null;
-    if (pixiRecover(canvasEl)) {
-      _pixiRetries = 0;
-      // The tile cache is keyed to the renderer that just died; without this
-      // the world comes back empty even though it is drawing again.
-      buildTileCanvas();
-      // Deliberately silent. A player who was looking at a grey screen sees the
-      // world appear, which is the whole message; a banner explaining what just
-      // fixed itself is noise.
-    } else {
-      _pixiRetry(canvasEl, null);
-    }
+    // Deliberately silent on success. A player who was looking at a grey
+    // screen sees the world appear, which is the whole message; a banner
+    // explaining what just fixed itself is noise.
+    if (!_pixiRebuild()) _pixiRetry(canvas, null);
   }, delay);
 }
 
@@ -2957,6 +2972,7 @@ window.addEventListener('load', () => {
     updateJoyCenter();
     if (dungeon) clampCamera();
   };
+  _doResize = resize;
   resize();
   window.addEventListener('resize', resize);
   _talkBtn = document.getElementById('npc-talk-btn');
