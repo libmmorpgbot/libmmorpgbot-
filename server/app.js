@@ -255,6 +255,11 @@ io.on('connection', (socket) => {
     // `sock.data`, and the rewrite assigned none of them either — see
     // server/mode-rewards.js.
     modeRewards.attach(socket, s);
+    // The other half of holdOnDisconnect: the same account takes its held
+    // party place under the new socket id. Without it the hold is only a
+    // delayed removal, and a blip still costs the party.
+    try { party.claimGrace(s.telegramId, socket.id, s.username); }
+    catch (err) { console.error('[login:party]', err); }
     socket.join(`tg_${s.telegramId}`);
     // savedData is what the client rebuilds a character from — one function,
     // restoreFromSave, fed from this field and nothing else. Omitting it left
@@ -413,12 +418,66 @@ io.on('connection', (socket) => {
   const posTimer = setInterval(() => { s.savePosition(); }, 20000);
   posTimer.unref();
 
+  // ── leaving ───────────────────────────────────────────────────────────────
+  // The rewrite's version cleared two timers and closed the session. Nothing
+  // took the player OUT OF THE ROOM, and everything below follows from that:
+  //
+  //   the body stays on the floor    nobody is sent 'playerLeft', so every
+  //                                  other client keeps drawing them
+  //   the room never goes quiet      players.size never reaches zero, so
+  //                                  _stopLoop never runs and every floor
+  //                                  ticks at 40Hz forever
+  //   monsters chase a ghost         _closestTargetFor takes any record with
+  //                                  hp > 0 and a class, which a departed
+  //                                  player still has. A monster near where
+  //                                  somebody logged out keeps chasing that
+  //                                  spot and ignores whoever is actually
+  //                                  standing there
+  //
+  // That last one is its own answer to "монстры не реагируют", separate from
+  // the packet bug, and it needed no bad luck at all: one player closing the
+  // app is enough.
+  //
+  // The rest is the old build's own disconnect list, which was not ported: a
+  // run in Страх or co-op held its lane forever, an arena match waited on
+  // someone who had closed the app, and a party kept a member who was gone.
   socket.on('disconnect', async (reason) => {
     clearTimeout(authTimer);
     clearInterval(posTimer);
     // The aura roster is "who is online AND VIP", so leaving takes the glow
     // with it — otherwise it accumulates every VIP who has ever logged in.
     if (s.username) presence.clearAura(s.username);
+
+    const m = modesRuntime;
+    if (m) {
+      try {
+        // fearGrace: a blip is not a decision. Страх and co-op hold the run
+        // for a reconnect; the competitive modes eliminate immediately,
+        // because a shared match cannot wait on one person's tunnel.
+        m._pvpEliminate(socket.id, undefined, s.room, {
+          fearGrace: true, telegramId: s.telegramId,
+        });
+        if (m._farm2EjectOnDisconnect) m._farm2EjectOnDisconnect(socket.id);
+        // The pre-run lobbies get no grace, deliberately: they are a queue,
+        // and a queue that holds places for absent people stops filling.
+        if (m._coopGroupDropOnDisconnect) m._coopGroupDropOnDisconnect(socket.id);
+        if (m._farm2GroupDropOnDisconnect) m._farm2GroupDropOnDisconnect(socket.id);
+      } catch (err) {
+        console.error('[disconnect:modes]', err);
+      }
+    }
+    // Held rather than dissolved: 45 seconds, the same reasoning as the run
+    // grace above. claimGrace in finishLogin takes the place back.
+    try { party.holdOnDisconnect(socket.id, s.telegramId); }
+    catch (err) { console.error('[disconnect:party]', err); }
+
+    if (s.room) {
+      // Told BEFORE removed, so the id is still meaningful to whoever hears it.
+      socket.to(`floor_${s.floor}`).emit('playerLeft', { id: socket.id });
+      try { s.room.removePlayer(socket.id); }
+      catch (err) { console.error('[disconnect:room]', err); }
+    }
+
     try { await s.close(reason); } catch (e) { console.error('[disconnect]', e); }
   });
 });
