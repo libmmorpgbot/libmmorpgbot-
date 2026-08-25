@@ -425,6 +425,12 @@ class Session {
     const was = this.room.players.get(this.socket.id);
     if (!was || !was.type) return null;            // no character chosen yet
 
+    // Leaving an instanced floor ends the run on it — see
+    // modes.leaveInstanceFloor for what a leftover run record does to every
+    // OTHER mode. Both floor-change routes go through here or through
+    // world.enterFloor, and both have to apply it.
+    this._leaveInstance(this.floor);
+
     this.room.removePlayer(this.socket.id);
     this.socket.to(`floor_${this.floor}`).emit('playerLeft', { id: this.socket.id });
     if (!INSTANCED_FLOORS.has(this.floor)) this.socket.leave(`floor_${this.floor}`);
@@ -459,6 +465,16 @@ class Session {
       .catch(err => console.error('[session] forceFloor push:', err.message));
 
     return p || null;
+  }
+
+  // The one line both floor-change routes share. Kept on the session because
+  // that is what holds `floor`, and guarded because modes are initialised
+  // after the first connection can exist.
+  _leaveInstance(oldFloor) {
+    const m = require('./modes').modes;
+    if (m && typeof m.leaveInstanceFloor === 'function') {
+      m.leaveInstanceFloor(this.socket.id, oldFloor);
+    }
   }
 
   // ── position ─────────────────────────────────────────────────────────────

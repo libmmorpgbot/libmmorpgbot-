@@ -80,6 +80,11 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
   if (!room) return session.floor;
 
   if (session.room && session.room !== room) {
+    // Same rule as forceFloor's: walking off an instanced floor ends the run
+    // that was happening on it. Without this a player who left Страх by any
+    // route other than dying kept a run record that silently refused every
+    // later entry — to Страх and to every other instanced mode.
+    if (typeof session._leaveInstance === 'function') session._leaveInstance(session.floor);
     session.room.removePlayer(session.socket.id);
     session.socket.leave(`floor_${session.floor}`);
   }

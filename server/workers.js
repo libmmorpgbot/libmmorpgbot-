@@ -94,10 +94,32 @@ async function scanDeposits({ notifyPlayer } = {}) {
 let _offset = 0;
 let _polling = false;
 
+// ── a restart is not a second poller ────────────────────────────────────────
+// getUpdates holds a connection open for TG_POLL_TIMEOUT_S. On SIGTERM the
+// loop's `while (_polling)` cannot notice anything until that request returns,
+// so the old process kept Telegram's poll slot for up to 25 seconds after it
+// was told to stop — and the NEW process, starting immediately, was told
+// Conflict.
+//
+// The old handling of that made it far worse than the cause: it raised
+// "Бот опрашивается из двух мест" and then slept SIXTY SECONDS. So every
+// deploy cost a minute of a bot that answered nothing, plus an alarm about a
+// second process that did not exist. That is the whole of "бот або дуже довго
+// відповідає, або не відповідає".
+//
+// Three changes. The in-flight request is now abortable, so stop() ends it at
+// once and the slot is released before the next process asks for it. A
+// conflict backs off briefly and escalates instead of sleeping a flat minute.
+// And it only alarms once the conflict has PERSISTED — a handful of seconds
+// around a restart is expected and means nothing.
+let _pollAbort = null;
+const CONFLICT_ALERT_AFTER = 6;      // ~30s of genuine overlap before alarming
+
 async function pollOps({ notifyPlayer } = {}) {
   const token = process.env.TG_OPS_BOT_TOKEN || '';
   if (!token || _polling) return;
   _polling = true;
+  let conflicts = 0;
 
   const loop = async () => {
     while (_polling) {
@@ -105,18 +127,32 @@ async function pollOps({ notifyPlayer } = {}) {
         const url = `https://api.telegram.org/bot${token}/getUpdates` +
           `?offset=${_offset}&timeout=${TG_POLL_TIMEOUT_S}` +
           `&allowed_updates=${encodeURIComponent('["callback_query","message"]')}`;
-        const res = await fetch(url, { signal: AbortSignal.timeout((TG_POLL_TIMEOUT_S + 10) * 1000) });
+        _pollAbort = new AbortController();
+        const timer = setTimeout(() => _pollAbort && _pollAbort.abort(),
+          (TG_POLL_TIMEOUT_S + 10) * 1000);
+        let res;
+        try { res = await fetch(url, { signal: _pollAbort.signal }); }
+        finally { clearTimeout(timer); _pollAbort = null; }
         const data = await res.json();
         if (!data.ok) {
           if (/conflict/i.test(data.description || '')) {
-            // Two pollers on one token. Fatal for this feature and silent
-            // otherwise — the buttons would simply stop working.
-            await ops.alert('tg.conflict', 'Бот опрашивается из двух мест',
-              'getUpdates вернул Conflict. Кнопки выводов работать не будут, пока второй процесс не остановлен.');
-            await new Promise(r => setTimeout(r, 60000));
+            conflicts++;
+            if (conflicts === CONFLICT_ALERT_AFTER) {
+              await ops.alert('tg.conflict', 'Бот опрашивается из двух мест',
+                'getUpdates возвращает Conflict дольше 30 секунд. Кнопки выводов и /admin работать не будут, пока второй процесс не остановлен.');
+            }
+            // 1s, 2s, 4s… to 10s. The overlap around a restart clears in one
+            // or two of these.
+            await new Promise(r => setTimeout(r, Math.min(10000, 1000 * 2 ** Math.min(conflicts - 1, 4))));
+          } else {
+            // Anything else — a bad token, Telegram having a moment. `continue`
+            // on its own made this a tight loop hammering the API.
+            console.error('[workers] getUpdates:', data.description);
+            await new Promise(r => setTimeout(r, 3000));
           }
           continue;
         }
+        conflicts = 0;
         for (const upd of data.result) {
           _offset = upd.update_id + 1;
           try {
@@ -138,8 +174,12 @@ async function pollOps({ notifyPlayer } = {}) {
         }
       } catch (err) {
         // Network errors are expected on a long poll; back off briefly rather
-        // than hammering.
-        if (err.name !== 'TimeoutError') console.error('[workers] poll:', err.message);
+        // than hammering. An abort is not an error at all — it is stop() doing
+        // exactly what it was asked, and the loop is about to end.
+        if (!_polling) break;
+        if (err.name !== 'TimeoutError' && err.name !== 'AbortError') {
+          console.error('[workers] poll:', err.message);
+        }
         await new Promise(r => setTimeout(r, 2000));
       }
     }
@@ -236,6 +276,10 @@ function start(opts = {}) {
 
 function stop() {
   _polling = false;
+  // Ends the long poll NOW rather than up to 25 seconds from now. Without
+  // this the departing process holds Telegram's poll slot well past its own
+  // shutdown, and the next one starts into a Conflict it did not cause.
+  if (_pollAbort) { try { _pollAbort.abort(); } catch { /* already gone */ } _pollAbort = null; }
   for (const t of timers) clearInterval(t);
   timers.length = 0;
 }

@@ -223,13 +223,17 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       _coopGroupOf.delete(s.socket.id);
       _coopGroupOf.delete(partnerSid);
       _coopGroupBroadcastList();
-      _lockCoopDaily(partnerSid);
+      // BOTH halves. The line below was converted to modes.takeAttempt and this
+      // one was not, so coopGroupStart threw ReferenceError on the partner
+      // every single time: the run never started, and the error named a
+      // function that has not existed since the rewrite.
+      await modes.takeAttempt(partnerSid, 'coop');
       await modes.takeAttempt(s.socket.id, 'coop');
       _coop.set(partnerSid, { room: coopRoom, lane: spot1.lane, partnerId: s.socket.id });
       _coop.set(s.socket.id, { room: coopRoom, lane: spot2.lane, partnerId: partnerSid });
       const p1 = coopRoom.players.get(partnerSid), p2 = coopRoom.players.get(s.socket.id);
       const readyAt = Date.now() + COOP_START_DELAY_MS;
-      io.to(partnerSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await _coopAttemptsLeft(partnerSid), readyAt });
+      io.to(partnerSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await modes.attemptsLeft(partnerSid, 'coop'), readyAt });
       s.socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: await modes.attemptsLeft(s.socket.id, 'coop'), readyAt });
       safeTimeout('coopStage1', () => {
         // Still exactly the run this timer was scheduled for? A disconnect
@@ -414,7 +418,7 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         // Authoritative daily-minutes gate — see this section's own header
         // comment on why every participant is checked here, not just the
         // leader at create time.
-        const minutesLeft = await Promise.all(allIds.map(sid => _farm2MinutesLeft(sid)));
+        const minutesLeft = await Promise.all(allIds.map(sid => modes.farm2MinutesLeft(sid)));
         const exhaustedIdx = minutesLeft.findIndex(m => m <= 0);
         if (exhaustedIdx !== -1) {
           const msg = exhaustedIdx === 0
@@ -448,7 +452,7 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         // here and force-joins every connection onto it via the `room` override
         // (_forceEnterLocation, exposed per-connection so this handler can move
         // sockets that aren't its own).
-        const allSockets = [socket, ...memberSockets];
+        const allSockets = [s.socket, ...memberSockets];
         const farm2Room = _createFarm2Room();
         const entered = allSockets.map(s => s.data._forceEnterLocation?.('farmZone2', { room: farm2Room }));
         if (entered.some(ok => !ok)) {
@@ -489,7 +493,10 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           }, minutesLeft[i] * 60000);
           run.minuteTimer = safeInterval('farm2Min_' + sid, () => {
             run.chargedMin += 1;
-            _lockFarm2Minutes(sid, 1);
+            // Charged against the ACCOUNT, not the connection — a reconnect
+            // mid-run used to start the budget over.
+            const tid = modes._socketTid && modes._socketTid(sid);
+            if (tid) modes._lockFarm2MinutesFor(tid, 1);
           }, 60000);
           _farm2.set(sid, run);
         });

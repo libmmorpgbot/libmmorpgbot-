@@ -35,6 +35,7 @@ const { FLOOR_IDS } = require('./game/floors');
 const {
   FARM2_DAILY_MINUTES, WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
+  FEAR_MAX_WAVE, COOP_STAGE_LEVELS, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE,
 } = require('../shared/definitions');
 
 const createArena3 = require('./game/arena3');
@@ -481,6 +482,64 @@ function init(io) {
     if (wbNotifyTimer && wbNotifyTimer.unref) wbNotifyTimer.unref();
   }
   wbSchedule();
+
+  // ── walking out of an instanced run ends it ──────────────────────────────
+  // Страх, co-op and the elite farm zone each keep a record saying "this
+  // connection is mid-run". Two things used to clear it: clearing the last
+  // wave, and dying. Leaving the floor ANY other way — the return button, a
+  // portal, an event window closing and moving you — left the record behind.
+  //
+  // A leftover record is not inert. fearEnter checks it FIRST and returns in
+  // silence on a hit, so the button does nothing at all and the attempt is
+  // never spent; co-op and the farm zone check it too and refuse out loud with
+  // "Вы сейчас в Страхе". So one walk out of Страх locked a player out of
+  // every instanced mode in the game until they reconnected — which is exactly
+  // "события зайшли, воно не стартується".
+  //
+  // The old build did this inside its own floor-change function. This is the
+  // same rule in the one place both floor changes go through.
+  modes.leaveInstanceFloor = (socketId, oldFloor) => {
+    if (!Number.isFinite(oldFloor)) return;
+    try {
+      if (oldFloor === FLOOR_IDS.fear) {
+        if (modes._fearReleaseRun(socketId)) {
+          io.to(socketId).emit('fearState', {
+            maxAttempts: modes.FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE,
+            minLevel: modes.FEAR_MIN_LEVEL, inRun: false, wave: 0,
+          });
+        }
+        return;
+      }
+      if (oldFloor === FLOOR_IDS.coop) {
+        const run = modes._coop.get(socketId);
+        if (!run) return;
+        const partnerId = run.partnerId;
+        modes._coopReleaseRun(socketId);
+        // A co-op run with one person left is a run whose rules no longer
+        // hold: the partner is sent home rather than left waiting on a stage
+        // that can now never clear.
+        if (partnerId && modes._coop.has(partnerId)) modes._coopFinish(partnerId, false);
+        io.to(socketId).emit('coopState', {
+          maxAttempts: modes.COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length,
+          minLevel: modes.COOP_MIN_LEVEL, inRun: false, stage: 0,
+        });
+        return;
+      }
+      if (oldFloor === FLOOR_IDS.farmZone2) {
+        const run = modes._farm2.get(socketId);
+        if (!run) return;
+        const { room, participantIds } = run;
+        modes._farm2ReleaseRun(socketId);
+        modes._farm2CascadeCheck(room, participantIds);
+        io.to(socketId).emit('farm2State', {
+          entryLevel: FARM2_ENTRY_LEVEL, partySize: FARM2_PARTY_SIZE,
+          dailyMinutes: FARM2_DAILY_MINUTES, inRun: false,
+        });
+      }
+    } catch (err) {
+      ops.alertError('modes.leaveInstance', 'Ошибка при выходе из инстанса', err);
+    }
+  };
 
   // ── every mode's stake in one swing of a sword ───────────────────────────
   // A hit is a hit in the open world. Inside a mode it is also a wave counter,
