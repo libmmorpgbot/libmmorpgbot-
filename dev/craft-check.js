@@ -16,7 +16,7 @@ const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const craft = require('../server/db/repos/craft');
 const {
-  GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES, craftResultEnhance,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
   BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
 } = require('../shared/definitions');
@@ -258,6 +258,47 @@ async function main() {
   eq(await countOf(r6, bulkMat.id), bulkMat.n, 'другий матеріал теж на місці');
 
   // ── naming a recipe by its result ────────────────────────────────────────
+  // ── ЩО ВИХОДИТЬ ІЗ ЗАТОЧЕНОГО ──────────────────────────────────────────
+  // "В крафте тоже: заточенную вещь крафтишь, не заточенную даёт."
+  //
+  // A tier recipe asks for two copies at +8 and the result carries +6 — two
+  // levels below what was consumed. That rule was written twice: js/npc.js
+  // computed it to SHOW the player what they would get, and the old server
+  // handler computed it again to GRANT it. The PostgreSQL rewrite dropped the
+  // server half and put `enhance: rec.enhance || 0` in its place — and no
+  // recipe has ever had an `enhance` field, so every craft granted +0 while
+  // the crafting window promised +6.
+  //
+  // Eighty-one assertions in this file and none of them looked at the
+  // enhancement of the thing that came out.
+  console.log('');
+  console.log('  ── заточка результату ──');
+  const tierIdx = GEAR_TIER_CRAFT_RECIPES.findIndex(r =>
+    (r.mats || []).some(m => m.minEnhance > 0));
+  const tier = GEAR_TIER_CRAFT_RECIPES[tierIdx];
+  const wantEnh = craftResultEnhance(tier);
+  eq(wantEnh, tier.mats.find(m => m.minEnhance != null).minEnhance - 2,
+    `правило: на два рівні нижче за з'їдене (+${wantEnh})`);
+  ok(wantEnh > 0, 'і воно не нуль — інакше перевірка нижче нічого не доводить');
+
+  const te = await mk('tier');
+  for (const m of tier.mats) {
+    for (let i = 0; i < (m.n || 1); i++) {
+      await tx(t => items.add(t, te, m.id, { enhance: m.minEnhance || 0 }));
+    }
+  }
+  if (tier.nexumCost) {
+    await money.credit(null, te, 'nexum', tier.nexumCost, { reason: 'seed', idemKey: `${TAG}:nxt` });
+  }
+  const tRes = await tx(t => craft.craft(t, te, 'gearTier', tierIdx));
+  eq(tRes.outcome, 'success', 'тировий крафт пройшов');
+  const { rows: got } = await pool().query(
+    `SELECT enhance FROM player_items WHERE player_id = $1 AND item_id = $2`, [te, tier.itemId]);
+  ok(got.length === 1, 'предмет виданий');
+  eq(got[0] && got[0].enhance, wantEnh,
+    `і він виходить +${wantEnh}, а не +0 — саме це й було зламано`);
+
+
   console.log('  ── рецепт за предметом ──');
   eq(JSON.stringify(craft.gearRecipeByItemId(rec.itemId)), JSON.stringify({ family: 'gear', index: 0 }),
     'епічний рецеп знайдено в GEAR_CRAFT_RECIPES');

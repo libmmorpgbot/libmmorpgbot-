@@ -36,7 +36,7 @@ const {
   ENHANCE_MAX, ENHANCEABLE_SLOTS, MERCHANT_SHOP, ITEM_DEF, BOX_DEF, CRAFT_MATS,
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
-  ADV_SKILL_BOOK_CRAFT,
+  ADV_SKILL_BOOK_CRAFT, craftResultEnhance,
 } = require('../../../shared/definitions');
 
 class CraftError extends Error {
@@ -196,8 +196,11 @@ async function craft(db, playerId, family, index) {
   const success = chance >= 1 || rand() < chance;
   if (!success) return { outcome: 'fail', family, index, chance };
 
+  // craftResultEnhance, not `rec.enhance` — no recipe has ever had that field,
+  // so this granted +0 for every craft while the crafting window showed the
+  // player a +6 item. See the function in shared/definitions.js.
   const rowId = await items.add(db, playerId, rec.itemId,
-    { qty: rec.qty || 1, enhance: rec.enhance || 0 });
+    { qty: rec.qty || 1, enhance: craftResultEnhance(rec) });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', family, index, chance, itemId: rec.itemId, rowId };
 }

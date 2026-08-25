@@ -1353,6 +1353,26 @@ ITEM_DEF.push(...UNIQUE_WEAPONS.map(w => ({ ...w, noDrop: true, unique: true }))
 // no nexumCost/goldCost field on any of these. js/definitions.js splices this
 // into ITEM_CRAFT_RECIPES so the craftsman UI keeps listing every tier from
 // one place.
+// What enhancement a crafted item comes out at.
+//
+// A tier recipe asks for two copies at +8 and the result carries +6 — two
+// levels below what was consumed. That rule lived in TWO places and then in
+// neither: js/npc.js computed it to show the player what they would get, the
+// old server handler computed it again to grant it, and the PostgreSQL rewrite
+// dropped the server half. `items.add(..., { enhance: rec.enhance || 0 })` —
+// and no recipe has ever had an `enhance` field, so every craft granted +0.
+//
+// The player was shown a +6 item in the crafting window and handed a +0 one
+// after spending the stones to get two items to +8: "заточенную вещь крафтишь,
+// не заточенную даёт".
+//
+// It lives here now because both ends of the wire read this file, so there is
+// one rule rather than two copies that agreed until one of them was rewritten.
+function craftResultEnhance(rec) {
+  const baseMat = (rec && rec.mats || []).find(m => m.minEnhance != null);
+  return baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
+}
+
 const GEAR_TIER_CRAFT_RECIPES = [
   // ── Assassin knives ──────────────────────────────────────
   { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
@@ -2224,6 +2244,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
+  craftResultEnhance,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   dropLevelGapDivisor,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,

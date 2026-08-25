@@ -1230,7 +1230,12 @@ function tryFillCodexSlot(setId, slotIdx) {
   }
   const it = player.inventory[idx];
   if (!confirm(`Внести «${it.name}${it.enhance ? ' +' + it.enhance : ''}» в набор «${set.name}»? Предмет будет уничтожен без возврата.`)) return;
-  netRegisterCodexSetItem(setId, slotIdx, idx);
+  // The confirmation above names this exact item and warns it will be
+  // destroyed without return. Sending only the index means the server destroys
+  // whatever sits at that position when the message ARRIVES — and a kill or a
+  // pickup between the dialog opening and the click renumbers the list. The
+  // row id names the item the player actually agreed to lose.
+  netRegisterCodexSetItem(setId, slotIdx, idx, it);
 }
 
 function _codexSetRowHtml(set) {

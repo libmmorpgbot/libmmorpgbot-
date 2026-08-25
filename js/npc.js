@@ -291,9 +291,11 @@ function _uniqueCraftGroupHTML() {
 // the result comes out pre-enhanced 2 levels below that (+6), instead of
 // starting back at +0. Shared by the preview (openCraftModal) and the
 // actual craft (craftSpecificItem) so they always agree.
+// The rule itself lives in shared/definitions.js, which is in this bundle —
+// having it written out here as well is how the server's copy could be dropped
+// in the rewrite without anything noticing that the two ends now disagreed.
 function _craftResultEnhance(rec) {
-  const baseMat = rec.mats.find(m => m.minEnhance != null);
-  return baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
+  return craftResultEnhance(rec);
 }
 function _itemWithEnhance(item, enhance) {
   if (!enhance) return item;

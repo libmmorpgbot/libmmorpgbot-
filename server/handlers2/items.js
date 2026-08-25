@@ -162,11 +162,16 @@ module.exports = function registerItems(s, safeOn) {
   }));
 
   // ── codex ────────────────────────────────────────────────────────────────
-  safeOn('registerCodexSetItem', ({ setId, slotIdx, idx, id = null, enhance = null } = {}) =>
+  safeOn('registerCodexSetItem', ({ setId, slotIdx, idx, id = null, enhance = null, rowId = null } = {}) =>
     s.act('registerCodexSetItem', 'itemError', async (t, pid) => {
       if (typeof setId !== 'string') return;
       await items.lockPlayer(t, pid);
-      const row = await items.resolveRow(t, pid, { idx, id, enhance }, 'inventory');
+      // rowId FIRST. This DESTROYS the item, and the client's confirmation
+      // names it by hand — "Внести «Меч +8»? Предмет будет уничтожен без
+      // возврата". An index alone means whatever occupies that position when
+      // the message lands, and a kill between the dialog and the click
+      // renumbers the list.
+      const row = await items.resolveRow(t, pid, { rowId, idx, id, enhance }, 'inventory');
       if (!row) return;
       const res = await consumables.registerCodexItem(t, pid, setId, slotIdx, row);
       await push(t);

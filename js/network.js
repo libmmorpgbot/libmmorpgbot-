@@ -2419,28 +2419,60 @@ function _looksBlankSave(s) {
     (s.inventory || []).length === 0 && equipped === 0;
 }
 
-function _emitSaveProgress() {
-  if (!player || state !== 'playing') return;
-  // Never let a session that hasn't got real data behind it write a blank
-  // save. In the normal flow this is unreachable (state only becomes
-  // 'playing' after gameStart ran the restore), so it costs nothing — but it
-  // is the single choke point every save path in the game funnels through,
-  // and blank-save-over-real-progress is exactly the failure that cost a
-  // player their character. The DB half is already guarded server-side too
-  // (_looksLikeCatastrophicReset in saveProgress/selectChar).
-  // _accountIsNew accounts are exempt: their first save legitimately is blank.
-  const stats = _buildSaveStats();
-  if (!_accountIsNew && !_sessionHasRealData && _looksBlankSave(stats)) {
-    console.warn('[save] refusing to persist a blank save for an existing account — no real data loaded this session');
-    return;
-  }
-  if (socket?.connected) socket.emit('saveProgress', { stats });
+// ── what still needs saving, and what does not ──────────────────────────────
+// This used to serialise the whole player — inventory, equipment, level, gold
+// — into a `saveProgress` blob every two seconds and on every kill. The server
+// stopped listening to that event during the PostgreSQL rewrite, deliberately
+// and correctly: the database owns all of it now, and a client that can post
+// its own gold is a client that can post any gold. `statsUpdate` went the same
+// way for the same reason (`socket.emit('statsUpdate', { atk: 1e6 })`).
+//
+// The client never stopped SENDING them. Every two seconds, mid-combat, on the
+// phone, it walked the inventory, built the object and pushed it down a socket
+// to a server that dropped it on the floor — which is exactly the frame-spike
+// cost its own comment below was written about.
+//
+// One thing in that blob genuinely did need to reach the database: the
+// SETTINGS. Auto-potion threshold, auto-skills, which potion is on the HUD,
+// auto-buff types, language. The server has had a complete `savePrefs` handler
+// the whole time — validated field by field, guarded against prototype
+// pollution — and nothing has ever called it. So those six settings have been
+// read at login and never written: every one of them reset on every reload,
+// and nobody could see why.
+//
+// So this path now sends the settings, and only when they have actually
+// changed. Every existing caller — a settings toggle, a floor change, page
+// unload, going to background — keeps working and costs a comparison instead
+// of a serialised inventory.
+function _buildPrefs() {
+  if (!player) return null;
+  return {
+    lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
+    hudPotion: player.hudPotion || 'pt1',
+    autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0,
+    autoSkillsOn: player.autoSkillsOn !== false,
+    autoSkillOff: player.autoSkillOff || {},
+    autoBuffTypes: player.autoBuffTypes || {},
+  };
 }
 
-// Debounced save — serializing the full inventory + equipment on every kill
-// and pickup caused frame spikes mid-combat. Coalesce into at most one emit
-// per 2s (trailing edge); netSaveProgressNow() flushes immediately for
-// floor changes and page unload where the save must not be lost.
+let _lastPrefsSent = null;
+function _emitSaveProgress() {
+  if (!player || state !== 'playing') return;
+  if (!socket?.connected) return;
+  const prefs = _buildPrefs();
+  if (!prefs) return;
+  // Unchanged settings are not worth a round trip. netSaveProgress is called
+  // from combat, so without this the debounce would still fire every two
+  // seconds for the whole session.
+  const sig = JSON.stringify(prefs);
+  if (sig === _lastPrefsSent) return;
+  _lastPrefsSent = sig;
+  socket.emit('savePrefs', { prefs });
+}
+
+// Debounced — coalesce into at most one emit per 2s (trailing edge);
+// netSaveProgressNow() flushes immediately for floor changes and page unload.
 let _saveTimer = null, _lastSaveMs = 0;
 function netSaveProgress() {
   if (!player || state !== 'playing') return;
@@ -2491,8 +2523,15 @@ function netToggleAdvSkill(key)  { if (socket?.connected) socket.emit('toggleAdv
 // a result — the server checks the item/enchant match and slot availability,
 // deletes the item and answers with codexSync (authoritative progress +
 // bonus) or itemError.
-function netRegisterCodexSetItem(setId, slotIdx, idx) {
-  if (socket?.connected) socket.emit('registerCodexSetItem', { setId, slotIdx, idx });
+function netRegisterCodexSetItem(setId, slotIdx, idx, item) {
+  if (!socket?.connected) return;
+  const it = item || {};
+  // rowId is the item; idx and identity are the fallbacks if it has gone stale.
+  socket.emit('registerCodexSetItem', {
+    setId, slotIdx, idx,
+    rowId: it.rowId || null, id: it.id || null,
+    enhance: it.enhance != null ? it.enhance : null,
+  });
 }
 function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgrade', { key }); }
 
@@ -2922,9 +2961,13 @@ function netUsePotion(id, amount) {
   if (socket?.connected) socket.emit('usePotion', { id, amount });
 }
 
-function netStatsUpdate(atk, def, maxHp, critChance, critPower) {
-  if (socket?.connected) socket.emit('statsUpdate', { atk, def, maxHp, critChance, critPower });
-}
+// Kept as a no-op rather than deleted, because js/player.js calls it from
+// recompute() and a missing global there is a ReferenceError on every stat
+// change. The event itself is gone: the server computes stats from the
+// database and pushes them down, and it deleted this handler on purpose —
+// `socket.emit('statsUpdate', { atk: 1e6, maxHp: 1e9 })` used to park the
+// sender at a million attack (see the comment in server/game/Room.js).
+function netStatsUpdate() { /* server-owned — see above */ }
 
 // `splash`: this hit is "Безумие"'s (advanced deathknight E) AOE side effect
 // of a primary attack, not a primary attack itself — the server always
