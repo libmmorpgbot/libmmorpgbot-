@@ -6111,7 +6111,12 @@ function onGuildWarState() {}
 
 // ── Buy flow ────────────────────────────────────────────────
 function openMarketBuyConfirm(listingId) {
-  const l = _marketLots.find(x => x.id === listingId);
+  // Compared as TEXT. The id arrives from an onclick attribute, so it is
+  // always a string; the lot's own id used to be a Mongo _id string and is now
+  // a PostgreSQL bigint arriving as a number. `'229' === 229` is false, the
+  // lookup missed, and this returned — no request, no error, no log line.
+  // "Не покупается" with nothing anywhere to say why.
+  const l = _marketLots.find(x => String(x.id) === String(listingId));
   if (!l) return;
   if (typeof invHasSpace === 'function' && !invHasSpace()) {
     _marketToast(t('invFullFreeSpaceToast'), 'err');
@@ -6356,13 +6361,30 @@ function _confirmMarketList() {
 }
 
 // ── Server event handlers (called from network.js) ───────────────────────────
+// ── a lot names an item; the catalog says what it looks like ────────────────
+// The server sends id, enhance, qty, name, rarity and slot — the identity and
+// nothing else. The renderer wants the picture (`img`/`icon`) and the stat
+// line, which are catalog facts this client already holds, and without them
+// every lot on the market drew the same grey weapon glyph with a blank
+// subtitle whatever it actually was.
+//
+// Enriched exactly as the inventory is (_rebuildFromCatalog, js/player.js), so
+// a sword looks the same in a lot as it does in the bag. Sending the fields
+// from the server instead would put a second copy of the catalog on the wire
+// for every browse.
+function _marketEnrich(listings) {
+  if (!Array.isArray(listings)) return [];
+  if (typeof _rebuildFromCatalog !== 'function') return listings;
+  return listings.map(l => (l && l.item ? { ...l, item: _rebuildFromCatalog(l.item) || l.item } : l));
+}
+
 function onMarketBrowseData(listings) {
-  _marketLots = listings;
+  _marketLots = _marketEnrich(listings);
   _marketLoaded.lots = true;
   if (_marketTab === 'lots') _renderMarketBody();
 }
 function onMarketMyListingsData(listings) {
-  _marketMine = listings;
+  _marketMine = _marketEnrich(listings);
   _marketLoaded.mine = true;
   if (_marketTab === 'mine') _renderMarketBody();
 }

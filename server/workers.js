@@ -12,6 +12,7 @@
 // is arriving and going nowhere.
 
 const ops = require('./tg-ops');
+const tgAdmin = require('./tg-admin');
 const cards = require('./ops-cards');
 const gram = require('./db/repos/gram');
 const money = require('./db/repos/money');
@@ -120,7 +121,14 @@ async function pollOps({ notifyPlayer } = {}) {
           _offset = upd.update_id + 1;
           try {
             if (upd.callback_query) await _onCallback(upd.callback_query, { notifyPlayer });
-            else if (upd.message) await ops.handleTopicIdCommand(upd.message);
+            else if (upd.message) {
+              // Each returns whether it took the message, so a command that
+              // belongs to neither is simply ignored rather than answered
+              // twice or answered wrongly.
+              if (!await tgAdmin.handle(upd.message)) {
+                await ops.handleTopicIdCommand(upd.message);
+              }
+            }
           } catch (err) {
             // One malformed update must not stop the loop, and the offset has
             // already advanced so it will not be retried forever.
