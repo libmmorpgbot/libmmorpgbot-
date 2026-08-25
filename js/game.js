@@ -2800,13 +2800,33 @@ const _PIXI_MAX_RETRIES = 5;
 
 function _pixiRetry(canvasEl, err) {
   if (_pixiRetryTimer) return;
-  if (_pixiRetries === 0 && typeof window.__reportClientError === 'function') {
+
+  // A device with no WebGL at all is not a transient failure. An iPhone with
+  // it disabled answered "no webgl2 · no webgl1" and then got five retries,
+  // each throwing the same "Unable to auto-detect a suitable renderer" — a
+  // dozen seconds of pointless work and a stack trace in the alerts topic for
+  // a phone that was never going to render anything. Say so once and stop.
+  if (!pixiWebglSupported()) {
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('pixi-unsupported',
+        `на устройстве нет WebGL — ${pixiWebglDiagnosis(canvasEl)}`);
+    }
+    _pixiRetries = _PIXI_MAX_RETRIES;
+    _pixiGiveUp({ unsupported: true });
+    return;
+  }
+
+  if (_pixiRetries === 0 && err && typeof window.__reportClientError === 'function') {
     // Reported on the FIRST failure, with the device's own explanation, so a
     // phone that cannot start the world is visible in the alerts topic rather
     // than only in a screenshot somebody happens to send.
+    //
+    // Only when there IS an error to report: the restore path calls this with
+    // null after a context that simply was not ready yet, which is an ordinary
+    // step in recovering and not something to wake anyone up about.
     window.__reportClientError('pixi-init',
-      `${(err && err.message) || 'WebGL недоступен'} — ${pixiWebglDiagnosis(canvasEl)}`,
-      err && err.stack);
+      `${err.message || 'WebGL недоступен'} — ${pixiWebglDiagnosis(canvasEl)}`,
+      err.stack);
   }
   if (_pixiRetries >= _PIXI_MAX_RETRIES) {
     _pixiGiveUp();
@@ -2832,8 +2852,9 @@ function _pixiRetry(canvasEl, err) {
   }, delay);
 }
 
-function _pixiGiveUp() {
-  if (typeof window.__reportClientError === 'function') {
+function _pixiGiveUp({ unsupported = false } = {}) {
+  // The unsupported case has already reported itself, with a better message.
+  if (!unsupported && typeof window.__reportClientError === 'function') {
     window.__reportClientError('pixi-dead',
       `сдались после ${_PIXI_MAX_RETRIES} попыток — ${pixiWebglDiagnosis(canvas)}`);
   }
@@ -2848,8 +2869,12 @@ function _pixiGiveUp() {
     + 'max-width:80vw;background:#2a1616;border:1px solid #b05a5a;color:#e8c4c4;'
     + 'padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.45;'
     + 'text-align:center;z-index:99999';
-  box.textContent = 'Графика не запустилась на этом устройстве. '
-    + 'Закройте и откройте игру заново — если не поможет, перезапустите Telegram.';
+  box.textContent = unsupported
+    ? 'Этот браузер не поддерживает WebGL, без него игра не рисуется. '
+      + 'Откройте игру в Telegram или в Chrome/Safari — и проверьте, что в настройках '
+      + 'браузера включено аппаратное ускорение.'
+    : 'Графика не запустилась на этом устройстве. '
+      + 'Закройте и откройте игру заново — если не поможет, перезапустите Telegram.';
   document.body.appendChild(box);
 }
 

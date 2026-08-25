@@ -603,6 +603,16 @@ async function api(path, opts={}) {
 // there, so a loop cannot flood the group.
 function report(where, message, stack) {
   try {
+    // A phone that locked its screen mid-poll is not a fault. The 15-second
+    // online counter fires, the browser suspends the tab, the request dies as
+    // "Failed to fetch", and the alerts topic gets a report about a working
+    // panel on a working server. It happened twice in one evening.
+    //
+    // Reported only when the page is actually visible and the browser thinks
+    // it has a network. Anything that fails while hidden or offline is the
+    // phone, not the code — and if it is really broken, the next request made
+    // while someone is LOOKING at the page will say so.
+    if (document.hidden || navigator.onLine === false) return;
     fetch('/client-error', {
       method: 'POST',
       credentials: 'same-origin',
@@ -894,11 +904,21 @@ async function closeGuildWar() {
 }
 
 function refreshOnline() {
+  // Not while nobody is looking. A counter that refreshes behind a locked
+  // screen updates a number no one can read, and on mobile the suspended tab
+  // turns each attempt into a failed request. The panel redraws it on the way
+  // back in anyway.
+  if (document.hidden) return;
   api('/admin/stats').then(r=>r.json()).then(d=>{
     document.getElementById('st-online').textContent = d.online||0;
     document.getElementById('online-badge').textContent = '● '+(d.online||0)+' онлайн';
   }).catch(()=>{});
 }
+// Coming back to the tab: refresh at once rather than waiting out the rest of
+// the 15-second tick with a stale number on screen.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _tok) refreshOnline();
+});
 
 function renderTops(tops) {
   const topMap = { bm:'top-bm', lvl:'top-lvl', gold:'top-gold', nexum:'top-nexum' };

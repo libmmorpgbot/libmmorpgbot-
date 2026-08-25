@@ -779,6 +779,11 @@
 window.__reportClientError = function (where, message, stack) {
   try {
     if (!message) return;
+    // A phone with no signal, or one that suspended the tab mid-request, is
+    // not a bug in the game. Those failures announce themselves as "Failed to
+    // fetch" and would fill the alerts topic with reports about working code
+    // on a working server.
+    if (navigator.onLine === false) return;
     // Two of the same message in a row are one problem, not two. The server
     // throttles as well; this stops the requests being made at all.
     const sig = where + '|' + String(message).slice(0, 120);

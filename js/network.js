@@ -518,7 +518,10 @@ function netConnect(onReady) {
 
   socket.on('connect_error', (err) => {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
-    if (typeof window.__reportClientError === 'function') {
+    // Not while the page is hidden: a backgrounded tab loses its socket as a
+    // matter of course, and every app switch would be an alert about a player
+    // who is simply not looking at the game right now.
+    if (!document.hidden && typeof window.__reportClientError === 'function') {
       window.__reportClientError('connect', (err && err.message) || 'connect_error');
     }
   });
