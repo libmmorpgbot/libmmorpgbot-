@@ -22,6 +22,7 @@ const db = require('./db');
 const items = require('./db/repos/items');
 const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
+const plog = require('./db/repos/playerlog');
 const ops = require('./tg-ops');
 const workers = require('./workers');
 const adminAuth = require('./admin-auth');
@@ -105,6 +106,9 @@ app.get('/health', async (req, res) => {
     sessions: activeSessions.size,
     workers: workers.status(),
     ops: ops.status(),
+    // The player log: how many rows are queued, written, and lost. An empty
+    // player_logs table looked exactly like a quiet server until this existed.
+    playerLog: plog.stats(),
     // Per-floor tick timings. "Иногда тупит" was unanswerable without these:
     // nothing recorded whether the 25ms world loop was making its budget.
     // Reading RESETS the window, so each poll describes the interval since the
@@ -132,6 +136,57 @@ app.get('/health/ready', async (_req, res) => {
 // is a 404 rather than index.html.
 require('./static').mount(app, { floorRooms: world.floorRooms });
 
+// ── what breaks in the BROWSER ──────────────────────────────────────────────
+// Half of what a player calls a bug never reaches this process at all. The
+// market lot that could not be bought was a string compared against a number
+// in js/ui.js: the click did nothing, no request was made, the server had
+// nothing to log — and the report was "не мог купить лот, и никаких ошибок наш
+// лог не выбил". It was right. There was no way for the client to say so.
+//
+// This is that way. The page reports its own exceptions, its rejected
+// promises, and any request that came back wrong; they land in the same
+// alerts topic as everything else, through the same throttle, so a broken
+// build cannot flood it.
+const _clientErrRate = new Map();       // ip -> { n, until }
+app.post('/client-error', (req, res) => {
+  // Answered before anything else can go wrong. A reporting endpoint that
+  // returns an error is a reporting endpoint that starts a loop.
+  res.status(204).end();
+  try {
+    const ip = req.ip || 'anon';
+    const now = Date.now();
+    const b = _clientErrRate.get(ip) || { n: 0, until: 0 };
+    if (now > b.until) { b.n = 0; b.until = now + 60000; }
+    _clientErrRate.set(ip, b);
+    // 20 a minute per address. Past that the sender is looping, and the
+    // throttle inside ops.alert would collapse them anyway — this stops the
+    // work before it is done rather than after.
+    if (++b.n > 20) return;
+    if (_clientErrRate.size > 2000) {
+      for (const [k, v] of _clientErrRate) if (v.until < now) _clientErrRate.delete(k);
+    }
+
+    const body = req.body || {};
+    const where = String(body.where || 'client').slice(0, 60);
+    const message = String(body.message || '').slice(0, 400);
+    if (!message) return;
+    const stack = String(body.stack || '').split('\n').slice(0, 6).join('\n').slice(0, 900);
+
+    // Keyed on the message with the numbers taken out, so "лот 229" and "лот
+    // 471" are one alert and not two hundred.
+    const key = `client.${where}.${message.replace(/\d+/g, '#').slice(0, 80)}`;
+    ops.alert(key, `Ошибка у игрока (${where})`, stack || message, {
+      сообщение: message,
+      игрок: String(body.user || '').slice(0, 40) || undefined,
+      страница: String(body.url || '').slice(0, 120) || undefined,
+      сборка: String(body.build || '').slice(0, 20) || undefined,
+      браузер: String(req.headers['user-agent'] || '').slice(0, 120),
+    }).catch(() => {});
+  } catch (err) {
+    console.error('[client-error]', err.message);
+  }
+});
+
 // ── the admin panel ─────────────────────────────────────────────────────────
 // Mounted lazily inside boot(), because half of it answers questions about the
 // event modes and those do not exist until the world does.
@@ -143,6 +198,23 @@ function mountAdmin() {
     guildWarState: () => (modesRuntime && modesRuntime._gwPublicState ? modesRuntime._gwPublicState() : {}),
     guildWarOpen: () => modesRuntime && modesRuntime._gwOpenWindow && modesRuntime._gwOpenWindow(),
     guildWarClose: () => modesRuntime && modesRuntime._gwCloseWindow && modesRuntime._gwCloseWindow(),
+  });
+
+  // ── after every route, and only here ──────────────────────────────────────
+  // Express dispatches an error to the next error handler REGISTERED AFTER the
+  // route that raised it. One installed at the top of this file would sit in
+  // front of everything and catch nothing, which is the trap in wiring it the
+  // way middleware is usually wired. So it goes last, inside the last mount.
+  //
+  // Four arguments is what makes express treat it as an error handler. Removing
+  // the unused `next` silently turns it back into an ordinary one.
+  app.use((err, req, res, _next) => {
+    console.error(`[http] ${req.method} ${req.path}`, err);
+    ops.alertError(`http.${req.method}.${req.path.split('/').slice(0, 3).join('/')}`,
+      `Ошибка запроса ${req.method} ${req.path}`, err,
+      { админ: (req.admin && req.admin.sub) || undefined }).catch(() => {});
+    if (res.headersSent) return;
+    res.status(500).json({ error: 'Ошибка сервера' });
   });
 }
 
@@ -604,12 +676,55 @@ async function shutdown(signal, { exit = true } = {}) {
     new Promise(r => setTimeout(r, 5000)),
   ]);
 
+  // Whatever is still queued goes out before the pool closes. The buffer is
+  // what makes logging cheap; flushing here is what keeps an ordinary restart
+  // from losing the last two seconds of it.
+  await plog.flush().catch(() => {});
+
   await db.close();
   console.log('shutdown complete');
   if (exit) process.exit(0);
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// ── the last net ────────────────────────────────────────────────────────────
+// Both of these existed in the build this replaces and neither was carried
+// over, which is why "в баг-алерт не прилетает ничего" was partly true even
+// when everything else was configured correctly: a promise that rejects with
+// nobody awaiting it, or a throw from inside a timer, produced a line in the
+// journal at best and nothing at all at worst. Neither is something anybody
+// watches. Now every one of them is a message in the group.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+  ops.alertError('unhandled.rejection', 'Необработанная ошибка (promise)', reason, {
+    build: version.COMMIT,
+  }).catch(() => {});
+});
+
+// An uncaught exception leaves the process in an undefined state — node's own
+// documentation is explicit that resuming is not safe. So it is reported and
+// then the process ends, which systemd turns into a restart three seconds
+// later. The ALERT IS AWAITED before exiting: exiting first is how a crash
+// report gets lost, and the crash is precisely the thing worth knowing about.
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  ops.alertError('fatal.uncaught', 'Сервер упал — процесс перезапускается', err, {
+    build: version.COMMIT, uptimeS: Math.round(process.uptime()),
+  }).catch(() => {}).finally(() => process.exit(1));
+  // A hard ceiling in case the alert itself hangs: the group message is worth
+  // waiting for, but not worth staying down for.
+  setTimeout(() => process.exit(1), 5000).unref();
+});
+
+// Telegram's API, the TON API and the database all reach the network. A
+// warning node raises about a leaking listener or a deprecated call is the
+// early form of a bug that shows up later as a freeze.
+process.on('warning', (w) => {
+  if (w.name === 'MaxListenersExceededWarning' || w.name === 'DeprecationWarning') {
+    ops.alert(`node.warning.${w.name}`, `Предупреждение Node: ${w.name}`, w.message).catch(() => {});
+  }
+});
 
 if (require.main === module) {
   boot().catch(err => {

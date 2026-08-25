@@ -37,7 +37,29 @@ const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
 const items = require('./db/repos/items');
 const money = require('./db/repos/money');
+const plog = require('./db/repos/playerlog');
 const ops = require('./tg-ops');
+
+// ── what gets a log line on success ─────────────────────────────────────────
+// Every refusal and every crash is recorded whatever the action was — those are
+// the ones somebody asks about later. Successes are recorded only where the
+// action MOVED something: an item, money, a listing, a level. act() also wraps
+// reads (vipSync, getRating, codexSync, chatHistory) and a row for each of
+// those would bury the ones worth reading — the point of the log is that it can
+// be scanned while a player is on the phone.
+const WRITE_ACTIONS = new Set([
+  'marketList', 'marketBuy', 'marketCancel',
+  'craft', 'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
+  'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
+  'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'rebirth',
+  'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
+  'claimQuest', 'completeSpecialQuest', 'claimVipRewards',
+  'gramDepositRequest', 'gramWithdrawRequest',
+  'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
+  'clanDisband', 'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim',
+  'clanStorageCancel', 'clanStorageUnlock',
+  'registerCodexSetItem', 'selectChar', 'respawn',
+]);
 
 // telegramId -> socket.id of the live session. Single-session enforcement, the
 // one piece of cross-connection state that genuinely has to live in memory
@@ -156,16 +178,26 @@ class Session {
   async act(name, errEvent, fn) {
     if (!this.authed) return null;
     try {
-      return await txRetry(t => fn(t, this.playerId));
+      const out = await txRetry(t => fn(t, this.playerId));
+      // Only the actions that CHANGE something. Logging a read would bury the
+      // rows that matter under vipSync and getRating — see WRITE_ACTIONS.
+      if (WRITE_ACTIONS.has(name)) plog.log(this.playerId, name);
+      return out;
     } catch (err) {
       // A domain error carries a message written for the player. Anything else
       // is a bug and must not have its text shown — an internal message in a
       // player's face is both confusing and an information leak.
       if (err && err.userMessage) {
+        // A REFUSAL IS RECORDED. This is the hole the market bug fell into:
+        // the player was told no, and nobody else was told anything, so "не мог
+        // купить лот, и никаких ошибок наш лог не выбил" was literally true.
+        // One line per refusal, with the reason the player saw.
+        plog.log(this.playerId, `refuse:${name}`, { code: err.code, msg: err.userMessage });
         this.socket.emit(errEvent, { msg: err.userMessage, code: err.code });
         return null;
       }
       console.error(`[act:${name}]`, err);
+      plog.log(this.playerId, 'error', { action: name, msg: String(err && err.message || err).slice(0, 300) });
       ops.alertError(`act.${name}`, `Ошибка в обработчике ${name}`, err, {
         player: this.username, telegramId: this.telegramId,
       });

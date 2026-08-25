@@ -128,10 +128,36 @@ async function send(topic, html, { buttons = null, disablePreview = true } = {})
   if (thread) body.message_thread_id = Number(thread);
   if (buttons) body.reply_markup = { inline_keyboard: buttons };
 
-  const res = await _api('sendMessage', body);
-  if (!res.ok) console.error(`[tg-ops] ${topic}: ${res.description}`);
+  let res = await _api('sendMessage', body);
+
+  // One retry, because the two ways a send fails are both recoverable and both
+  // common. 429 is Telegram's rate limit and it says exactly how long to wait.
+  // 5xx and a dropped connection are transient. Giving up on the first failure
+  // means the message this alert was carrying is gone for good — and an alert
+  // that is silently dropped is worse than no alerting at all, because it looks
+  // like nothing went wrong.
+  if (!res.ok) {
+    const retryAfter = res.parameters && res.parameters.retry_after;
+    const wait = Math.min(10000, (Number(retryAfter) || 1) * 1000);
+    console.error(`[tg-ops] ${topic}: ${res.description} — повтор через ${wait}ms`);
+    await new Promise(r => setTimeout(r, wait));
+    res = await _api('sendMessage', body);
+  }
+
+  if (!res.ok) {
+    // The last line of defence. journalctl is the only place left that can
+    // record it, so the whole message goes there rather than a summary — this
+    // is what someone reads when they ask "why did no alert arrive".
+    console.error(`[tg-ops] ${topic}: НЕ ОТПРАВЛЕНО (${res.description})\n${String(html).slice(0, 900)}`);
+    _undelivered++;
+  }
   return res.ok ? res.result : null;
 }
+
+// Counted so /health can say it out loud. "Alerts stopped arriving" and "alerts
+// stopped being raised" look identical from the outside and have completely
+// different causes.
+let _undelivered = 0;
 
 async function editMessage(messageId, html, { buttons = null } = {}) {
   if (!GROUP_ID || !messageId) return null;
@@ -186,23 +212,63 @@ async function dm(tgId, html, { buttons = null } = {}) {
 // Anything that broke. Collapsed by key so a fault inside a loop produces one
 // message plus a count, not one message per iteration.
 const ALERT_WINDOW_MS = Number(process.env.TG_ALERT_WINDOW_MS || 300000);   // 5 min
-const _alertState = new Map();   // key -> { at, count, notified }
+const _alertState = new Map();   // key -> { at, count, reported, title }
+
+// Every alert raised since boot, whether it was sent, collapsed or dropped.
+// Read by /health.
+const _counts = { raised: 0, sent: 0, collapsed: 0 };
+
+// ── a ceiling on the whole channel, not just on one alert ──────────────────
+// The per-key throttle stops ONE fault from flooding the group. It does
+// nothing about fifty different faults at once, which is what a bad deploy
+// looks like — and a group that receives two hundred messages in a minute gets
+// muted, after which the alerting is worse than useless.
+//
+// So there is a second, global limit. Past it the group is told once that it is
+// being held back, and the detail stays in the journal where it can be read in
+// full. Every alert is still RAISED and still counted; what is bounded is how
+// many become messages.
+const BURST_PER_MIN = Number(process.env.TG_ALERT_BURST || 25);
+let _burstAt = 0, _burstN = 0, _burstTold = false;
+
+function _overBurst(now) {
+  if (now - _burstAt > 60000) { _burstAt = now; _burstN = 0; _burstTold = false; }
+  return ++_burstN > BURST_PER_MIN;
+}
 
 async function alert(key, title, detail, extra = {}) {
+  _counts.raised++;
   const now = Date.now();
+
+  if (_overBurst(now)) {
+    // Printed in full — journalctl is where the rest of the storm lives.
+    console.error(`[tg-ops] (сверх лимита) ${title}: ${String(detail || '').slice(0, 300)}`);
+    if (_burstTold) return null;
+    _burstTold = true;
+    return send('alerts',
+      `⏸ <b>Слишком много разных алертов</b> — больше ${BURST_PER_MIN} за минуту.\n`
+      + `Остальные за эту минуту только в журнале сервера: <code>journalctl -u liberty-next</code>`);
+  }
+
   const st = _alertState.get(key);
 
   if (st && now - st.at < ALERT_WINDOW_MS) {
     st.count++;
-    // A second message is sent only at powers of ten, so a storm reports 10,
-    // 100, 1000 rather than every single occurrence.
-    if (st.count !== 10 && st.count !== 100 && st.count !== 1000) return null;
+    _counts.collapsed++;
+    // Collapsed, NOT discarded. The steps are close together at the start
+    // (2, 3, 5) because the difference between "happened once" and "happening
+    // repeatedly" is the most useful thing to learn early, and spread out after
+    // that so a real storm cannot flood the group. Whatever falls between the
+    // steps is still reported — by the sweeper below, when the window closes.
+    if (!ALERT_STEPS.has(st.count)) return null;
+    st.reported = st.count;
+    _counts.sent++;
     return send('alerts',
       `🔁 <b>${esc(title)}</b> — повторилось ${st.count} раз за ${Math.round((now - st.at) / 60000)} мин\n` +
       `<code>${esc(key)}</code>`);
   }
 
-  _alertState.set(key, { at: now, count: 1 });
+  _alertState.set(key, { at: now, count: 1, reported: 1, title });
   // The map is keyed by alert kind, not by occurrence, so it is bounded by the
   // number of distinct alerts in the code — but a key built from a player id or
   // a message would not be, so old entries are dropped anyway.
@@ -216,8 +282,33 @@ async function alert(key, title, detail, extra = {}) {
     if (v !== undefined && v !== null) lines.push(`${esc(k)}: <code>${esc(v)}</code>`);
   }
   lines.push(`<code>${esc(key)}</code> · ${new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC`);
+  _counts.sent++;
   return send('alerts', lines.join('\n'));
 }
+
+const ALERT_STEPS = new Set([2, 3, 5, 10, 25, 50, 100, 250, 500, 1000]);
+
+// ── the closing of a window ─────────────────────────────────────────────────
+// Everything the throttle held back gets said in the end. Without this, an
+// alert that fired 4 times in five minutes reported 3 and lost the fourth
+// forever — and "9 of them" would have been reported as 5. The rule the user
+// asked for is that nothing is silently dropped, and a counter that is never
+// flushed drops things silently.
+async function _sweepAlerts(now = Date.now()) {
+  for (const [k, v] of [..._alertState]) {
+    if (now - v.at < ALERT_WINDOW_MS) continue;
+    _alertState.delete(k);
+    if (v.count <= (v.reported || 1)) continue;
+    _counts.sent++;
+    await send('alerts',
+      `📉 <b>${esc(v.title || k)}</b> — итог за окно: ${v.count} раз\n<code>${esc(k)}</code>`);
+  }
+}
+
+// unref'd: a background timer that keeps the process alive would hang every
+// test that requires this file, and half of them do.
+const _sweeper = setInterval(() => { _sweepAlerts().catch(() => {}); }, 60000);
+if (_sweeper.unref) _sweeper.unref();
 
 // Convenience for a caught exception: takes the error object and reports its
 // message plus the top of the stack, both scrubbed.
@@ -256,10 +347,17 @@ async function handleTopicIdCommand(message) {
 function status() {
   return {
     configured: !!(TOKEN && GROUP_ID),
+    live: isLive(),
     group: GROUP_ID || null,
     topics: Object.fromEntries(Object.entries(TOPICS).map(([k, v]) => [k, v ? Number(v) : null])),
     admins: ADMIN_IDS.size,
     separateBot: !!process.env.TG_OPS_BOT_TOKEN,
+    // raised — how many alerts the code asked for
+    // sent — how many messages actually went out (collapsed ones count once)
+    // undelivered — how many Telegram refused, after the retry
+    // Three numbers because "нічого не приходить" has three different causes
+    // and they are told apart here rather than by guessing.
+    alerts: { ..._counts, undelivered: _undelivered, pending: _alertState.size },
   };
 }
 
@@ -269,4 +367,10 @@ module.exports = {
   alert, alertError,
   isAdmin, adminIds, handleTopicIdCommand, status,
   esc, scrub, TOPICS, GROUP_ID,
+  // Exported for dev/alert-check.js, which has to be able to close a window on
+  // demand rather than waiting five real minutes for the sweeper — and to clear
+  // the per-minute ceiling after deliberately hitting it, rather than sleeping
+  // through the rest of the minute.
+  _sweepAlerts, _alertState, ALERT_WINDOW_MS,
+  _resetBurst: () => { _burstAt = 0; _burstN = 0; _burstTold = false; },
 };

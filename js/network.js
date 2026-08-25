@@ -493,8 +493,34 @@ function netConnect(onReady) {
 
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; _pongMissed = 0; });
 
-  socket.on('connect_error', () => {
+  // ── every refusal the player sees, that they SHOULDN'T ────────────────────
+  // Not every '*Error' event is worth an alert: "Недостаточно золота" is the
+  // game working. Two kinds are worth one, and both are invisible today.
+  //
+  //   * a generic server error — that is act()'s answer when a handler threw
+  //     something with no message for the player. The server alerts on those
+  //     already, but only the client knows WHICH SCREEN the player was on.
+  //
+  //   * an error event with no message at all — the client shows nothing, so
+  //     from the player's side the button simply did not work. That is the
+  //     shape of report we have been getting and could never trace.
+  //
+  // Ordinary refusals are recorded server-side in player_logs (session.act),
+  // so they are answerable without being announced.
+  socket.onAny((ev, data) => {
+    if (!/Error$/.test(ev)) return;
+    const msg = (data && data.msg) || '';
+    if (msg && !/Ошибка сервера/.test(msg)) return;
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('socket:' + ev, msg || '(без текста)');
+    }
+  });
+
+  socket.on('connect_error', (err) => {
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('connect', (err && err.message) || 'connect_error');
+    }
   });
 
   socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras, seasonTicketActive }) => {

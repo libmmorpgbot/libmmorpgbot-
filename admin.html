@@ -511,6 +511,18 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
 <script>
 'use strict';
 
+// ── how this page proves who it is ────────────────────────────────────────
+// It does NOT hold a token. /admin/login sets an httpOnly cookie, which the
+// browser attaches to every /admin request by itself and page JavaScript
+// cannot read — that is the point of it, and it is why an XSS in the game
+// client cannot steal admin access.
+//
+// What is kept here is only a marker saying "we logged in", so a reload does
+// not bounce straight back to the form. The page used to store `d.token` from
+// a reply that has never contained one: it saved the string "undefined", sent
+// it as `Authorization: Bearer undefined` on every request, and the requests
+// worked anyway because the cookie was doing the job. The lie was invisible
+// until the first POST.
 let _tok = localStorage.getItem('adm_tok') || '';
 let _currentTab = 'dashboard';
 let _currentPlayerId = null;
@@ -527,7 +539,7 @@ async function doLogin() {
     const r = await fetch('/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username:u, password:p }) });
     const d = await r.json();
     if (!r.ok) { err.textContent = d.error || 'Ошибка'; err.style.display = 'block'; return; }
-    _tok = d.token;
+    _tok = d.csrf || '1';
     localStorage.setItem('adm_tok', _tok);
     showApp();
   } catch(e) { err.textContent = 'Ошибка сети'; err.style.display = 'block'; }
@@ -542,11 +554,71 @@ function doLogout() {
   document.getElementById('login-screen').style.display = 'flex';
 }
 
+// ── THE HEADER THAT MADE EVERY BUTTON WORK ────────────────────────────────
+// requireCsrfHeader (server/admin-auth.js) refuses every non-GET request that
+// does not carry `X-Admin-Request: 1`. A cross-site form can make a browser
+// send a cookie; it cannot make it send a custom header, and that is the whole
+// defence. This page never sent it.
+//
+// So every GET worked — the dashboard, the player list, the event states — and
+// every POST came back 403. Вызвать босса, открыть башню, открыть битву,
+// забанить, выдать, разослать: all of them. "Кнопки не работают" was exactly
+// right, and it was one missing header.
+//
+// credentials is stated rather than left to the default, because the whole
+// login depends on the cookie travelling and a default is a thing that can
+// change under you.
 async function api(path, opts={}) {
-  const r = await fetch(path, { ...opts, headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+_tok, ...(opts.headers||{}) } });
+  let r;
+  try {
+    r = await fetch(path, {
+      ...opts,
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Request': '1',
+        ...(opts.headers||{}),
+      },
+    });
+  } catch (e) {
+    // The request never left. Reported before it is re-thrown, because a
+    // network failure here looks identical to a dead button.
+    report('api', `${opts.method||'GET'} ${path}: ${e.message}`);
+    throw e;
+  }
   if (r.status === 401) { doLogout(); throw new Error('Unauthorized'); }
+  // EVERY refusal is reported, not just the ones a caller happens to check.
+  // This is the other half of "почему в баг-алерт ничего не прилетает": the
+  // page swallowed failures into `toast('Ошибка')` and told nobody.
+  if (!r.ok) {
+    let why = '';
+    try { why = (await r.clone().json()).error || ''; } catch(e) { /* not json */ }
+    report('api', `${opts.method||'GET'} ${path} → ${r.status} ${why}`);
+  }
   return r;
 }
+
+// ── anything that goes wrong on this page reaches the alerts topic ────────
+// Rate-limited on the server (20/min per address) and collapsed by message
+// there, so a loop cannot flood the group.
+function report(where, message, stack) {
+  try {
+    fetch('/client-error', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        where: 'admin:' + where,
+        message: String(message).slice(0, 400),
+        stack: stack ? String(stack).slice(0, 900) : '',
+        url: location.pathname,
+      }),
+    }).catch(function(){});
+  } catch (e) { /* reporting must never be the thing that breaks */ }
+}
+window.addEventListener('error', e => report('js', e.message, e.error && e.error.stack));
+window.addEventListener('unhandledrejection', e =>
+  report('promise', (e.reason && e.reason.message) || String(e.reason), e.reason && e.reason.stack));
 
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
@@ -684,11 +756,11 @@ async function loadEventBoss() {
 }
 
 async function summonEventBoss() {
-  if (!confirm('Вызвать мирового босса? Все игроки увидят предупреждение, босс появится через 5 минут.')) return;
+  if (!confirm('Вызвать мирового босса? Он появится в арене СРАЗУ, и все игроки получат оповещение.')) return;
   try {
     const r = await api('/admin/event-boss', { method:'POST' });
     const d = await r.json();
-    if (r.ok) toast('Босс вызван — появится через 5 минут');
+    if (r.ok) toast('Босс вызван — он уже в арене');
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadEventBoss();
@@ -722,7 +794,7 @@ async function openDeathBattle() {
   try {
     const r = await api('/admin/death-battle', { method: 'POST' });
     const d = await r.json();
-    if (r.ok) toast('Регистрация открыта');
+    if (r.ok) toast('Регистрация открыта — бой через ' + Math.round((d.regMs||300000)/60000) + ' мин');
     else toast(d.error || 'Ошибка', false);
   } catch (e) { toast('Ошибка', false); }
   loadDeathBattle();
@@ -873,36 +945,46 @@ async function openPlayer(tid) {
   document.getElementById('player-logs').innerHTML = '';
   try {
     const pr = await api('/admin/player/'+tid);
-    const pd = await pr.json();
-    const p = pd.player;
+    const p = await pr.json();
+    // FLAT, not `{ player: { savedData: {...} } }`. savedData was the Mongo
+    // document's blob of everything; there is no blob any more — progress,
+    // balances and items are three tables and the route sends three objects.
+    // This read `pd.player`, got undefined, and threw on `.banned` — which is
+    // why opening any player showed "Ошибка загрузки" and always has.
+    if (p.error) throw new Error(p.error);
     _currentPlayerBanned = p.banned;
-    const sd = p.savedData || {};
+    const pg = p.progress || {}, bal = p.balances || {}, inv = p.items || {};
     document.getElementById('player-info').innerHTML = `
-      <div class="prow"><span class="k">Ник</span><span>${esc(p.username)}</span></div>
+      <div class="prow"><span class="k">Ник</span><span>${esc(p.username)}${p.online?' <span style="color:var(--green)">● онлайн</span>':''}</span></div>
       <div class="prow"><span class="k">Telegram ID</span><span>${p.telegramId}</span></div>
-      <div class="prow"><span class="k">Уровень</span><span>${sd.lvl||1}</span></div>
-      <div class="prow"><span class="k">Класс</span><span>${sd.type||'—'}</span></div>
-      <div class="prow"><span class="k">Очки навыка (бонус)</span><span>${sd.bonusSP||0}</span></div>
-      <div class="prow"><span class="k">Перерождений</span><span>${sd.rebirths||0}${(sd.keptSP||0) ? ` · перенесено ${sd.keptSP} оч.` : ''}</span></div>
-      <div class="prow"><span class="k">Золото</span><span>${fmt(sd.gold||0)}</span></div>
-      <div class="prow"><span class="k">Liberty</span><span>${fmt(sd.nexumBalance||0)}</span></div>
-      <div class="prow"><span class="k">GRAM</span><span>${fmt(sd.gramBalance||0)}</span></div>
+      <div class="prow"><span class="k">Уровень</span><span>${pg.lvl||1}</span></div>
+      <div class="prow"><span class="k">Класс</span><span>${pg.charClass||'—'}</span></div>
+      <div class="prow"><span class="k">Очки навыка (бонус)</span><span>${pg.bonusSP||0}</span></div>
+      <div class="prow"><span class="k">Перерождений</span><span>${pg.rebirths||0}${(pg.keptSP||0) ? ` · перенесено ${pg.keptSP} оч.` : ''}</span></div>
+      <div class="prow"><span class="k">Золото</span><span>${fmt(bal.gold||0)}</span></div>
+      <div class="prow"><span class="k">Liberty</span><span>${fmt(bal.nexum||0)}</span></div>
+      <div class="prow"><span class="k">GRAM</span><span>${fmt(bal.gram||0)}</span></div>
+      <div class="prow"><span class="k">VIP</span><span>${(p.vip && p.vip.level) || 0}</span></div>
       <div class="prow"><span class="k">BM</span><span>${p.bm||0}</span></div>
       <div class="prow"><span class="k">Рефер</span><span>${p.referredBy||'—'}</span></div>
       <div class="prow"><span class="k">Статус</span><span style="color:${p.banned?'var(--red)':'var(--green)'}">${p.banned?'Заблокирован':'Активен'}</span></div>
       <div class="prow"><span class="k">Зарегистрирован</span><span>${fmtDate(p.createdAt)}</span></div>
     `;
-    _curLogs = pd.logs || [];
+    _curLogs = p.logs || [];
     renderLogs();
-    _curSeasonLogs = pd.seasonLogs || [];
-    _curSeasonPoints = pd.seasonPoints || 0;
+    _curSeasonLogs = p.seasonLogs || [];
+    _curSeasonPoints = p.seasonPoints || 0;
     renderSeasonPoints();
-    _curInv = Array.isArray(sd.inventory) ? sd.inventory : [];
-    _curEq  = (sd.equipment && typeof sd.equipment === 'object') ? sd.equipment : {};
+    _curInv = Array.isArray(inv.inventory) ? inv.inventory : [];
+    _curEq  = (inv.equipment && typeof inv.equipment === 'object') ? inv.equipment : {};
     renderPlayerItems();
     await loadItemCatalog();
     renderItemPicker();
-  } catch(e) { document.getElementById('player-info').innerHTML = '<p style="color:var(--red)">Ошибка загрузки</p>'; }
+  } catch(e) {
+    report('openPlayer', e.message, e.stack);
+    document.getElementById('player-info').innerHTML =
+      '<p style="color:var(--red)">Ошибка загрузки: ' + esc(e.message) + '</p>';
+  }
 }
 
 function closePlayerDetail() {
@@ -1197,7 +1279,7 @@ async function loadClans() {
           <div class="clan-name">${esc(c.name)}</div>
           <div class="clan-meta">Участников: ${c.memberCount||0} · Создан: ${fmtDate(c.createdAt)}</div>
         </div>
-        <button class="btn btn-sm btn-red" onclick="deleteClan('${c._id}')">Удалить</button>
+        <button class="btn btn-sm btn-red" onclick="deleteClan('${c.id}')">Удалить</button>
       </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Кланов нет</p>';
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
 }
@@ -1223,15 +1305,18 @@ async function loadChat() {
       <div class="chat-msg">
         <span class="cu">${esc(m.username||'?')}</span>
         <span class="ct">${esc(m.text)}</span>
-        <span class="cd">${fmtTime(m.ts)}</span>
-        <button class="cdel" onclick="deleteChat(${i})" title="Удалить">✕</button>
+        <span class="cd">${fmtTime(m.createdAt)}</span>
+        <button class="cdel" onclick="deleteChat(${m.id})" title="Удалить">✕</button>
       </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Сообщений нет</p>';
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
 }
 
-async function deleteChat(idx) {
+// By ID. It used to pass the row's INDEX in the rendered list, which is
+// the id of some entirely different message — so "delete this one" deleted
+// another, and on a quiet chat it deleted nothing and looked broken.
+async function deleteChat(id) {
   try {
-    await api('/admin/chat/'+idx, { method:'DELETE' });
+    await api('/admin/chat/'+id, { method:'DELETE' });
     toast('Удалено');
     loadChat();
   } catch(e) { toast('Ошибка', false); }
@@ -1317,7 +1402,7 @@ async function loadMarket(tab) {
           <div style="color:var(--text2);font-size:10px">${fmtDate(l.createdAt)}</div>
         </div>
         <span class="mv">${fmt(l.price)} 💎</span>
-        <button class="btn btn-sm btn-red" style="margin-left:8px" onclick="cancelListing('${l._id}')">Снять</button>
+        <button class="btn btn-sm btn-red" style="margin-left:8px" onclick="cancelListing('${l.id}')">Снять</button>
       </div>`;
     }).join('');
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
@@ -1371,8 +1456,8 @@ async function loadQuests() {
           <div style="color:var(--text2);font-size:11px">${q.type} · 🪙${q.reward?.gold||0} · XP${q.reward?.xp||0} · 💎${q.reward?.nexum||0}</div>
         </div>
         <span class="qbadge ${q.active?'':'off'}">${q.active?'Вкл':'Выкл'}</span>
-        <button class="btn btn-sm btn-gray" style="margin-left:6px" onclick="toggleQuest('${q._id}',${!q.active})">${q.active?'Выкл':'Вкл'}</button>
-        <button class="btn btn-sm btn-red" style="margin-left:4px" onclick="deleteQuest('${q._id}')">✕</button>
+        <button class="btn btn-sm btn-gray" style="margin-left:6px" onclick="toggleQuest('${q.id}',${!q.active})">${q.active?'Выкл':'Вкл'}</button>
+        <button class="btn btn-sm btn-red" style="margin-left:4px" onclick="deleteQuest('${q.id}')">✕</button>
       </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Квестов нет</p>';
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
 }
@@ -1430,6 +1515,7 @@ async function loadSuspicious() {
       <div class="sus-row">
         <div class="su">${esc(p.username)} <span style="font-weight:normal;font-size:11px;color:var(--text2)">(${p.telegramId})</span></div>
         <div class="sm">BM: ${p.bm||0} · Lvl: ${p.lvl||1} · Зарегистрирован: ${fmtDate(p.createdAt)}</div>
+        ${p.reason ? `<div class="sm" style="color:var(--red)">${esc(p.reason)}</div>` : ''}
         <div style="margin-top:6px;display:flex;gap:6px">
           <button class="btn btn-sm btn-red" onclick="banSus('${p.telegramId}')">Заблокировать</button>
           <button class="btn btn-sm btn-gray" onclick="openSusPlayer('${p.telegramId}')">Профиль</button>

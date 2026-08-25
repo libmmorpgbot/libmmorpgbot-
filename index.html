@@ -762,6 +762,53 @@
 #chat-send-btn:active { opacity:0.75; }
 </style>
 <script>
+// ── the client reports what breaks in the client ────────────────────────────
+// Installed FIRST, before anything else runs, because the errors most worth
+// hearing about are the ones thrown while the game is still starting.
+//
+// The reason this exists: "не мог купить лот, и при том никаких ошибок наш лог
+// не выбил". That was accurate. The bug was `'229' === 229` in js/ui.js — the
+// click found no matching listing and returned. No request was sent, so the
+// server saw nothing, so there was nothing to log and nothing to alert on. A
+// whole class of bug was invisible by construction.
+//
+// Now anything the browser throws, any promise nobody caught, and any error
+// event the game shows the player goes to /client-error, which turns it into
+// an alert in the operators' group. The server rate-limits it (20/min per
+// address) and collapses identical messages, so a loop cannot flood anyone.
+window.__reportClientError = function (where, message, stack) {
+  try {
+    if (!message) return;
+    // Two of the same message in a row are one problem, not two. The server
+    // throttles as well; this stops the requests being made at all.
+    const sig = where + '|' + String(message).slice(0, 120);
+    window.__lastErrSig = window.__lastErrSig || {};
+    const now = Date.now();
+    if (now - (window.__lastErrSig[sig] || 0) < 30000) return;
+    window.__lastErrSig[sig] = now;
+
+    fetch('/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        where: String(where || 'client'),
+        message: String(message).slice(0, 400),
+        stack: stack ? String(stack).slice(0, 900) : '',
+        url: location.pathname,
+        user: (window.state && window.state.username) || '',
+        build: (window.__BUILD__ || ''),
+      }),
+    }).catch(function () {});
+  } catch (e) { /* reporting must never become the failure */ }
+};
+window.addEventListener('error', function (e) {
+  window.__reportClientError('js', e && e.message, e && e.error && e.error.stack);
+});
+window.addEventListener('unhandledrejection', function (e) {
+  const r = e && e.reason;
+  window.__reportClientError('promise', (r && r.message) || String(r), r && r.stack);
+});
+
 let _chatUnread = 0;
 // _chatTab: which of the 3 channels is currently on screen. _activeDmUser:
 // the other party of the one "Беседа" thread currently open (null = none
