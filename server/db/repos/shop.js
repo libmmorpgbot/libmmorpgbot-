@@ -268,10 +268,18 @@ async function referralsOf(db, playerId) {
   if (!me.length) return { friends: [], refLink: null };
   const tg = me[0].telegram_id;
 
+  // `t.type`, not `t.kind`, and 'confirmed', not 'credited'. Both were wrong,
+  // and the second would have raised even after fixing the first —
+  // gram_tx_status_t has no 'credited' member, so the comparison is not a
+  // filter that matches nothing, it is an invalid enum literal.
+  //
+  // The whole referral panel was one 42703 away from ever rendering, and the
+  // error went to 'gramError' where the client shows it as a toast: a player
+  // opening their invites saw a server error and nothing else.
   const { rows } = await query(db, `
     SELECT p.username,
            COALESCE(ROUND(SUM(t.amount) FILTER (
-             WHERE t.kind = 'deposit' AND t.status = 'credited') * 0.05, 2), 0) AS bonus
+             WHERE t.type = 'deposit' AND t.status = 'confirmed') * 0.05, 2), 0) AS bonus
       FROM players p
       LEFT JOIN gram_tx t ON t.player_id = p.id
      WHERE p.referred_by = $1
