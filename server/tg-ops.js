@@ -141,6 +141,36 @@ async function editMessage(messageId, html, { buttons = null } = {}) {
   return res.ok ? res.result : null;
 }
 
+// The same edit, in whatever chat the message is in. editMessage above is
+// pinned to the ops group because that is where a withdrawal card lives; an
+// admin panel lives in a private chat, and a panel that cannot redraw itself
+// is a panel that answers every button with a new message.
+async function editIn(chatId, messageId, html, { buttons = null } = {}) {
+  if (!chatId || !messageId) return null;
+  const body = {
+    chat_id: String(chatId), message_id: messageId,
+    text: scrub(html), parse_mode: 'HTML',
+    link_preview_options: { is_disabled: true },
+  };
+  // Always sent, even empty: omitting it LEAVES the previous keyboard in
+  // place, so a screen with no buttons would keep the buttons of the one
+  // before it.
+  body.reply_markup = { inline_keyboard: buttons || [] };
+  const res = await _api('editMessageText', body);
+  return res.ok ? res.result : null;
+}
+
+// A prompt the admin types a value into. force_reply is what makes the client
+// open the keyboard already quoting this message, which is what lets the reply
+// be matched back to what it answers — see the marker in tg-admin.js.
+async function ask(chatId, html) {
+  const res = await _api('sendMessage', {
+    chat_id: String(chatId), text: scrub(html), parse_mode: 'HTML',
+    reply_markup: { force_reply: true, selective: true },
+  });
+  return res.ok ? res.result : null;
+}
+
 async function answerCallback(id, text = '', alert = false) {
   return _api('answerCallbackQuery', { callback_query_id: id, text, show_alert: alert });
 }
@@ -235,7 +265,7 @@ function status() {
 
 module.exports = {
   isLive,
-  send, editMessage, answerCallback, dm,
+  send, editMessage, editIn, ask, answerCallback, dm,
   alert, alertError,
   isAdmin, adminIds, handleTopicIdCommand, status,
   esc, scrub, TOPICS, GROUP_ID,

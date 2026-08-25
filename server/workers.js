@@ -148,6 +148,10 @@ async function pollOps({ notifyPlayer } = {}) {
 }
 
 async function _onCallback(cq, { notifyPlayer }) {
+  // The admin panel first: its buttons all start `a:` and belong to nobody
+  // else. A withdrawal card's do not, so the two cannot be confused.
+  if (await tgAdmin.handleCallback(cq)) return;
+
   const handled = await cards.handleWithdrawCallback(cq, {
     feePct: _GRAM_WITHDRAW_FEE_PCT,
     notifyPlayer: async (w, action) => {

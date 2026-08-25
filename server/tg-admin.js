@@ -1,25 +1,34 @@
 'use strict';
-// ── /admin — granting things from Telegram ──────────────────────────────────
+// ── /admin — an admin panel in Telegram ─────────────────────────────────────
 //
-// A chat command for the two people who run this game, so a level or a balance
-// can be handed out without an SSH session and a hand-written UPDATE.
+// One command opens a panel; everything after that is buttons. Nobody has to
+// remember an argument order, and there is no way to grant 30 GRAM when you
+// meant 30 levels because you typed the words in the wrong order.
 //
-// Every grant goes through the same repositories the game itself uses:
-// players.grantXp is not reimplemented here, and a currency moves through
-// money.credit so it lands in the ledger like every other coin. A grant that
-// wrote the column directly would be money created outside money.js, which is
-// the one thing reconcile() exists to catch — and it would catch this.
+// ── how a screen works ──────────────────────────────────────────────────────
+// Every button carries a `callback_data` that names the screen to draw and
+// what to draw it about — `a:p:1307` is "the card for player 1307". Pressing
+// one EDITS the message in place rather than sending a new one, so the panel
+// is a single message that changes, and ⬅️ is just another screen name.
 //
-// ── who may use it ─────────────────────────────────────────────────────────
-// ops.isAdmin, which reads TG_ADMIN_IDS, and nothing else. Not "an admin of
-// the group", not "whoever is in the chat": the group has other people in it
-// and being able to read the ops channel is not the same as being able to
-// hand out GRAM. A non-admin gets no reply at all rather than a refusal —
-// there is no reason to tell someone probing which commands exist.
+// Telegram caps callback_data at 64 bytes, which is the reason ids travel
+// rather than names, and the reason there is no server-side "where is this
+// admin right now" state to leak or expire.
 //
-// Every action is written to admin_actions with who did it and to whom. Levels
-// and balances appearing out of nowhere is exactly the shape of a compromised
-// account, and the log is what separates that from a legitimate grant.
+// ── typing a number ─────────────────────────────────────────────────────────
+// Buttons cannot carry arbitrary input, so the two places that need one
+// (a search, a custom amount) send a force_reply prompt. What that prompt is
+// FOR is encoded in its own text as ⟨lvl:1307⟩ and read back off
+// reply_to_message — so there is still no state held here. A prompt answered
+// an hour later still works, and a restart in between changes nothing.
+//
+// ── what it is allowed to do ────────────────────────────────────────────────
+// Currency moves through money.credit/spend, so a grant lands in the ledger
+// like every other coin: a panel that wrote the balance column directly would
+// be money created outside money.js, which is the one thing reconcile() exists
+// to catch. Every action is written to admin_actions with who did it and to
+// whom — levels and balances appearing from nowhere is the shape of a
+// compromised account, and that log is what tells the two apart.
 
 const { tx, query } = require('./db');
 const players = require('./db/repos/players');
@@ -28,148 +37,383 @@ const stats = require('./db/repos/stats');
 const progression = require('./db/repos/progression');
 const ops = require('./tg-ops');
 
-const HELP = [
-  '<b>Админ-команды</b>',
-  '',
-  '<code>/admin who ИМЯ</code> — найти игрока и показать его состояние',
-  '<code>/admin lvl ИМЯ 30</code> — выставить уровень',
-  '<code>/admin gold ИМЯ 5000</code> — начислить золото',
-  '<code>/admin gram ИМЯ 100</code> — начислить GRAM',
-  '<code>/admin nexum ИМЯ 500</code> — начислить Liberty',
-  '<code>/admin vip ИМЯ 5</code> — выставить уровень VIP',
-  '',
-  'Имя — как в игре, регистр не важен; можно telegram id.',
-  'Отрицательное число списывает: <code>/admin gram ИМЯ -50</code>',
-].join('\n');
+const PAGE = 8;                      // players per page — fits without scrolling
+const CURRENCY = { gold: 'Золото', gram: 'GRAM', nexum: 'Liberty' };
+const AMOUNTS = {
+  gold:  [100, 1000, 10000, 100000],
+  gram:  [1, 10, 100, 1000],
+  nexum: [10, 100, 1000, 10000],
+};
 
-const CURRENCY = { gold: 'gold', gram: 'gram', nexum: 'nexum', liberty: 'nexum' };
+// ── the marker a force_reply prompt carries ────────────────────────────────
+const MARK = /⟨([a-z]+):([0-9]*)⟩/;
+const mark = (what, id = '') => `⟨${what}:${id}⟩`;
 
-// Name OR telegram id, because an admin has one or the other to hand and
-// should not have to know which the database prefers.
-async function findPlayer(needle) {
+const esc = (v) => ops.esc(String(v == null ? '' : v));
+const btn = (text, data) => ({ text, callback_data: data });
+
+// ── reading a player ────────────────────────────────────────────────────────
+async function load(id) {
   const { rows } = await query(null, `
-    SELECT p.id, p.username, p.telegram_id, p.banned, g.lvl, g.xp, g.char_class, g.rebirths
+    SELECT p.id, p.username, p.telegram_id, p.banned, p.bm,
+           g.lvl, g.xp, g.char_class, g.rebirths, g.floor
       FROM players p LEFT JOIN player_progress g ON g.player_id = p.id
-     WHERE p.telegram_id = $1 OR lower(p.username) = lower($1)
-     ORDER BY p.id LIMIT 2`, [String(needle)]);
-  if (rows.length === 1) return { player: rows[0] };
-  if (rows.length > 1) return { error: 'Найдено несколько — уточни telegram id' };
-
-  // Nothing exact: offer the near misses rather than just saying no.
-  const { rows: like } = await query(null,
-    `SELECT username, telegram_id FROM players
-      WHERE username ILIKE '%' || $1 || '%' ORDER BY id LIMIT 5`, [String(needle)]);
-  if (!like.length) return { error: `Не найден: <code>${ops.esc(needle)}</code>` };
-  return {
-    error: `Не найден: <code>${ops.esc(needle)}</code>\n\nПохожие:\n`
-      + like.map(l => `• <code>${ops.esc(l.username)}</code> (${l.telegram_id})`).join('\n'),
-  };
+     WHERE p.id = $1`, [id]);
+  return rows[0] || null;
 }
 
-async function record(adminTgId, action, player, meta) {
+async function search(needle) {
+  const { rows } = await query(null, `
+    SELECT p.id, p.username, p.telegram_id, g.lvl
+      FROM players p LEFT JOIN player_progress g ON g.player_id = p.id
+     WHERE p.telegram_id = $1 OR p.username ILIKE '%' || $1 || '%'
+     ORDER BY (p.telegram_id = $1) DESC, p.bm DESC NULLS LAST
+     LIMIT 12`, [String(needle)]);
+  return rows;
+}
+
+// Ordered by battle rating: the people worth looking at are the people
+// actually playing, and a list ordered by id is a list of test fixtures.
+async function recent(offset) {
+  const { rows } = await query(null, `
+    SELECT p.id, p.username, p.telegram_id, g.lvl
+      FROM players p LEFT JOIN player_progress g ON g.player_id = p.id
+     WHERE p.telegram_id ~ '^[0-9]+$'
+     ORDER BY p.bm DESC NULLS LAST, p.id
+     LIMIT $1 OFFSET $2`, [PAGE + 1, offset]);
+  return rows;
+}
+
+async function record(adminTgId, action, p, meta) {
   await query(null, `
     INSERT INTO admin_actions (admin_tg_id, action, ref_type, ref_id, meta)
     VALUES ($1, $2, 'player', $3, $4)`,
-    [String(adminTgId), action, String(player.id),
-     JSON.stringify({ username: player.username, telegramId: player.telegram_id, ...meta })]);
+    [String(adminTgId), action, String(p.id),
+     JSON.stringify({ username: p.username, telegramId: p.telegram_id, ...meta })]);
 }
 
-async function describe(p) {
+// ── screens ─────────────────────────────────────────────────────────────────
+
+async function screenHome() {
+  const { rows } = await query(null, `
+    SELECT (SELECT count(*) FROM players WHERE telegram_id ~ '^[0-9]+$')::int AS players,
+           (SELECT count(*) FROM market_listings WHERE status = 'active')::int AS lots,
+           (SELECT count(*) FROM gram_tx WHERE status = 'pending' AND type = 'withdraw')::int AS payouts`);
+  const st = rows[0] || {};
+  return {
+    text: [
+      '⚙️ <b>Админ-панель</b>',
+      '',
+      `Игроков: <b>${st.players}</b>`,
+      `Лотов на рынке: <b>${st.lots}</b>`,
+      `Выводов в очереди: <b>${st.payouts}</b>`,
+    ].join('\n'),
+    buttons: [
+      [btn('👥 Игроки', 'a:list:0'), btn('🔎 Поиск', 'a:find')],
+      [btn('📊 Сервер', 'a:srv')],
+    ],
+  };
+}
+
+async function screenList(offset) {
+  const rows = await recent(offset);
+  const more = rows.length > PAGE;
+  const page = rows.slice(0, PAGE);
+  const buttons = page.map(r => [btn(
+    `${r.username}${r.lvl ? ` · ${r.lvl} ур.` : ''}`, `a:p:${r.id}`)]);
+  const nav = [];
+  if (offset > 0) nav.push(btn('◀️', `a:list:${Math.max(0, offset - PAGE)}`));
+  if (more) nav.push(btn('▶️', `a:list:${offset + PAGE}`));
+  if (nav.length) buttons.push(nav);
+  buttons.push([btn('🔎 Поиск', 'a:find'), btn('⬅️ Назад', 'a:home')]);
+  return {
+    text: page.length
+      ? `👥 <b>Игроки</b>  <i>(${offset + 1}–${offset + page.length})</i>\n\nВыбери, кого менять.`
+      : '👥 <b>Игроки</b>\n\nПусто.',
+    buttons,
+  };
+}
+
+async function screenPlayer(id) {
+  const p = await load(id);
+  if (!p) return { text: 'Игрок не найден.', buttons: [[btn('⬅️ Назад', 'a:home')]] };
   const bal = await money.balancesOf(null, p.id);
   const vip = await progression.vipOf(null, p.id);
   const st = await stats.of(null, p.id);
-  return [
-    `<b>${ops.esc(p.username)}</b>  <code>${p.telegram_id}</code>`,
-    `Уровень ${p.lvl ?? '—'} · ${p.char_class || 'без класса'}`
-      + (p.rebirths ? ` · перерождений ${p.rebirths}` : ''),
-    st ? `Атака ${st.atk} · Защита ${st.def} · HP ${st.maxHp}` : '',
-    `Золото ${bal.gold} · GRAM ${bal.gram} · Liberty ${bal.nexum}`,
-    `VIP ${vip.level}${vip.pending && vip.pending.length ? ` (не забрано: ${vip.pending.join(', ')})` : ''}`,
-    p.banned ? '🚫 заблокирован' : '',
-  ].filter(Boolean).join('\n');
+  return {
+    text: [
+      `👤 <b>${esc(p.username)}</b>`,
+      `<code>${esc(p.telegram_id)}</code>`,
+      '',
+      `Уровень <b>${p.lvl ?? '—'}</b> · ${esc(p.char_class || 'без класса')}`
+        + (p.rebirths ? ` · перерождений ${p.rebirths}` : ''),
+      st ? `Атака ${st.atk} · Защита ${st.def} · HP ${st.maxHp}` : '',
+      '',
+      `💰 Золото <b>${bal.gold}</b>`,
+      `💎 GRAM <b>${bal.gram}</b>`,
+      `🔷 Liberty <b>${bal.nexum}</b>`,
+      `⭐️ VIP <b>${vip.level}</b>`
+        + (vip.pending && vip.pending.length ? `  <i>(не забрано: ${vip.pending.join(', ')})</i>` : ''),
+      p.banned ? '\n🚫 <b>заблокирован</b>' : '',
+    ].filter(Boolean).join('\n'),
+    buttons: [
+      [btn('📈 Уровень', `a:lvl:${p.id}`)],
+      [btn('💰 Золото', `a:cur:${p.id}:gold`), btn('💎 GRAM', `a:cur:${p.id}:gram`)],
+      [btn('🔷 Liberty', `a:cur:${p.id}:nexum`), btn('⭐️ VIP', `a:vip:${p.id}`)],
+      [btn('🔄 Обновить', `a:p:${p.id}`), btn('⬅️ Назад', 'a:list:0')],
+    ],
+  };
 }
 
-// ── setting a level ─────────────────────────────────────────────────────────
-// Written straight, not granted as experience: an admin asking for level 30
-// means level 30, and computing the xp that reaches it would depend on the
-// curve staying what it is today. The stat block is recomputed afterwards
-// because level feeds it, and the battle rating because that is stored.
-async function setLevel(playerId, lvl) {
-  const n = Math.max(1, Math.min(1000, Math.floor(Number(lvl))));
-  if (!Number.isFinite(n)) throw new Error('bad level');
+async function screenLevel(id) {
+  const p = await load(id);
+  if (!p) return screenHome();
+  const row = (ns) => ns.map(n => btn(String(n), `a:lvlset:${id}:${n}`));
+  return {
+    text: `📈 <b>${esc(p.username)}</b>\n\nСейчас: <b>${p.lvl ?? '—'}</b> ур.\n\nВыбери новый уровень.`,
+    buttons: [
+      row([1, 10, 20, 30]),
+      row([40, 50, 70, 100]),
+      [btn('✏️ Ввести', `a:ask:${id}:lvl`)],
+      [btn('⬅️ Назад', `a:p:${id}`)],
+    ],
+  };
+}
+
+async function screenCurrency(id, cur) {
+  const p = await load(id);
+  if (!p || !CURRENCY[cur]) return screenHome();
+  const bal = await money.balancesOf(null, p.id);
+  const amts = AMOUNTS[cur];
+  return {
+    text: `${CURRENCY[cur]} — <b>${esc(p.username)}</b>\n\nСейчас: <b>${bal[cur]}</b>`
+      + '\n\nПлюс начисляет, минус списывает.',
+    buttons: [
+      amts.map(n => btn(`+${n}`, `a:give:${id}:${cur}:${n}`)),
+      amts.map(n => btn(`−${n}`, `a:give:${id}:${cur}:-${n}`)),
+      [btn('✏️ Ввести', `a:ask:${id}:${cur}`)],
+      [btn('⬅️ Назад', `a:p:${id}`)],
+    ],
+  };
+}
+
+async function screenVip(id) {
+  const p = await load(id);
+  if (!p) return screenHome();
+  const vip = await progression.vipOf(null, p.id);
+  const row = (ns) => ns.map(n => btn(n === vip.level ? `• ${n} •` : String(n), `a:vipset:${id}:${n}`));
+  return {
+    text: `⭐️ <b>${esc(p.username)}</b>\n\nVIP сейчас: <b>${vip.level}</b>`,
+    buttons: [row([0, 1, 2, 3, 4]), row([5, 6, 7, 8, 9]), [btn('⬅️ Назад', `a:p:${id}`)]],
+  };
+}
+
+async function screenServer() {
+  const { rows } = await query(null, `
+    SELECT (SELECT count(*) FROM players WHERE telegram_id ~ '^[0-9]+$')::int AS players,
+           (SELECT count(*) FROM market_listings WHERE status = 'active')::int AS lots,
+           (SELECT count(*) FROM gram_tx WHERE status = 'pending')::int AS pending,
+           (SELECT COALESCE(sum(amount), 0) FROM balances WHERE currency = 'gram')::numeric AS gram,
+           (SELECT count(*) FROM chat_messages)::int AS msgs`);
+  const s = rows[0] || {};
+  const drift = await query(null, `
+    SELECT count(*)::int n FROM (
+      SELECT b.amount, COALESCE((SELECT sum(l.delta) FROM ledger l
+        WHERE l.player_id = b.player_id AND l.currency = b.currency), 0) AS led
+        FROM balances b) x WHERE x.amount <> x.led`);
+  const bad = drift.rows[0].n;
+  return {
+    text: [
+      '📊 <b>Сервер</b>',
+      '',
+      `Игроков: <b>${s.players}</b>`,
+      `Активных лотов: <b>${s.lots}</b>`,
+      `GRAM у всех на руках: <b>${s.gram}</b>`,
+      `Сообщений в чате: <b>${s.msgs}</b>`,
+      '',
+      bad === 0
+        ? '✅ Баланс сходится с леджером'
+        : `🚨 <b>Расхождений баланс/леджер: ${bad}</b>`,
+    ].join('\n'),
+    buttons: [[btn('🔄 Обновить', 'a:srv'), btn('⬅️ Назад', 'a:home')]],
+  };
+}
+
+// ── actions ─────────────────────────────────────────────────────────────────
+// Each returns the toast for the button press; the screen is redrawn after.
+
+async function doLevel(adminTg, id, n) {
+  const p = await load(id);
+  if (!p) return 'Игрок не найден';
+  const lvl = Math.max(1, Math.min(1000, Math.floor(Number(n))));
+  if (!Number.isFinite(lvl)) return 'Не число';
   await tx(async (t) => {
     await t.query(
       'UPDATE player_progress SET lvl = $2, xp = 0, updated_at = now() WHERE player_id = $1',
-      [playerId, n]);
-    await stats.refreshBm(t, playerId);
+      [id, lvl]);
+    // Level feeds the stat block, and the battle rating is stored rather than
+    // derived — both have to be recomputed or the rating table disagrees with
+    // the character.
+    await stats.refreshBm(t, id);
   });
-  return n;
+  await record(adminTg, 'set_level', p, { lvl, was: p.lvl });
+  return `${p.username}: уровень ${p.lvl ?? '?'} → ${lvl}`;
 }
 
+async function doGive(adminTg, id, cur, amount) {
+  const p = await load(id);
+  if (!p) return 'Игрок не найден';
+  if (!CURRENCY[cur]) return 'Неизвестная валюта';
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt === 0) return 'Не число';
+  // A unique key per press: two identical grants on purpose are two grants.
+  const idem = `admin:${cur}:${id}:${require('crypto').randomUUID()}`;
+  const res = await tx(t => (amt > 0
+    ? money.credit(t, id, cur, amt, { reason: 'admin_grant', refType: 'admin', refId: String(adminTg), idemKey: idem })
+    : money.spend(t, id, cur, -amt, { reason: 'admin_take', refType: 'admin', refId: String(adminTg), idemKey: idem })));
+  if (!res) return `Недостаточно ${CURRENCY[cur]} у ${p.username}`;
+  await record(adminTg, amt > 0 ? 'grant' : 'take', p, { currency: cur, amount: amt, balance: res.balance });
+  return `${p.username}: ${CURRENCY[cur]} ${amt > 0 ? '+' : ''}${amt} → ${res.balance}`;
+}
+
+async function doVip(adminTg, id, n) {
+  const p = await load(id);
+  if (!p) return 'Игрок не найден';
+  const lvl = Math.max(0, Math.min(10, Math.floor(Number(n))));
+  await query(null, 'UPDATE player_vip SET level = $2, updated_at = now() WHERE player_id = $1', [id, lvl]);
+  await record(adminTg, 'set_vip', p, { vip: lvl });
+  return `${p.username}: VIP → ${lvl}`;
+}
+
+// ── routing ─────────────────────────────────────────────────────────────────
+
+async function draw(name, arg1, arg2) {
+  switch (name) {
+    case 'home': return screenHome();
+    case 'list': return screenList(Math.max(0, Number(arg1) || 0));
+    case 'p':    return screenPlayer(Number(arg1));
+    case 'lvl':  return screenLevel(Number(arg1));
+    case 'cur':  return screenCurrency(Number(arg1), arg2);
+    case 'vip':  return screenVip(Number(arg1));
+    case 'srv':  return screenServer();
+    default:     return screenHome();
+  }
+}
+
+// A message. Either the command itself, or a reply to one of our prompts.
 async function handle(message) {
   const text = String((message && message.text) || '').trim();
-  if (!/^\/admin\b/i.test(text)) return false;
+  const from = message && message.from && message.from.id;
+  const chat = message && message.chat && message.chat.id;
+  if (!from || !chat) return false;
 
-  const from = message.from && message.from.id;
-  // Silence, not a refusal. The ops group has other people in it.
+  // A reply to a force_reply prompt — the prompt says what it was for.
+  const quoted = message.reply_to_message && String(message.reply_to_message.text || '');
+  const m = quoted && MARK.exec(quoted);
+  if (m) {
+    if (!ops.isAdmin(from)) return true;
+    const [, what, idStr] = m;
+    if (what === 'find') {
+      const found = await search(text);
+      if (!found.length) {
+        await ops.dm(chat, `Не найден: <code>${esc(text)}</code>`, {
+          buttons: [[btn('🔎 Ещё раз', 'a:find'), btn('⬅️ Назад', 'a:home')]],
+        });
+        return true;
+      }
+      if (found.length === 1) {
+        const sc = await screenPlayer(found[0].id);
+        await ops.dm(chat, sc.text, { buttons: sc.buttons });
+        return true;
+      }
+      await ops.dm(chat, `🔎 Нашлось ${found.length}:`, {
+        buttons: [
+          ...found.map(r => [btn(`${r.username}${r.lvl ? ` · ${r.lvl} ур.` : ''}`, `a:p:${r.id}`)]),
+          [btn('⬅️ Назад', 'a:home')],
+        ],
+      });
+      return true;
+    }
+    const id = Number(idStr);
+    const n = Number(String(text).replace(/\s+/g, '').replace(',', '.'));
+    let toast;
+    if (!Number.isFinite(n)) toast = 'Это не число';
+    else if (what === 'lvl') toast = await doLevel(from, id, n);
+    else if (CURRENCY[what]) toast = await doGive(from, id, what, n);
+    else toast = 'Неизвестное действие';
+    const sc = await screenPlayer(id);
+    await ops.dm(chat, `${toast}\n\n${sc.text}`, { buttons: sc.buttons });
+    return true;
+  }
+
+  if (!/^\/admin\b/i.test(text)) return false;
+  // Silence, not a refusal: the ops group has other people in it, and there is
+  // no reason to tell someone probing which commands exist.
   if (!ops.isAdmin(from)) return true;
 
-  const reply = (html) => ops.dm(from, html).catch(() => {});
-  const parts = text.split(/\s+/).slice(1);
-  const cmd = (parts[0] || '').toLowerCase();
-  if (!cmd || cmd === 'help') { await reply(HELP); return true; }
-
-  const needle = parts[1];
-  if (!needle) { await reply(HELP); return true; }
-
-  const found = await findPlayer(needle);
-  if (found.error) { await reply(found.error); return true; }
-  const p = found.player;
-
-  try {
-    if (cmd === 'who') { await reply(await describe(p)); return true; }
-
-    if (cmd === 'lvl' || cmd === 'level') {
-      const n = await setLevel(p.id, parts[2]);
-      await record(from, 'set_level', p, { lvl: n, was: p.lvl });
-      await reply(`✅ <b>${ops.esc(p.username)}</b>: уровень ${p.lvl ?? '?'} → <b>${n}</b>\n\n`
-        + `Пусть перезайдёт в игру.\n\n${await describe({ ...p, lvl: n })}`);
-      return true;
-    }
-
-    if (CURRENCY[cmd]) {
-      const cur = CURRENCY[cmd];
-      const amt = Number(parts[2]);
-      if (!Number.isFinite(amt) || amt === 0) { await reply('Сумма? Например: <code>/admin gram Ник 100</code>'); return true; }
-      // Through money.js, both directions, so the ledger stays the whole
-      // story of every coin. A unique key per grant: two identical grants on
-      // purpose are two grants.
-      const idem = `admin:${cmd}:${p.id}:${require('crypto').randomUUID()}`;
-      const res = await tx(t => (amt > 0
-        ? money.credit(t, p.id, cur, amt, { reason: 'admin_grant', refType: 'admin', refId: String(from), idemKey: idem })
-        : money.spend(t, p.id, cur, -amt, { reason: 'admin_take', refType: 'admin', refId: String(from), idemKey: idem })));
-      if (!res) { await reply(`❌ Недостаточно средств у <b>${ops.esc(p.username)}</b>`); return true; }
-      await record(from, amt > 0 ? 'grant' : 'take', p, { currency: cur, amount: amt, balance: res.balance });
-      await reply(`✅ <b>${ops.esc(p.username)}</b>: ${cmd} ${amt > 0 ? '+' : ''}${amt}\n`
-        + `Теперь: <b>${res.balance}</b>\n\nПусть перезайдёт в игру.`);
-      return true;
-    }
-
-    if (cmd === 'vip') {
-      const lvl = Math.max(0, Math.min(10, Math.floor(Number(parts[2]))));
-      if (!Number.isFinite(lvl)) { await reply('Уровень VIP? Например: <code>/admin vip Ник 5</code>'); return true; }
-      await query(null, 'UPDATE player_vip SET level = $2, updated_at = now() WHERE player_id = $1', [p.id, lvl]);
-      await record(from, 'set_vip', p, { vip: lvl });
-      await reply(`✅ <b>${ops.esc(p.username)}</b>: VIP → <b>${lvl}</b>\n\nПусть перезайдёт в игру.`);
-      return true;
-    }
-
-    await reply(HELP);
-  } catch (err) {
-    console.error('[tg-admin]', err);
-    await reply(`❌ Не получилось: <code>${ops.esc(err.userMessage || err.message)}</code>`);
+  const sc = await screenHome();
+  // Into the private chat, so a panel that can hand out GRAM is not drawn in
+  // a group. If the bot has never been messaged privately Telegram refuses,
+  // and saying so is more use than silence.
+  const dm = await ops.dm(from, sc.text, { buttons: sc.buttons });
+  if (!dm && String(chat) !== String(from)) {
+    await ops.dm(chat, 'Открой личку с ботом и нажми Start — панель придёт туда.')
+      .catch(() => {});
   }
   return true;
 }
 
-module.exports = { handle, findPlayer, setLevel, HELP };
+// A button. Returns whether it was ours.
+async function handleCallback(cq) {
+  const data = String((cq && cq.data) || '');
+  if (!data.startsWith('a:')) return false;
+  const from = cq.from && cq.from.id;
+  if (!ops.isAdmin(from)) {
+    await ops.answerCallback(cq.id, 'Нет доступа', true);
+    return true;
+  }
+  const chat = cq.message && cq.message.chat && cq.message.chat.id;
+  const msgId = cq.message && cq.message.message_id;
+  const [, name, a1, a2, a3] = data.split(':');
+
+  try {
+    // The two that ask for typing send a NEW message — a force_reply cannot be
+    // an edit, because the client has to have something to reply to.
+    if (name === 'find') {
+      await ops.answerCallback(cq.id, '');
+      await ops.ask(chat, `🔎 Пришли имя или telegram id ${mark('find')}`);
+      return true;
+    }
+    if (name === 'ask') {
+      await ops.answerCallback(cq.id, '');
+      const label = a2 === 'lvl' ? 'новый уровень' : `сколько ${CURRENCY[a2] || a2}`;
+      await ops.ask(chat, `✏️ Пришли ${label} ${mark(a2, a1)}`);
+      return true;
+    }
+
+    let toast = '';
+    let show = { name: 'home', a1: null, a2: null };
+
+    if (name === 'lvlset')      { toast = await doLevel(from, Number(a1), a2); show = { name: 'p', a1 }; }
+    else if (name === 'give')   { toast = await doGive(from, Number(a1), a2, a3); show = { name: 'cur', a1, a2 }; }
+    else if (name === 'vipset') { toast = await doVip(from, Number(a1), a2); show = { name: 'vip', a1 }; }
+    else                        { show = { name, a1, a2 }; }
+
+    await ops.answerCallback(cq.id, toast);
+    const sc = await draw(show.name, show.a1, show.a2);
+    // Edited in place: the panel is one message that changes, which is what
+    // makes ⬅️ mean anything.
+    await ops.editIn(chat, msgId, sc.text, { buttons: sc.buttons });
+  } catch (err) {
+    console.error('[tg-admin]', err);
+    await ops.answerCallback(cq.id, `Ошибка: ${err.userMessage || err.message}`, true);
+  }
+  return true;
+}
+
+module.exports = {
+  handle, handleCallback,
+  // for tests
+  screenHome, screenPlayer, screenList, screenCurrency, screenVip, screenServer,
+  doLevel, doGive, doVip, search, MARK,
+};
