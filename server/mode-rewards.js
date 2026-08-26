@@ -51,13 +51,32 @@ const COOP_BOSS_NEXUM = 100;
 const COOP_BOSS_ITEM = 'bless_stone';
 const ARENA3_NEXUM = 10;
 
-// `ref` names the mode, for the ledger's own audit trail. The key adds a
-// per-call component on top of it — see the note above.
+// `ref` names the mode, for the ledger's own audit trail.
+//
+// The key used to end in crypto.randomUUID() — a fresh value on every call,
+// which means the ledger's UNIQUE constraint could never refuse anything and
+// these four payouts had no idempotency whatsoever. The argument for it was
+// that none of the four is ever retried. Three are genuinely single-fire; the
+// co-op one deletes its run record only AFTER awaiting the payout, so its
+// guard is still true for the whole payout window and the only thing stopping
+// a second entry is attackEnemy refusing a hit on a corpse. Any future change
+// to a finish path — a retry, a reconnect mid-finish, a second killed:true —
+// would have paid twice, silently, and no reconcile could have caught it,
+// because every key was unique.
+//
+// A ten-second bucket instead. A double-fire is milliseconds apart, so it
+// collides and money.credit replays the first payment rather than making a
+// second. What this does NOT do is dedupe two payouts more than ten seconds
+// apart — it is a guard against re-entry, not a run identifier. No mode here
+// can legitimately pay the same player twice inside ten seconds: every one of
+// them runs for minutes.
+const MODE_IDEM_BUCKET_MS = 10000;
 async function credit(t, pid, currency, amount, ref) {
   if (!(amount > 0)) return null;
+  const bucket = Math.floor(Date.now() / MODE_IDEM_BUCKET_MS);
   return money.credit(t, pid, currency, amount, {
     reason: 'mode_reward', refType: 'mode', refId: String(ref),
-    idemKey: `mode:${pid}:${ref}:${require('crypto').randomUUID()}`,
+    idemKey: `mode:${pid}:${ref}:${bucket}`,
   });
 }
 
@@ -65,6 +84,10 @@ async function credit(t, pid, currency, amount, ref) {
 // comes from shared/definitions (deathBattleRewards, race10Rewards): each entry
 // is a fully-formed item, so nothing here has to know what any of them are.
 async function grantItems(t, pid, list) {
+  // The lock items.js requires of anything that mutates items. Mode payouts
+  // ran without it, so hasRoomFor -> add below could interleave with a kill
+  // reward landing at the same moment and push the inventory past its cap.
+  await items.lockPlayer(t, pid);
   const given = [], missed = [];
   for (const it of list) {
     const id = it && it.id;

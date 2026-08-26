@@ -448,8 +448,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
     safeOn('skillEffect', ({ enemyId, enemyIds, type, duration } = {}) => {
       if (!s.currentRoom) return;
-      if (enemyId) s.currentRoom.applySkillEffect(enemyId, type, duration);
-      if (enemyIds) s.currentRoom.applySkillEffectMany(enemyIds, type, duration);
+      if (enemyId) s.currentRoom.applySkillEffect(s.socket.id, enemyId, type, duration);
+      if (enemyIds) s.currentRoom.applySkillEffectMany(s.socket.id, enemyIds, type, duration);
       // Visual only (the freeze/stun tint on a monster), so it goes to whoever
       // is close enough to see that monster rather than to the whole world —
       // see _emitNearby. The caster's own position is the anchor: every CC in

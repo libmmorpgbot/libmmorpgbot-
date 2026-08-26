@@ -170,6 +170,10 @@ const SKILL_BURST_MS = 150;
 // Upper bound on how many enemies one crowd-control packet may name (see
 // applySkillEffectMany).
 const MAX_CC_TARGETS = 64;
+// How far a crowd-control effect may reach. A little more generous than the
+// 350 a basic hit gets, because several skills are area effects centred away
+// from the caster — but bounded, which it was not at all.
+const CC_REACH = 460;
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
@@ -3693,25 +3697,62 @@ class Room {
     return { killed: false, hp: enemy.hp, dmg, isCrit };
   }
 
-  applySkillEffect(enemyId, type, duration) {
+  // Crowd control on a monster.
+  //
+  // This took the enemy id straight from the client and applied the effect —
+  // no caster, no range, no line of sight, no instance check, nothing. Every
+  // one of those is enforced on attackEnemy a few hundred lines up; none of
+  // them was enforced here. Reading enemy ids off the world stream and sending
+  // skillEffect{enemyIds:[…40], type:'stun'} once a second kept every monster
+  // and every boss on the floor permanently stunned, from anywhere, and turned
+  // boss farming into a chore with no risk. The duration cap was the only
+  // thing standing in the way, and a cap on how long is not a rule about what.
+  //
+  // Same predicate set as a hit, and for the same reason: naming an id is not
+  // the same as being able to reach it.
+  //
+  // What this still does NOT model is the skill's own cooldown — the server
+  // has no copy of the skill table — so a modified client can still re-apply
+  // to something it is genuinely standing next to and can see. That is a much
+  // smaller advantage than the one removed here, and closing it properly means
+  // moving skill definitions server-side.
+  applySkillEffect(socketId, enemyId, type, duration) {
+    const caster = this.players.get(socketId);
+    if (!caster || caster.hp <= 0) return false;
     const enemy = this._enemyMap.get(enemyId);
-    if (!enemy || enemy.hp <= 0) return;
+    if (!enemy || enemy.hp <= 0) return false;
+    // The same "you may only touch your own instance" rule the damage path and
+    // the streaming path both use.
+    if (!this._raceVisible(caster, enemy)) return false;
+    const dx = caster.x - enemy.x, dy = caster.y - enemy.y;
+    const reach = CC_REACH + (enemy.size || 0);
+    if (dx * dx + dy * dy > reach * reach) return false;
+    if (!this._hasLOS(caster.x, caster.y, enemy.x, enemy.y)) return false;
     if (type === 'stun') enemy.stunTimer = Math.min(duration, 6);
     else if (type === 'slow') enemy.slowTimer = Math.min(duration, 6);
     // "Охота" (advanced deathknight R, js/player.js) — same 6s cap as
     // stun/slow above, applied in attackEnemy/skillAttackEnemy's own damage
     // calc (defDownTimer > 0 → 20% off this enemy's def for that hit).
     else if (type === 'defDown') enemy.defDownTimer = Math.min(duration, 6);
+    else return false;
+    return true;
   }
 
   // Capped: the id list comes straight from a client packet (up to the 512 KB
   // socket.io message limit) and this loop runs on the same thread as the world
   // tick, so an oversized array is a direct way to stall the whole room. No
   // real AoE touches anywhere near this many enemies.
-  applySkillEffectMany(enemyIds, type, duration) {
-    if (!Array.isArray(enemyIds)) return;
+  //
+  // Returns the ids that ACTUALLY took the effect, so the visual echoed to
+  // everyone nearby describes what happened rather than what was asked for.
+  applySkillEffectMany(socketId, enemyIds, type, duration) {
+    if (!Array.isArray(enemyIds)) return [];
     const n = Math.min(enemyIds.length, MAX_CC_TARGETS);
-    for (let i = 0; i < n; i++) this.applySkillEffect(enemyIds[i], type, duration);
+    const hit = [];
+    for (let i = 0; i < n; i++) {
+      if (this.applySkillEffect(socketId, enemyIds[i], type, duration)) hit.push(enemyIds[i]);
+    }
+    return hit;
   }
 
   healPartyMember(socketId, amount) {

@@ -565,6 +565,21 @@ class Session {
   // walking.
   async savePosition() {
     if (!this.authed || !this.room) return;
+    // The ONE write in this build that comes out of memory rather than out of
+    // a server-owned rule — which makes it the one place the old build's
+    // rollback bug could still take root, in a smaller form.
+    //
+    // login() kicks the previous socket and immediately claims activeSessions;
+    // the kicked socket's teardown then runs, and it ends here. Nothing
+    // sequenced the two. So: open a second tab, get kicked on the first, walk
+    // through a portal on the second — the new floor is persisted inside its
+    // own transaction, and then the OLD socket's timer writes the old floor,
+    // the old coordinates and the old HP straight over it. Next login lands on
+    // the wrong floor with HP the player no longer had.
+    //
+    // A session that is no longer the account's active one has nothing true
+    // left to say about where that account is.
+    if (activeSessions.get(this.telegramId) !== this.socket.id) return;
     const p = this.room.players.get(this.socket.id);
     if (!p) return;
     try {

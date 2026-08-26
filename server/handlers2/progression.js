@@ -141,6 +141,10 @@ module.exports = function registerProgression(s, safeOn) {
   safeOn('claimQuest', ({ idx } = {}) => s.act('claimQuest', 'questClaimError', async (t, pid) => {
     const i = Math.floor(Number(idx));
     if (!Number.isSafeInteger(i) || i < 0) return;
+    // Same rule as every other item-granting transaction in this file (see
+    // :52, :77, :119, :252) — this one was the exception, and the reward loop
+    // below inserts.
+    await items.lockPlayer(t, pid);
     const res = await progression.claimQuest(t, pid, i);
 
     const r = res.reward || {};

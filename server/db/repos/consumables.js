@@ -262,6 +262,15 @@ async function pickupDrop(db, playerId, itemId, qty = 1, enhance = 0) {
 // kill on the path that already did a write, in exchange for a number that
 // cannot lie.
 async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram = 0, drops = [], idemKey }) {
+  // items.js states the rule at the top of the file: lockPlayer must be the
+  // FIRST statement of any transaction that mutates items. This path granted
+  // drops without it, so hasRoomFor -> add was a read-then-write across two
+  // statements with nothing holding the row still between them. Two rewards
+  // landing together — an own kill and a party share, two quick kills, a mode
+  // payout arriving mid-kill — could both read 149 slots and both insert.
+  // It was masked incidentally by grantXp taking FOR UPDATE on player_progress
+  // first, which does not happen when xp is 0.
+  await items.lockPlayer(db, playerId);
   const out = { gold: 0, xp: null, nexum: 0, gram: 0, items: [] };
 
   if (gold > 0) {

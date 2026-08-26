@@ -563,10 +563,22 @@ module.exports = function registerWorld(s, safeOn, deps) {
   safeOn('skillEffect', ({ enemyId, enemyIds, type, duration } = {}) => {
     if (!s.room) return;
     const dur = num(duration, 0, 10, 0);
-    if (enemyId) s.room.applySkillEffect(enemyId, type, dur);
-    if (Array.isArray(enemyIds)) s.room.applySkillEffectMany(enemyIds.slice(0, 40), type, dur);
+    const hitOne = enemyId ? s.room.applySkillEffect(s.socket.id, enemyId, type, dur) : false;
+    const hitMany = Array.isArray(enemyIds)
+      ? s.room.applySkillEffectMany(s.socket.id, enemyIds.slice(0, 40), type, dur) : [];
+    // Nothing landed — nothing to draw, and nothing to say. Refusals are
+    // ordinary here (a target walked out of range between the client deciding
+    // and the packet arriving), so they are counted rather than alerted; see
+    // ccRefused on /health.
+    if (!hitOne && !hitMany.length) { s.room.ccRefused = (s.room.ccRefused || 0) + 1; return; }
     const me = s.room.players.get(s.socket.id);
-    if (me) s.emitNearby(me.x, me.y, 'enemyCC', { enemyId, enemyIds, type, duration: dur });
+    // Echoed as what ACTUALLY took the effect. Sending back the requested ids
+    // made every other client draw a stun on monsters that were never stunned.
+    if (me) s.emitNearby(me.x, me.y, 'enemyCC', {
+      enemyId: hitOne ? enemyId : undefined,
+      enemyIds: hitMany.length ? hitMany : undefined,
+      type, duration: dur,
+    });
   });
 
   // The rogue's stealth ending. Only ever clears the flag — a client cannot

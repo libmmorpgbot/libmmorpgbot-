@@ -22,7 +22,7 @@
 const { query, hasColumn } = require('../index');
 const items = require('./items');
 const money = require('./money');
-const { MARKET_FEE_PCT, MARKET_MAX_PRICE, MARKET_LIST_COOLDOWN_MS, _marketMinPrice } =
+const { MARKET_FEE_PCT, MARKET_MAX_PRICE, MARKET_MAX_QTY, MARKET_LIST_COOLDOWN_MS, _marketMinPrice } =
   require('../../inventory');
 const { _marketMaxActive } = require('../../market-helpers');
 const { _catalogBase } = require('../../anticheat');
@@ -58,7 +58,23 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
   if (!own.length) err('not_owned', 'Предмет не знайдено в інвентарі');
   const it = own[0];
 
-  const min = _marketMinPrice(_catalogBase(it.item_id) || { rarity: it.rarity });
+  // qty is the point. _marketMinPrice multiplies its floors by item.qty
+  // because they are PER UNIT and a listing's price covers the whole stack
+  // (see the constants in server/inventory.js) — and _catalogBase returns a
+  // catalog definition, which has no qty. So it defaulted to 1 and the
+  // scaling was silently dropped: a stack of 9999 bless_stone, floor 1.5 each,
+  // could be listed for 1.5 GRAM total instead of 14998. Buy it from an alt
+  // and nearly 15k GRAM of goods crosses accounts for a 0.15 fee instead of
+  // ~1500 — the market fee is the only tax on muling, and this divided it by
+  // the size of the stack.
+  if (it.qty > MARKET_MAX_QTY) err('bad_qty', `За раз можна виставити не більше ${MARKET_MAX_QTY} шт.`);
+  const min = _marketMinPrice({ ...(_catalogBase(it.item_id) || {}), rarity: it.rarity, qty: it.qty });
+  if (min > MARKET_MAX_PRICE) {
+    // A stack whose honest floor exceeds the ceiling cannot be listed at any
+    // legal price. Saying so is better than the alternative the bug produced,
+    // which was letting it through at a hundredth of its worth.
+    err('bad_qty', `Стак завеликий — мінімальна ціна за нього ${min.toFixed(2)} GRAM, а стеля ${MARKET_MAX_PRICE}. Розділіть стак.`);
+  }
   if (p < min) err('bad_price', `Мінімальна ціна для цього предмета — ${min} GRAM`);
 
   // Active-listing cap and cooldown, both read from the listings themselves.
