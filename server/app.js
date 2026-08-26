@@ -494,6 +494,39 @@ io.on('connection', (socket) => {
   // the lag they are seeing is theirs or the server's.
   socket.on('_ping', t0 => socket.emit('_pong', t0));
 
+  // ── a client-side failure, reported over the socket ──────────────────────
+  // /client-error (the HTTP endpoint above) still exists and still has to: it
+  // is the only way to hear about a failure that happens before a connection,
+  // or instead of one. But it identifies the player from a name the PAGE put
+  // in a JSON body — and for the whole life of that endpoint the client filled
+  // that field with `window.state.username`, where `state` is a script-scope
+  // `let` holding the string 'playing'. Every report ever received arrived
+  // with an empty player. Nobody could look up who anything happened to.
+  //
+  // Here the player is the SESSION's. Nothing in the payload says who this is,
+  // so nothing in the payload can lie about it — and it lands in player_logs,
+  // where it can be queried after the fact instead of scrolling back through a
+  // Telegram topic.
+  let _cerrN = 0, _cerrAt = 0;
+  safeOn('clientError', ({ where, message, stack } = {}) => {
+    const now = Date.now();
+    if (now - _cerrAt > 60000) { _cerrAt = now; _cerrN = 0; }
+    if (++_cerrN > 10) return;               // a looping client is one problem
+    const w = String(where || 'client').slice(0, 60);
+    const msg = String(message || '').slice(0, 400);
+    if (!msg) return;
+    const st = String(stack || '').split('\n').slice(0, 6).join('\n').slice(0, 900);
+    const ua = String(socket.handshake.headers['user-agent'] || '').slice(0, 160);
+    plog.log(s.playerId, 'client:' + w, { msg, stack: st || undefined, ua });
+    ops.alert(`client.${w}.${msg.replace(/\d+/g, '#').slice(0, 80)}`,
+      `Ошибка у игрока (${w})`, st || msg, {
+        сообщение: msg,
+        игрок: s.username || String(s.playerId || '?'),
+        сборка: version.COMMIT,
+        браузер: ua,
+      }).catch(() => {});
+  });
+
   require('./handlers2/items')(s, safeOn, deps);
   require('./handlers2/economy')(s, safeOn, deps);
   require('./handlers2/progression')(s, safeOn, deps);

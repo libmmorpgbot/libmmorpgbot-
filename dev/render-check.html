@@ -69,6 +69,36 @@ function frames(w, n, ms) {
   });
 }
 
+// The black-screen watchdog. Each way a world can be blank is reproduced
+// here and _worldBlankWhy() has to name it — because the failure players
+// actually report ("интерфейс есть, экран чёрный") is invisible to a
+// liveness check: a renderer with an empty world draws sixty black frames a
+// second and looks perfectly healthy.
+const BLANK_PROBE = `window.__rcBlank = (function () {
+  var out = {};
+  var savedDungeon = dungeon, savedW = W, savedH = H;
+  render(1 / 60, performance.now());
+  out.healthy = _worldBlankWhy();
+
+  W = 0; H = 0;
+  out.zeroViewport = _worldBlankWhy();
+  W = savedW; H = savedH;
+
+  dungeon = null;
+  out.noMap = _worldBlankWhy();
+  dungeon = savedDungeon;
+
+  var keep = [];
+  _chunkSprCache.forEach(function (v, k) { keep.push([k, v]); });
+  _chunkSprCache.clear();
+  out.noTiles = _worldBlankWhy();
+  keep.forEach(function (kv) { _chunkSprCache.set(kv[0], kv[1]); });
+
+  render(1 / 60, performance.now());
+  out.healthyAgain = _worldBlankWhy();
+  out.facts = _worldFacts();
+  return out;
+})();`;
 // Chunk streaming: the lookahead builds chunks the camera has not reached
 // yet and keeps them hidden. PixiJS skips hidden sprites entirely, and a
 // texture is only uploaded the first time something draws it — so their
@@ -251,6 +281,16 @@ async function run() {
 
   inject(w, SHOT);
   say('  снимок кадра отправлен -> dev/_render-shot.png');
+
+  head('сторож чёрного экрана');
+  inject(w, BLANK_PROBE);
+  const bl = w.__rcBlank;
+  ok(bl.healthy === null, 'на здоровом мире молчит', bl.healthy === null ? '' : 'сказал: ' + bl.healthy);
+  ok(bl.zeroViewport === 'zero-viewport', 'ловит нулевой размер экрана (WebView разложил #app в ноль)', String(bl.zeroViewport));
+  ok(bl.noMap === 'no-map', 'ловит отсутствие карты (gameStart не доехал)', String(bl.noMap));
+  ok(bl.noTiles === 'no-tiles', 'ловит непостроенные тайлы', String(bl.noTiles));
+  ok(bl.healthyAgain === null, 'после восстановления снова молчит', String(bl.healthyAgain));
+  say('  диагностика: ' + bl.facts);
 
   head('потоковая подгрузка тайлов');
   // Walk east so the lookahead has a direction to build toward. The keys are

@@ -2768,7 +2768,7 @@ function _pixiRebuild() {
   if (!fresh) return false;
   canvas = fresh;
   if (typeof bindCanvasInput === 'function') bindCanvasInput(canvas);
-  if (_doResize) _doResize();
+  if (_doResize) _doResize(true);
   buildTileCanvas();
   _pixiRetries = 0;
   return true;
@@ -2860,16 +2860,101 @@ function _pixiGiveUp({ unsupported = false } = {}) {
 //   _visibleSince — just came back from the background, where the last render
 //                   timestamp is by definition old
 let _visibleSince = 0;
-function _pixiWatchdog() {
-  if (!canvas) return;
-  if (_pixiRetryTimer) return;                       // a retry is already in flight
-  if (state === 'select') return;
-  if (activeTab !== 0) return;
+// ── and a THIRD failure, which the watchdog above could not see at all ─────
+// The renderer is alive. It is drawing sixty frames a second. Of nothing.
+//
+// "Заходжу в апку, інтерфейс є, екран чорний." The interface is DOM and a
+// separate 2D canvas, so it comes up regardless — and a world with no map, or
+// a canvas the WebView laid out at zero height, or tiles that were never
+// built, renders perfectly happily in black. Ask "did it render recently" and
+// the answer is yes, every time, forever.
+//
+// So the question has to be what the world CONTAINS. Each answer below has its
+// own recovery, because restarting the renderer fixes none of them.
+const _WD_GRACE_MS = 4000;
+const _wdReported = new Set();   // one alert per distinct cause per session
+let _wdWhy = null, _wdWhySince = 0;
+
+function _worldBlankWhy() {
+  if (!canvas) return 'no-canvas';
+  // #app can be laid out at zero height for the first frames after Telegram
+  // opens the Mini App, and every size in the game is derived from it — so a
+  // zero here is a zero everywhere, including both canvases.
+  if (!(W > 8) || !(H > 8)) return 'zero-viewport';
+  if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return 'zero-canvas';
+  if (!pixiAlive()) return 'no-renderer';
+  if (performance.now() - pixiLastRenderTs() > _WD_GRACE_MS) return 'not-rendering';
+  // No map means the server never told us about a floor (or told us and the
+  // world-map fetch behind it failed). Nothing local can conjure one.
+  if (!dungeon || !dungeon.grid) return 'no-map';
+  // A map with no rasterised chunk is a floor that was never drawn — the tile
+  // cache is rebuilt by buildTileCanvas(), which a floor change already calls.
+  if (typeof _chunkSprCache !== 'undefined' && _chunkSprCache.size === 0) return 'no-tiles';
+  // Last resort: everything looks right and the GPU was still handed nothing.
+  if (typeof gpuStats === 'function' && gpuStats().draws === 0) return 'nothing-drawn';
+  return null;
+}
+
+// Everything an operator needs to tell these apart from a phone they cannot
+// hold. Numbers, not adjectives.
+function _worldFacts() {
+  const g = (typeof gpuStats === 'function') ? gpuStats() : { draws: -1, verts: -1 };
+  return [
+    'экран ' + W + 'x' + H + ' @' + (DPR || 0).toFixed(2),
+    'canvas ' + (canvas ? canvas.clientWidth + 'x' + canvas.clientHeight : 'нет'),
+    'pixi ' + (pixiAlive() ? 'жив' : 'мёртв'),
+    'карта ' + (dungeon && dungeon.grid ? dungeon.w + 'x' + dungeon.h + ' эт.' + dungeonLvl : 'НЕТ'),
+    'чанки ' + (typeof _chunkSprCache !== 'undefined' ? _chunkSprCache.size : '?') + '/' + _tileChunks.size,
+    'draws ' + g.draws,
+    'сокет ' + (socket && socket.connected ? 'на связи' : 'НЕТ'),
+    'кадр ' + Math.round(performance.now() - pixiLastRenderTs()) + 'мс назад',
+  ].join(' · ');
+}
+
+function _worldWatchdog() {
+  if (state !== 'playing') return;
+  if (activeTab !== 0) return;                       // a panel is covering the world on purpose
   if (document.hidden) return;
-  if (performance.now() - _visibleSince < 4000) return;
-  if (pixiAlive() && performance.now() - pixiLastRenderTs() < 4000) return;
-  console.error('[pixi] мир не рисовался 4с — перезапуск рендерера');
-  _pixiRetry(canvas, new Error('мир не рисовался 4 секунды'));
+  if (performance.now() - _visibleSince < _WD_GRACE_MS) return;
+  if (_pixiRetryTimer) return;                       // a retry is already in flight
+
+  const why = _worldBlankWhy();
+  if (!why) { _wdWhy = null; return; }
+
+  // The same complaint has to hold across two checks before anything is done
+  // about it: a single tick can land inside a floor change, where there is
+  // legitimately no map for a moment.
+  if (_wdWhy !== why) { _wdWhy = why; _wdWhySince = performance.now(); return; }
+  if (performance.now() - _wdWhySince < _WD_GRACE_MS) return;
+  _wdWhySince = performance.now();
+
+  const facts = _worldFacts();
+  console.error('[world] пусто:', why, facts);
+  // Reported once per cause per session — the server collapses repeats anyway,
+  // but a phone that stays broken should not spend its battery saying so.
+  if (!_wdReported.has(why) && typeof window.__reportClientError === 'function') {
+    _wdReported.add(why);
+    window.__reportClientError('world-blank', why + ' — ' + facts);
+  }
+
+  switch (why) {
+    case 'zero-viewport':
+    case 'zero-canvas':
+      // Costs nothing and fixes itself the moment the WebView reports a real
+      // size; the ResizeObserver below usually gets there first.
+      if (_doResize) _doResize(true);
+      break;
+    case 'no-tiles':
+      buildTileCanvas();
+      break;
+    case 'no-map':
+      // Only the server can answer this, and the only thing that makes it
+      // answer is a fresh attachment.
+      if (socket) { socket.disconnect(); socket.connect(); }
+      break;
+    default:
+      _pixiRetry(canvas, new Error('пустой мир: ' + why));
+  }
 }
 
 window.addEventListener('load', () => {
@@ -2903,10 +2988,19 @@ window.addEventListener('load', () => {
     _pixiRetry(canvas, err);
   }
 
-  const resize = () => {
-    DPR = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
-    W = appEl.clientWidth;
-    H = appEl.clientHeight;
+  // Dirty-checked so a ResizeObserver can be pointed at it without either
+  // wasting work or feeding itself. `force` is for the two callers that need
+  // it applied to something new regardless: a rebuilt canvas after a context
+  // loss, and the blank-world watchdog.
+  let _rzW = -1, _rzH = -1, _rzDpr = -1;
+  const resize = (force) => {
+    const _dpr = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
+    const _w = appEl.clientWidth, _h = appEl.clientHeight;
+    if (!force && _w === _rzW && _h === _rzH && _dpr === _rzDpr) return;
+    _rzW = _w; _rzH = _h; _rzDpr = _dpr;
+    DPR = _dpr;
+    W = _w;
+    H = _h;
     // WebGL resolution capped at 1.5 (same cap for mobile and desktop) so
     // the GPU fill-rate stays reasonable on high-DPR phones without
     // sacrificing visual quality the way res=1.0 would.
@@ -2927,14 +3021,27 @@ window.addEventListener('load', () => {
     if (dungeon) clampCamera();
   };
   _doResize = resize;
-  resize();
-  window.addEventListener('resize', resize);
+  resize(true);
+  window.addEventListener('resize', () => resize(false));
+  // window.resize is not enough inside a Telegram Mini App. The WebView lays
+  // #app out at its final height AFTER the page loads (and changes it again
+  // when the app is expanded, when the keyboard opens, when the system bars
+  // hide) — and it does not always fire a window resize for it. Everything in
+  // the game is sized off #app, so missing that layout means W/H stay at
+  // whatever the first measurement said, which can be zero: a black screen
+  // with a working interface. Watch the element itself instead of hoping.
+  if (typeof ResizeObserver === 'function') {
+    try { new ResizeObserver(() => resize(false)).observe(appEl); } catch (e) { /* old WebView */ }
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => resize(false));
+  }
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();
   // Startup gets the same grace as coming back from the background: the world
   // cannot have drawn yet, and a watchdog that fires before the first frame
   // would restart a renderer that was never given a chance.
   _visibleSince = performance.now();
-  setInterval(_pixiWatchdog, 1000);
+  setInterval(_worldWatchdog, 1000);
   requestAnimationFrame(ts => { _loopTs = ts; requestAnimationFrame(loop); });
 });

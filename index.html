@@ -792,6 +792,25 @@ window.__reportClientError = function (where, message, stack) {
     if (now - (window.__lastErrSig[sig] || 0) < 30000) return;
     window.__lastErrSig[sig] = now;
 
+    // Over the socket when there is one. The server then takes the player
+    // from the session instead of from this payload — which matters, because
+    // the line below used to read `window.state.username`, and `state` is a
+    // script-scope `let` holding the string 'playing'. It was always ''. Every
+    // report ever sent arrived anonymous, and that is most of the reason
+    // "иногда чёрный экран" was never traced to a device.
+    try {
+      if (typeof socket !== 'undefined' && socket && socket.connected) {
+        socket.emit('clientError', {
+          where: String(where || 'client'),
+          message: String(message).slice(0, 400),
+          stack: stack ? String(stack).slice(0, 900) : '',
+        });
+        return;
+      }
+    } catch (e) { /* fall through to the HTTP path */ }
+
+    // No connection — which covers every failure that happens before one
+    // exists, and is exactly where the HTTP endpoint earns its keep.
     fetch('/client-error', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -800,7 +819,7 @@ window.__reportClientError = function (where, message, stack) {
         message: String(message).slice(0, 400),
         stack: stack ? String(stack).slice(0, 900) : '',
         url: location.pathname,
-        user: (window.state && window.state.username) || '',
+        user: (typeof netUsername === 'string' && netUsername) || '',
         build: (window.__BUILD__ || ''),
       }),
     }).catch(function () {});
