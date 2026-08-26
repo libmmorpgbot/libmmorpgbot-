@@ -35,6 +35,12 @@ const id = v => {
 // points at players.id. Translating here, once, against the database is what
 // keeps the repositories from having to know two kinds of identifier.
 const byTg = (t, v) => players.idByTelegram(t, v);
+// ── why the guards below fail instead of returning ──────────────────────────
+// act() writes the success row when the handler does not throw, so every bare
+// `return;` in a clan or storage handler put a row in player_logs saying an
+// item was handed over, a member kicked, a claim taken — for a call that did
+// nothing. The clan storage is the one place items move between accounts
+// without a market listing, which makes its log the only record there is.
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
 module.exports = function registerSocial(s, safeOn, deps) {
@@ -76,7 +82,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
 
   safeOn('clanApply', ({ clanId } = {}) => s.act('clanApply', 'clanError', async (t, pid) => {
     const c = id(clanId);
-    if (!c) return;
+    if (!c) fail('Клан не найден', 'bad_clan');
     await clans.apply(t, c, pid);
     s.socket.emit('clanApplySent', { clanId: c });
   }));
@@ -84,7 +90,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
   safeOn('clanApprove', ({ telegramId } = {}) => s.act('clanApprove', 'clanError', async (t, pid) => {
     const target = await byTg(t, telegramId);
     const m = await clans.clanOf(t, pid);
-    if (!target || !m) return;
+    if (!target) fail('Игрок не найден', 'no_user');
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
     await clans.accept(t, pid, m.clanId, target);
     await pushClan(t);
     // Tell them, if they are here. Their own panel refreshes from the database
@@ -109,7 +116,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
   safeOn('clanDecline', ({ telegramId } = {}) => s.act('clanDecline', 'clanError', async (t, pid) => {
     const target = await byTg(t, telegramId);
     const m = await clans.clanOf(t, pid);
-    if (!target || !m) return;
+    if (!target) fail('Игрок не найден', 'no_user');
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
     await clans.decline(t, pid, m.clanId, target);
     await pushClan(t);
   }));
@@ -117,7 +125,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
   safeOn('clanKick', ({ telegramId } = {}) => s.act('clanKick', 'clanError', async (t, pid) => {
     const target = await byTg(t, telegramId);
     const m = await clans.clanOf(t, pid);
-    if (!target || !m) return;
+    if (!target) fail('Игрок не найден', 'no_user');
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
     await clans.kick(t, pid, m.clanId, target);
     await pushClan(t);
     const sock = deps.socketForPlayerId && deps.socketForPlayerId(target);
@@ -135,7 +144,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
 
   safeOn('clanDisband', () => s.act('clanDisband', 'clanError', async (t, pid) => {
     const m = await clans.clanOf(t, pid);
-    if (!m) return;
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
     await clans.disband(t, pid, m.clanId);
     await s.refreshClan(t);
     s.socket.emit('clanData', null);
@@ -165,7 +174,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
   safeOn('clanStorageDeposit', ({ id: itemId, qty } = {}) =>
     s.act('clanStorageDeposit', 'clanError', async (t, pid) => {
       const m = await clans.clanOf(t, pid);
-      if (!m || typeof itemId !== 'string') return;
+      if (!m) fail('Вы не состоите в клане', 'no_clan');
+      if (typeof itemId !== 'string') fail('Предмет не выбран', 'bad_item');
       const n = await clans.deposit(t, pid, m.clanId, itemId, qty);
       await s.pushItems(t);
       await pushClanStorage(t);
@@ -181,7 +191,9 @@ module.exports = function registerSocial(s, safeOn, deps) {
     s.act('clanStorageGive', 'clanError', async (t, pid) => {
       const target = await byTg(t, telegramId);
       const m = await clans.clanOf(t, pid);
-      if (!target || !m || typeof itemId !== 'string') return;
+      if (!target) fail('Игрок не найден', 'no_user');
+      if (!m) fail('Вы не состоите в клане', 'no_clan');
+      if (typeof itemId !== 'string') fail('Предмет не выбран', 'bad_item');
       const a = await clans.allocate(t, pid, m.clanId, target, itemId, qty);
       await pushClanStorage(t);
       s.socket.emit('clanStorageOk', { msg: `Выдано: ${(a && a.qty) || qty || 1}` });
@@ -205,16 +217,21 @@ module.exports = function registerSocial(s, safeOn, deps) {
     s.act('clanStorageCancel', 'clanError', async (t, pid) => {
       const m = await clans.clanOf(t, pid);
       const target = await byTg(t, telegramId);
-      if (!m || !target || typeof itemId !== 'string') return;
+      if (!m) fail('Вы не состоите в клане', 'no_clan');
+      if (!target) fail('Игрок не найден', 'no_user');
+      if (typeof itemId !== 'string') fail('Предмет не выбран', 'bad_item');
       const a = await clans.allocationIdFor(t, m.clanId, target, itemId);
-      if (!a) return;
+      // Already claimed or already cancelled — the leader's table is stale. A
+      // success row here would say the leader took an outstanding allocation
+      // back, which is exactly the sort of thing the other member disputes.
+      if (!a) fail('Выдача не найдена — список обновлён', 'no_allocation');
       await clans.cancelAllocation(t, pid, m.clanId, a);
       await pushClanStorage(t);
     }));
 
   safeOn('clanStorageUnlock', () => s.act('clanStorageUnlock', 'clanError', async (t, pid) => {
     const m = await clans.clanOf(t, pid);
-    if (!m) return;
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
     const { CLAN_STORAGE_UNLOCK_GOLD } = require('../../shared/definitions');
     const res = await clans.unlockStorage(t, pid, m.clanId, CLAN_STORAGE_UNLOCK_GOLD);
     await s.pushBalances(t);
@@ -365,20 +382,29 @@ module.exports = function registerSocial(s, safeOn, deps) {
   const HEAL_PARTY_CD_MS = 2000;
   let lastHealAt = 0;
 
+  // ── five refusals that were logged as a heal ─────────────────────────────
+  // healParty is a WRITE_ACTION, so each of these bare returns wrote a row
+  // saying the party was healed. The cooldown one is the worst: it is the
+  // branch that fires most often — the client's own 25s cooldown means the 2s
+  // floor is only reached by a socket being spammed — so the log's picture of
+  // this skill was mostly casts that healed nobody, mixed in with the real ones
+  // and indistinguishable from them.
   safeOn('healParty', () => s.act('healParty', 'itemError', async (t, pid) => {
     const partyId = party.playerParty.get(s.socket.id);
-    if (!partyId || !s.room) return;
+    if (!partyId) fail('Вы не в группе', 'no_party');
+    if (!s.room) fail('Вы не на карте — перезайдите', 'no_room');
     const members = party.parties.get(partyId);
-    if (!members) return;
+    if (!members) fail('Группа распалась', 'no_party');
 
     const now = Date.now();
-    if (now - lastHealAt < HEAL_PARTY_CD_MS) return;
+    if (now - lastHealAt < HEAL_PARTY_CD_MS) fail('Слишком часто', 'cooldown');
 
     const healer = s.room.players.get(s.socket.id);
-    if (!healer || healer.hp <= 0) return;                 // the dead do not cast
+    if (!healer || healer.hp <= 0) fail('Сначала возродитесь', 'dead');   // the dead do not cast
 
     const st = await stats.of(t, pid);
-    if (!st || st.charClass !== 'warlock') return;         // only the warlock has this
+    // only the warlock has this
+    if (!st || st.charClass !== 'warlock') fail('Этот навык не для вашего класса', 'wrong_class');
     const sk = await players.skillsOf(t, pid);
     const adv = !!(sk.advSkillLearned.R && sk.advSkillActive.R);
     const pct = adv ? 0.20 : 0.10;
@@ -386,6 +412,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const amount = Math.max(1, Math.round(st.maxHp * pct * mult));
     lastHealAt = now;
 
+    let reached = 0, total = 0;
     for (const [sid] of members) {
       if (sid === s.socket.id) continue;
       const p = s.room.players.get(sid);
@@ -397,9 +424,14 @@ module.exports = function registerSocial(s, safeOn, deps) {
       const before = p.hp;
       s.room.setPlayerHp(sid, Math.min(p.maxHp, p.hp + amount));
       const healed = Math.round(p.hp - before);
+      if (healed > 0) { reached++; total += healed; }
       if (healed > 0) deps.io.to(sid).emit('healPartyMember', { amount: healed });
     }
-  }));
+    // A cast that reached nobody — everyone at full health, everyone out of
+    // range — is not a refusal, but it is not the same event as a heal either,
+    // and the row said the same thing for both.
+    return { amount, reached, total };
+  }, r => r && { amount: r.amount, reached: r.reached, healed: r.total }));
 
   // ── clan chat ────────────────────────────────────────────────────────────
   // The cooldown is SHARED with the global chat below, deliberately: it is one

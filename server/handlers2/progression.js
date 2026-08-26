@@ -26,6 +26,12 @@ const {
 const shop = require('../shop');
 
 const SLOTS = new Set(['Q', 'W', 'E', 'R']);
+// ── why the guards below fail instead of returning ──────────────────────────
+// act() writes the success row when the handler does not throw, so every bare
+// `return;` in this file recorded a skill studied, a quest claimed, a package
+// bought — none of which happened. Books and GRAM are the two things players
+// ask about most often, and the log answered both with a row that says the
+// transaction went through.
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
 module.exports = function registerProgression(s, safeOn) {
@@ -60,7 +66,7 @@ module.exports = function registerProgression(s, safeOn) {
   }
 
   safeOn('learnSkill', ({ key } = {}) => s.act('learnSkill', 'progressError', async (t, pid) => {
-    if (!SLOTS.has(key)) return;
+    if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
     const res = await study(t, pid, 'skill', key, skillBookId(prog.charClass, key), SKILL_MAX_LEVEL);
@@ -70,7 +76,7 @@ module.exports = function registerProgression(s, safeOn) {
   // Upgrading rolls a chance. The roll is the server's — the old client sent
   // whether it succeeded.
   safeOn('upgradeSkill', ({ key } = {}) => s.act('upgradeSkill', 'progressError', async (t, pid) => {
-    if (!SLOTS.has(key)) return;
+    if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
 
@@ -97,7 +103,7 @@ module.exports = function registerProgression(s, safeOn) {
   }));
 
   safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'progressError', async (t, pid) => {
-    if (typeof id !== 'string' || !id) return;
+    if (typeof id !== 'string' || !id) fail('Не выбран пассивный навык', 'bad_passive');
     const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
   }));
@@ -106,14 +112,14 @@ module.exports = function registerProgression(s, safeOn) {
   // the client applies (studyPassiveSkill / upgradePassiveSkillWithBook,
   // js/ui.js). These two handlers shared one body and one price.
   safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'progressError', async (t, pid) => {
-    if (typeof id !== 'string' || !id) return;
+    if (typeof id !== 'string' || !id) fail('Не выбран пассивный навык', 'bad_passive');
     const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL,
       SKILL_UPGRADE_COST);
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
   safeOn('learnAdvSkill', ({ key } = {}) => s.act('learnAdvSkill', 'progressError', async (t, pid) => {
-    if (!SLOTS.has(key)) return;
+    if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
     await items.lockPlayer(t, pid);
@@ -140,7 +146,7 @@ module.exports = function registerProgression(s, safeOn) {
   // complete in one packet.
   safeOn('claimQuest', ({ idx } = {}) => s.act('claimQuest', 'questClaimError', async (t, pid) => {
     const i = Math.floor(Number(idx));
-    if (!Number.isSafeInteger(i) || i < 0) return;
+    if (!Number.isSafeInteger(i) || i < 0) fail('Задание не найдено', 'bad_quest');
     // Same rule as every other item-granting transaction in this file (see
     // :52, :77, :119, :252) — this one was the exception, and the reward loop
     // below inserts.
@@ -171,7 +177,13 @@ module.exports = function registerProgression(s, safeOn) {
     s.act('completeSpecialQuest', 'questClaimError', async (t, pid) => {
       const id = Math.floor(Number(questId));
       if (!Number.isSafeInteger(id) || id <= 0) {
-        return s.socket.emit('specialQuestError', { questId: String(questId || ''), reason: 'not_found' });
+        // The button-specific event first, because that is what re-enables it,
+        // and THEN a throw — returning here left act() believing the quest had
+        // been completed and paid, which is the one thing that must not be in
+        // the log for a reward that was never granted. Same order as the catch
+        // at the bottom of this handler.
+        s.socket.emit('specialQuestError', { questId: String(questId || ''), reason: 'not_found' });
+        fail('Задание не найдено', 'not_found');
       }
       try {
         const res = await progression.claimSpecialQuest(t, pid, id);
@@ -198,7 +210,9 @@ module.exports = function registerProgression(s, safeOn) {
     const prog = await players.progressOf(t, pid);
     const cls = prog.charClass || 'lev';
     const res = await progression.claimVip(t, pid, tier => shop._vipLevelItems(tier, cls));
-    if (!res.tiers.length) return;
+    // Nothing pending is a refusal, not a claim. Logged as one, so a second
+    // press of a stale button cannot be mistaken later for a second payout.
+    if (!res.tiers.length) fail('Нечего получать — все награды VIP уже забраны', 'nothing_pending');
 
     // Gold rides along with the tiers, keyed so a retry cannot pay twice.
     let gold = 0;
@@ -262,18 +276,18 @@ module.exports = function registerProgression(s, safeOn) {
   }));
 
   safeOn('seasonBurnAll', ({ rarity } = {}) => s.act('seasonBurnAll', 'seasonBurnError', async (t, pid) => {
-    if (typeof rarity !== 'string' || !rarity) return;
+    if (typeof rarity !== 'string' || !rarity) fail('Не выбрана редкость', 'bad_rarity');
     await afterBurn(t, pid, await progression.burnAllOfRarity(t, pid, rarity));
   }));
 
   safeOn('seasonBurnBook', ({ id, qty } = {}) => s.act('seasonBurnBook', 'seasonBurnError', async (t, pid) => {
-    if (typeof id !== 'string' || !id) return;
+    if (typeof id !== 'string' || !id) fail('Не выбрана книга', 'bad_book');
     await afterBurn(t, pid, await progression.burnBooks(t, pid, id, qty));
   }));
 
   // ── the GRAM shop ────────────────────────────────────────────────────────
   safeOn('gramShopBuy', ({ pkgId, petId } = {}) => s.act('gramShopBuy', 'gramShopError', async (t, pid) => {
-    if (typeof pkgId !== 'string' || !pkgId) return;
+    if (typeof pkgId !== 'string' || !pkgId) fail('Набор не выбран', 'bad_package');
     const res = await shopRepo.buyPackage(t, pid, pkgId, petId);
     await s.refreshVip(t);       // the package may have moved a VIP tier or bought the ticket
     await s.pushItems(t); await s.pushBalances(t); await s.pushProgress(t); await s.pushStats(t);
@@ -292,6 +306,16 @@ module.exports = function registerProgression(s, safeOn) {
       const st = await progression.seasonOf(t, pid);
       s.socket.emit('seasonEventDone', { task: 'shop_buy', points: res.seasonPoints, total: st.points });
     }
+    return res;
+    // ── the only row that is about real money ─────────────────────────────
+    // A package is bought with GRAM, and GRAM is bought with TON. "Я купил
+    // набор и ничего не пришло" is a payment dispute, and until now the log's
+    // answer to it was the word 'gramShopBuy'. Which package, at what price,
+    // and what the balance was afterwards are all already in hand here.
+  }, r => r && {
+    pkgId: r.pkgId, price: r.price, gramLeft: r.gramLeft,
+    gold: r.gold, nexum: r.nexum, seasonTicket: r.seasonTicket,
+    items: (r.granted || []).map(g => g.itemId),
   }));
 
   // ── the starter kit ──────────────────────────────────────────────────────

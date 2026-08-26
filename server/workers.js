@@ -52,12 +52,26 @@ async function scanDeposits({ notifyPlayer } = {}) {
       // people mute.
       if (_failStreak === 12 || _failStreak === 120 || _failStreak === 1200) {
         const mins = Math.round(_failStreak * DEPOSIT_EVERY_MS / 60000);
-        await ops.send('alerts',
-          `⚠️ <b>Не читается блокчейн уже ~${mins} мин</b>\n\n` +
-          `Депозиты НЕ потеряны: метка сканирования держится, всё зачислится ` +
-          `автоматически, как только TonAPI ответит.`);
+        // ops.alert, not ops.send. An unreachable chain is a CONDITION that
+        // persists for as long as it persists, and ops.send goes round the
+        // throttle, round the burst ceiling and — the part that matters here —
+        // round the alert accounting on /health. So the one number that answers
+        // "поднимался ли вообще алерт" never counted the money outage, which is
+        // the alert it most needed to count. The escalation steps are far
+        // enough apart (~3 min, ~30 min, ~5 h) that the 5-minute window has
+        // closed between them and each is still sent in full.
+        await ops.alert('deposit.chain.unreachable',
+          `Не читается блокчейн уже ~${mins} мин`,
+          'Депозиты НЕ потеряны: метка сканирования держится, всё зачислится '
+          + 'автоматически, как только TonAPI ответит.',
+          { подряд_неудач: _failStreak });
       }
     } else if (_failStreak >= 12) {
+      // Left on ops.send deliberately, unlike the outage above it. This fires
+      // at most once per outage and it is the message that CANCELS an alarm —
+      // if the burst ceiling held it back, everyone would go on believing the
+      // deposits were still stuck. A recovery notice is worth more delivered
+      // than accounted for.
       await ops.send('alerts',
         `✅ <b>Блокчейн снова читается</b> — сканирование возобновлено, ` +
         `переводы за время сбоя зачисляются сейчас.`);
@@ -217,12 +231,24 @@ async function reconcile() {
     if (!drift.length) return { ok: true, drift: 0 };
 
     const lines = drift.slice(0, 10).map(d =>
-      `• игрок <code>${d.playerId}</code> · ${d.currency}: баланс ${d.balance}, журнал ${d.ledgerTotal} (расхождение ${d.drift})`);
-    await ops.send('alerts',
-      `🚨 <b>Расхождение баланса и журнала</b>\n\n` +
-      `Счетов с расхождением: <b>${drift.length}</b>\n${lines.join('\n')}` +
-      (drift.length > 10 ? `\n… и ещё ${drift.length - 10}` : '') +
-      `\n\nЭто значит, что деньги двигались в обход repos/money.js.`);
+      `• игрок ${d.playerId} · ${d.currency}: баланс ${d.balance}, журнал ${d.ledgerTotal} (расхождение ${d.drift})`);
+    // ── why this is an alert and not a send ─────────────────────────────────
+    // Drift is PERSISTENT STATE. Once a balance and its ledger disagree they go
+    // on disagreeing until somebody fixes the row, so ops.send here posted the
+    // whole report again every reconcile cycle, for ever — past the per-key
+    // throttle that exists to collapse exactly this, past the burst ceiling,
+    // and past the alert counters /health reports. A report that arrives every
+    // six hours unchanged is a report that gets muted, and a muted channel is
+    // where the NEXT drift goes to die.
+    //
+    // Through ops.alert it is one message, then a count when it repeats, then a
+    // summary when the window closes — and it shows up in ops.status().alerts,
+    // which is how anyone finds out the ledger check is even running.
+    await ops.alert('money.drift', 'Расхождение баланса и журнала',
+      `Счетов с расхождением: ${drift.length}\n${lines.join('\n')}`
+      + (drift.length > 10 ? `\n… и ещё ${drift.length - 10}` : '')
+      + `\n\nЭто значит, что деньги двигались в обход repos/money.js.`,
+      { счетов: drift.length });
     return { ok: false, drift: drift.length };
   } catch (err) {
     console.error('[workers] reconcile:', err);

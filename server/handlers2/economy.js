@@ -33,6 +33,19 @@ const idx = v => {
   return Number.isSafeInteger(n) && n >= 0 ? n : null;
 };
 
+// ── why a bad payload throws instead of returning ───────────────────────────
+// Every `return;` below used to be a bare one, and act() cannot tell a handler
+// that decided to do nothing from a handler that finished: it sees no throw, so
+// it writes the success row. A client that sent `marketBuy` with a malformed
+// listingId produced a player_logs row saying the purchase happened — evidence
+// that is worse than silence, because somebody reading it later believes it.
+//
+// A refusal is recorded as `refuse:<action>` with the code and the message the
+// player saw (see act(), server/session.js), and the client gets its own error
+// event back so the button it disabled comes alive again. Same helper the other
+// three handler files already use.
+const fail = (msg, code) => { throw Object.assign(new Error(code || msg), { userMessage: msg, code }); };
+
 module.exports = function registerEconomy(s, safeOn, deps) {
   const pushAll = async (t) => { await s.pushItems(t); await s.pushBalances(t); await s.pushStats(t); };
 
@@ -52,18 +65,29 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // Gear, named by the item it produces. Three recipe lists can make gear and
   // the resolver searches them in the order the old handler did, so an id that
   // appears twice resolves the way it always has.
+  // ── what a craft row has to say ──────────────────────────────────────────
+  // A craft either produced an item or ate the materials for nothing, and the
+  // row used to record the word 'craftGear' for both. `outcome` is the whole
+  // difference between "он получил" and "он потратил" — and `itemId` is what
+  // the question is usually about.
+  const craftMeta = r => r && {
+    outcome: r.outcome, itemId: r.itemId, family: r.family, index: r.index,
+    chance: r.chance, rarity: r.rarity, slot: r.slot,
+  };
+
   safeOn('craftGear', ({ itemId } = {}) => s.act('craftGear', 'craftGearError', async (t, pid) => {
-    if (typeof itemId !== 'string' || !itemId) return;
+    if (typeof itemId !== 'string' || !itemId) fail('Не выбран предмет для ковки', 'bad_item');
     const { family, index } = craft.gearRecipeByItemId(itemId);
     const res = await craft.craft(t, pid, family, index);
     await pushAll(t);
     s.socket.emit('gearCrafted', {
       itemId, success: res.outcome === 'success', newNexumBalance: await nexumOf(t, pid),
     });
-  }));
+    return res;
+  }, craftMeta));
 
   safeOn('craftPet', ({ rarity } = {}) => s.act('craftPet', 'petCraftError', async (t, pid) => {
-    if (typeof rarity !== 'string' || !rarity) return;
+    if (typeof rarity !== 'string' || !rarity) fail('Не выбрана редкость питомца', 'bad_rarity');
     const res = await craft.craftPet(t, pid, rarity);
     await pushAll(t);
     // The client wants the pet's catalog entry, not just its id — it draws the
@@ -72,33 +96,39 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     s.socket.emit('petCrafted', {
       pet, newNexumBalance: await nexumOf(t, pid), delivered: res.outcome === 'success',
     });
-  }));
+    return res;
+  }, craftMeta));
 
   safeOn('craftClassGear', ({ slot, rarity } = {}) =>
     s.act('craftClassGear', 'craftClassGearError', async (t, pid) => {
-      if (typeof slot !== 'string' || typeof rarity !== 'string') return;
+      if (typeof slot !== 'string' || typeof rarity !== 'string') {
+        fail('Не выбран слот или редкость', 'bad_recipe');
+      }
       const res = await craft.craftClassGear(t, pid, slot, rarity);
       await pushAll(t);
       const item = ITEM_DEF.find(d => d.id === res.itemId) || null;
       s.socket.emit('classGearCrafted', {
         item, newNexumBalance: await nexumOf(t, pid), delivered: !!item,
       });
-    }));
+      return res;
+    }, craftMeta));
 
   safeOn('craftMatUpgrade', ({ from } = {}) =>
     s.act('craftMatUpgrade', 'craftMatUpgradeError', async (t, pid) => {
-      if (typeof from !== 'string' || !from) return;
+      if (typeof from !== 'string' || !from) fail('Не выбран материал', 'bad_material');
       const res = await craft.upgradeMat(t, pid, from);
       await pushAll(t);
       s.socket.emit('matUpgraded', { from: res.from, to: res.to, success: res.outcome === 'success' });
-    }));
+      return res;
+    }, r => r && { outcome: r.outcome, from: r.from, to: r.to, spent: r.spent, chance: r.chance }));
 
   safeOn('craftBox', ({ boxId } = {}) => s.act('craftBox', 'craftBoxError', async (t, pid) => {
-    if (typeof boxId !== 'string' || !boxId) return;
+    if (typeof boxId !== 'string' || !boxId) fail('Не выбран сундук', 'bad_box');
     const res = await craft.craftBox(t, pid, boxId);
     await pushAll(t);
     s.socket.emit('boxCrafted', { boxId: res.boxId });
-  }));
+    return res;
+  }, r => r && { outcome: r.outcome, boxId: r.boxId, spent: r.spent }));
 
   // No payload: the recipe is "any ten skill books" and the result is rolled
   // here. The version this replaces took a `key` and tried to build the book id
@@ -110,7 +140,8 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       s.socket.emit('advSkillBookCrafted', {
         success: res.outcome === 'success', id: res.itemId || null,
       });
-    }));
+      return res;
+    }, r => r && { outcome: r.outcome, itemId: r.itemId, spent: r.spent, chance: r.chance }));
 
   // Enchant stones stopped being craftable before this port, and the refusal is
   // kept rather than dropped: the button is still in the shipped client, and a
@@ -174,6 +205,16 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       newEnhance: res.to,
       rate: res.rate,
     });
+    return res;
+    // ── the row that answers "мій +12 меч згорів" ─────────────────────────
+    // This is the action the question is always about, and the one where the
+    // three outcomes are indistinguishable from the outside: success, fail and
+    // burned all left the same 'enhanceItem' row. Nothing had to be computed
+    // for this — the repository already returns every field, and act() threw
+    // them away on the way to the log.
+  }, r => r && {
+    outcome: r.outcome, itemId: r.itemId, rowId: r.rowId,
+    from: r.from, to: r.to, rate: r.rate,
   }));
 
   // ── boxes ────────────────────────────────────────────────────────────────
@@ -181,7 +222,11 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const res = await craft.openBox(t, pid, String(id || ''));
     await pushAll(t);
     s.socket.emit('boxOpened', res);
-  }));
+    return res;
+    // A box is the commonest way a rare item enters an account, so this is the
+    // row that answers "откуда у него это" — which is the same question as
+    // "куда делось моё", asked from the other side.
+  }, r => r && { boxId: r.boxId, rarity: r.rarity, itemId: r.itemId }));
 
   // ── merchant ─────────────────────────────────────────────────────────────
   // `idx` counts into MERCHANT_SHOP, the table the client renders — not into
@@ -190,14 +235,15 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   safeOn('buyPotion', ({ idx: shopIdx, qty } = {}) => s.act('buyPotion', 'goldError', async (t, pid) => {
     const i = idx(shopIdx);
     const entry = i === null ? null : MERCHANT_SHOP[i];
-    if (!entry) return;
+    if (!entry) fail('Такого товара нет у торговца', 'no_entry');
     const res = await consumables.buyPotions(t, pid, entry.itemId, qty);
     await s.pushBalances(t);
     // "Купи 10 зелий" counts here, where the purchase actually happens.
     const q = await progression.questOnEvent(t, pid, 'buy_potion', '_potion', res.qty);
     if (q) s.socket.emit('questSync', q);
     s.socket.emit('potionBag', { potionBag: res.potionBag, bought: { id: res.itemId, n: res.qty } });
-  }));
+    return res;
+  }, r => r && { itemId: r.itemId, qty: r.qty }));
 
   safeOn('sellItem', ({ idx: at, id, enhance, qty = 1 } = {}) => s.act('sellItem', 'sellItemError', async (t, pid) => {
     await items.lockPlayer(t, pid);
@@ -206,7 +252,11 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const res = await craft.sellItem(t, pid, row, qty);
     await pushAll(t);
     s.socket.emit('itemSold', { gold: res.gold, newGold: res.goldLeft });
-  }));
+    return res;
+    // WHAT was sold and for how much. A sale is irreversible and the item is
+    // gone from the bag the instant it happens, so "я не продавал этот меч" has
+    // to be answerable from the row alone.
+  }, r => r && { itemId: r.itemId, qty: r.qty, gold: r.gold, goldTotal: r.goldTotal }));
 
   // ── market ───────────────────────────────────────────────────────────────
   // `item` is the client's own copy of the row it wants to sell — the same
@@ -221,21 +271,26 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const res = await market.list(t, pid, row, price, { vipLevel: vip.level });
     await pushAll(t);
     s.socket.emit('marketListed', { listing: res.listing || res });
-  }));
+    return res;
+    // The three market rows are the ones an admin reads back most often, because
+    // a lot is the only way an item legitimately crosses accounts. Which lot,
+    // which item, what price — none of it was recorded.
+  }, r => r && { listingId: r.listingId || r.id, price: r.price, item: r.item }));
 
   safeOn('marketCancel', ({ listingId } = {}) => s.act('marketCancel', 'marketError', async (t, pid) => {
     const id = rowId(listingId);
-    if (!id) return;
+    if (!id) fail('Лот не найден — список обновлён', 'bad_listing');
     const res = await market.cancel(t, pid, id);
     await pushAll(t);
     s.socket.emit('marketCancelled', res);
-  }));
+    return res;
+  }, r => r && { listingId: r.listingId, item: r.item, delivered: r.delivered }));
 
   // The buy path. Everything that used to be five branches and a refund is one
   // call — money, item and listing move together or none of them does.
   safeOn('marketBuy', ({ listingId } = {}) => s.act('marketBuy', 'marketError', async (t, pid) => {
     const id = rowId(listingId);
-    if (!id) return;
+    if (!id) fail('Лот не найден — список обновлён', 'bad_listing');
     const res = await market.buy(t, pid, id);
     await pushAll(t);
     // Buying counts toward VIP, and the panel reads its level from this reply.
@@ -269,6 +324,13 @@ module.exports = function registerEconomy(s, safeOn, deps) {
           console.error('[marketBuy] seller balance:', err.message));
       }
     }
+    return res;
+    // sellerId rides along: this is the one row that records an item leaving
+    // one account and arriving on another, and both halves of that are the
+    // question when somebody asks how a lot ended up where it did.
+  }, r => r && {
+    listingId: r.listingId, price: r.price, fee: r.fee,
+    item: r.item, sellerId: r.sellerId,
   }));
 
   safeOn('marketBrowse', ({ slot = null, offset = 0 } = {}) => s.act('marketBrowse', 'marketError', async (t) => {

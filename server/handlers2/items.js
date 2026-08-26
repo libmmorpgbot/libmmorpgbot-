@@ -25,6 +25,19 @@ const { CODEX_SETS, ITEM_DEF } = require('../../shared/definitions');
 // occupy a slot nothing can ever unequip.
 const EQ_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet', 'cloak', 'artifact']);
 
+// ── why a refusal throws instead of returning ───────────────────────────────
+// act() decides what to write from whether the handler THREW. A bare `return;`
+// looks exactly like a handler that ran to the end, so it wrote a success row
+// into player_logs for an action that moved nothing — a row saying this player
+// equipped an item, deposited into storage or registered a set piece, when none
+// of it happened. That is worse than the silence it replaced: an operator
+// reading the log believes it.
+//
+// Throwing with a userMessage puts a `refuse:<action>` row in instead, with the
+// code and the text the player saw, and hands the client its own error event so
+// the button it disabled comes back.
+const fail = (msg, code) => { throw Object.assign(new Error(code || msg), { userMessage: msg, code }); };
+
 module.exports = function registerItems(s, safeOn) {
   const push = async (t) => { await s.pushItems(t); await s.pushStats(t); };
 
@@ -40,7 +53,7 @@ module.exports = function registerItems(s, safeOn) {
   safeOn('equipItem', (ref = {}) => s.act('equipItem', 'itemError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, ref, 'inventory');
-    if (!row) return;
+    if (!row) fail('Предмет не найден — список обновлён', 'not_found');
 
     const inv = await items.inventoryOf(t, pid);
     const target = inv.inventory.find(i => i.rowId === row);
@@ -67,11 +80,11 @@ module.exports = function registerItems(s, safeOn) {
   }));
 
   safeOn('unequipItem', ({ slot } = {}) => s.act('unequipItem', 'itemError', async (t, pid) => {
-    if (!EQ_SLOTS.has(slot)) return;
+    if (!EQ_SLOTS.has(slot)) fail('Неизвестный слот', 'bad_slot');
     await items.lockPlayer(t, pid);
     const inv = await items.inventoryOf(t, pid);
     const it = inv.equipment[slot];
-    if (!it) return;
+    if (!it) fail('В этом слоте ничего нет', 'empty_slot');
     // Refusing rather than destroying: a full inventory is the player's
     // problem to solve, not a reason to delete their gear.
     if (!await items.moveTo(t, it.rowId, pid, 'inventory')) {
@@ -84,7 +97,7 @@ module.exports = function registerItems(s, safeOn) {
   safeOn('storageDeposit', (ref = {}) => s.act('storageDeposit', 'itemError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, ref, 'inventory');
-    if (!row) return;
+    if (!row) fail('Предмет не найден — список обновлён', 'not_found');
     if (!await items.moveTo(t, row, pid, 'storage')) {
       throw Object.assign(new Error('no'), { userMessage: 'Предмет не найден' });
     }
@@ -96,7 +109,7 @@ module.exports = function registerItems(s, safeOn) {
   safeOn('storageWithdraw', (ref = {}) => s.act('storageWithdraw', 'itemError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, ref, 'storage');
-    if (!row) return;
+    if (!row) fail('Предмет не найден — список обновлён', 'not_found');
     if (!await items.moveTo(t, row, pid, 'inventory')) {
       throw Object.assign(new Error('full'), { userMessage: 'Инвентарь полон' });
     }
@@ -130,9 +143,18 @@ module.exports = function registerItems(s, safeOn) {
   // performs the grant. Splitting it that way keeps the ownership rule in one
   // place and the geometry in another.
   safeOn('pickupWorldDrop', ({ id } = {}) => s.act('pickupWorldDrop', 'worldDropError', async (t, pid) => {
-    if (!s.room) return;
+    // Both of these were bare returns, and pickupWorldDrop is a WRITE_ACTION —
+    // so every pile somebody lost the race for wrote a row saying they PICKED
+    // IT UP. A boss killed by a party produces sixty piles and five losers per
+    // pile, which is three hundred rows a fight claiming an item entered an
+    // account that never received one. The log for the one player who really
+    // got it was indistinguishable from the four who did not.
+    if (!s.room) fail('Вы не на карте — перезайдите', 'no_room');
     const claim = s.room.claimDrop(s.socket.id, id);
-    if (!claim) return;                       // gone, too far, or not theirs
+    // Gone, expired, or out of the server's (generous) range. The client draws
+    // the pile until it is told otherwise, so this has to come back as a reason
+    // rather than as nothing — see 'кто успел, тот забрал' in Room.claimWorldDrop.
+    if (!claim) fail('Добыча уже подобрана или слишком далеко', 'gone');
     try {
       // THE DROP AND THE ITEM ARE TWO DIFFERENT THINGS. A drop is a pile on
       // the floor: `{ id: 'wd_7', x, y, item, expiresAt }`. What goes into an
@@ -164,27 +186,49 @@ module.exports = function registerItems(s, safeOn) {
   // ── codex ────────────────────────────────────────────────────────────────
   safeOn('registerCodexSetItem', ({ setId, slotIdx, idx, id = null, enhance = null, rowId = null } = {}) =>
     s.act('registerCodexSetItem', 'itemError', async (t, pid) => {
-      if (typeof setId !== 'string') return;
+      if (typeof setId !== 'string') fail('Набор не выбран', 'bad_set');
       await items.lockPlayer(t, pid);
       // rowId FIRST. This DESTROYS the item, and the client's confirmation
       // names it by hand — "Внести «Меч +8»? Предмет будет уничтожен без
       // возврата". An index alone means whatever occupies that position when
       // the message lands, and a kill between the dialog and the click
       // renumbers the list.
+      // This is the row that DESTROYS an item, so a false success here is the
+      // most expensive one in the file: "Внести «Меч +8»?" answered by a log
+      // line saying the sword was consumed by the codex, when the resolve found
+      // nothing and the sword is still — or is no longer — somewhere else.
+      // Whoever reads that row stops looking, which is the whole cost.
       const row = await items.resolveRow(t, pid, { rowId, idx, id, enhance }, 'inventory');
-      if (!row) return;
+      if (!row) fail('Предмет не найден — список обновлён', 'not_found');
       const res = await consumables.registerCodexItem(t, pid, setId, slotIdx, row);
       await push(t);
       s.socket.emit('codexSync', { codex: res.codex, bonus: res.bonus, complete: res.complete });
-    }));
+      // What was destroyed and where it went. Registering is irreversible.
+      return { setId, slotIdx, rowId: row, complete: res.complete };
+    }, r => r && { setId: r.setId, slotIdx: r.slotIdx, rowId: r.rowId, complete: r.complete }));
 
   // ── progression the client asks for, the server decides ──────────────────
   safeOn('spendUpgrade', ({ key } = {}) => s.act('spendUpgrade', 'itemError', async (t, pid) => {
     const res = await players.spendUpgrade(t, pid, String(key || ''));
-    if (!res) throw Object.assign(new Error('no points'), { userMessage: 'Нет свободных очков' });
+    // Two different refusals arrive as the same null: no free point, and not
+    // enough gold now that upgradeCost() is actually charged (repos/players.js).
+    // Naming only the first would put a reason in the player's face — and in
+    // the `refuse:spendUpgrade` row — that is wrong half the time.
+    if (!res) {
+      throw Object.assign(new Error('cannot upgrade'),
+        { userMessage: 'Не хватает очков или золота', code: 'no_points_or_gold' });
+    }
     await s.pushProgress(t);
     await s.pushStats(t);
-  }));
+    // A point costs GOLD now. Without this the counter on screen kept the
+    // number it had before the purchase — too high, and staying too high until
+    // some unrelated push corrected it, which reads as "золото не списалось".
+    await s.pushBalances(t);
+    return res;
+    // Which point, and what it cost. The price climbs with the level already
+    // bought, so "почему так дорого" is only answerable if the row says which
+    // step was paid for.
+  }, r => r && { key: r.key, level: r.level, cost: r.cost, gold: r.gold }));
 
   // Read-only: what sets exist, so the client can render the codex tab without
   // shipping 984 set definitions it already has in the bundle. Kept as a

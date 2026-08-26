@@ -445,7 +445,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // reconnects must not come back still dead.
   safeOn('respawn', () => s.act('respawn', 'itemError', async (t, pid) => {
     const st = await stats.of(t, pid);
-    if (!st) return;
+    // No stat row means no character to bring back. Returning here told act()
+    // the respawn succeeded, so the log said the player was revived while the
+    // death screen stayed up in front of them — the one moment a player is
+    // certain to report, answered by a row saying it worked.
+    if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
     await players.setHp(t, pid, st.maxHp);
     // HP only. Room has no `spawnPoint()` — the guard around the call meant it
     // never ran, so the line read as "move them off the corpse" while doing
@@ -468,16 +472,20 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // holds. A refusal is its own event, because the client has a modal for it.
   safeOn('enterLocation', ({ target } = {}) => s.act('enterLocation', 'locationError', async (t, pid) => {
     const want = floorIdOf(target);
-    if (!Number.isFinite(want)) return;
+    if (!Number.isFinite(want)) fail('Такой локации нет', 'bad_target');
     const prog = await players.progressOf(t, pid);
     if (resolveFloor(want, prog) !== want) {
       // 'level' was the only reason this could ever give, and now it is not:
       // a timed zone refuses because it is closed, which is a different thing
       // to be told and a different thing to do about it.
       const closed = want === floorIdOf('guildWar') || want === floorIdOf('arena');
-      return s.socket.emit('enterLocationDenied', {
-        target, reason: closed ? 'closed' : 'level',
-      });
+      // The client's own modal first, then a throw. `return` here left act()
+      // writing an 'enterLocation' success row for a portal that refused —
+      // so the log placed players on floors they were never allowed onto, and
+      // a level-gate bypass and an ordinary refusal looked the same in it.
+      s.socket.emit('enterLocationDenied', { target, reason: closed ? 'closed' : 'level' });
+      fail(closed ? 'Локация сейчас закрыта' : 'Недостаточный уровень',
+        closed ? 'closed' : 'level');
     }
     const landed = await sendGameStart(t, want);
     // Where the player ACTUALLY IS on the new floor, not where they were on

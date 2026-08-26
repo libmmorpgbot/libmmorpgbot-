@@ -77,6 +77,35 @@ const WRITE_ACTIONS = new Set([
   'healParty', 'enterLocation',
 ]);
 
+// ── what a success row SAYS ─────────────────────────────────────────────────
+// A row carrying only the action's NAME answers "did it happen", and nobody has
+// ever asked that question. What gets asked is "мій +12 меч згорів" — and
+// craft.enhance computes { outcome, itemId, from, to, rate } on the way past,
+// hands all of it to the client, and the row recorded the single word
+// 'enhanceItem'. A burned weapon and a successful sharpening left the SAME
+// evidence, so the log could not tell them apart afterwards and the answer to
+// every "куда делся" was still "не знаю".
+//
+// So act() takes an optional fourth argument: either the meta object itself or
+// a function of whatever the handler returned. Optional everywhere, and wired
+// only where a player could later ask where something went — an amount, an
+// item, an outcome.
+//
+// It CANNOT break the action. By the time this runs the transaction has already
+// committed, so a throw here would report a completed craft as a failure and
+// roll nothing back. plog swallows its own failures; this swallows the
+// extractor's, and records that it did.
+function _resultMeta(name, meta, out) {
+  if (!meta) return null;
+  try {
+    const m = typeof meta === 'function' ? meta(out) : meta;
+    return m && typeof m === 'object' ? m : null;
+  } catch (err) {
+    console.error(`[act:${name}] мета для журнала:`, err.message);
+    return { metaError: String((err && err.message) || err).slice(0, 120) };
+  }
+}
+
 // telegramId -> socket.id of the live session. Single-session enforcement, the
 // one piece of cross-connection state that genuinely has to live in memory
 // (it is about sockets, and sockets are per-process). Moves to Redis when a
@@ -194,13 +223,14 @@ class Session {
   //   * refusal when not logged in, in one place instead of 133 `if (!s.authed)`
   //
   // `errEvent` is what the client listens on for this action's failures.
-  async act(name, errEvent, fn) {
+  // `meta` is what the row it writes should SAY — see _resultMeta above.
+  async act(name, errEvent, fn, meta = null) {
     if (!this.authed) return null;
     try {
       const out = await txRetry(t => fn(t, this.playerId));
       // Only the actions that CHANGE something. Logging a read would bury the
       // rows that matter under vipSync and getRating — see WRITE_ACTIONS.
-      if (WRITE_ACTIONS.has(name)) plog.log(this.playerId, name);
+      if (WRITE_ACTIONS.has(name)) plog.log(this.playerId, name, _resultMeta(name, meta, out));
       return out;
     } catch (err) {
       // A domain error carries a message written for the player. Anything else

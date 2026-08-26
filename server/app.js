@@ -113,6 +113,13 @@ app.get('/health', async (req, res) => {
     // The player log: how many rows are queued, written, and lost. An empty
     // player_logs table looked exactly like a quiet server until this existed.
     playerLog: plog.stats(),
+    // What the socket rate limiter threw away, and how many failed Telegram
+    // checks there have been. Both used to happen entirely in silence, and both
+    // are the kind of number that only means anything when you can see it
+    // BEFORE somebody complains: a limiter that is too tight looks like a
+    // working game, and a hash-guessing burst looks like nothing at all.
+    rateLimit: { ...rlStats },
+    authFails: { total: _authFail.total, lastMinute: _authFail.n },
     // Per-floor tick timings. "Иногда тупит" was unanswerable without these:
     // nothing recorded whether the 25ms world loop was making its budget.
     // Reading RESETS the window, so each poll describes the interval since the
@@ -270,6 +277,85 @@ const HEAVY = new Set([
   // expensive to answer.
 ]);
 
+// ── how a dropped packet reaches the player ─────────────────────────────────
+// A refusal has to come back on the channel the CLIENT is listening to for THAT
+// action, or it is not a refusal — it is a second silence. The market panel
+// re-enables its buy button from 'marketError', the forge from 'enhanceError',
+// the merchant from 'goldError'; a new event of our own would be handled by
+// none of them and would leave every one of those buttons exactly as stuck as
+// the bare `return` left it.
+//
+// Grouped by channel because that is how the client is written (js/network.js),
+// and flattened once at load. Anything not named here answers on 'itemError'.
+const RL_ERR_EVENT = new Map();
+for (const [channel, events] of Object.entries({
+  marketError: ['marketBrowse', 'marketMyListings', 'marketHistory', 'marketBuy', 'marketCancel'],
+  marketListError: ['marketList'],
+  gramError: ['gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'balanceHistory'],
+  gramShopError: ['claimVipRewards', 'vipSync'],
+  craftAdvSkillBookError: ['craftAdvSkillBook'],
+  enhanceError: ['enhanceItem'],
+  openBoxError: ['openLootBox'],
+  goldError: ['buyPotion'],
+  sellItemError: ['sellItem'],
+  progressError: ['learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive',
+    'learnAdvSkill', 'toggleAdvSkill'],
+  questClaimError: ['claimQuest', 'completeSpecialQuest'],
+  seasonError: ['seasonRating'],
+  rebirthError: ['rebirth'],
+  resetUpgradesError: ['resetUpgrades'],
+  clanError: ['clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
+    'clanDisband', 'clanSetDescription', 'clanSearch', 'clanRequest',
+    'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
+    'clanStorageUnlock'],
+  clanStorageError: ['clanStorageSync'],
+  chatError: ['chat', 'chatHistory'],
+  authError: ['selectChar'],
+})) for (const ev of events) RL_ERR_EVENT.set(ev, channel);
+
+// ── what the limiter threw away ─────────────────────────────────────────────
+// Process-wide, for /health. "Сколько пакетов мы выбросили" had no answer
+// anywhere in this process, so a limiter that was too tight and a game that was
+// working were the same observation.
+const rlStats = { dropped: 0, bursts: 0, sockets: 0, lastEvent: null, lastAt: null };
+
+// ── a login that fails is a login somebody TRIED ────────────────────────────
+// Both Telegram paths used to answer a failed check with an authError to the
+// client and nothing else: no console line, no counter, no alert. So a burst of
+// forged initData — the exact thing the hash check exists to stop — was
+// undetectable from inside the server, while the admin panel's own bad-login
+// path (admin.badlogin, routes/admin2.js) has alerted since the first day.
+//
+// Counted across connections, not per socket, because that is where the signal
+// is: one client retrying with a stale Mini App session is noise, two hundred
+// attempts a minute is somebody trying hashes.
+const _authFail = { total: 0, at: 0, n: 0 };
+const AUTH_FAIL_WINDOW_MS = 60000;
+const AUTH_FAIL_ALERT = Number(process.env.AUTH_FAIL_ALERT || 20);
+
+function authCheckFailed(socket, kind) {
+  const now = Date.now();
+  _authFail.total++;
+  if (now - _authFail.at > AUTH_FAIL_WINDOW_MS) { _authFail.at = now; _authFail.n = 0; }
+  _authFail.n++;
+
+  const h = socket.handshake || {};
+  const ip = String((h.headers && h.headers['x-forwarded-for']) || h.address || '?')
+    .split(',')[0].trim().slice(0, 45);
+  console.error(`[auth] проверка Telegram не пройдена (${kind}) · ip ${ip} · за минуту ${_authFail.n} · всего ${_authFail.total}`);
+
+  // The RATE, not the event. A single failure is an expired session and alerting
+  // on it would train everyone to ignore this. Past the threshold every further
+  // failure re-raises the same key, and ops.alert's own throttle collapses them
+  // into one message plus a count — which is what makes "sustained" readable.
+  if (_authFail.n >= AUTH_FAIL_ALERT) {
+    ops.alert('auth.telegram.fail', 'Много неудачных проверок Telegram',
+      `${_authFail.n} за минуту (всего с запуска: ${_authFail.total})`,
+      { канал: kind, ip }).catch(() => {});
+  }
+  socket.emit('authError', { msg: 'Проверка Telegram не пройдена' });
+}
+
 io.on('connection', (socket) => {
   const s = new Session(socket, io);
 
@@ -289,10 +375,62 @@ io.on('connection', (socket) => {
     if (now > b.at) { b.n = 0; b.at = now + 5000; }
     return ++b.n <= max;
   };
+  // ── a dropped packet is a button that does nothing ───────────────────────
+  // This used to be `if (!ok) return;` — no next(), no log, no counter, no
+  // alert, nothing to the client. HEAVY holds marketBuy, marketCancel,
+  // sellItem, enhanceItem, clanStorageClaim, storageDeposit and equipItem, and
+  // 40 of them in five seconds is reachable by ordinary spam-clicking. So a
+  // player hit the ceiling on the actions that MOVE VALUE and got a button that
+  // had simply stopped responding, and nobody could tell them why: the packet
+  // never reached a handler, so session.act never saw it and player_logs has
+  // nothing. This is the same hole session.js:210 closed one layer down,
+  // reproduced above it.
+  //
+  // ONE TRACE PER BURST. A spam-click is dozens of packets a second and a row
+  // for each would bury the log this is supposed to fill — so the first drop
+  // reports itself and everything for the next window is counted and carried
+  // into the following report. Nothing is discarded: the remainder is flushed
+  // on disconnect.
+  const RL_REPORT_MS = 5000;                     // one bucket window
+  const rlDrop = { n: 0, at: 0, ev: null, counted: false };
+
+  function rlReport(ev, n) {
+    rlStats.bursts++;
+    rlStats.lastEvent = ev || null;
+    rlStats.lastAt = new Date().toISOString();
+    // s.playerId is null before login, and plog.log drops a row with no player
+    // — an unauthenticated flood is still counted in rlStats and still refused,
+    // it just has no account to hang a row on.
+    plog.log(s.playerId, 'ratelimit', {
+      ev: String(ev || '?').slice(0, 60),
+      bucket: HEAVY.has(ev) ? 'heavy' : 'fast',
+      dropped: n,
+    });
+  }
+
   socket.use((packet, next) => {
     const ev = packet && packet[0];
     const ok = HEAVY.has(ev) ? bump(rl.heavy, 40) : bump(rl.fast, 1500);
-    if (!ok) return;                       // dropped silently, over budget
+    if (!ok) {
+      rlDrop.n++;
+      rlDrop.ev = ev;
+      rlStats.dropped++;
+      if (!rlDrop.counted) { rlDrop.counted = true; rlStats.sockets++; }
+      const now = Date.now();
+      if (now - rlDrop.at >= RL_REPORT_MS) {
+        rlDrop.at = now;
+        rlReport(ev, rlDrop.n);
+        rlDrop.n = 0;
+        // On the channel this action's own panel listens to, so the button it
+        // disabled comes back and says why. Emitted through a variable
+        // deliberately: every name in RL_ERR_EVENT is already handled by the
+        // client, and this is a refusal for an existing action rather than a
+        // new event in the protocol.
+        socket.emit(RL_ERR_EVENT.get(ev) || 'itemError',
+          { msg: 'Слишком часто — подождите пару секунд', code: 'rate_limit' });
+      }
+      return;
+    }
     next();
   });
 
@@ -300,7 +438,7 @@ io.on('connection', (socket) => {
   // uncaughtException handler would take every player's connection down over
   // one bad packet. s.act() already catches inside a transaction; this is the
   // backstop for everything outside one.
-  const errAt = new Map();
+  const errAt = new Map();     // event -> { at, n, timer } — n is what logErr hid
   function safeOn(event, handler) {
     socket.on(event, (...args) => {
       if (args.length && args[0] === null) args[0] = undefined;
@@ -310,12 +448,50 @@ io.on('connection', (socket) => {
       } catch (e) { logErr(event, e); }
     });
   }
+  // ── what the throttle swallowed ──────────────────────────────────────────
+  // This was `if (now - (errAt.get(event) || 0) < 5000) return;` — one error
+  // reported and then five seconds of silence that looks exactly like five
+  // seconds of nothing going wrong. A handler failing on every packet reported
+  // roughly one in a hundred, and nothing anywhere said so, so the alerts topic
+  // showed a single incident where there had been thousands.
+  //
+  // tg-ops has _sweepAlerts for precisely this — an alert that fired four times
+  // reported three and lost the fourth — and this path had no equivalent. Now
+  // the window CLOSES with a number rather than merely stopping: the count is
+  // carried into the next report, and if the burst ends inside the window a
+  // one-shot timer says what was hidden.
+  const ERR_WINDOW_MS = 5000;
   function logErr(event, err) {
     const now = Date.now();
-    if (now - (errAt.get(event) || 0) < 5000) return;   // console.error is sync I/O
-    errAt.set(event, now);
-    console.error(`[socket:${event}]`, err);
-    ops.alertError(`socket.${event}`, `Ошибка в обработчике ${event}`, err);
+    const st = errAt.get(event);
+    if (st && now - st.at < ERR_WINDOW_MS) {
+      st.n++;                                  // console.error is sync I/O
+      if (!st.timer) {
+        st.timer = setTimeout(() => flushErrWindow(event), ERR_WINDOW_MS - (now - st.at) + 50);
+        // Never the reason a process stays alive, and never the reason a
+        // disconnected socket keeps one open.
+        if (st.timer.unref) st.timer.unref();
+      }
+      return;
+    }
+    const swallowed = st ? st.n : 0;
+    if (st && st.timer) clearTimeout(st.timer);
+    errAt.set(event, { at: now, n: 0, timer: null });
+    console.error(`[socket:${event}]${swallowed ? ` (+${swallowed} подавлено за прошлое окно)` : ''}`, err);
+    ops.alertError(`socket.${event}`, `Ошибка в обработчике ${event}`, err,
+      swallowed ? { подавлено: swallowed } : {});
+  }
+
+  function flushErrWindow(event) {
+    const st = errAt.get(event);
+    if (!st) return;
+    st.timer = null;
+    if (!st.n) return;
+    const n = st.n;
+    st.n = 0;
+    console.error(`[socket:${event}] подавлено ${n} повторов за ${ERR_WINDOW_MS}мс`);
+    ops.alert(`socket.${event}.suppressed`, `Ошибка в обработчике ${event} повторялась`,
+      `подавлено ${n} повторов за ${Math.round(ERR_WINDOW_MS / 1000)}с`).catch(() => {});
   }
 
   // ── auth ──────────────────────────────────────────────────────────────────
@@ -454,14 +630,17 @@ io.on('connection', (socket) => {
     return bot ? `https://t.me/${bot}?start=ref_${telegramId}` : '';
   }
 
+  // Both failures go through authCheckFailed (top of this file), which counts
+  // them, writes a console line and alerts on a sustained rate. They used to
+  // emit to the client and leave nothing behind at all.
   safeOn('loginTelegramWebApp', async ({ initData } = {}) => {
     const v = verifyTelegramWebApp(String(initData || ''));
-    if (!v || !v.user) return socket.emit('authError', { msg: 'Проверка Telegram не пройдена' });
+    if (!v || !v.user) return authCheckFailed(socket, 'miniapp');
     await finishLogin(v.user.id, v.user.username || v.user.first_name);
   });
 
   safeOn('loginTelegram', async (data = {}) => {
-    if (!verifyTelegramAuth(data)) return socket.emit('authError', { msg: 'Проверка Telegram не пройдена' });
+    if (!verifyTelegramAuth(data)) return authCheckFailed(socket, 'widget');
     await finishLogin(data.id, data.username || data.first_name);
   });
 
@@ -600,6 +779,14 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async (reason) => {
     clearTimeout(authTimer);
     clearInterval(posTimer);
+    // The tail of both throttles. A burst that ends without reaching the next
+    // report window would otherwise take its own count away with it, which is
+    // the failure both of them exist to stop.
+    if (rlDrop.n) { rlReport(rlDrop.ev, rlDrop.n); rlDrop.n = 0; }
+    for (const [event, st] of errAt) {
+      if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+      if (st.n) flushErrWindow(event);
+    }
     // The aura roster is "who is online AND VIP", so leaving takes the glow
     // with it — otherwise it accumulates every VIP who has ever logged in.
     if (s.username) presence.clearAura(s.username);
@@ -723,8 +910,14 @@ async function boot() {
   const problems = adminAuth.configProblems();
   if (problems.length) {
     console.error('[config] ' + problems.join('; '));
-    await ops.send('alerts', `⚠️ <b>Проблемы конфигурации при запуске</b>\n` +
-      problems.map(p => `• ${p}`).join('\n'));
+    // ops.alert, not ops.send: a broken config is a CONDITION, not an event. It
+    // is still broken on the next boot and the one after that, so a crash loop
+    // sent this raw message every three seconds — past the throttle, past the
+    // burst ceiling, and past the alert accounting /health reports, which is
+    // the one place somebody would look to ask how bad it is. Through alert()
+    // the same fault collapses into one message and a count.
+    await ops.alert('config.problems', 'Проблемы конфигурации при запуске',
+      problems.map(p => `• ${p}`).join('\n'), { сборка: version.COMMIT });
   }
 
   // 4. Background work.
