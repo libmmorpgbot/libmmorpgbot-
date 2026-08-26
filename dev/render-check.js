@@ -31,8 +31,28 @@ const MIME = {
   '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav',
 };
 
+// The bundle exactly as server/assets.js builds it. MIN=1 in the environment
+// serves the terser output instead — which is what players actually download.
+// Minification is configured with toplevel mangling AND toplevel compression
+// off (assets.js explains why: half the client's entry points are named from
+// strings inside index.html and inside JS template literals, which a minifier
+// cannot see). That configuration is a promise, and this is the only place it
+// can be checked by running the result instead of trusting it.
+//
+//   node dev/render-check.js         the readable bundle
+//   MIN=1 node dev/render-check.js   what actually ships
+const MINIFY = process.env.MIN === '1';
 function bundle() {
-  return FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
+  const raw = FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
+  if (!MINIFY) return raw;
+  const { minify_sync } = require('terser');
+  const out = minify_sync(raw, {
+    compress: { toplevel: false },
+    mangle:   { toplevel: false },
+    format:   { comments: false },
+  });
+  if (!out || !out.code) throw new Error('terser returned nothing');
+  return out.code;
 }
 
 // The two things the client reaches for that have nothing to do with drawing.
@@ -93,5 +113,6 @@ http.createServer((req, res) => {
     send(200, MIME[path.extname(f)] || 'application/octet-stream', d);
   });
 }).listen(PORT, '127.0.0.1', () => {
-  console.log('  render-check: http://127.0.0.1:' + PORT + '/render-check');
+  console.log('  render-check: http://127.0.0.1:' + PORT + '/render-check'
+    + (MINIFY ? '   [минифицированный бандл — то, что едет игрокам]' : ''));
 });
