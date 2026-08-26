@@ -41,6 +41,8 @@ const { tx } = require('./db');
 const money = require('./db/repos/money');
 const items = require('./db/repos/items');
 const progression = require('./db/repos/progression');
+const plog = require('./db/repos/playerlog');
+const ops = require('./tg-ops');
 const {
   DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   race10Rewards, race10Liberty,
@@ -90,7 +92,13 @@ async function grantItems(t, pid, list) {
   // ran without it, so hasRoomFor -> add below could interleave with a kill
   // reward landing at the same moment and push the inventory past its cap.
   await items.lockPlayer(t, pid);
-  const given = [], missed = [];
+  // `missed` used to collapse two completely different outcomes into one list:
+  // a full backpack, which is the player's problem and a normal thing to
+  // happen; and items.add returning null, which is a BUG — the slot check just
+  // passed, so the insert refusing means the cap moved underneath it or the
+  // catalog lost the id. Told apart, because only one of them is worth waking
+  // someone for.
+  const given = [], missed = [], failed = [];
   for (const it of list) {
     const id = it && it.id;
     if (!id) continue;
@@ -99,11 +107,45 @@ async function grantItems(t, pid, list) {
     // each reward to { id, name, img, qty } for its result screen, and a list
     // of bare ids renders as a row of blanks.
     const entry = { ...it, id, qty };
-    if (await items.hasRoomFor(t, pid, id)
-        && await items.add(t, pid, id, { qty, source: 'mode', sourceRef: id }) !== null) given.push(entry);
-    else missed.push(entry);
+    if (!await items.hasRoomFor(t, pid, id)) { missed.push(entry); continue; }
+    if (await items.add(t, pid, id, { qty, source: 'mode', sourceRef: id }) === null) {
+      failed.push(entry);
+      continue;
+    }
+    given.push(entry);
   }
-  return { given, missed };
+  // Kept on `missed` as well, so every existing caller's "did all of it fit"
+  // test is unchanged — a failed insert did not arrive either.
+  return { given, missed: missed.concat(failed), roomless: missed, failed };
+}
+
+// ── the payout leaves a trace ────────────────────────────────────────────
+// These four are the only value grants in the build with no player_logs row of
+// any kind: they run through tx() directly rather than through Session.act(),
+// so WRITE_ACTIONS never sees them. A player who wins Кровавая Башня and loses
+// the item half to a full backpack produced NOTHING — no console line, no log
+// row, no alert. The only trace was a delivered:false on a result screen they
+// could close.
+function _recordPayout(playerId, mode, detail) {
+  const missed = detail.missed || [];
+  const failed = detail.failed || [];
+  plog.log(playerId, 'modeReward', {
+    mode,
+    currency: detail.currency, amount: detail.amount,
+    given: (detail.given || []).map(g => g.id),
+    missed: missed.map(m => m.id),
+  });
+  // A full backpack is the player's business. An insert that refused after the
+  // slot check passed is ours.
+  if (failed.length) {
+    ops.alertError('modeReward.failed.' + mode, 'Награда за событие не выдалась',
+      new Error('items.add вернул null: ' + failed.map(f => f.id).join(', ')),
+      { playerId, mode }).catch(() => {});
+  } else if (missed.length) {
+    ops.alert('modeReward.full.' + mode, 'Награда за событие не поместилась',
+      mode + ': ' + missed.map(m => m.id).join(', '),
+      { игрок: String(playerId), режим: mode }).catch(() => {});
+  }
 }
 
 // Attaches the four closures to one connection. Called once per login, from
@@ -112,7 +154,21 @@ function attach(socket, s) {
   // A mode resolves the winner's socket and then awaits this. By the time it
   // runs, the account may have reconnected on a different socket — the
   // PLAYER id is what the reward belongs to, and that does not change.
-  const pid = () => (s.authed ? s.playerId : null);
+  // The account, not the connection: a mode resolves the winner's socket and
+  // then awaits the payout, by which time they may have reconnected on a
+  // different one. The player id does not change; the socket does.
+  //
+  // Returning null here used to drop the ENTIRE payout in silence — the winner
+  // simply got nothing and nobody found out. It is a real state (a socket that
+  // dropped between the last hit and the reward), so it is not an error, but it
+  // owes an operator an explanation.
+  const pid = () => {
+    if (s.authed) return s.playerId;
+    ops.alert('modeReward.noauth', 'Награду некому выдать',
+      'сессия не авторизована в момент выплаты — победитель не получил ничего',
+      { сокет: socket.id }).catch(() => {});
+    return null;
+  };
 
   // ── season points for entering and for winning ───────────────────────────
   // The two closures arena3.js and death-battle.js call through
@@ -152,9 +208,11 @@ function attach(socket, s) {
     try {
       return await tx(async (t) => {
         const bal = await credit(t, id, 'gram', DEATH_BATTLE_GRAM_REWARD, ref);
-        const { given, missed } = await grantItems(t, id, deathBattleRewards());
+        const g = await grantItems(t, id, deathBattleRewards());
+        const { given, missed } = g;
         await s.pushBalances(t);
         if (given.length) await s.pushItems(t);
+        _recordPayout(id, ref, { currency: 'gram', amount: DEATH_BATTLE_GRAM_REWARD, ...g });
         // `delivered` is what the winner's result screen prints — it means
         // "all of it fit", not "something was granted".
         return {
@@ -174,6 +232,7 @@ function attach(socket, s) {
       await tx(async (t) => {
         await credit(t, id, 'nexum', ARENA3_NEXUM, 'arena3');
         await s.pushBalances(t);
+        _recordPayout(id, 'arena3', { currency: 'nexum', amount: ARENA3_NEXUM });
       });
       return ARENA3_NEXUM;
     } catch (err) { _report('arena3', err, id); return 0; }
@@ -189,9 +248,11 @@ function attach(socket, s) {
       return await tx(async (t) => {
         const nexum = race10Liberty(won);
         const bal = await credit(t, id, 'nexum', nexum, ref);
-        const { given, missed } = await grantItems(t, id, race10Rewards(won));
+        const g = await grantItems(t, id, race10Rewards(won));
+        const { given, missed } = g;
         await s.pushBalances(t);
         if (given.length) await s.pushItems(t);
+        _recordPayout(id, ref, { currency: 'nexum', amount: nexum, ...g });
         return { nexum, balance: bal && bal.balance, items: given, missed, delivered: missed.length === 0 };
       });
     } catch (err) { return _report('race10', err, id); }
@@ -205,9 +266,11 @@ function attach(socket, s) {
     try {
       return await tx(async (t) => {
         const bal = await credit(t, id, 'nexum', COOP_BOSS_NEXUM, 'coop');
-        const { given, missed } = await grantItems(t, id, [{ id: COOP_BOSS_ITEM, qty: 1 }]);
+        const g = await grantItems(t, id, [{ id: COOP_BOSS_ITEM, qty: 1 }]);
+        const { given, missed } = g;
         await s.pushBalances(t);
         if (given.length) await s.pushItems(t);
+        _recordPayout(id, 'coop', { currency: 'nexum', amount: COOP_BOSS_NEXUM, ...g });
         return {
           nexum: COOP_BOSS_NEXUM, balance: bal && bal.balance,
           items: given, missed, delivered: missed.length === 0,
@@ -218,7 +281,6 @@ function attach(socket, s) {
 }
 
 function _report(mode, err, playerId) {
-  const ops = require('./tg-ops');
   console.error(`[mode-reward:${mode}]`, err);
   ops.alertError(`modeReward.${mode}`, `Не удалось выплатить награду (${mode})`, err, { playerId });
   return null;
