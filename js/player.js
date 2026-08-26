@@ -455,6 +455,38 @@ function usePotion() {
   netSaveProgress();
 }
 
+// Buff types with a drink already asked for and not yet answered.
+//
+// The auto-re-drink below is driven from the per-frame loop in js/game.js, and
+// the condition it fires on is "this timer is at zero" — which stays true for
+// every single frame between the emit and the server's buffSync. At 60fps and
+// an ordinary round trip that is another six to ten requests, of which the
+// first one drinks the potion and the rest come back "Этот бафф уже активен".
+//
+// That was not a theory. refuse:useBuffPotion was the most frequent event in
+// the entire game — 353 of them in one day from one player, more than every
+// successful action that player took put together — and each one cost the
+// server a row lock and a transaction to say no.
+//
+// A deadline rather than a plain flag, because a reply that never arrives must
+// not wedge the toggle: the worst case is an auto-drink late by
+// _BUFF_INFLIGHT_MS, not one that stays off until the page is reloaded.
+const _buffInFlight = new Map();   // buffType -> ms after which asking again is allowed
+const _BUFF_INFLIGHT_MS = 3000;
+
+function _buffPending(btype) {
+  const until = _buffInFlight.get(btype);
+  if (!until) return false;
+  if (Date.now() >= until) { _buffInFlight.delete(btype); return false; }
+  return true;
+}
+
+// Called from the buffSync handler (js/network.js) the moment the server
+// answers. A function declaration rather than exposing the Map: the bundle is
+// one script scope, and a hoisted function is the only thing the other file
+// needs to be able to reach.
+function _buffClearPending() { _buffInFlight.clear(); }
+
 // A request now. The server removes the potion and holds the timer — it has
 // to, because buffs.gold and buffs.exp are what the x2 payouts read, so a
 // client-written timer would be a client-written multiplier.
@@ -466,6 +498,8 @@ function useBuffPotion(id) {
     dmgNum(player.x, player.y - 26, 'Уже активно!', '#f88');
     return;
   }
+  if (_buffPending(def.buffType)) return;
+  _buffInFlight.set(def.buffType, Date.now() + _BUFF_INFLIGHT_MS);
   netUseBuffPotion(id);
 }
 

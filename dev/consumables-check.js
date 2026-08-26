@@ -10,6 +10,7 @@
 // no amount to send here; the heal is read from the catalog. The test proves
 // that by trying to pass one.
 
+const fs = require('fs');
 const { pool, tx, close } = require('../server/db');
 const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
@@ -18,7 +19,7 @@ const stats = require('../server/db/repos/stats');
 const con = require('../server/db/repos/consumables');
 const {
   ITEM_DEF, CODEX_SETS, REBIRTH_LEVEL, REBIRTH_BONUS_SP,
-  rebirthCostFor, UPGRADE_RESET_COST, codexTotalBonus, MERCHANT_SHOP, POTION_CAP,
+  rebirthCostFor, UPGRADE_RESET_COST, MERCHANT_SHOP, POTION_CAP,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -180,6 +181,36 @@ async function main() {
     `на дріт іде залишок у секундах (${left[BP.buffType]})`);
   eq(Object.keys(con.buffsRemaining({ old: Date.now() - 5000 })).length, 0,
     'прострочені взагалі не потрапляють на дріт');
+
+  // ── the client half of the same rule ──────────────────────────────────────
+  // Everything above proves the server refuses a second potion while one is
+  // running. What it cannot see is that the client used to ASK for that second
+  // potion once per frame: the auto-re-drink in the game loop (js/game.js)
+  // fires on "this timer is at zero", which stays true for every frame between
+  // the emit and the buffSync that answers it.
+  //
+  // The result was the most frequent event in the game. 353 refuse:useBuffPotion
+  // rows in one day from a single player, more than all of that player's
+  // successful actions together, each costing a row lock and a transaction to
+  // say no. A server test cannot catch that — the server behaved correctly
+  // every single time — so the guard is asserted here, against the source.
+  const _cli = f => fs.readFileSync(require('path').join(__dirname, '..', f), 'utf8');
+  const _playerSrc = _cli('js/player.js');
+  const _netSrc = _cli('js/network.js');
+
+  const _useBuff = (_playerSrc.match(/function useBuffPotion\(id\)[\s\S]*?\n\}/) || [''])[0];
+  ok(_useBuff.includes('netUseBuffPotion('), 'знайшли тіло useBuffPotion у js/player.js');
+  ok(_useBuff.indexOf('_buffPending(') !== -1
+     && _useBuff.indexOf('_buffPending(') < _useBuff.indexOf('netUseBuffPotion('),
+    'клієнт не шле запит, поки попередній без відповіді');
+  ok(/_buffInFlight\.set\([\s\S]{0,80}Date\.now\(\)/.test(_useBuff),
+    'позначка «в дорозі» має дедлайн, тож загублена відповідь не блокує назавжди');
+
+  const _buffSync = (_netSrc.match(/socket\.on\('buffSync'[\s\S]*?\n {2}\}\);/) || [''])[0];
+  ok(_buffSync.includes('_buffClearPending('),
+    'відповідь сервера знімає позначку «в дорозі»');
+  ok(_buffSync.includes('deathPenalty'),
+    'buffSync не витирає deathPenalty — його ставить лише клієнт, сервер про нього не знає');
 
   // ── teleport stone ───────────────────────────────────────────────────────
   console.log('  ── камінь телепорту ──');

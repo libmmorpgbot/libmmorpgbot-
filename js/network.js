@@ -1981,7 +1981,17 @@ function netConnect(onReady) {
   // own HUD; this is what starts one, and what a reconnect resumes from.
   socket.on('buffSync', ({ buffs } = {}) => {
     if (!player || !buffs) return;
+    // The server's map is authoritative for everything the server knows about,
+    // and deathPenalty is not one of those: it is set on death by the client
+    // (js/game.js) and the server has never heard of the key. Replacing the
+    // map wholesale therefore cleared the death penalty every time a buff
+    // potion was drunk. Carried across by name rather than merged blindly, so
+    // a server-side buff still wins over a stale client copy of itself.
+    const _penalty = (player.buffs || {}).deathPenalty;
     player.buffs = { ...buffs };
+    if (_penalty > 0 && buffs.deathPenalty === undefined) player.buffs.deathPenalty = _penalty;
+    // Whatever the answer was, the question is no longer outstanding.
+    if (typeof _buffClearPending === 'function') _buffClearPending();
     if (typeof recompute === 'function') recompute();
     if (player.hp > player.maxHp) player.hp = player.maxHp;
     if (typeof updateInvUI === 'function') updateInvUI();

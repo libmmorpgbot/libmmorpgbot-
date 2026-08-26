@@ -6,7 +6,7 @@
 #   bash /srv/liberty/purge-test.sh
 #
 # Every suite in dev/ runs against the real database, because it is the only
-# PostgreSQL this project has. Each run leaves an account behind: 2362 of them
+# PostgreSQL this project has. Each run leaves an account behind: 3521 of them
 # for 2 players.
 #
 # dev/purge-test-accounts.js already zeroed their battle rating, so none of
@@ -19,18 +19,21 @@
 # Telegram path with ids like 910000001 and 930000631, which are the same shape
 # as a real account's. An imported player landing on one of those would be
 # merged into a fixture.
+#
+# ── why the SQL below is in a QUOTED heredoc ───────────────────────────────
+# The previous version used an unquoted one and interpolated $WHERE into it.
+# The pattern for test usernames contains `$` (end-of-string anchors), and the
+# escaping needed to survive the shell turned two DELETE statements into
+# `username ~ $$$;` — an accidental dollar-quoted string that swallowed the
+# statement written after it. Nothing in that SQL needs the shell's help, so
+# the shell is not given the chance: <<'SQL' passes every byte through
+# untouched, and the two values that vary are written inline where they can be
+# read.
 set -euo pipefail
 
 HOST=private-liberty-db-do-user-42796403-0.m.db.ondigitalocean.com
 PORT=25060
 DB=liberty
-
-# Never deleted, whatever the pattern says.
-KEEP="'1199957588','8868342638'"
-# A tag, a slice of a pid, a role — or a telegram id that is not a number,
-# which no real Telegram account can have.
-WHERE="(username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester\$|999\$)' OR telegram_id !~ '^[0-9]+\$')
-       AND telegram_id NOT IN ($KEEP)"
 
 echo
 echo "  Liberty — очистка тестовых аккаунтов"
@@ -49,15 +52,66 @@ PGCONNECT_TIMEOUT=15 psql "$URL" -tAc 'SELECT 1' >/dev/null 2>&1 || {
 
 echo "  До очистки:"
 psql "$URL" -tAc "SELECT '    аккаунтов: ' || count(*) FROM players"
-psql "$URL" -tAc "SELECT '    из них тестовых: ' || count(*) FROM players WHERE $WHERE"
+psql "$URL" -tA -f - <<'COUNTSQL'
+SELECT '    из них тестовых: ' || count(*) FROM players
+ WHERE (username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)'
+        OR telegram_id !~ '^[0-9]+$')
+   AND telegram_id NOT IN ('1199957588','8868342638');
+COUNTSQL
 echo
 
-# One transaction: either the fixtures and their history both go, or neither
-# does. Deleting the accounts without their ledger rows is impossible anyway
-# (the foreign key sees to that), and deleting ledger rows without the accounts
-# would leave balances that no longer add up.
-psql "$URL" -v ON_ERROR_STOP=1 --single-transaction <<SQL
-CREATE TEMP TABLE doomed AS SELECT id FROM players WHERE $WHERE;
+# One transaction: either the fixtures and their whole history go, or nothing
+# does. That is also what made the first failed run harmless — it stopped on a
+# foreign key with three DELETEs already issued, and rolled all of them back.
+psql "$URL" -v ON_ERROR_STOP=1 --single-transaction -f - <<'SQL'
+-- A tag, a slice of a pid, a role — or a telegram id that is not a number,
+-- which no real Telegram account can have. The two ids never touched whatever
+-- the pattern says are the two real admins.
+CREATE TEMP TABLE doomed AS
+SELECT id, username, telegram_id FROM players
+ WHERE (username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)'
+        OR telegram_id !~ '^[0-9]+$')
+   AND telegram_id NOT IN ('1199957588','8868342638');
+
+-- ── the guard ────────────────────────────────────────────────────────────
+-- Every table in the list below is there because its foreign key to players
+-- has no ON DELETE rule: nothing clears it for us, so one row left behind
+-- stops the whole purge with a raw constraint error and no hint about what to
+-- add. That is exactly how the first run failed, on gram_tx.
+--
+-- So the list is not merely written down, it is CHECKED against the live
+-- catalog. A migration that adds a new table pointing at players without a
+-- delete rule now raises a sentence naming that table, instead of leaving the
+-- next person to decode a constraint name a year from now.
+DO $guard$
+DECLARE unhandled text;
+BEGIN
+  SELECT string_agg(tbl || '.' || col, ', ') INTO unhandled FROM (
+    -- relname, not conrelid::regclass::text: the cast schema-qualifies
+    -- anything outside search_path, and a stray "public." prefix would make
+    -- every known entry look unknown and raise on a healthy database.
+    SELECT cl.relname::text AS tbl, a.attname AS col
+      FROM pg_constraint c
+      JOIN pg_class cl ON cl.oid = c.conrelid
+      JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+     WHERE c.contype = 'f'
+       AND c.confrelid = 'players'::regclass
+       AND c.confdeltype IN ('a', 'r')   -- NO ACTION / RESTRICT: blocks us
+  ) f
+  WHERE (f.tbl, f.col) NOT IN (
+    ('ledger', 'player_id'), ('gram_tx', 'player_id'),
+    ('market_listings', 'seller_id'), ('market_listings', 'buyer_id'),
+    ('clan_allocations', 'allocated_by')
+  );
+  IF unhandled IS NOT NULL THEN
+    RAISE EXCEPTION
+      'purge-test: на players ссылается таблица, которую скрипт не чистит: %. Добавь для неё DELETE выше и внеси в этот список.',
+      unhandled;
+  END IF;
+END
+$guard$;
+
 -- An item held by a listing has player_id NULL, so the cascade from players
 -- never reaches it: the listing goes first, then the orphan it was holding.
 DELETE FROM player_items WHERE player_id IS NULL AND id IN (
@@ -66,15 +120,42 @@ DELETE FROM player_items WHERE player_id IS NULL AND id IN (
                                   OR buyer_id IN (SELECT id FROM doomed)));
 DELETE FROM market_listings WHERE seller_id IN (SELECT id FROM doomed)
                                OR buyer_id  IN (SELECT id FROM doomed);
+
+-- Real-money requests. No cascade there on purpose: a deposit or a withdrawal
+-- must not be erasable as a side effect of removing an account.
+DELETE FROM gram_tx WHERE player_id IN (SELECT id FROM doomed);
+
+-- An allocation a fixture handed to a REAL member: the member's pending claim
+-- is theirs and stays. Only the record of who granted it is forgotten, because
+-- the granter is about to stop existing.
+UPDATE clan_allocations SET allocated_by = NULL
+ WHERE allocated_by IN (SELECT id FROM doomed);
+
 -- What they said, before what they are. chat_messages.player_id and
 -- clan_chat.player_id are ON DELETE SET NULL, so the cascade would leave the
 -- lines behind with the id stripped and the display name intact — visible in
 -- the history real players open, and no longer traceable to anything. Deleted
--- by id while the id still exists, and by name for whatever was already
--- orphaned by an earlier run.
-DELETE FROM chat_messages  WHERE player_id IN (SELECT id FROM doomed) OR username ~ $\$$;
-DELETE FROM clan_chat      WHERE player_id IN (SELECT id FROM doomed) OR username ~ $\$$;
+-- by id while the id still exists, and by name for whatever an earlier run
+-- already orphaned.
+DELETE FROM chat_messages WHERE player_id IN (SELECT id FROM doomed)
+   OR (player_id IS NULL
+       AND username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)');
+DELETE FROM clan_chat     WHERE player_id IN (SELECT id FROM doomed)
+   OR (player_id IS NULL
+       AND username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)');
 DELETE FROM direct_messages WHERE sender_id IN (SELECT id FROM doomed);
+
+-- player_logs carries no foreign key at all — it is partitioned, and pointing
+-- one at a partitioned table is not free — so nothing would stop these rows
+-- outliving the accounts they describe.
+DELETE FROM player_logs WHERE player_id IN (SELECT id FROM doomed);
+
+-- referred_by holds a telegram id, not a row id: no foreign key to dangle, but
+-- it would go on naming an account that no longer exists, and every referral
+-- query would silently find nothing while looking like it worked.
+UPDATE players SET referred_by = NULL
+ WHERE referred_by IN (SELECT telegram_id FROM doomed);
+
 DELETE FROM ledger  WHERE player_id IN (SELECT id FROM doomed);
 DELETE FROM players WHERE id IN (SELECT id FROM doomed);
 SQL
@@ -92,6 +173,13 @@ psql "$URL" -tAc "
            COALESCE((SELECT sum(l.delta) FROM ledger l
                       WHERE l.player_id=b.player_id AND l.currency=b.currency),0) led
       FROM balances b) x WHERE x.amount <> x.led"
+# A fixture that led a clan takes its clan_members row with it. The clan itself
+# survives the cascade, so a real member can be left in a clan that nobody can
+# administer — worth seeing rather than discovering from a complaint.
+psql "$URL" -tAc "
+  SELECT '    кланов без лидера: ' || count(*) FROM clans c
+   WHERE NOT EXISTS (SELECT 1 FROM clan_members m
+                      WHERE m.clan_id = c.id AND m.role = 'leader')"
 echo "  Рейтинг:"
 psql "$URL" -tAc "SELECT '    ' || username || '  ' || bm FROM players ORDER BY bm DESC NULLS LAST LIMIT 5"
 echo
