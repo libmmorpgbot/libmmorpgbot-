@@ -398,9 +398,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // left the player swinging at a castle that never lost hp and never said
   // why — which reads as the game being broken rather than as a rule.
   function immuneMsg(res) {
-    return res.reason === 'no_clan'
-      ? 'Нужен клан, чтобы атаковать замок'
-      : 'Нельзя атаковать свой замок';
+    if (res.reason === 'closed') return 'Война гильдий сейчас закрыта — замок неуязвим';
+    if (res.reason === 'no_clan') return 'Нужен клан, чтобы атаковать замок';
+    return 'Нельзя атаковать свой замок';
   }
 
   // Both attack paths do the same four things in the same order, and the old
@@ -471,7 +471,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (!Number.isFinite(want)) return;
     const prog = await players.progressOf(t, pid);
     if (resolveFloor(want, prog) !== want) {
-      return s.socket.emit('enterLocationDenied', { target, reason: 'level' });
+      // 'level' was the only reason this could ever give, and now it is not:
+      // a timed zone refuses because it is closed, which is a different thing
+      // to be told and a different thing to do about it.
+      const closed = want === floorIdOf('guildWar') || want === floorIdOf('arena');
+      return s.socket.emit('enterLocationDenied', {
+        target, reason: closed ? 'closed' : 'level',
+      });
     }
     const landed = await sendGameStart(t, want);
     // Where the player ACTUALLY IS on the new floor, not where they were on

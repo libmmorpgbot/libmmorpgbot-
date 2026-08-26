@@ -57,12 +57,45 @@ function floorIdOf(target) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+// ── the timed zones ─────────────────────────────────────────────────────────
+// Two floors are only standable while their event is running, and neither was
+// checked anywhere. resolveFloor tested STANDABLE and the LEVEL requirement and
+// nothing else — so:
+//
+//   * a player could walk into the Guild War castle at any hour of any day
+//   * and one who logged out inside it was put straight back there on login,
+//     because sendGameStart restores progress.floor through this same function
+//
+// "Война гильдий не активна, но я заспавнился там, потому что вышел там." The
+// same hole let anyone sit in the world-boss arena waiting for a summon, alone.
+//
+// The mode runtime is required lazily: world.js is loaded before modes.js
+// exists, and this is only ever called with a live server behind it.
+function _timedZoneOpen(f) {
+  let modes = null;
+  try { modes = require('./modes').modes; } catch (err) { return true; }
+  if (!modes) return true;
+  if (f === FLOOR_IDS.guildWar) {
+    // Ownership is permanent and pays income around the clock; only ACCESS
+    // follows the window, which is the same rule _gwCloseWindow enforces on
+    // the people already inside.
+    return !!(modes._gw && modes._gw.phase === 'live');
+  }
+  if (f === FLOOR_IDS.arena) {
+    // Up while the boss lives and while its loot is still on the floor, so
+    // nobody who was fighting is locked out of collecting a drop.
+    return typeof modes._arenaOpen === 'function' ? !!modes._arenaOpen() : true;
+  }
+  return true;
+}
+
 function resolveFloor(floorId, progress) {
   const f = floorIdOf(floorId);
   if (!Number.isFinite(f) || !STANDABLE.has(f)) return FLOOR_IDS.hub;
   if (f === FLOOR_IDS.hub) return FLOOR_IDS.hub;
   const need = ZONE_LEVEL_REQ[FLOOR_KEY[f]] || 0;
   if ((progress && progress.lvl ? progress.lvl : 1) < need) return FLOOR_IDS.hub;
+  if (!_timedZoneOpen(f)) return FLOOR_IDS.hub;
   return f;
 }
 

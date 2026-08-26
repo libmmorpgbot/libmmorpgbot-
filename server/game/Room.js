@@ -3485,6 +3485,17 @@ class Room {
     // current owner may damage it — checked here, inside Room.js rather than
     // in the handler, since this needs to run before damage is computed.
     if (enemy.guildWar) {
+      // THE WINDOW FIRST. There was no check for it at all: the castle could be
+      // brought down and captured at four in the afternoon, with the zone
+      // closed and the event not running — "война гильдий не активна, но я
+      // заламал замок". Ownership pays hourly income to the holding clan, so
+      // capturing it outside the window is capturing the whole reward with
+      // nobody able to contest it.
+      //
+      // The predicate is handed in from boot rather than read here: a Room
+      // knows about geometry and combat and deliberately nothing about what
+      // time it is.
+      if (this._gwIsOpen && !this._gwIsOpen()) return { immune: true, reason: 'closed' };
       if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
       if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
     }
@@ -3570,6 +3581,17 @@ class Room {
     if (rdx * rdx + rdy * rdy > 600 * 600) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     if (enemy.guildWar) {
+      // THE WINDOW FIRST. There was no check for it at all: the castle could be
+      // brought down and captured at four in the afternoon, with the zone
+      // closed and the event not running — "война гильдий не активна, но я
+      // заламал замок". Ownership pays hourly income to the holding clan, so
+      // capturing it outside the window is capturing the whole reward with
+      // nobody able to contest it.
+      //
+      // The predicate is handed in from boot rather than read here: a Room
+      // knows about geometry and combat and deliberately nothing about what
+      // time it is.
+      if (this._gwIsOpen && !this._gwIsOpen()) return { immune: true, reason: 'closed' };
       if (!attacker.clanName) return { immune: true, reason: 'no_clan' };
       if (attacker.clanName === enemy.ownerClanName) return { immune: true, reason: 'own_tower' };
     }

@@ -647,6 +647,11 @@ async function boot() {
   // restart instead of standing unclaimed every time the process starts.
   const gwRoom = world.roomOf(world.FLOOR_IDS.guildWar);
   if (gwRoom && gwRoom.spawnGuildWarTower && modesRuntime._gw) {
+    // Whether the castle may be fought over at all. A Room knows geometry and
+    // combat and deliberately nothing about the clock, so the question is
+    // handed in — without it the castle could be brought down and captured any
+    // hour of any day, with the event not running and nobody able to contest.
+    gwRoom._gwIsOpen = () => !!(modesRuntime._gw && modesRuntime._gw.phase === 'live');
     const tower = gwRoom.spawnGuildWarTower(modesRuntime._gw);
     console.log(`guild war: замок ${tower ? 'на месте' : 'НЕ создан'}`
       + `${tower && tower.ownerClanName ? ` · владеет «${tower.ownerClanName}»` : ' · ничей'}`);
