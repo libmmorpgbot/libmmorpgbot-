@@ -166,6 +166,26 @@ app.post('/client-error', (req, res) => {
       for (const [k, v] of _clientErrRate) if (v.until < now) _clientErrRate.delete(k);
     }
 
+    // ── crawlers are not players ─────────────────────────────────────────────
+    // The first alert this path produced in anger was
+    //
+    //   Ошибка у игрока (pixi-unsupported)
+    //   на устройстве нет WebGL — no webgl2 · no webgl1
+    //   браузер: Mozilla/5.0 (compatible; Dataprovider.com)
+    //
+    // which is a web crawler. Of course it has no WebGL — it is not a browser
+    // and there is no player. Every indexer, scanner and link-preview fetcher
+    // that loads the page will report the same thing forever, and an alerts
+    // topic that fills with robots is one nobody reads.
+    //
+    // Judged on the User-Agent, which is the server's to see. A crawler that
+    // lies about being Chrome gets treated as a player, and that is the right
+    // way round to be wrong.
+    const ua = String(req.headers['user-agent'] || '');
+    if (!ua || /bot|crawl|spider|slurp|scan|preview|fetch|monitor|headless|dataprovider|curl|wget|python-requests|go-http|okhttp|java\//i.test(ua)) {
+      return;
+    }
+
     const body = req.body || {};
     const where = String(body.where || 'client').slice(0, 60);
     const message = String(body.message || '').slice(0, 400);

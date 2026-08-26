@@ -34,7 +34,7 @@ const consumables = require('../server/db/repos/consumables');
 const items = require('../server/db/repos/items');
 const {
   VIP_BONUSES, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT,
-  SEASON_TICKET_DROP_PCT, NEXUM_DROP_CHANCE, ITEM_DEF,
+  SEASON_TICKET_DROP_PCT, NEXUM_DROP_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL, ITEM_DEF,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -74,6 +74,8 @@ async function main() {
     `і +${SEASON_TICKET_DROP_PCT} до лута та +${SEASON_TICKET_LIBERTY_PCT}% до шансу Liberty`);
   ok(Array.isArray(NEXUM_DROP_CHANCE) && NEXUM_DROP_CHANCE.some(c => c > 0),
     'Liberty має падати з мобів — таблиця шансів на місці');
+  ok(GRAM_DROP_CHANCE > 0 && GRAM_PER_LEVEL > 0,
+    `і GRAM теж — ${GRAM_DROP_CHANCE * 100}% шанс, ${GRAM_PER_LEVEL} за рівень`);
 
   // ── the buff potions ─────────────────────────────────────────────────────
   // Every potion in the catalog must move something. The three that did not —
@@ -130,16 +132,25 @@ async function main() {
   // the ledger, not just the arithmetic.
   console.log('\n  ── гроші доходять ──');
   const q = await mk('pay');
+  // A level-40 mob's GRAM drop, to the exact fraction the rule produces.
+  const gramDrop = 40 * GRAM_PER_LEVEL;
   const r = await tx(t => consumables.grantKillReward(t, q, {
-    gold: 200, xp: 0, nexum: 1, drops: [], idemKey: `${TAG}:pay:1`,
+    gold: 200, xp: 0, nexum: 1, gram: gramDrop, drops: [], idemKey: `${TAG}:pay:1`,
   }));
   eq(Number(r.gold), 200, 'подвоєне золото зараховано');
-  eq(Number((await money.balancesOf(null, q)).nexum), 1, 'Liberty з моба зарахована');
+  const bal = await money.balancesOf(null, q);
+  eq(Number(bal.nexum), 1, 'Liberty з моба зарахована');
+  // The whole reason balances are numeric(24,8): rounding this to 2 decimals
+  // destroys it entirely, and a session of farming with it.
+  eq(Number(bal.gram), gramDrop,
+    `GRAM зарахований до останнього знаку (${gramDrop.toFixed(7)}) — не округлений у нуль`);
 
   const { rows: led } = await pool().query(
     `SELECT currency, delta, reason FROM ledger WHERE player_id = $1 ORDER BY currency`, [q]);
   ok(led.some(l => l.currency === 'nexum' && l.reason === 'mob_drop'),
     'і Liberty має рядок у леджері — не зʼявилась повз money.js');
+  ok(led.some(l => l.currency === 'gram' && l.reason === 'mob_drop'),
+    'і GRAM теж — реальна валюта не зʼявляється повз леджер');
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

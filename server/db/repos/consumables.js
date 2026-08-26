@@ -261,8 +261,8 @@ async function pickupDrop(db, playerId, itemId, qty = 1, enhance = 0) {
 // So the balance is read whether or not anything moved. One extra query per
 // kill on the path that already did a write, in exchange for a number that
 // cannot lie.
-async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, drops = [], idemKey }) {
-  const out = { gold: 0, xp: null, nexum: 0, items: [] };
+async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram = 0, drops = [], idemKey }) {
+  const out = { gold: 0, xp: null, nexum: 0, gram: 0, items: [] };
 
   if (gold > 0) {
     const r = await money.credit(db, playerId, 'gold', gold,
@@ -274,10 +274,20 @@ async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, drop
       { reason: 'mob_drop', idemKey: `${idemKey}:nexum` });
     out.nexum = r.balance;
   }
-  if (!(gold > 0) || !(nexum > 0)) {
+  // GRAM from a kill. Tiny — GRAM_PER_LEVEL is 0.0000001 per mob level — and
+  // real money, so it goes through money.js like everything else and lands in
+  // the ledger with its own idempotency key. The balances column is
+  // numeric(24,8), which holds it exactly; a float would not.
+  if (gram > 0) {
+    const r = await money.credit(db, playerId, 'gram', gram,
+      { reason: 'mob_drop', idemKey: `${idemKey}:gram` });
+    out.gram = r.balance;
+  }
+  if (!(gold > 0) || !(nexum > 0) || !(gram > 0)) {
     const bal = await money.balancesOf(db, playerId);
     if (!(gold > 0)) out.gold = bal.gold;
     if (!(nexum > 0)) out.nexum = bal.nexum;
+    if (!(gram > 0)) out.gram = bal.gram;
   }
   if (xp > 0) {
     const players = require('./players');

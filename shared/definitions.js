@@ -2214,6 +2214,19 @@ const VIP_BONUSES = [
 // Index is the corridor number (armIndexForLevel), 1..5; index 0 is the hub.
 const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
 
+// ── GRAM from an ordinary kill ──────────────────────────────────────────────
+// 7.5% of kills pay GRAM_PER_LEVEL per level of the monster — 0.0000001 each,
+// so a level-40 mob is 0.000004 GRAM. Tiny on purpose: this is the real-money
+// currency, and the balances column is numeric(24,8) precisely so these
+// fractions survive. Rounding a GRAM balance to 2 decimals destroys a whole
+// session of farming, which is why _round7 exists in server/inventory.js.
+//
+// Same story as NEXUM_DROP_CHANCE: local consts in the retired handler file
+// that never came across, so `result.gram` was read and emitted by the new
+// kill path with nothing ever setting it.
+const GRAM_DROP_CHANCE = 0.075;
+const GRAM_PER_LEVEL = 0.0000001;
+
 const SEASON_TICKET_GRAM_PRICE = 15;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
 const SEASON_TICKET_DROP_PCT = 30;     // +30 to the bonus loot re-roll chance
@@ -2274,7 +2287,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
-  NEXUM_DROP_CHANCE,
+  NEXUM_DROP_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,

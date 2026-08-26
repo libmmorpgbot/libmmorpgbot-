@@ -236,6 +236,34 @@ async function main() {
     `а рахується як повтор першого (${(sent[0] || {}).text || ''})`);
   ok(!/471/.test(sent[0].text), 'у згорнутому рядку немає другого номера — це той самий ключ');
 
+  // ── crawlers are not players ─────────────────────────────
+  // The first live alert this path produced was a web crawler reporting that
+  // it has no WebGL. Of course it does not — it is not a browser, and there is
+  // no player behind it. Every indexer that loads the page would report the
+  // same thing forever.
+  console.log('');
+  console.log('  ── краулери ──');
+  sent.length = 0;
+  await realFetch(`http://127.0.0.1:${PORT}/client-error`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; Dataprovider.com)' },
+    body: JSON.stringify({ where: 'pixi-unsupported', message: `${TAG} нет WebGL` }),
+  });
+  await wait(200);
+  eq(sent.length, 0, 'від краулера алерт не йде');
+
+  sent.length = 0;
+  await realFetch(`http://127.0.0.1:${PORT}/client-error`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36',
+    },
+    body: JSON.stringify({ where: 'pixi-unsupported', message: `${TAG} нет WebGL у гравця` }),
+  });
+  await wait(200);
+  eq(sent.length, 1, 'а від справжнього телефона — йде');
+
   // ── the process-level net ────────────────────────────────────────────────
   console.log('\n  ── падіння процесу ──');
   ok(process.listenerCount('unhandledRejection') > 0,

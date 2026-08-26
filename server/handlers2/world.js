@@ -34,7 +34,7 @@ const { query } = require('../db');
 const {
   CHAR_DEF, FLOOR_ENEMIES, FEAR_MAX_WAVE, COOP_STAGE_LEVELS,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
-  NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, armIndexForLevel,
+  NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -255,6 +255,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
       : (NEXUM_DROP_CHANCE[arm] || 0) * (ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1);
     const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
 
+    // GRAM, the real-money currency. Not from the farm zones and not from the
+    // co-op run — those pay their own fixed rewards — and, like Liberty, its
+    // chance table never came across from the retired handler file, so
+    // `result.gram` was emitted to the client while nothing set it.
+    const myGram = (result.farmZone || result.farmZone2 || result.arm === 'coop') ? 0
+      : (rand() < (GRAM_DROP_CHANCE || 0) ? (result.rlvl || 1) * (GRAM_PER_LEVEL || 0) : 0);
+
     // One key per KILL, not per enemy and not per attempt.
     //
     // Keyed on the enemy id alone, a respawning monster paid once and never
@@ -293,7 +300,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const paidXp = buffOn('exp') ? myXp * 2 : myXp;
 
       const reward = await consumables.grantKillReward(t, pid, {
-        gold: paidGold, xp: paidXp, nexum: myNexum,
+        gold: paidGold, xp: paidXp, nexum: myNexum, gram: myGram,
         drops: drops.items, idemKey: idem,
       });
       // The quest chain. `result.enemyName` — the field the rewrite passed here
@@ -342,7 +349,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       items: reward.items.filter(i => !i.dropped),
       boxUncommon: drops.boxUncommon, boxRare: drops.boxRare,
       normStone: drops.normStone, blessStone: drops.blessStone,
-      nexum: myNexum, gram: result.gram || 0,
+      nexum: myNexum, gram: myGram,
     });
 
     // What would not fit stays on the floor. The reward for a kill is not owed
