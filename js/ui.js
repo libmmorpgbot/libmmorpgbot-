@@ -6446,7 +6446,17 @@ function onMarketBought(listingId, item, delivered) {
   _marketToast(tVars('boughtItemToast', { name: `${item?.name || ''}${item?.qty > 1 ? ' ×' + item.qty : ''}` }), 'ok');
 }
 function onMarketSold(data) {
-  _marketToast(tVars('soldItemToast', { name: data.itemName, price: data.price, payout: (data.payout || 0).toFixed(2) }), 'ok');
+  // The item comes across as a catalog reference (id/qty/enhance), the same
+  // shape the buy toast resolves — so the name is looked up the same way
+  // rather than expected pre-rendered.
+  const it = data.item ? itemCatalogBase(data.item.id) : null;
+  const nm = (it && it.name) || (data.item && data.item.id) || '';
+  const qty = data.item && data.item.qty > 1 ? ' \u00d7' + data.item.qty : '';
+  _marketToast(tVars('soldItemToast', {
+    name: nm + qty,
+    price: Number(data.price || 0).toFixed(2),
+    payout: (data.payout || 0).toFixed(2),
+  }), 'ok');
   const panel = document.getElementById('market-panel');
   if (_marketTab === 'mine' && panel && panel.style.display !== 'none') netMarketMyListings();
 }
@@ -6971,19 +6981,23 @@ function _confirmGramShopBuy(pkgId) {
 
 function onGramShopResult(data) {
   window._gramBalance = data.newBalance;
-  if (data.newNexumBalance != null) window._nexumBalance = data.newNexumBalance;
+  if (data.nexum != null) window._nexumBalance = data.nexum;
   if (player) {
-    player.gold = data.newGold;
-    if (data.newPotionBag) player.potionBag = data.newPotionBag;
-    if (data.newInventory) player.inventory = data.newInventory;
-    if (data.newBonusSP != null) player.bonusSP = data.newBonusSP;
-    if (data.newNexumBalance != null) player.nexumBalance = data.newNexumBalance;
+    // Guarded, like every line under it. An unguarded assignment from a field
+    // the server does not send is not a fallback, it is an erasure.
+    if (data.gold != null) player.gold = data.gold;
+    if (data.items) player.inventory = data.items;
+    if (data.bonusSP != null) player.bonusSP = data.bonusSP;
+    if (data.nexum != null) player.nexumBalance = data.nexum;
   }
-  if (data.vipData) window._vipData = data.vipData;
+  // VIP arrives on its own event (vipUpdate) right after this one — it was
+  // never a field here, so the branch that read it never ran.
   // A gramShopResult for 'season_ticket' only ever arrives on a successful
   // purchase (the server refuses a second one before any GRAM moves), so
   // this is safe to set unconditionally — no separate confirmation needed.
-  if (data.pkgId === 'season_ticket') _seasonTicketActive = true;
+  // The server says so outright now (seasonTicket); the package-id test is
+  // kept as the fallback for a client that is one deploy behind.
+  if (data.seasonTicket || data.pkgId === 'season_ticket') _seasonTicketActive = true;
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId)
     || (data.pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
   // Pet+cloak+artifact packages (petpkg1/2/3) — bought through this same
@@ -7386,7 +7400,7 @@ function onGramTxUpdate(id, status) {
 function openGramDepositModal() {
   const wallet = window._gramWallet || t('walletNotSetLbl');
   const memo   = (player && player.telegramId) ? player.telegramId
-                 : (window.netUsername || String(Date.now()));
+                 : (netUsername || String(Date.now()));
   const html = `
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
       <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">

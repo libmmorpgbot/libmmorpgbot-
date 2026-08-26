@@ -365,6 +365,10 @@ class Session {
       bonusSP: p.bonusSP, keptSP: p.keptSP, rebirths: p.rebirths,
       starterBonus: !!p.starterBonusClaimed,
       questIdx: p.questIdx, questKills: p.questKills || {},
+      // Read by the special-quests panel (js/quests.js) to grey out what is
+      // already claimed. The repo function for it has existed since the port
+      // and had no caller.
+      specialQuestsDone: await require('./db/repos/progression').claimedSpecialQuests(db, this.playerId),
       codex: p.codex || {},
 
       skillLevels: skills.skillLevels || {},

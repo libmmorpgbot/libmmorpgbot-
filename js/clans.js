@@ -689,7 +689,7 @@ function _clanSubmitCreate() {
 // actually arrive) so the pending/sent button state stays consistent
 // regardless of which of the two just re-rendered the row.
 function _clanResultRowHTML(c) {
-  const pending = _clanApplyPendingId === c._id;
+  const pending = _clanApplyPendingId === c.id;
   const label = pending
     ? (typeof t === 'function' ? t('clanApplySending') : 'Отправка...')
     : (typeof t === 'function' ? t('clanJoinBtn') : 'Вступить');
@@ -700,7 +700,7 @@ function _clanResultRowHTML(c) {
         <div class="clan-result-name">${_esc(c.name)}</div>
         <div class="clan-result-meta">${typeof tVars === 'function' ? tVars('clanLevelMembersFmt', { lvl: c.level, n: c.members }) : 'Ур. ' + c.level + ' · ' + c.members + ' участников'}</div>
       </div>
-      <button class="clan-btn-sm" data-clan-id="${c._id}" ${pending ? 'disabled' : ''} onclick="_clanApplyTo('${c._id}')">${label}</button>
+      <button class="clan-btn-sm" data-clan-id="${c.id}" ${pending ? 'disabled' : ''} onclick="_clanApplyTo('${c.id}')">${label}</button>
     </div>`;
 }
 

@@ -1751,7 +1751,7 @@ function _updateOtherPlayers(pulse, ts) {
     obj._auraKind = auraKind;
 
     const isSelected = pid === targetId && targetIsPlayer;
-    const swinging = (p._swingTimer || 0) > 0;
+    const swinging = (p.atkAnimTimer || 0) > 0;
 
     // Sprite — always updated, the texture/frame changes with the walk/idle
     // animation every frame regardless of whether the Graphics layer redraws.
@@ -1811,7 +1811,8 @@ function _updateOtherPlayers(pulse, ts) {
     }
 
     if (swinging) {
-      const sa = p._swingAngle || 0;
+      const [sdx, sdy] = _dirVecFromFacing(p.facing || 'front');
+      const sa = Math.atan2(sdy, sdx);
       gfx.lineStyle(2.5, 0xc8dcff, 0.65);
       gfx.arc(0, 0, 30, sa - 0.65, sa + 0.65);
       gfx.lineStyle(0);

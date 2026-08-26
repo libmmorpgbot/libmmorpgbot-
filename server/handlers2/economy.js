@@ -251,7 +251,12 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // not the payment.
     const sellerSock = deps.socketForPlayerId && deps.socketForPlayerId(res.sellerId);
     if (sellerSock) {
-      sellerSock.emit('marketSold', { listingId: res.listingId, payout: res.payout, fee: res.fee });
+      // item and price too: the seller's toast names what sold and for how
+      // much, and without them it read "Продано: undefined за undefined".
+      sellerSock.emit('marketSold', {
+        listingId: res.listingId, payout: res.payout, fee: res.fee,
+        price: res.price, item: res.item,
+      });
       // And the money. The payout was credited inside the transaction above,
       // but the seller was only TOLD that a sale happened — their GRAM counter
       // kept the number it had at login until they reloaded the game.

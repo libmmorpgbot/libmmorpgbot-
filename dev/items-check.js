@@ -194,7 +194,9 @@ async function main() {
 async function cleanup() {
   if (!made.length) return;
   await pool().query('DELETE FROM market_listings WHERE seller_id = ANY($1)', [made]).catch(() => {});
-  await pool().query('DELETE FROM player_items WHERE player_id = ANY($1) OR player_id IS NULL', [made]).catch(() => {});
+  // `OR player_id IS NULL` here meant every live player's listed items — see
+  // the note in dev/market-check.js's cleanup. Scoped to this run's rows.
+  await pool().query('DELETE FROM player_items WHERE player_id = ANY($1)', [made]).catch(() => {});
   await pool().query('DELETE FROM players WHERE id = ANY($1)', [made]).catch(() => {});
 }
 

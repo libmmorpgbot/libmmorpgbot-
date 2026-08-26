@@ -171,7 +171,24 @@ async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
   await q('DELETE FROM market_listings WHERE seller_id = ANY($1) OR buyer_id = ANY($1)', [made]);
   await q(`DELETE FROM player_items WHERE player_id = ANY($1)`, [made]);
-  await q(`DELETE FROM player_items WHERE player_id IS NULL`);
+  // ── this line used to have no WHERE beyond "player_id IS NULL" ───────────
+  // Which is not "leftover test rows". It is the market ESCROW state: listing
+  // an item DETACHES the row from its owner (items.detachForListing), so
+  // player_id IS NULL means "somebody has this on sale right now". Unscoped,
+  // and inside a .catch(() => {}) that would have said nothing, this cleanup
+  // was aimed at every live player's active lots — and it runs from a
+  // .finally(), on every run, success or failure. dev/sync.sh sources the
+  // PRODUCTION env, so "run the market check" meant it.
+  //
+  // Nothing was actually lost: market_listings.item_id REFERENCES
+  // player_items(id), so the delete was refused and the refusal was swallowed.
+  // The schema saved it, not the test.
+  //
+  // Scoped to the rows this run created, the same way every other line here
+  // already was.
+  await q(`DELETE FROM player_items pi
+            USING market_listings m
+            WHERE pi.id = m.item_id AND m.seller_id = ANY($1)`, [made]);
   await q('DELETE FROM ledger   WHERE player_id = ANY($1)', [made]);
   await q('DELETE FROM balances WHERE player_id = ANY($1)', [made]);
   await q('DELETE FROM players  WHERE id = ANY($1)', [made]);

@@ -205,8 +205,8 @@ async function updateSpecialQuestUI() {
   }
   let html = '';
   quests.forEach(q => {
-    const isDone = done.includes(q._id);
-    const isPending = _specialQuestPending.has(String(q._id));
+    const isDone = done.includes(q.id);
+    const isPending = _specialQuestPending.has(String(q.id));
     const icon = q.icon || '⭐';
     const rewardParts = [];
     if (q.reward.gold)  rewardParts.push(iconHTML('coin',12,'#e3941d') + q.reward.gold);
@@ -234,8 +234,8 @@ async function updateSpecialQuestUI() {
       </div>`;
     } else {
       const actionBtn = q.url
-        ? `<a href="${q.url}" target="_blank" class="quest-claim-btn" style="display:inline-block;text-decoration:none;text-align:center" onclick="_specialQuestPending.add('${q._id}');updateSpecialQuestUI();setTimeout(()=>{ netCompleteSpecialQuest('${q._id}');setTimeout(()=>_specialQuestUnlock('${q._id}'),10000); },1500)">${typeLabel}</a>`
-        : `<button class="quest-claim-btn" onclick="_onSpecialQuestClick('${q._id}')">${typeLabel}</button>`;
+        ? `<a href="${q.url}" target="_blank" class="quest-claim-btn" style="display:inline-block;text-decoration:none;text-align:center" onclick="_specialQuestPending.add('${q.id}');updateSpecialQuestUI();setTimeout(()=>{ netCompleteSpecialQuest('${q.id}');setTimeout(()=>_specialQuestUnlock('${q.id}'),10000); },1500)">${typeLabel}</a>`
+        : `<button class="quest-claim-btn" onclick="_onSpecialQuestClick('${q.id}')">${typeLabel}</button>`;
       html += `<div class="quest-item quest-current">
         <div class="quest-header">
           <span class="quest-title">${icon} ${q.title}</span>

@@ -30,10 +30,20 @@ const STANDABLE = new Set([
   FLOOR_IDS.farmZone, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
 ]);
 
-function initFloors(io, onBossDeath = () => {}) {
+// bossStates: { [floorId]: { [arm]: respawnAtMs } }, read out of boss_state
+// (server/db/repos/bossstate.js). It used to be `{}` for every floor and the
+// callback used to be a no-op, so every restart handed every arm boss back at
+// full health no matter when it had last been killed — while the table meant to
+// prevent exactly that sat there, correct and empty, since migration 002.
+//
+// The floor is bound HERE rather than asked for later: Room calls
+// onBossDeath(arm, respawnAt) with no idea which floor it belongs to, and the
+// one place that knows is the loop creating it.
+function initFloors(io, onBossDeath = () => {}, bossStates = {}) {
   for (const f of FLOOR_REGISTRY) {
     try {
-      floorRooms.set(f.id, new Room(f.id, io, {}, onBossDeath));
+      floorRooms.set(f.id, new Room(f.id, io, bossStates[f.id] || {},
+        (arm, respawnAt) => onBossDeath(f.id, arm, respawnAt)));
     } catch (err) {
       // A floor that cannot generate is a hard failure: the world is built from
       // a fixed seed, so this is a code problem, not a transient one, and

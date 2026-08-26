@@ -23,6 +23,7 @@ const items = require('./db/repos/items');
 const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
 const plog = require('./db/repos/playerlog');
+const bossstate = require('./db/repos/bossstate');
 // The built bundle — required here only for its content hash, which is what
 // tells a connected client whether the code it is running is still current.
 const assets = require('./assets');
@@ -656,8 +657,13 @@ async function boot() {
   // 2b. The world. Generated from a fixed seed, so this is deterministic and
   //     a failure here is a code problem rather than a transient one — which
   //     is why initFloors throws rather than continuing with a hole in the map.
-  const floors = world.initFloors(io);
-  console.log(`world: ${floors} floors`);
+  // Per-arm boss respawn deadlines, so a restart does not hand every boss back
+  // at once. Read before the rooms exist, because Room restores each timer in
+  // its constructor; written on every boss death, fire-and-forget.
+  const bossStates = await bossstate.loadAll();
+  const restored = Object.values(bossStates).reduce((n, m) => n + Object.keys(m).length, 0);
+  const floors = world.initFloors(io, bossstate.save, bossStates);
+  console.log(`world: ${floors} floors` + (restored ? `, восстановлено таймеров боссов: ${restored}` : ''));
 
   // 2c. The event modes. Their schedules start here, which is why this is after
   //     the floors exist and before the first player can connect: a mode that
