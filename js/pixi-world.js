@@ -795,11 +795,30 @@ const _CHUNK_BUILD_BUDGET = 2;
 // viewport edge sits inside its current chunk, buy anywhere from almost a
 // full chunk-width of lead down to almost none — so this is 2, guaranteeing
 // at least one full chunk-width (~320 world px, ~2s at normal move speed) of
-// lead in the worst-case alignment. That's comfortably inside
-// _CHUNK_BUILD_BUDGET's 2-per-frame throttle, so the expensive GPU texture
-// upload has already happened well before the chunk actually scrolls into
-// view instead of landing in the same frame the player needed it rendered.
+// lead in the worst-case alignment.
+//
+// The lookahead was supposed to buy that lead for the EXPENSIVE half — the
+// GPU upload — and for a long time it did not, because of something PixiJS
+// does that is easy to miss: a Sprite with visible=false is skipped by the
+// renderer entirely, and a texture is only uploaded the first time something
+// actually draws it. A lookahead chunk is built and then deliberately kept
+// hidden until the camera reaches it, so its texImage2D landed in exactly the
+// frame it was revealed — the frame the lookahead existed to protect. All the
+// lead time bought was the cheap ~0.6ms canvas draw.
+//
+// Verified rather than reasoned about (dev/render-check.html has an assertion
+// for it now): with a hidden sprite, baseTexture._glTextures is empty after a
+// render, and populated after the reveal. _prewarmTexture below is what
+// actually moves the upload forward.
 const _CHUNK_LOOKAHEAD = 2;
+// Hand a texture to the GPU now instead of leaving it for whichever frame
+// first draws it. renderer.texture.bind() runs the same upload path the
+// renderer would, and it is called outside a render pass, so the binding it
+// leaves on unit 0 is replaced by the next frame's own setup.
+function _prewarmTexture(tex) {
+  if (!_pixiApp || _ctxLost) return;
+  try { _pixiApp.renderer.texture.bind(tex); } catch (err) { /* context gone mid-build */ }
+}
 function _updateTiles(camX, camY) {
   if (!dungeon || !dungeon.grid) return;
   const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
@@ -832,6 +851,7 @@ function _updateTiles(camX, camY) {
           _tileChunks.set(key, cv);
         }
         const tex = PIXI.Texture.from(cv);
+        _prewarmTexture(tex);
         spr = new PIXI.Sprite(tex);
         spr.x = cx * _CHUNK_PX - _CHUNK_G;
         spr.y = cy * _CHUNK_PX - _CHUNK_G;

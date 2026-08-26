@@ -72,8 +72,8 @@ function floorIdOf(target) {
 // The mode runtime is required lazily: world.js is loaded before modes.js
 // exists, and this is only ever called with a live server behind it.
 function _timedZoneOpen(f) {
-  let modes = null;
-  try { modes = require('./modes').modes; } catch (err) { return true; }
+  let modes;
+  try { modes = require('./modes').modes; } catch (_err) { return true; }
   if (!modes) return true;
   if (f === FLOOR_IDS.guildWar) {
     // Ownership is permanent and pays income around the clock; only ACCESS

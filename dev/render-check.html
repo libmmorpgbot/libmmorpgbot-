@@ -69,6 +69,31 @@ function frames(w, n, ms) {
   });
 }
 
+// Chunk streaming: the lookahead builds chunks the camera has not reached
+// yet and keeps them hidden. PixiJS skips hidden sprites entirely, and a
+// texture is only uploaded the first time something draws it — so their
+// textures used to land on the GPU in the frame they were revealed, which is
+// the frame the lookahead existed to protect.
+//
+// Only chunks built DURING the walk count. Counting every hidden sprite does
+// not work and looks like it does: most hidden chunks are ones the camera
+// has already passed, and those were uploaded while they were on screen, so
+// the check passed happily with the fix taken back out.
+const TILE_MARK = `window.__rcKeysBefore = Array.from(_chunkSprCache.keys());`;
+const TILE_PROBE = `window.__rcTiles = (function () {
+  var uid = _pixiApp.renderer.CONTEXT_UID;
+  var before = new Set(window.__rcKeysBefore || []);
+  var fresh = 0, freshHidden = 0, uploaded = 0;
+  _chunkSprCache.forEach(function (spr, key) {
+    if (before.has(key)) return;
+    fresh++;
+    if (spr.visible) return;
+    freshHidden++;
+    if (spr.texture.baseTexture._glTextures[uid]) uploaded++;
+  });
+  return { total: _chunkSprCache.size, fresh: fresh, freshHidden: freshHidden, uploaded: uploaded };
+})();`;
+
 // Composite the WebGL world and the 2D HUD overlay into one PNG and send it
 // to the server. Injected so it runs in the SAME task as the render() call
 // it makes: without preserveDrawingBuffer the WebGL drawing buffer is gone
@@ -227,6 +252,27 @@ async function run() {
   inject(w, SHOT);
   say('  снимок кадра отправлен -> dev/_render-shot.png');
 
+  head('потоковая подгрузка тайлов');
+  // Walk east so the lookahead has a direction to build toward. The keys are
+  // recorded first so the probe can tell a fresh lookahead chunk from one the
+  // camera has simply left behind.
+  inject(w, TILE_MARK);
+  // The stick is held east so inputDir() reports a direction and the lookahead
+  // has something to aim at, but only render() runs — no update(), so the
+  // camera does not actually travel. That is the whole point: the chunks built
+  // here are ones the camera has NOT reached, which is the only case that
+  // proves anything. Letting the camera move revealed every chunk it built and
+  // the check passed with the fix taken back out.
+  inject(w, 'joy.active = true; joy.dx = 1; joy.dy = 0;');
+  inject(w, 'for (var i = 0; i < 20; i++) render(1/60, performance.now());');
+  inject(w, 'joy.active = false; joy.dx = 0; joy.dy = 0;');
+  inject(w, TILE_PROBE);
+  const tl = w.__rcTiles;
+  ok(tl.freshHidden > 0, 'задел вперёд реально строится', tl.fresh + ' новых чанков, из них ещё не показанных: ' + tl.freshHidden);
+  ok(tl.freshHidden > 0 && tl.uploaded === tl.freshHidden,
+     'текстуры задела УЖЕ на видеокарте, а не в кадре появления',
+     tl.uploaded + '/' + tl.freshHidden);
+
   head('атлас цифр урона');
   const bmp = w.PIXI.BitmapFont.available && w.PIXI.BitmapFont.available['libdmg'];
   ok(!!bmp, 'атлас глифов испечён', bmp ? Object.keys(bmp.chars).length + ' глифов' : 'НЕТ');
@@ -245,8 +291,8 @@ async function run() {
   r = w.__rc;
   say('  update+render: ' + frameMs.toFixed(2) + 'ms на кадр (чистая работа, без ожидания vsync)');
   say('  GPU: ' + r.gpu.draws + ' draw calls, ' + (r.gpu.verts / 1000).toFixed(1) + 'k вершин, частиц ' + r.particles);
-  ok(r.gpu.draws < 60, 'draw calls остались низкими под нагрузкой', String(r.gpu.draws));
-  ok(r.gpu.verts < 6000, 'геометрии кадра мало', (r.gpu.verts / 1000).toFixed(1) + 'k вершин');
+  ok(r.gpu.draws > 3 && r.gpu.draws < 60, 'draw calls остались низкими под нагрузкой', String(r.gpu.draws));
+  ok(r.gpu.verts > 500 && r.gpu.verts < 6000, 'геометрии кадра мало', (r.gpu.verts / 1000).toFixed(1) + 'k вершин');
 
   head('цена одного объекта в вершинах');
   // The regression this guards: a pooled sprite is one quad — six indices —
@@ -261,13 +307,15 @@ async function run() {
   await frames(w, 1);
   inject(w, PROBE); const vPart = w.__rc.gpu.verts;
   const perParticle = (vPart - vBase) / w.__rc.particles;
-  ok(perParticle <= 6, 'частица = спрайт, не тесселированный круг', perParticle.toFixed(1) + ' верш./частицу (круг был бы ~94)');
+  ok(perParticle > 0 && perParticle <= 6, 'частица = спрайт, не тесселированный круг',
+     perParticle.toFixed(1) + ' верш./частицу (круг был бы ~94)' + (perParticle > 0 ? '' : ' — НИЧЕГО НЕ НАРИСОВАЛОСЬ'));
   inject(w, 'particles.length = 0;');
   inject(w, `for (let i = 0; i < 40; i++) worldDrops.set('d' + i, { id: 'd' + i, x: __rcCx - 200 + (i % 8) * 50, y: __rcCy + 60 + Math.floor(i / 8) * 50, item: { rarity: 'epic' } });`);
   await frames(w, 2);
   inject(w, PROBE); const vDrop = w.__rc.gpu.verts;
   const perDrop = (vDrop - vBase) / 40;
-  ok(perDrop <= 18, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника', perDrop.toFixed(1) + ' верш./кучу (было 462)');
+  ok(perDrop > 0 && perDrop <= 18, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника',
+     perDrop.toFixed(1) + ' верш./кучу (было 462)' + (perDrop > 0 ? '' : ' — НИЧЕГО НЕ НАРИСОВАЛОСЬ'));
   ok((w.__rcErrors || []).length === 0, 'ни одной ошибки за весь прогон', (w.__rcErrors || []).slice(0, 5).join(' | '));
 
   finish(w);
