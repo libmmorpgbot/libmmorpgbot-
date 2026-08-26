@@ -116,6 +116,9 @@ function _drawPerf(frameMs) {
     // floor, and strv at 0.
     `jit  ${netJitterP95().toFixed(0)}ms  itp ${netInterpCurrent().toFixed(0)}ms`,
     `strv ${_netStarvedRate.toFixed(1)}/s`,
+    // Enemy deltas dropped for want of the record behind them. Should be 0;
+    // if it climbs, monsters are standing still or missing for this player.
+    `lost ${typeof netLostHandles === 'function' ? netLostHandles() : '?'}`,
     `upd  ${_profUpdate.toFixed(1)}ms`,
     `rnd  ${_profRender.toFixed(1)}ms`,
     `skt  ${_profSocketEvtsSnap}e ${_profSocketMsSnap.toFixed(1)}ms`,
@@ -169,6 +172,24 @@ const _pvpSentinel = { _socketId: null, x: 0, y: 0 };
 
 // Visible enemy count (set each render frame, read by _drawPerf)
 let _visEnm = 0;
+
+// How far out this client keeps SIMULATING enemies — status timers, the chase
+// smoothing, the position correction. Everything past it is snapped straight
+// to the server's position instead (see the enemy loop in update()): correct,
+// just not smoothed, which is all an enemy nobody can see needs.
+//
+// It has to cover whatever is actually on screen, and the fixed 1100 it
+// replaces did not. On a wide desktop window the visible world reaches past
+// 1100, so an enemy the player could see was drawn from a position nothing was
+// updating. Half the viewport diagonal plus a margin, floored at the old value
+// so a phone still gets the CPU saving this gate exists for. Recomputed in
+// resize(), because that is the only thing it depends on.
+let _ENEMY_SIM_R2 = 1100 * 1100;
+function _recalcEnemySimR() {
+  const halfW = W / (2 * ZOOM), halfH = (H - HEADER_H) / (2 * ZOOM);
+  const r = Math.sqrt(halfW * halfW + halfH * halfH) + 200;
+  _ENEMY_SIM_R2 = Math.max(1100 * 1100, r * r);
+}
 
 // Profiling breakdown — measures update vs render vs socket processing
 let _profUpdate = 0, _profRender = 0;
@@ -1072,7 +1093,29 @@ function update(dt, realDt) {
     // server corrects position/hp/status the moment one re-enters range.
     const _epdx = player.x - e.x, _epdy = player.y - e.y;
     const _epd2 = _epdx * _epdx + _epdy * _epdy;
-    if (_epd2 > 1100 * 1100) return;
+    if (_epd2 > _ENEMY_SIM_R2) {
+      // ...but the server's position is still the truth out here, and simply
+      // returning is what left a monster standing where it was last drawn
+      // while the server walked the real one somewhere else entirely.
+      //
+      // Three radii disagreed: this gate at 1100, the server's stream at
+      // ENEMY_AOI_R (1400), and the client's own prune at ENEMY_AOI_R + 600.
+      // Inside the band between the first two the client kept updating
+      // targetX/targetY and never applied them, so it drew a ghost — you could
+      // be hit by something the server had standing on top of you while your
+      // screen showed it a screen away, and the moment you crossed 1100 the
+      // correction hauled it a thousand pixels in three frames. Both halves of
+      // "урон получаєш, коли біля них не стоїш" and "потім вони тепнуться".
+      //
+      // Bosses were worse: they stream from ANY distance and are exempt from
+      // the prune, so a boss's drawn position could be arbitrarily old.
+      //
+      // Snapped rather than interpolated, deliberately. Nobody is looking at
+      // these; smoothing them would cost the CPU this gate exists to save, and
+      // arriving already correct is what stops the lurch on the way back in.
+      if (e.targetX !== undefined) { e.x = e.targetX; e.y = e.targetY; }
+      return;
+    }
 
     if ((e.hurtTimer || 0) > 0) e.hurtTimer -= dt;
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
@@ -3017,6 +3060,7 @@ window.addEventListener('load', () => {
     _skillBtnGradCache = null;
     _uiBtnGrads = null;
     _partyHpGrads = null;
+    _recalcEnemySimR();
     updateJoyCenter();
     if (dungeon) clampCamera();
   };

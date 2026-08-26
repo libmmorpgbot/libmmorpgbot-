@@ -305,6 +305,12 @@ function netMarginTick(anyMoving) {
 // below because that one ADVANCES the smoothing — the overlay must be able to
 // display the value without also driving it.
 function netInterpCurrent() { return _interpMs; }
+// Enemy deltas this session had to throw away because the full record they
+// belong to never arrived (the world cast is volatile — it drops rather than
+// queues). A healthy link is 0; anything else is monsters that stood still or
+// never appeared. Shown in the perf overlay.
+let _netLostHandles = 0;
+function netLostHandles() { return _netLostHandles; }
 // Computed on read rather than per packet — only the overlay ever asks, and
 // only while it is on screen.
 function netJitterP95() {
@@ -1018,6 +1024,24 @@ function netConnect(onReady) {
   const _enemyResyncQueue = new Set();
   let _enemyResyncTimer = null;
 
+  // Deltas that named an enemy handle the decoder has no full record for.
+  // Those entries never become enemies, so the by-id repair below can never be
+  // triggered for them — nothing in the client knows their ids. The only thing
+  // that can put it right is asking the server to forget what it thinks this
+  // client holds and re-send everything in range in full.
+  //
+  // Rate-limited hard on both ends: one request makes the server encode a full
+  // record for every enemy in the player's radius, and a client on a link bad
+  // enough to keep losing packets must not turn that into a second stream.
+  let _lostIdxAt = 0;
+  const _LOST_IDX_MS = 3000;
+  function _repairLostHandles(n) {
+    _netLostHandles += n;
+    const now = Date.now();
+    if (now - _lostIdxAt < _LOST_IDX_MS) return;
+    _lostIdxAt = now;
+    if (socket?.connected) socket.emit('enemyResyncAll');
+  }
   function _queueEnemyResync(id) {
     if (id === undefined || _enemyResyncQueue.has(id)) return;
     if (_enemyResyncQueue.size >= _ENEMY_RESYNC_MAX) return;
@@ -1203,6 +1227,12 @@ function netConnect(onReady) {
     // (see shared/netcodec.js). The decoder has already advanced each one by
     // however long it waited for this cast, so they start where they should be
     // rather than at the muzzle.
+    // Anything the decoder had to discard for want of a full record — see
+    // netCodecLostIdx (shared/netcodec.js). Checked after the merge so a
+    // packet that was partly usable still gets used.
+    const _lost = typeof netCodecLostIdx === 'function' ? netCodecLostIdx() : 0;
+    if (_lost > 0) _repairLostHandles(_lost);
+
     const _sp = _st.projs;
     if (_sp && _sp.length) for (let i = 0; i < _sp.length; i++) otherProjs.push(_sp[i]);
     const _sa = _st.aoes;

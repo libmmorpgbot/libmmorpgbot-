@@ -503,6 +503,19 @@ module.exports = function registerWorld(s, safeOn, deps) {
     s.room.resendEnemies(s.socket.id, ids.slice(0, 40));
   });
 
+  // The other half of the repair, for the case the by-id one cannot reach: a
+  // client whose decoder was never given the full record for a handle has no
+  // id to ask about. It can only say "I have lost track" — and the fix is for
+  // the server to forget what it believes this player holds, so the next cast
+  // re-sends everything in their radius in full.
+  //
+  // Rate-limited on the server as well as the client, because the client's
+  // limiter lives on the machine with the problem.
+  safeOn('enemyResyncAll', () => {
+    if (!s.room) return;
+    s.room.forgetKnownEnemies(s.socket.id);
+  });
+
 
   // ── the map ──────────────────────────────────────────────────────────────
   // Geometry, on request. Sent separately from gameStart and cached by the

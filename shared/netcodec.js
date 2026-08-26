@@ -118,7 +118,23 @@ const _NC_ENTRY_HEADROOM = 1200;
 const _ncPIdMap = new Map(); // seq -> socketId
 const _ncEIdMap = new Map(); // idx -> enemy id string
 
-function resetNetCodecMaps() { _ncPIdMap.clear(); _ncEIdMap.clear(); }
+function resetNetCodecMaps() { _ncPIdMap.clear(); _ncEIdMap.clear(); _ncLostIdx = 0; }
+
+// Slim enemy deltas naming a handle this decoder was never given a full record
+// for. That happens for exactly one reason: the packet carrying the full
+// record was DROPPED — the world cast is volatile.emit, which is meant to drop
+// rather than queue on a socket that is backed up.
+//
+// The decoder used to discard those entries with a bare `if (id !== undefined)`
+// and no else. The enemy then did not exist on that client at all — and, the
+// part that made it last, the client's own repair (_queueEnemyResync,
+// js/network.js) could never fire for it, because that trigger lives inside a
+// loop over the enemies the decoder produced, and it produced none. Nothing
+// fixed it until ENEMY_REFRESH_CASTS came round: sixty seconds.
+// "Моби тупо стоять, взагалі не включаються" is this, and it was silent on
+// both ends.
+let _ncLostIdx = 0;
+function netCodecLostIdx() { const n = _ncLostIdx; _ncLostIdx = 0; return n; }
 
 // The length prefix is a single byte, so anything past 255 bytes has to be
 // dropped here rather than written: `_ncU8[o] = b.length` silently keeps only
@@ -405,8 +421,8 @@ function decodeGameState(data) {
         aggro, aggroR, spd, rlvl, atkAnimTimer });
     } else {
       const id = _ncEIdMap.get(idx);
-      if (id !== undefined)
-        enemies.push({ id, x, y, hp, aggro, atkAnimTimer });
+      if (id !== undefined) enemies.push({ id, x, y, hp, aggro, atkAnimTimer });
+      else _ncLostIdx++;   // a dropped full record — see netCodecLostIdx
     }
   }
 
@@ -500,4 +516,4 @@ function unpackGrid(packed, w, h) {
 }
 
 if (typeof module !== 'undefined')
-  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, packGrid, unpackGrid, NC_FACING, NC_AOE_STYLES };
+  module.exports = { encodeGameState, decodeGameState, resetNetCodecMaps, netCodecLostIdx, packGrid, unpackGrid, NC_FACING, NC_AOE_STYLES };

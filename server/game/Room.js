@@ -350,6 +350,26 @@ const MAP_BLIP_EVERY = 40;
 // streaming) is what let a client-invented aggro survive indefinitely instead
 // of correcting itself within a minute.
 const ENEMY_REFRESH_CASTS = 1200; // 20 casts/s -> once a minute
+// ── how long a lost packet may go unnoticed ────────────────────────────────
+// _eKnown is written at ENCODE time (see _pushEnemyEntry) and the cast goes
+// out with volatile.emit, which drops rather than queues when a socket is
+// backed up. So the server can believe a player has state they never received
+// — and then the suppression test below, which is otherwise exactly right,
+// keeps quiet about it.
+//
+// Everything that changes continuously repairs itself: the next position
+// delta carries it. What does not is a ONE-SHOT transition — an enemy losing
+// aggro, teleporting back to its spawn on the leash, respawning. Each of
+// those produces exactly one packet, and if that packet is the one that got
+// dropped, the client keeps a ghost standing where the fight was, with aggro
+// stuck on, unhittable (the server measures range from the real position) —
+// until ENEMY_REFRESH_CASTS came round. Sixty seconds.
+//
+// So an enemy nobody has SENT anything about for this long gets a slim delta
+// regardless of whether anything changed. In raw castId units, which advance
+// two per cast. ~2s, staggered by handle so they do not all land together.
+// Costs about half an entry per cast: a slim delta is eight bytes.
+const ENEMY_RESTATE_TICKS = 80;
 
 // The complete record for one enemy — every field the client needs to render
 // and fight it. Shared by the tick's periodic refresh and the on-demand
@@ -1196,6 +1216,24 @@ class Room {
   // at a fraction of the cost: one small packet to one player, only for the
   // enemies actually missing. Encoded as an ordinary gameState (players: null)
   // so the client's existing merge path handles it with no new format.
+  // Drop this player's "they already have it" bookkeeping, so the next cast
+  // sends every enemy in their radius as a full record. Asked for by a client
+  // whose decoder lost the record behind a handle (see enemyResyncAll) — it
+  // cannot name the enemy, only the fact that it can no longer follow the
+  // stream.
+  forgetKnownEnemies(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return;
+    const now = Date.now();
+    // One reset makes the next cast carry a full record per enemy in range —
+    // the single largest packet this connection ever sends. A link bad enough
+    // to keep asking must not be able to turn that into a second stream.
+    if (now - (p._eResetAt || 0) < 3000) return;
+    p._eResetAt = now;
+    p._eKnown.clear();
+    this._eResets = (this._eResets || 0) + 1;
+  }
+
   resendEnemies(socketId, ids) {
     const p = this.players.get(socketId);
     if (!p || !Array.isArray(ids) || !ids.length) return;
@@ -1214,7 +1252,7 @@ class Room {
       out.push(_fullEnemyEntry(e));
       // Record it as sent, or the next tick would spend another full entry on
       // the same enemy before any slim delta could be used for it.
-      if (known) known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: this._tickNo });
+      if (known) known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: this._tickNo, sent: this._tickNo, full: true });
     }
     if (!out.length) return;
     // A fresh generation number every time — the gen is an encoder cache key,
@@ -2443,7 +2481,7 @@ class Room {
     // be dropped on the floor. See enemySnapshot.
     if (!k || !k.full || stale) {
       out.push(_fullEnemyEntry(e));
-      known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: castId, full: true });
+      known.set(e.id, { x: e.x, y: e.y, hp: e.hp, aggro: e.aggro, seen: castId, sent: castId, full: true });
       return;
     }
     k.seen = castId;
@@ -2462,13 +2500,17 @@ class Room {
     // which also covers the cases the old code needed an explicit _shp = -1
     // poke for (leash teleport, respawn): those move the enemy or change its
     // hp, so they fall out of this same check.
-    if (!e.aggro && !e._atkPulse && e.hp === k.hp && e.aggro === k.aggro &&
+    // ...unless nothing has actually been SENT about this enemy for a while.
+    // See ENEMY_RESTATE_TICKS: what this guards is the one-shot transition
+    // whose only packet was dropped.
+    const mute = castId - (k.sent || 0) < ENEMY_RESTATE_TICKS + ((e._idx || 0) % 20) * 2;
+    if (mute && !e.aggro && !e._atkPulse && e.hp === k.hp && e.aggro === k.aggro &&
         Math.abs(e.x - k.x) <= 0.5 && Math.abs(e.y - k.y) <= 0.5) return;
     out.push({
       id: e.id, idx: e._idx, x: e.x, y: e.y, hp: e.hp, aggro: e.aggro,
       atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
     });
-    k.x = e.x; k.y = e.y; k.hp = e.hp; k.aggro = e.aggro;
+    k.x = e.x; k.y = e.y; k.hp = e.hp; k.aggro = e.aggro; k.sent = castId;
   }
 
   // Every alive non-boss enemy as a flat Int16 tile-coordinate pair list.
