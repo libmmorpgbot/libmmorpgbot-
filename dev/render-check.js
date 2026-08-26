@@ -70,6 +70,31 @@ http.createServer((req, res) => {
     res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
     res.end(body);
   };
+  // ── the REAL map of a real floor ─────────────────────────────────────────
+  // A synthetic grid proves the renderer works; it does not prove it works on
+  // the world players actually load. The tile builder reads rooms, arm
+  // entries, race/guild/farm bounds and the biome theme off the dungeon, and
+  // a black screen was traced to it failing on exactly that data. So the
+  // harness can ask for the genuine article: the same mapPayload the server
+  // hands a client, generated here with no database and no sockets.
+  // Same path and same bytes the real server answers on, so the client's own
+  // _loadWorldMap/_decodeWorldMap run unmodified.
+  if (url.startsWith('/api/world-map/')) {
+    try {
+      const RoomC = require('../server/game/Room.js');
+      const { FLOOR_IDS } = require('../server/game/floors.js');
+      const want = url.split('/')[3] || 'hub';
+      const floor = FLOOR_IDS[want] !== undefined ? FLOOR_IDS[want] : (Number(want) || FLOOR_IDS.hub);
+      const r = new RoomC(floor, { to: () => ({ emit: () => {} }), sockets: { sockets: { get: () => null } } }, {}, null);
+      const payload = r.mapPayload;
+      if (r._interval) clearInterval(r._interval);
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' });
+      return res.end(payload);
+    } catch (e) {
+      console.error('  [world-map]', e);
+      return send(500, 'text/plain', 'world-map failed: ' + e.message);
+    }
+  }
   if (url === '/socket.io/socket.io.js') return send(200, MIME['.js'], IO_STUB);
   if (url === '/bundle.js')              return send(200, MIME['.js'], bundle());
   // The game page itself, with an error collector prepended and the Telegram

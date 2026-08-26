@@ -369,6 +369,13 @@ let _gpuDraws = 0, _gpuDrawsSnap = 0;
 // tessellated drawCircle about 94 — which is the whole point of counting it.
 let _gpuVerts = 0, _gpuVertsSnap = 0;
 function gpuStats() { return { draws: _gpuDrawsSnap, verts: _gpuVertsSnap }; }
+// A frame that throws before reaching renderer.render() used to leave the
+// PREVIOUS frame's numbers in place — and the previous frame, on a fresh
+// launch, is the empty stage drawn during character select. So a world that
+// was failing every single frame reported "draws 2" and looked like it was
+// merely quiet. That reading cost real diagnostic time. Cleared at the TOP of
+// the frame instead, so "nothing was drawn" reads as nothing.
+function _gpuFrameStart() { _gpuDraws = 0; _gpuVerts = 0; _gpuDrawsSnap = 0; _gpuVertsSnap = 0; }
 function _hookGpuCounters(gl) {
   if (!gl || gl.__libCounted) return;
   gl.__libCounted = true;
@@ -390,6 +397,8 @@ function _hookGpuCounters(gl) {
 // exactly what these two tell apart from a working one.
 let _pixiLastRender = 0;
 let _ctxLost = false;
+let _ctxLostN = 0, _ctxRestoredN = 0;
+function pixiCtxCounts() { return { lost: _ctxLostN, restored: _ctxRestoredN }; }
 function pixiAlive() { return !!_pixiApp && !_ctxLost; }
 function pixiLastRenderTs() { return _pixiLastRender; }
 
@@ -587,6 +596,7 @@ function pixiInit(canvasEl) {
     canvasEl.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
       _ctxLost = true;
+      _ctxLostN++;
       // Not reported. Losing the context is ROUTINE — a WebView hands it back
       // to the system every time the player switches apps — and it is
       // self-healing, so an alert for each one is a stream of messages about
@@ -605,6 +615,7 @@ function pixiInit(canvasEl) {
       // the input listeners are attached to it, and the tile cache belongs to
       // the renderer that just died. Rebuilding the renderer alone would give
       // back a world nobody could move around in.
+      _ctxRestoredN++;
       if (typeof _pixiRebuild === 'function') _pixiRebuild();
     });
   }
@@ -773,6 +784,13 @@ function _npcTextures(id) {
 // fresh Set every frame — avoids one GC-pressuring allocation per render on
 // mobile, where collection pauses show up as visible hitches.
 let _tileVisGen = 0;
+let _chunkBuildFailed = false;
+// What the tile pass actually decided this frame. Read by the blank-world
+// diagnostic (js/game.js): "no tiles" and "no tiles because the camera is
+// outside the map" are different problems with different fixes, and the first
+// report of this could not tell them apart.
+const _tileRange = { c0x: -1, c1x: -1, c0y: -1, c1y: -1, built: 0, failed: false };
+function pixiTileRange() { _tileRange.failed = _chunkBuildFailed; return _tileRange; }
 // Building a chunk (_buildChunk: 5-6 full passes over its tiles — wall fill,
 // floor, cliff caps, two shadow passes, props) plus the GPU texture upload
 // from PIXI.Texture.from() is real synchronous work per chunk. Revealing a
@@ -834,6 +852,8 @@ function _updateTiles(camX, camY) {
   const by0 = (dir && dir.dy < -0.15) ? Math.max(0, c0y - _CHUNK_LOOKAHEAD) : c0y;
   const by1 = (dir && dir.dy >  0.15) ? Math.min(maxCy, c1y + _CHUNK_LOOKAHEAD) : c1y;
 
+  _tileRange.c0x = c0x; _tileRange.c1x = c1x;
+  _tileRange.c0y = c0y; _tileRange.c1y = c1y;
   const gen = ++_tileVisGen;
   let _built = 0;
   _visibleTorches.length = 0;
@@ -846,7 +866,23 @@ function _updateTiles(camX, camY) {
         _built++;
         let cv = _tileChunks.get(key);
         if (!cv) {
-          cv = _buildChunk(cx, cy);
+          // Named, because "the world is black" and "chunk 4,7 threw on a
+          // missing room record" are the same event and only one of them can
+          // be acted on. Reported once; the chunk is skipped rather than
+          // taking the frame — a hole in the floor beats no floor at all.
+          try {
+            cv = _buildChunk(cx, cy);
+          } catch (err) {
+            if (!_chunkBuildFailed) {
+              _chunkBuildFailed = true;
+              console.error('[tiles] чанк ' + key + ' не построился:', err);
+              if (typeof window.__reportClientError === 'function') {
+                window.__reportClientError('chunk-build',
+                  'чанк ' + key + ': ' + (err && err.message), err && err.stack);
+              }
+            }
+            continue;
+          }
           if (_tileChunks.size >= _CHUNK_MAX) _tileChunks.delete(_tileChunks.keys().next().value);
           _tileChunks.set(key, cv);
         }
@@ -868,6 +904,7 @@ function _updateTiles(camX, camY) {
       }
     }
   }
+  _tileRange.built = _built;
   _chunkSprCache.forEach(spr => { spr.visible = spr._visGen === gen; });
   // Evict oldest-first (Map insertion order, same rule _tileChunks uses)
   // once over the cap, skipping anything visible this frame — see
@@ -2027,12 +2064,37 @@ function _updatePets(dt) {
 
 // ── main render entry ─────────────────────────────────────
 
+// Every layer, run so that one of them failing costs only itself.
+//
+// This used to be a straight sequence of calls, so the first one to throw took
+// the entire world with it — including renderer.render() at the end, which is
+// why a player saw a black screen rather than a world missing one thing. The
+// tile layer is the one that matters here: it runs first, and a failure in it
+// meant nothing at all was drawn.
+//
+// Each failure is reported ONCE per layer per session, with the real message
+// and stack. Silence is the thing being fixed; a swallowed exception that
+// nobody hears about would be the same bug wearing a different coat.
+const _layerBroken = new Set();
+function _layer(name, fn) {
+  try { fn(); } catch (err) {
+    if (!_layerBroken.has(name)) {
+      _layerBroken.add(name);
+      console.error('[pixi] слой "' + name + '" упал:', err);
+      if (typeof window.__reportClientError === 'function') {
+        window.__reportClientError('layer-' + name, err && err.message, err && err.stack);
+      }
+    }
+  }
+}
+
 function pixiWorldRender(dt, ts, camX, camY, theme) {
   if (!_pixiApp || _ctxLost) return;
   // Stamped BEFORE the work, not after: if this frame throws halfway through,
   // the renderer is still alive and the watchdog must not mistake one bad
   // frame for a dead context.
   _pixiLastRender = ts;
+  _gpuFrameStart();
 
   const bgCol = theme ? theme.bg : '#060610';
   if (bgCol !== _lastBgColor) { pixiSetBg(bgCol); _lastBgColor = bgCol; }
@@ -2043,20 +2105,19 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   const pulse    = 0.5 + 0.5 * Math.sin(ts * 0.009);
   const bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
 
-  _updateTiles(camX, camY);
-  _updateLights(ts);
-  _updateAoeRings();
-  _updateNpcs(dt, ts);
-  _updateDrops(ts);
-  _updateParticles();
-  _updateEnemies(dt, pulse, bossGlow);
-  _updateOtherPlayers(pulse, ts);
-  _updateProjs();
-  _updatePets(dt);
-  _updatePlayer(dt, ts);
-  _updateDmgNums();
+  _layer('tiles', () => _updateTiles(camX, camY));
+  _layer('lights', () => _updateLights(ts));
+  _layer('aoe', () => _updateAoeRings());
+  _layer('npcs', () => _updateNpcs(dt, ts));
+  _layer('drops', () => _updateDrops(ts));
+  _layer('particles', () => _updateParticles());
+  _layer('enemies', () => _updateEnemies(dt, pulse, bossGlow));
+  _layer('others', () => _updateOtherPlayers(pulse, ts));
+  _layer('projs', () => _updateProjs());
+  _layer('pets', () => _updatePets(dt));
+  _layer('player', () => _updatePlayer(dt, ts));
+  _layer('dmg', () => _updateDmgNums());
 
-  _gpuDraws = 0; _gpuVerts = 0;
   _pixiApp.renderer.render(_pixiApp.stage);
   _gpuDrawsSnap = _gpuDraws; _gpuVertsSnap = _gpuVerts;
 }

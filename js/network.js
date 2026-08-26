@@ -324,6 +324,14 @@ function _showReloadNotice() {
 // never appeared. Shown in the perf overlay.
 let _netLostHandles = 0;
 function netLostHandles() { return _netLostHandles; }
+// Ask the server to re-send every enemy in range in full, forgetting what it
+// believes this client already holds. Used when the client has reason to think
+// its picture is stale rather than merely incomplete — coming back from the
+// background is the case that matters, because the cast is volatile and a
+// hidden page received none of it. Rate-limited on the server as well.
+function netResyncWorld() {
+  if (socket && socket.connected) socket.emit('enemyResyncAll');
+}
 // Computed on read rather than per packet — only the overlay ever asks, and
 // only while it is on screen.
 function netJitterP95() {

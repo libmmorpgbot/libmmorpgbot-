@@ -2768,6 +2768,18 @@ document.addEventListener('visibilitychange', () => {
   // the watchdog has to be told when the clock started running again, or it
   // reads a paused tab as a dead renderer.
   _visibleSince = performance.now();
+  // ── everything on screen is as old as the time spent away ────────────────
+  // rAF is paused while the app is backgrounded, so the last frame drawn is
+  // whatever was true when the player switched away — and the world cast is
+  // volatile, so most of what happened meanwhile was dropped rather than
+  // queued. Coming back to a stale picture is exactly "моби пропадають, якась
+  // херня". Three things put it right, and all three are cheap:
+  //   the viewport, which the WebView may have resized while hidden;
+  //   the enemy stream, asked for in full rather than waited for;
+  //   the camera, in case anything drifted while nothing was drawing it.
+  if (_doResize) _doResize(true);
+  if (typeof netResyncWorld === 'function') netResyncWorld();
+  if (dungeon) clampCamera();
   // Coming back to the foreground: requestAnimationFrame (and with it,
   // update()/render()) is paused for the entire time the tab is hidden, but
   // socket messages still get processed as they arrive, so a fatal
@@ -2940,6 +2952,13 @@ function _worldBlankWhy() {
 
 // Everything an operator needs to tell these apart from a phone they cannot
 // hold. Numbers, not adjectives.
+const _n = v => (Number.isFinite(v) ? Math.round(v) : String(v));
+function _tileRangeStr() {
+  if (typeof pixiTileRange !== 'function') return '?';
+  const r = pixiTileRange();
+  return 'x' + r.c0x + '..' + r.c1x + ' y' + r.c0y + '..' + r.c1y
+    + ' постр.' + r.built + (r.failed ? ' СБОЙ_СБОРКИ' : '');
+}
 function _worldFacts() {
   const g = (typeof gpuStats === 'function') ? gpuStats() : { draws: -1, verts: -1 };
   return [
@@ -2948,7 +2967,17 @@ function _worldFacts() {
     'pixi ' + (pixiAlive() ? 'жив' : 'мёртв'),
     'карта ' + (dungeon && dungeon.grid ? dungeon.w + 'x' + dungeon.h + ' эт.' + dungeonLvl : 'НЕТ'),
     'чанки ' + (typeof _chunkSprCache !== 'undefined' ? _chunkSprCache.size : '?') + '/' + _tileChunks.size,
+    // "no tiles" has two very different causes and the first report of it
+    // could not tell them apart: the tile pass computed an EMPTY chunk range
+    // (camera outside the map — nothing to build), or it tried and the build
+    // threw. The range and the camera say which.
+    'диапазон ' + _tileRangeStr(),
+    'камера ' + _n(camera.x) + ',' + _n(camera.y),
+    'игрок ' + (player ? _n(player.x) + ',' + _n(player.y) : 'нет'),
     'draws ' + g.draws,
+    'контекст ' + (typeof pixiCtxCounts === 'function'
+      ? (function (c) { return 'терял ' + c.lost + ', вернул ' + c.restored; })(pixiCtxCounts())
+      : '?'),
     'сокет ' + (socket && socket.connected ? 'на связи' : 'НЕТ'),
     'кадр ' + Math.round(performance.now() - pixiLastRenderTs()) + 'мс назад',
   ].join(' · ');
@@ -2987,9 +3016,26 @@ function _worldWatchdog() {
       // size; the ResizeObserver below usually gets there first.
       if (_doResize) _doResize(true);
       break;
-    case 'no-tiles':
-      buildTileCanvas();
+    case 'no-tiles': {
+      // buildTileCanvas() only CLEARS the caches — chunks are built lazily by
+      // the tile pass. So calling it here was not a recovery at all: it threw
+      // away whatever existed and built nothing in its place.
+      //
+      // What actually stops the tile pass is a camera whose chunk range comes
+      // out empty, and the only way that happens on a valid map is a camera
+      // (or a player) that is not a finite number inside it. clamp puts it
+      // back; the pass builds on the next frame.
+      if (player && dungeon.spawn
+          && (!Number.isFinite(player.x) || !Number.isFinite(player.y))) {
+        player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
+      }
+      if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) {
+        camera.x = (player ? player.x : 0) - W / (2 * ZOOM);
+        camera.y = (player ? player.y : 0) - _visH() / 2;
+      }
+      clampCamera();
       break;
+    }
     case 'no-map':
       // Only the server can answer this, and the only thing that makes it
       // answer is a fresh attachment.

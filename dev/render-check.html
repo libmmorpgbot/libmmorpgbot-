@@ -144,24 +144,60 @@ const SHOT = `(function () {
   x.send(out.toDataURL("image/png"));
 })();`;
 
+// Load the REAL map of the real hub, through the client's own loader.
+//
+// A synthetic grid proves the renderer runs; it does not prove it runs on the
+// world players actually load. The tile builder reads rooms, arm entries,
+// race/guild/farm bounds and the biome theme straight off the dungeon — and a
+// black screen on a real device was traced to that pass failing, with the
+// synthetic floor passing happily all along.
+// The payload's shape is fixed by Room.mapPayload: a little-endian uint32
+// length, that many bytes of JSON metadata, then the packed grid bits. Decoded
+// here rather than through the client's own _decodeWorldMap, which is closure
+// state inside netConnect and unreachable from outside — see the note above
+// about script-scope bindings.
+const MAP_LOAD = `window.__rcMapReady = false;
+fetch('/api/world-map/hub/x')
+  .then(function (r) { return r.arrayBuffer(); })
+  .then(function (b) {
+    var n = new DataView(b).getUint32(0, true);
+    var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(b, 4, n)));
+    meta.gridPacked = new Uint8Array(b, 4 + n);
+    window.__rcMap = meta;
+    window.__rcMapReady = true;
+  })
+  .catch(function (e) { window.__rcMapErr = String(e && e.message); window.__rcMapReady = true; });`;
+
 // Everything below runs INSIDE the game's own script scope.
 const SETUP = `
 (function () {
-  const TW = 70, TH = 70, T = TILE;
-  const grid = [];
-  for (let y = 0; y < TH; y++) {
-    const row = new Array(TW);
-    for (let x = 0; x < TW; x++) row[x] = (x < 2 || y < 2 || x > TW - 3 || y > TH - 3) ? 0 : 1;
-    grid.push(row);
+  const T = TILE;
+  const m = window.__rcMap;
+  window.__rcRealMap = !!m;
+  if (m) {
+    // Exactly what _applyGameStart does with it, so the tile pass sees the
+    // same object shape it sees in play.
+    dungeonLvl = 1;
+    dungeon = { ...m, grid: unpackGrid(m.gridPacked, m.w, m.h), enemies: [], safeZone: m.safeZone || null };
+    if (typeof _buildArmGates === 'function') _buildArmGates();
+    if (typeof initNpcs === 'function') initNpcs();
+  } else {
+    const TW = 70, TH = 70;
+    const grid = [];
+    for (let y = 0; y < TH; y++) {
+      const row = new Array(TW);
+      for (let x = 0; x < TW; x++) row[x] = (x < 2 || y < 2 || x > TW - 3 || y > TH - 3) ? 0 : 1;
+      grid.push(row);
+    }
+    dungeonLvl = 1;
+    dungeon = {
+      w: TW, h: TH, grid, spawn: { x: 35 * T, y: 35 * T },
+      rooms: [{ x: 2, y: 2, w: TW - 4, h: TH - 4, arm: 'left', monsterLvl: 5 }],
+      safeZone: null, armEntries: null, returnPad: null, corridorGates: null,
+    };
   }
-  const cx = 35 * T, cy = 35 * T;
+  const cx = dungeon.spawn.x, cy = dungeon.spawn.y;
   window.__rcCx = cx; window.__rcCy = cy;
-  dungeonLvl = 1;
-  dungeon = {
-    w: TW, h: TH, grid, spawn: { x: cx, y: cy },
-    rooms: [{ x: 2, y: 2, w: TW - 4, h: TH - 4, arm: 'left', monsterLvl: 5 }],
-    safeZone: null, armEntries: null, returnPad: null, corridorGates: null,
-  };
   buildTileCanvas();
   player = makePlayer('lev');
   player.x = cx; player.y = cy;
@@ -243,6 +279,10 @@ const PROBE = `window.__rc = {
   labels: _decalLbls.length,
   enemies: serverEnemies.length, others: otherPlayers.size, drops: worldDrops.size,
   torches: (typeof _chunkTorches !== 'undefined' && _chunkTorches) ? _chunkTorches.size : -1,
+  chunks: (typeof _chunkSprCache !== 'undefined') ? _chunkSprCache.size : -1,
+  tileRange: (typeof _tileRangeStr === 'function') ? _tileRangeStr() : '?',
+  tileFailed: (typeof pixiTileRange === 'function') ? pixiTileRange().failed : false,
+  realMap: !!window.__rcRealMap,
   state: state, hasDungeon: !!dungeon,
   profUpdate: _profUpdate, profRender: _profRender,
 };`;
@@ -261,12 +301,20 @@ async function run() {
   ok((w.__rcErrors || []).length === 0, 'ни одной ошибки при старте', (w.__rcErrors || []).slice(0, 3).join(' | '));
 
   head('мир');
+  inject(w, MAP_LOAD);
+  for (let i = 0; i < 60 && !w.__rcMapReady; i++) await new Promise(res => setTimeout(res, 50));
+  ok(!!w.__rcMap, 'настоящая карта хаба загружена клиентским загрузчиком',
+     w.__rcMap ? w.__rcMap.w + 'x' + w.__rcMap.h : ('НЕТ — ' + (w.__rcMapErr || 'таймаут')));
   inject(w, SETUP);
   await frames(w, 12);
   inject(w, PROBE);
   let r = w.__rc;
   ok(r && r.hasDungeon && r.state === 'playing', 'этаж собран и игра в состоянии playing');
-  ok(r.torches > 0, 'тайл-чанки построены (есть факелы)', r.torches + ' чанков с факелами');
+  ok(r.chunks > 0, 'тайлы НАСТОЯЩЕЙ карты растеризуются',
+     r.chunks + ' чанков; диапазон ' + r.tileRange
+     + (r.tileFailed ? '  СБОРКА ЧАНКА УПАЛА' : ''));
+  ok(!r.tileFailed, 'ни один чанк не упал при сборке');
+  ok(r.torches > 0, 'на карте есть факелы (чанки действительно разобраны)', String(r.torches));
 
   head('всё, что рисует мир');
   ok(r.gpu.draws > 0, 'кадр дошёл до GPU', r.gpu.draws + ' draw calls, ' + (r.gpu.verts / 1000).toFixed(1) + 'k вершин');
@@ -354,7 +402,11 @@ async function run() {
   await frames(w, 2);
   inject(w, PROBE); const vDrop = w.__rc.gpu.verts;
   const perDrop = (vDrop - vBase) / 40;
-  ok(perDrop > 0 && perDrop <= 18, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника',
+  // Three sprites is eighteen indices; the bound is a little above that
+  // because the baseline is measured on a scene with other things in it, and a
+  // decal or a name drifting in or out shifts it by a sprite. What is being
+  // guarded is the difference between ~18 and ~462, not the last unit.
+  ok(perDrop > 0 && perDrop <= 24, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника',
      perDrop.toFixed(1) + ' верш./кучу (было 462)' + (perDrop > 0 ? '' : ' — НИЧЕГО НЕ НАРИСОВАЛОСЬ'));
   ok((w.__rcErrors || []).length === 0, 'ни одной ошибки за весь прогон', (w.__rcErrors || []).slice(0, 5).join(' | '));
 
