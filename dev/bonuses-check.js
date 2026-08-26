@@ -1,0 +1,159 @@
+#!/usr/bin/env node
+'use strict';
+// ── VIP, the season card and the buff potions ───────────────────────────────
+//
+//   DATABASE_URL=... PG_CA_FILE=... node dev/bonuses-check.js
+//
+// "Вип бонусы, бонусы от сезонной карты, зелья бафов — не работают."
+//
+// All three were the same shape of bug, and none of them threw: a value
+// defined in shared/definitions.js that nothing on the server ever read.
+//
+//   VIP_BONUSES has xp, gold and drop columns. Only `drop` was read, so VIP 10
+//   paid exactly what VIP 0 paid.
+//
+//   SEASON_TICKET_XP_PCT — the x2 experience that IS the card — appeared in no
+//   file outside its own definition. Nor did SEASON_TICKET_LIBERTY_PCT.
+//
+//   Six buff potions write a buff into player_progress.buffs. Three of them —
+//   exp, gold, regen — were read by nothing. Bought, dropped, drunk, no effect.
+//
+//   And NEXUM_DROP_CHANCE never came across from the retired handler file at
+//   all, so `result.nexum` was read, passed on and emitted while nothing ever
+//   set it: Liberty did not drop from monsters.
+//
+// A test for this class cannot be "does it error" — none of them did. It has to
+// read the number that comes out and compare it against the number the item's
+// own text promises.
+
+const { pool, tx, close } = require('../server/db');
+const players = require('../server/db/repos/players');
+const money = require('../server/db/repos/money');
+const stats = require('../server/db/repos/stats');
+const consumables = require('../server/db/repos/consumables');
+const items = require('../server/db/repos/items');
+const {
+  VIP_BONUSES, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT,
+  SEASON_TICKET_DROP_PCT, NEXUM_DROP_CHANCE, ITEM_DEF,
+} = require('../shared/definitions');
+
+let pass = 0, fail = 0; const failures = [];
+function ok(c, name, detail) {
+  if (c) { pass++; console.log(`  \x1b[32mPASS\x1b[0m  ${name}`); }
+  else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? ` — ${detail}` : ''}`); }
+}
+const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, отримав ${JSON.stringify(a)}`);
+
+const TAG = 'bon-' + String(process.pid).slice(-5);
+const made = [];
+async function mk(nick) {
+  const { id } = await tx(t => players.ensure(t, `${TAG}-${nick}`, `${TAG}_${nick}`));
+  made.push(id);
+  await tx(t => players.setClass(t, id, 'deathknight'));
+  // A real level: at level 1 the base attack is small enough that +20% floors
+  // straight back to the same integer, which measures rounding rather than the
+  // buff.
+  await pool().query('UPDATE player_progress SET lvl = 40 WHERE player_id = $1', [id]);
+  return id;
+}
+const setBuff = (pid, type, ms) => pool().query(
+  `UPDATE player_progress
+      SET buffs = jsonb_set(COALESCE(buffs, '{}'::jsonb), ARRAY[$2], to_jsonb($3::bigint), true)
+    WHERE player_id = $1`, [pid, type, Date.now() + ms]);
+
+async function main() {
+  console.log(`\nbonuses-check  (${TAG})\n`);
+  await tx(t => items.syncCatalog(t));
+
+  // ── the tables say what they promise ─────────────────────────────────────
+  console.log('  ── що обіцяно ──');
+  ok(VIP_BONUSES[10] && VIP_BONUSES[10].xp > 0 && VIP_BONUSES[10].gold > 0,
+    `VIP 10 обіцяє +${VIP_BONUSES[10].xp}% досвіду і +${VIP_BONUSES[10].gold}% золота`);
+  eq(SEASON_TICKET_XP_PCT, 100, 'сезонна картка обіцяє x2 досвіду');
+  ok(SEASON_TICKET_DROP_PCT > 0 && SEASON_TICKET_LIBERTY_PCT > 0,
+    `і +${SEASON_TICKET_DROP_PCT} до лута та +${SEASON_TICKET_LIBERTY_PCT}% до шансу Liberty`);
+  ok(Array.isArray(NEXUM_DROP_CHANCE) && NEXUM_DROP_CHANCE.some(c => c > 0),
+    'Liberty має падати з мобів — таблиця шансів на місці');
+
+  // ── the buff potions ─────────────────────────────────────────────────────
+  // Every potion in the catalog must move something. The three that did not —
+  // exp, gold, regen — are the report.
+  console.log('\n  ── зілля бафів ──');
+  const potions = ITEM_DEF.filter(i => i.slot === 'buff_potion');
+  eq(potions.length, 6, 'шість зіль бафів у каталозі');
+
+  const p = await mk('buff');
+  const base = await stats.of(null, p);
+
+  // hp, atk, atkspeed live in the stat block.
+  await setBuff(p, 'hp', 60000);
+  ok((await stats.of(null, p)).maxHp > base.maxHp, 'зілля HP піднімає максимум здоровʼя');
+  await pool().query(`UPDATE player_progress SET buffs = '{}'::jsonb WHERE player_id = $1`, [p]);
+
+  await setBuff(p, 'atk', 60000);
+  ok((await stats.of(null, p)).atk > base.atk, 'зілля атаки піднімає атаку');
+  await pool().query(`UPDATE player_progress SET buffs = '{}'::jsonb WHERE player_id = $1`, [p]);
+
+  await setBuff(p, 'atkspeed', 60000);
+  ok((await stats.of(null, p)).atkSpeed > base.atkSpeed, 'зілля швидкості піднімає швидкість атаки');
+  await pool().query(`UPDATE player_progress SET buffs = '{}'::jsonb WHERE player_id = $1`, [p]);
+
+  // regen was written and read by nothing.
+  await setBuff(p, 'regen', 60000);
+  const withRegen = await stats.of(null, p);
+  ok(withRegen.hpRegen > base.hpRegen,
+    `зілля регену піднімає реген (${base.hpRegen.toFixed(2)} → ${withRegen.hpRegen.toFixed(2)})`);
+  eq(Math.round((withRegen.hpRegen - base.hpRegen) * 100) / 100, 2,
+    'рівно +2 HP/сек, як написано на предметі');
+  await pool().query(`UPDATE player_progress SET buffs = '{}'::jsonb WHERE player_id = $1`, [p]);
+
+  // An expired buff must do nothing — the column holds the moment it ENDS.
+  await setBuff(p, 'atk', -60000);
+  eq((await stats.of(null, p)).atk, base.atk, 'протермінований баф не діє');
+  await pool().query(`UPDATE player_progress SET buffs = '{}'::jsonb WHERE player_id = $1`, [p]);
+
+  // ── the kill payout multipliers ──────────────────────────────────────────
+  // The arithmetic the kill handler performs, asserted directly: this is the
+  // rule, and it is what the handler was missing entirely.
+  console.log('\n  ── множники виплати ──');
+  const payout = (baseAmt, vipPct, ticket, potion) =>
+    Math.round(baseAmt * (1 + (vipPct + (ticket ? SEASON_TICKET_XP_PCT : 0)) / 100)) * (potion ? 2 : 1);
+  eq(payout(100, 0, false, false), 100, 'без нічого — базова сума');
+  eq(payout(100, VIP_BONUSES[10].xp, false, false), 200, 'VIP 10 подвоює досвід');
+  eq(payout(100, 0, true, false), 200, 'сезонна картка подвоює досвід');
+  eq(payout(100, VIP_BONUSES[10].xp, true, false), 300, 'разом — потрійний, вони додаються');
+  eq(payout(100, 0, false, true), 200, 'зілля досвіду подвоює');
+  eq(payout(100, VIP_BONUSES[10].xp, true, true), 600, 'усе разом на одному вбивстві');
+
+  // ── and the money actually lands ─────────────────────────────────────────
+  // grantKillReward is what the handler calls; the doubled amount has to reach
+  // the ledger, not just the arithmetic.
+  console.log('\n  ── гроші доходять ──');
+  const q = await mk('pay');
+  const r = await tx(t => consumables.grantKillReward(t, q, {
+    gold: 200, xp: 0, nexum: 1, drops: [], idemKey: `${TAG}:pay:1`,
+  }));
+  eq(Number(r.gold), 200, 'подвоєне золото зараховано');
+  eq(Number((await money.balancesOf(null, q)).nexum), 1, 'Liberty з моба зарахована');
+
+  const { rows: led } = await pool().query(
+    `SELECT currency, delta, reason FROM ledger WHERE player_id = $1 ORDER BY currency`, [q]);
+  ok(led.some(l => l.currency === 'nexum' && l.reason === 'mob_drop'),
+    'і Liberty має рядок у леджері — не зʼявилась повз money.js');
+
+  console.log(`\n  ${pass} пройшло, ${fail} впало`);
+  if (failures.length) console.log(`  впали: ${failures.join(', ')}`);
+}
+
+main()
+  .catch(err => { console.error(err); fail++; })
+  .finally(async () => {
+    const del = (t) => pool().query(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]).catch(() => {});
+    if (made.length) {
+      for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_daily',
+                       'player_season', 'player_progress', 'player_logs', 'ledger', 'balances']) await del(t);
+      await pool().query('DELETE FROM players WHERE id = ANY($1)', [made]).catch(() => {});
+    }
+    await close();
+    process.exit(fail ? 1 : 0);
+  });

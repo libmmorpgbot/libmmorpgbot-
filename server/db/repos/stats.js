@@ -140,6 +140,11 @@ function compute(row) {
   if (buffOn('hp'))       h = Math.floor(h * 1.10);
   if (buffOn('atk'))      a = Math.floor(a * 1.20);
   if (buffOn('atkspeed')) extraAS += (cd.atkSpeed || 0) * 0.20;
+  // Three of the six buff potions were written and never read: exp, gold and
+  // regen. exp and gold are applied where a kill pays out (handlers2/world.js);
+  // regen belongs here, with every other stat, and is the flat +2 HP/sec the
+  // item's own text promises.
+  const regenBuff = buffOn('regen') ? 2 : 0;
 
   a = Math.floor(a * (1 + pt.atkPct));
   d = Math.floor(d * (1 + pt.defPct));
@@ -160,7 +165,7 @@ function compute(row) {
     critChance: Math.min(0.80, 0.05 + lvl * 0.004 + row.upg_crit_chance * 0.01 + extraCrit),
     critPower:  1.5 + lvl * 0.015 + row.upg_crit_power * 0.03 + pt.critPowerFlat,
     atkSpeed:   (cd.atkSpeed || 0) * (1 + lvl * 0.015) + row.upg_atk_speed * 0.05 + extraAS,
-    hpRegen:    lvl * 0.02 + row.upg_hp_regen * 0.1 + pt.hpRegenFlat,
+    hpRegen:    lvl * 0.02 + row.upg_hp_regen * 0.1 + pt.hpRegenFlat + regenBuff,
     moveSpeed:  (cd.speed || 0) * (1 + pt.moveSpeedPct),
     skillPct,
     hp: Math.min(row.hp, h),

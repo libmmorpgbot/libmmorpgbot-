@@ -281,14 +281,21 @@ function _questProgHtml(q, isCur) {
   if (complete) return `<button class="quest-claim-btn" onclick="claimQuest()">${typeof t === 'function' ? t('questClaimReward') : 'Забрать награду'}</button>`;
 
   if (q.type === 'kill') {
-    const done = q.enemies.reduce((s, n) => s + (player.questKills[n] || 0), 0);
+    // questKillsFor reads the SPECIES id, and the old name key alongside it for
+    // a quest that was already in flight. Reading `player.questKills[name]`
+    // directly is what froze every quest for anyone not playing in Russian:
+    // applyLocale rewrites q.enemies to the localised names and the counters
+    // keep their original keys.
+    const done = (q.eids || q.enemies).reduce((s, _x, i) => s + questKillsFor(q, player.questKills, i), 0);
     const pct  = Math.min(100, Math.round(done / q.count * 100));
     return `<div class="quest-prog">${done}/${q.count}
       <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;
   }
   if (q.type === 'kill_multi') {
-    return q.enemies.map(name => {
-      const done = player.questKills[name] || 0;
+    return q.enemies.map((name, i) => {
+      // The NAME is what is shown — localised, in the player's language — and
+      // the count comes from the species id beside it.
+      const done = questKillsFor(q, player.questKills, i);
       const pct  = Math.min(100, Math.round(done / q.count * 100));
       return `<div class="quest-prog">${name}: ${done}/${q.count}
         <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div></div>`;

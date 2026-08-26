@@ -2010,12 +2010,53 @@ function upgradeCost(level) { return 300 * (Math.max(0, Math.floor(Number(level)
 // `kills` is the same flat map both sides keep (savedData.questKills): enemy
 // names for the kill types, and a handful of underscore-prefixed keys for the
 // others.
+// ── quests are bound to SPECIES, not to a display name ──────────────────────
+// Every kill quest lists its targets as names — `enemies: ['Крыса страж']` —
+// and the kill counter is stored under that same string. That works in exactly
+// one language.
+//
+// js/i18n.js's applyLocale rewrites `q.enemies` to the localised names when the
+// language is not Russian. The counters keep their Russian keys, because the
+// server writes them from its own untranslated table. So in English the panel
+// asks for `questKills['Rat Guard']`, gets undefined, shows 0/10 forever and
+// never offers the claim button — the whole quest chain is frozen for anyone
+// not playing in Russian. "На русском работают, на других нет."
+//
+// `eids` is the technical binding: an enemy's `eid` is an identifier, not text,
+// and no translation touches it. Computed here, once, from the pristine table
+// — before i18n can mutate a single name.
+const _EID_BY_ENEMY_NAME = new Map(ENEMY_DEF.map(e => [e.name, e.eid]));
+for (const _q of QUEST_DEF) {
+  if (!Array.isArray(_q.enemies)) continue;
+  // The Russian names are kept under their own key as well: accounts that are
+  // mid-quest right now have counters filed under them, and dropping those
+  // would reset everyone's progress to zero on deploy.
+  _q.legacyNames = [..._q.enemies];
+  _q.eids = _q.enemies.map(n => _EID_BY_ENEMY_NAME.get(n) || n);
+}
+
+// How many kills of one quest target this player has. Reads the species id AND
+// the old name key, because a quest in flight when this shipped has its count
+// under the name. The two keys never both receive new writes, so adding them
+// cannot double-count.
+function questKillsFor(q, kills, i) {
+  const k = kills || {};
+  const num = key => Math.max(0, Math.floor(Number(k[key])) || 0);
+  const byEid = (q.eids && q.eids[i]) ? num(q.eids[i]) : 0;
+  const byName = (q.legacyNames && q.legacyNames[i]) ? num(q.legacyNames[i]) : 0;
+  return byEid + byName;
+}
+
 function questComplete(q, kills, lvl) {
   const k = kills || {};
   const n = key => Math.max(0, Math.floor(Number(k[key])) || 0);
   switch (q && q.type) {
-    case 'kill':          return (q.enemies || []).reduce((s, name) => s + n(name), 0) >= q.count;
-    case 'kill_multi':    return (q.enemies || []).every(name => n(name) >= q.count);
+    case 'kill':
+      return (q.eids || q.enemies || [])
+        .reduce((s, _x, i) => s + questKillsFor(q, k, i), 0) >= q.count;
+    case 'kill_multi':
+      return (q.eids || q.enemies || [])
+        .every((_x, i) => questKillsFor(q, k, i) >= q.count);
     case 'level':         return (Math.max(1, Math.floor(Number(lvl)) || 1)) >= q.level;
     case 'buy_potion':    return n('_potion') >= q.count;
     case 'craft':         return n('_craft') >= 1;
@@ -2163,6 +2204,16 @@ const VIP_BONUSES = [
 // VIP's own xp/drop bonuses (server/index.js's _vipBon), same percentage
 // units; the Liberty (Nexum) drop chance has no VIP bonus of its own to
 // stack with, so this is applied as a straight relative multiplier there.
+// ── Liberty from an ordinary kill ───────────────────────────────────────────
+// By corridor: the deeper the arm, the better the chance. These lived as local
+// consts inside the OLD handler file (server/handlers/world.js) and were never
+// moved when the handlers were rewritten — so `result.nexum` is read and
+// emitted by the new kill path, and nothing has ever set it. Liberty simply
+// did not drop from monsters at all.
+//
+// Index is the corridor number (armIndexForLevel), 1..5; index 0 is the hub.
+const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
+
 const SEASON_TICKET_GRAM_PRICE = 15;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
 const SEASON_TICKET_DROP_PCT = 30;     // +30 to the bonus loot re-roll chance
@@ -2219,10 +2270,11 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
-  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete,
+  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
+  NEXUM_DROP_CHANCE,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,

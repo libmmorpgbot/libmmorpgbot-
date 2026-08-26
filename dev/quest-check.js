@@ -70,16 +70,19 @@ async function main() {
   const p = await mk('a');
 
   // ── a kill counts ────────────────────────────────────────────────────────
+  // Under the SPECIES ID. It used to be filed under the display name, which is
+  // the whole reason quests worked in Russian and nowhere else — see the
+  // language block near the end of this file.
   await prog.questOnKill(null, p, { eid: targetEid, rlvl: 1 });
   let st = await state(p);
-  eq(st.questKills[targetName], 1, 'вбивство зарахувалось у лічильник квесту');
+  eq(st.questKills[targetEid], 1, 'вбивство зарахувалось у лічильник квесту');
 
   // ── a kill of something else does NOT ────────────────────────────────────
   const other = ENEMY_DEF.find(e => e.eid !== targetEid && !(q0.enemies || []).includes(e.name));
   await prog.questOnKill(null, p, { eid: other.eid, rlvl: 1 });
   st = await state(p);
   eq(Object.keys(st.questKills).length, 1, 'чужий моб не створив зайвий лічильник');
-  eq(st.questKills[targetName], 1, 'і не збив свій');
+  eq(st.questKills[targetEid], 1, 'і не збив свій');
 
   // ── the claim is refused until the count is reached ──────────────────────
   eq(await caught(() => tx(t => prog.claimQuest(t, p, 0))), 'not_done',
@@ -90,7 +93,7 @@ async function main() {
     await prog.questOnKill(null, p, { eid: targetEid, rlvl: 1 });
   }
   st = await state(p);
-  eq(st.questKills[targetName], q0.count, `дійшли до ${q0.count}`);
+  eq(st.questKills[targetEid], q0.count, `дійшли до ${q0.count}`);
   ok(questComplete(q0, st.questKills, 1), 'questComplete погоджується, що виконано');
 
   // ── and now it claims ────────────────────────────────────────────────────
@@ -112,7 +115,7 @@ async function main() {
   // reached yet, which is what an unconditional counter would do.
   await prog.questOnKill(null, p, { eid: targetEid, rlvl: 1 });
   st = await state(p);
-  eq(st.questKills[targetName], undefined,
+  eq(st.questKills[targetEid], undefined,
     'моб попереднього завдання не рахується у поточне');
 
   // ── a non-kill quest: buying potions ─────────────────────────────────────
@@ -194,7 +197,56 @@ async function main() {
   await Promise.all(Array.from({ length: 8 }, () =>
     prog.questOnKill(null, p6, { eid: targetEid, rlvl: 1 })));
   const s6 = await state(p6);
-  eq(s6.questKills[targetName], 8, '8 одночасних вбивств — 8 у лічильнику');
+  eq(s6.questKills[targetEid], 8, '8 одночасних вбивств — 8 у лічильнику');
+
+  // ── квести не залежать від мови ────────────────────
+  // "На русском работают, на других нет."
+  //
+  // A kill quest listed its targets as display NAMES and stored the counter
+  // under the same string. js/i18n.js's applyLocale rewrites q.enemies to the
+  // localised names when the language is not Russian; the counters keep their
+  // Russian keys, because the server writes them from its own untranslated
+  // table. So the panel asked for questKills['Rat Guard'], got undefined, and
+  // showed 0/10 forever — the chain was frozen for everyone not playing in
+  // Russian.
+  //
+  // The binding is the species id now. This proves it by doing what applyLocale
+  // does — replacing the names on a copy of the quest — and checking the count
+  // still reads.
+  console.log('');
+  console.log('  ── квест будь-якою мовою ──');
+  const killQ = QUEST_DEF.find(q => q.type === 'kill' && (q.eids || []).length === 1);
+  ok(!!killQ && !!killQ.eids, 'у квеста є привʼязка до виду, а не лише назва');
+  const eid0 = killQ.eids[0];
+  ok(eid0 !== killQ.enemies[0],
+    `id виду (${eid0}) — не те саме, що назва (${killQ.enemies[0]})`);
+
+  // Exactly what applyLocale produces for English.
+  const translated = { ...killQ, enemies: ['Rat Guard'] };
+  ok(questComplete(translated, { [eid0]: killQ.count }, 99),
+    'квест зараховується, коли назви перекладені');
+  ok(!questComplete(translated, { [eid0]: killQ.count - 1 }, 99),
+    'і не зараховується, поки не добито');
+
+  // A quest already in flight keeps its progress: those counters are filed
+  // under the Russian name and dropping them would zero everyone on deploy.
+  ok(questComplete(translated, { [killQ.legacyNames[0]]: killQ.count }, 99),
+    'старий лічильник за назвою досі рахується — прогрес не обнулився');
+  ok(questComplete(translated, {
+    [killQ.legacyNames[0]]: Math.floor(killQ.count / 2),
+    [eid0]: killQ.count - Math.floor(killQ.count / 2),
+  }, 99), 'і половина старим ключем плюс половина новим дає ціле');
+
+  // The server counts under the species id.
+  const lq = await mk('lang');
+  await pool().query(
+    'UPDATE player_progress SET quest_idx = $2, quest_kills = $3 WHERE player_id = $1',
+    [lq, QUEST_DEF.indexOf(killQ), JSON.stringify({})]);
+  await tx(t => prog.questOnKill(t, lq, { eid: eid0, rlvl: 1 }));
+  const after = await prog.questState(null, lq);
+  eq((after.questKills || {})[eid0], 1,
+    'сервер пише лічильник під id виду, а не під російською назвою');
+
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

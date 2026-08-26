@@ -33,7 +33,8 @@ const loot = require('../game/loot');
 const { query } = require('../db');
 const {
   CHAR_DEF, FLOOR_ENEMIES, FEAR_MAX_WAVE, COOP_STAGE_LEVELS,
-  VIP_BONUSES, SEASON_TICKET_DROP_PCT, seasonActive,
+  VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
+  NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, armIndexForLevel,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -220,8 +221,39 @@ module.exports = function registerWorld(s, safeOn, deps) {
       ? [...members.keys()].filter(id => id !== s.socket.id && s.room && s.room.players.has(id))
       : [];
     const share = mates.length + 1;
-    const myGold = Math.round((result.gold || 0) / share);
-    const myXp = share > 1 ? Math.max(1, Math.round((result.xp || 0) / share)) : (result.xp || 0);
+    const baseGold = Math.round((result.gold || 0) / share);
+    const baseXp = share > 1 ? Math.max(1, Math.round((result.xp || 0) / share)) : (result.xp || 0);
+
+    // ── VIP and the season ticket, on the numbers they were written for ─────
+    // VIP_BONUSES has three columns — xp, gold, drop — and only `drop` was ever
+    // read. SEASON_TICKET_XP_PCT (x2 experience, the headline of the card) and
+    // SEASON_TICKET_LIBERTY_PCT were not read anywhere at all. So VIP 10 paid
+    // exactly what VIP 0 paid, and a bought season card doubled nothing:
+    // "Вип бонусы, бонусы от сезонной карты не работают."
+    //
+    // Additive between the two, applied to the share this player receives so a
+    // party member's VIP is theirs and not the group's.
+    const vipB = VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {};
+    const ticketOn = !!(s.seasonTicket && seasonActive());
+    const xpPct = (vipB.xp || 0) + (ticketOn ? (SEASON_TICKET_XP_PCT || 0) : 0);
+    const goldPct = vipB.gold || 0;
+    const myGold = Math.round(baseGold * (1 + goldPct / 100));
+    const myXp = Math.round(baseXp * (1 + xpPct / 100));
+
+    // ── Liberty from the kill ───────────────────────────────────────────────
+    // `result.nexum` is read three lines below, passed to grantKillReward and
+    // emitted to the client — and nothing has ever assigned it. The chance
+    // table was a local const in the retired handler file and did not come
+    // across, so Liberty has never dropped from a monster in this build.
+    //
+    // The season card's third promise is here: +10% RELATIVE to the chance,
+    // which is what SEASON_TICKET_LIBERTY_PCT is for and where it was never
+    // read.
+    const arm = armIndexForLevel(result.rlvl || 1);
+    const libertyChance = result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0)
+      : result.farmZone ? 0
+      : (NEXUM_DROP_CHANCE[arm] || 0) * (ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1);
+    const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
 
     // One key per KILL, not per enemy and not per attempt.
     //
@@ -245,8 +277,23 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const prog = await players.progressOf(t, pid);
       const drops = rollLoot(result, prog.lvl);
 
+      // ── the two buff potions that did nothing ──────────────────────────────
+      // Six buff potions exist; three were written into player_progress.buffs
+      // and never read anywhere. `hp`, `atk` and `atkspeed` are applied in
+      // repos/stats.js — `exp` (x2 опыт), `gold` (x2 золото) and `regen` were
+      // not applied at all, so half the potions in the game were sold, bought,
+      // dropped and drunk for no effect: "зелья бафов не работают".
+      //
+      // Read from the progress row already fetched a line above, so this costs
+      // nothing extra, and applied to THIS player's share — a potion is the
+      // drinker's, not the party's.
+      const nowMs = Date.now();
+      const buffOn = t2 => Number((prog.buffs || {})[t2] || 0) > nowMs;
+      const paidGold = buffOn('gold') ? myGold * 2 : myGold;
+      const paidXp = buffOn('exp') ? myXp * 2 : myXp;
+
       const reward = await consumables.grantKillReward(t, pid, {
-        gold: myGold, xp: myXp, nexum: result.nexum || 0,
+        gold: paidGold, xp: paidXp, nexum: myNexum,
         drops: drops.items, idemKey: idem,
       });
       // The quest chain. `result.enemyName` — the field the rewrite passed here
@@ -264,7 +311,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
         // paid nor told.
         refBonus = await progression.payReferralOnLevel(t, pid, reward.xp.lvl || 0);
       }
-      return { reward, drops, refBonus };
+      return { reward, drops, refBonus, paidGold, paidXp };
     });
     if (!done) return;                      // act reported it; nothing happened
 
@@ -287,15 +334,15 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
     s.socket.emit('enemyKilled', {
       id: result.enemyUid, at: result.at,
-      gold: myGold, goldTotal: reward.gold,
-      xp: myXp, level: reward.xp || null,
+      gold: done.paidGold, goldTotal: reward.gold,
+      xp: done.paidXp, level: reward.xp || null,
       dmg: result.dmg, isCrit: result.isCrit,
       ex: result.ex, ey: result.ey, color: result.color,
       eid: result.eid, rlvl: result.rlvl,
       items: reward.items.filter(i => !i.dropped),
       boxUncommon: drops.boxUncommon, boxRare: drops.boxRare,
       normStone: drops.normStone, blessStone: drops.blessStone,
-      nexum: result.nexum || 0, gram: result.gram || 0,
+      nexum: myNexum, gram: result.gram || 0,
     });
 
     // What would not fit stays on the floor. The reward for a kill is not owed
@@ -312,16 +359,27 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const mate = deps.sessionForSocketId && deps.sessionForSocketId(mid);
       if (!mate || !mate.authed) continue;
       mate.act('killRewardShare', 'itemError', async (t, pid) => {
+        // Their own VIP, their own season ticket, their own potions. Paying a
+        // party member the KILLER's multipliers would make a group's rewards
+        // depend on who landed the last hit.
+        const mProg = await players.progressOf(t, pid);
+        const mNow = Date.now();
+        const mBuff = t2 => Number((mProg.buffs || {})[t2] || 0) > mNow;
+        const mVip = VIP_BONUSES[mate.vipLevel || 0] || VIP_BONUSES[0] || {};
+        const mTicket = !!(mate.seasonTicket && seasonActive());
+        const mXpPct = (mVip.xp || 0) + (mTicket ? (SEASON_TICKET_XP_PCT || 0) : 0);
+        const mGold = Math.round(baseGold * (1 + (mVip.gold || 0) / 100)) * (mBuff('gold') ? 2 : 1);
+        const mXp = Math.round(baseXp * (1 + mXpPct / 100)) * (mBuff('exp') ? 2 : 1);
         const r = await consumables.grantKillReward(t, pid, {
-          gold: myGold, xp: myXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,
+          gold: mGold, xp: mXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,
         });
         const mq = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
         if (mq) mate.socket.emit('questSync', mq);
         await mate.pushBalances(t);
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
         mate.socket.emit('enemyKilled', {
-          id: result.enemyUid, gold: myGold, goldTotal: r.gold,
-          xp: myXp, level: r.xp || null,
+          id: result.enemyUid, gold: mGold, goldTotal: r.gold,
+          xp: mXp, level: r.xp || null,
           ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl,
         });

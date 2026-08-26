@@ -127,8 +127,12 @@ async function questOnKill(db, playerId, { eid, rlvl } = {}) {
   if (!q) return null;
 
   if ((q.type === 'kill' || q.type === 'kill_multi') && eid) {
-    const def = ENEMY_DEF.find(e => e.eid === eid);
-    if (def && (q.enemies || []).includes(def.name)) return bumpQuest(db, playerId, def.name, 1);
+    // Matched and counted by SPECIES ID. It used to look the enemy up by eid,
+    // take its display NAME, and both match and store under that — which ties
+    // the whole quest chain to one language, because the client translates
+    // those names and then cannot find its own counters. See the eids binding
+    // in shared/definitions.js.
+    if ((q.eids || []).includes(eid)) return bumpQuest(db, playerId, eid, 1);
     return null;
   }
 
