@@ -112,6 +112,43 @@ function _resultMeta(name, meta, out) {
 // second process appears; nothing else here needs to.
 const activeSessions = new Map();
 
+// ── how often the single-session rule actually fires ────────────────────────
+// It fired in complete silence: no player_logs row, no counter, no console
+// line. So "с двух устройств можно играть" could be neither confirmed nor
+// denied from the server — the rule left no evidence that it had run, which is
+// the same position as not having one.
+//
+// The two outcomes are counted APART, and that split is the whole point. A
+// player whose tunnel dropped comes back on a NEW socket id and lands in the
+// same branch as a second device; if both were one number it would say the
+// rule fires constantly and would be worth nothing to whoever reads it. What
+// tells them apart is the client tag — see _claimSlot.
+const sessionClaims = {
+  takeovers: 0,        // a live OTHER client was told and closed
+  reclaims: 0,         // the same client took its own slot back after a drop
+  refusedActions: 0,   // an action refused because the session lost the slot
+  lastTakeoverAt: null,
+};
+
+// ── the tag that tells a second device from a reconnect ─────────────────────
+// The client puts a per-tab, per-launch string in the socket.io handshake (see
+// _netClientTag in js/network.js). It travels in the HANDSHAKE rather than in
+// either login payload on purpose: the Login Widget's payload is HMAC'd over
+// every field it carries, so adding one to it would fail verifyTelegramAuth
+// and lock the Android wrapper out of the game.
+//
+// It is untrusted client input and is used for ONE thing — an equality test
+// against the tag of the connection about to be replaced. Nothing is granted
+// on the strength of it: forging someone else's tag buys you a takeover that
+// closes the other session WITHOUT telling it, which is strictly less than
+// the takeover you get by sending no tag at all.
+function _clientTagOf(sock) {
+  try {
+    const tag = sock && sock.handshake && sock.handshake.auth && sock.handshake.auth.client;
+    return (typeof tag === 'string' && tag.length >= 8 && tag.length <= 64) ? tag : null;
+  } catch { return null; }
+}
+
 // Floors whose rooms are created per run rather than once at boot. Their
 // players stay out of the `floor_N` broadcast group, because two simultaneous
 // runs on the same floor id would otherwise see each other's traffic.
@@ -165,15 +202,7 @@ class Session {
     // Single session per account. The previous holder is disconnected rather
     // than refused, because the common case is a page refresh where the old
     // socket has not noticed it is gone yet.
-    const prev = activeSessions.get(this.telegramId);
-    if (prev && prev !== this.socket.id) {
-      const old = this.socket.nsp.sockets.get(prev);
-      if (old) {
-        old.emit('kicked', { reason: 'Вход с другого устройства' });
-        old.disconnect(true);
-      }
-    }
-    activeSessions.set(this.telegramId, this.socket.id);
+    this._claimSlot();
 
     // The two numbers that size a loot roll, cached for the session — see the
     // constructor for why they are not read per kill.
@@ -184,6 +213,88 @@ class Session {
     // that comes back with it (savedView) is a projection OUT of these tables,
     // never a thing read back in.
     return { ...res, state: await this.fullState() };
+  }
+
+  // ── one account, one live client ─────────────────────────────────────────
+  // Three things reach this branch and only ONE of them is a second device.
+  // Telling them apart is the whole job, because getting it wrong in either
+  // direction is worse than the bug:
+  //
+  //   too loose — two devices both play, which is the report this exists for;
+  //   too tight — a player is thrown out mid-fight because their tunnel
+  //               blipped, and a reconnect is the single most common event in
+  //               a game played on phones.
+  //
+  //   a genuine second client   different tag, socket still connected. TOLD
+  //                             and closed: the client shows the message and
+  //                             stops reconnecting, so the account is not
+  //                             fought over. This is the only case that emits
+  //                             'kicked'.
+  //   the same client back      same tag on a new socket — a dropped tunnel, a
+  //                             backgrounded WebView, a reload. Whatever the
+  //                             server still holds for it is a zombie: closed
+  //                             WITHOUT a message, because "вы вошли с другого
+  //                             устройства" is both a lie and, if it were
+  //                             delivered, an instruction to the client to
+  //                             stop reconnecting — the blip would become a
+  //                             logout.
+  //   nothing left to close     socket.io already reaped it. Counted, so the
+  //                             number can be read, and nothing else.
+  //
+  // The claim is written FIRST, before anything is closed. The socket being
+  // closed runs its own disconnect teardown synchronously inside disconnect(),
+  // and that teardown ends in close(), which deletes the slot if it still owns
+  // it — with the order the other way round it owned it, and the ONLY thing
+  // standing between that and a brand-new session with no slot at all was the
+  // exact point at which close() happens to await. Claiming first makes the
+  // guard in close() true by construction rather than by timing.
+  _claimSlot() {
+    const prev = activeSessions.get(this.telegramId);
+    activeSessions.set(this.telegramId, this.socket.id);
+    // A second login on the SAME socket — the client re-sending its login after
+    // a authOk it did not see. Nothing changed hands.
+    if (!prev || prev === this.socket.id) return null;
+
+    const old = this.socket.nsp.sockets.get(prev);
+    if (!old || !old.connected) { sessionClaims.reclaims++; return 'gone'; }
+
+    const mine = _clientTagOf(this.socket);
+    const theirs = _clientTagOf(old);
+    // Both tags have to be present to claim they are the same client: two
+    // clients running a bundle too old to send one would otherwise look
+    // identical to each other, and a real second device would go unkicked.
+    // No tag at all therefore means "assume a second device", which is the
+    // safe direction — it closes the other session either way, and only
+    // decides whether that session is told why.
+    if (mine && theirs && mine === theirs) {
+      sessionClaims.reclaims++;
+      old.disconnect(true);
+      return 'zombie';
+    }
+
+    sessionClaims.takeovers++;
+    sessionClaims.lastTakeoverAt = new Date().toISOString();
+    // `code` so the client can say this in the player's own language — the
+    // string is already in js/i18n.js in all six (loggedInElsewhere), and a
+    // hardcoded Russian `reason` overrode it for everybody. The reason is
+    // still sent, because a bundle older than that change reads only the
+    // reason and would otherwise show an empty error box.
+    old.emit('kicked', { reason: 'Вход с другого устройства', code: 'another_device' });
+    old.disconnect(true);
+    // THE ROW SOMEBODY LOOKS FOR. "Меня выкинуло" and "я не выходил" are the
+    // same sentence from the two sides of this event, and until now neither
+    // had an answer anywhere. It carries how long the closed session had been
+    // connected, because a takeover seconds after a login is a player opening
+    // the game twice and one after two hours is somebody else on the account.
+    const held = old.data && old.data.session && old.data.session.connectedAt;
+    plog.log(this.playerId, 'sessionTakeover', {
+      code: 'another_device',
+      oldSocket: String(prev).slice(0, 24),
+      newSocket: String(this.socket.id).slice(0, 24),
+      heldForS: held ? Math.round((Date.now() - held) / 1000) : null,
+      oldTagged: !!theirs,
+    });
+    return 'takeover';
   }
 
   // ── Why these reads are sequential, not Promise.all ──────────────────────
@@ -226,6 +337,25 @@ class Session {
   // `meta` is what the row it writes should SAY — see _resultMeta above.
   async act(name, errEvent, fn, meta = null) {
     if (!this.authed) return null;
+    // ── a session that no longer owns the account ────────────────────────
+    // savePosition has refused for a superseded session since it was written,
+    // and it was the ONLY thing that did — every craft, sale, purchase and
+    // market order went through untouched. So "the first device stops being
+    // able to write" was true of one value, its coordinates, and false of
+    // everything a player could lose.
+    //
+    // In the ordinary case _claimSlot has already closed that socket and
+    // nothing can arrive on it. This is for the cases where it could not: a
+    // packet already in flight when the socket went, a client that ignores
+    // 'kicked', a socket.io the account outlived. The account has exactly one
+    // live session and this is not it.
+    if (activeSessions.get(this.telegramId) !== this.socket.id) {
+      sessionClaims.refusedActions++;
+      plog.log(this.playerId, `refuse:${name}`,
+        { code: 'session_replaced', msg: 'Сессия заменена входом с другого устройства' });
+      this.socket.emit(errEvent, { msg: 'Вы вошли с другого устройства', code: 'session_replaced' });
+      return null;
+    }
     try {
       const out = await txRetry(t => fn(t, this.playerId));
       // Only the actions that CHANGE something. Logging a read would bury the
@@ -371,6 +501,23 @@ class Session {
     }
 
     return {
+      // ── WHICH CLASS THIS ACCOUNT ALREADY IS ──────────────────────────────
+      // The column is char_class, the client's whole vocabulary for it is
+      // `type` (makePlayer(type), SPRITE_DEF[type], SKILL_DEF[type]), and this
+      // projection is where the rename has to happen. It did not happen
+      // anywhere, on any login path — so `savedData.type` has been undefined
+      // for every player since the port, and _showCharSelect (js/network.js)
+      // fell through to its localStorage fallback every single time.
+      //
+      // That fallback is per-DEVICE, which is exactly why this looked like a
+      // PC-only bug: the phone that created the character has the class in its
+      // own localStorage and skips the roster, and the same account on a
+      // desktop has nothing cached and is asked to choose again. Progress
+      // belongs to the account, so the answer has to come from here.
+      //
+      // Null for an account that has not chosen yet — the client then shows the
+      // roster, which is the correct screen for that player.
+      type: p.charClass || null,
       lvl: p.lvl, xp: p.xp, kills: p.kills,
       // Base figures, NOT the computed ones. recompute() on the client adds the
       // equipment and the upgrades itself, so handing it the final atk would
@@ -663,4 +810,4 @@ function socketForTelegramId(io, telegramId) {
   return id ? io.sockets.sockets.get(id) : null;
 }
 
-module.exports = { Session, activeSessions, socketForTelegramId };
+module.exports = { Session, activeSessions, socketForTelegramId, sessionClaims };

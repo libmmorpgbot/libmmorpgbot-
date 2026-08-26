@@ -484,6 +484,39 @@ if (typeof document !== 'undefined') {
   });
 }
 
+// ── which CLIENT this connection belongs to ─────────────────────────────────
+// The server allows one live session per account and closes the previous one
+// when a second appears. The hard part there is not closing it — it is telling
+// a SECOND DEVICE apart from this same client coming back after a dropped
+// tunnel, because both arrive as "a new socket id for an account that already
+// has one", and treating a reconnect as a second device logs people out for a
+// blip. This tag is what makes them distinguishable: the server compares it
+// against the tag of the connection it is about to replace (see _claimSlot,
+// server/session.js).
+//
+// sessionStorage, not localStorage: it is per-TAB, which is exactly the line
+// that has to be drawn. A reload keeps the tag — same window, same player,
+// a reclaim. A second tab gets its own, and so does the Mini App next to a
+// desktop browser — a real second client, and a real takeover.
+//
+// In the handshake rather than in the login payload because the Login Widget's
+// payload (the Android wrapper's path) is HMAC'd over every field it carries,
+// and one extra key there fails the check. Private mode can refuse to store
+// it; the in-memory value then lasts as long as the page, which is as long as
+// it is needed. A tag that cannot be produced at all is not fatal — the server
+// falls back to assuming a second device, which closes the other session
+// either way and only changes whether it is told why.
+let _clientTag = null;
+function _netClientTag() {
+  if (_clientTag) return _clientTag;
+  try { _clientTag = sessionStorage.getItem('_libClientTag') || null; } catch (_) { /* private mode */ }
+  if (!_clientTag) {
+    _clientTag = 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    try { sessionStorage.setItem('_libClientTag', _clientTag); } catch (_) { /* private mode */ }
+  }
+  return _clientTag;
+}
+
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
   if (socket && socket.connected) { if (onReady) onReady(); return; }
@@ -491,6 +524,10 @@ function netConnect(onReady) {
   socket = io(SERVER_URL, {
     transports: ['websocket'],  // skip polling — polling adds 200-400ms per packet
     upgrade: false,
+    // Re-sent by socket.io on every reconnect, so the tag is on the handshake
+    // of every socket this page ever opens — which is what lets the server see
+    // a reconnect as one.
+    auth: { client: _netClientTag() },
   });
 
   socket.on('connect', () => {
@@ -638,8 +675,14 @@ function netConnect(onReady) {
   // its own the moment anything nudged it — and let the player decide when to
   // come back. Telegram still closes the Mini App, which is that platform's
   // own "you're done here" and does not re-enter the loop.
-  socket.on('kicked', ({ reason } = {}) => {
-    const msg = reason || (typeof t === 'function' ? t('loggedInElsewhere') : 'Вы вошли с другого устройства');
+  socket.on('kicked', ({ reason, code } = {}) => {
+    // The server sends BOTH a code and a Russian reason. The reason exists for
+    // a bundle older than the code; where we understand the code we say it in
+    // the player's own language instead, because this string already exists in
+    // all six (loggedInElsewhere, js/i18n.js) and the hardcoded reason was
+    // overriding every one of them.
+    const fallback = typeof t === 'function' ? t('loggedInElsewhere') : 'Вы вошли с другого устройства';
+    const msg = (code === 'another_device' ? fallback : reason) || fallback;
     showAuthError(msg);
     _kicked = true;
     if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null; }
@@ -2705,11 +2748,25 @@ function _waShowThanks(el, onPass) {
 }
 
 function _showCharSelect(savedData) {
-  // Prefer server savedData, fall back to localStorage for fast refresh
-  // before the first DB write completes (race condition on reconnect).
-  const type = savedData?.type || (() => {
+  // ── the server's answer first, and it is the only one that travels ───────
+  // savedData.type is char_class, projected in savedView (server/session.js).
+  // The localStorage fallback stays BELOW it and stays narrow: it is
+  // per-device, so leaning on it is what made "the same account asks me to
+  // choose a character on the PC" — the phone that created the character had
+  // the class cached and the desktop had nothing. It is still worth keeping
+  // for the fast refresh it was added for, but it can no longer be the only
+  // source, because a device that has never seen this account has no cache to
+  // be right.
+  const remembered = savedData?.type || (() => {
     try { return localStorage.getItem(_lastCharTypeKey()); } catch (_) { return null; }
   })();
+  // A class that no longer exists must not be auto-resumed. Retired classes
+  // are still in the data (csShow, js/charselect.js, falls back to 'lev' for
+  // exactly that reason) and selectChar → makePlayer → CHAR_DEF[type] has
+  // nothing to fall back to — it would be a black screen instead of a roster.
+  // Cheap to check, and the wrong side of it is the game not starting at all.
+  const type = (remembered && typeof CHAR_DEF !== 'undefined' && CHAR_DEF[remembered])
+    ? remembered : null;
   if (type) {
     const el = document.getElementById('char-select');
     if (el) {
@@ -4373,6 +4430,27 @@ function _initGramHandlers(s) {
   s.on('gramDepositIntent', ({ memo, address, minAmount, expiresAt }) => {
     if (typeof onGramDepositIntent === 'function') {
       onGramDepositIntent({ memo, address, minAmount, expiresAt });
+    }
+  });
+  // The chain scanner matched a transfer to this player's intent and credited
+  // it (server/db/repos/gram.js creditOnce). This is the ONLY signal the client
+  // gets that the money moved — there is no polling and no "I paid" button any
+  // more — so it is also the only chance to show it. It can arrive with the
+  // deposit modal open, with the wallet tab open behind it, or with the player
+  // in the dungeon three floors down; onGramDepositCredited handles all three.
+  //
+  // The balance is updated inside that handler rather than here, because it has
+  // to move in the same frame the confirmation is drawn: a card that says
+  // "+5 GRAM" over a balance that has not changed yet reads as a lie.
+  s.on('gramDepositCredited', ({ amount, balance, memo, txHash, at } = {}) => {
+    if (typeof onGramDepositCredited === 'function') {
+      onGramDepositCredited({ amount, balance, memo, txHash, at });
+    } else {
+      // Nothing to draw it with — still keep the number honest, and leave a
+      // trace, because a credit that lands with no handler is money the player
+      // will never be told about.
+      if (balance != null) window._gramBalance = Number(balance) || 0;
+      console.warn('[gram] deposit credited with no UI handler:', amount, memo);
     }
   });
   s.on('gramError', ({ msg }) => {

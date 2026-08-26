@@ -31,7 +31,11 @@ const adminAuth = require('./admin-auth');
 // The game bot's own updates. Required at the top rather than at the mount
 // below because /health reports its counters and /health is defined above it.
 const tgWebhook = require('./routes/tg-webhook');
-const { Session, activeSessions, socketForTelegramId } = require('./session');
+// socketForTelegramId is no longer imported here: the deposit push was its
+// last caller and now addresses the `tg_<id>` ROOM instead — see notifyCredited
+// below for why. It is still exported by session.js and still used through
+// modes.js's _socketForTelegramId.
+const { Session, activeSessions, sessionClaims } = require('./session');
 const world = require('./world');
 const version = require('./version');
 const party = require('./party');
@@ -108,6 +112,13 @@ app.get('/health', async (req, res) => {
     rssMb: Math.round(mem.rss / 1048576),
     sockets: io.engine.clientsCount,
     sessions: activeSessions.size,
+    // The single-session rule, which used to fire in total silence. `takeovers`
+    // is a live client closed in favour of another; `reclaims` is the same
+    // client coming back after a drop and is expected to be much the larger of
+    // the two. If it is not — if takeovers tracks reconnects — the rule is
+    // throwing people out for a blip, and this is the only place that would
+    // say so before the reports arrive.
+    sessionClaims: { ...sessionClaims },
     workers: workers.status(),
     ops: ops.status(),
     // The player log: how many rows are queued, written, and lost. An empty
@@ -1068,14 +1079,29 @@ io.on('connection', (socket) => {
     try { party.holdOnDisconnect(socket.id, s.telegramId); }
     catch (err) { console.error('[disconnect:party]', err); }
 
-    if (s.room) {
-      // Told BEFORE removed, so the id is still meaningful to whoever hears it.
-      socket.to(`floor_${s.floor}`).emit('playerLeft', { id: socket.id });
-      try { s.room.removePlayer(socket.id); }
+    // Told BEFORE removed, so the id is still meaningful to whoever hears it.
+    if (s.room) socket.to(`floor_${s.floor}`).emit('playerLeft', { id: socket.id });
+
+    // ── close() FIRST, and the room reference kept ──────────────────────────
+    // close() flushes the player's position and HP, and it reads them out of
+    // the room: savePosition does `this.room.players.get(this.socket.id)` and
+    // returns at `if (!p)`. removePlayer used to run one line above it, so `p`
+    // was ALWAYS undefined here and the disconnect flush this path exists for
+    // has never written a single row. The periodic timer covered it well
+    // enough that nobody noticed — the cost was up to one timer period of
+    // movement and HP lost on every logout.
+    //
+    // The reference is captured because close() ends by setting this.room to
+    // null. Reading s.room after it — which is what the old order allowed —
+    // would now skip removePlayer entirely and leave the player standing in
+    // the floor forever, which is a worse bug than the one being fixed.
+    const room = s.room;
+    try { await s.close(reason); } catch (e) { console.error('[disconnect]', e); }
+
+    if (room) {
+      try { room.removePlayer(socket.id); }
       catch (err) { console.error('[disconnect:room]', err); }
     }
-
-    try { await s.close(reason); } catch (e) { console.error('[disconnect]', e); }
   });
 });
 
@@ -1175,18 +1201,38 @@ async function boot() {
   }
 
   // 4. Background work.
+  // ── a credited deposit, pushed to whoever is holding that account ────────
+  // This is what replaces the "Я оплатил" button. The player sent TON and then
+  // had to TELL the game about it; now the chain tells the game and the game
+  // tells the player, so the only thing they have to do is pay.
+  //
+  // THE ROOM, not the socket. socketForTelegramId finds the connection that
+  // asked for the deposit code, and by the time a transfer settles that
+  // connection is routinely gone — a phone locked, a tab reloaded, the app
+  // reopened. `tg_<telegramId>` is joined at login (see the join beside
+  // savedData above) and is what the admin panel already uses to reach an
+  // account rather than a session. It also covers the original socket, which
+  // is why that socket is not emitted to separately: two deliveries of one
+  // credit would be one balance update and two toasts.
+  //
+  // Nothing is queued for an offline player, deliberately. The balance and the
+  // deposit history are already correct in the database, so the next login
+  // shows the truth; a replay queue would be a second source of it.
+  const notifyCredited = (c) => {
+    const room = `tg_${c.telegramId}`;
+    io.to(room).emit('gramBalanceUpdate', { balance: c.balance });
+    io.to(room).emit('gramTxUpdate', { id: c.txId || c.memo, status: 'credited' });
+    io.to(room).emit('gramDepositCredited', {
+      amount: c.amount, balance: c.balance, memo: c.memo || null,
+      txHash: c.txId, at: Date.now(),
+    });
+  };
+
   const w = workers.start({
-    notifyPlayer: async (c) => {
-      const sock = socketForTelegramId(io, c.telegramId);
-      // Two events the client already handles: the balance it shows, and the
-      // row in the deposit history. 'gramCredited' was a third name for the
-      // same news that nothing listened for, so a confirmed deposit left the
-      // player's screen at the old number until they reloaded.
-      if (sock) {
-        sock.emit('gramBalanceUpdate', { balance: c.balance });
-        sock.emit('gramTxUpdate', { id: c.txId || c.memo, status: 'credited' });
-      }
-    },
+    notifyPlayer: async (c) => notifyCredited(c),
+    // The same push for a transfer an operator placed by hand. The player has
+    // no way to tell the two apart and no reason to: money arrived.
+    notifyCredit: async (c) => notifyCredited(c),
   });
   console.log(`workers: deposit scan every ${w.deposits}ms`);
 

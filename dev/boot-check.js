@@ -29,6 +29,8 @@ process.env.ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET
 // path untestable. security.js captures this at require time, hence before.
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'boot-check-throwaway-token';
 
+const fs = require('fs');
+const path = require('path');
 const io = require('socket.io-client');
 const { boot, server } = require('../server/app');
 const { pool, close } = require('../server/db');
@@ -382,15 +384,142 @@ async function main() {
   ok(back && back.floor === 1, 'дозволений перехід приходить як gameStart');
 
   // ── single session per account ───────────────────────────────────────────
+  // Two questions, and only the first one used to be asked here. "Did the
+  // second login kick the first" was answered and passed, which is why "можно
+  // играть с двух устройств" was never traced to anything: the kick worked,
+  // it just left NO evidence that it had, and it could not tell a second
+  // device from the same player reconnecting.
+  //
+  // So the second question is the one that matters now: does a RECONNECT get
+  // treated as a second device? Getting that wrong throws players out for a
+  // dropped tunnel, which is worse than the bug this rule exists for — and
+  // nothing here could see it.
+  const initData = signInitData(token, { id: Number(TG_ID), username: `${TAG}_u` });
+  const { sessionClaims } = require('../server/session');
+  const plog = require('../server/db/repos/playerlog');
+  const takeoversBefore = sessionClaims.takeovers;
+  const reclaimsBefore = sessionClaims.reclaims;
+
   const second = io(url, { transports: ['websocket'], forceNew: true });
   await once(second, 'connect');
-  second.emit('loginTelegramWebApp', {
-    initData: signInitData(token, { id: Number(TG_ID), username: `${TAG}_u` }),
-  });
+  second.emit('loginTelegramWebApp', { initData });
   const kicked = await once(sock, 'kicked', 8000).catch(() => null);
   ok(!!kicked, 'другий вхід у той самий акаунт вигнав перший');
+  eq(kicked && kicked.code, 'another_device',
+    'і сказав ЧОМУ кодом, який клієнт перекладає сам (жорсткий російський текст перекривав усі шість мов)');
+  const auth2 = await once(second, 'authOk', 8000);
+  // ── the class the account already is ─────────────────────────────────────
+  // A SECOND connection, with nothing cached anywhere — which is what opening
+  // the game on a PC after playing on a phone actually is. selectChar wrote
+  // 'deathknight' above, so this login must carry it. The column is
+  // char_class and the client's whole vocabulary is `type`; the rename lives
+  // in savedView (server/session.js) and did not exist, so savedData.type was
+  // undefined on every login path and _showCharSelect fell through to a
+  // per-DEVICE localStorage cache — present on the phone that made the
+  // character, empty on the PC, which is exactly the report.
+  eq(auth2 && auth2.savedData && auth2.savedData.type, 'deathknight',
+    'новий пристрій дізнається клас персонажа від СЕРВЕРА, а не з localStorage');
+  await new Promise(r => setTimeout(r, 400));
+  ok(!sock.connected, 'перший сокет справді ЗАКРИТО, а не лишено живим із мовчазними відмовами');
+  eq(sessionClaims.takeovers, takeoversBefore + 1, 'перехоплення враховано як перехоплення');
+  eq(sessionClaims.reclaims, reclaimsBefore, 'і НЕ як перепідключення');
 
-  second.close(); sock.close();
+  // The row somebody looks for when a player says «меня выкинуло, я не
+  // выходил». plog buffers for a couple of seconds; flush rather than sleep.
+  await plog.flush();
+  const { rows: took } = await pool().query(
+    `SELECT meta FROM player_logs
+      WHERE player_id = $1 AND event = 'sessionTakeover' ORDER BY created_at DESC LIMIT 1`,
+    [playerId]);
+  ok(took.length === 1, 'перехоплення лишило рядок у player_logs');
+  ok(took.length === 1 && took[0].meta && took[0].meta.code === 'another_device'
+     && typeof took[0].meta.heldForS === 'number',
+    'і рядок каже, ЩО саме сталося і скільки протрималась закрита сесія',
+    JSON.stringify(took[0] && took[0].meta));
+
+  // ── а тепер те, що НЕ має нікого виганяти ────────────────────────────────
+  // The same client on a new socket: a dropped tunnel, a backgrounded WebView,
+  // a reload. It carries the same handshake tag, and it must take its slot
+  // back in silence — the previous socket is closed (it is a zombie) but is
+  // never TOLD it was logged in elsewhere, because that message stops the
+  // client reconnecting and would turn a blip into a logout.
+  const TAG_ONE = 'boot-check-same-client-1';
+  const third = io(url, { transports: ['websocket'], forceNew: true, auth: { client: TAG_ONE } });
+  // Listening BEFORE the login, not after it: a kick that arrived in the gap
+  // would be the exact failure this is looking for, and a listener attached
+  // afterwards would miss it and pass.
+  let thirdKicked = null;
+  third.on('kicked', d => { thirdKicked = d; });
+  await once(third, 'connect');
+  third.emit('loginTelegramWebApp', { initData });
+  await once(third, 'authOk', 8000);
+
+  const takeoversB4Reconnect = sessionClaims.takeovers;
+  const reclaimsB4Reconnect = sessionClaims.reclaims;
+  const fourth = io(url, { transports: ['websocket'], forceNew: true, auth: { client: TAG_ONE } });
+  await once(fourth, 'connect');
+  fourth.emit('loginTelegramWebApp', { initData });
+  await once(fourth, 'authOk', 8000);
+  await new Promise(r => setTimeout(r, 400));
+  ok(!thirdKicked, 'перепідключення того самого клієнта НЕ сказало попередньому сокету «вхід з іншого пристрою»',
+    JSON.stringify(thirdKicked));
+  eq(sessionClaims.takeovers, takeoversB4Reconnect, 'перепідключення НЕ враховано як перехоплення');
+  eq(sessionClaims.reclaims, reclaimsB4Reconnect + 1, 'а враховано окремо, як перепідключення');
+  ok(!third.connected, 'зомбі-сокет усе одно закрито — просто мовчки');
+
+  // ── і те, що сесія без слоту більше не може ПИСАТИ ───────────────────────
+  // savePosition has refused for a superseded session since it was written,
+  // and it was the ONLY thing that did — every craft, sale, purchase and
+  // market order went through untouched. In the ordinary case the socket is
+  // already closed, so what is being checked here is the case where it was
+  // not: a packet in flight when the slot changed hands, or a client that
+  // ignores 'kicked'. The slot is taken away WITHOUT touching the socket,
+  // which is exactly that state.
+  const { activeSessions } = require('../server/session');
+  const slotHolder = activeSessions.get(String(TG_ID));
+  const refusedBefore = sessionClaims.refusedActions;
+  activeSessions.set(String(TG_ID), 'boot-check-not-this-socket');
+  fourth.emit('sellItem', { idx: 0 });
+  const refused = await once(fourth, 'sellItemError', 4000).catch(() => null);
+  activeSessions.set(String(TG_ID), slotHolder);    // put it back before anything else runs
+  eq(refused && refused.code, 'session_replaced',
+    'дія від сесії, що втратила слот, відхилена — не лише збереження позиції');
+  eq(sessionClaims.refusedActions, refusedBefore + 1, 'і порахована');
+  await plog.flush();
+  const { rows: ref } = await pool().query(
+    `SELECT 1 FROM player_logs
+      WHERE player_id = $1 AND event = 'refuse:sellItem' LIMIT 1`, [playerId]);
+  ok(ref.length === 1, 'і лишила рядок — мовчазних відмов тут немає');
+
+  // ── і що вихід узагалі щось зберігає ────────────────────────────────────
+  // Перевірка по ДЖЕРЕЛУ, а не по поведінці, і навмисно.
+  //
+  // close() зливає позицію та HP, читаючи їх із кімнати: savePosition робить
+  // this.room.players.get(this.socket.id) і виходить на if (!p). removePlayer
+  // стояв рядком вище, тож p був undefined ЗАВЖДИ — злив при виході не
+  // записав жодного рядка з моменту порту. Ніхто не помітив, бо таймер на 20 с
+  // покривав майже все; ціною був останній відрізок руху та HP при кожному
+  // виході.
+  //
+  // Поведінкою це не перевірити чесно: між ходом і роз'єднанням може
+  // спрацювати той самий таймер, і тест проходив би на зламаному коді раз на
+  // кілька запусків. Порядок двох рядків — те, що тут насправді має значення,
+  // і він або є, або його немає.
+  const appSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'app.js'), 'utf8');
+  const discon = (appSrc.match(/socket\.on\('disconnect'[\s\S]*?\n {2}\}\);/) || [''])[0];
+  ok(discon.length > 200, 'знайшли обробник disconnect у server/app.js');
+  const iClose = discon.indexOf('await s.close(');
+  const iRemove = discon.indexOf('removePlayer(');
+  ok(iClose !== -1 && iRemove !== -1, 'у ньому є і close(), і removePlayer()');
+  ok(iClose < iRemove,
+    'close() чекають ДО removePlayer — інакше злив позиції не має що читати');
+  // close() наприкінці ставить this.room = null, тож s.room після нього — null,
+  // і гравець лишився б стояти на поверсі назавжди. Посилання має бути взяте
+  // заздалегідь.
+  ok(/const room = s\.room;/.test(discon) && /\broom\.removePlayer\(/.test(discon),
+    'кімнату взято в змінну до close() — s.room після нього вже null');
+
+  second.close(); third.close(); fourth.close(); sock.close();
 }
 
 async function cleanup() {
