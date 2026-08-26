@@ -60,10 +60,22 @@ async function mkPlayer(nick, gold = 0) {
   return id;
 }
 
+// THE CASTLE ROW IS LIVE DATA. This check captures the tower and calls
+// _gwApplyCapture, which persists — and the first run of it handed a real
+// clan's castle to a test clan the cleanup then deleted, leaving the castle
+// owned by nobody. Snapshotted here and put back at the end, whatever happens
+// in between: a test does not get to decide who owns it.
+let _castleBefore = null;
+
 async function main() {
   console.log(`\nguildwar-check  (${TAG})  порт ${PORT}\n`);
   await app.boot();
-  console.log('');
+  // AFTER boot, because the pool is configured there. boot() only READS this
+  // row (_gwRestore), so the value is the same either way.
+  const { rows: snap } = await pool().query(
+    `SELECT owner_clan_id, captured_at FROM guild_war_state WHERE key = 'castle'`);
+  _castleBefore = snap.length ? snap[0] : null;
+  console.log(`\n  (володіння замком збережено: клан ${_castleBefore && _castleBefore.owner_clan_id})`);
 
   const modes = require('../server/modes').modes;
   const room = world.roomOf(FLOOR_IDS.guildWar);
@@ -214,6 +226,12 @@ main()
         await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
       }
       await q('DELETE FROM players WHERE id = ANY($1)', [made]);
+    }
+    // Put the real castle back before anything else — a test must not decide
+    // who owns it.
+    if (_castleBefore) {
+      await q(`UPDATE guild_war_state SET owner_clan_id = $1, captured_at = $2 WHERE key = 'castle'`,
+        [_castleBefore.owner_clan_id, _castleBefore.captured_at]);
     }
     try { await app.shutdown('test', { exit: false }); } catch { /* already down */ }
     await close().catch(() => {});
