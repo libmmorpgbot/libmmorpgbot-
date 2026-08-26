@@ -433,7 +433,9 @@ class Room {
     // The single arm this floor's regular enemies belong to (or null, e.g.
     // on the hub floor) — see _broadcastMapBlips, which used to derive this
     // per-player from a Y-band lookup across all 4 arms sharing one grid.
-    this._soleArm = ARM_NAMES.find(a => this._dungeon.enemies.some(e => e.arm === a)) || null;
+    this._soleArm = ARM_NAMES.find(a => this._dungeon.enemies.some(e => e.arm === a))
+      || (this._dungeon.enemies.find(e => e.arm && !e.isBoss) || {}).arm
+      || null;
     const _now = Date.now();
     this.enemies = this._dungeon.enemies.map(e => {
       if (!e.isBoss) {
@@ -1304,7 +1306,14 @@ class Room {
       tickOverruns: this._tickOverruns,
       tickSamples: this._tickSamples,
       tickBudgetMs: TICK_MS,
+      // Crowd-control the room refused: out of range, no line of sight, wrong
+      // instance, dead caster. handlers2/world.js increments this and its
+      // comment says "see ccRefused on /health" — which was not true, because
+      // nothing here reported it. A steady non-zero is either a client
+      // reaching for what it cannot touch, or a range that is too tight.
+      ccRefused: this.ccRefused || 0,
     };
+    this.ccRefused = 0;
     this._tickMsMax = 0; this._tickMsSum = 0; this._tickSamples = 0; this._tickOverruns = 0;
     return s;
   }

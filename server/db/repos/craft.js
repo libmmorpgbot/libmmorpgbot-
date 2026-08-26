@@ -460,7 +460,10 @@ async function sellItem(db, playerId, rowId, qty = 1) {
     reason: 'merchant_sell', refType: 'item', refId: it.item_id,
     idemKey: `sell:${playerId}:${rowId}:${crypto.randomUUID()}`,
   });
-  return { itemId: it.item_id, qty: n, gold: unit * n, goldTotal: got.balance };
+  // goldLeft AND goldTotal: goldLeft is what the handler reads and what every
+  // other repo here calls the remaining balance; goldTotal is kept because
+  // dev/craft-check.js asserts on it by that name.
+  return { itemId: it.item_id, qty: n, gold: unit * n, goldTotal: got.balance, goldLeft: got.balance };
 }
 
 module.exports = {
