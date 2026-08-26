@@ -17,7 +17,6 @@ function facing8FromDelta(dx, dy, cur) {
   }
   return FACING8_DIRS[Math.round(angle / 45) % 8];
 }
-function rnd(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 const _hasNativeRoundRect = typeof CanvasRenderingContext2D !== 'undefined' &&
   typeof CanvasRenderingContext2D.prototype.roundRect === 'function';

@@ -635,7 +635,7 @@ function onStoneCrafted(matId) {
 function onStoneCraftError(msg) {
   const idx = _pendingStoneCraftIdx;
   _pendingStoneCraftIdx = null;
-  _shopMsg(msg || 'Ошибка');
+  _shopMsg(msg || t('genericErrorLbl'));
   if (idx !== null) openCraftModal(idx);
 }
 
@@ -656,7 +656,7 @@ function onGearCrafted(itemId, success) {
 function onGearCraftError(msg) {
   const idx = _pendingGearCraftIdx;
   _pendingGearCraftIdx = null;
-  _shopMsg(msg || 'Ошибка');
+  _shopMsg(msg || t('genericErrorLbl'));
   if (idx !== null) openCraftModal(idx);
 }
 
@@ -846,7 +846,7 @@ function onBoxCrafted(boxId) {
 function onBoxCraftError(msg) {
   const id = _pendingBoxCraftId;
   _pendingBoxCraftId = null;
-  _shopMsg(msg || 'Ошибка');
+  _shopMsg(msg || t('genericErrorLbl'));
   if (id !== null) openBoxCraftModal(id);
 }
 
@@ -913,7 +913,7 @@ function onMatUpgraded(from, to, success) {
 function onMatUpgradeError(msg) {
   const idx = _pendingMatUpgradeIdx;
   _pendingMatUpgradeIdx = null;
-  _shopMsg(msg || 'Ошибка');
+  _shopMsg(msg || t('genericErrorLbl'));
   if (idx !== null) openMatModal(idx);
 }
 
@@ -968,7 +968,7 @@ function onAdvSkillBookCrafted(success, id) {
   openAdvBookCraftModal();
 }
 function onAdvSkillBookCraftError(msg) {
-  _shopMsg(msg || 'Ошибка');
+  _shopMsg(msg || t('genericErrorLbl'));
   openAdvBookCraftModal();
 }
 

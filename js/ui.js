@@ -190,7 +190,7 @@ function onTeleportStoneBought(qty, delivered) {
   }
 }
 function onTeleportStoneError(msg) {
-  if (typeof _shopMsg === 'function') _shopMsg(msg || 'Ошибка');
+  if (typeof _shopMsg === 'function') _shopMsg(msg || t('genericErrorLbl'));
 }
 
 // ── Inventory portrait (eq-center-canvas) ──────────────────
@@ -548,7 +548,17 @@ function updateUpgradeUI() {
   const u = player.upgrades || {};
   el.innerHTML = Object.entries(UPGRADE_DEF).map(([key, cfg]) => {
     const lvl  = u[key] || 0;
-    const cost = 300 * (lvl + 1);
+    // The price the server will actually charge — upgradeCost() is in
+    // shared/definitions.js, so it is in this bundle's scope, and the
+    // deduction bills from that same function (spendUpgrade, down through
+    // server/db/repos/players.js). This line used to re-type the formula
+    // as `300 * (lvl + 1)`. That is the same number only for as long as
+    // nobody edits the shared one: the moment pricing moves, the button
+    // keeps printing the old cost AND keeps enabling itself against it,
+    // so the click leaves the device and comes back rejected — which
+    // reads as "the upgrade button is broken", not as a stale copy of a
+    // formula, and sends you looking in the wrong file.
+    const cost = upgradeCost(lvl);
     const can  = player.gold >= cost && availSP >= 1;
     return `<div class="upg-row">
       <div class="upg-info">
@@ -624,7 +634,7 @@ function onUpgradesReset(pointsReturned) {
 }
 
 function onUpgradesResetError(msg) {
-  if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+  if (player) dmgNum(player.x, player.y - 30, msg || t('genericErrorLbl'), '#f88');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -739,7 +749,7 @@ function onRebirthDone() {
 }
 
 function onRebirthError(msg) {
-  if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+  if (player) dmgNum(player.x, player.y - 30, msg || t('genericErrorLbl'), '#f88');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1796,6 +1806,15 @@ function _liveFarmEnemy(base) {
 // is deliberately NOT _monsterDropBodyHtml: that function's rows would all
 // be either wrong (recipe/gear chances that never actually roll here) or
 // misleadingly absent (no hint that shards/adv books exist at all).
+
+// One row of that icon/label/chance list — and of _monsterDropBodyHtml's,
+// further down. That function used to carry its own copy of this, nested
+// inside itself and differing only in how the template literal was indented,
+// which shadowed this one for the whole of it. Nothing in either place said
+// so, so every edit made here — a class name, a colour, an extra span —
+// landed on the Фарм-зона panel and silently missed the monster panel, and
+// the two lists drifted apart until someone diffed the rendered HTML. It
+// lives at top level, once; the nested callers resolve to it.
 function _dropRow(icon, label, valHtml, color) {
   const st = color ? ` style="color:${color}"` : '';
   return `<div class="fi-drop">
@@ -1951,14 +1970,6 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     if (v >= 1)   return v.toFixed(1).replace(/\.0$/, '') + '%';
     if (v >= 0.1) return v.toFixed(2).replace(/\.?0+$/, '') + '%';
     return v.toFixed(4).replace(/\.?0+$/, '') + '%';
-  }
-  function _dropRow(icon, label, valHtml, color) {
-    const st = color ? ` style="color:${color}"` : '';
-    return `<div class="fi-drop">
-      <span class="fi-drop-icon">${icon}</span>
-      <span class="fi-drop-lbl"${st}>${label}</span>
-      <span class="fi-drop-val"${st}>${valHtml}</span>
-    </div>`;
   }
 
   // Gold: deterministic amount = level, 30% chance to drop (100% for boss)
@@ -3229,8 +3240,8 @@ function onStarterBonusError(msg) {
   const box = document.getElementById('starter-bonus-err');
   const btn = document.getElementById('starter-bonus-go');
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = t('starterBonusClaimBtn'); }
-  if (box) { box.style.display = 'block'; box.textContent = msg || 'Ошибка'; }
-  else if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+  if (box) { box.style.display = 'block'; box.textContent = msg || t('genericErrorLbl'); }
+  else if (player) dmgNum(player.x, player.y - 30, msg || t('genericErrorLbl'), '#f88');
 }
 
 // ─────────────────────────────────────────────────────────

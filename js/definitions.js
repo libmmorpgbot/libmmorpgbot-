@@ -1,13 +1,23 @@
 // CHAR_DEF, ENEMY_DEF, TILE, WALL, FLOOR, CLAN_LEVELS, clanAtkBonusPct → shared/definitions.js
 
+// Presentation only: label, icon, and the one-line effect blurb. There is
+// deliberately no price column here — every stat upgrade costs the same flat
+// upgradeCost(lvl) (shared/definitions.js), which is what the server actually
+// deducts (spendUpgrade, down through server/db/repos/players.js) and what
+// updateUpgradeUI prints (js/ui.js). A per-stat baseCost — 30/30/25/50/60/60/80
+// — used to sit in these entries. It outlived the switch to the flat formula
+// and was then read by nothing on either end, so this table sat here quietly
+// stating prices the game had not charged in a long time: the kind of lie that
+// gets believed the first time someone reprices upgrades and edits the table
+// instead of the formula.
 const UPGRADE_DEF = {
-  atk:        { label:'Атака',       icon:'sword',      baseCost:30,  desc:'+1 ATK'       },
-  def:        { label:'Защита',      icon:'shield',     baseCost:30,  desc:'+1 DEF'       },
-  hp:         { label:'Здоровье',    icon:'heart',      baseCost:25,  desc:'+10 MaxHP'    },
-  atkSpeed:   { label:'Скор. атаки', icon:'lightning',  baseCost:50,  desc:'+0.05 уд/с'  },
-  critChance: { label:'Шанс крита',  icon:'star',       baseCost:60,  desc:'+1%'          },
-  critPower:  { label:'Сила крита',  icon:'flame',      baseCost:60,  desc:'+3%'          },
-  hpRegen:    { label:'Реген HP',    icon:'hpPlus',     baseCost:80,  desc:'+0.1/сек'     },
+  atk:        { label:'Атака',       icon:'sword',      desc:'+1 ATK'       },
+  def:        { label:'Защита',      icon:'shield',     desc:'+1 DEF'       },
+  hp:         { label:'Здоровье',    icon:'heart',      desc:'+10 MaxHP'    },
+  atkSpeed:   { label:'Скор. атаки', icon:'lightning',  desc:'+0.05 уд/с'  },
+  critChance: { label:'Шанс крита',  icon:'star',       desc:'+1%'          },
+  critPower:  { label:'Сила крита',  icon:'flame',      desc:'+3%'          },
+  hpRegen:    { label:'Реген HP',    icon:'hpPlus',     desc:'+0.1/сек'     },
 };
 
 // Story quest chain: one linear track (player.questIdx) spanning all 4

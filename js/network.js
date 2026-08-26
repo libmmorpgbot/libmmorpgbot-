@@ -2010,17 +2010,6 @@ function netConnect(onReady) {
     if (typeof onSeasonRating === 'function') onSeasonRating();
   });
 
-  // A quest finished: points already added server-side, the next one is here.
-  socket.on('seasonQuestDone', ({ points, total, next } = {}) => {
-    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
-    if (next) _seasonState = { ..._seasonState, quest: next };
-    if (typeof showEventBossBanner === 'function' && points) {
-      showEventBossBanner(tVars('seasonQuestDoneMsg', { n: points }), '#50af95');
-    }
-    if (typeof Sound !== 'undefined') Sound.loot?.();
-    if (typeof onSeasonState === 'function') onSeasonState();
-  });
-
   // Items are already gone via the inventorySync that preceded this.
   socket.on('seasonBurned', ({ burned, points, total } = {}) => {
     if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
@@ -2954,6 +2943,26 @@ function _finishOnlineStart() {
   setTab(0);
   // Immediately save so a page refresh always finds the character type
   _emitSaveProgress();
+
+  // Last in this function, so the announcement lands on a finished HUD
+  // instead of racing the char-select overlay csHide() just dropped. This is
+  // also the only first-join path — a reconnect takes the branch in the
+  // gameStart handler above and never reaches here — which is exactly the
+  // once-per-player moment the modal is for.
+  //
+  // This call went missing and nothing caught it, because everything around
+  // it still looked right: the modal, its .whatsnew-* CSS, its four i18n
+  // strings, and three separate comments (js/ui.js's, js/i18n.js's, and
+  // dev/harness.js's, which dismisses the overlay before pressing the AUTO
+  // button) all describe a notice that had not been shown in a long time.
+  // The tell was closeWhatsNewModal writing 'whatsNewSeen' to localStorage
+  // that nothing ever read back — a gate with nothing behind it. The read
+  // below is what makes it a gate, so it has to stay paired with
+  // WHATS_NEW_VERSION: bumping that constant (js/ui.js) is the whole
+  // mechanism for showing the notice again after a deploy.
+  let seenWhatsNew = false;
+  try { seenWhatsNew = localStorage.getItem('whatsNewSeen') === WHATS_NEW_VERSION; } catch (_) {}
+  if (!seenWhatsNew && typeof openWhatsNewModal === 'function') openWhatsNewModal();
 }
 
 // ── Move throttle ─────────────────────────────────────────────
@@ -4090,22 +4099,22 @@ function _initPetCraftHandlers(s) {
     if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   });
 
-  // Enchant stones. Materials and the stone itself both move server-side (it
-  // costs Liberty), so the authoritative inventory arrives via inventorySync
-  // and there's nothing for this side to add or remove by hand.
-  s.on('stoneCrafted', ({ matId, newNexumBalance }) => {
-    window._nexumBalance = newNexumBalance;
-    if (player) player.nexumBalance = newNexumBalance;
-    if (typeof onStoneCrafted === 'function') onStoneCrafted(matId);
-  });
+  // Enchant stones — the failure path only, deliberately. Nothing on the
+  // server has emitted 'stoneCrafted' since stones stopped being forged
+  // (dev/reply-shape-check.js carries it in its no-emitter list), so the
+  // success twin that used to sit here was a handler waiting on an event
+  // that never comes. It read as working code, and it kept onStoneCrafted
+  // (js/npc.js) looking live along with it, which is how a dead feature
+  // stays convincing enough that nobody deletes it. craftStoneError is
+  // still genuinely reachable, so it stays.
   s.on('craftStoneError', ({ msg }) => {
     if (typeof onStoneCraftError === 'function') onStoneCraftError(msg);
   });
 
-  // Epic/legendary gear (Liberty-priced tiers). Same shape as stoneCrafted
-  // above, plus `success`: unlike stones this can genuinely roll a failure —
-  // mats and Liberty are gone either way (inventorySync already reflects
-  // that), only the item itself depends on the roll.
+  // Epic/legendary gear (Liberty-priced tiers). New balance in, plus
+  // `success`: unlike the other craft round trips this can genuinely roll a
+  // failure — mats and Liberty are gone either way (inventorySync already
+  // reflects that), only the item itself depends on the roll.
   s.on('gearCrafted', ({ itemId, success, newNexumBalance }) => {
     window._nexumBalance = newNexumBalance;
     if (player) player.nexumBalance = newNexumBalance;
@@ -4143,7 +4152,7 @@ function _initPetCraftHandlers(s) {
   // Box crafting (keys → box, 100% success) and material tier-up (recipe
   // scroll → next tier, can fail) — both server round trips now, same
   // "inventorySync already landed, this only carries the outcome" shape as
-  // stoneCrafted/gearCrafted above.
+  // gearCrafted above.
   s.on('boxCrafted', ({ boxId }) => {
     if (typeof onBoxCrafted === 'function') onBoxCrafted(boxId);
   });

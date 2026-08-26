@@ -137,7 +137,15 @@ let _race10MyDamage = 0;
 // another clan re-fights it down to 0 (see server/game/Room.js's capture
 // logic). Combat access follows phase (open/closed); ownership/income don't.
 // Pushed by js/network.js's guildWarState handler and by gameStart.
-let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0, towerHp: 300000 };
+//
+// No towerHp field here, though the server sends one: the tower is an
+// ordinary enemy in the world snapshot, so updateGuildWarHpBar (js/ui.js)
+// reads its hp/maxHp straight off serverEnemies.find(e => e.eid ===
+// 'guildwar_castle') — live, every tick. A towerHp: 300000 default used to
+// sit in this initializer with nothing reading it, and the only thing it
+// could do was invite someone to point the bar at a number that moves only
+// when a whole guildWarState packet happens to arrive.
+let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0 };
 
 // Страх (Fear) — on-demand, solo wave-survival instance: no registration
 // queue and no scheduled window, unlike the arena/race above — entering IS
@@ -193,8 +201,18 @@ let _farm2OpenGroups = [];
 // server/index.js); nothing is computed locally. The point VALUES below are
 // just a reasonable default for the first paint before seasonState arrives —
 // the server's own numbers (shared/definitions.js) always win.
-let _seasonState = { endAt: 0, active: false, points: 0, minRatingPoints: 5000, prizes: [], vipPrize: null,
-                     enhanceSpecialSlots: ['pet', 'cloak', 'artifact'],
+//
+// Two fields the server also sends are deliberately not mirrored here. The
+// rating threshold is read as _seasonRating.minPoints by _seasonRatingHTML
+// (js/ui.js) — a different payload that arrives on its own — so the
+// minRatingPoints: 5000 that used to sit below was a second number nobody
+// ever consulted. The enhanceable special slots are
+// SEASON_ENHANCE_SPECIAL_SLOTS (shared/definitions.js), in this bundle's
+// scope and the same set seasonEnhancePoints() prices from server-side, so
+// the enhanceSpecialSlots: ['pet', 'cloak', 'artifact'] literal that used
+// to sit below was a hand-copy that would not have followed the real one
+// when it changed.
+let _seasonState = { endAt: 0, active: false, points: 0, prizes: [], vipPrize: null,
                      enhanceSpecial: { common: { norm: 20, bless: 5 }, uncommon: { norm: 40, bless: 15 }, rare: { norm: 100, bless: 40 } },
                      enhanceGear: { rare: 20, epic: 100 },
                      advBookPoints: 300,

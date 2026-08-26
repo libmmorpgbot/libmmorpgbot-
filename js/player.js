@@ -348,11 +348,11 @@ function upgradeStats(key) {
   if (!player || !UPGRADE_DEF[key]) return;
   const lvl = (player.upgrades || {})[key] || 0;
   if (player.gold < upgradeCost(lvl)) {
-    dmgNum(player.x, player.y - 30, 'Мало золота!', '#f88');
+    dmgNum(player.x, player.y - 30, t('npcNotEnoughGold'), '#f88');
     return;
   }
   if (getAvailableSkillPoints() < 1) {
-    dmgNum(player.x, player.y - 30, 'Мало очков навыка!', '#f88');
+    dmgNum(player.x, player.y - 30, t('notEnoughSkillPoints'), '#f88');
     return;
   }
   netSpendUpgrade(key);
