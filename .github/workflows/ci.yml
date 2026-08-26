@@ -5,11 +5,11 @@ name: ci
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # It used to run `npm run lint` and `node dev/harness.js`, and nothing else.
-# The harness boots `server/index.js` — the RETIRED MongoDB build. The live
+# The harness booted `server/index.js` — the RETIRED MongoDB build. The live
 # server is `server/app.js` + `server/handlers2/*` + `server/db/repos/*`
-# (package.json main/start, and the systemd unit both name it). So CI was
-# green while exercising a build that has not run in production for weeks, and
-# ZERO of the ~50 PostgreSQL detectors in dev/ ran anywhere except by hand.
+# (package.json main/start and the systemd unit both name it). So CI was green
+# while exercising a build that had not run in production for weeks, and ZERO
+# of the ~50 PostgreSQL detectors in dev/ ran anywhere except by hand.
 #
 # That is the worst shape a test suite can take: it reads as proof and proves
 # nothing about the thing that ships.
@@ -17,9 +17,13 @@ name: ci
 # Now CI stands up a throwaway PostgreSQL, applies the real migrations with the
 # real migrate.sh, and runs the detectors that guard the live build's
 # invariants — item conservation, the double-entry ledger, market half-trades,
-# the exploit fixes, enemy streaming. The Mongo harness stays for as long as
-# that build exists, because deleting a test before deleting its subject is how
-# a "temporary" build survives forever.
+# the exploit fixes, enemy streaming.
+#
+# The Mongo harness step is gone because its subject is: server/index.js,
+# server/handlers/, server/models/ and the five dev/ scripts that drove them
+# were deleted whole. The test outlived the build by exactly one commit, which
+# is the right order — deleting a test before deleting its subject is how a
+# "temporary" build survives forever.
 #
 # lint: eslint against the real config (eslint.config.js) — no-undef /
 # no-unused-vars are what caught the class of bug that shipped twice in one day
@@ -27,9 +31,10 @@ name: ci
 
 on:
   push:
-    # postgres-migration is where the live build is developed; main still
-    # carries the Mongo one. Leaving it off the list would mean CI never ran
-    # on the branch that ships.
+    # postgres-migration is where the live build is developed and where the
+    # Mongo build was deleted; main still carries that build until this branch
+    # is merged. Leaving postgres-migration off the list would mean CI never
+    # ran on the branch that ships.
     branches: [main, postgres-migration]
   pull_request:
   workflow_dispatch:
@@ -59,52 +64,6 @@ jobs:
       - name: enemy streaming survives packet loss
         run: node dev/enemysync-check.js
 
-      # The retired MongoDB build, still tested for as long as it exists —
-      # but not allowed to block the branch that ships. It exercises
-      # server/index.js, which nothing runs any more; if it breaks, that is a
-      # fact worth seeing in the log and not a reason to stop a release of the
-      # PostgreSQL build. The step disappears with the build it tests.
-      - name: legacy mongo harness (does not block)
-        continue-on-error: true
-        run: node dev/harness.js
-
-  # ── the build that actually ships ─────────────────────────────────────────
-  postgres:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    services:
-      postgres:
-        # 18 on purpose: claimVipRewards uses the PG18 `RETURNING old.…` form
-        # (server/db/repos/progression.js), so testing against 17 would pass a
-        # query production cannot run.
-        image: postgres:18
-        env:
-          POSTGRES_PASSWORD: ci
-          POSTGRES_DB: liberty
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      ADMIN_URL: postgres://postgres:ci@localhost:5432/liberty
-      DATABASE_URL: postgres://liberty_app:ci@localhost:5432/liberty
-      # No TLS between two processes in the same container, and no CA to have.
-      # This is honoured ONLY together with a loopback host — see _ssl() in
-      # server/db/index.js, where both keys are required to open it.
-      PG_ALLOW_PLAINTEXT: '1'
-      NODE_ENV: test
-      OPS_LIVE: '0'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-
       - name: install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
@@ -127,6 +86,13 @@ jobs:
       - name: currency ledger is atomic and append-only
         run: node dev/money-check.js
 
+      # The same proof for items. Half of it is static — it fails when a ledger
+      # write is deleted from ANY path that changes an inventory, including one
+      # no test thinks to call — and half is the invariant itself against the
+      # database built above.
+      - name: item ledger accounts for every item
+        run: node dev/item-ledger-check.js
+
       - name: items are conserved
         run: node dev/items-check.js
 
@@ -147,3 +113,13 @@ jobs:
 
       - name: the server boots and answers
         run: node dev/boot-check.js
+
+      # players.referred_by had no writer anywhere in this build, so the 5%
+      # deposit commission, the season payout at level 20 and the invited-
+      # friends list were three finished features that could not fire — and
+      # nothing failed, because an empty column is a query returning no rows.
+      # This one signs a real start_param and logs in with it: the bug was the
+      # login throwing that field away, so a repo-only test would have been
+      # green on the broken build.
+      - name: an invited player gets a referrer
+        run: node dev/referral-check.js

@@ -4,22 +4,31 @@
 //
 //   node dev/reachable-check.js
 //
-// Two builds live in this tree. The PostgreSQL one starts at server/app.js —
-// that is what systemd runs (ExecStart=/usr/bin/node server/app.js). The Mongo
-// one starts at server/index.js and is kept only as a reference while the
-// rewrite is finished; package.json's `main` and `start` still point at it,
-// which is itself a good reason for this check to exist.
+// This file was written while two builds shared the tree: the PostgreSQL one
+// starting at server/app.js, and the retired Mongo one starting at
+// server/index.js. Its job then was to prove that not one file of the old
+// build was reachable from the new one — the worry having been raised in as
+// many words, "можливо ти старий код з новим змішуєш". Reading the code cannot
+// settle that; a require three files deep is not visible from the top.
 //
-// The worry it answers was raised directly: "можливо ти старий код з новим
-// змішуєш". Reading the code cannot settle that — a require three files deep
-// is not visible from the top. Walking the graph can, and does: from
-// server/app.js the answer is a fixed list, and not one file of the old build
-// is on it.
+// The Mongo build has since been deleted, which retires that question and
+// would leave this file asserting something about a list of paths that no
+// longer match anything — a check that passes because there is nothing left to
+// catch. So it asserts the stronger thing instead:
 //
-// It fails if that ever stops being true. A single `require('../index')` added
-// by accident would pull the whole Mongo build — models, mongoose, a second
-// set of handlers — into a process that has no Mongo to talk to, and the
-// symptom would be nothing at all until the first code path that used it.
+//   EVERY .js file under server/ is loaded by server/app.js.
+//
+// While two builds shared the tree that could not be a rule, because "not
+// loaded" was the normal state for half the files. Now it can be, and it is
+// the rule that stops the situation recurring — because a second build does
+// not arrive all at once. It arrives one file at a time, each one reachable
+// from nothing, each one looking like work in progress, until there is enough
+// of it that deleting it is a project.
+//
+// It fails, too, if the server ever requires mongoose again. That package is a
+// devDependency now: dev/etl.js needs it for the single cutover run that moves
+// the old data across, and nothing that serves a player has any business
+// touching it.
 //
 // Nothing is executed here. The graph is read out of the source text, so this
 // runs anywhere, needs no database and cannot have side effects.
@@ -29,16 +38,6 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const ENTRY = 'server/app.js';
-
-// Anything under these must never be reachable from the running server.
-const RETIRED = [
-  /^server\/index\.js$/,
-  /^server\/handlers\//,
-  /^server\/models\//,
-  /^server\/routes\/admin\.js$/,      // admin2.js is the live one
-  /^server\/telegram-bot\.js$/,
-  /^server\/player-log\.js$/,
-];
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -62,11 +61,11 @@ function resolve(from, spec) {
 //
 // A FILE THAT CANNOT BE READ IS REPORTED, not skipped. `catch { continue }`
 // swallowed it, and the first file in the queue is the entrypoint: rename
-// server/app.js and the walk ends immediately with a set of one, every RETIRED
-// pattern matches nothing, and this prints PASS over a graph it never opened.
-// Nothing else can produce a read error here either — resolve() has already
-// confirmed the file exists before anything is queued — so an unreadable file
-// is a broken run and says so.
+// server/app.js and the walk ends immediately with a set of one, every
+// assertion below finds nothing to complain about, and this prints PASS over a
+// graph it never opened. Nothing else can produce a read error here either —
+// resolve() has already confirmed the file exists before anything is queued —
+// so an unreadable file is a broken run and says so.
 function reachableFrom(entry) {
   const seen = new Set();
   const unreadable = [];
@@ -103,12 +102,12 @@ console.log('\nreachable-check\n');
 const { seen: live, unreadable } = reachableFrom(ENTRY);
 console.log(`  ${ENTRY} loads ${live.size} files\n`);
 
-// A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. The count above was
+// A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. The count above was once
 // printed and never asserted on, so a walk that collapsed to the entrypoint
 // alone — a renamed server/app.js, a require() spelling this regex stops
-// recognising — came out as "жоден файл старої збірки не завантажується": true,
-// vacuously, about a graph of one file. The floor is far below the real figure
-// (60), so ordinary growth and ordinary deletion never reach it.
+// recognising — came out green, vacuously, about a graph of one file. The
+// floor is far below the real figure (60), so ordinary growth and ordinary
+// deletion never reach it.
 ok(unreadable.length === 0,
   'кожен файл у графі прочитано',
   unreadable.join(', '));
@@ -116,42 +115,38 @@ ok(live.size > 30,
   `є що перевіряти — обійдено ${live.size} файлів від ${ENTRY}`,
   'сканування нічого не знайшло — зламана сама перевірка');
 
-const leaked = [...live].filter(f => RETIRED.some(re => re.test(f))).sort();
-ok(leaked.length === 0,
-  'жоден файл старої (Mongo) збірки не завантажується сервером',
-  leaked.join(', '));
-
-// The reverse, as information rather than a rule: what is in the tree and not
-// loaded. Everything here is either the retired build or genuinely unused, and
-// both are worth seeing in one place at cutover.
+// ── the rule ───────────────────────────────────────────────────────────────
 const dead = allUnder('server').filter(f => !live.has(f)).sort();
-const unexpected = dead.filter(f => !RETIRED.some(re => re.test(f)));
-console.log(`\n  не завантажується ${dead.length} файлів:`);
-for (const f of dead) {
-  const retired = RETIRED.some(re => re.test(f));
-  console.log(`    ${retired ? '\x1b[2mстара збірка\x1b[0m' : '\x1b[33mне використовується\x1b[0m'}  ${f}`);
-}
+ok(dead.length === 0,
+  'кожен файл у server/ завантажується сервером',
+  dead.length
+    ? `${dead.length}: ${dead.join(', ')} — або підключи, або видали; git пам'ятає`
+    : '');
 
-// A file that is neither loaded nor part of the retired build is dead code —
-// reported, not failed, because "written for something not finished yet" is a
-// legitimate reason for it to be there.
-//
-// So it is a LINE, not an assertion. It was `ok(true, ...)`, which is the same
-// information filed under a green PASS — and a run whose count of passes
-// includes one that cannot fail is a run whose count of passes means less than
-// it says. The two assertions above are what this file actually gates on.
-console.log(`\n  ${unexpected.length
-  ? `\x1b[33mдо відома\x1b[0m  поза старою збіркою не використовується `
-    + `${unexpected.length} файлів (${unexpected.join(', ')})`
-  : 'поза старою збіркою не використовується жодного файла'}`);
+// mongoose left `dependencies` when the Mongo build was deleted. It stays in
+// the tree for dev/etl.js and the one cutover run that moves the old data, and
+// a require of it from anywhere in THIS graph would be the server depending on
+// a database that is being switched off.
+const mongoish = [...live].filter((f) => {
+  const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+  return /require\(\s*['"](mongoose|mongodb)(\/|['"])/.test(src);
+}).sort();
+ok(mongoish.length === 0,
+  'сервер не тягне mongoose/mongodb',
+  mongoish.join(', '));
 
-// The entrypoint the packaging claims, versus the one that runs. Stated rather
-// than enforced: `npm start` booting the retired build is a trap worth naming.
+// The entrypoint the packaging claims, versus the one that runs. systemd runs
+// `node server/app.js`; when package.json disagreed with that, `npm start`
+// booted the retired build — which is the kind of trap that is only ever found
+// by falling into it.
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-const startsOld = /server\/index\.js/.test((pkg.scripts && pkg.scripts.start) || '');
-console.log(startsOld
-  ? `\n  \x1b[33mувага\x1b[0m  npm start → ${pkg.scripts.start} (стара збірка); systemd запускає ${ENTRY}`
-  : `\n  npm start → ${pkg.scripts.start}`);
+const start = (pkg.scripts && pkg.scripts.start) || '';
+ok(pkg.main === ENTRY && start.includes(ENTRY),
+  `package.json вказує на ${ENTRY}`,
+  `main=${pkg.main} start=${start}`);
+ok(!Object.prototype.hasOwnProperty.call(pkg.dependencies || {}, 'mongoose'),
+  'mongoose не в dependencies (лише dev, для dev/etl.js)',
+  'він потрапить у прод при npm ci --omit=dev');
 
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

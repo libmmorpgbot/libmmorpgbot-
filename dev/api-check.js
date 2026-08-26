@@ -44,13 +44,12 @@ function ok(c, name, detail) {
   else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? `\n        ${detail}` : ''}`); }
 }
 
-// The retired Mongo build (see dev/reachable-check.js) is on disk and is not
-// what runs: server/handlers, server/models, server/index.js and the old
-// server/routes/admin.js.
+// Migrations are SQL with a .sql extension, but the directory is walked the
+// same way as the rest, so it is named here rather than special-cased in the
+// walker. The retired Mongo build used to be listed alongside it; it is gone
+// from the tree now, and dev/reachable-check.js is what keeps it gone.
 function skipped(rel) {
-  return /\/(handlers|models|migrations)\//.test(rel)
-    || rel === 'server/index.js'
-    || rel === 'server/routes/admin.js';
+  return /\/migrations\//.test(rel);
 }
 
 function sourceFiles() {
