@@ -1115,12 +1115,30 @@ canvas { display:block; width:100%; height:100%; }
 
 /* ── GRAM Wallet (Profile tab) ──────────────────────────────── */
 .gram-balance-card {
+  position: relative;
   background: linear-gradient(135deg, #1c160c, #352915);
   border: 1px solid rgba(236,187,103,0.2);
-  border-radius: 16px;
-  padding: 22px 20px;
+  border-radius: 18px;
+  padding: 20px 20px 22px;
   text-align: center;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+/* A soft bloom behind the mark, so the card reads as the one thing on the tab
+   worth looking at first. Pointer-events off — it covers the whole card. */
+.gram-balance-card::before {
+  content: '';
+  position: absolute; inset: -40% 20% auto 20%; height: 120px;
+  background: radial-gradient(ellipse at center, rgba(48,161,245,.22), transparent 70%);
+  pointer-events: none;
+}
+.gram-balance-chip {
+  position: relative;
+  width: 46px; height: 46px; margin: 0 auto 10px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(48,161,245,0.12);
+  border: 1px solid rgba(48,161,245,0.28);
 }
 .gram-balance-label {
   font-size: 12px;
@@ -1130,11 +1148,18 @@ canvas { display:block; width:100%; height:100%; }
   margin-bottom: 8px;
 }
 .gram-balance-amount {
+  position: relative;
   font-size: 34px;
   font-weight: 800;
   color: #d1ccc5;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
 }
+.gram-bal-whole { color: #f5dbae; }
+/* Seven decimals of GRAM is real money (per-kill drops are tiny) and is never
+   dropped — it is just made quiet, so the eye lands on the whole number. */
+.gram-bal-frac { font-size: 19px; font-weight: 700; color: #96876c; }
 .gram-unit {
   font-size: 16px;
   font-weight: 600;
@@ -1240,14 +1265,31 @@ canvas { display:block; width:100%; height:100%; }
 }
 .gram-tx-dep { color: #90d653; background: rgba(144,214,83,0.12); }
 .gram-tx-wd  { color: #e5a546; background: rgba(229,165,70,0.12); }
-.gram-tx-info { flex: 1; }
+/* min-width:0 is load-bearing: a flex child defaults to min-width:auto, so the
+   date+code line refuses to shrink below its text and shoves the amount out of
+   the row entirely. The code is the part that gives — the amount and its
+   status are what the row is for. */
+.gram-tx-info { flex: 1; min-width: 0; }
 .gram-tx-type { font-size: 13px; font-weight: 600; color: #f5dbae; }
-.gram-tx-date { font-size: 11px; color: #6c6354; margin-top: 2px; }
+.gram-tx-date {
+  font-size: 11px; color: #6c6354; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .gram-tx-amount { font-size: 13px; font-weight: 700; }
 .gram-tx-status { font-size: 10px; margin-top: 3px; font-weight: 600; }
+/* Per-row status, ported from the Rewardix wallet's rowStatus. The row is
+   tinted as a whole rather than labelled in one corner, so a list of six can
+   be read without reading it. .gram-tx-dim is the case the old two-way test
+   had no answer for: an intent that expired, or a withdrawal that was
+   forfeited, both used to render identically to one still being processed. */
+.gram-tx-right { text-align: right; flex-shrink: 0; white-space: nowrap; }
+.gram-tx-icon svg { display: block; }
+.gram-tx-dim { opacity: .5; }
+.gram-tx-ok .gram-tx-icon.gram-tx-dep { background: rgba(144,214,83,0.16); }
 .gram-st-ok   { color: #90d653; }
 .gram-st-no   { color: #e46070; }
 .gram-st-wait { color: #e5a546; }
+.gram-st-dim  { color: #7c7364; }
 .gram-copy-box {
   display: flex; align-items: center; justify-content: space-between;
   background: rgba(0,0,0,0.5); border: 1px solid rgba(209,204,197,0.1);
@@ -1263,6 +1305,238 @@ canvas { display:block; width:100%; height:100%; }
   border-radius: 8px; padding: 8px 12px; font-size: 12px;
   color: #c79549; margin-top: 10px;
 }
+
+/* ── GRAM wallet: actions, wallet card, credited moment ──────────────────── */
+.gram-actions { display: flex; gap: 10px; margin-bottom: 14px; }
+.gram-action {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px 10px; border-radius: 13px; border: 1px solid transparent;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; transition: filter .15s, border-color .15s;
+}
+.gram-action:active { filter: brightness(1.25); }
+.gram-action-ico { display: flex; align-items: center; }
+.gram-action-dep {
+  background: linear-gradient(135deg, #29361e, #486133);
+  border-color: rgba(144,214,83,0.3); color: #90d653;
+}
+.gram-action-wd {
+  background: linear-gradient(135deg, #342206, #5f3d0b);
+  border-color: rgba(229,165,70,0.28); color: #e5a546;
+}
+
+.gram-wallet-card {
+  background: rgba(209,204,197,0.035);
+  border: 1px solid rgba(209,204,197,0.1);
+  border-radius: 14px;
+  padding: 14px;
+}
+.gram-wallet-card-off { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
+.gram-wallet-head { display: flex; align-items: center; gap: 11px; }
+.gram-wallet-head-txt { min-width: 0; flex: 1; }
+.gram-wallet-chip {
+  width: 38px; height: 38px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(209,204,197,0.07); color: #a3957c;
+}
+.gram-wallet-chip-on {
+  background: rgba(144,214,83,0.13); color: #90d653;
+  border: 1px solid rgba(144,214,83,0.28);
+}
+.gram-wallet-status { font-size: 13px; font-weight: 700; color: #90d653; }
+.gram-wallet-short {
+  font-size: 12px; color: #a3957c; font-family: monospace;
+  margin-top: 2px; letter-spacing: .2px;
+}
+.gram-wallet-off-txt { flex: 1; min-width: 140px; font-size: 12px; color: #b2a288; line-height: 1.45; }
+.gram-wallet-addr { margin-top: 12px; }
+
+.gram-connect-btn {
+  width: 100%; padding: 12px; border-radius: 11px;
+  background: rgba(48,161,245,0.12); border: 1px solid rgba(48,161,245,0.35);
+  color: #8ec9fb; font-size: 13px; font-weight: 700;
+  cursor: pointer; touch-action: manipulation;
+}
+.gram-connect-btn:active { background: rgba(48,161,245,0.2); }
+
+/* «Отвязать». A real bordered control, not the underlined word it used to be:
+   unbinding a wallet is a deliberate, irreversible-feeling action and it has
+   to look like a button you decide to press, while staying visibly quieter
+   than the two things above it that move money. */
+.gram-unlink-btn {
+  width: 100%; margin-top: 12px; padding: 11px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  border-radius: 11px; cursor: pointer; touch-action: manipulation;
+  background: rgba(238,102,118,0.06);
+  border: 1px solid rgba(238,102,118,0.28);
+  color: #ee8b97; font-size: 13px; font-weight: 600;
+  transition: background .15s;
+}
+.gram-unlink-btn:active { background: rgba(238,102,118,0.16); }
+
+/* Copy rows — label above, value on its own line so a 48-character address can
+   wrap without shoving the copy control off the row. */
+.gram-copy-row { margin-bottom: 10px; }
+.gram-copy-row-lbl {
+  font-size: 10px; letter-spacing: .8px; text-transform: uppercase;
+  color: #82745b; margin-bottom: 5px;
+}
+.gram-copy-row-body {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(0,0,0,0.42);
+  border: 1px solid rgba(209,204,197,0.1);
+  border-radius: 11px; padding: 10px 10px 10px 13px;
+}
+.gram-copy-row-val {
+  flex: 1; min-width: 0; word-break: break-all;
+  font-family: monospace; font-size: 12.5px; line-height: 1.45;
+  color: #d2c1a4; transition: color .2s;
+}
+.gram-copy-chip {
+  flex-shrink: 0; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 9px; cursor: pointer; touch-action: manipulation;
+  background: rgba(209,204,197,0.08); border: none; color: #d2c1a4;
+}
+.gram-copy-chip:active { background: rgba(234,181,89,0.24); color: #f4d9aa; }
+
+/* Deposit sheet */
+.gram-sheet {
+  width: 100%; max-width: 500px; background: #16120a;
+  border-radius: 18px 18px 0 0; border-top: 1px solid rgba(209,204,197,.1);
+  padding: 20px 18px 34px; max-height: 88vh; overflow-y: auto;
+}
+.gram-sheet-hdr { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.gram-sheet-ico {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; border-radius: 9px;
+}
+.gram-sheet-ico-dep { background: rgba(144,214,83,0.13); color: #90d653; }
+.gram-sheet-ico-wd  { background: rgba(229,165,70,0.13); color: #e5a546; }
+.gram-sheet-title { flex: 1; font-size: 16px; font-weight: 800; color: #f5dbae; }
+.gram-sheet-close {
+  width: 28px; height: 28px; flex-shrink: 0; border: none; border-radius: 50%;
+  background: rgba(209,204,197,.08); color: #968a7a; cursor: pointer;
+}
+
+.gram-dep-panel {
+  background: rgba(209,204,197,0.035);
+  border: 1px solid rgba(209,204,197,0.09);
+  border-radius: 14px; padding: 18px 16px; margin-top: 10px;
+}
+.gram-dep-panel-center { text-align: center; }
+.gram-dep-panel-sub { font-size: 12px; color: #a3957c; margin-top: 6px; line-height: 1.5; }
+
+/* The waiting state. It says the window can be closed on purpose: the credit
+   arrives on a socket push that does not care whether anyone is looking, and a
+   player who thinks they must stand here is a player who reads a two-minute
+   chain confirmation as a hang. */
+.gram-dep-watch {
+  display: flex; align-items: flex-start; gap: 11px;
+  background: rgba(48,161,245,0.07);
+  border: 1px solid rgba(48,161,245,0.2);
+  border-radius: 12px; padding: 12px 14px; margin-top: 12px;
+}
+.gram-dep-watch-title { font-size: 13px; font-weight: 700; color: #8ec9fb; }
+.gram-dep-watch-sub { font-size: 11.5px; color: #a3957c; margin-top: 3px; line-height: 1.45; }
+
+.gram-spinner {
+  display: block; width: 26px; height: 26px; margin: 0 auto;
+  border-radius: 50%; border: 2.5px solid rgba(209,204,197,.18);
+  border-top-color: #eab559; animation: gram-spin .8s linear infinite;
+}
+.gram-spinner-sm { width: 17px; height: 17px; border-width: 2px; margin: 2px 0 0; flex-shrink: 0; border-top-color: #8ec9fb; }
+@keyframes gram-spin { to { transform: rotate(360deg); } }
+
+/* The credited moment — the whole point of the redesign. Green, large, and
+   carrying the number, because it is the only confirmation there is. */
+.gram-dep-ok { border-color: rgba(144,214,83,0.28); background: rgba(144,214,83,0.06); }
+.gram-dep-ok-title { font-size: 15px; font-weight: 800; color: #f5dbae; margin-top: 10px; }
+.gram-dep-ok-amount { font-size: 26px; font-weight: 800; color: #98e456; margin-top: 4px; line-height: 1.1; }
+.gram-dep-ok-hash { font-size: 11px; color: #6c6354; font-family: monospace; margin-top: 8px; word-break: break-all; }
+.gram-dep-again {
+  width: 100%; margin-top: 10px; padding: 9px; background: none; border: none;
+  color: #a3957c; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  text-decoration: underline; touch-action: manipulation;
+}
+
+.gram-credit-chip {
+  width: 44px; height: 44px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(144,214,83,0.15); color: #98e456;
+  border: 1px solid rgba(144,214,83,0.3);
+}
+.gram-credit-chip-lg { width: 58px; height: 58px; margin: 0 auto; }
+
+/* In-tab banner: what a player sees when they open the wallet after a deposit
+   landed while they were somewhere else. */
+.gram-credit-card {
+  display: flex; align-items: center; gap: 12px;
+  background: linear-gradient(135deg, rgba(144,214,83,0.14), rgba(144,214,83,0.05));
+  border: 1px solid rgba(144,214,83,0.32);
+  border-radius: 15px; padding: 14px; margin-bottom: 14px;
+  animation: gram-credit-in .32s ease-out;
+}
+.gram-credit-txt { flex: 1; min-width: 0; }
+.gram-credit-title { font-size: 12px; font-weight: 700; color: #b7d69a; letter-spacing: .2px; }
+.gram-credit-amount { font-size: 22px; font-weight: 800; color: #98e456; line-height: 1.15; margin-top: 1px; word-break: break-all; }
+.gram-credit-sub { font-size: 11.5px; color: #a3957c; margin-top: 2px; }
+.gram-credit-close {
+  flex-shrink: 0; align-self: flex-start;
+  width: 24px; height: 24px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.25); color: #82745b; cursor: pointer; font-size: 12px;
+  touch-action: manipulation;
+}
+.gram-credit-mark { flex-shrink: 0; opacity: .85; }
+
+/* Floating confirmation, for a credit that lands while the player is in the
+   world. z-index sits above the panels (400) and below nothing that matters —
+   this is the one message in the tab that must never be missed. */
+.gram-credit-toast {
+  position: fixed; top: 74px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  width: max-content; max-width: 88vw;
+  background: rgba(22,18,10,.97);
+  border: 1px solid rgba(144,214,83,0.45);
+  border-radius: 15px; padding: 12px 15px;
+  box-shadow: 0 6px 26px rgba(0,0,0,.6);
+  z-index: 500; cursor: pointer;
+  /* Its own keyframes, not the card's: this one is centred with
+     translateX(-50%), and an animation that sets transform: translateY() would
+     drop that and slam the toast to the left edge for its first frames. */
+  animation: gram-credit-toast-in .32s ease-out;
+}
+@keyframes gram-credit-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes gram-credit-toast-in {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Airdrop promo — a real card with the artwork, no longer a parachute emoji.
+   images/airdrop.png is a 192px cut; 60px here keeps it inside the 2x budget
+   the coordinator sized it for. */
+.gram-airdrop-card {
+  display: flex; align-items: center; gap: 13px;
+  background: linear-gradient(135deg, rgba(230,148,25,0.14), rgba(230,148,25,0.04));
+  border: 1px solid rgba(230,148,25,0.28);
+  border-radius: 15px; padding: 12px 14px; margin-bottom: 14px;
+}
+.gram-airdrop-img { width: 60px; height: 60px; flex-shrink: 0; object-fit: contain; }
+.gram-airdrop-txt { min-width: 0; }
+.gram-airdrop-title {
+  font-size: 15px; font-weight: 800; color: #e6ac19;
+  letter-spacing: .03em; display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+}
+.gram-airdrop-soon {
+  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  color: #1a1a1a; background: #e6ac19; border-radius: 5px; padding: 2px 6px;
+}
+.gram-airdrop-sub { font-size: 11.5px; color: #b2a288; margin-top: 3px; line-height: 1.45; }
 
 /* ── Profile tabs ─────────────────────────────────────────────────────────── */
 .profile-tabs {

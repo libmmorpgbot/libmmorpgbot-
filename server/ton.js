@@ -18,6 +18,44 @@
 //   * an address is validated before it goes into a URL path. It is
 //     configuration rather than user input today, but a value that can reach a
 //     URL path is one that can inject path and query segments.
+//   * a transfer is named by something the chain cannot rename. See below.
+//
+// ── the name of a payment ───────────────────────────────────────────────────
+//
+// This one cost an alert on every deposit and is worth stating in full,
+// because it looks like a detail and is the whole correctness of the scanner.
+//
+// A transfer used to be named `${event.event_id}:${actionIndex}`. On
+// 25 August one 0.05 TON payment produced a credit at 21:52 and
+// "⚠️ Платёж не зачислен" at 21:53. Both hashes fetched back from TonAPI
+// resolve to the SAME event:
+//
+//   /v2/events/f7f5e993…  →  event_id 1058d708…  lt 99405635000001  1 action
+//   /v2/events/1058d708…  →  event_id 1058d708…  lt 99405635000001  1 action
+//
+// One transfer, one lt, two names. TonAPI reports an event whose trace is
+// still in flight under a PROVISIONAL id; when the trace settles the same
+// transfer comes back under its final one. Nothing here read `in_progress`, so
+// the scanner named a payment after a value that was about to change, stored
+// that name, and then failed to recognise the payment it had already credited.
+//
+// Two changes, and they are independent on purpose — either alone fixes the
+// symptom, and money paths do not rest on one thing being right:
+//
+//   1. AN UNSETTLED TRACE IS NOT READ AT ALL. An id that is going to change is
+//      not an id, and there is nothing to gain from being a minute early.
+//   2. A TRANSFER IS NAMED BY `${lt}:${actionIndex}`. `lt` is the receiving
+//      account's own logical time — the same value the watermark is built on
+//      and pages on, so the scanner already depends on it being stable and
+//      monotonic. It was IDENTICAL across both readings above. One transaction
+//      on an account has exactly one lt, so two genuine transfers can never
+//      collide; several transfers inside one trace are separated by the index,
+//      as they were before.
+//
+// `event_id` is still carried, and still used — for the Tonviewer link. That
+// is the job it can do: a name a human can paste into an explorer. It just
+// cannot be the name we file money under, and one column was being asked to be
+// both.
 
 const ADDR_RE = /^(?:-?\d+:[0-9a-fA-F]{64}|[A-Za-z0-9_-]{48})$/;
 const NANOTON = 1_000_000_000n;
@@ -178,9 +216,27 @@ async function fetchEvents(limit, beforeLt = null) {
 // false, and the caller must then NOT advance the watermark: re-scanning is
 // free (crediting is idempotent), while skipping past unread events loses real
 // deposits with no trace.
+// ── the mark must not step over a trace that has not landed ─────────────────
+// incomingFrom() refuses an `in_progress` event, because its id is provisional.
+// That refusal is only safe if the watermark ALSO stays behind it: the mark
+// advances to `highest` on a clean pass, and a mark that moved past an event
+// this pass declined to read is an event that is never read again — a deposit
+// lost outright, silently, which the header above calls the one outcome worse
+// than reporting a payment twice.
+//
+// So an unsettled event pins the mark just below its own lt. The next tick
+// re-fetches from there, finds the trace settled, and credits it. Nothing is
+// skipped; it is deferred by one tick, and the overlap that costs is free
+// because crediting is idempotent — the property this whole file leans on.
+//
+// Only events ABOVE the current mark can pin it. A long-unsettled trace down
+// in already-scanned history would otherwise drag the mark backwards and
+// re-open the wallet's past, which is the failure scanOnce's bootstrap exists
+// to prevent.
 async function fetchSince(watermark, { pageSize = 50, maxPages = 20 } = {}) {
   const out = [];
   let beforeLt = null, highest = watermark, clean = false, failed = false;
+  let holdAt = Infinity;
 
   for (let i = 0; i < maxPages; i++) {
     const { events, ok } = await fetchEvents(pageSize, beforeLt);
@@ -190,10 +246,19 @@ async function fetchSince(watermark, { pageSize = 50, maxPages = 20 } = {}) {
 
     const lts = events.map(e => Number(e.lt || 0));
     highest = Math.max(highest, ...lts);
+    for (const e of events) {
+      if (!e || e.in_progress !== true) continue;
+      const l = Number(e.lt || 0);
+      if (l > watermark) holdAt = Math.min(holdAt, l);
+    }
     const oldest = Math.min(...lts);
     if (!oldest || oldest <= watermark || events.length < pageSize) { clean = true; break; }
     beforeLt = oldest;
   }
+
+  // holdAt > watermark by construction, so this can only ever hold the mark
+  // still or move it forward — never back.
+  if (holdAt !== Infinity) highest = Math.min(highest, holdAt - 1);
   return { events: out, highest, clean, failed };
 }
 
@@ -235,32 +300,57 @@ function parseAction(action, ourRaw) {
 }
 
 // Every incoming transfer in a batch of events, de-duplicated by tx id.
-// `${event_id}:${index}` rather than the event id alone: one event can carry
-// several actions, and two transfers inside it would otherwise share a key and
-// only one would ever be credited.
+//
+// `${lt}:${index}` — the receiving account's logical time, plus the action's
+// position within the trace. See the header for why it is not the event id.
+// The index is still needed because one trace can carry several transfers to
+// us, and two of them sharing a key would mean only one was ever credited.
 function incomingFrom(events, ourRaw) {
   const seen = new Set();
   const out = [];
   for (const ev of events) {
-    const evId = ev && ev.event_id;
-    if (!evId) continue;                    // malformed → skip, never key on ''
+    if (!ev) continue;
+    // ── not settled, therefore not named ────────────────────────────────────
+    // Deliberately checked here as well as on the id, and note that
+    // parseAction's `action.status !== 'ok'` is NOT this check: an action can
+    // be 'ok' inside an event whose trace is still in flight, which is exactly
+    // the state that produced a credit and a false alarm for the same 0.05 TON.
+    // fetchSince holds the watermark below this event so the next tick sees it
+    // settled; nothing is dropped.
+    if (ev.in_progress === true) continue;
+    const lt = Number(ev.lt || 0);
+    // Never key on 0. A malformed event with no logical time has no name, and
+    // filing money under '0:0' would collide every such transfer into one row.
+    if (!lt) continue;
+    // The event id is the LINK, not the name, so a missing one costs a
+    // clickable URL and not a deposit. It used to be the key, and `continue`
+    // here would have thrown the money away with the hyperlink.
+    const evId = ev.event_id ? String(ev.event_id) : null;
     const actions = ev.actions || [];
     for (let i = 0; i < actions.length; i++) {
       const parsed = parseAction(actions[i], ourRaw);
       if (!parsed) continue;
-      const txId = `${evId}:${i}`;
+      const txId = `${lt}:${i}`;
       if (seen.has(txId)) continue;         // page overlap saw it twice
       seen.add(txId);
-      out.push({ ...parsed, txId, lt: Number(ev.lt || 0), utime: Number(ev.timestamp || 0) });
+      out.push({ ...parsed, txId, eventId: evId, lt, utime: Number(ev.timestamp || 0) });
     }
   }
   return out;
 }
 
 // A link an admin can open to check a transfer against the chain themselves.
-function explorerLink(txId) {
-  const evId = String(txId || '').split(':')[0];
-  return evId ? `https://tonviewer.com/transaction/${evId}` : null;
+//
+// Takes an event id, or a stored id in either form — the historical
+// `<64 hex>:<index>` and the current `<lt>:<index>`. Only the first is a name
+// Tonviewer can resolve, so the second returns null rather than a URL that
+// opens on "transaction not found": a link that lands nowhere is worse than a
+// visibly absent one, because the operator concludes the transfer is not on
+// the chain. Callers that hold the event id separately pass THAT.
+const HASH_RE = /^[0-9a-fA-F]{64}$/;
+function explorerLink(idOrHash) {
+  const head = String(idOrHash || '').split(':')[0];
+  return HASH_RE.test(head) ? `https://tonviewer.com/transaction/${head}` : null;
 }
 
 module.exports = {

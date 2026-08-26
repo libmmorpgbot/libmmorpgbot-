@@ -153,12 +153,66 @@ function _bytesToBase64(bytes) {
 // tying the transfer that leaves here to an account. Callers must pass the
 // server's code and nothing else — see _tcDepositSend (js/ui.js), which
 // refuses to call this at all until one has arrived.
+// ── one tap, one transfer ───────────────────────────────────────────────────
+// The button that calls this is disabled by its own handler, and that is not
+// enough. It lives in js/ui.js, which is being rewritten; the disable happens
+// after two awaits and an early return; and a wallet that opens a modal gives
+// the player several seconds of a live screen behind it. A second tap while
+// the first transfer is in flight signs and broadcasts a SECOND transfer —
+// real money, gone twice, with nothing downstream able to tell the two apart,
+// because both carry the same comment and both are genuine payments. That is
+// the same shape as the buff-potion storm: a client-side guard that lived on
+// the button rather than on the thing the button fires.
+//
+// So the guard lives HERE, at the last line before a transfer leaves a wallet.
+//
+// A DEADLINE, not a flag. _tonConnectUI.sendTransaction() resolves when the
+// wallet confirms, and the ways it never resolves are ordinary: the player
+// switches to Tonkeeper and does not come back, the bridge drops the reply,
+// the tab is backgrounded by the OS. A plain boolean left set by any of those
+// wedges the button until reload — and a player who cannot pay decides the
+// game is broken, which is a worse outcome than the bug being guarded against.
+//
+// The window is validUntil, and deliberately the SAME number: that is exactly
+// how long the message already signed can still land on chain, so it is
+// exactly how long a second one would be a genuine double payment. Past it the
+// first attempt can no longer be executed and retrying is correct.
+const TC_SEND_WINDOW_MS = 300 * 1000;
+let _tcSendUntil = 0;
+
 async function tcSendDeposit(walletAddress, amountTon, memo) {
   if (!_tonConnectUI || !_tonConnectedAddress) throw new Error('Кошелёк не подключен');
+  const now = Date.now();
+  if (now < _tcSendUntil) {
+    // Refused, and it says so out loud: a silent return here would look
+    // exactly like a transfer that was sent, and the player would wait for a
+    // credit that is not coming.
+    const left = Math.ceil((_tcSendUntil - now) / 1000);
+    console.warn(`[tonconnect] повторная отправка отклонена, ещё ${left}s`);
+    // Into player_logs as `client:tcSendDeposit`, through the same reporter
+    // every other client failure uses. A refusal that only ever existed as a
+    // toast is a refusal nobody can count, and how often this fires is the
+    // only way to find out whether double-tapping is actually happening.
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('tcSendDeposit', `duplicate send blocked, ${left}s left`);
+    }
+    throw new Error('Перевод уже отправляется — подождите');
+  }
+  _tcSendUntil = now + TC_SEND_WINDOW_MS;
   const nanotons = Math.round(amountTon * 1e9).toString();
   const payload = _bytesToBase64(_commentCellBoc(String(memo)));
-  return _tonConnectUI.sendTransaction({
-    validUntil: Math.floor(Date.now() / 1000) + 300,
-    messages: [{ address: walletAddress, amount: nanotons, payload }],
-  });
+  try {
+    return await _tonConnectUI.sendTransaction({
+      validUntil: Math.floor(now / 1000) + TC_SEND_WINDOW_MS / 1000,
+      messages: [{ address: walletAddress, amount: nanotons, payload }],
+    });
+  } catch (err) {
+    // The wallet REFUSED or failed, so nothing was signed and nothing is in
+    // flight. Releasing at once is the difference between "I cancelled by
+    // mistake, let me try again" and five minutes of a dead button.
+    _tcSendUntil = 0;
+    throw err;
+  }
+  // A resolved send holds the window: the transfer is on its way, and the
+  // player watching their balance not move yet is exactly who taps again.
 }

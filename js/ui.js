@@ -7276,30 +7276,169 @@ function onPvpHistoryResult(history) {
   if (window._profileTab === 'history') updatePvpHistoryUI();
 }
 
+// ─────────────────────────────────────────────────────────
+//  WALLET ICONS
+// ─────────────────────────────────────────────────────────
+// Inlined rather than <img src="…">, for the same reason every other icon in
+// this game is (see clanIconSVG, js/clans.js): these sit inside buttons and
+// status chips whose colour changes with their state, and an <img> cannot
+// inherit that — a disabled button would keep a bright glyph, and the deposit
+// arrow would stay green inside a row that had just turned red.
+//
+// The two supplied glyphs arrived as fill="#000000" on an 800px canvas. Both
+// the fill and the fixed size are dropped here: currentColor lets one copy
+// serve every place at every size, and pasting an 800px icon into a 32px chip
+// would hand the browser a layout it has to undo on every render.
+function _gramIconDeposit(size) {
+  const sz = size || 18;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="currentColor" style="display:block;flex-shrink:0"><path d="M19.6 21H4.4C3.1 21 2 19.9 2 18.6V14h2v4.2c0 .6.4.8 1 .8h14c.6 0 1-.4 1-1v-4h2v4.6c0 1.3-1.1 2.4-2.4 2.4z"/><path d="M15.3 12.1L13.4 14v-4c0-2 0-4.9 2.4-7-3.4.6-5.1 3.2-5.2 7v4l-1.9-1.9L7 13l5 5 5-5-1.7-.9z"/></svg>`;
+}
+
+function _gramIconWithdraw(size) {
+  const sz = size || 18;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="${sz}" height="${sz}" fill="currentColor" style="display:block;flex-shrink:0"><path d="M480,224a31.991,31.991,0,0,0-32,32V448H64V256a32,32,0,0,0-64,0V480a31.991,31.991,0,0,0,32,32H480a31.991,31.991,0,0,0,32-32V256A31.991,31.991,0,0,0,480,224Z" fill-rule="evenodd"/><path d="M224,320a32,32,0,0,0,64,0V128h96L256,0,128,128h96Z" fill-rule="evenodd"/></svg>`;
+}
+
+// The GRAM diamond is a BRAND mark, not a UI glyph, so unlike the two above it
+// keeps its own blue and white and must never be switched to currentColor —
+// the currency would change colour depending on which panel it sat in.
+// Source of truth stays at images/gram-mark.svg; this is that file inlined so
+// the balance card paints in the first frame instead of flashing an empty box
+// while an <img> round-trips.
+function _gramMarkSvg(size) {
+  const sz = size || 22;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${sz}" height="${sz}" fill="none" style="display:block;flex-shrink:0"><path d="M66.523 11.333H33.477c-4.401 0-6.601 0-8.592.616a13.792 13.792 0 0 0-4.808 2.625c-1.594 1.341-2.784 3.192-5.164 6.894L4.408 37.81c-1.572 2.446-2.358 3.67-2.572 4.956a6.322 6.322 0 0 0 .362 3.37c.482 1.212 1.51 2.24 3.567 4.296l39.033 39.034c1.821 1.82 2.731 2.731 3.781 3.072.924.3 1.918.3 2.842 0 1.05-.34 1.96-1.251 3.78-3.072l39.035-39.034c2.056-2.056 3.084-3.084 3.566-4.296a6.32 6.32 0 0 0 .362-3.37c-.214-1.287-1-2.51-2.572-4.956L85.087 21.47c-2.38-3.703-3.57-5.554-5.164-6.895a13.792 13.792 0 0 0-4.808-2.625c-1.99-.616-4.191-.616-8.592-.616z" fill="#30A1F5"/><path d="M60.268 24.224c.537-1.45 2.59-1.45 3.126 0l3.71 10.027a2.2 2.2 0 0 0 1.3 1.3l10.027 3.71c1.451.537 1.451 2.59 0 3.126l-10.027 3.71a2.2 2.2 0 0 0-1.3 1.3l-3.71 10.027c-.537 1.451-2.59 1.451-3.126 0l-3.71-10.027a2.2 2.2 0 0 0-1.3-1.3l-10.027-3.71c-1.451-.537-1.451-2.589 0-3.126l10.027-3.71a2.2 2.2 0 0 0 1.3-1.3l3.71-10.027z" fill="#fff"/></svg>`;
+}
+
+// Stroke icons in the same house style as index.html's own nav/panel glyphs
+// (24-box, currentColor, round caps) so the wallet block does not read as
+// pasted in from somewhere else.
+function _gramIconWallet(size) {
+  const sz = size || 18;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a2 2 0 0 1 2 2v1"/><path d="M3 7.5V17a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M21 10v4h-4a2 2 0 0 1 0-4z"/></svg>`;
+}
+
+// A broken chain link, not a pulled plug: the wallet is BOUND to the account
+// and the button that undoes it says «Отвязать», so the glyph has to agree.
+// This is the same shape Rewardix's WalletSheet uses for its unlink control.
+function _gramIconUnlink(size) {
+  const sz = size || 15;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-.12-7.07 5 5 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 .12 7.07 5 5 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>`;
+}
+
+function _gramIconCheck(size) {
+  const sz = size || 26;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M20 6 9 17l-5-5"/></svg>`;
+}
+
+function _gramIconCopy(size) {
+  const sz = size || 15;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+}
+
+// ─────────────────────────────────────────────────────────
+//  WALLET FORMATTING
+// ─────────────────────────────────────────────────────────
+// Every digit is kept. GRAM drops per kill are tiny — a player who farmed
+// 0.0000042 has to be able to see it, which is why the balance was printed to
+// seven places in the first place — but seven places of noise is also why the
+// number was unreadable at a glance. The whole part and the fraction are
+// returned separately so the card can render the fraction smaller and dimmer
+// instead of dropping it.
+function _gramSplitAmount(n) {
+  const v = Number(n) || 0;
+  const fixed = Math.abs(v).toFixed(7);
+  const dot = fixed.indexOf('.');
+  return {
+    sign: v < 0 ? '-' : '',
+    whole: fixed.slice(0, dot),
+    frac: fixed.slice(dot + 1).replace(/0+$/, ''),
+  };
+}
+
+// One-line form for rows and toasts: trailing zeros trimmed, never scientific
+// notation (toFixed guarantees that; a bare String(1e-7) prints "1e-7", which
+// a player reads as a broken number).
+function _gramFmtAmount(n) {
+  const p = _gramSplitAmount(n);
+  return p.sign + p.whole + (p.frac ? '.' + p.frac : '');
+}
+
+// Ported from the Rewardix wallet's rowStatus. Two rules matter:
+//
+//  • A CONFIRMED transaction is final. It must never render as expired or
+//    waiting, whatever else the row carries — "истёк" printed over money that
+//    already arrived is the one wrong answer a player will act on.
+//  • Every status the server can actually send is named. 'expired' and
+//    'forfeited' both used to fall through the old two-way test to "⏳
+//    Ожидание", so a dead intent looked exactly like one still being watched,
+//    and a forfeited withdrawal looked like one still being processed.
+function _gramTxRowStatus(tx) {
+  const s = tx && tx.status;
+  // 'confirmed' is what the database stores and what gramHistory replays;
+  // 'credited' is what the live gramTxUpdate push carries the moment the chain
+  // scanner settles a deposit (server/app.js notifyCredited). They are the same
+  // event seen from two places, and a client that knew only one of them showed
+  // money that had just landed as "⏳ Ожидание" until the next history fetch.
+  if (s === 'confirmed' || s === 'credited') return 'ok';
+  if (s === 'rejected') return 'no';
+  if (s === 'forfeited') return 'no';
+  if (s === 'expired') return 'dim';
+  return 'wait';
+}
+
+function _gramTxStatusLabel(kind) {
+  return kind === 'ok' ? t('txDoneLbl')
+    : kind === 'no' ? t('txRejectedLbl')
+      : kind === 'dim' ? t('txExpiredLbl')
+        : t('txWaitingLbl');
+}
+
+// The address/comment pair, laid out the way Rewardix's CopyRow is: the label
+// above in small caps, the value on its own line in mono so it can wrap
+// without pushing the copy control off the row, and the copy button as a chip
+// rather than an icon floating in whitespace. `value` is escaped by the
+// caller's _esc — it is server text, and it lands in innerHTML.
+function _gramCopyRow(label, id, value, tone) {
+  const col = tone === 'code' ? '#f4d7a7' : '#d2c1a4';
+  return `<div class="gram-copy-row">
+    <div class="gram-copy-row-lbl">${label}</div>
+    <div class="gram-copy-row-body">
+      <span id="${id}" class="gram-copy-row-val" style="color:${col}">${value}</span>
+      <button class="gram-copy-chip" onclick="gramCopy('${id}')" aria-label="${_escAttr(label)}">${_gramIconCopy(15)}</button>
+    </div>
+  </div>`;
+}
+
 function updateGramUI() {
   const el = document.getElementById('gram-body');
   if (!el) return;
   const balance = window._gramBalance || 0;
 
+  const amt = _gramSplitAmount(balance);
+
   el.innerHTML = `
-    <div class="gram-airdrop-card" style="background:linear-gradient(135deg,rgba(230,148,25,0.14),rgba(230,148,25,0.05));border:1px solid rgba(230,148,25,0.3);border-radius:14px;padding:14px 16px;text-align:center;margin-bottom:14px">
-      <div style="font-size:16px;font-weight:800;color:#e6ac19;letter-spacing:0.03em">🪂 AirDrop</div>
-      <div style="font-size:12px;color:#c5bfb7;margin-top:4px">${t('airdropCollectHint')}</div>
-    </div>
+    <!-- Where a landed deposit announces itself when the player is standing in
+         this tab. Filled by _renderGramCreditBanner from _gramLastCredit, and
+         deliberately the FIRST thing in the body: the credit is the one event
+         here the player is actually waiting on, and burying it under the
+         airdrop promo is how "I cannot see my deposit arrive" happens. -->
+    <div id="gram-credit-banner"></div>
 
     <div class="gram-balance-card">
+      <div class="gram-balance-chip">${_gramMarkSvg(26)}</div>
       <div class="gram-balance-label">${t('gramBalanceLbl')}</div>
-      <div class="gram-balance-amount" id="gram-balance-val">${balance.toFixed(7)} <span class="gram-unit">GRAM</span></div>
+      <div class="gram-balance-amount" id="gram-balance-val"><span class="gram-bal-whole">${amt.whole}</span>${amt.frac ? `<span class="gram-bal-frac">.${amt.frac}</span>` : ''} <span class="gram-unit">GRAM</span></div>
     </div>
 
-    <div id="ton-connect-row" style="margin-bottom:14px"></div>
-
-    <div style="display:flex;gap:10px;margin-bottom:14px">
-      <button class="gram-btn gram-btn-green" style="flex:1;padding:13px" onclick="openGramDepositModal()">
-        ${t('depositBtn')}
+    <div class="gram-actions">
+      <button class="gram-action gram-action-dep" onclick="openGramDepositModal()">
+        <span class="gram-action-ico">${_gramIconDeposit(19)}</span>
+        <span>${t('depositBtn')}</span>
       </button>
-      <button class="gram-btn gram-btn-orange" style="flex:1;padding:13px" onclick="openGramWithdrawModal()">
-        ${t('withdrawBtn')}
+      <button class="gram-action gram-action-wd" onclick="openGramWithdrawModal()">
+        <span class="gram-action-ico">${_gramIconWithdraw(17)}</span>
+        <span>${t('withdrawBtn')}</span>
       </button>
     </div>
 
@@ -7313,12 +7452,34 @@ function updateGramUI() {
     <div id="gram-msg" class="gram-msg" style="display:none;margin-bottom:14px"></div>
 
     <div class="gram-section">
+      <div class="gram-section-title">${t('gramWalletHdr')}</div>
+      <div id="ton-connect-row"></div>
+    </div>
+
+    <div class="gram-airdrop-card">
+      <!-- images/airdrop.png is cut to 192×192 (10 KB) and must not be drawn
+           larger than 96 CSS px — past that it softens. 60px here leaves the
+           2× headroom the cut was sized for. -->
+      <img class="gram-airdrop-img" src="/images/airdrop.png" width="60" height="60" alt="">
+      <div class="gram-airdrop-txt">
+        <div class="gram-airdrop-title">AirDrop <span class="gram-airdrop-soon">${t('airdropSoonLbl')}</span></div>
+        <div class="gram-airdrop-sub">${t('airdropCollectHint')}</div>
+      </div>
+    </div>
+
+    <div class="gram-section">
       <div class="gram-section-title">${t('txHistoryHdr')}</div>
       <div id="gram-history-list"><div class="gram-hint" style="text-align:center;padding:12px 0">${t('questLoading')}</div></div>
     </div>
   `;
 
+  _renderGramCreditBanner();
   _renderTonConnectRow();
+  // The list is re-rendered from what is already in hand before the refetch,
+  // so reopening the tab does not blank a history we can already draw — and so
+  // a credit that landed while the tab was closed is on screen in the first
+  // frame rather than one round trip later.
+  if (_gramTxList.length) _renderGramHistory();
   // Pulls the wallet library in the moment the panel is opened, so a player
   // who connected before sees that state instead of a "connect" button. The
   // library is the only thing that can restore that session.
@@ -7350,28 +7511,82 @@ function _tcSetBusy(busy) {
   }
 }
 
+// The connected wallet, laid out like Rewardix's WalletSheet: an icon chip, a
+// status line, the address on its own row in mono, and the unlink control as a
+// real bordered button.
+//
+// It used to be three spans and an underlined word crammed onto one 12px line,
+// with the address elided to "UQ6f…ab3f" and no way to read or copy the rest —
+// so the one question the row exists to answer ("is the wallet I think I
+// linked the one that is linked?") could not be answered from it.
 function _renderTonConnectRow() {
   const el = document.getElementById('ton-connect-row');
   if (!el) return;
   const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  // The address comes back from the wallet library, not from the player, but
+  // it lands in innerHTML and it is the one value on this row this client did
+  // not author — escaped on the way in rather than trusted.
+  const safe = _esc(addr || '');
   el.innerHTML = addr
-    ? `<div style="display:flex;align-items:center;gap:8px;background:rgba(209,204,197,.04);border:1px solid rgba(209,204,197,.12);border-radius:10px;padding:9px 12px;font-size:12px">
-        <span style="color:#90d653">✓ ${t('tcConnectedLbl')}</span>
-        <span style="color:#a3957c;font-variant-numeric:tabular-nums">${_shortenTonAddr(addr)}</span>
-        <button onclick="tcDisconnect()" style="margin-left:auto;background:none;border:none;color:#ee6676;font-size:11px;cursor:pointer;text-decoration:underline">${t('tcDisconnectBtn')}</button>
+    ? `<div class="gram-wallet-card">
+        <div class="gram-wallet-head">
+          <span class="gram-wallet-chip gram-wallet-chip-on">${_gramIconWallet(19)}</span>
+          <div class="gram-wallet-head-txt">
+            <div class="gram-wallet-status">${t('tcConnectedLbl')}</div>
+            <div class="gram-wallet-short">${_esc(_shortenTonAddr(addr))}</div>
+          </div>
+        </div>
+        <div class="gram-wallet-addr">
+          <div class="gram-copy-row-lbl">${t('tcAddressLbl')}</div>
+          <div class="gram-copy-row-body">
+            <span id="gram-tc-addr-val" class="gram-copy-row-val">${safe}</span>
+            <button class="gram-copy-chip" onclick="gramCopy('gram-tc-addr-val')" aria-label="${_escAttr(t('tcAddressLbl'))}">${_gramIconCopy(15)}</button>
+          </div>
+        </div>
+        <button class="gram-unlink-btn" onclick="_gramUnlinkWallet()">${_gramIconUnlink(15)}<span>${t('tcDisconnectBtn')}</span></button>
       </div>`
-    : `<button class="gram-btn" style="width:100%;padding:11px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5" onclick="tcConnect()">${t('tcConnectBtn')}</button>`;
+    : `<div class="gram-wallet-card gram-wallet-card-off">
+        <span class="gram-wallet-chip">${_gramIconWallet(19)}</span>
+        <div class="gram-wallet-off-txt">${t('tcNotConnectedHint')}</div>
+        <button class="gram-connect-btn" onclick="tcConnect()">${t('tcConnectBtn')}</button>
+      </div>`;
 }
+
+// Unlinking goes through here rather than straight to tcDisconnect() so the
+// player is TOLD it happened. tcDisconnect is fire-and-forget: if the library
+// never loaded, or the disconnect throws inside it, the row simply stays as it
+// was and the tap reads as a dead button — the exact silent-refusal shape this
+// tab is not allowed to have any more.
+function _gramUnlinkWallet() {
+  if (typeof tcDisconnect !== 'function') { _gramMsg(t('serviceUnavailableToast'), 'err'); return; }
+  try {
+    tcDisconnect();
+  } catch (e) {
+    _gramMsg(t('serviceUnavailableToast'), 'err');
+    console.warn('[wallet] unlink failed:', e);
+    return;
+  }
+  // The confirmation itself is left to _onTonConnectChange, which is the only
+  // thing that knows the wallet actually went away. Announcing it here would
+  // claim success for a disconnect that had not happened yet.
+}
+
+// Whether a wallet was connected the last time the row was drawn. Kept so the
+// connect→disconnect edge can be told apart from a re-render, which is what
+// decides whether the "отвязан" confirmation is honest.
+let _gramWalletWasOn = false;
 
 // Called by js/tonconnect.js whenever the wallet connect status changes —
 // keeps the wallet tab (and any open deposit/withdraw modal) in sync without
 // the player needing to close and reopen anything.
 function _onTonConnectChange() {
+  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  if (_gramWalletWasOn && !addr) _gramMsg(t('tcUnlinkConfirmToast'), 'ok');
+  _gramWalletWasOn = !!addr;
   _renderTonConnectRow();
   const depBtn = document.getElementById('ton-deposit-send-wrap');
   if (depBtn) _renderTonDepositSection();
   const wdAddr = document.getElementById('gram-wd-addr');
-  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
   if (wdAddr && addr && !wdAddr.value) wdAddr.value = addr;
   if (document.getElementById('ton-wd-connect-wrap')) _renderTonWithdrawConnectHint();
 }
@@ -7383,23 +7598,45 @@ function _renderGramHistory() {
     el.innerHTML = `<div class="gram-hint" style="text-align:center;padding:12px 0">${t('noTxYetHint')}</div>`;
     return;
   }
+  // Per-row status the way Rewardix's deposit list does it: the row is TINTED
+  // by its outcome — icon chip, amount and label together — instead of the
+  // outcome being one 10px word in the corner that reads the same whether the
+  // money arrived or the intent died. A row that is not going to pay out is
+  // dimmed whole, so a list of six can be understood without reading it.
   el.innerHTML = _gramTxList.map(tx => {
     const isDeposit = tx.type === 'deposit';
-    const statusCls = tx.status === 'confirmed' ? 'gram-st-ok' : tx.status === 'rejected' ? 'gram-st-no' : 'gram-st-wait';
-    const statusLbl = tx.status === 'confirmed' ? t('txDoneLbl') : tx.status === 'rejected' ? t('txRejectedLbl') : t('txWaitingLbl');
+    const st = _gramTxRowStatus(tx);
+    const dir = isDeposit ? 'dep' : 'wd';
     const date = new Date(tx.createdAt).toLocaleString('ru-RU', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
-    return `<div class="gram-tx-row">
-      <div class="gram-tx-icon ${isDeposit ? 'gram-tx-dep' : 'gram-tx-wd'}">${isDeposit ? '↓' : '↑'}</div>
+    // A deposit's amount is only real once the chain has been read: an intent
+    // carries the MINIMUM as a placeholder, so printing it on a pending row
+    // promised a figure the player had not sent. Shown for anything settled,
+    // withheld while it is still a guess.
+    const showAmt = st === 'ok' || !isDeposit;
+    return `<div class="gram-tx-row gram-tx-${st}">
+      <div class="gram-tx-icon gram-tx-${dir}">${isDeposit ? _gramIconDeposit(15) : _gramIconWithdraw(14)}</div>
       <div class="gram-tx-info">
         <div class="gram-tx-type">${isDeposit ? t('depositTypeLbl') : t('withdrawTypeLbl')}</div>
-        <div class="gram-tx-date">${date}</div>
+        <div class="gram-tx-date">${date}${tx.memo ? ` · ${t('txMemoLbl')} ${_esc(tx.memo)}` : ''}</div>
       </div>
-      <div style="text-align:right">
-        <div class="gram-tx-amount ${isDeposit ? 'gram-tx-dep' : 'gram-tx-wd'}">${isDeposit ? '+' : '-'}${tx.amount} GRAM</div>
-        <div class="gram-tx-status ${statusCls}">${statusLbl}</div>
+      <div class="gram-tx-right">
+        ${showAmt ? `<div class="gram-tx-amount gram-tx-${dir}">${isDeposit ? '+' : '−'}${_gramFmtAmount(tx.amount)} GRAM</div>` : ''}
+        <div class="gram-tx-status gram-st-${st}">${_gramTxStatusLabel(st)}</div>
       </div>
     </div>`;
   }).join('');
+}
+
+// The balance number is markup (whole part, dimmed fraction, unit), so it is
+// re-rendered rather than assigned as text. Assigning textContent here is what
+// the two callers below used to do, and it silently ate the "GRAM" unit the
+// moment any transaction landed — the card went from "12.5 GRAM" to "12.5 "
+// and stayed that way until the tab was reopened.
+function _setGramBalanceText() {
+  const bal = document.getElementById('gram-balance-val');
+  if (!bal) return;
+  const p = _gramSplitAmount(window._gramBalance || 0);
+  bal.innerHTML = `<span class="gram-bal-whole">${p.whole}</span>${p.frac ? `<span class="gram-bal-frac">.${p.frac}</span>` : ''} <span class="gram-unit">GRAM</span>`;
 }
 
 function onGramHistory(txs) {
@@ -7410,15 +7647,153 @@ function onGramHistory(txs) {
 function onGramTxCreated(tx) {
   _gramTxList.unshift(tx);
   _renderGramHistory();
-  const bal = document.getElementById('gram-balance-val');
-  if (bal) bal.textContent = (window._gramBalance || 0).toFixed(7) + ' ';
+  _setGramBalanceText();
 }
 
 function onGramTxUpdate(id, status) {
-  const tx = _gramTxList.find(t => t.id === id);
+  // Not `t` for the predicate: `t` is the translation function, and shadowing
+  // it inside a callback that lives next to a dozen `t('...')` calls is a trap
+  // waiting for the next edit to this line.
+  const tx = _gramTxList.find(x => x.id === id);
   if (tx) { tx.status = status; _renderGramHistory(); }
-  const bal = document.getElementById('gram-balance-val');
-  if (bal) bal.textContent = (window._gramBalance || 0).toFixed(7) + ' ';
+  _setGramBalanceText();
+}
+
+// ─────────────────────────────────────────────────────────
+//  A DEPOSIT LANDED
+// ─────────────────────────────────────────────────────────
+// 'gramDepositCredited' is pushed by the server the moment the chain scanner
+// matches a transfer to this player's intent and credits it (see
+// server/db/repos/gram.js creditOnce). It is the ONLY moment the client can
+// know the money moved — there is no polling and no "I paid" button any more —
+// so everything about making that moment visible hangs off this one function.
+//
+// The credit can land in three different places and all three are handled:
+//
+//   • deposit modal open   → the modal flips to its success state
+//   • wallet tab open      → a banner at the top of the tab, balance updated
+//   • anywhere else        → a floating card, because the player is in the
+//                            dungeon and will not see either of the above
+//
+// The last one is the one that is easy to leave out and the one that matters
+// most: a player who sent TON from their phone's wallet app comes back to a
+// game that is not on the wallet tab.
+let _gramLastCredit = null;
+let _gramCreditToastTimer = null;
+// How long the floating confirmation stays. Longer than _marketToast's four
+// seconds on purpose — this one carries a number the player will want to read
+// twice, and it is dismissible before then.
+const GRAM_CREDIT_TOAST_MS = 8000;
+
+function onGramDepositCredited(data) {
+  const d = data || {};
+  const amount = Number(d.amount) || 0;
+  // The server sends the authoritative post-credit balance. Trusting it over a
+  // local add keeps the card from ever showing a number the server disagrees
+  // with; if it is absent for any reason, fall back to adding the delta rather
+  // than leaving the balance stale.
+  const balance = Number.isFinite(Number(d.balance)) && d.balance != null
+    ? Number(d.balance)
+    : (window._gramBalance || 0) + amount;
+  window._gramBalance = balance;
+  if (typeof player !== 'undefined' && player) player.gramBalance = balance;
+
+  _gramLastCredit = {
+    amount, balance,
+    memo: d.memo ? String(d.memo) : '',
+    txHash: d.txHash ? String(d.txHash) : '',
+    at: d.at || Date.now(),
+  };
+
+  // Patch the matching history row in place so the list is right in this
+  // frame, then ask the server for the real one. Without the local patch the
+  // row the player is staring at keeps saying "Ожидание" for a whole round
+  // trip after the success card has told them it arrived.
+  const row = _gramLastCredit.memo && _gramTxList.find(x => x.memo === _gramLastCredit.memo);
+  if (row) { row.status = 'confirmed'; row.amount = amount; row.txHash = _gramLastCredit.txHash; }
+  else {
+    _gramTxList.unshift({
+      id: 'credit-' + _gramLastCredit.at, type: 'deposit', amount,
+      status: 'confirmed', memo: _gramLastCredit.memo,
+      txHash: _gramLastCredit.txHash, createdAt: _gramLastCredit.at,
+    });
+  }
+  if (typeof netGramHistory === 'function' && typeof netIsLive === 'function' && netIsLive()) netGramHistory();
+
+  // The same cue a good drop makes. Wrapped because the audio graph is built
+  // lazily and can be missing entirely (muted, no user gesture yet) — a cue
+  // that throws must never be what stops the confirmation being drawn.
+  if (typeof Sound !== 'undefined' && Sound && typeof Sound.loot === 'function') {
+    try { Sound.loot(); } catch (e) { console.warn('[wallet] credit cue failed:', e); }
+  }
+
+  const modalOpen = !!document.getElementById('gram-dep-code');
+  if (modalOpen) {
+    _setGramDepositState('credited');
+  } else {
+    // The tab, if it happens to be the one on screen, and the floating card
+    // either way — the tab render alone is invisible to a player in the world.
+    _gramCreditToast(_gramLastCredit);
+  }
+  if (activeTab === 5 && window._profileTab === 'wallet') {
+    _setGramBalanceText();
+    _renderGramCreditBanner();
+    _renderGramHistory();
+  }
+}
+
+// The in-tab banner. Rendered from _gramLastCredit rather than from the event,
+// so opening the wallet tab minutes later still shows what landed — a credit
+// that happened while the player was in the dungeon is not a thing they should
+// have to reconstruct from the history list.
+function _renderGramCreditBanner() {
+  const el = document.getElementById('gram-credit-banner');
+  if (!el) return;
+  if (!_gramLastCredit) { el.innerHTML = ''; return; }
+  const c = _gramLastCredit;
+  el.innerHTML = `<div class="gram-credit-card">
+    <span class="gram-credit-chip">${_gramIconCheck(24)}</span>
+    <div class="gram-credit-txt">
+      <div class="gram-credit-title">${t('depositCreditedTitle')}</div>
+      <div class="gram-credit-amount">${tVars('depositCreditedAmountFmt', { n: _gramFmtAmount(c.amount) })}</div>
+      <div class="gram-credit-sub">${tVars('depositNewBalanceFmt', { n: _gramFmtAmount(c.balance) })}</div>
+    </div>
+    <button class="gram-credit-close" onclick="_gramDismissCredit()" aria-label="✕">✕</button>
+  </div>`;
+}
+
+function _gramDismissCredit() {
+  _gramLastCredit = null;
+  _renderGramCreditBanner();
+}
+
+// The floating confirmation, for a credit that lands while the player is
+// anywhere but this tab. Built here rather than reusing _marketToast because
+// that one is a single line of text with pointer-events off — it cannot carry
+// the amount, the new balance, or a way to go and look at them.
+function _gramCreditToast(c) {
+  const old = document.getElementById('gram-credit-toast');
+  if (old) old.remove();
+  clearTimeout(_gramCreditToastTimer);
+  const el = document.createElement('div');
+  el.id = 'gram-credit-toast';
+  el.className = 'gram-credit-toast';
+  el.innerHTML = `<span class="gram-credit-chip">${_gramIconCheck(22)}</span>
+    <div class="gram-credit-txt">
+      <div class="gram-credit-title">${t('depositCreditedTitle')}</div>
+      <div class="gram-credit-amount">${tVars('depositCreditedAmountFmt', { n: _gramFmtAmount(c.amount) })}</div>
+      <div class="gram-credit-sub">${tVars('depositNewBalanceFmt', { n: _gramFmtAmount(c.balance) })}</div>
+    </div>
+    <span class="gram-credit-mark">${_gramMarkSvg(26)}</span>`;
+  // Tapping it takes the player to the wallet, where the banner and the
+  // history row are already waiting.
+  el.onclick = () => {
+    el.remove();
+    clearTimeout(_gramCreditToastTimer);
+    if (typeof setTab === 'function') { setTab(5); switchProfileTab('wallet'); }
+  };
+  document.body.appendChild(el);
+  _gramCreditToastTimer = setTimeout(() => el.remove(), GRAM_CREDIT_TOAST_MS);
 }
 
 // ── Deposit modal ─────────────────────────────────────────
@@ -7440,7 +7815,7 @@ function onGramTxUpdate(id, status) {
 // There is deliberately NO fallback any more, not even a "temporary" one. A
 // locally invented memo is money sent to a comment nothing will match, so
 // showing no code at all — and saying so — is strictly better than showing one.
-let _gramDepositState = 'idle';       // idle | loading | ready | error
+let _gramDepositState = 'idle';       // idle | loading | ready | error | credited
 let _gramDepositTimer = null;
 // How long the modal waits before calling the request lost. Longer than any
 // healthy round trip and shorter than a player's patience.
@@ -7449,32 +7824,37 @@ const GRAM_DEPOSIT_WAIT_MS = 15000;
 function openGramDepositModal() {
   const html = `
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
-      <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">
-        <div style="display:flex;align-items:center;margin-bottom:18px">
-          <div style="font-size:16px;font-weight:800;color:#90d653">${t('depositModalTitle')}</div>
-          <button onclick="closeGramModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      <div class="gram-sheet" onclick="event.stopPropagation()">
+        <div class="gram-sheet-hdr">
+          <span class="gram-sheet-ico gram-sheet-ico-dep">${_gramIconDeposit(17)}</span>
+          <div class="gram-sheet-title">${t('depositModalTitle')}</div>
+          <button class="gram-sheet-close" onclick="closeGramModal()" aria-label="✕">✕</button>
         </div>
 
-        <div style="margin-bottom:10px">
-          <div class="gram-hint" style="margin-bottom:6px">${t('transferAmountHint')}</div>
-          <!-- No floor until the server names one. It used to say min="1"
-               while the server's real minimum is 0.05 TON, so the browser
-               refused a legitimate small top-up before anything was sent. -->
-          <input id="gram-dep-amount" type="number" min="0" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_renderTonDepositSection()">
-        </div>
+        <!-- The amount field and the one-tap wallet button are only useful
+             before the transfer leaves; once the deposit credits they are
+             replaced wholesale by the success state, so they live in a wrapper
+             _setGramDepositState can hide in one move. -->
+        <div id="gram-dep-form">
+          <div style="margin-bottom:10px">
+            <div class="gram-hint" style="margin-bottom:6px">${t('transferAmountHint')}</div>
+            <!-- No floor until the server names one. It used to say min="1"
+                 while the server's real minimum is 0.05 TON, so the browser
+                 refused a legitimate small top-up before anything was sent. -->
+            <input id="gram-dep-amount" type="number" min="0" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_renderTonDepositSection()">
+          </div>
 
-        <div id="ton-deposit-send-wrap" style="margin-bottom:6px"></div>
+          <div id="ton-deposit-send-wrap" style="margin-bottom:6px"></div>
+        </div>
 
         <!-- Address, code, expiry and the warning all live in here together,
              because they are one thing: they are only true once the server has
              issued the code. Showing the address on its own while the code is
              still loading (or failed) is an invitation to pay without one, and
-             a payment with no comment is another unmatched_deposits row. -->
+             a payment with no comment is another unmatched_deposits row.
+             The credited state replaces this block too — the code is spent. -->
         <div id="gram-dep-code"></div>
 
-        <button id="gram-dep-paid-btn" class="gram-btn gram-btn-green" style="width:100%;padding:14px;font-size:15px;margin-top:16px" onclick="gramDepositConfirm()" disabled>
-          ${t('iPaidBtn')}
-        </button>
         <div id="gram-modal-msg" class="gram-msg" style="display:none;margin-top:10px"></div>
       </div>
     </div>`;
@@ -7538,40 +7918,73 @@ function _gramDepositFailed(msg) {
   return true;
 }
 
-// Everything about the modal that depends on whether a code has arrived, in
-// one place: the code block, the amount field's minimum, the "I paid" button,
-// and the wallet button below it.
+// Everything about the modal that depends on whether a code has arrived — and,
+// now, on whether the money has — in one place: the code block, the amount
+// field's minimum, the wallet button, and the success state that replaces all
+// of them.
+//
+// There is no "I paid" button any more. It never did anything: the intent that
+// makes a transfer creditable is minted when this modal OPENS, and the chain
+// scanner credits it on its own. What the button actually did was teach the
+// player that their tap was the thing that moved the money — so a chain that
+// took two minutes read as a button that had not worked, and pressing it again
+// looked like the fix. The modal now watches instead, and says so.
 function _setGramDepositState(state, msg, intent) {
   _gramDepositState = state;
   const el = document.getElementById('gram-dep-code');
   if (!el) { _gramDepositState = 'idle'; return; }
+  const form = document.getElementById('gram-dep-form');
 
   if (state === 'loading') {
-    el.innerHTML = `<div class="gram-hint" style="text-align:center;padding:18px 0">${t('depositCodeLoadingLbl')}</div>`;
+    el.innerHTML = `<div class="gram-dep-panel gram-dep-panel-center">
+      <span class="gram-spinner"></span>
+      <div class="gram-dep-panel-sub">${t('depositCodeLoadingLbl')}</div>
+    </div>`;
   } else if (state === 'error') {
     el.innerHTML = `<div class="gram-warn" style="margin-top:6px">${_esc(msg || t('depositCodeErrorMsg'))}</div>
       <button class="gram-btn" style="width:100%;padding:12px;margin-top:10px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5" onclick="_requestGramDepositCode()">${t('depositRetryBtn')}</button>`;
+  } else if (state === 'credited') {
+    // The moment the whole redesign exists for. The form and the code are gone
+    // — that code is spent, and leaving it on screen invites a second transfer
+    // against an intent that is already closed.
+    const c = _gramLastCredit || { amount: 0, balance: window._gramBalance || 0, txHash: '' };
+    if (form) form.style.display = 'none';
+    el.innerHTML = `<div class="gram-dep-panel gram-dep-panel-center gram-dep-ok">
+      <span class="gram-credit-chip gram-credit-chip-lg">${_gramIconCheck(30)}</span>
+      <div class="gram-dep-ok-title">${t('depositCreditedTitle')}</div>
+      <div class="gram-dep-ok-amount">${tVars('depositCreditedAmountFmt', { n: _gramFmtAmount(c.amount) })}</div>
+      <div class="gram-dep-panel-sub">${tVars('depositNewBalanceFmt', { n: _gramFmtAmount(c.balance) })}</div>
+      ${c.txHash ? `<div class="gram-dep-ok-hash">${t('depositTxHashLbl')} ${_esc(_shortenTonAddr(c.txHash))}</div>` : ''}
+      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px;margin-top:14px" onclick="closeGramModal()">${t('depositDoneBtn')}</button>
+      <button class="gram-dep-again" onclick="_gramDepositAgain()">${t('depositAnotherBtn')}</button>
+    </div>`;
   } else {
     const min = window._gramDepositMin;
     const until = intent && intent.expiresAt ? new Date(intent.expiresAt) : null;
     const untilTxt = until && !isNaN(until.getTime())
       ? until.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
       : null;
+    if (form) form.style.display = '';
     el.innerHTML = `
-      <div class="gram-hint" style="margin-bottom:6px">${t('transferToWalletHint')}</div>
-      <div class="gram-copy-box" onclick="gramCopy('gram-addr-val')">
-        <span id="gram-addr-val">${_esc(intent.address)}</span>
-        <span class="gram-copy-icon">⎘</span>
-      </div>
-
-      <div class="gram-hint" style="margin:12px 0 6px">${t('memoRequiredHint')}</div>
-      <div class="gram-copy-box" onclick="gramCopy('gram-memo-val')">
-        <span id="gram-memo-val">${_esc(intent.memo)}</span>
-        <span class="gram-copy-icon">⎘</span>
-      </div>
+      ${_gramCopyRow(t('transferToWalletHint'), 'gram-addr-val', _esc(intent.address))}
+      ${_gramCopyRow(t('memoRequiredHint'), 'gram-memo-val', _esc(intent.memo), 'code')}
 
       <div class="gram-warn">${t('memoWarnHint')}</div>
-      <div class="gram-hint" style="margin-top:8px">${t('depositAutoCreditHint')}</div>
+
+      <!-- The watching state, ported from Rewardix's DepositSheet. Nothing is
+           ever lost while we wait — the scanner's watermark holds through an
+           API outage and credits everything once it recovers — and the panel
+           has to SAY so, or a slow confirmation reads as "my money vanished".
+           It also says the window can be closed, because the credit arrives on
+           a socket push that does not care whether anyone is looking. -->
+      <div class="gram-dep-watch">
+        <span class="gram-spinner gram-spinner-sm"></span>
+        <div>
+          <div class="gram-dep-watch-title">${t('depositWatchingTitle')}</div>
+          <div class="gram-dep-watch-sub">${t('depositWatchingDesc')}</div>
+        </div>
+      </div>
+      <div class="gram-hint" style="margin-top:8px">${t('depositSafeNote')}</div>
       ${min ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositMinAmountFmt', { n: min })}</div>` : ''}
       ${untilTxt ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositCodeValidUntilFmt', { n: untilTxt })}</div>` : ''}`;
     // The server's floor, on the field, now that it is known.
@@ -7579,9 +7992,22 @@ function _setGramDepositState(state, msg, intent) {
     if (amt && min) amt.min = String(min);
   }
 
-  const paid = document.getElementById('gram-dep-paid-btn');
-  if (paid) paid.disabled = state !== 'ready';
-  _renderTonDepositSection();
+  // Never while the success state is up: the wallet button sends against a
+  // code that has just been spent.
+  if (state !== 'credited') _renderTonDepositSection();
+}
+
+// "Пополнить ещё" from the success state. A fresh code, not the spent one —
+// the server's intent is closed the moment it credits, so reusing the memo on
+// screen would produce a transfer that lands in unmatched_deposits.
+function _gramDepositAgain() {
+  window._gramDepositMemo = null;
+  window._gramDepositAddress = null;
+  window._gramDepositMin = null;
+  _gramLastCredit = null;
+  const amt = document.getElementById('gram-dep-amount');
+  if (amt) amt.value = '';
+  _requestGramDepositCode();
 }
 
 // Fills #ton-deposit-send-wrap inside the (currently open) deposit modal:
@@ -7606,8 +8032,15 @@ function _renderTonDepositSection() {
       <div class="gram-hint" style="text-align:center;margin-bottom:10px">${t('tcOrManualHint')}</div>`;
     return;
   }
-  const amountVal = document.getElementById('gram-dep-amount')?.value || '0';
-  el.innerHTML = `<button id="ton-deposit-send-btn" class="gram-btn gram-btn-green" style="width:100%;padding:13px;margin-bottom:10px" onclick="_tcDepositSend()">${tVars('tcSendFromWalletFmt', { n: amountVal })}</button>
+  // An empty field used to render "Отправить 0 GRAM из кошелька" on a live
+  // button — an offer to send nothing, which _tcDepositSend then refuses. The
+  // button now asks for the amount instead, and is disabled until there is one
+  // worth sending, so the refusal is prevented rather than reported.
+  const raw = document.getElementById('gram-dep-amount')?.value || '';
+  const value = parseFloat(raw);
+  const min = window._gramDepositMin || 0;
+  const ready = Number.isFinite(value) && value > 0 && value >= min;
+  el.innerHTML = `<button id="ton-deposit-send-btn" class="gram-btn gram-btn-green" style="width:100%;padding:13px;margin-bottom:10px${ready ? '' : ';opacity:.45'}" ${ready ? '' : 'disabled '}onclick="_tcDepositSend()">${ready ? tVars('tcSendFromWalletFmt', { n: _gramFmtAmount(value) }) : t('enterGramAmountPlaceholder')}</button>
     <div class="gram-hint" style="text-align:center;margin-bottom:10px">${t('tcOrManualHint')}</div>`;
 }
 
@@ -7642,17 +8075,14 @@ async function _tcDepositSend() {
   }
 }
 
-// "Я оплатил" is an acknowledgement now, not a request. It used to be what
-// created the deposit record — which is why the record was created AFTER the
-// money had already left, with a comment the server had never seen. The record
-// exists before the modal shows a code, the chain scanner credits it on its
-// own, and there is nothing left for this button to send: emitting here would
-// mint a second code and teach the player the first one was wrong.
-function gramDepositConfirm() {
-  if (!window._gramDepositMemo) { _gramModalMsg(t('depositCodeWaitToast'), 'err'); return; }
-  closeGramModal();
-  _gramMsg(t('depositAutoCreditHint'), 'ok');
-}
+// gramDepositConfirm() — the "Я оплатил" handler — is GONE, along with the
+// button. It had already stopped being a request (the record is minted when
+// the modal opens, and the chain scanner credits it), so all it did was close
+// the modal on a claim only the player could make. Its real cost was what it
+// taught: that the tap was what moved the money. A player whose transfer was
+// still confirming pressed it, saw nothing change, and pressed it again.
+// The modal watches for 'gramDepositCredited' instead — see
+// onGramDepositCredited and the 'credited' branch of _setGramDepositState.
 
 // ── Withdraw modal ────────────────────────────────────────
 // Mirrors the server's own gate (gramWithdrawRequest, server/index.js), which
@@ -7770,23 +8200,53 @@ function closeGramModal() {
   window._gramDepositMin = null;
 }
 
-function _gramModalMsg(text, type) {
-  const el = document.getElementById('gram-modal-msg');
-  if (!el) return;
+// ── saying something the player can actually see ────────────────────────────
+// Both entry points below used to `return` when their own strip was missing
+// from the DOM, which is the silent refusal this tab is not allowed to have.
+// The strips are missing far more often than it looks:
+//
+//   #gram-modal-msg  exists only while a deposit/withdraw modal is open
+//   #gram-msg        exists only while the WALLET tab specifically is rendered
+//
+// so a refusal arriving with the player on Друзья, on Язык, or three floors
+// down in the dungeon had nowhere to land and was dropped without a trace.
+//
+// One chooser now picks the best place that is actually on screen, in the only
+// order that makes sense: the modal strip first WHENEVER a modal is open —
+// even for a message that was not the modal's own — because the modal's
+// backdrop is drawn over the panel strip, and a refusal written underneath it
+// is a refusal nobody can read.
+//
+// And it is logged either way. If every target is somehow gone, the message
+// still exists somewhere an operator can find it.
+function _gramSay(text, type) {
+  if (type === 'err') console.warn('[wallet] ' + text);
+  else console.info('[wallet] ' + text);
+  const cls = 'gram-msg ' + (type === 'err' ? 'gram-msg-err' : 'gram-msg-ok');
+  const modal = document.getElementById('gram-modal-msg');
+  const strip = document.getElementById('gram-msg');
+  const el = modal || strip;
+  if (!el) {
+    // Nothing on screen belongs to the wallet at all — say it where the player
+    // IS. A toast is a worse place for this than a panel strip, and it is
+    // infinitely better than nowhere.
+    if (typeof _marketToast === 'function') _marketToast(text, type);
+    return;
+  }
   el.textContent = text;
   el.style.display = 'block';
-  el.className = 'gram-msg ' + (type === 'err' ? 'gram-msg-err' : 'gram-msg-ok');
+  el.className = cls;
+  // Only the panel strip auto-hides. The modal's own strip is removed with the
+  // modal, and hiding it early would take the reason away while the player is
+  // still looking at the thing that refused.
+  if (el === strip) {
+    clearTimeout(_gramSay._t);
+    _gramSay._t = setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
+  }
 }
 
-function _gramMsg(text, type) {
-  const el = document.getElementById('gram-msg');
-  if (!el) return;
-  el.textContent = text;
-  el.style.display = 'block';
-  el.className = 'gram-msg ' + (type === 'err' ? 'gram-msg-err' : 'gram-msg-ok');
-  clearTimeout(_gramMsg._t);
-  _gramMsg._t = setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
-}
+function _gramModalMsg(text, type) { _gramSay(text, type); }
+function _gramMsg(text, type) { _gramSay(text, type); }
 
 // ── "What's new" login modal ─────────────────────────────────────────────
 // Shown once per WHATS_NEW_VERSION (js/network.js's _finishOnlineStart calls

@@ -130,7 +130,11 @@ let _polling = false;
 let _pollAbort = null;
 const CONFLICT_ALERT_AFTER = 6;      // ~30s of genuine overlap before alarming
 
-async function pollOps({ notifyPlayer } = {}) {
+// Takes the whole options object rather than picking one callback out of it:
+// the callbacks reachable from a button press have grown from one to two
+// (a withdrawal decision, and a stranded transfer being placed), and a
+// destructure here is a place for the next one to be silently dropped.
+async function pollOps(opts = {}) {
   const token = process.env.TG_OPS_BOT_TOKEN || '';
   if (!token || _polling) return;
   _polling = true;
@@ -171,12 +175,19 @@ async function pollOps({ notifyPlayer } = {}) {
         for (const upd of data.result) {
           _offset = upd.update_id + 1;
           try {
-            if (upd.callback_query) await _onCallback(upd.callback_query, { notifyPlayer });
+            if (upd.callback_query) await _onCallback(upd.callback_query, opts);
             else if (upd.message) {
               // Each returns whether it took the message, so a command that
               // belongs to neither is simply ignored rather than answered
               // twice or answered wrongly.
-              if (!await tgAdmin.handle(upd.message)) {
+              //
+              // The unmatched-deposit reply goes FIRST. Its prompt marker is
+              // ⟨UDEP:n⟩, which tg-admin's /⟨([a-z]+):([0-9]*)⟩/ cannot match —
+              // both belts, because the cost of getting this order wrong is
+              // an admin naming who should receive 15 TON and being shown a
+              // player card instead.
+              if (await cards.handleUnmatchedReply(upd.message)) { /* taken */ }
+              else if (!await tgAdmin.handle(upd.message)) {
                 await ops.handleTopicIdCommand(upd.message);
               }
             }
@@ -202,10 +213,14 @@ async function pollOps({ notifyPlayer } = {}) {
   loop();
 }
 
-async function _onCallback(cq, { notifyPlayer }) {
+async function _onCallback(cq, { notifyPlayer, notifyCredit } = {}) {
   // The admin panel first: its buttons all start `a:` and belong to nobody
   // else. A withdrawal card's do not, so the two cannot be confused.
   if (await tgAdmin.handleCallback(cq)) return;
+
+  // Placing a stranded transfer — `u:` — and it returns null when the press
+  // was not one of its own, exactly like the withdrawal handler below.
+  if (await cards.handleUnmatchedCallback(cq, { notifyCredit }) !== null) return;
 
   const handled = await cards.handleWithdrawCallback(cq, {
     feePct: _GRAM_WITHDRAW_FEE_PCT,

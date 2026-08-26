@@ -17,10 +17,20 @@ const players = require('../server/db/repos/players');
 const gram = require('../server/db/repos/gram');
 const ton = require('../server/ton');
 
-let pass = 0, fail = 0; const failures = [];
+let pass = 0, fail = 0, skipped = 0; const failures = [];
 function ok(c, name, detail) {
   if (c) { pass++; console.log(`  \x1b[32mPASS\x1b[0m  ${name}`); }
   else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? ` — ${detail}` : ''}`); }
+}
+// A check that could not RUN is not a check that passed. workers.js states the
+// rule for the item reconciler — "no drift found" and "no check ran" must never
+// print the same way — and it applies with more force here, because the block
+// this guards is the one that hands out money. Counted and named in the
+// summary, in its own colour, so a run against a pre-014 database cannot be
+// mistaken for a green one.
+function skip(name, why) {
+  skipped++;
+  console.log(`  \x1b[33mSKIP\x1b[0m  ${name} — ${why}`);
 }
 const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, отримав ${JSON.stringify(a)}`);
 
@@ -69,7 +79,13 @@ async function main() {
   // One event, two transfers — they must get different ids or only one credits.
   const two = ton.incomingFrom([{ event_id: 'EV1', lt: 5, actions: [inTx, inTx] }], OUR);
   eq(two.length, 2, 'дві перекази в одній події отримали різні id');
-  eq(two[0].txId, 'EV1:0', 'id складається з події та індексу дії');
+  eq(two[0].txId, '5:0', 'id складається з ЛОГІЧНОГО ЧАСУ рахунку та індексу дії');
+
+  transferIdentity(OUR, inTx);
+
+  // ── the watermark must not step over a trace that has not landed ─────────
+  // fetchSince() needs no network for this: it is given the pages directly.
+  await watermarkHoldCheck();
 
   // ── classify(): every shape a transfer arrives in ────────────────────────
   console.log('  ── рішення сканера ──');
@@ -160,6 +176,116 @@ async function main() {
 
   ok((await gram.openUnmatched(null)).some(x => x.txId === 'EVZ:0'), 'відкриті незіставлені видно адміну');
 
+  // ── 25 серпня, від початку до кінця ──────────────────────────────────────
+  // The whole incident against the live database: one payment, offered twice
+  // under two event ids, must credit once and produce ONE operator-visible
+  // event — not a credit plus "⚠️ Платёж не зачислен".
+  console.log('  ── один платіж, два імені ──');
+  const dbl = await mk('dbl');
+  const di = await tx(t => gram.createIntent(t, dbl));
+  const LT2 = 99405635000001;
+  const PROV = 'f7f5e993c89c9df58f5f53e327436a0703f6c91c8b7a0e4f1523e836fd30119e';
+  const FIN  = '1058d7086fa3ae5cd7a7bcf8f1335f7e964cad2490e957f1d70a8641c4e66547';
+  const action = { status: 'ok', type: 'TonTransfer', TonTransfer: {
+    recipient: { address: OUR }, sender: { address: '0:ee' },
+    amount: '50000000', comment: di.memo } };
+
+  // Read while the trace is in flight, then again once it has settled.
+  const readA = ton.incomingFrom([{ event_id: PROV, lt: LT2, actions: [action] }], OUR)[0];
+  const readB = ton.incomingFrom([{ event_id: FIN,  lt: LT2, actions: [action] }], OUR)[0];
+  txIds.push(readA.txId, readB.txId);
+
+  const c1 = await gram.creditOnce(readA, di.id);
+  eq(c1 && c1.amount, 0.05, 'перше читання зарахувало 0.05');
+  eq(await bal(dbl), 0.05, 'баланс поповнено один раз');
+
+  // What the scanner sees on the next tick: the SAME row, and — because the
+  // name no longer comes from the event id — the SAME name.
+  const { rows: stored } = await pool().query(
+    'SELECT status, chain_tx_hash FROM gram_tx WHERE id = $1', [di.id]);
+  eq(stored[0].chain_tx_hash, readB.txId,
+    'збережене ім\'я збігається з ДРУГИМ читанням — тому фільтр сканера його відкине');
+  eq(gram.classify(readB, { id: di.id, status: stored[0].status, chain_tx_hash: stored[0].chain_tx_hash }).verdict,
+    'skip', 'друге читання того самого платежу → тиша, а не «нужен разбор»');
+
+  // And the belt underneath it: even if identity failed again, the memo-keyed
+  // ledger entry refuses the second credit. This is the assertion that would
+  // have caught the fix that made it worse.
+  eq(await gram.creditOnce(readB, di.id), null, 'друге зарахування того ж інтенту — відмова');
+  eq(await bal(dbl), 0.05, 'і 0.05 TON не перетворились на 0.10 GRAM');
+
+  // ── placing a stranded transfer ──────────────────────────────────────────
+  console.log('  ── ручне зарахування ──');
+  if (!await gram.hasDepositOpsCols()) {
+    skip('ручне зарахування незіставленого переказу',
+      'міграція 014 не застосована; це НЕ означає, що перевірки пройшли');
+  } else {
+    const rcv = await mk('rcv');
+    const strandedTx = `${TAG}-STRAND:0`;
+    txIds.push(strandedTx);
+    await gram.recordUnmatched(
+      { txId: strandedTx, comment: 'чужий коментар', amount: '7.0', sender: '0:ff', eventId: FIN },
+      'unknown_comment');
+    const row = await gram.unmatchedByTx(null, strandedTx);
+    ok(row && row.id > 0, 'у незіставленого переказу є короткий номер для кнопки');
+    ok(row.link && row.link.includes(FIN), 'і посилання на Tonviewer — з event_id, а не з імені');
+
+    const placed = await gram.resolveUnmatched(row.id, rcv, '1199957588');
+    eq(placed && placed.amount, 7, 'оператор зарахував переказ названому гравцю');
+    eq(await bal(rcv), 7, 'гроші на балансі');
+    // Once. The claim on resolved_at is what refuses the second press.
+    eq(await gram.resolveUnmatched(row.id, rcv, '1199957588'), null,
+      'друге натискання нічого не робить');
+    eq(await bal(rcv), 7, 'і баланс не подвоївся');
+    ok(!(await gram.openUnmatched(null)).some(x => x.txId === strandedTx),
+      'зниклий з черги — оператор більше його не побачить');
+
+    // The player's own history has to explain the money, or the credit is a
+    // number that appeared from nowhere.
+    const hist = await gram.historyOf(null, rcv);
+    ok(hist.some(h => h.type === 'deposit' && h.amount === 7),
+      'у гравця в історії видно поповнення, а не тільки змінений баланс');
+
+    // Who received it, and the difference between "credited" and "declined".
+    const { rows: res } = await pool().query(
+      'SELECT resolved_by, resolved_player_id FROM unmatched_deposits WHERE tx_id = $1', [strandedTx]);
+    eq(Number(res[0].resolved_player_id), rcv, 'записано, КОМУ зарахували');
+    eq(res[0].resolved_by, '1199957588', 'і хто це вирішив');
+
+    // ── not ours ───────────────────────────────────────────────────────────
+    const declineTx = `${TAG}-DECLINE:0`;
+    txIds.push(declineTx);
+    await gram.recordUnmatched(
+      { txId: declineTx, comment: null, amount: '4.0', sender: '0:99' }, 'no_comment');
+    const dRow = await gram.unmatchedByTx(null, declineTx);
+    ok(await gram.declineUnmatched(dRow.id, '1199957588'), 'переказ можна позначити «не наш»');
+    eq(await gram.declineUnmatched(dRow.id, '1199957588'), null, 'повторно — no-op');
+    const { rows: dres } = await pool().query(
+      'SELECT resolved_at, resolved_player_id FROM unmatched_deposits WHERE tx_id = $1', [declineTx]);
+    ok(dres[0].resolved_at && dres[0].resolved_player_id === null,
+      'вирішено, але нікому не зараховано — саме це і мала сказати пара колонок');
+
+    // ── the row that would mint GRAM from nothing ──────────────────────────
+    // A `comment_reused` row written BEFORE the identity fix is one payment
+    // read twice: the money is already on somebody's balance. Placing it would
+    // create GRAM. The 25 August row is exactly this shape, and it is still in
+    // the table.
+    const ghostTx = `${TAG}-GHOST:0`;
+    txIds.push(ghostTx);
+    await gram.recordUnmatched(
+      { txId: ghostTx, comment: di.memo, amount: '0.05', sender: '0:ee', eventId: PROV },
+      'comment_reused');
+    const gRow = await gram.unmatchedByTx(null, ghostTx);
+    const refused = await caught(() => gram.resolveUnmatched(gRow.id, rcv, '1199957588'));
+    eq(refused, 'already_credited',
+      'переказ, який уже зарахований, зарахувати вдруге НЕ можна — це створило б GRAM з повітря');
+    eq(await bal(rcv), 7, 'баланс не змінився від відмови');
+    const { rows: still } = await pool().query(
+      'SELECT resolved_at FROM unmatched_deposits WHERE tx_id = $1', [ghostTx]);
+    ok(still[0].resolved_at === null,
+      'і рядок лишився ВІДКРИТИМ — відмова відкотилась разом із заявкою на нього');
+  }
+
   // ── withdrawals ──────────────────────────────────────────────────────────
   console.log('  ── виведення ──');
   const w = await mk('w');
@@ -238,6 +364,87 @@ async function main() {
 
   await addressCheck();
   await watermarkCheck();
+}
+
+// ── the name of a payment ───────────────────────────────────────────────────
+// The case that actually happened, on 25 August, encoded with the real values.
+//
+// One 0.05 TON transfer produced a credit at 21:52 and "⚠️ Платёж не зачислен"
+// at 21:53. Fetched back from TonAPI, both ids resolve to the SAME event with
+// the SAME lt — the scanner had read the trace while it was still in flight,
+// under a provisional event id, and TonAPI renamed it when it settled.
+//
+// Every assertion below fails against the old `${event_id}:${index}` key.
+function transferIdentity(OUR, inTx) {
+  console.log('  ── ім\'я переказу ──');
+  const PROVISIONAL = 'f7f5e993c89c9df58f5f53e327436a0703f6c91c8b7a0e4f1523e836fd30119e';
+  const SETTLED     = '1058d7086fa3ae5cd7a7bcf8f1335f7e964cad2490e957f1d70a8641c4e66547';
+  const LT = 99405635000001;
+
+  const first  = ton.incomingFrom([{ event_id: PROVISIONAL, lt: LT, actions: [inTx] }], OUR);
+  const second = ton.incomingFrom([{ event_id: SETTLED,     lt: LT, actions: [inTx] }], OUR);
+  eq(first[0].txId, second[0].txId,
+    'ОДИН переказ, прочитаний під двома event_id, має ОДНЕ ім\'я — це і є баг 25 серпня');
+  eq(first[0].txId, `${LT}:0`, 'ім\'я — логічний час рахунку, а не хеш трейсу');
+  eq(first[0].eventId, PROVISIONAL, 'event_id збережено окремо — він потрібен для посилання');
+
+  // The other half: a trace that has not settled has no name yet, so it is not
+  // read at all. parseAction's `status === 'ok'` is a DIFFERENT field on a
+  // different object and does not catch this — an action can be ok inside an
+  // event still in flight, which is exactly what happened.
+  eq(ton.incomingFrom([{ event_id: SETTLED, lt: LT, in_progress: true, actions: [inTx] }], OUR).length, 0,
+    'незавершений трейс не читається взагалі');
+  eq(ton.incomingFrom([{ event_id: SETTLED, actions: [inTx] }], OUR).length, 0,
+    'подія без lt пропускається — інакше всі такі перекази злиплись би в один id');
+  // The reverse priority: an id we cannot LINK to is still money.
+  eq(ton.incomingFrom([{ lt: 7, actions: [inTx] }], OUR).length, 1,
+    'подія без event_id усе одно зараховується — це коштує посилання, а не депозит');
+
+  // A logical time is a name, not a URL. A link built from one opens on
+  // "transaction not found", which reads as "цього переказу немає в мережі".
+  ok(ton.explorerLink(SETTLED).endsWith(SETTLED), 'event_id дає посилання на Tonviewer');
+  eq(ton.explorerLink(`${SETTLED}:0`), `https://tonviewer.com/transaction/${SETTLED}`,
+    'старий формат id (до виправлення) теж дає робоче посилання');
+  eq(ton.explorerLink(`${LT}:0`), null,
+    'новий формат id НЕ вдає посилання, якого не існує');
+}
+
+// ── the mark must not step over a trace that has not landed ─────────────────
+// The refusal above is only safe if the watermark stays behind the event it
+// refused: the mark advances to `highest` on a clean pass, and a mark that
+// moved past an unread event is a deposit nobody ever sees again.
+//
+// No network. `fetch` is replaced with a function that returns canned pages
+// and is put back afterwards — nothing here reaches TonAPI.
+async function watermarkHoldCheck() {
+  console.log('  ── метка і незавершені трейси ──');
+  const realFetch = global.fetch;
+  const page = evs => async () => ({ status: 200, json: async () => ({ events: evs }) });
+  try {
+    global.fetch = page([{ event_id: 'A', lt: 100, actions: [] }]);
+    const settled = await ton.fetchSince(50, { pageSize: 50, maxPages: 1 });
+    eq(settled.highest, 100, 'усе завершене — метка йде на найбільший lt');
+
+    global.fetch = page([
+      { event_id: 'A', lt: 100, actions: [] },
+      { event_id: 'B', lt: 200, in_progress: true, actions: [] },
+    ]);
+    const held = await ton.fetchSince(50, { pageSize: 50, maxPages: 1 });
+    eq(held.highest, 199,
+      'незавершений трейс притримує метку ПІД собою — наступний тік прочитає його знову');
+    ok(held.highest >= 50, 'і ніколи не тягне метку назад, у вже прочитану історію');
+
+    // An old unsettled trace below the mark must not re-open the wallet's past.
+    global.fetch = page([
+      { event_id: 'A', lt: 100, actions: [] },
+      { event_id: 'C', lt: 10, in_progress: true, actions: [] },
+    ]);
+    const behind = await ton.fetchSince(50, { pageSize: 50, maxPages: 1 });
+    eq(behind.highest, 100,
+      'давній незавершений трейс НИЖЧЕ метки її не зсуває — інакше історія гаманця перечитається');
+  } finally {
+    global.fetch = realFetch;
+  }
 }
 
 // ── whose code the player is shown ──────────────────────────────────────────
@@ -444,7 +651,12 @@ main()
   .catch(err => { fail++; failures.push('НЕОБРОБЛЕНА ПОМИЛКА'); console.error('\n', err); })
   .finally(async () => {
     await cleanup(); await close();
-    console.log(`\n  ${pass} пройшло, ${fail} впало`);
+    console.log(`\n  ${pass} пройшло, ${fail} впало`
+      + (skipped ? `, \x1b[33m${skipped} НЕ ЗАПУСКАЛОСЬ\x1b[0m` : ''));
     if (failures.length) console.log('  впали: ' + failures.join(' · '));
+    if (skipped) {
+      console.log('  \x1b[33mчастина перевірок не виконана — застосуйте міграцію 014'
+        + ' і запустіть ще раз\x1b[0m');
+    }
     process.exit(fail ? 1 : 0);
   });

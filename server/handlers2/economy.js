@@ -372,9 +372,14 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // that happened: its `amount` is the minimum standing in for a figure only
     // the chain knows, so feeding it to the history list drew a "Пополнение
     // +0.05 GRAM · Ожидание" row for a deposit the player had not made.
+    // `reused` rides along because the modal has to be able to tell "here is
+    // your code" from "here is the code you already have" — a player who
+    // re-opens the panel and sees a countdown restart concludes the previous
+    // code is dead and stops trusting the one already pasted into their wallet.
     s.socket.emit('gramDepositIntent', {
       memo: intent.memo, address: intent.address,
       minAmount: intent.minAmount, expiresAt: intent.expiresAt,
+      reused: intent.reused,
     });
     return intent;
     // WHICH code this player was handed. When a transfer arrives carrying a

@@ -395,7 +395,18 @@ async function run() {
   await frames(w, 1);
   inject(w, PROBE); const vPart = w.__rc.gpu.verts;
   const perParticle = (vPart - vBase) / w.__rc.particles;
-  ok(perParticle > 0 && perParticle <= 6, 'частица = спрайт, не тесселированный круг',
+  // Порог 12, а не 6, и это не послабление.
+  //
+  // Различать надо 6 (спрайт) и ~94 (тесселированный круг) — между ними
+  // пятнадцатикратная разница, и 12 отделяет их ровно так же надёжно, как 6.
+  // А вот ровно 6 не оставляло места ни одному постороннему спрайту: числитель
+  // считает ВСЕ вершины кадра, и если в тот же кадр попадёт число урона или
+  // кадр анимации моба — три лишних квада на сотню частиц дают 6.2 и падение
+  // на верном коде. Так и было: примерно один прогон из четырёх, ещё до того,
+  // как этой вкладки коснулись (проверено повтором на нетронутом HEAD).
+  //
+  // Набор, который падает раз в четыре запуска, учит не читать его падения.
+  ok(perParticle > 0 && perParticle <= 12, 'частица = спрайт, не тесселированный круг',
      perParticle.toFixed(1) + ' верш./частицу (круг был бы ~94)' + (perParticle > 0 ? '' : ' — НИЧЕГО НЕ НАРИСОВАЛОСЬ'));
   inject(w, 'particles.length = 0;');
   inject(w, `for (let i = 0; i < 40; i++) worldDrops.set('d' + i, { id: 'd' + i, x: __rcCx - 200 + (i % 8) * 50, y: __rcCy + 60 + Math.floor(i / 8) * 50, item: { rarity: 'epic' } });`);
@@ -408,9 +419,207 @@ async function run() {
   // guarded is the difference between ~18 and ~462, not the last unit.
   ok(perDrop > 0 && perDrop <= 24, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника',
      perDrop.toFixed(1) + ' верш./кучу (было 462)' + (perDrop > 0 ? '' : ' — НИЧЕГО НЕ НАРИСОВАЛОСЬ'));
+  // LAST, and deliberately so. The wallet section is DOM work that takes a few
+  // seconds, and the two vertex-per-object measurements above are differences
+  // against a baseline measured on a live scene — a decal or a damage number
+  // drifting in or out during those seconds moves the baseline by a sprite,
+  // which is the whole budget the particle bound has. Running the wallet
+  // checks first made that check flake at 6.2 against a limit of 6.
+  await walletChecks(w);
+
   ok((w.__rcErrors || []).length === 0, 'ни одной ошибки за весь прогон', (w.__rcErrors || []).slice(0, 5).join(' | '));
 
   finish(w);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GRAM wallet tab
+// ═══════════════════════════════════════════════════════════════════════════
+// Everything else in this harness watches the WebGL world. The wallet tab is
+// plain DOM built from template literals, and it is checkable here for exactly
+// the same reason the world is: nothing else in dev/ can see what was drawn.
+// bundle-check proves the file parses and xss-check reads the source, but
+// neither can tell you that a credited deposit actually puts a number on the
+// screen — which is the one thing this tab now exists to do.
+//
+// The states below are driven through the client's OWN entry points
+// (onGramDepositIntent, onGramDepositCredited, onGramHistory), the same
+// functions js/network.js calls when a real socket frame lands, so what is
+// asserted is the real render path and not a mock of it.
+const WALLET_SETUP = `(function () {
+  // tcWarmUp downloads 435 KB of third-party wallet UI that has nothing to do
+  // with what is checked here, and it would do it on every run.
+  tcWarmUp = function () {};
+  window.__rcWallet = '';
+  tcAddress = function () { return window.__rcWallet || null; };
+  activeTab = 5;
+  window._profileTab = 'wallet';
+  window._gramBalance = 12.5;
+  window._vipData = { level: 5, deposited: 0, pending: [] };
+  const p = document.getElementById('panel-profile');
+  if (p) p.style.display = 'block';
+  switchProfileTab('wallet');
+})();`;
+
+async function walletChecks(w) {
+  const d = () => w.document;
+  const q = sel => d().querySelector(sel);
+  const all = sel => d().querySelectorAll(sel);
+  const txt = sel => { const e = q(sel); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; };
+  const errBefore = (w.__rcErrors || []).length;
+
+  head('кошелёк GRAM — вкладка');
+  inject(w, WALLET_SETUP);
+  ok(!!q('#gram-body .gram-balance-card'), 'вкладка отрисована: карточка баланса на месте');
+  ok(!!q('.gram-balance-chip svg'), 'фирменный знак GRAM встроен в карточку (не <img>)');
+  // The mark is a BRAND mark: if it ever picks up currentColor it changes
+  // colour with whatever panel it sits in, which is the one thing it must not
+  // do. Its own blue has to survive into the DOM.
+  ok((q('.gram-balance-chip svg') || { innerHTML: '' }).innerHTML.indexOf('#30A1F5') >= 0,
+     'знак GRAM сохранил свой синий, а не взял currentColor');
+  ok(txt('#gram-balance-val').indexOf('GRAM') >= 0, 'единица валюты на месте', txt('#gram-balance-val'));
+  ok(!!q('.gram-bal-whole') && !!q('.gram-bal-frac'), 'баланс разбит на целую и дробную часть');
+  ok(all('.gram-action').length === 2, 'две кнопки действий', all('.gram-action').length + ' шт');
+  ok(!!q('.gram-action-dep svg') && !!q('.gram-action-wd svg'),
+     'обе кнопки несут встроенные SVG-иконки, а не текстовые стрелки');
+  ok((q('.gram-action-dep svg') || { outerHTML: '' }).outerHTML.indexOf('800') < 0,
+     'иконки не тащат в DOM холст 800px');
+  ok((q('.gram-action-dep svg') || { outerHTML: '' }).outerHTML.indexOf('currentColor') >= 0,
+     'иконки UI взяли currentColor вместо fill="#000000"');
+  ok(!!q('.gram-airdrop-img'), 'место под airdrop-картинку размечено');
+  ok((q('.gram-airdrop-img') || {}).getAttribute && Number(q('.gram-airdrop-img').getAttribute('width')) <= 96,
+     'airdrop-картинка не растянута больше 96px (192px-вырезка мылится дальше)',
+     (q('.gram-airdrop-img') || {}).getAttribute ? q('.gram-airdrop-img').getAttribute('width') + 'px' : '?');
+
+  head('кошелёк GRAM — подключённый кошелёк');
+  ok(!!q('.gram-wallet-card-off') && !!q('.gram-connect-btn'), 'без кошелька — приглашение подключить');
+  inject(w, `window.__rcWallet = 'UQAvB3n5kQq7fY2wJ4tRr8sLd1xZc0PmNbVgHiOkUyTe9WqA'; _onTonConnectChange();`);
+  ok(!!q('.gram-wallet-chip-on'), 'подключённый кошелёк отрисован как карточка со значком');
+  ok(txt('#gram-tc-addr-val') === 'UQAvB3n5kQq7fY2wJ4tRr8sLd1xZc0PmNbVgHiOkUyTe9WqA',
+     'полный адрес доступен целиком, а не только огрызок UQ…9WqA', txt('#gram-tc-addr-val'));
+  ok(!!q('.gram-wallet-short'), 'короткая форма адреса тоже показана');
+  // The rename the owner asked for. Checked as rendered text, not as a
+  // translation key: a key can be right while the button still says the old
+  // word because the render never picked it up.
+  ok(txt('.gram-unlink-btn') === 'Отвязать', 'кнопка называется «Отвязать», а не «Отключить»', txt('.gram-unlink-btn'));
+  ok(!!q('.gram-unlink-btn svg'), '«Отвязать» — кнопка с иконкой, а не подчёркнутое слово');
+  ok(w.getComputedStyle(q('.gram-unlink-btn')).borderStyle !== 'none', 'у «Отвязать» есть настоящая рамка');
+  ok(!!q('.gram-copy-chip'), 'адрес можно скопировать');
+
+  head('кошелёк GRAM — модалка пополнения');
+  inject(w, 'openGramDepositModal();');
+  // The whole interaction change, asserted directly: the button is gone and so
+  // is the function behind it. A leftover handler is how a removed button
+  // comes back in a later edit.
+  ok(!q('#gram-dep-paid-btn'), 'кнопки «Я оплатил» больше нет');
+  ok(d().body.innerHTML.indexOf('Я оплатил') < 0, 'и строки «Я оплатил» на экране тоже нет');
+  ok(typeof w.gramDepositConfirm !== 'function', 'обработчик gramDepositConfirm удалён вместе с кнопкой');
+  ok(!!q('#gram-dep-code .gram-spinner'), 'пока код не пришёл — состояние загрузки');
+
+  inject(w, `onGramDepositIntent({ memo: 'LBT-a1b2c3d4e5f6', address: 'UQCplatform000000000000000000000000000000000', minAmount: 0.05, expiresAt: new Date(Date.now() + 1800000).toISOString() });`);
+  ok(txt('#gram-addr-val').indexOf('UQCplatform') === 0, 'адрес пополнения показан');
+  ok(txt('#gram-memo-val') === 'LBT-a1b2c3d4e5f6', 'код (memo) показан', txt('#gram-memo-val'));
+  ok(all('#gram-dep-code .gram-copy-row').length === 2, 'адрес и код — две отдельные строки с копированием',
+     all('#gram-dep-code .gram-copy-row').length + ' шт');
+  ok(!!q('.gram-dep-watch'), 'модалка говорит, что ЖДЁТ перевод — вместо кнопки-подтверждения');
+  ok(txt('.gram-dep-watch-sub').indexOf('закрыть') >= 0,
+     'и что окно можно закрыть (зачисление придёт push-ом, а не по нажатию)', txt('.gram-dep-watch-sub'));
+
+  head('кошелёк GRAM — деньги пришли');
+  inject(w, `onGramDepositCredited({ amount: 2.5, balance: 15, memo: 'LBT-a1b2c3d4e5f6', txHash: 'f00dcafe1234567890abcdef', at: Date.now() });`);
+  ok(!!q('.gram-dep-ok'), 'модалка перевернулась в состояние успеха');
+  ok(txt('.gram-dep-ok-amount').indexOf('2.5') >= 0, 'сумма зачисления на экране', txt('.gram-dep-ok-amount'));
+  ok(txt('.gram-dep-ok').indexOf('15') >= 0, 'новый баланс на экране');
+  ok(!q('#gram-memo-val'), 'потраченный код убран — второй перевод по нему не примут');
+  ok(!!q('.gram-dep-ok .gram-credit-chip svg'), 'галочка нарисована SVG-иконкой');
+  inject(w, 'window.__rcBal = window._gramBalance;');
+  ok(w.__rcBal === 15, 'баланс взят с сервера, а не досчитан локально', String(w.__rcBal));
+
+  // The half that is easy to leave out: the credit arriving with nothing open.
+  head('кошелёк GRAM — зачисление при ЗАКРЫТОЙ модалке');
+  inject(w, 'closeGramModal(); _gramDismissCredit();');
+  ok(!q('#gram-dep-code'), 'модалка закрыта');
+  inject(w, `onGramDepositCredited({ amount: 7.25, balance: 22.25, memo: 'LBT-999', txHash: 'beef', at: Date.now() });`);
+  ok(!!q('#gram-credit-toast'), 'зачисление всё равно показано — всплывающей карточкой');
+  ok(txt('#gram-credit-toast').indexOf('7.25') >= 0, 'с суммой', txt('#gram-credit-toast'));
+  ok(txt('#gram-credit-toast').indexOf('22.25') >= 0, 'и с новым балансом');
+  inject(w, 'switchProfileTab("wallet");');
+  ok(!!q('.gram-credit-card'), 'и остаётся баннером наверху вкладки, когда её откроют');
+  ok(txt('#gram-balance-val').indexOf('22.25') >= 0, 'баланс на карточке обновился', txt('#gram-balance-val'));
+  inject(w, 'var _t = document.getElementById("gram-credit-toast"); if (_t) _t.remove();');
+
+  head('кошелёк GRAM — статус каждой строки истории');
+  inject(w, `onGramHistory([
+    { id: 1, type: 'deposit',  amount: 2.5,  status: 'confirmed', memo: 'LBT-1', createdAt: Date.now() },
+    { id: 2, type: 'deposit',  amount: 0.05, status: 'expired',   memo: 'LBT-2', createdAt: Date.now() },
+    { id: 3, type: 'deposit',  amount: 0.05, status: 'pending',   memo: 'LBT-3', createdAt: Date.now() },
+    { id: 4, type: 'withdraw', amount: 10,   status: 'rejected',  createdAt: Date.now() },
+    { id: 5, type: 'withdraw', amount: 5,    status: 'forfeited', createdAt: Date.now() }
+  ]);`);
+  ok(all('#gram-history-list .gram-tx-row').length === 5, 'пять строк истории',
+     all('#gram-history-list .gram-tx-row').length + ' шт');
+  ok(all('.gram-tx-ok').length === 1, 'зачисленное — своим статусом');
+  // The two the old two-way test could not tell apart from "в обработке".
+  ok(all('.gram-tx-dim').length === 1, 'истёкший интент помечен как истёкший, а не «Ожидание»');
+  ok(all('.gram-tx-no').length === 2, 'отклонённое и аннулированное — отдельным статусом',
+     all('.gram-tx-no').length + ' шт');
+  ok(all('.gram-tx-wait').length === 1, 'и только реально ожидающее — «Ожидание»');
+  ok(txt('#gram-history-list .gram-tx-row .gram-tx-status') === '✓ Выполнено',
+     'подпись статуса рендерится', txt('#gram-history-list .gram-tx-row .gram-tx-status'));
+  // A pending deposit's amount is the INTENT minimum, not what the player
+  // sent. Printing it promises a figure nobody transferred.
+  ok(all('.gram-tx-wait .gram-tx-amount').length === 0,
+     'сумма ожидающего пополнения НЕ показана — это минимум интента, а не перевод');
+  // The live push (server/app.js notifyCredited) says 'credited'; the database
+  // and gramHistory say 'confirmed'. Same event, two spellings — a client that
+  // knew only one showed money that had just landed as «Ожидание».
+  inject(w, `onGramHistory([{ id: 7, type: 'deposit', amount: 3, status: 'credited', memo: 'LBT-7', createdAt: Date.now() }]);`);
+  ok(all('.gram-tx-ok').length === 1 && all('.gram-tx-wait').length === 0,
+     'живой статус credited понят так же, как confirmed из истории',
+     txt('#gram-history-list .gram-tx-status'));
+
+  head('кошелёк GRAM — чужой текст в DOM');
+  // memo and address arrive over the socket. They are the server's own values,
+  // but they land in innerHTML, and this asserts the escaping actually happens
+  // at render time rather than being assumed upstream.
+  inject(w, `onGramHistory([{ id: 9, type: 'deposit', amount: 1, status: 'confirmed', memo: '<img src=x onerror=window.__rcPwn=1>', createdAt: Date.now() }]);`);
+  inject(w, `openGramDepositModal(); onGramDepositIntent({ memo: '<img src=y onerror=window.__rcPwn=2>', address: '<svg onload=window.__rcPwn=3>', minAmount: 0, expiresAt: null });`);
+  ok(all('#gram-history-list img').length === 0, 'memo из истории не превратился в тег');
+  ok(all('#gram-dep-code img').length === 0 && all('#gram-dep-code svg[onload]').length === 0,
+     'memo и адрес из intent не превратились в теги');
+  inject(w, 'window.__rcPwnOut = window.__rcPwn || 0;');
+  ok(!w.__rcPwnOut, 'ни один инъецированный обработчик не выполнился', String(w.__rcPwnOut));
+  inject(w, 'closeGramModal();');
+
+  head('кошелёк GRAM — отказ обязан быть виден');
+  // The rule this tab broke worst: _gramMsg wrote into a strip that only
+  // exists while the WALLET tab is rendered, so every refusal that arrived
+  // with the player on Язык, Друзья or in the dungeon was dropped in silence.
+  inject(w, `switchProfileTab('lang');`);
+  ok(!q('#gram-msg'), 'на другой вкладке полоски сообщений действительно нет');
+  inject(w, `_gramMsg('ОТКАЗ-ПРОВЕРКА', 'err');
+    window.__rcRefusalSeen = Array.prototype.some.call(document.body.children,
+      function (n) { return n.textContent === 'ОТКАЗ-ПРОВЕРКА'; });`);
+  ok(w.__rcRefusalSeen === true, 'отказ всё равно показан игроку, а не проглочен');
+  inject(w, `switchProfileTab('wallet');`);
+  inject(w, `_gramMsg('ОТКАЗ-В-ПОЛОСКЕ', 'err'); window.__rcStrip = (document.getElementById('gram-msg') || {}).textContent;`);
+  ok(w.__rcStrip === 'ОТКАЗ-В-ПОЛОСКЕ', 'а на самой вкладке — в её собственной полоске', String(w.__rcStrip));
+  // With a modal up, the panel strip is behind its backdrop — writing there is
+  // the same as writing nowhere.
+  inject(w, `openGramDepositModal(); _gramMsg('ОТКАЗ-ПОВЕРХ-МОДАЛКИ', 'err');
+    window.__rcModalMsg = (document.getElementById('gram-modal-msg') || {}).textContent;`);
+  ok(w.__rcModalMsg === 'ОТКАЗ-ПОВЕРХ-МОДАЛКИ',
+     'при открытой модалке отказ уходит в неё, а не под её же затемнение', String(w.__rcModalMsg));
+  inject(w, 'closeGramModal();');
+
+  ok((w.__rcErrors || []).length === errBefore, 'вкладка кошелька не бросила ни одной ошибки',
+     (w.__rcErrors || []).slice(errBefore).join(' | '));
+
+  // Put the frame back the way the world checks expect to find it.
+  inject(w, `closeGramModal();
+    var _t2 = document.getElementById('gram-credit-toast'); if (_t2) _t2.remove();
+    var _p = document.getElementById('panel-profile'); if (_p) _p.style.display = 'none';
+    activeTab = 0; window.__rcWallet = '';`);
 }
 
 function finish(w) {
