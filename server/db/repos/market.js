@@ -24,7 +24,8 @@ const items = require('./items');
 const money = require('./money');
 const { MARKET_FEE_PCT, MARKET_MAX_PRICE, MARKET_MAX_QTY, MARKET_LIST_COOLDOWN_MS, _marketMinPrice } =
   require('../../inventory');
-const { _marketMaxActive } = require('../../market-helpers');
+const { _marketMaxActive, MARKET_VIP_PCT } = require('../../market-helpers');
+const progression = require('./progression');
 const { _catalogBase } = require('../../anticheat');
 
 // Rounded to the same 2 decimals the old _round2 used everywhere a GRAM figure
@@ -258,6 +259,13 @@ async function buy(db, buyerId, listingId) {
     UPDATE market_listings
        SET status = 'sold', buyer_id = $2, closed_at = now()
      WHERE id = $1`, [listingId, buyerId]);
+
+  // Inside the same transaction as the payment, so the credit toward VIP and
+  // the GRAM that earned it commit together. Only a share of the price counts
+  // — MARKET_VIP_PCT — because a market trade moves GRAM between two players
+  // rather than into the game, and counting the whole of it would make VIP
+  // farmable by two accounts selling to each other.
+  await progression.addVipSpend(db, buyerId, price * MARKET_VIP_PCT);
 
   // What the buyer actually received, read back from the row that just moved.
   // The client shows it — "you bought X" — and without it the confirmation

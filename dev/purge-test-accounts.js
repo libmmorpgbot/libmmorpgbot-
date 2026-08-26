@@ -112,6 +112,35 @@ async function main() {
     'UPDATE players SET bm = 0 WHERE id = ANY($1) AND bm <> 0', [ids]);
   console.log('  прибрано з рейтингу: ' + zeroed + ' акаунтів (БМ → 0)');
 
+  // ── and what they said ───────────────────────────────────────────────────
+  // The rating was not the only place a fixture was visible. Every socket
+  // suite that exercises chat leaves its lines in the history real players
+  // open — "чому вони в чат пишуть" was asked about exactly this. Unlike the
+  // player rows, these CAN go from here: the ledger's foreign key is what
+  // holds an account in place, and a chat line is not money.
+  //
+  // Three tables, because a message can be in any of them. All three keep BOTH
+  // the sender's id and the display name it was posted under — and the id is
+  // ON DELETE SET NULL in two of them, so once the rows go the name is the only
+  // thing left to match on. Both clauses, so neither order of operations can
+  // leave a fixture talking in the history.
+  let said = 0;
+  for (const [tbl, where, args] of [
+    ['clan_chat', 'player_id = ANY($1) OR username ~ $2', [ids, TEST_USERNAME]],
+    ['direct_messages', 'sender_id = ANY($1) OR username ~ $2', [ids, TEST_USERNAME]],
+    ['chat_messages', 'player_id = ANY($1) OR username ~ $2', [ids, TEST_USERNAME]],
+  ]) {
+    try {
+      const { rowCount } = await pool().query(`DELETE FROM ${tbl} WHERE ${where}`, args);
+      said += rowCount;
+    } catch (err) {
+      // A table that does not exist on this cluster is not a failure of the
+      // purge — say so and carry on rather than leaving the rating half done.
+      console.log('  ! ' + tbl + ': ' + err.message);
+    }
+  }
+  console.log('  прибрано їхніх повідомлень у чатах: ' + said);
+
   const { rows: topNow } = await pool().query(
     'SELECT username, bm FROM players ORDER BY bm DESC NULLS LAST LIMIT 5');
   console.log('  рейтинг тепер:');

@@ -40,9 +40,11 @@
 const { tx } = require('./db');
 const money = require('./db/repos/money');
 const items = require('./db/repos/items');
+const progression = require('./db/repos/progression');
 const {
   DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   race10Rewards, race10Liberty,
+  SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
 } = require('../shared/definitions');
 
 // The co-op boss. Not in shared/definitions because nothing else refers to it
@@ -111,6 +113,36 @@ function attach(socket, s) {
   // runs, the account may have reconnected on a different socket — the
   // PLAYER id is what the reward belongs to, and that does not change.
   const pid = () => (s.authed ? s.playerId : null);
+
+  // ── season points for entering and for winning ───────────────────────────
+  // The two closures arena3.js and death-battle.js call through
+  // socket.data?.…?.() and that nothing has ever assigned. Both are
+  // fire-and-forget by design: a season point is a nice-to-have on top of the
+  // real reward, and it must never be able to fail the match that earned it.
+  // Failures are reported rather than swallowed, through the same path the
+  // four payouts already use.
+  const _awardSeason = (points, ref) => async (mode) => {
+    const id = pid();
+    if (!id || !(points > 0)) return null;
+    try {
+      return await tx(async (t) => {
+        const total = await progression.addSeasonPoints(t, id, points);
+        // Null means the season is not running — not a failure, just nothing
+        // to award. addSeasonPoints already decides that; this only avoids
+        // telling the client about a change that did not happen.
+        // 'seasonEventDone' rather than a new event name: the client already
+        // listens for it and shows the banner (js/network.js), and the shop
+        // path already uses it. Inventing a second name for the same thing is
+        // how an emit ends up with no handler on the other side.
+        if (total != null) {
+          s.socket.emit('seasonEventDone', { task: ref + ':' + mode, points, total });
+        }
+        return total;
+      });
+    } catch (err) { return _report('season:' + ref, err, id); }
+  };
+  socket.data._seasonAwardEvent = _awardSeason(SEASON_EVENT_POINTS, 'event');
+  socket.data._seasonAwardWin = _awardSeason(SEASON_EVENT_WIN_POINTS, 'win');
 
   // Death battle: GRAM plus a fixed item set.
   socket.data._dbGrantWin = async () => {

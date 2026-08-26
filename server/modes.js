@@ -499,6 +499,39 @@ function init(io) {
   }
   wbSchedule();
 
+  // ── and the other three, which nobody was arming ─────────────────────────
+  // The world boss above and the guild war (armed from server/app.js) each
+  // schedule themselves at boot. The 3v3 arena, Кровавая Башня and the death
+  // battle do not: _a3Schedule, _race10Schedule and _dbSchedule are called
+  // ONLY from inside their own close/finish handlers.
+  //
+  // Which never runs. A window that never opens never closes, so it never
+  // re-arms, so it never opens. All three sat in their initial phase forever
+  // and the player who asked "события включи как-нибудь" was right — there was
+  // no way to start them short of an admin pressing the button by hand.
+  //
+  // Same defect as spawnGuildWarTower: a function that existed, was correct,
+  // was exported, and was called by nothing. Three times over.
+  //
+  // Guarded per mode rather than in one try: a factory that failed to load
+  // should cost its own schedule and not the other two.
+  for (const [name, fn] of [
+    ['arena3', modes._a3Schedule],
+    ['race10', modes._race10Schedule],
+    ['deathBattle', modes._dbSchedule],
+  ]) {
+    if (typeof fn !== 'function') {
+      console.error('[modes] ' + name + ': нет функции расписания — событие не запустится');
+      ops.alert('modes.noschedule', 'Событие без расписания',
+        name + ': _*Schedule отсутствует, окно никогда не откроется').catch(() => {});
+      continue;
+    }
+    try { fn(); } catch (err) {
+      console.error('[modes] ' + name + ' schedule:', err);
+      ops.alertError('modes.schedule.' + name, 'Не удалось поставить расписание события', err).catch(() => {});
+    }
+  }
+
   // ── walking out of an instanced run ends it ──────────────────────────────
   // Страх, co-op and the elite farm zone each keep a record saying "this
   // connection is mid-run". Two things used to clear it: clearing the last

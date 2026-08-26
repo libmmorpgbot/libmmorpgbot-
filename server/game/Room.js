@@ -2733,16 +2733,23 @@ class Room {
   // bounded, and skillPct is read off the equipment rather than claimed.
   _skillMultFor(p, key) {
     const sd = p._sd || {};
-    let skillPct = 0;
-    Object.values(sd.equipment || {}).forEach(it => { if (it && it.skillPct) skillPct += it.skillPct; });
+    // skillPct comes off the computed stats now (setPlayerStats), where the
+    // equipment that grants it has already been read out of player_items. The
+    // sd.equipment walk below it is the old path and is kept only as the
+    // fallback for the retired build, whose setPlayerChar does fill _sd.
+    let skillPct = Number(p.skillPct) || 0;
+    if (!skillPct) Object.values(sd.equipment || {}).forEach(it => { if (it && it.skillPct) skillPct += it.skillPct; });
     // Unstudied slots cast for nothing. The client refuses this outright
     // ("Навык не изучен", useSkill in js/player.js) but the server never
     // checked it at all, so a modified client had all four slots from level
     // one without spending a single book. studySkill writes level 1, so zero
     // means unstudied and nothing else.
-    const lvl = Math.max(0, Math.floor(Number((sd.skillLevels || {})[key])) || 0);
+    const levels = p._skillLevels || sd.skillLevels || {};
+    const lvl = Math.max(0, Math.floor(Number(levels[key])) || 0);
     if (lvl <= 0) return 0;
-    const adv = !!((sd.advSkillLearned || {})[key] && (sd.advSkillActive || {})[key]);
+    const learned = p._advLearned || sd.advSkillLearned || {};
+    const active = p._advActive || sd.advSkillActive || {};
+    const adv = !!(learned[key] && active[key]);
     return skillDamageMult(p.type || sd.type, key, adv, lvl, skillPct);
   }
 
@@ -3393,6 +3400,15 @@ class Room {
     p.atkSpeed = st.atkSpeed;
     p.hpRegen = st.hpRegen;
     p.skillPct = st.skillPct || 0;
+    // Skill levels and the advanced-skill flags, which decide whether a cast
+    // does ANY damage at all (_skillMultFor). They used to be read off the
+    // client-authored save blob, which this build stopped filling — see the
+    // note there. Only overwritten when the payload actually carries them, so
+    // the one caller that hand-builds a partial stats object for a floor move
+    // (Session.moveRoom) cannot blank them.
+    if (st.skillLevels) p._skillLevels = st.skillLevels;
+    if (st.advSkillLearned) p._advLearned = st.advSkillLearned;
+    if (st.advSkillActive) p._advActive = st.advSkillActive;
     if (st.maxHp > 0 && p.maxHp !== st.maxHp) {
       p.maxHp = st.maxHp;
       // Other clients render this player's health bar from maxHp, so a change

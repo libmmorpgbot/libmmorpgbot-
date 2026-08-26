@@ -27,7 +27,7 @@
 // "the client cannot touch it".
 
 const { query } = require('../index');
-const { xpToNext, skillPointBudget, CHAR_DEF, UPGRADE_KEYS, SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL } =
+const { xpToNext, skillPointBudget, upgradeCost, CHAR_DEF, UPGRADE_KEYS, SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL } =
   require('../../../shared/definitions');
 
 // ── identity ────────────────────────────────────────────────────────────────
@@ -289,10 +289,30 @@ async function spendUpgrade(db, playerId, key) {
   const budget = skillPointBudget(r.lvl, r.rebirths) + r.bonus_sp;
   if (Number(r.spent) >= budget) return null;          // no points left
 
+  // The gold. money.spend fuses affordability and deduction into one
+  // statement, so an unaffordable upgrade cannot half-apply — and the idem key
+  // names the exact point being bought, so a retry inside txRetry pays once.
+  const { rows: cur } = await query(db,
+    `SELECT ${col} AS v FROM player_progress WHERE player_id = $1`, [playerId]);
+  const cost = upgradeCost(Number(cur[0].v) || 0);
+  const money = require('./money');
+  let goldLeft = null;
+  if (cost > 0) {
+    const paid = await money.spend(db, playerId, 'gold', cost, {
+      reason: 'upgrade', refType: 'upgrade', refId: key,
+      idemKey: `upg:${playerId}:${key}:${Number(cur[0].v) || 0}`,
+    });
+    // spend() returns null when the balance could not cover it — that is the
+    // whole affordability check, fused into the UPDATE so two purchases in the
+    // same instant cannot both pass against the same gold.
+    if (!paid) return null;
+    goldLeft = paid.balance;
+  }
+
   const { rows: out } = await query(db, `
     UPDATE player_progress SET ${col} = ${col} + 1, updated_at = now()
      WHERE player_id = $1 RETURNING ${col} AS v`, [playerId]);
-  return { key, level: out[0].v, remaining: budget - Number(r.spent) - 1 };
+  return { key, level: out[0].v, remaining: budget - Number(r.spent) - 1, cost, gold: goldLeft };
 }
 
 // ── skills ──────────────────────────────────────────────────────────────────

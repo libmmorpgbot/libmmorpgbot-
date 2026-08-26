@@ -64,6 +64,25 @@ const LOAD_SQL = `
         FROM player_skills s
        WHERE s.player_id = pr.player_id AND s.kind = 'passive' AND s.level > 0
     ), '{}'::json) AS passives,
+    -- The three the COMBAT path needs. Read here rather than separately so
+    -- they travel with the stats to Room.setPlayerStats — see the note above
+    -- _skillMultFor in server/game/Room.js for what happened when they did not
+    -- travel at all.
+    COALESCE((
+      SELECT json_object_agg(s.key, s.level)
+        FROM player_skills s
+       WHERE s.player_id = pr.player_id AND s.kind = 'skill' AND s.level > 0
+    ), '{}'::json) AS skill_levels,
+    COALESCE((
+      SELECT json_object_agg(s.key, true)
+        FROM player_skills s
+       WHERE s.player_id = pr.player_id AND s.kind = 'adv_learned' AND s.level > 0
+    ), '{}'::json) AS adv_learned,
+    COALESCE((
+      SELECT json_object_agg(s.key, true)
+        FROM player_skills s
+       WHERE s.player_id = pr.player_id AND s.kind = 'adv_active' AND s.level > 0
+    ), '{}'::json) AS adv_active,
     COALESCE((
       SELECT c.level FROM clan_members m JOIN clans c ON c.id = m.clan_id
        WHERE m.player_id = pr.player_id
@@ -168,6 +187,11 @@ function compute(row) {
     hpRegen:    lvl * 0.02 + row.upg_hp_regen * 0.1 + pt.hpRegenFlat + regenBuff,
     moveSpeed:  (cd.speed || 0) * (1 + pt.moveSpeedPct),
     skillPct,
+    // Not stats — but they ride with them, because everything that refreshes a
+    // player's numbers is also the moment their skills should reach the Room.
+    skillLevels: row.skill_levels || {},
+    advSkillLearned: row.adv_learned || {},
+    advSkillActive: row.adv_active || {},
     hp: Math.min(row.hp, h),
     clanAtkPct: clanPct,
   };

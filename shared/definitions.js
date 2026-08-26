@@ -589,6 +589,12 @@ const SEASON_BOOK_BURN_POINTS = 60;
 // friend's own document, so it cannot be collected twice by relogging, and
 // it lands whether or not the referrer happens to be online at the time.
 // Unchanged from Season 1.
+// Entering a scheduled event, and winning one. Read by mode-rewards.js and
+// shipped in seasonState so the season panel can name them alongside every
+// other source. Sized against their neighbours: below the referral bonus for
+// turning up, between the advanced book and a rebirth for taking the win.
+const SEASON_EVENT_POINTS = 40;
+const SEASON_EVENT_WIN_POINTS = 400;
 const SEASON_REF_POINTS = 200;
 const SEASON_REF_LEVEL  = 20;
 
@@ -2270,6 +2276,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS, seasonEnhancePoints,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
   SEASON_REBIRTH_POINTS,
   SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,

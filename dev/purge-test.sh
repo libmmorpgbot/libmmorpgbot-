@@ -66,6 +66,15 @@ DELETE FROM player_items WHERE player_id IS NULL AND id IN (
                                   OR buyer_id IN (SELECT id FROM doomed)));
 DELETE FROM market_listings WHERE seller_id IN (SELECT id FROM doomed)
                                OR buyer_id  IN (SELECT id FROM doomed);
+-- What they said, before what they are. chat_messages.player_id and
+-- clan_chat.player_id are ON DELETE SET NULL, so the cascade would leave the
+-- lines behind with the id stripped and the display name intact — visible in
+-- the history real players open, and no longer traceable to anything. Deleted
+-- by id while the id still exists, and by name for whatever was already
+-- orphaned by an earlier run.
+DELETE FROM chat_messages  WHERE player_id IN (SELECT id FROM doomed) OR username ~ $\$$;
+DELETE FROM clan_chat      WHERE player_id IN (SELECT id FROM doomed) OR username ~ $\$$;
+DELETE FROM direct_messages WHERE sender_id IN (SELECT id FROM doomed);
 DELETE FROM ledger  WHERE player_id IN (SELECT id FROM doomed);
 DELETE FROM players WHERE id IN (SELECT id FROM doomed);
 SQL
