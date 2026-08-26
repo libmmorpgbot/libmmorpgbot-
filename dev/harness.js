@@ -86,12 +86,24 @@ console.error = (...args) => {
 };
 
 // ── Tiny assertion kit ───────────────────────────────────────────────────────
-let passed = 0, failed = 0;
+let passed = 0, failed = 0, skipped = 0;
 const results = [];
 function ok(cond, msg, detail) {
   if (cond) { passed++; results.push(['PASS', msg, '']); }
   else { failed++; results.push(['FAIL', msg, detail === undefined ? '' : String(detail)]); }
 }
+
+// A SCENARIO THAT COULD NOT RUN IS NOT A SCENARIO THAT PASSED.
+//
+// The nine browser scenarios below each opened with two lines of
+// `ok(true, 'skipped — no chromium in this environment')` and
+// `ok(true, 'skipped — playwright not installed')`. On a machine without the
+// browser they contributed eighteen green PASSes to the total and told the
+// reader the client had been loaded, driven and rendered — over nothing at
+// all. Worse than no coverage, because the number at the bottom said there
+// was some. This records the skip and leaves both counters alone; the runner
+// prints it as SKIP and marks a scenario that did nothing else with a dash.
+function skip(msg) { skipped++; results.push(['SKIP', msg, '']); }
 const eq = (got, want, msg) => ok(got === want, msg, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -2461,8 +2473,10 @@ scenario('race: spendUpgrade cannot exceed the skill point budget by racing two 
   const budget = require('../shared/definitions').skillPointBudget(1, 0);
   if (budget < 1) {
     // Nothing to prove at budget 0 — a fresh level-1 account with no rebirth
-    // bonus may simply have none to spend yet.
-    ok(true, 'skipped — level 1 has no skill points to budget-test');
+    // bonus may simply have none to spend yet. A SKIP, not a pass: the race
+    // this scenario exists for was never run, and counting it as a success
+    // would say it was.
+    skip('level 1 has no skill points to budget-test — the race did NOT run');
     await c.close();
     return;
   }
@@ -2940,8 +2954,18 @@ scenario('build: the bundle is minified, mapped, and keeps its HTML entry points
 // The browser Playwright wants and the one this environment ships are
 // different builds, so the path is resolved rather than assumed; if neither is
 // there the scenario says so instead of failing the run for the wrong reason.
+//
+// CHROMIUM_PATH FIRST, which is how dev/egress.js has always resolved it. This
+// copy did not read it and searched exactly one directory, so every machine
+// keeping its browser anywhere else — a developer's laptop, a CI image with
+// its own Playwright cache, a container with a system chromium — fell through
+// to the skip branch. The skip used to register as a pass, so on all of those
+// the nine browser scenarios reported success without a browser ever starting.
+// Set but wrong is deliberately NOT silently ignored: launch() then fails and
+// names the path, which is a better answer than another quiet skip.
 function chromiumPath() {
   const fs = require('fs');
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   const roots = ['/opt/pw-browsers'];
   for (const root of roots) {
     if (!fs.existsSync(root)) continue;
@@ -2955,10 +2979,10 @@ function chromiumPath() {
 
 scenario('browser: the real client loads and reaches the world', async () => {
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const browser = await chromium.launch({ executablePath: exe });
   try {
@@ -3056,10 +3080,10 @@ scenario('browser: entering Страх closes the events panel instead of leavin
   // entry went through this exact button, which is why it read as "monsters
   // never appear in Страх" for everyone, every time, right on entry.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   // Seeded above FEAR_MIN_LEVEL (10) the same way the other 'reconnect:'
   // scenarios seed a save — connectWithSaved creates the DB row and patches
@@ -3110,10 +3134,10 @@ scenario('browser: the market search, rarity filter and sort actually narrow the
   // next scenario). This drives the real panel in a real browser: seeded lots
   // from another seller, then the toolbar the player types into.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const MarketListing = require('../server/models/MarketListing');
   // Every scenario in a run shares one in-memory database, and the market
@@ -3235,10 +3259,10 @@ scenario('browser: the market category strip can be scrolled with a mouse', asyn
   // the panel's 430px was unreachable: the reported "с ПК невозможно листать
   // вкладки". Both mouse gestures are checked here.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   // Seeded across enough categories that the strip is wider than the 430px
   // panel whatever else the run left in the market — the whole point of the
@@ -3333,10 +3357,10 @@ scenario('browser: АВТО casts only the skills left switched on, and none whe
   // writes autoSkillsOn/autoSkillOff, and this is what _autoCastSkills does
   // with them.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const seed = await connectWithSaved('harness_autoskills', {
     lvl: 15, vipLevel: 2, skillLevels: { Q: 5, W: 5, E: 5, R: 5 },
@@ -3461,10 +3485,10 @@ scenario('browser: pressing Вывести below VIP 3 says so instead of openin
   // address, submitted, and nothing happened, with no reason given. The gate
   // is stated on the press now, and the message element is real.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const seed = await connectWithSaved('harness_withdraw_vip', { lvl: 15, vipLevel: 0, gramBalance: 500 });
   await seed.close();
@@ -3533,10 +3557,10 @@ scenario('browser: a short drop resumes in place instead of rebuilding the world
   // looked exactly like an hour offline. This drives a real client through a
   // real drop and checks the world was resumed, not rebuilt.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const seed = await connectWithSaved('harness_resume_ui', { lvl: 20, xp: 0, xpNext: 9999 });
   await seed.close();
@@ -3611,10 +3635,10 @@ scenario('browser: a kicked session stays down instead of reloading into a kick 
   // server that keeps restarting — which is exactly the report this whole
   // branch started from.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const browser = await chromium.launch({ executablePath: exe });
   try {
@@ -3675,10 +3699,10 @@ scenario('browser: the season ticket info modal does not get stuck on "season en
   // ended" even mid-season. The fix: the modal now requests its own sync on
   // open and re-renders once the reply lands.
   const exe = chromiumPath();
-  if (!exe) { ok(true, 'skipped — no chromium in this environment'); return; }
+  if (!exe) { skip('no chromium in this environment — the browser scenario did NOT run'); return; }
   let chromium;
   try { ({ chromium } = require('playwright')); }
-  catch { ok(true, 'skipped — playwright not installed'); return; }
+  catch { skip('playwright not installed — the browser scenario did NOT run'); return; }
 
   const browser = await chromium.launch({ executablePath: exe });
   try {
@@ -4354,9 +4378,15 @@ scenario('admin: top-referrals ranks by GRAM earned (not headcount), and top-mar
       await s.fn();
       const mine = results.slice(before);
       const bad = mine.filter(r => r[0] === 'FAIL');
-      console.log(`${bad.length ? '✗' : '✓'} ${s.name}`);
+      const skips = mine.filter(r => r[0] === 'SKIP');
+      // A scenario that asserted nothing but a skip gets its own mark. A ✓ over
+      // it is the whole problem: it reads as "this was checked", and for the
+      // browser scenarios on a machine with no chromium it never was.
+      const nothingRan = skips.length > 0 && skips.length === mine.length;
+      console.log(`${bad.length ? '✗' : nothingRan ? '–' : '✓'} ${s.name}`);
       mine.forEach(([st, msg, detail]) => {
         if (st === 'FAIL') console.log(`    FAIL ${msg}${detail ? ' — ' + detail : ''}`);
+        else if (st === 'SKIP') console.log(`    SKIP ${msg}`);
       });
     } catch (err) {
       failed++;
@@ -4372,7 +4402,15 @@ scenario('admin: top-referrals ranks by GRAM earned (not headcount), and top-mar
     uniqueErrors.forEach(e => console.log('    ' + e));
   }
 
-  console.log(`\n${passed} passed, ${failed} failed`);
+  // Skipped is its own column, never folded into passed. A run that could not
+  // start a browser now says so on the bottom line instead of adding eighteen
+  // to a number a reader takes for coverage. CHROMIUM_PATH is named because it
+  // is the fix, and chromiumPath() reads it.
+  console.log(`\n${passed} passed, ${failed} failed`
+    + (skipped ? `, ${skipped} SKIPPED — not checked` : ''));
+  if (results.some(r => r[0] === 'SKIP' && /chromium|playwright/.test(r[1]))) {
+    console.log('  (set CHROMIUM_PATH to run the browser scenarios)');
+  }
   process.exit(failed ? 1 : 0);
 })().catch(err => {
   console.error('harness:', err);

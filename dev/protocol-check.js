@@ -175,6 +175,16 @@ const RETIRED = {
 
 // ── every event the client sends has a handler ──────────────────────────────
 console.log('  ── покриття ──');
+// A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. Both sizes are printed
+// three lines above and neither was asserted on, so a regex that stopped
+// matching — the client moving from `socket.emit` to a wrapper, handlers2
+// being renamed, safeOn gaining an argument — produced "усі 0 подій клієнта
+// мають обробник" and a green run over a protocol nobody looked at. That is
+// the hole dev/api-check.js closed after walking sixty-two files and matching
+// nothing. The floors are far under the real figures (130 emits, 138 handlers).
+ok(clientEmits.size > 50 && serverOn.size > 50,
+  `є що перевіряти — ${clientEmits.size} подій клієнта, ${serverOn.size} обробників`,
+  'сканування нічого не знайшло — зламана сама перевірка');
 const missing = [...clientEmits.keys()].filter(e => !serverOn.has(e) && !RETIRED[e]).sort();
 ok(missing.length === 0, `усі ${clientEmits.size} подій клієнта мають обробник`,
   `без обробника (${missing.length}): ${missing.join(' ')}`);
@@ -186,10 +196,11 @@ for (const [e, why] of Object.entries(RETIRED)) {
 // ── the handler does not read a key the client never sends ──────────────────
 console.log('  ── форма payload ──');
 const IGNORE_KEYS = new Set(['']);
-let mismatched = 0;
+let mismatched = 0, compared = 0;
 for (const [event, keys] of serverOn) {
   const sent = clientEmits.get(event);
   if (!sent || !keys.size) continue;              // client-less or no payload read
+  compared++;
   const unread = [...keys].filter(k => !sent.has(k) && !IGNORE_KEYS.has(k));
   if (unread.length) {
     mismatched++;
@@ -197,8 +208,17 @@ for (const [event, keys] of serverOn) {
                 `клієнт шле {${[...sent].join(', ')}}`);
   }
 }
+// The `continue` above is what makes this loop able to compare nothing at all
+// and still print PASS: a handler whose destructure the parser stops reading
+// has `keys.size === 0` and is skipped, and if that happened to every one of
+// them — the brace-matching slip described above did exactly that once, and
+// six real mismatches sat in front of a green line — nothing is left to
+// mismatch. So the number of pairs actually COMPARED is asserted, not just the
+// number that disagreed. Sixty-eight pairs today; the floor is a third of it.
+ok(compared > 20, `звірено ${compared} пар подія↔payload`,
+  'сканування нічого не знайшло — зламана сама перевірка');
 if (mismatched) { fail++; failures.push('форма payload'); }
-else { pass++; console.log('  \x1b[32mPASS\x1b[0m  жоден обробник не читає ключ, якого клієнт не шле'); }
+else { pass++; console.log(`  \x1b[32mPASS\x1b[0m  жоден із ${compared} обробників не читає ключ, якого клієнт не шле`); }
 
 // ── the other direction ─────────────────────────────────────────────────────
 // A handler can be perfectly wired and still leave the UI frozen, because the
@@ -243,6 +263,13 @@ const UNHANDLED_BY_DESIGN = {
   prefsSync: 'підтвердження savePrefs — клієнт ще зберігає налаштування всередині старого блоба',
 };
 
+// Same guard, mirrored: an empty `serverEmits` has nothing that can be
+// unheard, and an empty `clientOn` makes EVERY server event unheard — the
+// second fails loudly, the first passes silently, and it is the silent one
+// that needs the floor. (127 emits, 193 listeners today.)
+ok(serverEmits.size > 50 && clientOn.size > 50,
+  `є що перевіряти — ${serverEmits.size} подій сервера, ${clientOn.size} слухачів клієнта`,
+  'сканування нічого не знайшло — зламана сама перевірка');
 const unheard = [...serverEmits.keys()]
   .filter(e => !clientOn.has(e) && !WIRE.has(e) && !UNHANDLED_BY_DESIGN[e]).sort();
 ok(unheard.length === 0, `усі ${serverEmits.size} подій сервера має хто слухати`,

@@ -23,7 +23,7 @@
 // PostgreSQL will check a statement without running it. PREPARE resolves every
 // table, column, function and enum literal and infers the parameter types,
 // then throws exactly what the query would have thrown. So this asks the
-// database to read all ~200 statements in the codebase, and executes none of
+// database to read all ~250 statements in the codebase, and executes none of
 // them: no rows written, no side effects, seconds to run.
 //
 // It is the check that would have caught all three, on the day each was
@@ -74,24 +74,49 @@ function strip(src) {
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + ' '.repeat(m.length - p.length));
 }
 
-// Every backtick template literal whose first word is a statement keyword.
+// Every string literal whose first word is a statement keyword.
 // Matching on the literal rather than on the call site means it does not
 // matter whether it was passed to query(), t.query(), pool().query() or
 // assembled in a variable first.
+//
+// ALL THREE QUOTE CHARACTERS, not just the backtick. The first version of this
+// matched `` ` `` alone, on the assumption that a statement long enough to
+// matter gets written as a template literal. Seventy-nine of them are not:
+// every short one-liner in the repos — `query(db, 'SELECT id FROM players
+// WHERE telegram_id = $1')` — is single-quoted, and those were neither checked
+// nor counted as skipped. They simply did not exist as far as the report was
+// concerned, so "178 запитів перевірено базою" described two thirds of them
+// while reading as all of them. A short statement names columns exactly as a
+// long one does, and pvp_history.won — the column that started this file — was
+// missing from a one-liner.
 function statements(src) {
   const out = [];
-  const re = /`(\s*(?:WITH|SELECT|INSERT|UPDATE|DELETE)\b[\s\S]*?)`/gi;
+  // The quote character is captured and used as the terminator, so an
+  // apostrophe inside a double-quoted statement (and a double quote inside a
+  // single-quoted one) does not cut the literal short.
+  const re = /(['"`])(\s*(?:WITH|SELECT|INSERT|UPDATE|DELETE)\b(?:\\.|[^\\])*?)\1/gi;
   let m;
   while ((m = re.exec(src))) {
-    const sql = m[1];
+    const quote = m[1];
+    const sql = m[2];
     // A statement keyword alone is not enough. English prose begins with
     // "With" and "Select" too — one comment in server/ton.js starts "with
     // ok:true" and was reported as a syntax error. Real SQL of these five
     // kinds always carries one of these words as well.
     if (!/\b(FROM|INTO|SET|VALUES)\b/i.test(sql)) continue;
-    // Line number of the opening backtick, for the report.
+    // Only a template literal may span lines. A quoted match that does is the
+    // regex having run past an unrelated closing quote on a later line, not a
+    // statement — handing that to PREPARE would invent a syntax error.
+    if (quote !== '`' && /\n/.test(sql)) continue;
+    // Line number of the opening quote, for the report.
     const line = src.slice(0, m.index).split('\n').length;
-    out.push({ sql, line });
+    // A literal glued to a `+` is one PIECE of a statement. There are none
+    // today; there is no reason for the day somebody adds one to be the day
+    // this file starts reporting a syntax error that is not there.
+    const before = src.slice(Math.max(0, m.index - 40), m.index);
+    const after = src.slice(m.index + m[0].length, m.index + m[0].length + 40);
+    const partial = /\+\s*$/.test(before) || /^\s*\+/.test(after);
+    out.push({ sql, line, partial });
   }
   return out;
 }
@@ -111,10 +136,13 @@ async function main() {
 
       for (const st of sts) {
         total++;
-        // A statement built by interpolation cannot be checked as written —
-        // the pieces are decided at runtime. Counted and named rather than
-        // quietly dropped, because "checked everything" has to be true.
-        if (/\$\{/.test(st.sql)) { skipped++; skippedList.push(`${rel}:${st.line}`); continue; }
+        // A statement built by interpolation, or glued together with `+`,
+        // cannot be checked as written — the pieces are decided at runtime.
+        // Counted and named rather than quietly dropped, because "checked
+        // everything" has to be true.
+        if (/\$\{/.test(st.sql) || st.partial) {
+          skipped++; skippedList.push(`${rel}:${st.line}`); continue;
+        }
 
         // A NAME PER STATEMENT, deallocated afterwards. PREPARE survives a
         // ROLLBACK, which the first version of this assumed it did not: one
@@ -159,9 +187,29 @@ async function main() {
     + ` · ${fail ? RED : DIM}${fail} з помилками${OFF}`
     + ` · ${DIM}${skipped} динамічних${OFF}`
     + ` · ${DIM}${total} усього${OFF}`);
+
+  // ── A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS ─────────────────────
+  // This file had no assertion of its own at all: it counted failures and
+  // exited 0 when there were none, which is also what it did when it read
+  // zero statements. Every way of breaking the scan itself — a rename of
+  // server/handlers2, a SKIP pattern that grew a `.*`, one wrong character in
+  // the literal regex — came out as a green run against a database it never
+  // asked a single question. The same hole dev/api-check.js closed after
+  // walking sixty-two files, matching nothing, and printing a cheerful PASS.
+  //
+  // The floors are far below the real figures (61 files, ~250 statements), so
+  // ordinary growth and ordinary deletion never trip them. Only a scan that
+  // has stopped working can.
+  const broken = [];
+  if (list.length < 30) broken.push(`знайдено лише ${list.length} файлів`);
+  if (total < 100) broken.push(`знайдено лише ${total} запитів`);
+  if (broken.length) {
+    console.log(`\n  ${RED}сканування нічого не знайшло — зламана сама перевірка${OFF}`
+      + `\n  ${RED}${broken.join(' · ')}${OFF}`);
+  }
   if (failures.length) console.log(`  ${RED}впали: ${failures.join(', ')}${OFF}`);
   console.log('');
-  process.exitCode = fail ? 1 : 0;
+  process.exitCode = (fail || broken.length) ? 1 : 0;
 }
 
 main()

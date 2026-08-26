@@ -222,12 +222,15 @@ async function main() {
 
   // And the schema refuses it even bypassing the application entirely — the
   // guard above is convenience, this is the guarantee.
-  let rawDouble = false;
-  try {
-    await pool().query('INSERT INTO clan_members (clan_id, player_id) VALUES ($1,$2)', [c2.clanId, inClan]);
-    rawDouble = true;
-  } catch { /* clan_members_one_clan_key */ }
-  ok(!rawDouble, 'другий клан неможливий навіть прямим записом повз застосунок');
+  // By SQLSTATE, with the same caught() this file already uses four lines up.
+  // `try { … rawDouble = true } catch {}` passed on every error there is: the
+  // day `clan_id` is renamed, or `c2.clanId` arrives undefined, PostgreSQL
+  // raises 42703 or 22P02, the catch eats it and the index that IS the
+  // guarantee reads as holding while possibly not existing at all. 23505 —
+  // unique_violation — is clan_members_one_clan_key and nothing else.
+  eq(await caught(() => pool().query(
+    'INSERT INTO clan_members (clan_id, player_id) VALUES ($1,$2)', [c2.clanId, inClan])),
+  '23505', 'другий клан неможливий навіть прямим записом повз застосунок (23505)');
 
   eq((await clans.search(null, TAG.slice(-4))).length, 2, 'пошук знаходить обидва клани');
 }

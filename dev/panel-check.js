@@ -156,6 +156,16 @@ async function main() {
   console.log('  ── маршрути ──');
   const calls = panelCalls();
   const routes = serverRoutes();
+  // A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. Both counts were
+  // printed inside the message below and neither was ever asserted on, so
+  // every way of breaking the scanners themselves — admin.html renamed, the
+  // page switching from `api('/admin/x')` to a helper this regex does not
+  // recognise, routes moving out of admin2.js — came out as "усі 0 викликів
+  // панелі мають маршрут". The floors are far under the real figures (about
+  // forty of each), so only a scanner that has stopped working reaches them.
+  ok(calls.length > 20 && routes.length > 20,
+    `є що перевіряти — ${calls.length} викликів сторінки проти ${routes.length} маршрутів`,
+    'сканування нічого не знайшло — зламана сама перевірка');
   const dead = calls.filter(c =>
     !routes.some(r => r.method === c.method && matches(r, c.path)));
   ok(dead.length === 0,

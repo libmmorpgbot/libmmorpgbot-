@@ -251,12 +251,12 @@ for (const dir of SERVER) {
 // server/handlers/, still in the tree): none of them was ever emitted there
 // either. They are client code waiting for a feature that does not exist, and
 // listing them here is what keeps a genuine new regression visible instead of
-// buried in four permanent warnings.
+// buried in permanent ones. It was four; seasonQuestDone and stoneCrafted left
+// when their client handlers did, which is the outcome this list is for — an
+// exemption should end by the thing being deleted, not by living here forever.
 const KNOWN_DEAD = new Set([
   'eventBossAnnounce',  // the countdown rides on gameStart's eventBoss.nextAt
-  'seasonQuestDone',    // season quests are counted, never announced separately
   'spawnAoe',           // AoE now streams inside the world packet (queueAoe)
-  'stoneCrafted',       // enhancement stones are no longer forged
 ]);
 
 // ── the diff ────────────────────────────────────────────────────────────────
@@ -265,6 +265,25 @@ const RED = '\x1b[31m', YEL = '\x1b[33m', GRN = '\x1b[32m', DIM = '\x1b[2m', OFF
 
 const names = [...clientReads.keys()].sort();
 console.log(`\n${names.length} destructured client handlers, ${serverSends.size} server emits\n`);
+
+// ── A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS ───────────────────────
+// Both numbers were printed on the line above and neither was ever a condition
+// for anything. This file's exit code is `broken || unsent`, and both are
+// counted inside a loop over `names` — so an empty `names` exits 0, and every
+// way of emptying it is a silent one: the `s.on(...)` regex ceasing to match
+// after a rename, js/ moving, strip() eating a file. The same failure the
+// enhanceResult bug rode in on, one level up — that one reported 134 clean
+// while counting the broken event as unchecked.
+//
+// The floors are a third of the real figures, so ordinary churn never reaches
+// them and only a scanner that has stopped working can.
+let scanBroken = 0;
+if (names.length < 40 || serverSends.size < 40) {
+  scanBroken = 1;
+  console.log(`${RED}SCAN BROKEN${OFF} nothing to compare — `
+    + `${names.length} client handlers, ${serverSends.size} server emits. `
+    + `The check itself is what is failing here, not the protocol.\n`);
+}
 
 for (const event of names) {
   const want = clientReads.get(event);
@@ -306,5 +325,6 @@ if (unchecked) {
 
 console.log(`\n${GRN}${clean} clean${OFF} · ${RED}${broken} missing fields${OFF} · ${YEL}${unsent} never sent${OFF} · ${DIM}${unchecked} unverifiable${OFF}`);
 console.log(`${DIM}${clientOpaque.size} handlers take the payload whole and are not checked here.${OFF}\n`);
-// A new gap in either column is a regression, and this is the gate for it.
-process.exit(broken || unsent ? 1 : 0);
+// A new gap in either column is a regression, and this is the gate for it —
+// and so is a scan that had nothing to look at, which used to exit 0.
+process.exit(broken || unsent || scanBroken ? 1 : 0);

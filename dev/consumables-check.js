@@ -271,7 +271,14 @@ async function main() {
   const rs = await mk('reset');
   eq(await caught(() => tx(t => players.resetUpgrades(t, rs, UPGRADE_RESET_COST))), 'nothing',
     'скидати нічого — відмова');
-  await tx(t => players.spendUpgrade(t, rs, 'atk'));
+  // Funded first: spendUpgrade charges gold now (upgradeCost — 300 for the
+  // first point in a stat), and a penniless player is refused, which left
+  // upgrades.atk at 0 and made the reset below answer 'nothing' instead of
+  // 'no_nexum'. The refusal being tested here is the LIBERTY one, so the gold
+  // must not be what stops it.
+  await money.credit(null, rs, 'gold', 5000, { reason: 'seed', idemKey: `${TAG}:upg-gold` });
+  const spent = await tx(t => players.spendUpgrade(t, rs, 'atk'));
+  eq(!!spent, true, 'очко покращення куплено — інакше скидати нічого і тест нижче безглуздий');
   eq(await caught(() => tx(t => players.resetUpgrades(t, rs, UPGRADE_RESET_COST))), 'no_nexum',
     'без Liberty — відмова');
   eq((await players.progressOf(null, rs)).upgrades.atk, 1, 'покращення на місці після відмови');

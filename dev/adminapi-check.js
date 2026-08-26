@@ -55,7 +55,8 @@ const TAG = 'ad-' + String(process.pid).slice(-5);
 const made = [];
 const BASE = `http://127.0.0.1:${PORT}`;
 
-let cookie = null;
+let cookie = null;        // the name=value pair, which is all a request may echo
+let setCookieRaw = null;  // the whole Set-Cookie line, attributes included
 async function api(path, opts = {}) {
   const res = await fetch(BASE + path, {
     ...opts,
@@ -67,7 +68,13 @@ async function api(path, opts = {}) {
     },
   });
   const set = res.headers.get('set-cookie');
-  if (set) cookie = set.split(';')[0];
+  // BOTH halves are kept now. `cookie` is the name=value pair and nothing else,
+  // because that is all a Cookie REQUEST header may carry — attributes belong
+  // to Set-Cookie and a request echoing them is malformed. `setCookieRaw` is
+  // the line as sent, and it is the only place HttpOnly, SameSite and Path can
+  // be read at all. Keeping only [0] threw them away at the door, which is how
+  // the flag assertion below came to be written against an empty string.
+  if (set) { setCookieRaw = set; cookie = set.split(';')[0]; }
   let body = null;
   try { body = await res.json(); } catch { /* not json */ }
   return { status: res.status, body };
@@ -101,7 +108,20 @@ async function main() {
   const good = await api('/admin/login', {
     method: 'POST', body: JSON.stringify({ username: 'checkadmin', password: PASSWORD }) });
   eq(good.status, 200, 'правильна пара пускає');
-  ok(!!cookie && /HttpOnly/i.test('') === false, 'видано cookie сесії');
+  ok(!!cookie, 'видано cookie сесії');
+  // `/HttpOnly/i.test('')` is false for every input there has ever been, so
+  // `=== false` was a constant and the flag half of this assertion was dead —
+  // and it could not have worked anyway, because the attributes were discarded
+  // by api() before anything could read them. These three are what make the
+  // session cookie a session cookie rather than a token in a string: without
+  // HttpOnly any XSS on /admin reads it, and without SameSite=Strict a form on
+  // another site can make the browser attach it. `Secure` is deliberately not
+  // asserted — admin-auth.js adds it only under NODE_ENV=production, and this
+  // process runs as test so that it can reach a plain-HTTP local server.
+  const raw = setCookieRaw || '';
+  ok(/;\s*HttpOnly\b/i.test(raw), 'cookie сесії HttpOnly — сторінковий JS її не прочитає', raw);
+  ok(/;\s*SameSite\s*=\s*Strict\b/i.test(raw), 'SameSite=Strict — чужа форма її не причепить', raw);
+  ok(/;\s*Path\s*=\s*\/admin\b/i.test(raw), 'Path=/admin — вона не їде на ігрові маршрути', raw);
 
   // The CSRF header is required on every write. A form posted from another
   // site can carry the cookie but cannot set a header.

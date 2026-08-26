@@ -26,6 +26,8 @@
 // read the number that comes out and compare it against the number the item's
 // own text promises.
 
+const fs = require('fs');
+const path = require('path');
 const { pool, tx, close } = require('../server/db');
 const players = require('../server/db/repos/players');
 const money = require('../server/db/repos/money');
@@ -114,18 +116,47 @@ async function main() {
   eq((await stats.of(null, p)).atk, base.atk, 'протермінований баф не діє');
   await pool().query(`UPDATE player_progress SET buffs = '{}'::jsonb WHERE player_id = $1`, [p]);
 
-  // ── the kill payout multipliers ──────────────────────────────────────────
-  // The arithmetic the kill handler performs, asserted directly: this is the
-  // rule, and it is what the handler was missing entirely.
-  console.log('\n  ── множники виплати ──');
-  const payout = (baseAmt, vipPct, ticket, potion) =>
-    Math.round(baseAmt * (1 + (vipPct + (ticket ? SEASON_TICKET_XP_PCT : 0)) / 100)) * (potion ? 2 : 1);
-  eq(payout(100, 0, false, false), 100, 'без нічого — базова сума');
-  eq(payout(100, VIP_BONUSES[10].xp, false, false), 200, 'VIP 10 подвоює досвід');
-  eq(payout(100, 0, true, false), 200, 'сезонна картка подвоює досвід');
-  eq(payout(100, VIP_BONUSES[10].xp, true, false), 300, 'разом — потрійний, вони додаються');
-  eq(payout(100, 0, false, true), 200, 'зілля досвіду подвоює');
-  eq(payout(100, VIP_BONUSES[10].xp, true, true), 600, 'усе разом на одному вбивстві');
+  // ── the kill payout multipliers, in the handler that pays them ───────────
+  // Six assertions used to stand here about a lambda defined three lines above
+  // them. They restated the rule inside this file and then checked that this
+  // file's own arithmetic worked: `Math.round(100 * (1 + 100 / 100))` is 200
+  // whatever server/handlers2/world.js does, so deleting every multiplier from
+  // the live handler left all six green. That is this file's own subject
+  // matter one level up — a number written down that nothing reads.
+  //
+  // The rule cannot be CALLED from here. It lives inside registerWorld()'s
+  // closure — `myXp = Math.round(baseXp * (1 + xpPct / 100))`, and the
+  // `buffOn('exp')` doubling sixty lines further down — with no export and no
+  // seam short of a real socket, a real floor and a real monster. That path is
+  // driven by dev/kill-check.js and dev/play-check.js, which read the xp out
+  // of the packet the client gets.
+  //
+  // What IS asked here is the question every one of these bugs answered wrong:
+  // does the live payout read the constant at all. Each name has to occur in
+  // the handler somewhere besides its own import line — exactly one occurrence
+  // means imported and then never used, which is the state SEASON_TICKET_XP_PCT
+  // was in on the day a bought season card doubled nothing.
+  console.log('\n  ── чи читає їх живий обробник виплати ──');
+  const worldSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'server', 'handlers2', 'world.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    // WHOLE-line comments only. The comments in that file name these constants
+    // on purpose, to record what used to be missing, so counting them would
+    // report every fix as the bug it fixed.
+    .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+  const reads = (name) => (worldSrc.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+  for (const name of ['VIP_BONUSES', 'SEASON_TICKET_XP_PCT', 'SEASON_TICKET_LIBERTY_PCT',
+                      'SEASON_TICKET_DROP_PCT', 'NEXUM_DROP_CHANCE', 'GRAM_DROP_CHANCE',
+                      'GRAM_PER_LEVEL']) {
+    ok(reads(name) >= 2, `${name} читається у виплаті за вбивство (${reads(name)} згадок)`,
+      'імпортовано і не використано — саме так картка й не подвоювала нічого');
+  }
+  ok(/buffOn\s*\(\s*'exp'\s*\)/.test(worldSrc), "зілля досвіду читається при виплаті");
+  ok(/buffOn\s*\(\s*'gold'\s*\)/.test(worldSrc), "зілля золота читається при виплаті");
+  // And the party share pays the MEMBER's own bonuses, not the killer's — its
+  // own three lines, and its own chance of being the one that gets dropped.
+  ok(/mBuff\s*\(\s*'exp'\s*\)/.test(worldSrc),
+    'частка напарника теж рахує ЙОГО зілля, а не зілля вбивці');
 
   // ── and the money actually lands ─────────────────────────────────────────
   // grantKillReward is what the handler calls; the doubled amount has to reach
@@ -137,8 +168,16 @@ async function main() {
   const r = await tx(t => consumables.grantKillReward(t, q, {
     gold: 200, xp: 0, nexum: 1, gram: gramDrop, drops: [], idemKey: `${TAG}:pay:1`,
   }));
-  eq(Number(r.gold), 200, 'подвоєне золото зараховано');
   const bal = await money.balancesOf(null, q);
+  // `eq(Number(r.gold), 200)` asserted the number this test handed in one
+  // statement earlier. grantKillReward could have returned its own argument
+  // and credited nothing at all and that still passed — which is precisely
+  // what "зелья бафов не работают" looked like from the outside: a number
+  // reported, and no money. The BALANCE is where "зараховано" is either true
+  // or not.
+  eq(Number(bal.gold), 200, 'подвоєне золото лежить у балансі, а не лише у відповіді');
+  eq(Number(r.gold), Number(bal.gold),
+    'а у відповіді — той самий підсумок, що й у базі (клієнт малює саме його)');
   eq(Number(bal.nexum), 1, 'Liberty з моба зарахована');
   // The whole reason balances are numeric(24,8): rounding this to 2 decimals
   // destroys it entirely, and a session of farming with it.

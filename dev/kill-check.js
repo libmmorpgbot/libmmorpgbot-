@@ -139,7 +139,12 @@ async function main() {
   // fights the server's own corrections is a test measuring itself.
   let killed = null, victim = null;
   const goldBefore = (await money.balancesOf(null, a.pid)).gold;
-  const xpBefore = (await players.progressOf(null, a.pid)).xp;
+  const progBefore = await players.progressOf(null, a.pid);
+  const xpBefore = progBefore.xp;
+  // The level as well as the xp, because a level-up is the one legitimate way
+  // for stored xp to come back SMALLER than it started — see the assertion
+  // below, which used to have `|| killed.level` standing in for this.
+  const lvlBefore = progBefore.lvl;
   let totalGold = 0;
 
   // Several kills, because a low-level monster can legitimately roll zero
@@ -195,8 +200,20 @@ async function main() {
     }
     eq(killed.goldTotal <= goldAfter, true,
       'goldTotal не випереджає базу — екран не показує грошей, яких нема');
-    ok((await players.progressOf(null, a.pid)).xp !== xpBefore || killed.level,
-      'досвід записаний у базу');
+    // `xp !== xpBefore || killed.level` never had to reach the database.
+    // `killed.level` is the level block off the kill packet, truthy for every
+    // level anybody has ever been, so the second disjunct was true whenever
+    // the packet arrived at all — and the packet arriving is what the four
+    // assertions above already establish. The rewrite's whole failure mode was
+    // "the number was sent and nothing was stored", and this was the one line
+    // meant to catch it.
+    //
+    // Both directions of a real write are allowed and nothing else is: xp
+    // moved, or the player crossed a level (which resets the remainder and can
+    // legitimately leave xp lower than it started, or equal to it).
+    const progAfter = await players.progressOf(null, a.pid);
+    ok(progAfter.xp !== xpBefore || progAfter.lvl > lvlBefore,
+      `досвід записаний у базу (${xpBefore} → ${progAfter.xp}, рівень ${lvlBefore} → ${progAfter.lvl})`);
     eq(victim.hp, 0, 'монстр справді мертвий на сервері');
   }
 

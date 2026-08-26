@@ -185,10 +185,21 @@ async function main() {
 
   // And prove the opening entry is what makes it so — the check has teeth.
   const { rows: led } = await pool().query(
-    `SELECT reason, delta FROM ledger WHERE player_id = $1 ORDER BY currency`, [full.playerId]);
+    `SELECT currency, reason, delta FROM ledger WHERE player_id = $1 ORDER BY currency`, [full.playerId]);
   eq(led.length, 3, 'три відкриваючі записи — золото, GRAM, Liberty');
   ok(led.every(l => l.reason === 'migration_opening'), 'усі позначені як migration_opening');
-  eq(Number(led.find(l => Number(l.delta) === 12500).delta), 12500, 'сума запису дорівнює перенесеному балансу');
+  // Found by CURRENCY, because `led.find(l => Number(l.delta) === 12500).delta`
+  // used the search term as the answer: whatever row satisfied the predicate
+  // was then asserted to satisfy it, so the only outcome that was not a PASS
+  // was no row matching at all — and that is a TypeError on `.delta`, which
+  // this file reports as НЕОБРОБЛЕНА ПОМИЛКА rather than as the balance the
+  // label names. Each of the three is now read by name and compared against the
+  // figure the old blob carried, which is the actual claim: an opening entry
+  // written for the wrong currency, or rounded, fails here.
+  const opening = (c) => { const r = led.find(l => l.currency === c); return r ? Number(r.delta) : null; };
+  eq(opening('gold'), 12500, 'відкриваючий запис золота дорівнює перенесеному балансу');
+  eq(opening('gram'), 7.25, 'і GRAM — до сотої');
+  eq(opening('nexum'), 0.0000015, 'і Liberty — до сьомого знаку');
 }
 
 async function cleanup() {

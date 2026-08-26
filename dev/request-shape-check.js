@@ -176,6 +176,24 @@ function main() {
   const sends = clientSends();
   const reads = serverReads();
 
+  // A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. The exit code below is
+  // `missing.length ? 1 : 0`, and `missing` is filled inside a loop over
+  // `sends.out` — so an empty scan exits 0 with a clean-looking report, and
+  // every way of emptying it is silent: the client moving off `socket.emit`,
+  // server/handlers2 renamed, one character wrong in a regex. That is what
+  // dev/api-check.js closed after walking sixty-two files, matching nothing
+  // and printing a cheerful PASS.
+  //
+  // Failing here rather than after the loop, because with nothing scanned the
+  // rest of the report is a description of an empty set.
+  if (sends.out.size < 40 || reads.out.size < 40) {
+    console.log(`${RED}сканування нічого не знайшло — зламана сама перевірка${OFF}`);
+    console.log(`  клієнт шле ${sends.out.size} подій · сервер читає ${reads.out.size}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(`  ${DIM}клієнт шле ${sends.out.size} подій · сервер читає ${reads.out.size}${OFF}\n`);
+
   let clean = 0;
   const missing = [];     // server reads it, client never sends it
   const unread = [];      // client sends it, server never reads it

@@ -191,17 +191,50 @@ async function main() {
 
   // ── the modes are actually running ───────────────────────────────────────
   console.log('  ── розклад режимів ──');
+  // `x && typeof x === 'object'` was the ONLY coverage these three modes had,
+  // and `{}` satisfies it — which is exactly what a factory that forgot to
+  // return its public state hands over, and exactly what the panel gets when
+  // one does. The two below them (Страх, Сотрудництво) were already written the
+  // other way, naming a field the client actually reads, so the shape of the
+  // fix is already in this file.
+  //
+  // Every name below is destructured in js/network.js's handler for that event
+  // and drawn by the Events panel. A missing `nextAt` is a countdown to 1970;
+  // a missing `phase` puts the whole panel in 'idle' and hides the button; a
+  // missing `attemptsLeft` reads as "unknown" forever. `await once(...)` above
+  // already proves the reply ARRIVED — what it never asked was what was in it.
+  const shape = (st, name, keys) => {
+    const missing = keys.filter(k => !(k in (st || {})));
+    ok(missing.length === 0, `${name} несе всі поля, які читає клієнт`,
+      `немає: ${missing.join(', ')}`);
+  };
+
   a.sock.emit('deathBattleSync');
   const dbState = await once(a.sock, 'deathBattleState');
-  ok(dbState && typeof dbState === 'object', 'битва на смерть відповідає своїм станом');
+  shape(dbState, 'битва на смерть', ['phase', 'startAt', 'nextAt', 'count', 'registered']);
+  ok(typeof dbState.phase === 'string' && Number.isFinite(dbState.nextAt) && dbState.nextAt > Date.now(),
+    `битва на смерть: фаза '${dbState.phase}', наступний старт через ${Math.round((dbState.nextAt - Date.now()) / 60000)} хв`);
 
   a.sock.emit('arena3Sync');
   const a3State = await once(a.sock, 'arena3State');
-  ok(a3State && typeof a3State === 'object', 'арена 3х3 відповідає своїм станом');
+  shape(a3State, 'арена 3х3', ['phase', 'nextAt', 'queued', 'needed', 'live',
+                               'minLevel', 'reward', 'maxAttempts', 'registered', 'inMatch', 'attemptsLeft']);
+  ok(typeof a3State.phase === 'string' && Number.isFinite(a3State.nextAt) && a3State.nextAt > Date.now()
+     && a3State.needed > 0,
+    `арена 3х3: фаза '${a3State.phase}', потрібно ${a3State.needed} гравців`);
 
   a.sock.emit('race10Sync');
   const r10 = await once(a.sock, 'race10State');
-  ok(r10 && typeof r10 === 'object', 'Кровава Башта відповідає своїм станом');
+  shape(r10, 'Кровава Башта', ['phase', 'nextAt', 'startAt', 'queued', 'capacity', 'minPlayers',
+                               'live', 'minLevel', 'reward', 'winReward', 'maxAttempts',
+                               'registered', 'inMatch', 'attemptsLeft']);
+  // capacity is counted from the map at request time (raceUsableLanes), so it
+  // is asserted as a number and not as a floor — a corridor that generated
+  // unusable this run is a map question, and this file is not the place it
+  // would be answered.
+  ok(typeof r10.phase === 'string' && Number.isFinite(r10.nextAt) && r10.nextAt > Date.now()
+     && Number.isFinite(r10.capacity),
+    `Кровава Башта: фаза '${r10.phase}', місць ${r10.capacity}`);
 
   a.sock.emit('fearSync');
   const fear = await once(a.sock, 'fearState');

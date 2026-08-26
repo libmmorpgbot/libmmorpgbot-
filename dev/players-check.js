@@ -13,6 +13,7 @@
 const { pool, tx, close } = require('../server/db');
 const players = require('../server/db/repos/players');
 const money = require('../server/db/repos/money');
+const { upgradeCost } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -125,13 +126,28 @@ async function main() {
   eq(rp.xp, 60, 'два одночасні нарахування досвіду не загубились');
   eq(rp.lvl, 1, 'рівень не піднявся — 60 менше за поріг 100');
 
+  // ── two budgets, not one ─────────────────────────────────────────────────
+  // A stat point costs GOLD as well as a point. upgradeCost() — 300 for the
+  // first point in a stat, 600 for the second, 900 for the third — sat in
+  // shared/definitions.js under a comment saying the server charges it, and no
+  // file in server/ referenced it: every point in the game was free from the
+  // PostgreSQL port until spendUpgrade started spending. The assertions below
+  // were written in that window and would now refuse for the wrong reason, so
+  // each fixture is funded past what it spends: what they are about is the
+  // POINT budget, and a test that runs out of money instead measures nothing.
+  const threeInOne = upgradeCost(0) + upgradeCost(1) + upgradeCost(2);   // 300 + 600 + 900
+
   // Upgrade budget: level 1 grants 3 points.
   const u = await mk('d');
+  await money.credit(null, u, 'gold', threeInOne + 10000, { reason: 'seed', idemKey: `${TAG}:upg-d` });
   for (let i = 0; i < 3; i++) ok(await tx(t => players.spendUpgrade(t, u, 'atk')) !== null, `очко ${i + 1} з 3 витрачено`);
   eq(await tx(t => players.spendUpgrade(t, u, 'def')), null, 'четверте очко понад бюджет — відмова');
+  eq(Number((await money.balancesOf(null, u)).gold), 10000,
+    `три очки коштували рівно ${threeInOne} золота`);
 
   // The race: one point left, two clicks.
   const v = await mk('e');
+  await money.credit(null, v, 'gold', threeInOne + 10000, { reason: 'seed', idemKey: `${TAG}:upg-e` });
   await tx(t => players.spendUpgrade(t, v, 'atk'));
   await tx(t => players.spendUpgrade(t, v, 'atk'));
   const race = await Promise.all([
@@ -141,6 +157,28 @@ async function main() {
   eq(race.filter(Boolean).length, 1, 'два кліки на останнє очко — проходить РІВНО один');
   const uu = (await players.progressOf(null, v)).upgrades;
   eq(uu.atk + uu.def + uu.hp, 3, 'витрачено рівно 3 очки, не 4');
+
+  // ── and the gold is a real gate, not a decoration ─────────────────────────
+  // The point budget above has been guarded since the port; the price has
+  // nothing watching it at all. Both halves of a refusal matter and they fail
+  // in different ways: money.spend() fuses the affordability test into its own
+  // UPDATE, so a purse one gold short must leave the purse alone AND leave the
+  // point unspent — a charge that happens after the stat is written is a free
+  // point, and a stat written after a failed charge is the same thing.
+  const w = await mk('g');
+  const first = upgradeCost(0);
+  await money.credit(null, w, 'gold', first - 1, { reason: 'seed', idemKey: `${TAG}:upg-poor` });
+  eq(await tx(t => players.spendUpgrade(t, w, 'atk')), null,
+    `очко за ${first} золота з ${first - 1} у кишені — відмова`);
+  eq((await players.progressOf(null, w)).upgrades.atk, 0, 'і очко НЕ витрачено');
+  eq(Number((await money.balancesOf(null, w)).gold), first - 1,
+    'і золото на місці — невдала купівля не списує нічого');
+  // One gold more and the same call goes through, so the refusal above is the
+  // PRICE and not something else standing in its way.
+  await money.credit(null, w, 'gold', 1, { reason: 'seed', idemKey: `${TAG}:upg-poor2` });
+  ok(await tx(t => players.spendUpgrade(t, w, 'atk')) !== null,
+    `рівно ${first} — і очко купується`);
+  eq(Number((await money.balancesOf(null, w)).gold), 0, 'списано рівно ціну, до нуля');
 
   // Skills cap at their maximum instead of climbing forever.
   const s = await mk('f');

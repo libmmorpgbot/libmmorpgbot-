@@ -176,7 +176,13 @@ async function main() {
   a.sock.emit('selectChar', { type: 'deathknight' });
   const start = await once(a.sock, 'gameStart', 12000);
   ok(!!start.spawn, 'персонаж має де зʼявитись');
-  ok((start.enemies || []).length >= 0, `у стартовому пакеті ${(start.enemies || []).length} ворогів`);
+  // `(start.enemies || []).length >= 0` is true for a missing field, a null,
+  // a number and an empty array alike — the `|| []` made sure of it. What the
+  // client needs is the ARRAY: it iterates `g.enemies` on every gameStart, and
+  // the hub legitimately has none, so the count cannot be the assertion and
+  // the type has to be.
+  ok(Array.isArray(start.enemies),
+    `у стартовому пакеті масив ворогів (${(start.enemies || []).length})`);
 
   // ── the world moves ──────────────────────────────────────────────────────
   // A floor with monsters on it. Whether they animate is the whole of
@@ -218,7 +224,35 @@ async function main() {
   await wait(300);
   ok(a.scr.corrections === 0,
     `сервер прийняв усі 70 кроків коридором (корекцій ${a.scr.corrections})`);
-  ok(a.scr.x - startX > 250, `гравець реально пройшов ${Math.round(a.scr.x - startX)}px`);
+
+  // ── where the SERVER thinks the player is ────────────────────────────────
+  // `a.scr.x - startX > 250` measured the loop above: it is this file that
+  // writes `a.scr.x += 5`, seventy times, and then reads it back. A server
+  // that dropped every 'mv' packet on the floor passed both assertions — no
+  // corrections, because it sent nothing, and 350px of travel, because the
+  // bot moved its own model.
+  //
+  // Nothing in the ordinary stream can settle it: gameState never carries a
+  // player's own entry back to their own socket (Room.js says so where it
+  // pushes pvpModeSync by hand for the same reason), so the client's idea of
+  // its own position is always local. posCorrect is the one packet that
+  // reports the server's copy — and one step off the edge of the map is
+  // guaranteed to produce it, because _isWall() calls everything outside the
+  // grid a wall and updatePlayerPos answers a refusal with the LAST GOOD
+  // POSITION. Which is the number wanted here.
+  // Read BEFORE the probe: the posCorrect handler in makeScreen re-anchors
+  // scr.x to whatever the server sent, so comparing the two afterwards would
+  // be comparing the reply against itself.
+  const screenX = a.scr.x;
+  const anchored = once(a.sock, 'posCorrect', 4000).catch(() => null);
+  a.sock.emit('mv', [Math.round((screenX + 500000) * 2), Math.round(a.scr.y * 2), 0, 100, 1]);
+  const anchor = await anchored;
+  ok(!!anchor, 'крок за межі карти повернувся корекцією — сервер узагалі читає пакети руху');
+  ok(anchor && anchor.x - startX > 250,
+    `і сервер справді пересунув гравця на ${Math.round((anchor ? anchor.x : startX) - startX)}px`);
+  ok(anchor && Math.abs(anchor.x - screenX) < 1,
+    `сервер і екран стоять в одній точці (${anchor && Math.round(anchor.x)} проти ${Math.round(screenX)})`);
+  a.scr.corrections = 0;      // the probe's own correction is not a rejected step
 
   await wait(1500);
   const nowAggro = [...a.scr.enemies.values()].filter(e => e.aggro).length;
@@ -261,7 +295,16 @@ async function main() {
   // assertion that depends on a die is one that will fail on a day when
   // nothing is wrong — after which nobody believes it. What must hold is that
   // whatever DID arrive matches the database, and that is checked below.
-  ok(a.scr.goldGained >= 0, `золото за бій: +${a.scr.goldGained}`);
+  //
+  // `goldGained >= 0` was not that assertion. goldGained starts at zero and
+  // only ever has `k.gold || 0` added to it, so it is >= 0 by construction and
+  // the line printed a number without asking anything of it. The claim that
+  // survives a zero roll is the ARITHMETIC: the running total the screen draws
+  // (set from each packet's goldTotal) has to be the starting balance plus the
+  // per-kill amounts those same packets reported. A goldTotal that disagrees
+  // with its own deltas is "золото то есть то нету" exactly.
+  eq(a.scr.gold, before.gold + a.scr.goldGained,
+    `екранний підсумок = початок + сума з пакетів (${before.gold} + ${a.scr.goldGained})`);
   ok(a.scr.xpGained > 0, `досвід за бій дійшов (+${a.scr.xpGained}) — «опыт не идёт»`);
 
   // ── the screen agrees with the truth ─────────────────────────────────────
@@ -282,9 +325,17 @@ async function main() {
   const { rows: pr } = await pool().query(
     'SELECT lvl, xp, potion_bag FROM player_progress WHERE player_id = $1', [madeId]);
   // The level was raised behind the client's back to reach a gated floor, so
-  // the screen legitimately lags until the next push. What must agree is what
-  // the server has TOLD it.
-  ok(a.scr.lvl >= 1, `рівень на екрані (${a.scr.lvl})`);
+  // the screen legitimately lags until the next push. `a.scr.lvl >= 1` said
+  // nothing about that: scr.lvl starts at 1 and is only ever replaced by a
+  // number the server sent, so it could not go below 1 and the line was a
+  // decoration on the section that is actually about screen-versus-truth.
+  //
+  // The lag has a DIRECTION, and only one of the two is a bug. Behind the
+  // database is the client waiting for its next xpSync; AHEAD of it is a level
+  // the server never granted — the same shape as the gold that was on screen
+  // and not in the ledger, which is what this whole section exists for.
+  ok(a.scr.lvl <= Number(pr[0].lvl),
+    `рівень на екрані (${a.scr.lvl}) не випереджає базу (${pr[0].lvl})`);
 
   // ── the quest chain ──────────────────────────────────────────────────────
   // Two players earned 174,000 gold between them with quest 1 of 60 still
@@ -511,10 +562,28 @@ async function main() {
   if (revived) {
     eq(revived.floor, 1, 'воскресіння повертає в хаб');
     ok(!!revived.spawn, 'і каже, де стати');
+    // `!revived.spawn || moved > 200 || deathFloor !== revived.floor` could
+    // never fail. A respawn ALWAYS changes floor — you die in an arm and come
+    // back in the hub, which the assertion two lines above pins down — so the
+    // third disjunct was true on every run and the distance, the only half
+    // that describes the report, was never looked at.
+    //
+    // "При смерти делаешь тп — кидает в то же место, где умер" is the new
+    // floor written beside the OLD coordinates, and coordinates are a plain
+    // number pair with no floor attached: the hub's spawn is (1380, 1380) and
+    // an arm's is (500, 6780), five thousand pixels apart, so carrying them
+    // across is visible here and nothing else is within a screen of it.
+    // The scenario's own precondition, asserted rather than assumed: the bot
+    // died on an arm and came back to the hub. If a future edit ever has it die
+    // IN the hub, the distance below stops meaning what its label says, and
+    // this is the line that notices instead of quietly going green.
+    ok(deathFloor !== revived.floor,
+      `смерть сталася не в хабі (поверх ${deathFloor} → ${revived.floor})`);
+    // -1 with no spawn at all, so a missing point fails here rather than
+    // throwing a TypeError the runner reports as НЕОБРОБЛЕНА ПОМИЛКА.
     const moved = revived.spawn
-      ? Math.hypot(revived.spawn.x - diedAt.x, revived.spawn.y - diedAt.y) : 0;
-    ok(!revived.spawn || moved > 200 || deathFloor !== revived.floor,
-      `це не те місце, де помер (${Math.round(moved)}px від трупа)`);
+      ? Math.hypot(revived.spawn.x - diedAt.x, revived.spawn.y - diedAt.y) : -1;
+    ok(moved > 200, `це не те місце, де помер (${Math.round(moved)}px від трупа)`);
   }
   await wait(700);
   const { rows: after } = await pool().query(
@@ -549,7 +618,15 @@ async function main() {
   eq(b.scr.gold, goldNow, `золото на місці після перезаходу (${b.scr.gold})`);
   eq(b.scr.lvl, pr[0].lvl, `після перезаходу рівень з бази (${b.scr.lvl})`);
   eq(b.scr.potions.pt1, potsBeforeReload, 'зілля на місці');
-  ok(b.scr.inventory.length >= 0, `інвентар прийшов (${b.scr.inventory.length} предметів)`);
+  // `inventory.length >= 0` is true of every array there has ever been,
+  // including the empty one a login that sent no inventory at all produces —
+  // which is the failure being claimed against. What the reload has to bring
+  // back is the rows that are in the database, counted.
+  const { rows: invRows } = await pool().query(
+    `SELECT count(*)::int n FROM player_items
+      WHERE player_id = $1 AND container = 'inventory'`, [madeId]);
+  eq(b.scr.inventory.length, invRows[0].n,
+    `інвентар прийшов повністю (${b.scr.inventory.length} предметів, у базі ${invRows[0].n})`);
 
   b.sock.emit('selectChar', { type: 'deathknight' });
   const back = await once(b.sock, 'gameStart', 12000);

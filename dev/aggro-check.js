@@ -167,10 +167,17 @@ function main() {
   const outside = snap.filter(e => !e.isBoss
     && Math.hypot(e.x - p.x, e.y - p.y) > ENEMY_AOI_R);
   console.log(`    ${snap.length} ворогів у знімку, радіус інтересу ${ENEMY_AOI_R}px`);
+  // AN EMPTY SNAPSHOT PASSES BOTH ASSERTIONS BELOW: nothing is outside the
+  // radius when there is nothing at all, and `0 >= 0` holds. And an empty
+  // snapshot is the exact failure they are here to catch — a player arriving
+  // on a floor and being told about no monsters is what "монстры багнутые"
+  // looked like from the inside. The count printed a line above was never a
+  // condition for anything, so it is one now.
+  ok(snap.length > 0, `знімок непорожній (${snap.length} ворогів) — інакше перевіряти нічого`);
   eq(outside.length, 0, 'у знімку немає нікого поза радіусом, кого потік ніколи не оновить');
 
   const known = p._eKnown.size;
-  ok(known >= snap.length,
+  ok(known >= snap.length && known > 0,
     `сервер запамʼятав, що вже надіслав (${known} записів на ${snap.length} у знімку)`);
 
   room._stopLoop();

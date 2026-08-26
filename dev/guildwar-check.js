@@ -137,8 +137,10 @@ async function main() {
   eq(world.resolveFloor(FLOOR_IDS.guildWar, high), FLOOR_IDS.guildWar,
     'тепер у зону пускає');
 
-  // No clan — refused.
-  const solo = await mkPlayer('solo');
+  // No clan — refused. The account itself is only needed so that mkPlayer
+  // registers it for cleanup; the refusal is decided from the ROOM record,
+  // which is added clanless on the next line.
+  await mkPlayer('solo');
   room.addPlayer('sock_s', `${TAG}_s`, null, null, 0, `${TAG}-solo`, null);
   room.setPlayerChar('sock_s', 'deathknight');
   room.setPlayerStats('sock_s', { atk: 999, def: 1, maxHp: 100, hp: 100, critChance: 0, critPower: 1, atkSpeed: 1, hpRegen: 0 });
@@ -206,7 +208,16 @@ async function main() {
 
   room.removePlayer('sock_a');
   room.removePlayer('sock_s');
-  ok(true, `гравці прибрані з кімнати (${solo ? '' : ''}ок)`);
+  // `ok(true, ...)`, with a message that interpolated `solo ? '' : ''` — two
+  // empty strings, so not even the text it printed could vary with anything.
+  // It stood over the one call that used to be missing altogether: nothing
+  // removed a departing player from a room, so a body stayed on the floor for
+  // everyone else and the monsters kept chasing it. Two test players left
+  // behind here also outlive this file — the guild-war room is the real one
+  // from server/world.js and it is not rebuilt between suites, so the next one
+  // to look at that floor sees them.
+  ok(!room.players.has('sock_a') && !room.players.has('sock_s'),
+    `гравці прибрані з кімнати (лишилось ${room.players.size})`);
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

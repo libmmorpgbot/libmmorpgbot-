@@ -16,8 +16,9 @@
 const { pool, tx, close } = require('../server/db');
 const items = require('../server/db/repos/items');
 const players = require('../server/db/repos/players');
+const money = require('../server/db/repos/money');
 const stats = require('../server/db/repos/stats');
-const { CHAR_DEF, ITEM_DEF, enhanceBonus } = require('../shared/definitions');
+const { CHAR_DEF, ITEM_DEF, enhanceBonus, upgradeCost } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -25,6 +26,13 @@ function ok(c, name, detail) {
   else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? ` — ${detail}` : ''}`); }
 }
 const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, отримав ${JSON.stringify(a)}`);
+// The SQLSTATE of whatever was raised, or null if nothing was — the helper
+// dev/market-check.js uses. `try { … flag = true } catch {}` passes on ANY
+// error, so it proves a constraint exists exactly as well as a typo in the
+// statement does.
+const caught = async (fn) => { try { await fn(); return null; } catch (e) { return e.code || e.message; } };
+const FK = '23503';          // foreign_key_violation
+const CHECK_VIOLATION = '23514';
 
 const TAG = 'st-' + String(process.pid).slice(-5);
 const made = [];
@@ -82,20 +90,19 @@ async function main() {
   eq((await stats.of(null, p)).atk, before, 'ATK не змінився після спроби');
 
   // 3. Invent an item id that is in the catalog but was never granted.
-  let invented = false;
-  try {
-    await pool().query(
-      `INSERT INTO player_items (player_id, container, slot, item_id) VALUES ($1,'equipment','helmet',$2)`,
-      [p, 'no_such_item_id']);
-    invented = true;
-  } catch { /* FK */ }
-  ok(!invented, 'вигаданий id предмета відхиляє зовнішній ключ');
+  eq(await caught(() => pool().query(
+    `INSERT INTO player_items (player_id, container, slot, item_id) VALUES ($1,'equipment','helmet',$2)`,
+    [p, 'no_such_item_id'])),
+  FK, 'вигаданий id предмета відхиляє ЗОВНІШНІЙ КЛЮЧ (23503)');
 
   // 4. Raise the enhancement past the game's ceiling.
-  let overEnhanced = false;
-  try { await pool().query('UPDATE player_items SET enhance = 99 WHERE id = $1', [row]); overEnhanced = true; }
-  catch { /* CHECK */ }
-  ok(!overEnhanced, 'заточка понад +15 відхиляється базою');
+  // By SQLSTATE, because the two `try { … flag = true } catch {}` blocks above
+  // this one were passing on any error at all: a column renamed, a table
+  // renamed, the connection already closed by an earlier failure — every one
+  // of them left the flag false and the assertion green, over a constraint
+  // that might not exist. 23514 is player_items_enhance_check specifically.
+  eq(await caught(() => pool().query('UPDATE player_items SET enhance = 99 WHERE id = $1', [row])),
+    CHECK_VIOLATION, 'заточка понад +15 відхиляється CHECK-обмеженням бази (23514)');
 
   // ── the enhancement that IS owned counts exactly ─────────────────────────
   await pool().query('UPDATE player_items SET enhance = 5 WHERE id = $1', [row]);
@@ -107,10 +114,25 @@ async function main() {
   console.log('  ── очки характеристик ──');
   const withUpg = await mk('upg');
   const base = (await stats.of(null, withUpg)).atk;
+  // A stat point COSTS GOLD now — upgradeCost(level), 300 for the first point
+  // in a stat, 600 for the second, 900 for the third. It always did in
+  // shared/definitions.js; nothing in server/ read it until spendUpgrade
+  // started charging it, and these two assertions were written when every
+  // point was free. Funded well past the 1800 the three below cost, so that
+  // the fourth is refused for the reason this section names — the BUDGET —
+  // and not for an empty purse, which would be the same PASS for the wrong
+  // reason.
+  const threePoints = upgradeCost(0) + upgradeCost(1) + upgradeCost(2);
+  await money.credit(null, withUpg, 'gold', threePoints + 10000,
+    { reason: 'seed', idemKey: `${TAG}:upg-gold` });
   for (let i = 0; i < 3; i++) await tx(t => players.spendUpgrade(t, withUpg, 'atk'));
   eq((await stats.of(null, withUpg)).atk, base + 3, '3 витрачені очки дали рівно +3 ATK');
+  eq(Number((await money.balancesOf(null, withUpg)).gold), 10000,
+    `три очки коштували рівно ${threePoints} золота`);
   await tx(t => players.spendUpgrade(t, withUpg, 'atk'));   // over budget, refused
   eq((await stats.of(null, withUpg)).atk, base + 3, 'очко понад бюджет нічого не додало');
+  eq(Number((await money.balancesOf(null, withUpg)).gold), 10000,
+    'і золота за нього не взяли — відмова по бюджету списань не робить');
 
   // ── the codex bonus, which the old server computation omitted ────────────
   console.log('  ── кодекс ──');

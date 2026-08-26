@@ -122,6 +122,23 @@ for (const f of FILES) {
 }
 
 console.log(`  ── ${scanned} інтерполяцій усередині HTML-літералів, ${FILES.length} файлів ──`);
+
+// A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. The number above was
+// printed and never asserted on, so every way of breaking the scanner itself —
+// a template-literal walker that loses its place on one escaped backtick, a
+// `js/` that has moved, a build step that minifies in place — came out as
+// "жоден текст не потрапляє в HTML без екранування" over nothing at all. That
+// is the same failure dev/api-check.js closed after walking sixty-two files,
+// matching zero call sites and printing a cheerful PASS: a check asserting that
+// something it never looked at is fine.
+//
+// The floor is far under the real figure (~1500 interpolations across 22
+// files), so it cannot be tripped by ordinary edits — only by a scanner that
+// has stopped working.
+ok(scanned > 300 && FILES.length > 10,
+  `є що перевіряти — ${scanned} інтерполяцій у ${FILES.length} файлах`,
+  'сканування нічого не знайшло — зламана сама перевірка');
+
 ok(findings.length === 0,
   'жоден текст, який пише інший гравець, не потрапляє в HTML без екранування',
   findings.length ? `\n${findings.map(x => `        ${x.file}:${x.line}  (${x.fields.join(',')})  ${x.expr}`).join('\n')}` : '');
@@ -149,8 +166,16 @@ const clanSrc = fs.readFileSync(path.join(ROOT, 'js/clans.js'), 'utf8');
   // "&lt;" arrives on screen as literal text instead of a "<".
   const iAmp = body.indexOf('&amp;'), iLt = body.indexOf('&lt;');
   ok(iAmp >= 0 && iLt >= 0 && iAmp < iLt, '_escHtml екранує & ПЕРШИМ');
-  ok(!/String\(s\)\.replace/.test(body) || /String\(/.test(body),
-    '_escHtml приводить до рядка — number.replace кинув би виняток');
+  // `!/String\(s\)\.replace/.test(body) || /String\(/.test(body)` was true for
+  // every possible body ever written: if the first pattern matched then the
+  // body contains `String(` and the second is true, and if it did not then the
+  // negation is. It could not fail, so it said nothing about the thing it is
+  // named for. What it must actually refuse is `.replace` reached for on the
+  // raw argument — a username Telegram hands over as a number, or an item
+  // count, and `_escHtml` throws inside the template literal that was building
+  // the panel, taking the whole render with it.
+  ok(/String\(\s*s\s*\)\s*\.replace/.test(body) && !/(^|[^\w$.])s\s*\.replace/.test(body),
+    '_escHtml приводить до рядка ПЕРЕД .replace — number.replace кинув би виняток');
 }
 
 const attrBody = bodyOf(netSrc, '_escAttr');

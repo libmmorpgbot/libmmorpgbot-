@@ -34,15 +34,26 @@ const io = require('socket.io-client');
 const { boot, shutdown, server } = require('../server/app');
 const { pool, close } = require('../server/db');
 
-let pass = 0, fail = 0; const failures = [];
+let pass = 0, fail = 0, skipped = 0; const failures = [];
 function ok(c, name, detail) {
   if (c) { pass++; console.log(`  \x1b[32mPASS\x1b[0m  ${name}`); }
   else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? ` — ${detail}` : ''}`); }
 }
+// A CHECK THE MAP MADE IMPOSSIBLE IS NOT A CHECK THAT PASSED. The two
+// movement cases below depend on what the floor generator produced this run,
+// and both used to take `ok(true, '… — пропущено')` when it produced the wrong
+// thing — a green line, counted in the total, for a step nobody took. This
+// prints the skip and stays out of both counters, so the number at the end is
+// the number of questions actually answered.
+function skip(name) { skipped++; console.log(`  \x1b[33mSKIP\x1b[0m  ${name} — НЕ перевірено`); }
 const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, отримав ${JSON.stringify(a)}`);
 
 const TAG = 'boot-' + String(process.pid).slice(-5);
 const TG_ID = '9' + String(process.pid).padStart(9, '0');
+// A SECOND account, never logged in, that exists only to own one item row. The
+// ownership check on equipItem cannot be exercised without a row that really
+// belongs to somebody else — see the equip section below.
+const TG_ID2 = '8' + String(process.pid).padStart(9, '0');
 
 // Real initData, signed the way Telegram signs it. The server verifies it with
 // verifyTelegramWebApp and has no idea this is a test — which is the point.
@@ -156,6 +167,7 @@ async function main() {
   const { rows: pid } = await pool().query('SELECT id FROM players WHERE telegram_id = $1', [TG_ID]);
   const playerId = Number(pid[0].id);
   const items = require('../server/db/repos/items');
+  const players = require('../server/db/repos/players');
   const { tx } = require('../server/db');
   const rowId = await tx(async t => { await items.lockPlayer(t, playerId); return items.add(t, playerId, 'sw1'); });
 
@@ -174,12 +186,51 @@ async function main() {
   const xp = await once(sock, 'xpSync');
   ok(Number.isFinite(xp.lvl) && Number.isFinite(xp.xpNext), 'xpSync несе рівень і криву');
 
-  // A row that is not theirs, named the way a future client would.
-  sock.emit('equipItem', { rowId: 999999999 });
-  const e = await Promise.race([once(sock, 'itemError'), new Promise(r => setTimeout(() => r(null), 1200))]);
-  ok(e === null || !!e, 'чужий рядок нічого не вдягає');
-  const inv2 = await new Promise(r => { sock.emit('clanRequest'); setTimeout(() => r(true), 300); });
-  ok(inv2, 'сесія жива після відхиленого запиту');
+  // ── a row that is not theirs ─────────────────────────────────────────────
+  // The probe used to be `{ rowId: 999999999 }`, and it proved less than it
+  // looked: an id that exists nowhere is turned away by `SELECT ... WHERE id =
+  // $1` for want of any row at all, so it never reaches the `AND player_id =
+  // $2` that is the actual ownership rule. This row EXISTS and has an owner,
+  // which is the only way to ask the question.
+  //
+  // The assertion was worse than the probe: `ok(e === null || !!e, ...)` is
+  // "either an error arrived or one did not", true on every possible run, and
+  // it never looked at where the row ended up. Deleting `AND player_id = $2`
+  // from items.resolveRow left this green. So the row itself is where the
+  // answer is read from now, on both sides — the stranger keeps their sword,
+  // and this account keeps the one it owns in the weapon slot.
+  const strangerId = (await tx(t => players.ensure(t, TG_ID2, `${TAG}_x`))).id;
+  const strangerRow = await tx(async t => {
+    await items.lockPlayer(t, strangerId);
+    return items.add(t, strangerId, 'sw2');
+  });
+  sock.emit('equipItem', { rowId: strangerRow });
+  await new Promise(r => setTimeout(r, 1200));
+  const { rows: stray } = await pool().query(
+    'SELECT player_id, container, slot FROM player_items WHERE id = $1', [strangerRow]);
+  ok(stray.length === 1 && Number(stray[0].player_id) === strangerId
+     && stray[0].container === 'inventory' && stray[0].slot === null,
+    'чужий рядок лишився в чужому інвентарі',
+    JSON.stringify(stray[0]));
+  const { rows: worn } = await pool().query(
+    `SELECT id FROM player_items
+      WHERE player_id = $1 AND container = 'equipment' AND slot = 'weapon'`, [playerId]);
+  ok(worn.length === 1 && Number(worn[0].id) === rowId,
+    'а в слоті зброї лишився власний меч, а не чужий');
+
+  // The session has to survive a refused action. This used to be
+  // `new Promise(r => { sock.emit('clanRequest'); setTimeout(() => r(true), 300) })`
+  // — a timer resolving true 300ms later, which it does just as happily with
+  // the socket dead and the server gone. clanRequest ANSWERS, with clanData:
+  // null for an account with no clan, which is what this one should get. The
+  // reply arriving at all is the thing being claimed, so the reply is what is
+  // waited for.
+  const clanReply = new Promise(r => {
+    const t = setTimeout(() => r(false), 4000);
+    sock.once('clanData', () => { clearTimeout(t); r(true); });
+  });
+  sock.emit('clanRequest');
+  ok(await clanReply, 'сесія жива після відхиленого запиту — clanRequest відповів');
 
   // ── the handlers ported in this pass ─────────────────────────────────────
   console.log('  ── прогресія і соціальне ──');
@@ -302,7 +353,7 @@ async function main() {
     ok(!!corr, 'крок у стіну повернув posCorrect замість мовчазного прийняття');
     eq(me.x, wasX, 'сервер не зрушив гравця в стіну');
   } else {
-    ok(true, 'стін на цьому поверсі не знайшлось — пропущено');
+    skip('крок у стіну: стін на цьому поверсі не знайшлось');
   }
 
   // Ordinary movement is accepted with no correction.
@@ -311,7 +362,7 @@ async function main() {
     sock.emit('playerMove', { x: okSpot.x, y: okSpot.y, facing: 'right', moving: true });
     const noCorr = await once(sock, 'posCorrect', 800).catch(() => null);
     ok(!noCorr, 'звичайний крок пройшов без корекції');
-  } else { ok(true, 'вільного сусіднього тайла немає — пропущено'); }
+  } else { skip('звичайний крок: вільного сусіднього тайла немає'); }
 
   // Entering a gated floor at level 1 must be refused rather than silently
   // dropping the player in the hub.
@@ -344,9 +395,14 @@ async function main() {
 
 async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
-  const { rows } = await pool().query('SELECT id FROM players WHERE telegram_id = $1', [TG_ID]).catch(() => ({ rows: [] }));
+  // BOTH accounts: the one that played and the stranger whose only purpose was
+  // to own one sword. Leaving the second behind would strand an item row and a
+  // players row per run.
+  const { rows } = await pool()
+    .query('SELECT id FROM players WHERE telegram_id = ANY($1)', [[TG_ID, TG_ID2]])
+    .catch(() => ({ rows: [] }));
   if (rows.length) {
-    const id = [Number(rows[0].id)];
+    const id = rows.map(r => Number(r.id));
     for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs',
                      'player_progress', 'ledger', 'balances', 'gram_tx']) {
       await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [id]);
@@ -361,7 +417,7 @@ main()
     await cleanup();
     try { server.close(); } catch { /* already closing */ }
     await close();
-    console.log(`\n  ${pass} пройшло, ${fail} впало`);
+    console.log(`\n  ${pass} пройшло, ${fail} впало${skipped ? `, ${skipped} пропущено (НЕ перевірено)` : ''}`);
     if (failures.length) console.log('  впали: ' + failures.join(' · '));
     process.exit(fail ? 1 : 0);
   });

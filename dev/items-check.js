@@ -17,6 +17,16 @@ function ok(c, name, detail) {
   else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? ` — ${detail}` : ''}`); }
 }
 const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, отримав ${JSON.stringify(a)}`);
+// The SQLSTATE of whatever was raised, or null if nothing was. The same helper
+// dev/market-check.js uses, for the same reason: `try { … flag = true } catch
+// {}` passes on ANY error, including the ones the test itself put there — a
+// mistyped column, a table renamed since, a connection that had already gone.
+// The three constraints checked below are the ones players' items depend on,
+// and "something threw" is not evidence that any of them exists.
+const caught = async (fn) => { try { await fn(); return null; } catch (e) { return e.code || e.message; } };
+// PostgreSQL class 23 — integrity_constraint_violation.
+const FK = '23503';          // foreign_key_violation
+const UNIQ = '23505';        // unique_violation
 
 const TAG = 'ichk-' + process.pid;
 const made = [];
@@ -47,21 +57,16 @@ async function main() {
 
   // ── 1. an unknown item id must be impossible, not filtered ───────────────
   const p = await mkPlayer('a');
-  let refusedFake = false;
-  try {
-    await pool().query(
-      `INSERT INTO player_items (player_id, container, item_id) VALUES ($1,'inventory','no_such_item')`, [p]);
-  } catch { refusedFake = true; }
-  ok(refusedFake, 'предмет із неіснуючим id відхиляється зовнішнім ключем');
+  eq(await caught(() => pool().query(
+    `INSERT INTO player_items (player_id, container, item_id) VALUES ($1,'inventory','no_such_item')`, [p])),
+  FK, 'предмет із неіснуючим id відхиляється ЗОВНІШНІМ КЛЮЧЕМ (23503)');
 
   // ── 2. a catalog row with live items cannot be deleted ───────────────────
   // This is the half that protects players: a catalog edit must not be able to
   // destroy copies people already own.
   await tx(async t => { await items.lockPlayer(t, p); await items.add(t, p, SWORD); });
-  let deletedCat = false;
-  try { await pool().query('DELETE FROM item_catalog WHERE item_id = $1', [SWORD]); deletedCat = true; }
-  catch { /* expected */ }
-  ok(!deletedCat, 'запис каталогу з живими предметами неможливо видалити');
+  eq(await caught(() => pool().query('DELETE FROM item_catalog WHERE item_id = $1', [SWORD])),
+    FK, 'запис каталогу з живими предметами неможливо видалити (23503)');
 
   // ── 3. stacking ──────────────────────────────────────────────────────────
   await tx(async t => {
@@ -99,10 +104,13 @@ async function main() {
     return [await items.add(t, q, SWORD), await items.add(t, q, SWORD)];
   });
   await tx(t => items.moveTo(t, w1, q, 'equipment', 'weapon'));
-  let second = true;
-  try { await tx(t => items.moveTo(t, w2, q, 'equipment', 'weapon')); }
-  catch { second = false; }
-  ok(!second, 'другий предмет у зайнятий слот екіпіровки — відхилено базою');
+  // player_items_equip_slot_key — the partial UNIQUE index on (player_id, slot)
+  // WHERE container='equipment'. Naming the code is what makes this a test of
+  // that index rather than of "the second call threw": items.moveTo has three
+  // throws of its own before it reaches SQL at all, and any of them would have
+  // satisfied the old `catch { second = false }` while the index was gone.
+  eq(await caught(() => tx(t => items.moveTo(t, w2, q, 'equipment', 'weapon'))),
+    UNIQ, 'другий предмет у зайнятий слот екіпіровки — відхилено УНІКАЛЬНИМ ІНДЕКСОМ (23505)');
 
   inv = await items.inventoryOf(null, q);
   eq(Object.keys(inv.equipment).length, 1, 'в екіпіровці лишився рівно один');

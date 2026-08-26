@@ -25,6 +25,16 @@ function ok(cond, name, detail) {
   else { fail++; failures.push(name); console.log(`  \x1b[31mFAIL\x1b[0m  ${name}${detail ? ` — ${detail}` : ''}`); }
 }
 const eq = (a, b, name) => ok(a === b, name, `очікував ${b}, отримав ${a}`);
+// The SQLSTATE of whatever was raised, or null if nothing was. Same helper
+// dev/market-check.js calls `caught`, and for the same reason: `try { … flag =
+// true } catch {}` passes on any error at all, including the ones the test
+// itself introduced, so what it proves is "something went wrong somewhere".
+//
+// Named `sqlstate` rather than `caught` because main() already has a local
+// `caught` — the drifted account reconcile() found — and a const inside the
+// function shadows this one for the whole of it, so the calls at the bottom
+// would have reached for an object and thrown TypeError instead of asserting.
+const sqlstate = async (fn) => { try { await fn(); return null; } catch (e) { return e.code || e.message; } };
 
 // Test accounts, torn down at the end. The tag makes them findable if a run is
 // killed halfway and leaves rows behind.
@@ -155,10 +165,18 @@ async function main() {
   // Verified here as well as in verify.sql, because this is the guarantee the
   // reconciler's entire value rests on: if the app can rewrite history, the
   // check above compares a number against a number the same process wrote.
-  let rewrote = false;
-  try { await pool().query(`UPDATE ledger SET delta = 0 WHERE idem_key = $1`, [`${TAG}:c1`]); rewrote = true; }
-  catch { /* expected */ }
-  ok(!rewrote, 'застосунок не може переписати леджер');
+  // BY SQLSTATE, not by "it threw". `try { … rewrote = true } catch {}` passes
+  // on every error there is, including the ones this line could contain: write
+  // `SET delat = 0` and PostgreSQL raises 42703 undefined_column, the catch
+  // eats it, `rewrote` stays false, and the append-only guarantee that the
+  // reconciler's entire value rests on is proved by a typo in the test. 42501
+  // — insufficient_privilege — is the only answer that means the REVOKE in
+  // server/db/migrate.sh is actually holding, and it is also the answer that
+  // stops meaning it the day this connects as a role that owns the table.
+  eq(await sqlstate(() => pool().query('UPDATE ledger SET delta = 0 WHERE idem_key = $1', [`${TAG}:c1`])),
+    '42501', 'застосунок не може ПЕРЕПИСАТИ леджер — REVOKE UPDATE тримає');
+  eq(await sqlstate(() => pool().query('DELETE FROM ledger WHERE idem_key = $1', [`${TAG}:c1`])),
+    '42501', 'і не може ВИДАЛИТИ рядок — без цього історію можна просто вкоротити');
 }
 
 async function cleanup() {

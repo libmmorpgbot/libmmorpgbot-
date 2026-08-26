@@ -148,7 +148,23 @@ async function main() {
   for (const t of traders) for (const l of lots) {
     attempts.push(txRetry(x => market.buy(x, t, l.listingId)).catch(() => null));
   }
-  await Promise.all(attempts);
+  const outcomes = await Promise.all(attempts);
+
+  // EVERY ONE OF THESE IS `.catch(() => null)`, and it has to be: thirty of the
+  // thirty-six are meant to fail — own_lot for the six a trader owns, not_found
+  // for whichever the winner already took. But conservation is preserved just
+  // as exactly by a buy path that is entirely DOWN. Nothing moves, the count
+  // below is unchanged, and the line printed says "після 36 одночасних покупок
+  // предметів рівно стільки ж" over thirty-six exceptions the catch ate.
+  //
+  // So the storm is asserted to have been a storm. Six lots and five eligible
+  // buyers each: normally all six change hands, and the floor is one, because
+  // what is under test here is conservation under concurrency and not the
+  // scheduler's choices.
+  const bought = outcomes.filter(Boolean).length;
+  ok(bought > 0,
+    `${bought} із ${lots.length} лотів справді куплено за ${attempts.length} одночасних спроб`,
+    'жодна покупка не пройшла — інваріант нижче міряє нерухому базу');
 
   const itemsAfter = (await pool().query(scoped, [traders])).rows[0].n;
   eq(itemsAfter, itemsBefore, `після ${attempts.length} одночасних покупок предметів рівно стільки ж (${itemsBefore})`);

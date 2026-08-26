@@ -59,21 +59,31 @@ function resolve(from, spec) {
 // Breadth-first over `require('...')` occurrences. Dynamic requires inside a
 // function body count — several modules require lazily to break a cycle, and
 // a lazy require loads the file just as surely as a top-level one does.
+//
+// A FILE THAT CANNOT BE READ IS REPORTED, not skipped. `catch { continue }`
+// swallowed it, and the first file in the queue is the entrypoint: rename
+// server/app.js and the walk ends immediately with a set of one, every RETIRED
+// pattern matches nothing, and this prints PASS over a graph it never opened.
+// Nothing else can produce a read error here either — resolve() has already
+// confirmed the file exists before anything is queued — so an unreadable file
+// is a broken run and says so.
 function reachableFrom(entry) {
   const seen = new Set();
+  const unreadable = [];
   const queue = [entry];
   while (queue.length) {
     const f = queue.shift();
     if (seen.has(f)) continue;
     seen.add(f);
     let src;
-    try { src = fs.readFileSync(path.join(ROOT, f), 'utf8'); } catch { continue; }
+    try { src = fs.readFileSync(path.join(ROOT, f), 'utf8'); }
+    catch (err) { unreadable.push(`${f} (${err.code || err.message})`); continue; }
     for (const m of src.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
       const r = resolve(f, m[1]);
       if (r) queue.push(r);
     }
   }
-  return seen;
+  return { seen, unreadable };
 }
 
 function allUnder(dir) {
@@ -90,8 +100,21 @@ function allUnder(dir) {
 
 console.log('\nreachable-check\n');
 
-const live = reachableFrom(ENTRY);
+const { seen: live, unreadable } = reachableFrom(ENTRY);
 console.log(`  ${ENTRY} loads ${live.size} files\n`);
+
+// A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS. The count above was
+// printed and never asserted on, so a walk that collapsed to the entrypoint
+// alone — a renamed server/app.js, a require() spelling this regex stops
+// recognising — came out as "жоден файл старої збірки не завантажується": true,
+// vacuously, about a graph of one file. The floor is far below the real figure
+// (60), so ordinary growth and ordinary deletion never reach it.
+ok(unreadable.length === 0,
+  'кожен файл у графі прочитано',
+  unreadable.join(', '));
+ok(live.size > 30,
+  `є що перевіряти — обійдено ${live.size} файлів від ${ENTRY}`,
+  'сканування нічого не знайшло — зламана сама перевірка');
 
 const leaked = [...live].filter(f => RETIRED.some(re => re.test(f))).sort();
 ok(leaked.length === 0,
@@ -112,8 +135,15 @@ for (const f of dead) {
 // A file that is neither loaded nor part of the retired build is dead code —
 // reported, not failed, because "written for something not finished yet" is a
 // legitimate reason for it to be there.
-ok(true, `поза старою збіркою не використовується ${unexpected.length} файлів`
-  + (unexpected.length ? ` (${unexpected.join(', ')})` : ''));
+//
+// So it is a LINE, not an assertion. It was `ok(true, ...)`, which is the same
+// information filed under a green PASS — and a run whose count of passes
+// includes one that cannot fail is a run whose count of passes means less than
+// it says. The two assertions above are what this file actually gates on.
+console.log(`\n  ${unexpected.length
+  ? `\x1b[33mдо відома\x1b[0m  поза старою збіркою не використовується `
+    + `${unexpected.length} файлів (${unexpected.join(', ')})`
+  : 'поза старою збіркою не використовується жодного файла'}`);
 
 // The entrypoint the packaging claims, versus the one that runs. Stated rather
 // than enforced: `npm start` booting the retired build is a trap worth naming.

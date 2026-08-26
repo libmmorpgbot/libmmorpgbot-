@@ -102,11 +102,18 @@ function main() {
   anyEnemy.x += 3;                                   // something to report
   const second = castFor(room, 'a', 4);
   const secondFull = second.entries.filter(e => e.eid !== undefined);
+  // A CAST THAT CARRIES NOTHING SATISFIES EVERY LINE BELOW: `0 < first.length`
+  // is true, and `[].every(...)` is true. And a stream that has gone silent is
+  // the failure this section is named for — the enemy who moved three pixels
+  // one line above has to be in here. So the size is asked first, and only
+  // then whether it is a delta.
+  ok(second.entries.length > 0,
+    `другий каст щось несе (${second.entries.length} записів) — порожній потік це не дельта, а тиша`);
   ok(secondFull.length < first.entries.length,
     `другий каст уже не повний (${secondFull.length} повних з ${second.entries.length})`);
   const d2 = decodeGameState(second.buf);
-  ok(d2.enemies.every(e => typeof e.id === 'string' && e.id.length > 0),
-    'і дельти теж розшифровуються — handle вже відомий');
+  ok(d2.enemies.length > 0 && d2.enemies.every(e => typeof e.id === 'string' && e.id.length > 0),
+    `і дельти теж розшифровуються (${d2.enemies.length}) — handle вже відомий`);
 
   // ── and the OTHER thing _eKnown answers ──────────────────────────────────
   // viewersOfEnemy reads the same map to decide who is told a corpse fell. A

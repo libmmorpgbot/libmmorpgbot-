@@ -159,7 +159,23 @@ async function main() {
 
   // Only the warlock has it. A ranger casting it must heal nobody, or the
   // class restriction is decoration.
-  const notHealed = once(a.sock, 'healPartyMember', 1500).catch(() => null);
+  //
+  // THE WARLOCK HAS TO BE HURT FOR THIS TO MEAN ANYTHING. It watched a.sock
+  // while only b had ever been damaged, and healParty emits nothing to a
+  // member already at full health — `healed > 0` is the condition on the emit.
+  // So the silence it read as "the class check held" was the same silence a
+  // full-health target produces, and deleting `st.charClass !== 'warlock'`
+  // from server/handlers2/social.js left this green. Same route as above:
+  // the database, then a re-entry, because sendGameStart is what refreshes
+  // the room's copy of a player's hp.
+  await pool().query('UPDATE player_progress SET hp = 50 WHERE player_id = $1', [a.pid]);
+  a.sock.emit('enterLocation', { target: 'hub' });
+  const aBack = await once(a.sock, 'gameStart', 8000).catch(() => null);
+  await wait(400);
+  ok(aBack && aBack.progress && Number(aBack.progress.hp) === 50,
+    `варлок теж поранений (${aBack && aBack.progress && aBack.progress.hp}) — інакше нульове лікування не відрізнити від жодного`);
+
+  const notHealed = once(a.sock, 'healPartyMember', 2500).catch(() => null);
   b.sock.emit('healParty');
   ok(!await notHealed, 'рейнджер груп не лікує — це вміння варлока');
 
