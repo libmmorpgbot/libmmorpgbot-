@@ -13,3 +13,7 @@ android/app/build/
 android/*.keystore
 android/**/*.keystore
 dev/.scratch/
+
+# render-check leaves a composited frame behind so a human can look at it;
+# it is a run artefact, not a fixture.
+dev/_render-shot.png

@@ -99,6 +99,7 @@ function _drawPerf(frameMs) {
 
   // Text stats
   const mem = performance.memory;
+  const _gpuS = typeof gpuStats === 'function' ? gpuStats() : { draws: 0, verts: 0 };
   const lines = [
     `FPS  ${fps}`,
     `ping ${_pingMs >= 0 ? _pingMs + 'ms' : '...'} ${socket?.io?.engine?.transport?.name === 'websocket' ? 'ws' : socket?.io?.engine?.transport?.name ?? ''}`,
@@ -121,6 +122,13 @@ function _drawPerf(frameMs) {
     `dpr  ${DPR.toFixed(2)} / ${(window.devicePixelRatio || 1).toFixed(2)} raw`,
     `res  ${_pixiApp ? _pixiApp.renderer.resolution.toFixed(2) : '?'} mob=${_isMobile ? 1 : 0}`,
     `qlty ${_qualityTier}`,
+    // What the GPU was actually handed last frame — js/pixi-world.js counts
+    // the real gl.draw* calls rather than trusting the scene graph to batch.
+    // draws is the number that says whether it IS batching: it should stay
+    // roughly flat as enemies, players and particles pile on. verts catches
+    // the other failure mode, a Graphics layer quietly tessellating thousands
+    // of triangles a frame for circles nobody can see.
+    `gpu  ${_gpuS.draws} draws ${(_gpuS.verts / 1000).toFixed(1)}k v`,
     `drp  ${drops.length}`,
     mem ? `mem  ${(mem.usedJSHeapSize / 1048576).toFixed(0)}MB` : '',
   ];
@@ -1409,6 +1417,9 @@ function render(dt, ts) {
 
   // ── PixiJS world ─────────────────────────────────────────
   if (state !== 'select') {
+    // Queued BEFORE the world renders, so pads and barriers land in the same
+    // frame as everything else instead of one behind.
+    _buildDecals(ts);
     pixiWorldRender(dt, ts, _camX, _camY, theme);
   } else {
     pixiSetBg('#0f0c07');
@@ -1443,10 +1454,7 @@ function render(dt, ts) {
   // Player name + joystick: 60fps (smooth, cheap)
   if (player && dungeon) _drawPlayerNameOnUI();
   if (dungeon) _drawOtherPlayerNamesOnUI();
-  if (player && dungeon) drawArmGates();
-  if (player && dungeon) drawRaceBarriers();
-  if (player && dungeon) drawCoopBarriers();
-  if (player && dungeon) drawTeleportPads();
+  drawDecalLabels();
   if (activeTab === 0) drawJoystick();
 
   // Safe zone HUD label (on top of HUD)
@@ -1555,7 +1563,7 @@ let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation(
 // Event-boss arena pad (see _evtArenaOpen) and the Guild War pad just below —
 // both sit right next to the main portal (_PORTAL_DX/_PORTAL_DY), one tile
 // either side of it, rather than off in their own row: same swirl look as
-// the portal now (see _drawSwirlPad), just recoloured, so the three read as
+// the portal now (see _pushSwirlPad), just recoloured, so the three read as
 // one family of "teleport here" circles instead of two different pad styles
 // scattered around the hub.
 const _EVENT_PAD_DX = _PORTAL_DX - 2.4;
@@ -1813,127 +1821,176 @@ function _pickPortalDestination(target) {
   _requestEnterLocation(d.target, d.label);
 }
 
-function _drawTeleportPad(x, y, req, label, lockedColor, unlockedColor) {
-  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
-  if (sx < -60 || sx > W + 60 || sy < -60 || sy > H + 60) return;
-  const locked = req > 0 && (player.lvl || 1) < req;
-  const t = _nowMs / 1000;
-  const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
-  const baseR = 30 * ZOOM;
+// ── ground decals: teleport pads, level gates, zone barriers ──────────────
+// One pass decides what is on the floor and whether it is locked; the GPU
+// pass and the label pass then only consume that. They used to be two
+// independent walks of the same lists inside one 2D drawing function, which
+// is how a shape and its label get to disagree about whether a gate is open.
+//
+// Shapes now live in the PixiJS world (see pixiDecalRing/Swirl/Wall in
+// js/pixi-world.js) instead of being stroked onto the 2D HUD canvas every
+// frame — the swirl alone was measured at 0.205ms per pad per frame, and the
+// hub shows up to four. Labels stay on the overlay: at native DPR they are
+// crisp, and they must stay readable over whatever is standing on the pad.
+//
+// Radii are WORLD units here. The old code worked in screen pixels and wrote
+// them as `30 * ZOOM`, which is the same circle — screen = world x ZOOM — just
+// expressed in the space the overlay happened to draw in.
+const _decals = [];      // {k, ...} — shapes, world coordinates
+const _decalLbls = [];   // {wx, wy, dy, text, color, px, mid} — dy is a screen-px offset
 
-  ctx.save();
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = locked ? 'rgba(90,20,26,0.35)' : 'rgba(20,110,70,0.28)';
-  ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 0.55 + 0.25 * pulse;
-  ctx.strokeStyle = locked ? lockedColor : unlockedColor;
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(sx, sy, baseR + pulse * 5, 0, Math.PI * 2); ctx.stroke();
-  ctx.restore();
+const _PAD_R    = 30;
+const _GATE_R   = 34;
+const _SWIRL_R  = 28;
+const _DECAL_MARGIN = 90;   // world px past the viewport edge before a decal is dropped
 
-  const lbl = locked ? `🔒 ${label}` : label;
-  ctx.font = 'bold 11px system-ui, Arial';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-  ctx.strokeText(lbl, sx, sy + baseR + 14);
-  ctx.fillStyle = locked ? '#f17e8b' : '#8ff0c0';
-  ctx.fillText(lbl, sx, sy + baseR + 14);
-}
-
-// Colour families for _drawSwirlPad — glow/disc/rings/spark/label all move
+// Colour families for the swirl pads — glow/disc/rings/label all move
 // together so a pad reads as one coherent colour rather than a blue shape
-// with an odd-coloured label. Blue is the original (and still the only)
-// look for the main hub portal; red/green are the boss-arena and Guild War
-// pads, recoloured into the same swirl instead of the plainer pulsing ring
-// _drawTeleportPad gives everything else.
+// with an odd-coloured label. Blue is the original (and still the only) look
+// for the main hub portal; red/green are the boss-arena and Guild War pads,
+// recoloured into the same swirl instead of the plainer pulsing ring
+// everything else still uses.
 const _SWIRL_THEMES = {
-  blue:  { glow: '70,170,255',  disc: 'rgba(12,55,110,0.45)', ring1: '#4fc3ff', ring2: '#bfe9ff', label: '#8fd8ff' },
-  red:   { glow: '255,80,80',   disc: 'rgba(110,15,15,0.45)', ring1: '#ff5252', ring2: '#ffb0b0', label: '#ff9a9a' },
-  green: { glow: '80,235,140',  disc: 'rgba(12,90,45,0.45)',  ring1: '#4fe38a', ring2: '#bfffd9', label: '#8fffbf' },
+  blue:  { glow: 0x46aaff, disc: 0x0c376e, ring1: 0x4fc3ff, ring2: 0xbfe9ff, label: '#8fd8ff' },
+  red:   { glow: 0xff5050, disc: 0x6e0f0f, ring1: 0xff5252, ring2: 0xffb0b0, label: '#ff9a9a' },
+  green: { glow: 0x50eb8c, disc: 0x0c5a2d, ring1: 0x4fe38a, ring2: 0xbfffd9, label: '#8fffbf' },
 };
 
-// A swirling teleport circle — a soft outer glow, a slowly counter-rotating
-// pair of dashed rings, a bright pulsing core ring, and a few sparks
-// orbiting the rim — recoloured per `theme` (a key into _SWIRL_THEMES).
-// Started as the hub portal's own look only; the boss-arena and Guild War
-// pads now share it too (red/green) so the whole cluster next to the portal
-// reads as one family of circles rather than two different pad styles. None
-// of these lock on their own (the portal's destinations do, per-row, in its
-// modal), so there's no locked/unlocked branch to draw here at all.
-function _drawSwirlPad(x, y, label, theme) {
-  const sx = (x - _lastCamX) * ZOOM, sy = (y - _lastCamY) * ZOOM + HEADER_H;
-  if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
-  if (sx < -70 || sx > W + 70 || sy < -70 || sy > H + 70) return;
-  const th = _SWIRL_THEMES[theme] || _SWIRL_THEMES.blue;
-  const tsec = _nowMs / 1000;
-  const baseR = 28 * ZOOM;
-  const pulse = 0.5 + 0.5 * Math.sin(tsec * 2.1);
-
-  ctx.save();
-  // Soft outer glow.
-  const glow = ctx.createRadialGradient(sx, sy, baseR * 0.15, sx, sy, baseR * 1.8);
-  glow.addColorStop(0, `rgba(${th.glow},${0.32 + 0.1 * pulse})`);
-  glow.addColorStop(1, `rgba(${th.glow},0)`);
-  ctx.fillStyle = glow;
-  ctx.beginPath(); ctx.arc(sx, sy, baseR * 1.8, 0, Math.PI * 2); ctx.fill();
-
-  // Filled disc.
-  ctx.globalAlpha = 0.85;
-  ctx.fillStyle = th.disc;
-  ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
-
-  // Two dashed rings, counter-rotating, so the whole thing reads as swirling
-  // rather than just pulsing in place.
-  ctx.lineWidth = 2.4;
-  ctx.setLineDash([7, 6]);
-  ctx.globalAlpha = 0.85;
-  ctx.strokeStyle = th.ring1;
-  ctx.lineDashOffset = -tsec * 46;
-  ctx.beginPath(); ctx.arc(sx, sy, baseR + 4, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 0.55;
-  ctx.strokeStyle = th.ring2;
-  ctx.lineDashOffset = tsec * 34;
-  ctx.beginPath(); ctx.arc(sx, sy, baseR - 7, 0, Math.PI * 2); ctx.stroke();
-  ctx.setLineDash([]);
-
-  // A bright pulsing core ring right at the edge of the disc.
-  ctx.globalAlpha = 0.5 + 0.4 * pulse;
-  ctx.strokeStyle = '#eaffff';
-  ctx.lineWidth = 1.6;
-  ctx.beginPath(); ctx.arc(sx, sy, baseR - 1 + pulse * 2, 0, Math.PI * 2); ctx.stroke();
-
-  // Three sparks orbiting the rim.
-  ctx.globalAlpha = 0.95;
-  ctx.fillStyle = '#eaffff';
-  for (let i = 0; i < 3; i++) {
-    const ang = tsec * 1.7 + i * (Math.PI * 2 / 3);
-    const px = sx + Math.cos(ang) * (baseR + 5), py = sy + Math.sin(ang) * (baseR + 5);
-    ctx.beginPath(); ctx.arc(px, py, 2.1 * ZOOM, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-
-  ctx.font = 'bold 11px system-ui, Arial';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-  ctx.strokeText(label, sx, sy + baseR + 16);
-  ctx.fillStyle = th.label;
-  ctx.fillText(label, sx, sy + baseR + 16);
+function _decalVisible(x, y, r) {
+  return x >= _vL - r - _DECAL_MARGIN && x <= _vR + r + _DECAL_MARGIN &&
+         y >= _vT - r - _DECAL_MARGIN && y <= _vB + r + _DECAL_MARGIN;
 }
 
-function drawTeleportPads() {
-  if (!player) return;
-  if (_portalPad) _drawSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '🌀 Телепорт', 'blue');
-  (_returnPads || []).forEach(p => _drawTeleportPad(p.x, p.y, 0, typeof t === 'function' ? t('hallShort') : 'Зал', '#eb4e61', '#4ee69a'));
-  // Boss-arena and Guild War pads sit right beside the portal now, swirling
-  // in their own colour (red/green) instead of the plain pulsing ring every
-  // other pad still uses — see _SWIRL_THEMES.
-  if (_evtArenaOpen() && _evtPad) _drawSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
-  if (_gwOpen() && _gwPad) _drawSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : 'Война гильдий', 'green');
+// A plain pulsing pad — a translucent disc with a ring breathing around it.
+function _pushRingPad(x, y, r, locked, lockedEdge, openEdge, label, lockedLbl, openLbl) {
+  if (!_decalVisible(x, y, r)) return;
+  _decals.push({
+    k: 'ring', x, y, r,
+    fill: locked ? 0x5a141a : 0x146e46,
+    fillA: locked ? 0.35 : 0.28,
+    edge: locked ? lockedEdge : openEdge,
+  });
+  if (label) _decalLbls.push({ wx: x, wy: y, dy: r * ZOOM + 14, text: label, color: locked ? lockedLbl : openLbl, px: 11, mid: false });
+}
+
+function _pushSwirlPad(x, y, label, themeKey) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  if (!_decalVisible(x, y, _SWIRL_R)) return;
+  const th = _SWIRL_THEMES[themeKey] || _SWIRL_THEMES.blue;
+  _decals.push({ k: 'swirl', x, y, r: _SWIRL_R, th });
+  if (label) _decalLbls.push({ wx: x, wy: y, dy: _SWIRL_R * ZOOM + 16, text: label, color: th.label, px: 11, mid: false });
+}
+
+function _pushWall(x, y, hw, hh, fill, edge) {
+  if (x + hw < _vL - _DECAL_MARGIN || x - hw > _vR + _DECAL_MARGIN ||
+      y + hh < _vT - _DECAL_MARGIN || y - hh > _vB + _DECAL_MARGIN) return;
+  _decals.push({ k: 'wall', x, y, hw, hh, fill, edge });
+  _decalLbls.push({ wx: x, wy: y, dy: 0, text: '\u{1F512}', color: '#fff', px: 20, mid: true });
+}
+
+// Runs once per frame, before the world is rendered, so the shapes it queues
+// are in the same frame as everything else rather than a frame behind.
+function _buildDecals(ts) {
+  _decals.length = 0;
+  _decalLbls.length = 0;
+  if (!player || !dungeon) return;
+
+  // ── teleport pads ──
+  if (_portalPad) _pushSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '\u{1F300} \u0422\u0435\u043b\u0435\u043f\u043e\u0440\u0442', 'blue');
+  const hallLbl = typeof t === 'function' ? t('hallShort') : '\u0417\u0430\u043b';
+  (_returnPads || []).forEach(p => _pushRingPad(p.x, p.y, _PAD_R, false, 0xeb4e61, 0x4ee69a, hallLbl, '#f17e8b', '#8ff0c0'));
+  if (_evtArenaOpen() && _evtPad) _pushSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
+  if (_gwOpen() && _gwPad) _pushSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : '\u0412\u043e\u0439\u043d\u0430 \u0433\u0438\u043b\u044c\u0434\u0438\u0439', 'green');
   // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue
-  // swirl the hub portal itself uses, redrawn every frame centred on the
-  // player so it visibly follows them while they're held still. No label:
-  // it's already right under the character, a name would just clutter it.
-  if (typeof _teleportCasting === 'function' && _teleportCasting()) _drawSwirlPad(player.x, player.y, '', 'blue');
+  // swirl the hub portal itself uses, centred on the player so it visibly
+  // follows them while they're held still. No label: it's already right under
+  // the character, a name would just clutter it.
+  if (typeof _teleportCasting === 'function' && _teleportCasting()) _pushSwirlPad(player.x, player.y, '', 'blue');
+
+  // ── arm level gates ──
+  // t is the i18n function. It used to be shadowed here by a local
+  // `const t = _nowMs / 1000`, so `typeof t === 'function'` was false on every
+  // single frame and the level abbreviation fell through to hardcoded Russian
+  // for every language in the game.
+  if (_armGates && _armGates.length) {
+    const lvlAbbr = typeof t === 'function' ? t('levelAbbrev') : '\u0423\u0440.';
+    for (const g of _armGates) {
+      const locked = g.req > 0 && (player.lvl || 1) < g.req;
+      const lbl = g.req > 0 ? (locked ? '\u{1F512} ' : '') + lvlAbbr + ' ' + g.req : '';
+      if (!_decalVisible(g.x, g.y, _GATE_R)) continue;
+      _decals.push({
+        k: 'ring', x: g.x, y: g.y, r: _GATE_R,
+        fill: locked ? 0x5a141a : 0x1e5a6e,
+        fillA: locked ? 0.35 : 0.28,
+        edge: locked ? 0xeb4e61 : 0x7fd7ff,
+      });
+      if (lbl) _decalLbls.push({ wx: g.x, wy: g.y, dy: _GATE_R * ZOOM + 14, text: lbl, color: locked ? '#f17e8b' : '#a8e9ff', px: 11, mid: false });
+    }
+  }
+
+  // ── race10 barriers ──
+  // A solid pulsing wall across the corridor while its tier still has
+  // survivors — reads as "physically blocked", not just another level-gate
+  // pad, since a barrier spans the whole 3-tile width rather than sitting as
+  // a circle in its centre. Drops out entirely once the tier's cleared:
+  // there's nothing left to explain at that point.
+  if (_raceBarriers && _raceBarriers.length) {
+    for (const b of _raceBarriers) {
+      if (!_raceLaneTierAlive(b.lane, b.tier)) continue;
+      _pushWall(b.x, b.y, RACE_BARRIER_THICK, RACE_BARRIER_HALF_W, 0xeb4e61, 0xf7b0b8);
+    }
+  }
+
+  // ── coop barriers ──
+  // Same treatment, tinted green to read as part of Сотрудничество rather
+  // than a copy-paste of race10's red — see _isCoopBarrierBlocked for what
+  // "still blocked" means here.
+  if (_coopBarriers && _coopBarriers.length) {
+    const stageNo = (typeof _coopStageNo !== 'undefined' && _coopStageNo) || 0;
+    for (const b of _coopBarriers) {
+      if (stageNo > b.stage) continue;
+      _pushWall(b.x, b.y, COOP_BARRIER_THICK, COOP_BARRIER_HALF_W, 0x2f9e4f, 0xa8f0b8);
+    }
+  }
+
+  _pushDecalsToGpu(ts);
+}
+
+function _pushDecalsToGpu(ts) {
+  if (typeof pixiDecalsBegin !== 'function') return;
+  pixiDecalsBegin();
+  const tsec  = ts / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(tsec * 2.4);
+  const sPulse = 0.5 + 0.5 * Math.sin(tsec * 2.1);
+  for (let i = 0; i < _decals.length; i++) {
+    const d = _decals[i];
+    if (d.k === 'ring')       pixiDecalRing(d.x, d.y, d.r, d.fill, d.fillA, d.edge, pulse);
+    else if (d.k === 'swirl') pixiDecalSwirl(d.x, d.y, d.r, d.th, tsec, sPulse);
+    else                      pixiDecalWall(d.x, d.y, d.hw, d.hh, d.fill, 0.35 + 0.15 * pulse, d.edge, 0.7 + 0.3 * pulse);
+  }
+  pixiDecalsEnd();
+}
+
+// The overlay half: text only. Measured cheaper as live strokeText than as
+// cached bitmaps blitted per frame (0.147ms vs 0.180ms for twelve labels on
+// the dev bench), so these stay direct draws.
+function drawDecalLabels() {
+  if (!_decalLbls.length) return;
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < _decalLbls.length; i++) {
+    const L = _decalLbls[i];
+    const sx = (L.wx - _lastCamX) * ZOOM;
+    const sy = (L.wy - _lastCamY) * ZOOM + HEADER_H + L.dy;
+    if (sx < -80 || sx > W + 80 || sy < -40 || sy > H + 40) continue;
+    ctx.font = 'bold ' + L.px + 'px system-ui, Arial';
+    ctx.textBaseline = L.mid ? 'middle' : 'alphabetic';
+    ctx.lineWidth = L.mid ? 4 : 3;
+    ctx.strokeStyle = '#000';
+    ctx.strokeText(L.text, sx, sy);
+    ctx.fillStyle = L.color;
+    ctx.fillText(L.text, sx, sy);
+  }
 }
 
 // Every zone's main corridor runs along X — the arm names ('left', 'top',
@@ -2048,109 +2105,6 @@ function _updateRaceBarriers(dt) {
       dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('raceBarrierLockedMsg') : 'Убейте всех монстров', '#f17e8b');
       _raceGateMsgCd = 1.5;
     }
-  }
-}
-
-function drawArmGates() {
-  if (!player || !_armGates || !_armGates.length) return;
-  const t = _nowMs / 1000;
-  const pulse = 0.5 + 0.5 * Math.sin(t * 2.4);
-  for (const g of _armGates) {
-    const sx = (g.x - _lastCamX) * ZOOM;
-    const sy = (g.y - _lastCamY) * ZOOM + HEADER_H;
-    if (sx < -60 || sx > W + 60 || sy < -60 || sy > H + 60) continue;
-    const locked = g.req > 0 && (player.lvl || 1) < g.req;
-    const baseR = 34 * ZOOM;
-
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = locked ? 'rgba(90,20,26,0.35)' : 'rgba(30,90,110,0.28)';
-    ctx.beginPath(); ctx.arc(sx, sy, baseR, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.55 + 0.25 * pulse;
-    ctx.strokeStyle = locked ? '#eb4e61' : '#7fd7ff';
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(sx, sy, baseR + pulse * 5, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-
-    if (g.req > 0) {
-      const lvlAbbr = typeof t === 'function' ? t('levelAbbrev') : 'Ур.';
-      const lbl = locked ? `🔒 ${lvlAbbr} ${g.req}` : `${lvlAbbr} ${g.req}`;
-      ctx.font = 'bold 11px system-ui, Arial';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-      ctx.strokeText(lbl, sx, sy + baseR + 14);
-      ctx.fillStyle = locked ? '#f17e8b' : '#a8e9ff';
-      ctx.fillText(lbl, sx, sy + baseR + 14);
-    }
-  }
-}
-
-// A solid pulsing wall across the corridor while its tier still has
-// survivors — reads as "physically blocked", not just another level-gate
-// pad, since a barrier spans the whole 3-tile width rather than sitting as a
-// circle in its centre. Drops out entirely once the tier's cleared: there's
-// nothing left to explain at that point.
-function drawRaceBarriers() {
-  if (!player || !_raceBarriers || !_raceBarriers.length) return;
-  const tSec = _nowMs / 1000;
-  const pulse = 0.5 + 0.5 * Math.sin(tSec * 2.4);
-  for (const b of _raceBarriers) {
-    if (!_raceLaneTierAlive(b.lane, b.tier)) continue;
-    const sx = (b.x - _lastCamX) * ZOOM;
-    const sy = (b.y - _lastCamY) * ZOOM + HEADER_H;
-    const halfW = RACE_BARRIER_THICK * ZOOM, halfH = RACE_BARRIER_HALF_W * ZOOM;
-    if (sx + halfW < -20 || sx - halfW > W + 20 || sy + halfH < -20 || sy - halfH > H + 20) continue;
-
-    ctx.save();
-    ctx.globalAlpha = 0.35 + 0.15 * pulse;
-    ctx.fillStyle = '#eb4e61';
-    ctx.fillRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
-    ctx.globalAlpha = 0.7 + 0.3 * pulse;
-    ctx.strokeStyle = '#f7b0b8';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
-    ctx.restore();
-
-    ctx.font = 'bold 20px system-ui, Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
-    ctx.strokeText('🔒', sx, sy);
-    ctx.fillStyle = '#fff';
-    ctx.fillText('🔒', sx, sy);
-  }
-}
-
-// Same "solid pulsing wall" treatment for Сотрудничество, tinted green to
-// read as part of that zone rather than a copy-paste of race10's red — see
-// _isCoopBarrierBlocked for what "still blocked" means here.
-function drawCoopBarriers() {
-  if (!player || !_coopBarriers || !_coopBarriers.length) return;
-  const stageNo = (typeof _coopStageNo !== 'undefined' && _coopStageNo) || 0;
-  const tSec = _nowMs / 1000;
-  const pulse = 0.5 + 0.5 * Math.sin(tSec * 2.4);
-  for (const b of _coopBarriers) {
-    if (stageNo > b.stage) continue;
-    const sx = (b.x - _lastCamX) * ZOOM;
-    const sy = (b.y - _lastCamY) * ZOOM + HEADER_H;
-    const halfW = COOP_BARRIER_THICK * ZOOM, halfH = COOP_BARRIER_HALF_W * ZOOM;
-    if (sx + halfW < -20 || sx - halfW > W + 20 || sy + halfH < -20 || sy - halfH > H + 20) continue;
-
-    ctx.save();
-    ctx.globalAlpha = 0.35 + 0.15 * pulse;
-    ctx.fillStyle = '#2f9e4f';
-    ctx.fillRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
-    ctx.globalAlpha = 0.7 + 0.3 * pulse;
-    ctx.strokeStyle = '#a8f0b8';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(sx - halfW, sy - halfH, halfW * 2, halfH * 2);
-    ctx.restore();
-
-    ctx.font = 'bold 20px system-ui, Arial';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.strokeStyle = '#000'; ctx.lineWidth = 4;
-    ctx.strokeText('🔒', sx, sy);
-    ctx.fillStyle = '#fff';
-    ctx.fillText('🔒', sx, sy);
   }
 }
 

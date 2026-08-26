@@ -6,19 +6,22 @@ const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 let _pixiApp = null;
 let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
-let _lightsGfx = null;  // torch flames + warm glow (Graphics, additive blend, cleared each frame)
+let _lightsCt = null;   // torch flames + warm glow (pooled additive sprites — see _updateLights)
 let _aoeGfx   = null;   // AOE rings (Graphics, cleared each frame)
 let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
 let _npcNames = [];      // PIXI.Text per NPC
-let _dropGfx  = null;
-let _partGfx  = null;   // particles (Graphics, cleared each frame)
+let _dropCt   = null;   // ground loot (pooled sprites — see _updateDrops)
+let _partCt   = null;   // particles (pooled sprites — see _updateParticles)
 let _enemyCt  = null;
 let _otherPCt = null;
-let _projGfx  = null;
+let _projGfx  = null;   // arrows (a stroked line + a head — cheap as geometry)
+let _projCt   = null;   // magic bolts (pooled sprites — three circles each was not)
 let _playerCt = null;
 let _plAura = null;
 let _dmgNumCt = null;
 let _petCt = null; // holds every player's pet follower (see _updatePets)
+let _decalCt = null;   // ground decals: teleport pads, level gates (below everything)
+let _wallCt  = null;   // zone barriers (above everything — they are walls, not floor)
 
 // Entity sprite pools
 const _enemyPool  = new Map(); // id  → {ct, spr, gfx}
@@ -32,9 +35,57 @@ let _plSpr = null, _plGfx = null;
 // player. Other players' pets are fetched as their ids arrive (js/network.js).
 let _petLoadedFor = null;
 
-// Damage-number pool
-const _dmgActive = [];
-const _dmgPool   = [];
+// ── damage numbers ────────────────────────────────────────────────────────
+// Measured on this exact PixiJS build (7.4.2, desktop, dev bench): thirty
+// damage numbers all changing their text cost 1.257ms a frame as PIXI.Text
+// and 0.232ms as BitmapText. PIXI.Text is a canvas rasteriser wearing a
+// sprite costume — assigning .text re-runs strokeText/fillText into its own
+// private canvas and re-uploads that canvas to the GPU, which for a recycled
+// damage number is every single time one appears. BitmapText reads glyphs
+// from one atlas baked once, so a new number is a new vertex list and
+// nothing else, and all of them collapse into one draw call.
+//
+// The atlas holds only what damage numbers are made of. Baking a full
+// Latin+Cyrillic set was measured at 1.26 SECONDS across three 512px pages —
+// unshippable; this set is ~25 glyphs on one page and bakes in ~7ms.
+// A glyph the atlas lacks would render as NOTHING, silently, so every string
+// is checked first and anything it cannot spell falls back to the PIXI.Text
+// it always was. That covers the localised toasts, of which there is never
+// more than one or two on screen.
+const _DMG_FONT = 'libdmg';
+const _DMG_BAKE_PX = 32;
+let _dmgFontChars = null;   // Set<charCode>, or false once baking has failed
+const _dmgBmp = []; let _dmgBmpN = 0;
+const _dmgTxt = []; let _dmgTxtN = 0;
+
+function _ensureDmgFont() {
+  if (_dmgFontChars) return true;
+  if (_dmgFontChars === false) return false;
+  try {
+    const f = PIXI.BitmapFont.from(_DMG_FONT, {
+      fontFamily: 'Arial', fontWeight: 'bold', fontSize: _DMG_BAKE_PX,
+      fill: '#ffffff', stroke: '#000000', strokeThickness: 6,
+    }, { chars: ['0123456789+-.,%()g \u00d7\u2212\u2665\u26a1'], resolution: 1, padding: 4 });
+    _dmgFontChars = new Set();
+    for (const k in f.chars) _dmgFontChars.add(+k);
+    return true;
+  } catch (err) {
+    // Not silent: without the atlas every number falls back to the slow path
+    // for the rest of the session, and that is worth knowing about.
+    _dmgFontChars = false;
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('bitmapfont', 'bake failed: ' + (err && err.message), err && err.stack);
+    }
+    return false;
+  }
+}
+function _dmgSpellable(str) {
+  if (!_dmgFontChars) return false;
+  for (let i = 0; i < str.length; i++) {
+    if (!_dmgFontChars.has(str.charCodeAt(i))) return false;
+  }
+  return true;
+}
 
 // Chunk sprite cache — separate from _tileChunks canvas cache (js/game.js).
 // That one is capped at _CHUNK_MAX (96) with a comment sizing its worst-case
@@ -64,7 +115,274 @@ const _eTex = {};          // eid|sheetKey     → {down,up,left,right}: PIXI.Te
 const _npcTex = {};        // npc icon id      → PIXI.Texture[]
 const _petTex = {};        // petId|animKey    → PIXI.Texture[]
 
+// ── baked round textures ──────────────────────────────────────────────────
+// Torch light and hit particles used to be PIXI.Graphics circles rebuilt from
+// scratch every single frame: clear(), then beginFill/drawCircle/endFill per
+// item. drawCircle is not a GPU primitive — Pixi TESSELLATES it in JavaScript
+// into a fan of ~30 triangles, every frame, for every circle, and then
+// re-uploads the whole geometry buffer. A burst of 120 particles over ten lit
+// torches was ~4600 triangles built by hand in JS per frame, at 60fps.
+//
+// A textured quad is 2 triangles and needs no tessellation at all: the shape
+// lives in the texture, and position/size/colour/alpha are just sprite
+// properties the GPU already knows how to interpolate. Same pool, same
+// container, one texture — so they all still collapse into a single draw call,
+// but the per-frame CPU cost goes to roughly zero.
+//
+// It also looks better. A drawCircle is a flat disc with a hard tessellated
+// edge; a baked radial gradient has real falloff, which is what a torch glow
+// and a spark are supposed to have.
+let _texGlow = null;  // wide soft falloff — torch light pools
+let _texDot  = null;  // solid core, short rim — flames and particles
+function _bakeRadial(size, stops) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const h = size / 2;
+  const g = c.createRadialGradient(h, h, 0, h, h, h);
+  for (let i = 0; i < stops.length; i++) g.addColorStop(stops[i][0], 'rgba(255,255,255,' + stops[i][1] + ')');
+  c.fillStyle = g;
+  c.fillRect(0, 0, size, size);
+  return PIXI.Texture.from(cv);
+}
+// A stroked circle baked into a texture. `rFrac` is the ring's radius as a
+// fraction of half the texture, so a sprite scaled to diameter D draws a ring
+// of radius D*rFrac/2. `dash` gives the dashed variants — rotating one of
+// those is what produces the portal swirl, on the GPU, for free.
+function _bakeRing(size, rFrac, lineW, dash) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const h = size / 2;
+  c.strokeStyle = '#ffffff';
+  c.lineWidth = lineW;
+  if (dash) c.setLineDash(dash);
+  c.beginPath();
+  c.arc(h, h, h * rFrac, 0, Math.PI * 2);
+  c.stroke();
+  return PIXI.Texture.from(cv);
+}
+// A rounded square, filled or outlined. Loot is drawn from these instead of
+// drawRoundedRect for the reason measured in dev/render-check.html: a filled
+// rounded rect plus a stroked one plus a halo circle came to 462 tessellated
+// vertices PER PILE, rebuilt every frame because the pile bobs. Forty piles
+// on screen after an event boss was 18,480 vertices a frame — 88% of the
+// entire scene's geometry, for loot lying on the floor. As three sprites it
+// is eighteen indices.
+function _bakeRoundSquare(size, radius, lineW) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const c = cv.getContext('2d');
+  const inset = lineW ? lineW / 2 + 1 : 1;
+  const x0 = inset, y0 = inset, w = size - inset * 2, h = size - inset * 2;
+  const r = Math.min(radius, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x0 + r, y0);
+  c.arcTo(x0 + w, y0,     x0 + w, y0 + h, r);
+  c.arcTo(x0 + w, y0 + h, x0,     y0 + h, r);
+  c.arcTo(x0,     y0 + h, x0,     y0,     r);
+  c.arcTo(x0,     y0,     x0 + w, y0,     r);
+  c.closePath();
+  if (lineW) { c.strokeStyle = '#ffffff'; c.lineWidth = lineW; c.stroke(); }
+  else { c.fillStyle = '#ffffff'; c.fill(); }
+  return PIXI.Texture.from(cv);
+}
+function _ensureBaked() {
+  if (_texGlow) return;
+  _texGlow = _bakeRadial(128, [[0, 1], [0.4, 0.38], [0.75, 0.07], [1, 0]]);
+  _texDot  = _bakeRadial(64,  [[0, 1], [0.58, 1], [0.84, 0.5], [1, 0]]);
+  // Baked at 4x the on-screen size these are ever drawn at, so the edge stays
+  // clean when the sprite is scaled down to a ~50px pad.
+  _texDisc = _bakeRadial(128, [[0, 1], [0.88, 1], [1, 0]]);
+  // Stroke widths are chosen so that at the ~70 world-px diameter these rings
+  // are actually drawn at, the on-screen line comes out the same thickness the
+  // 2D versions had: lineW * D / 256 world px, x ZOOM for screen px.
+  _texRing     = _bakeRing(256, 0.92, 15, null);        // pads/gates: 3 screen px
+  _texRingThin = _bakeRing(256, 0.92, 9,  null);        // swirl core ring: 1.6 screen px
+  _texRingDash = _bakeRing(256, 0.92, 12, [34, 29]);    // swirl rings: 2.4 screen px, ~11 dashes
+  // 64px for an 18-20 world-px pile: corner radius 4/18 and outline 1.5/18 of
+  // the pile's own width, scaled up to the bake size.
+  _texGemFill = _bakeRoundSquare(64, 14, 0);
+  _texGemEdge = _bakeRoundSquare(64, 14, 5);
+}
+let _texDisc = null, _texRing = null, _texRingThin = null, _texRingDash = null;
+let _texGemFill = null, _texGemEdge = null;
+
+// Sprite recycling. Each frame fills a pool from index 0 upward and then hides
+// whatever the frame did not reach — so the live sprites are always a prefix
+// and the hide loop can stop at the first one already hidden. Nothing is ever
+// destroyed: a 120-particle burst pays its allocation once per session, not
+// once per burst.
+const _lightSpr = []; let _lightN = 0;
+const _partSpr  = []; let _partN  = 0;
+function _takePooled(pool, idx, parent, tex, blend) {
+  let sp = pool[idx];
+  if (!sp) {
+    sp = new PIXI.Sprite(tex);
+    sp.anchor.set(0.5);
+    if (blend) sp.blendMode = blend;
+    parent.addChild(sp);
+    pool[idx] = sp;
+  }
+  sp.visible = true;
+  return sp;
+}
+function _hideRest(pool, used) {
+  for (let i = used; i < pool.length; i++) {
+    if (!pool[i].visible) break;
+    pool[i].visible = false;
+  }
+}
+
+const _dropSpr = []; let _dropN = 0;
+const _projSpr = []; let _projN = 0;
+const _decSpr  = []; let _decN  = 0;
+const _wallSpr = []; let _wallN = 0;
+
+// ── ground decals: teleport pads, level gates, zone barriers ─────────────
+// All three used to be drawn on the 2D HUD canvas, every frame, in world
+// coordinates the overlay had to convert by hand. The portal swirl was the
+// expensive one: a createRadialGradient allocation, two setLineDash arc
+// strokes, a pulsing core ring and three orbiting sparks — measured at
+// 0.205ms per pad per frame on desktop, and the hub shows up to four at once.
+//
+// Here the same picture is baked textures plus a transform. The swirl is a
+// dashed-ring sprite ROTATING, which is a vertex transform the GPU does for
+// nothing, instead of re-stroking a dashed circle on the CPU sixty times a
+// second. Pads also moved from above the world to the ground layer, which is
+// where a thing you walk onto belongs; their labels stay on the overlay, so
+// they are still readable over whatever is standing on them.
+//
+// The caller decides what exists and whether it is locked (see _buildDecals
+// in js/game.js) — this only knows how to draw the three shapes.
+function pixiDecalsBegin() {
+  if (!_pixiApp || _ctxLost) return;
+  _ensureBaked();
+  _decN = 0; _wallN = 0;
+}
+function _decSprite(tex, x, y, diam, tint, alpha, rot) {
+  const sp = _takePooled(_decSpr, _decN++, _decalCt, tex, null);
+  if (sp.texture !== tex) sp.texture = tex;
+  sp.x = x; sp.y = y;
+  sp.scale.set(diam / tex.orig.width);
+  sp.rotation = rot || 0;
+  sp.tint = tint; sp.alpha = alpha;
+  return sp;
+}
+// The plain pulsing pad: a translucent disc with a ring breathing around it.
+function pixiDecalRing(x, y, r, fillTint, fillA, edgeTint, pulse) {
+  if (!_decalCt) return;
+  _decSprite(_texDisc, x, y, r * 2, fillTint, fillA * 0.9, 0);
+  _decSprite(_texRing, x, y, (r + pulse * 5) * 2 / 0.92, edgeTint, 0.55 + 0.25 * pulse, 0);
+}
+// The portal swirl: glow, disc, two counter-rotating dashed rings, a pulsing
+// core ring, three orbiting sparks.
+function pixiDecalSwirl(x, y, r, th, tsec, pulse) {
+  if (!_decalCt) return;
+  _decSprite(_texGlow, x, y, r * 3.6, th.glow, 0.32 + 0.1 * pulse, 0);
+  _decSprite(_texDisc, x, y, r * 2, th.disc, 0.85, 0);
+  _decSprite(_texRingDash, x, y, (r + 4) * 2 / 0.92, th.ring1, 0.85, tsec * 0.9);
+  _decSprite(_texRingDash, x, y, (r - 7) * 2 / 0.92, th.ring2, 0.55, -tsec * 0.66);
+  _decSprite(_texRingThin, x, y, (r - 1 + pulse * 2) * 2 / 0.92, 0xeaffff, 0.5 + 0.4 * pulse, 0);
+  for (let i = 0; i < 3; i++) {
+    const ang = tsec * 1.7 + i * (Math.PI * 2 / 3);
+    _decSprite(_texDot, x + Math.cos(ang) * (r + 5), y + Math.sin(ang) * (r + 5), 4.2, 0xeaffff, 0.95, 0);
+  }
+}
+// A zone barrier: a translucent slab with a bright outline, on the layer
+// ABOVE the entities — it is a wall, and it used to be drawn over everything
+// on the overlay, so keeping it on top is what preserves the look.
+function pixiDecalWall(x, y, hw, hh, fillTint, fillA, edgeTint, edgeA) {
+  if (!_wallCt) return;
+  const W_ = PIXI.Texture.WHITE;
+  const put = (cx, cy, w, h, tint, a) => {
+    const sp = _takePooled(_wallSpr, _wallN++, _wallCt, W_, null);
+    if (sp.texture !== W_) sp.texture = W_;
+    sp.x = cx; sp.y = cy;
+    sp.scale.set(w / W_.orig.width, h / W_.orig.height);
+    sp.rotation = 0;
+    sp.tint = tint; sp.alpha = a;
+  };
+  put(x, y, hw * 2, hh * 2, fillTint, fillA);
+  const t = 3;
+  put(x, y - hh + t / 2, hw * 2, t, edgeTint, edgeA);
+  put(x, y + hh - t / 2, hw * 2, t, edgeTint, edgeA);
+  put(x - hw + t / 2, y, t, hh * 2, edgeTint, edgeA);
+  put(x + hw - t / 2, y, t, hh * 2, edgeTint, edgeA);
+}
+function pixiDecalsEnd() {
+  if (!_pixiApp || _ctxLost) return;
+  _hideRest(_decSpr, _decN);
+  _hideRest(_wallSpr, _wallN);
+}
+
+// Point a sprite at a texture and give it a display size, writing only what
+// actually changed.
+//
+// PIXI's .width/.height setters are not property assignments — each one reads
+// the texture's own dimensions, divides, and re-derives scale, then dirties
+// the transform. Every animated entity here wrote both, every frame, forever,
+// even though a sprite's display size only changes when its sheet does. The
+// guard keys on the texture's SOURCE size rather than the texture itself, so
+// stepping through the frames of one animation (all the same size) writes
+// nothing, while actually swapping sheets still recomputes.
+function _setTexSize(sp, tex, w, h) {
+  if (sp.texture !== tex) sp.texture = tex;
+  const ow = tex.orig.width || 1, oh = tex.orig.height || 1;
+  if (sp._szW === w && sp._szH === h && sp._szOW === ow && sp._szOH === oh) return;
+  sp._szW = w; sp._szH = h; sp._szOW = ow; sp._szOH = oh;
+  sp.scale.set(w / ow, h / oh);
+}
+
+// CSS hex -> PIXI numeric tint, memoised. Particle and projectile colours are
+// a handful of fixed strings that used to be .replace()'d and parseInt()'d
+// once per item per frame — string allocation in the hottest loop there is.
+const _tintCache = new Map();
+function _tintOf(css, fallback) {
+  if (!css) return fallback;
+  let v = _tintCache.get(css);
+  if (v === undefined) {
+    v = parseInt(css.charCodeAt(0) === 35 ? css.slice(1) : css, 16);
+    if (!Number.isFinite(v)) v = fallback;
+    _tintCache.set(css, v);
+  }
+  return v;
+}
+
 let _lastBgColor = null; // dirty flag — bg color only changes on floor switch
+
+// ── GPU frame counters ────────────────────────────────────────────────────
+// Draw calls are the number that actually explains a mobile GPU's frame time.
+// Every one is a pipeline state change plus a bus round trip, and PixiJS only
+// merges consecutive objects that share a texture — so "batched" is a claim
+// about scene-graph ORDER, not something the engine guarantees. Counting the
+// real gl calls is what tells the two apart, and it is what the layer split
+// (_enemySprCt / _enemyGfxCt / _enemyLblCt below) is measured against: entity
+// count goes up, this number is supposed to stay flat.
+//
+// Installed once on the live context, read by _drawPerf (js/game.js). The
+// wrapper costs one closure call per draw — at the ~40 draws/frame this now
+// runs at, that is nothing, and having the number always correct is worth
+// more than saving it.
+let _gpuDraws = 0, _gpuDrawsSnap = 0;
+// Indices, not distinct vertices: one quad is six. A pooled sprite is 6, a
+// tessellated drawCircle about 94 — which is the whole point of counting it.
+let _gpuVerts = 0, _gpuVertsSnap = 0;
+function gpuStats() { return { draws: _gpuDrawsSnap, verts: _gpuVertsSnap }; }
+function _hookGpuCounters(gl) {
+  if (!gl || gl.__libCounted) return;
+  gl.__libCounted = true;
+  const de = gl.drawElements.bind(gl);
+  const da = gl.drawArrays.bind(gl);
+  gl.drawElements = function (mode, count, type, offset) {
+    _gpuDraws++; _gpuVerts += count;
+    de(mode, count, type, offset);
+  };
+  gl.drawArrays = function (mode, first, count) {
+    _gpuDraws++; _gpuVerts += count;
+    da(mode, first, count);
+  };
+}
 
 // ── init ──────────────────────────────────────────────────
 // When the world last drew a frame, and whether there is a renderer at all.
@@ -86,12 +404,26 @@ function _dropGpuState() {
   _npcPool.clear();
   _petPool.clear();
   _chunkSprCache.clear();
+  // Baked textures and every sprite pooled against them live on the context
+  // that just went away — drop the handles, _ensureBaked() rebuilds on demand.
+  _texGlow = null; _texDot = null;
+  _texDisc = null; _texRing = null; _texRingThin = null; _texRingDash = null;
+  _texGemFill = null; _texGemEdge = null;
+  _dropSpr.length = 0; _dropN = 0;
+  _projSpr.length = 0; _projN = 0;
+  _lightSpr.length = 0; _lightN = 0;
+  _partSpr.length = 0; _partN = 0;
+  _decSpr.length = 0; _decN = 0;
+  _wallSpr.length = 0; _wallN = 0;
+  _dmgBmp.length = 0; _dmgTxt.length = 0;
+  // The glyph atlas was uploaded to the context that just died. Uninstall so
+  // the name is free and _ensureDmgFont() bakes a fresh one on demand.
+  try { if (_dmgFontChars) PIXI.BitmapFont.uninstall(_DMG_FONT); } catch (e) { /* never installed */ }
+  _dmgFontChars = null;
   for (const cache of [_pTex, _eTex, _npcTex, _petTex]) {
     Object.keys(cache).forEach(k => delete cache[k]);
   }
   _npcNames.length = 0;
-  _dmgActive.length = 0;
-  _dmgPool.length = 0;
   _plSpr = null; _plGfx = null; _plAura = null;
   _petLoadedFor = null;
   _lastBgColor = null;
@@ -212,27 +544,30 @@ function pixiInit(canvasEl) {
     powerPreference: _isMobile ? 'default' : 'high-performance',
   });
   _pixiApp.stop(); // manual render call
+  try { _hookGpuCounters(_pixiApp.renderer.gl); } catch (e) { /* headless / no gl */ }
 
   _worldCt  = new PIXI.Container();
   _tileCt   = new PIXI.Container();
-  _lightsGfx = new PIXI.Graphics();
-  _lightsGfx.blendMode = PIXI.BLEND_MODES.ADD;
+  _lightsCt = new PIXI.Container();
   _aoeGfx   = new PIXI.Graphics();
   _npcCt    = new PIXI.Container();
-  _dropGfx  = new PIXI.Graphics();
-  _partGfx  = new PIXI.Graphics();
+  _dropCt   = new PIXI.Container();
+  _partCt   = new PIXI.Container();
   _enemyCt  = new PIXI.Container();
   _otherPCt = new PIXI.Container();
   _projGfx  = new PIXI.Graphics();
+  _projCt   = new PIXI.Container();
   _playerCt = new PIXI.Container();
   _petCt    = new PIXI.Container();
+  _decalCt  = new PIXI.Container();
+  _wallCt   = new PIXI.Container();
   _dmgNumCt = new PIXI.Container();
 
   _worldCt.addChild(
-    _tileCt, _lightsGfx, _aoeGfx,
-    _npcCt, _dropGfx, _partGfx,
-    _enemyCt, _otherPCt, _projGfx,
-    _petCt, _playerCt, _dmgNumCt
+    _tileCt, _decalCt, _lightsCt, _aoeGfx,
+    _npcCt, _dropCt, _partCt,
+    _enemyCt, _otherPCt, _projGfx, _projCt,
+    _petCt, _playerCt, _wallCt, _dmgNumCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -536,27 +871,41 @@ function _updateTiles(camX, camY) {
 // whichever chunks are actually on screen this frame.
 const _visibleTorches = [];
 
+// Four additive sprites per torch — two glow pools and two flame cores — all
+// off one texture, so however many torches are on screen they still cost the
+// GPU exactly one batched draw call. Colour and softness come from tint and
+// the baked falloff; only x/y/scale/alpha change per frame.
 function _updateLights(ts) {
-  _lightsGfx.clear();
+  _ensureBaked();
+  _lightN = 0;
   // Devices the adaptive tier already flagged as struggling (sustained
-  // <20fps, see _drawPerf in game.js) skip the big soft falloff circle —
-  // it's the widest fill here and large translucent circles are exactly
-  // what tends to be fill-rate-bound on low-end mobile GPUs — and drop the
-  // dimmest of the two glow rings entirely, keeping just the flame + one
-  // tight glow so torches still read as lit without the extra overdraw.
+  // <20fps, see _drawPerf in game.js) skip the big soft falloff sprite — it's
+  // the widest fill here and large translucent quads are exactly what tends
+  // to be fill-rate-bound on low-end mobile GPUs — keeping just the flame +
+  // one tight glow so torches still read as lit without the extra overdraw.
   const lite = (typeof _qualityTier !== 'undefined' && _qualityTier > 0);
   for (let i = 0; i < _visibleTorches.length; i++) {
     const t = _visibleTorches[i];
     const flick = 0.8 + 0.15 * Math.sin(ts * 0.006 + t.x * 0.11) + 0.08 * Math.sin(ts * 0.023 + t.y * 0.05);
     const fx = t.x + Math.sin(ts * 0.014 + t.x) * 1.2;
     const fy = t.y - 2 + Math.sin(ts * 0.02 + t.y) * 1;
-    if (!lite) {
-      _lightsGfx.beginFill(0xff9d3c, 0.05 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 60 * flick); _lightsGfx.endFill();
-    }
-    _lightsGfx.beginFill(0xffb85c, 0.09 * flick); _lightsGfx.drawCircle(t.x, t.y + 10, 32 * flick); _lightsGfx.endFill();
-    _lightsGfx.beginFill(0xff8a2e, 0.75); _lightsGfx.drawCircle(fx, fy + 2, 5 * flick); _lightsGfx.endFill();
-    _lightsGfx.beginFill(0xffe6a8, 0.9); _lightsGfx.drawCircle(fx, fy, 3.2 * flick); _lightsGfx.endFill();
+    if (!lite) _glowSpr(t.x, t.y + 10, 60 * flick, 0xff9d3c, 0.10 * flick, _texGlow, 128);
+    _glowSpr(t.x, t.y + 10, 32 * flick, 0xffb85c, 0.18 * flick, _texGlow, 128);
+    _glowSpr(fx, fy + 2, 5 * flick, 0xff8a2e, 0.75, _texDot, 64);
+    _glowSpr(fx, fy, 3.2 * flick, 0xffe6a8, 0.9, _texDot, 64);
   }
+  _hideRest(_lightSpr, _lightN);
+}
+// Alpha is doubled relative to the old flat discs on purpose: a gradient's
+// average coverage over its own radius is well under half a solid disc's, so
+// carrying the old numbers across would have made every torch visibly dimmer.
+function _glowSpr(x, y, r, tint, alpha, tex, texSize) {
+  const sp = _takePooled(_lightSpr, _lightN++, _lightsCt, tex, PIXI.BLEND_MODES.ADD);
+  if (sp.texture !== tex) sp.texture = tex;
+  sp.x = x; sp.y = y;
+  sp.scale.set(r * 2 / texSize);
+  sp.tint = tint;
+  sp.alpha = alpha;
 }
 
 // ── AOE rings ─────────────────────────────────────────────
@@ -716,6 +1065,11 @@ function _drawAoeBloodwave(g, x, y, R, p, color, color2) {
 function _updateAoeRings() {
   _aoeGfx.clear();
   aoeRings.forEach(ring => {
+    // A ring is up to 48 seeded jagged segments (fissure/frost). Off screen it
+    // is 48 segments of nothing. The radius is added to the margin so a ring
+    // whose centre sits just past the edge still draws the part that reaches in.
+    const rr = ring.r || 0;
+    if (ring.x < _vL - rr || ring.x > _vR + rr || ring.y < _vT - rr || ring.y > _vB + rr) return;
     const p = 1 - ring.life / ring.maxLife;
     const color = _hexToNum(ring.color, 0x44aaff);
     switch (ring.style) {
@@ -774,8 +1128,6 @@ function _updateNpcs(dt, ts) {
     if (!onScreen) continue;
     obj.ct.x = n.x; obj.ct.y = n.y;
     const { gfx, spr } = obj;
-    gfx.clear();
-    const col = parseInt((n.color || '#7b5ea7').replace('#', ''), 16);
 
     // Sprite (lazy-load on first encounter, matches enemy loading pattern)
     if (!npcSpriteCache[n.icon]) loadNpcSprites(n.icon);
@@ -788,11 +1140,6 @@ function _updateNpcs(dt, ts) {
     const spriteTop    = -_NPC_DISPLAY_H * 0.55;
     const spriteBottom = spriteTop + _NPC_DISPLAY_H;
 
-    // Shadow at the feet
-    gfx.beginFill(0x000000, 0.3);
-    gfx.drawEllipse(0, textures ? spriteBottom - 6 : 18, 14, 5);
-    gfx.endFill();
-
     if (textures && def) {
       if (n._animTimer === undefined) { n._animFrame = 0; n._animTimer = 0; }
       n._animTimer += dt;
@@ -801,25 +1148,42 @@ function _updateNpcs(dt, ts) {
         n._animTimer -= fd;
         n._animFrame = (n._animFrame + 1) % def.cols;
       }
-      spr.texture = textures[n._animFrame] || textures[0];
-      spr.width  = _NPC_DISPLAY_H;
-      spr.height = _NPC_DISPLAY_H;
+      _setTexSize(spr, textures[n._animFrame] || textures[0], _NPC_DISPLAY_H, _NPC_DISPLAY_H);
       spr.x = -_NPC_DISPLAY_H * 0.5;
       spr.y = spriteTop;
       spr.visible = true;
     } else {
-      // Circle fallback while the sheet is still loading
       spr.visible = false;
-      gfx.beginFill(col);
-      gfx.drawCircle(0, 0, 18);
-      gfx.endFill();
     }
 
     t.x = n.x; t.y = n.y + (textures ? spriteTop + 8 : -26);
 
-    if (nearNpc && nearNpc.id === n.id) {
+    // The foot shadow and the loading-fallback token never move, and an NPC
+    // never changes colour or icon at runtime. The one animated thing on this
+    // layer is the chat bubble, and only for whichever single NPC the player
+    // is standing next to. Rebuilding the whole Graphics for every NPC in the
+    // hub every frame — clear, tessellate, re-upload — produced bit-for-bit
+    // identical geometry ~60 times a second. Same guard the enemy and
+    // other-player layers already had; the NPC layer never got one.
+    const isNear = !!(nearNpc && nearNpc.id === n.id);
+    const hasTex = !!(textures && def);
+    if (!isNear && !obj._gfxNear && obj._gfxTex === hasTex) continue;
+    obj._gfxNear = isNear;
+    obj._gfxTex  = hasTex;
+
+    gfx.clear();
+    gfx.beginFill(0x000000, 0.3);
+    gfx.drawEllipse(0, hasTex ? spriteBottom - 6 : 18, 14, 5);
+    gfx.endFill();
+    if (!hasTex) {
+      // Circle fallback while the sheet is still loading
+      gfx.beginFill(_tintOf(n.color, 0x7b5ea7));
+      gfx.drawCircle(0, 0, 18);
+      gfx.endFill();
+    }
+    if (isNear) {
       // chat bubble indicator
-      const bubbleY = (textures ? spriteTop - 20 : -44) + bounce;
+      const bubbleY = (hasTex ? spriteTop - 20 : -44) + bounce;
       gfx.beginFill(0xffffff, 0.85);
       gfx.drawRoundedRect(-8, bubbleY, 16, 13, 3);
       gfx.endFill();
@@ -829,30 +1193,34 @@ function _updateNpcs(dt, ts) {
 
 // ── drops ─────────────────────────────────────────────────
 
+function _dropSprite(tex, x, y, size, tint, alpha) {
+  const sp = _takePooled(_dropSpr, _dropN++, _dropCt, tex, null);
+  if (sp.texture !== tex) sp.texture = tex;
+  sp.x = x; sp.y = y;
+  sp.scale.set(size / tex.orig.width);
+  sp.tint = tint; sp.alpha = alpha;
+}
+
 function _updateDrops(ts) {
-  _dropGfx.clear();
+  _ensureBaked();
+  _dropN = 0;
   _drawWorldDrops(ts);
-  if (!drops.length) return;
   const s = Math.sin(ts * 0.0054);
   const bob = s * 3;
-  drops.forEach(d => {
+  for (let i = 0; i < drops.length; i++) {
+    const d = drops[i];
+    if (d.x < _vL || d.x > _vR || d.y < _vT || d.y > _vB) continue;
     const a = Math.min(1, d.life * 1.5) * (0.85 + 0.15 * s);
+    const y = d.y + bob;
     if (d.type === 'gold') {
-      _dropGfx.beginFill(0xffff00, a);
-      _dropGfx.drawCircle(d.x, d.y + bob, 9);
-      _dropGfx.endFill();
-      _dropGfx.beginFill(0xcc8800, a * 0.9);
-      _dropGfx.drawCircle(d.x, d.y + bob, 5);
-      _dropGfx.endFill();
+      _dropSprite(_texDot, d.x, y, 18, 0xffff00, a);
+      _dropSprite(_texDot, d.x, y, 10, 0xcc8800, a * 0.9);
     } else {
-      _dropGfx.beginFill(0xaaaacc, a * 0.85);
-      _dropGfx.drawRoundedRect(d.x - 10, d.y + bob - 10, 20, 20, 3);
-      _dropGfx.endFill();
-      _dropGfx.lineStyle(1.5, 0xffffff, a * 0.5);
-      _dropGfx.drawRoundedRect(d.x - 10, d.y + bob - 10, 20, 20, 3);
-      _dropGfx.lineStyle(0);
+      _dropSprite(_texGemFill, d.x, y, 20, 0xaaaacc, a * 0.85);
+      _dropSprite(_texGemEdge, d.x, y, 20, 0xffffff, a * 0.5);
     }
-  });
+  }
+  _hideRest(_dropSpr, _dropN);
 }
 
 // Event-boss ground loot (js/state.js worldDrops). Drawn as rarity-tinted
@@ -867,51 +1235,56 @@ function _drawWorldDrops(ts) {
   const bob = s * 3;
   const a = 0.85 + 0.15 * s;
   worldDrops.forEach(d => {
+    // An event boss leaves 60+ piles lying across the whole arena, and they
+    // bob, so nothing here can be cached between frames. Two things fix that:
+    // only draw what is on screen, and draw it as three sprites instead of a
+    // halo circle plus two rounded rects — which measured 462 tessellated
+    // vertices per pile, rebuilt sixty times a second (dev/render-check.html).
+    if (d.x < _vL || d.x > _vR || d.y < _vT || d.y > _vB) return;
     const col = _WD_RARITY_HEX[d.item && d.item.rarity] || 0xc4a276;
     const y = d.y + bob;
-    _dropGfx.beginFill(col, a * 0.18);
-    _dropGfx.drawCircle(d.x, y, 17);
-    _dropGfx.endFill();
-    _dropGfx.beginFill(col, a * 0.9);
-    _dropGfx.drawRoundedRect(d.x - 9, y - 9, 18, 18, 4);
-    _dropGfx.endFill();
-    _dropGfx.lineStyle(1.5, 0xffffff, a * 0.55);
-    _dropGfx.drawRoundedRect(d.x - 9, y - 9, 18, 18, 4);
-    _dropGfx.lineStyle(0);
+    _dropSprite(_texGlow, d.x, y, 46, col, a * 0.30);
+    _dropSprite(_texGemFill, d.x, y, 18, col, a * 0.9);
+    _dropSprite(_texGemEdge, d.x, y, 18, 0xffffff, a * 0.55);
   });
 }
 
 // ── particles ─────────────────────────────────────────────
 
+// One pooled sprite per live particle, all off _texDot, all in one container:
+// a single batched draw call regardless of count, and no per-frame geometry.
+//
+// The colour-sort this used to do is gone along with the Graphics it existed
+// for. Grouping same-coloured circles into runs was the only way to stop a
+// Graphics starting a fresh fill batch per particle; a sprite carries its
+// colour in .tint, which is per-vertex data inside the same batch, so order
+// no longer affects anything and the sort was pure cost.
 function _updateParticles() {
-  _partGfx.clear();
-  if (!particles.length) return;
-  if (_particlesDirty) {
-    if (particles.length > 1) particles.sort((a, b) => (a.color > b.color) - (a.color < b.color));
-    _particlesDirty = false;
+  _partN = 0;
+  if (!particles.length) { _hideRest(_partSpr, 0); return; }
+  _ensureBaked();
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    const a = p.life > 0 ? (p.life < 1 ? p.life : 1) : 0;
+    if (a <= 0) continue;
+    // Off-screen particles were drawn too — a burst you walked away from kept
+    // costing a tessellated circle every frame until it expired.
+    if (p.x < _vL || p.x > _vR || p.y < _vT || p.y > _vB) continue;
+    const sp = _takePooled(_partSpr, _partN++, _partCt, _texDot, null);
+    if (sp.texture !== _texDot) sp.texture = _texDot;
+    sp.x = p.x; sp.y = p.y;
+    sp.scale.set(p.size * 2 / 64);
+    sp.tint = _tintOf(p.color, 0xffffff);
+    sp.alpha = a;
   }
-  let i = 0;
-  while (i < particles.length) {
-    const col = particles[i].color;
-    const cn = parseInt(col.replace('#', ''), 16);
-    let j = i;
-    while (j < particles.length && particles[j].color === col) j++;
-    // find max alpha in this batch for beginFill (individual alphas via separate fills)
-    while (i < j) {
-      const p = particles[i++];
-      const a = Math.max(0, p.life);
-      if (a <= 0) continue;
-      _partGfx.beginFill(cn, a);
-      _partGfx.drawCircle(p.x, p.y, p.size);
-      _partGfx.endFill();
-    }
-  }
+  _hideRest(_partSpr, _partN);
 }
 
 // ── projectiles ───────────────────────────────────────────
 
 function _pixiDrawProj(p) {
-  const col = parseInt((p.color || '#fa0').replace('#', ''), 16);
+  if (p.x < _vL || p.x > _vR || p.y < _vT || p.y > _vB) return;
+  const col = _tintOf(p.color, 0xffaa00);
   if (p.projType === 'arrow') {
     const ang = p.angle ?? Math.atan2(p.vy, p.vx);
     const cos = Math.cos(ang), sin = Math.sin(ang);
@@ -929,54 +1302,84 @@ function _pixiDrawProj(p) {
     ]);
     _projGfx.endFill();
   } else {
-    _projGfx.beginFill(col, 0.3);
-    _projGfx.drawCircle(p.x, p.y, p.size + 7);
-    _projGfx.endFill();
-    _projGfx.beginFill(col, 0.8);
-    _projGfx.drawCircle(p.x, p.y, p.size);
-    _projGfx.endFill();
-    _projGfx.beginFill(0xffffff, 0.9);
-    _projGfx.drawCircle(p.x, p.y, p.size * 0.38);
-    _projGfx.endFill();
+    // Three concentric circles = ~280 tessellated vertices per bolt, rebuilt
+    // every frame because the bolt moves. A mage and a warlock in the same
+    // fight put a dozen of these on screen at once. Three sprites is eighteen
+    // indices and no geometry at all — and the baked falloff gives the halo a
+    // real gradient instead of a flat disc with a hard edge.
+    _projSprite(_texGlow, p.x, p.y, (p.size + 7) * 2.6, col, 0.34);
+    _projSprite(_texDot,  p.x, p.y, p.size * 2, col, 0.85);
+    _projSprite(_texDot,  p.x, p.y, p.size * 0.76, 0xffffff, 0.9);
   }
+}
+function _projSprite(tex, x, y, size, tint, alpha) {
+  const sp = _takePooled(_projSpr, _projN++, _projCt, tex, null);
+  if (sp.texture !== tex) sp.texture = tex;
+  sp.x = x; sp.y = y;
+  sp.scale.set(size / tex.orig.width);
+  sp.tint = tint; sp.alpha = alpha;
 }
 
 function _updateProjs() {
+  _ensureBaked();
   _projGfx.clear();
+  _projN = 0;
   projs.forEach(_pixiDrawProj);
   otherProjs.forEach(_pixiDrawProj);
+  _hideRest(_projSpr, _projN);
 }
 
 // ── damage numbers ────────────────────────────────────────
 
-function _getDmgText() {
-  if (_dmgPool.length) return _dmgPool.pop();
-  const t = new PIXI.Text('', {
-    fontFamily: 'Arial', fontWeight: 'bold',
-    fill: '#fff', stroke: '#000', strokeThickness: 3,
-    align: 'center',
-  });
-  t.anchor.set(0.5, 0.5);
-  _dmgNumCt.addChild(t);
-  return t;
-}
-
 function _updateDmgNums() {
-  while (_dmgActive.length > dmgNums.length) {
-    const t = _dmgActive.pop();
-    t.visible = false;
-    _dmgPool.push(t);
-  }
-  while (_dmgActive.length < dmgNums.length) _dmgActive.push(_getDmgText());
+  const bmpOk = _ensureDmgFont();
+  _dmgBmpN = 0; _dmgTxtN = 0;
   for (let i = 0; i < dmgNums.length; i++) {
-    const d = dmgNums[i], t = _dmgActive[i];
-    t.visible = true;
-    if (t.text !== d.text) t.text = d.text;
-    if (t.style.fontSize !== (d.fontSize || 15)) t.style.fontSize = d.fontSize || 15;
-    if (t.style.fill !== (d.color || '#fff')) t.style.fill = d.color || '#fff';
-    t.alpha = Math.min(1, d.life * 1.5);
-    t.x = d.x; t.y = d.y;
+    const d = dmgNums[i];
+    const size  = d.fontSize || 15;
+    const tint  = _tintOf(d.color, 0xffffff);
+    const alpha = d.life * 1.5 < 1 ? d.life * 1.5 : 1;
+    if (bmpOk && _dmgSpellable(d.text)) {
+      let t = _dmgBmp[_dmgBmpN];
+      if (!t) {
+        t = new PIXI.BitmapText('', { fontName: _DMG_FONT, align: 'center' });
+        t.anchor.set(0.5, 0.5);
+        _dmgNumCt.addChild(t);
+        _dmgBmp[_dmgBmpN] = t;
+      }
+      _dmgBmpN++;
+      t.visible = true;
+      if (t.text !== d.text) t.text = d.text;
+      // Scaled, not re-sized: BitmapText.fontSize rebuilds the glyph layout,
+      // scale is a transform the GPU applies for free.
+      const sc = size / _DMG_BAKE_PX;
+      if (t.scale.x !== sc) t.scale.set(sc);
+      t.tint = tint; t.alpha = alpha;
+      t.x = d.x; t.y = d.y;
+    } else {
+      let t = _dmgTxt[_dmgTxtN];
+      if (!t) {
+        // White + tint rather than a coloured fill: tint is a multiply, so the
+        // black outline stays black while the glyph body takes the colour, and
+        // changing colour no longer re-rasterises the string.
+        t = new PIXI.Text('', {
+          fontFamily: 'Arial', fontWeight: 'bold', fontSize: 15,
+          fill: '#ffffff', stroke: '#000000', strokeThickness: 3, align: 'center',
+        });
+        t.anchor.set(0.5, 0.5);
+        _dmgNumCt.addChild(t);
+        _dmgTxt[_dmgTxtN] = t;
+      }
+      _dmgTxtN++;
+      t.visible = true;
+      if (t.text !== d.text) t.text = d.text;
+      if (t.style.fontSize !== size) t.style.fontSize = size;
+      t.tint = tint; t.alpha = alpha;
+      t.x = d.x; t.y = d.y;
+    }
   }
+  _hideRest(_dmgBmp, _dmgBmpN);
+  _hideRest(_dmgTxt, _dmgTxtN);
 }
 
 // ── enemy pool ────────────────────────────────────────────
@@ -1038,9 +1441,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     const frame  = Math.min(e._animFrame || 0, sh.cols - 1);
     const tex    = rowTex?.[frame];
     if (tex) {
-      spr.texture  = tex;
-      spr.width    = ds;
-      spr.height   = ds;
+      _setTexSize(spr, tex, ds, ds);
       spr.x        = -ds * 0.5;
       spr.y        = -ds * 0.55;
       spr.tint    = (e.hurtTimer > 0) ? 0xff4444 : 0xffffff;
@@ -1115,8 +1516,14 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
 
   // Name / boss label above HP bar — level on its own line above the name
   const { lbl } = obj;
-  const lvlLine  = e.rlvl > 0 ? `Уровень ${e.rlvl}\n` : '';
-  const nameLine = e.isBoss ? `⚠ БОСС · ${e.name || ''}` : `${e.name || ''}`;
+  // Both halves used to be Russian string literals, so a player on any of the
+  // other five languages read "Уровень" and "БОСС" over every monster's head.
+  // The keys already existed and nothing was using them here.
+  const lvlLine = e.rlvl > 0
+    ? (typeof tVars === 'function' ? tVars('charLevelFmt', { lvl: e.rlvl }) : 'Уровень ' + e.rlvl) + '\n'
+    : '';
+  const boss = typeof t === 'function' ? t('bossTag') : 'БОСС';
+  const nameLine = e.isBoss ? `⚠ ${boss} · ${e.name || ''}` : `${e.name || ''}`;
   const lblText  = lvlLine + nameLine;
   if (lbl.text !== lblText) lbl.text = lblText;
   lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
@@ -1298,13 +1705,12 @@ function _updateOtherPlayers(pulse, ts) {
     if (textures && def) {
       const ad = def.anims[key];
       const fi = Math.min(Math.floor(p.animFrame || 0), (ad?.n || 1) - 1);
-      spr.texture = textures[fi] || PIXI.Texture.WHITE;
       const cache = spriteCache[p.type];
       const img   = cache?.[key];
       const fw    = img?.frameW || def.frameW || 64;
       const fh    = img?.frameH || def.frameH || 64;
       const dh = _PLAYER_DISPLAY_H * (def.dispScale || 1), dw = dh * fw / fh;
-      spr.width = dw; spr.height = dh;
+      _setTexSize(spr, textures[fi] || PIXI.Texture.WHITE, dw, dh);
       spr.x = -dw / 2; spr.y = -dh * 0.62;
       spr.visible = true;
       usedSprite = true;
@@ -1412,13 +1818,12 @@ function _updatePlayer(dt, ts) {
   if (textures && def) {
     const ad = def.anims[key];
     const fi = Math.min(Math.floor(player.animFrame), (ad?.n || 1) - 1);
-    _plSpr.texture = textures[fi] || PIXI.Texture.WHITE;
     const cache = spriteCache[player.type];
     const img   = cache?.[key];
     const fw    = img?.frameW || def.frameW || 64;
     const fh    = img?.frameH || def.frameH || 64;
     const dh = _PLAYER_DISPLAY_H * (def.dispScale || 1), dw = dh * fw / fh;
-    _plSpr.width = dw; _plSpr.height = dh;
+    _setTexSize(_plSpr, textures[fi] || PIXI.Texture.WHITE, dw, dh);
     _plSpr.x = player.x - dw / 2;
     _plSpr.y = player.y - dh * 0.62;
     _plSpr.tint    = (player.hurtTimer > 0) ? 0xff4444 : 0xffffff;
@@ -1557,8 +1962,7 @@ function _updateOnePet(key, petId, ownerX, ownerY, ownerFacing, speed, dt) {
     const fw    = img?.frameW || def.frameW;
     const fh    = img?.frameH || def.frameH;
     const dh = _PLAYER_DISPLAY_H * _PET_DISPLAY_SCALE, dw = dh * fw / fh;
-    obj.spr.texture = textures[st._animFrame] || PIXI.Texture.WHITE;
-    obj.spr.width = dw; obj.spr.height = dh;
+    _setTexSize(obj.spr, textures[st._animFrame] || PIXI.Texture.WHITE, dw, dh);
     obj.spr.x = st.x - dw / 2;
     obj.spr.y = st.y - dh * (def.anchorY != null ? def.anchorY : 0.7);
     obj.spr.visible = true;
@@ -1632,5 +2036,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _updatePlayer(dt, ts);
   _updateDmgNums();
 
+  _gpuDraws = 0; _gpuVerts = 0;
   _pixiApp.renderer.render(_pixiApp.stage);
+  _gpuDrawsSnap = _gpuDraws; _gpuVertsSnap = _gpuVerts;
 }

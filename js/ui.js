@@ -152,7 +152,7 @@ function _refreshTeleportBadge() {
 // 'teleportCastStarted', js/network.js). Purely cosmetic — the server is
 // sole authority over whether the player can actually move or attack during
 // a cast (_teleportCastFrozen folded into _pvpFrozen, server/index.js) —
-// but this is what drives the blue swirl (drawTeleportPads, js/game.js) and
+// but this is what drives the blue swirl (_buildDecals, js/game.js) and
 // lets the button itself ignore extra taps while one is already running.
 let _teleportCastUntil = 0;
 function _teleportCasting() {

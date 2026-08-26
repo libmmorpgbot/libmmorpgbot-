@@ -1,0 +1,283 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>render-check</title>
+<style>
+  body { margin:0; background:#111; color:#d1ccc5; font:12px/1.55 monospace; display:flex; gap:14px; padding:12px; }
+  #frame-wrap { width:412px; height:915px; flex:0 0 auto; border:1px solid #333; }
+  iframe { width:412px; height:915px; border:0; display:block; }
+  #out { flex:1 1 auto; white-space:pre-wrap; margin:0; }
+  .ok { color:#98e456 } .bad { color:#ed5a6b } .warn { color:#e69419 } .h { color:#edc174 }
+</style>
+<div id="frame-wrap"><iframe id="game" src="/game-frame.html"></iframe></div>
+<pre id="out">запускаю…</pre>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  render-check — does the client actually draw?
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The real index.html, the real concatenated bundle, the real render loop.
+// Only socket.io and Telegram are stubbed (see dev/render-check.js). This page
+// fakes a floor, a character and every kind of thing the world layer knows how
+// to draw, drives the real update()/render() pair, and reports what the GPU
+// was actually handed.
+//
+// It exists because no other detector in dev/ can see the screen. A duplicate
+// top-level `let` between two bundled files once shipped a blank page to every
+// player; the bundle parsed fine on the server, and nothing ever ran it.
+//
+// Note on how the world is injected: the client is one script scope, and its
+// state (player, dungeon, camera, ...) is declared with `let`, which lives in
+// the global LEXICAL environment and is therefore not reachable as a property
+// of the frame's window. Only function declarations are. So setup runs as a
+// <script> appended into the frame — same scope as the game itself — and hands
+// its findings back through an ordinary window property.
+const out = document.getElementById('out');
+const lines = [];
+let failed = 0, passed = 0;
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const say  = (s, cls) => { lines.push(cls ? '<span class="' + cls + '">' + esc(s) + '</span>' : esc(s)); out.innerHTML = lines.join('\n'); };
+const head = s => say('\n── ' + s + ' ──', 'h');
+const ok   = (cond, label, extra) => {
+  if (cond) { passed++; say('  PASS  ' + label + (extra ? '   ' + extra : ''), 'ok'); }
+  else { failed++; say('  FAIL  ' + label + (extra ? '   ' + extra : ''), 'bad'); }
+};
+
+const fr = document.getElementById('game');
+fr.addEventListener('load', () => setTimeout(run, 1200));
+
+function inject(w, code) {
+  const sc = w.document.createElement('script');
+  sc.textContent = code;
+  w.document.body.appendChild(sc);
+  sc.remove();
+}
+// Frames are driven directly rather than through requestAnimationFrame.
+// rAF is a vsync callback: a browser that is not compositing the page — a
+// background tab, a headless run, a pane that is not on screen — never fires
+// it, and the harness would sit there forever reporting nothing. Calling
+// update()/render() is the same code path the loop calls, minus the wait, and
+// it makes the timing below a measurement of the work instead of a
+// measurement of the monitor.
+function frames(w, n, ms) {
+  return new Promise(res => {
+    inject(w, 'window.__rcFrameMs = (function(){' +
+      'var t0 = performance.now();' +
+      'for (var i = 0; i < ' + n + '; i++) { var ts = performance.now(); update(1/60, 1/60); render(1/60, ts); }' +
+      'return (performance.now() - t0) / ' + n + ';' +
+    '})();');
+    setTimeout(res, ms || 0);
+  });
+}
+
+// Composite the WebGL world and the 2D HUD overlay into one PNG and send it
+// to the server. Injected so it runs in the SAME task as the render() call
+// it makes: without preserveDrawingBuffer the WebGL drawing buffer is gone
+// the moment the browser composites, so reading it a tick later comes back
+// blank. "It drew something" and "it drew the right thing" are different
+// claims, and only one of them is answerable by an assertion.
+const SHOT = `(function () {
+  var world = document.getElementById("canvas");
+  var hud   = document.getElementById("ui-canvas");
+  render(1 / 60, performance.now());
+  var out = document.createElement("canvas");
+  out.width = world.width; out.height = world.height;
+  var c = out.getContext("2d");
+  c.drawImage(world, 0, 0, out.width, out.height);
+  if (hud) c.drawImage(hud, 0, 0, out.width, out.height);
+  var x = new XMLHttpRequest();
+  x.open("POST", "/shot", true);
+  x.send(out.toDataURL("image/png"));
+})();`;
+
+// Everything below runs INSIDE the game's own script scope.
+const SETUP = `
+(function () {
+  const TW = 70, TH = 70, T = TILE;
+  const grid = [];
+  for (let y = 0; y < TH; y++) {
+    const row = new Array(TW);
+    for (let x = 0; x < TW; x++) row[x] = (x < 2 || y < 2 || x > TW - 3 || y > TH - 3) ? 0 : 1;
+    grid.push(row);
+  }
+  const cx = 35 * T, cy = 35 * T;
+  window.__rcCx = cx; window.__rcCy = cy;
+  dungeonLvl = 1;
+  dungeon = {
+    w: TW, h: TH, grid, spawn: { x: cx, y: cy },
+    rooms: [{ x: 2, y: 2, w: TW - 4, h: TH - 4, arm: 'left', monsterLvl: 5 }],
+    safeZone: null, armEntries: null, returnPad: null, corridorGates: null,
+  };
+  buildTileCanvas();
+  player = makePlayer('lev');
+  player.x = cx; player.y = cy;
+  netUsername = 'render-check';
+  state = 'playing';
+  activeTab = 0;
+  camera.x = cx - 200; camera.y = cy - 300;
+  loadSprites('lev');
+
+  // Enemies — entity sprites, HP bars, status tints, selection ring, labels.
+  const eids = Object.keys(ENEMY_SPRITE_DEF || {});
+  serverEnemies = [];
+  for (let i = 0; i < 12; i++) {
+    const e = {
+      id: 'e' + i, eid: eids[i % eids.length],
+      x: cx - 240 + (i % 4) * 150, y: cy - 180 + Math.floor(i / 4) * 130,
+      hp: 60 - i * 3, maxHp: 60, size: 18, rlvl: 5 + i, name: 'Монстр ' + i,
+      isBoss: i === 0, aggro: i % 2 === 0, _moveTimer: 1, _facing: 'down',
+      atkAnimTimer: 0, hurtTimer: i === 3 ? 0.2 : 0,
+      slowTimer: i === 5 ? 1 : 0, stunTimer: i === 6 ? 1 : 0,
+    };
+    serverEnemies.push(e);
+    loadEnemySprites(e.eid);
+  }
+  serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
+  targetId = 'e1'; targetIsPlayer = false;
+
+  // Other players — second entity layer plus the 2D name/clan overlay.
+  otherPlayers = new Map();
+  ['lev', 'mage', 'ranger'].forEach(function (ty, i) {
+    otherPlayers.set('p' + i, {
+      x: cx + 120 + i * 70, y: cy + 140, type: ty, facing: 'front',
+      hp: 90, maxHp: 100, username: 'Игрок' + i, clanName: 'Клан', clanIcon: 3,
+      animFrame: 0, pvpMode: i === 0,
+    });
+    loadSprites(ty);
+  });
+
+  drops = [{ x: cx - 60, y: cy + 60, type: 'gold', life: 1 },
+           { x: cx - 20, y: cy + 60, type: 'item', life: 1 }];
+  worldDrops = new Map();
+  for (let i = 0; i < 40; i++) {
+    worldDrops.set('w' + i, { id: 'w' + i,
+      x: cx - 300 + (i % 8) * 80, y: cy + 200 + Math.floor(i / 8) * 60,
+      item: { rarity: ['common', 'uncommon', 'rare', 'epic', 'legendary'][i % 5] } });
+  }
+  projs = [{ x: cx + 40, y: cy - 40, vx: 1, vy: 0, size: 6, color: '#fa0', projType: 'arrow', angle: 0 },
+           { x: cx + 90, y: cy - 40, vx: 1, vy: 0, size: 7, color: '#4af' }];
+  otherProjs = [];
+  spawnBurst(cx, cy - 80, '#ff8844', 60);
+  spawnBurst(cx + 60, cy - 80, '#66ccff', 60);
+  spawnAOE(cx - 120, cy, 70, 'fissure', '#e04040', '#ffaa40');
+  spawnAOE(cx + 120, cy, 60, 'frost', '#5ad0ff');
+  dmgNum(cx, cy - 40, '1234', '#ff4');
+  dmgNum(cx + 30, cy - 60, '⚡ 999', '#ff8c00', 19);
+  dmgNum(cx - 30, cy - 60, '+250g', '#ff0');
+  dmgNum(cx, cy - 100, '−50% XP (5 мин)', '#c4838a');   // Cyrillic: the fallback path
+
+  // Ground decals: portal, return pad, level gates, both barrier kinds.
+  _portalPad = { x: cx - 160, y: cy - 200 };
+  _returnPads = [{ x: cx - 60, y: cy - 200 }];
+  _armGates = [{ x: cx + 200, y: cy - 200, req: 20, dir: 'left' },
+               { x: cx + 200, y: cy - 60,  req: 0,  dir: 'top' }];
+  _raceBarriers = [{ x: cx - 260, y: cy - 60, lane: 0, tier: 0 }];
+  _coopBarriers = [{ x: cx - 260, y: cy + 60, stage: 5 }];
+  _coopStageNo = 0;
+
+  ['login-screen', 'charselect'].forEach(function (id) {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  const cs = document.querySelector('.cs-stage');
+  if (cs && cs.parentElement) cs.parentElement.style.display = 'none';
+})();`;
+
+const PROBE = `window.__rc = {
+  alive: pixiAlive(), gpu: gpuStats(),
+  particles: particles.length, dmg: dmgNums.length,
+  decals: _decals.length, decalKinds: _decals.map(function (d) { return d.k; }),
+  labels: _decalLbls.length,
+  enemies: serverEnemies.length, others: otherPlayers.size, drops: worldDrops.size,
+  torches: (typeof _chunkTorches !== 'undefined' && _chunkTorches) ? _chunkTorches.size : -1,
+  state: state, hasDungeon: !!dungeon,
+  profUpdate: _profUpdate, profRender: _profRender,
+};`;
+
+const BURST = `for (let i = 0; i < 6; i++) spawnBurst(__rcCx + i * 30, __rcCy, '#ff8844', 60);`;
+
+async function run() {
+  const w = fr.contentWindow;
+  out.innerHTML = ''; lines.length = 0;
+
+  head('загрузка');
+  ok(typeof w.PIXI === 'object', 'PixiJS загружен', w.PIXI && w.PIXI.VERSION);
+  ok(typeof w.pixiInit === 'function', 'бандл выполнился');
+  if (typeof w.pixiInit !== 'function') return finish(w);
+  ok(w.pixiAlive(), 'рендерер живой (WebGL-контекст есть)');
+  ok((w.__rcErrors || []).length === 0, 'ни одной ошибки при старте', (w.__rcErrors || []).slice(0, 3).join(' | '));
+
+  head('мир');
+  inject(w, SETUP);
+  await frames(w, 12);
+  inject(w, PROBE);
+  let r = w.__rc;
+  ok(r && r.hasDungeon && r.state === 'playing', 'этаж собран и игра в состоянии playing');
+  ok(r.torches > 0, 'тайл-чанки построены (есть факелы)', r.torches + ' чанков с факелами');
+
+  head('всё, что рисует мир');
+  ok(r.gpu.draws > 0, 'кадр дошёл до GPU', r.gpu.draws + ' draw calls, ' + (r.gpu.verts / 1000).toFixed(1) + 'k вершин');
+  ok(r.gpu.draws < 60, 'сцена батчится', r.gpu.draws + ' draws на ' + r.enemies + ' мобов + ' + r.others + ' игроков + ' + r.particles + ' частиц + ' + r.drops + ' дропов');
+  ok(r.alive, 'рендерер пережил полную сцену');
+  ok(r.particles > 0, 'частицы живы', r.particles + ' шт');
+  ok(r.dmg > 0, 'цифры урона живы', r.dmg + ' шт');
+  ok(r.decals > 0, 'декали на полу собраны', r.decals + ' фигур, ' + r.labels + ' подписей');
+  ok(r.decalKinds.indexOf('swirl') >= 0, 'портал (swirl) собран');
+  ok(r.decalKinds.indexOf('ring') >= 0, 'кольцевые пады и ворота собраны');
+  ok(r.decalKinds.indexOf('wall') >= 0, 'барьеры зон собраны');
+
+  inject(w, SHOT);
+  say('  снимок кадра отправлен -> dev/_render-shot.png');
+
+  head('атлас цифр урона');
+  const bmp = w.PIXI.BitmapFont.available && w.PIXI.BitmapFont.available['libdmg'];
+  ok(!!bmp, 'атлас глифов испечён', bmp ? Object.keys(bmp.chars).length + ' глифов' : 'НЕТ');
+  if (bmp) {
+    const pages = Object.keys(bmp.pageTextures || {}).length;
+    ok(pages === 1, 'одна страница атласа = один draw call на все цифры', pages + ' стр.');
+    ok(!!bmp.chars[49] && !!bmp.chars[0x26a1], 'цифры и ⚡ (крит) в атласе');
+    ok(!bmp.chars[0x043c], 'кириллицы нет — она уходит в запасной PIXI.Text (так и задумано)');
+  }
+
+  head('нагрузка: +360 частиц, 60 кадров подряд');
+  inject(w, BURST);
+  await frames(w, 60);
+  const frameMs = w.__rcFrameMs;
+  inject(w, PROBE);
+  r = w.__rc;
+  say('  update+render: ' + frameMs.toFixed(2) + 'ms на кадр (чистая работа, без ожидания vsync)');
+  say('  GPU: ' + r.gpu.draws + ' draw calls, ' + (r.gpu.verts / 1000).toFixed(1) + 'k вершин, частиц ' + r.particles);
+  ok(r.gpu.draws < 60, 'draw calls остались низкими под нагрузкой', String(r.gpu.draws));
+  ok(r.gpu.verts < 6000, 'геометрии кадра мало', (r.gpu.verts / 1000).toFixed(1) + 'k вершин');
+
+  head('цена одного объекта в вершинах');
+  // The regression this guards: a pooled sprite is one quad — six indices —
+  // while a PixiJS drawCircle is about ninety-four, because Pixi tessellates
+  // circles in JavaScript and re-uploads the whole buffer every frame.
+  // Particles and ground loot were both circles. Counted per item rather than
+  // in aggregate, so the number stays meaningful whatever else is on screen.
+  inject(w, 'particles.length = 0; worldDrops.clear();');
+  await frames(w, 2);
+  inject(w, PROBE); const vBase = w.__rc.gpu.verts;
+  inject(w, `spawnBurst(__rcCx, __rcCy, '#ff8844', 100);`);
+  await frames(w, 1);
+  inject(w, PROBE); const vPart = w.__rc.gpu.verts;
+  const perParticle = (vPart - vBase) / w.__rc.particles;
+  ok(perParticle <= 6, 'частица = спрайт, не тесселированный круг', perParticle.toFixed(1) + ' верш./частицу (круг был бы ~94)');
+  inject(w, 'particles.length = 0;');
+  inject(w, `for (let i = 0; i < 40; i++) worldDrops.set('d' + i, { id: 'd' + i, x: __rcCx - 200 + (i % 8) * 50, y: __rcCy + 60 + Math.floor(i / 8) * 50, item: { rarity: 'epic' } });`);
+  await frames(w, 2);
+  inject(w, PROBE); const vDrop = w.__rc.gpu.verts;
+  const perDrop = (vDrop - vBase) / 40;
+  ok(perDrop <= 18, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника', perDrop.toFixed(1) + ' верш./кучу (было 462)');
+  ok((w.__rcErrors || []).length === 0, 'ни одной ошибки за весь прогон', (w.__rcErrors || []).slice(0, 5).join(' | '));
+
+  finish(w);
+}
+
+function finish(w) {
+  const errs = (w && w.__rcErrors) || [];
+  say('');
+  say(failed === 0 ? '  ' + passed + ' ПРОШЛО, 0 УПАЛО' : '  ' + passed + ' прошло, ' + failed + ' УПАЛО', failed === 0 ? 'ok' : 'bad');
+  if (errs.length) { say('\nошибки внутри игры:', 'warn'); errs.forEach(e => say('  ' + e, 'bad')); }
+  document.title = failed === 0 ? 'render-check OK' : 'render-check FAIL ' + failed;
+}
+</script>

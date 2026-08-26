@@ -3,14 +3,10 @@ function dmgNum(x, y, text, color, fontSize) {
   dmgNums.push({ x, y, text: t, color, life: 1.1, vy: -52, fontSize: fontSize || (isNaN(t) ? 12 : 15) });
 }
 
-// Set when new particles arrive — render() sorts by color only then.
-// Compaction of dead particles preserves order, so no re-sort is needed
-// between spawns.
-let _particlesDirty = false;
 
 function spawnBurst(x, y, color, n) {
   // On a device the adaptive tier flagged as struggling, hold far fewer live
-  // particles — each one is a per-frame PIXI fill + a physics step, so a lower
+  // particles — each one is a pooled sprite + a physics step, so a lower
   // ceiling directly cuts CPU/GPU load where it's needed most.
   const _cap = (typeof _qualityTier !== 'undefined' && _qualityTier > 0) ? 45 : 120;
   const _space = _cap - particles.length;
@@ -20,7 +16,6 @@ function spawnBurst(x, y, color, n) {
     const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 120;
     particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, color, life: .7, size: 3 + Math.random() * 4 });
   }
-  _particlesDirty = true;
 }
 
 // Tiny seeded PRNG so a jittery style (fissure/frost) keeps the SAME jagged

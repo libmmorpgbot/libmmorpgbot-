@@ -4004,7 +4004,7 @@ function _initPetCraftHandlers(s) {
   // server/index.js) — it, not this timer, is what actually holds the
   // player still for the duration (_teleportCastFrozen/_pvpFrozen). This is
   // only the client's own copy of when that window ends, for the blue swirl
-  // (drawTeleportPads, js/game.js) and so the button ignores a second tap
+  // (_buildDecals, js/game.js) and so the button ignores a second tap
   // mid-cast (_teleportCasting, js/ui.js). The real recall itself arrives
   // the normal way, as a 'gameStart' once the server-side timer fires.
   s.on('teleportCastStarted', ({ ms }) => {
