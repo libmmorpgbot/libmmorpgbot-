@@ -133,7 +133,8 @@ async function _roomForAll(db, playerId, list) {
 async function _grantAll(db, playerId, list) {
   const granted = [];
   for (const it of list) {
-    const rowId = await items.add(db, playerId, it.itemId, { qty: it.qty, enhance: it.enhance });
+    const rowId = await items.add(db, playerId, it.itemId,
+      { qty: it.qty, enhance: it.enhance, source: 'shop', sourceRef: it.itemId });
     if (rowId === null) err('no_room', 'Инвентарь полон');
     granted.push({ ...it, rowId });
   }

@@ -218,7 +218,8 @@ async function buyTeleportStone(db, playerId, qty = 1) {
   });
   if (!paid) err('no_nexum', `Нужно ${cost} Liberty`);
 
-  const rowId = await items.add(db, playerId, 'teleport_stone', { qty: n });
+  const rowId = await items.add(db, playerId, 'teleport_stone',
+    { qty: n, source: 'merchant', sourceRef: 'teleport_stone' });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { qty: n, cost, rowId };
 }
@@ -240,7 +241,8 @@ async function useTeleportStone(db, playerId) {
 async function pickupDrop(db, playerId, itemId, qty = 1, enhance = 0) {
   await items.lockPlayer(db, playerId);
   if (!await items.hasRoomFor(db, playerId, itemId)) err('no_room', 'Инвентарь полон');
-  const rowId = await items.add(db, playerId, itemId, { qty, enhance });
+  const rowId = await items.add(db, playerId, itemId,
+    { qty, enhance, source: 'drop', sourceRef: itemId });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { itemId, qty, enhance, rowId };
 }
@@ -307,7 +309,8 @@ async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram
     // kill — the reward for the kill is not owed anywhere else, and refusing
     // the whole transaction over a slot would also refuse the xp and gold.
     if (!await items.hasRoomFor(db, playerId, d.id)) { out.items.push({ ...d, dropped: true }); continue; }
-    const rowId = await items.add(db, playerId, d.id, { qty: d.qty || 1, enhance: d.enhance || 0 });
+    const rowId = await items.add(db, playerId, d.id,
+      { qty: d.qty || 1, enhance: d.enhance || 0, source: 'kill', sourceRef: idemKey });
     out.items.push(rowId === null ? { ...d, dropped: true } : { ...d, rowId });
   }
   return out;

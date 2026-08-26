@@ -43,9 +43,34 @@ const { Pool } = require('pg');
 // (/srv/liberty/pg-ca.crt). It expires in 2036; if the cluster is ever
 // rebuilt, this file must be refreshed with it — the failure mode is a
 // refused connection at boot, which is loud, not silent.
+// Is DATABASE_URL pointing at this very machine? Used only by the CI escape
+// hatch below, and deliberately strict: a hostname, not a guess. Anything it
+// cannot parse is not loopback.
+function _isLoopbackUrl(raw) {
+  try {
+    const h = new URL(String(raw || '')).hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]';
+  } catch (err) {
+    return false;
+  }
+}
+
 function _ssl() {
   const caFile = process.env.PG_CA_FILE;
   if (!caFile) {
+    // ── the one exception, and it takes TWO keys to open ─────────────────────
+    // Continuous integration runs a throwaway PostgreSQL in the same container,
+    // reached over loopback. There is no network between them to protect and no
+    // CA to have. Refusing there means CI can only ever test the retired Mongo
+    // build, which is exactly the state this is being added to fix.
+    //
+    // Both conditions are required, and neither is reachable by accident:
+    // PG_ALLOW_PLAINTEXT=1 has to be set on purpose, AND the host has to be
+    // this machine. Setting the variable against the production URL still
+    // refuses — which is the property that makes this safe to have at all.
+    if (process.env.PG_ALLOW_PLAINTEXT === '1' && _isLoopbackUrl(process.env.DATABASE_URL)) {
+      return false;
+    }
     throw new Error('PG_CA_FILE is not set — refusing to connect to the money ' +
       'database without a CA to verify it against');
   }

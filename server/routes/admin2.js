@@ -552,7 +552,11 @@ module.exports = function registerAdminRoutes(app, deps) {
         if (!await items.hasRoomFor(t, id, body.itemId)) {
           throw Object.assign(new Error('full'), { userMessage: 'Инвентарь игрока полон' });
         }
-        const rowId = await items.add(t, id, body.itemId, { qty: n, enhance: enh });
+        // The one path where a human decides. Which admin goes in the
+        // reference: "an admin gave it" and "which admin gave it" are
+        // different answers, and only the second one is worth having.
+        const rowId = await items.add(t, id, body.itemId,
+          { qty: n, enhance: enh, source: 'admin', sourceRef: who(req) });
         if (rowId === null) throw Object.assign(new Error('full'), { userMessage: 'Инвентарь игрока полон' });
         return { rowId, added: n, itemId: body.itemId };
       });

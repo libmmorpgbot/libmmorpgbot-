@@ -256,7 +256,8 @@ async function claim(db, playerId, allocationId) {
   if (!await items.hasRoomFor(db, playerId, rows[0].item_id)) {
     err('no_room', 'Звільніть місце в інвентарі');
   }
-  if (await items.add(db, playerId, rows[0].item_id, { qty: rows[0].qty }) === null) {
+  if (await items.add(db, playerId, rows[0].item_id,
+      { qty: rows[0].qty, source: 'clan', sourceRef: 'alloc:' + rows[0].id }) === null) {
     err('no_room', 'Звільніть місце в інвентарі');
   }
   await query(db, 'DELETE FROM clan_allocations WHERE id = $1', [allocationId]);
@@ -284,7 +285,8 @@ async function claimAll(db, playerId) {
   const taken = []; let blocked = 0;
   for (const r of rows) {
     if (!await items.hasRoomFor(db, playerId, r.item_id)) { blocked++; continue; }
-    if (await items.add(db, playerId, r.item_id, { qty: r.qty }) === null) { blocked++; continue; }
+    if (await items.add(db, playerId, r.item_id,
+        { qty: r.qty, source: 'clan', sourceRef: 'alloc:' + r.id }) === null) { blocked++; continue; }
     await query(db, 'DELETE FROM clan_allocations WHERE id = $1', [r.id]);
     taken.push({ itemId: r.item_id, qty: r.qty });
   }

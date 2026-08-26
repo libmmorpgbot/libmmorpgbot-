@@ -47,9 +47,18 @@ const ops = require('./tg-ops');
 // reads (vipSync, getRating, codexSync, chatHistory) and a row for each of
 // those would bury the ones worth reading — the point of the log is that it can
 // be scanned while a player is on the phone.
+// Successes worth a row in player_logs. Refusals and crashes are logged
+// unconditionally (see act() below); this is the list of things that WORKED
+// and are worth being able to look up afterwards.
+//
+// It was missing seventeen actions that move real value, and carried one —
+// 'craft' — that no handler is named, which is why all five real craft events
+// fell through it. The rule for what belongs here: if a player could later ask
+// "where did this go" or "where did this come from", the answer has to exist.
 const WRITE_ACTIONS = new Set([
   'marketList', 'marketBuy', 'marketCancel',
-  'craft', 'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
+  'craftGear', 'craftPet', 'craftClassGear', 'craftMatUpgrade', 'craftBox', 'craftStone',
+  'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
   'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'rebirth',
   'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
@@ -59,6 +68,13 @@ const WRITE_ACTIONS = new Set([
   'clanDisband', 'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim',
   'clanStorageCancel', 'clanStorageUnlock',
   'registerCodexSetItem', 'selectChar', 'respawn',
+  // Rewards and purchases. gramShopBuy is a real-money purchase and had no
+  // player-log row at all; killReward is the single most common way an item
+  // or a coin enters the world.
+  'killReward', 'killRewardShare', 'pickupWorldDrop',
+  'gramShopBuy', 'starterBonusClaim', 'buyTeleportStone', 'useTeleportStone',
+  'seasonBurn', 'seasonBurnAll', 'seasonBurnBook',
+  'healParty', 'enterLocation',
 ]);
 
 // telegramId -> socket.id of the live session. Single-session enforcement, the

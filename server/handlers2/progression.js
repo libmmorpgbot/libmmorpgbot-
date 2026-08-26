@@ -154,7 +154,9 @@ module.exports = function registerProgression(s, safeOn) {
     }
     if (r.xp > 0) await players.grantXp(t, pid, r.xp);
     for (const itemId of (r.items || [])) {
-      if (await items.hasRoomFor(t, pid, itemId)) await items.add(t, pid, itemId);
+      if (await items.hasRoomFor(t, pid, itemId)) {
+        await items.add(t, pid, itemId, { source: 'quest', sourceRef: 'q' + i });
+      }
     }
     await s.pushItems(t); await s.pushBalances(t); await pushAfterStat(t);
     s.socket.emit('questClaimed', { idx: i, nextIdx: res.nextIdx, reward: r });

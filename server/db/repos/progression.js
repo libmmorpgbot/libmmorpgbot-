@@ -254,7 +254,8 @@ async function claimVip(db, playerId, itemsForTier) {
       // the tiers stay claimable. That is the behaviour the old code had to
       // implement by hand ("nothing is consumed on failure: vipPending is left
       // intact") and got wrong when the clear and the grant were separate.
-      if (await items.add(db, playerId, it.id, { qty: it.qty || 1, enhance: it.enhance || 0 }) === null) {
+      if (await items.add(db, playerId, it.id,
+          { qty: it.qty || 1, enhance: it.enhance || 0, source: 'vip', sourceRef: 'tier' }) === null) {
         err('no_room', 'Інвентар повний — звільніть місце і заберіть нагороди знову');
       }
       granted.push(it);

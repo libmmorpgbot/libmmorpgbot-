@@ -1,38 +1,149 @@
 name: ci
 
-# lint: eslint against the real config (eslint.config.js) — no-undef/
-# no-unused-vars are what caught the class of bug that shipped twice in one
-# day (an unimported constant, a dead conditional branch); see the comment
-# at the top of eslint.config.js for how it's scoped across server/client.
+# ═══════════════════════════════════════════════════════════════════════════
+#  What this actually tests, and why it changed
+# ═══════════════════════════════════════════════════════════════════════════
 #
-# harness: runs the real server (server/index.js, unmodified) against the
-# in-memory Mongo double in dev/mongo-memory.js and drives it with real
-# socket.io clients — see dev/harness.js for why this exists and what it
-# checks (economy invariants, item/gold/XP ownership, market flows,
-# reconnect behaviour, the built client bundle). No MongoDB service and no
-# secrets are needed: the harness sets its own throwaway env vars before the
-# server ever loads. The one scenario that drives a real browser
-# (Playwright/Chromium) skips itself when neither is present, which is the
-# case on this runner — see chromiumPath() in dev/harness.js.
+# It used to run `npm run lint` and `node dev/harness.js`, and nothing else.
+# The harness boots `server/index.js` — the RETIRED MongoDB build. The live
+# server is `server/app.js` + `server/handlers2/*` + `server/db/repos/*`
+# (package.json main/start, and the systemd unit both name it). So CI was
+# green while exercising a build that has not run in production for weeks, and
+# ZERO of the ~50 PostgreSQL detectors in dev/ ran anywhere except by hand.
+#
+# That is the worst shape a test suite can take: it reads as proof and proves
+# nothing about the thing that ships.
+#
+# Now CI stands up a throwaway PostgreSQL, applies the real migrations with the
+# real migrate.sh, and runs the detectors that guard the live build's
+# invariants — item conservation, the double-entry ledger, market half-trades,
+# the exploit fixes, enemy streaming. The Mongo harness stays for as long as
+# that build exists, because deleting a test before deleting its subject is how
+# a "temporary" build survives forever.
+#
+# lint: eslint against the real config (eslint.config.js) — no-undef /
+# no-unused-vars are what caught the class of bug that shipped twice in one day
+# (an unimported constant, a dead conditional branch).
+
 on:
   push:
-    branches: [main]
+    # postgres-migration is where the live build is developed; main still
+    # carries the Mongo one. Leaving it off the list would mean CI never ran
+    # on the branch that ships.
+    branches: [main, postgres-migration]
   pull_request:
+  workflow_dispatch:
 
 jobs:
-  ci:
+  # ── everything that needs neither a database nor a browser ────────────────
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - run: npm ci
-
       - run: npm run lint
 
-      - run: node dev/harness.js
+      # The client is 24 files concatenated into ONE script scope. A duplicate
+      # top-level `let` between two of them is an early error that rejects the
+      # whole script — blank page, no HUD, no login — and it has shipped. This
+      # hands both the readable and the minified bundle to a real parser.
+      - name: bundle parses (readable and minified)
+        run: node dev/bundle-check.js
+
+      # A dropped world packet must not cost a monster. No database, no sockets.
+      - name: enemy streaming survives packet loss
+        run: node dev/enemysync-check.js
+
+      # The retired MongoDB build, still tested for as long as it exists —
+      # but not allowed to block the branch that ships. It exercises
+      # server/index.js, which nothing runs any more; if it breaks, that is a
+      # fact worth seeing in the log and not a reason to stop a release of the
+      # PostgreSQL build. The step disappears with the build it tests.
+      - name: legacy mongo harness (does not block)
+        continue-on-error: true
+        run: node dev/harness.js
+
+  # ── the build that actually ships ─────────────────────────────────────────
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # 18 on purpose: claimVipRewards uses the PG18 `RETURNING old.…` form
+        # (server/db/repos/progression.js), so testing against 17 would pass a
+        # query production cannot run.
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: liberty
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      ADMIN_URL: postgres://postgres:ci@localhost:5432/liberty
+      DATABASE_URL: postgres://liberty_app:ci@localhost:5432/liberty
+      # No TLS between two processes in the same container, and no CA to have.
+      # This is honoured ONLY together with a loopback host — see _ssl() in
+      # server/db/index.js, where both keys are required to open it.
+      PG_ALLOW_PLAINTEXT: '1'
+      NODE_ENV: test
+      OPS_LIVE: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # migrate.sh grants to this role on every run, so it has to exist first.
+      # Deliberately NOT a superuser: the REVOKEs at the end of migrate.sh are
+      # what make the ledger append-only, and a superuser would ignore them —
+      # CI would then pass a test production cannot.
+      - name: create the application role
+        run: psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE liberty_app LOGIN PASSWORD 'ci'"
+
+      - name: apply migrations
+        run: bash server/db/migrate.sh
+
+      # Every SQL literal in the server, PREPAREd against the schema that was
+      # just built. Catches a query naming a column no migration creates —
+      # including one added in the same commit and forgotten.
+      - name: every query matches the schema
+        run: node dev/sql-check.js
+
+      - name: currency ledger is atomic and append-only
+        run: node dev/money-check.js
+
+      - name: items are conserved
+        run: node dev/items-check.js
+
+      - name: a trade cannot half-happen
+        run: node dev/market-check.js
+
+      - name: enhancement cannot be got for free
+        run: node dev/enhance-check.js
+
+      - name: clan storage is conserved
+        run: node dev/clans-check.js
+
+      - name: stats cannot be forged
+        run: node dev/stats-check.js
+
+      - name: the exploits stay closed
+        run: node dev/exploit-check.js
+
+      - name: the server boots and answers
+        run: node dev/boot-check.js

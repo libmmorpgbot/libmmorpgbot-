@@ -98,7 +98,7 @@ async function grantItems(t, pid, list) {
     // of bare ids renders as a row of blanks.
     const entry = { ...it, id, qty };
     if (await items.hasRoomFor(t, pid, id)
-        && await items.add(t, pid, id, { qty }) !== null) given.push(entry);
+        && await items.add(t, pid, id, { qty, source: 'mode', sourceRef: id }) !== null) given.push(entry);
     else missed.push(entry);
   }
   return { given, missed };

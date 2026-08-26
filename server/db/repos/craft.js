@@ -200,7 +200,7 @@ async function craft(db, playerId, family, index) {
   // so this granted +0 for every craft while the crafting window showed the
   // player a +6 item. See the function in shared/definitions.js.
   const rowId = await items.add(db, playerId, rec.itemId,
-    { qty: rec.qty || 1, enhance: craftResultEnhance(rec) });
+    { qty: rec.qty || 1, enhance: craftResultEnhance(rec), source: 'craft', sourceRef: String(rec.itemId) });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', family, index, chance, itemId: rec.itemId, rowId };
 }
@@ -244,7 +244,7 @@ async function craftAdvSkillBook(db, playerId) {
   if (rand() >= ADV_SKILL_BOOK_CRAFT.chance) {
     return { outcome: 'fail', chance: ADV_SKILL_BOOK_CRAFT.chance, spent: need };
   }
-  const rowId = await items.add(db, playerId, out.id);
+  const rowId = await items.add(db, playerId, out.id, { source: 'craft', sourceRef: 'advbook:' + out.id });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', chance: ADV_SKILL_BOOK_CRAFT.chance, itemId: out.id, rowId };
 }
@@ -281,7 +281,7 @@ async function craftPet(db, playerId, rarity) {
   const chance = rec.chance == null ? 1 : Number(rec.chance);
   if (chance < 1 && rand() >= chance) return { outcome: 'fail', rarity, chance, cost: rec.nexumCost };
 
-  const rowId = await items.add(db, playerId, pet.id);
+  const rowId = await items.add(db, playerId, pet.id, { source: 'craft', sourceRef: 'pet:' + pet.id });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', rarity, chance, cost: rec.nexumCost, itemId: pet.id, rowId };
 }
@@ -306,7 +306,7 @@ async function upgradeMat(db, playerId, from) {
   if (rand() >= rec.chance) {
     return { outcome: 'fail', from: rec.from, to: rec.to, chance: rec.chance, spent: rec.count };
   }
-  const rowId = await items.add(db, playerId, rec.to);
+  const rowId = await items.add(db, playerId, rec.to, { source: 'craft', sourceRef: 'upgrade:' + rec.to });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', from: rec.from, to: rec.to, chance: rec.chance, itemId: rec.to, rowId };
 }
@@ -352,7 +352,7 @@ async function craftClassGear(db, playerId, slot, rarity) {
   const { ok } = await items.consumeMatching(db, playerId, rec.costCount, filter);
   if (!ok) err('no_mats', `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}»`);
 
-  const rowId = await items.add(db, playerId, out.id);
+  const rowId = await items.add(db, playerId, out.id, { source: 'craft', sourceRef: 'class:' + out.id });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', slot, rarity, cost: rec.nexumCost, itemId: out.id, rowId };
 }
@@ -392,7 +392,7 @@ async function craftBox(db, playerId, boxId) {
   if (!await items.removeQty(db, playerId, box.keyId, box.keyCost)) {
     err('no_mats', `Нужно ${box.keyCost} × ${box.keyId}`);
   }
-  const rowId = await items.add(db, playerId, box.id);
+  const rowId = await items.add(db, playerId, box.id, { source: 'craft', sourceRef: 'box:' + box.id });
   if (rowId === null) err('no_room', 'Инвентарь полон');
   return { outcome: 'success', boxId: box.id, spent: box.keyCost, rowId };
 }
@@ -422,7 +422,7 @@ async function openBox(db, playerId, boxId) {
   if (!pool.length) err('empty_pool', 'Пустая таблица наград');
   const won = pool[crypto.randomInt(pool.length)];
 
-  const rowId = await items.add(db, playerId, won.id);
+  const rowId = await items.add(db, playerId, won.id, { source: 'box', sourceRef: 'won:' + won.id });
   if (rowId === null) err('no_room', 'Инвентарь полон — освободите слот');
   return { boxId, rarity, itemId: won.id, rowId };
 }

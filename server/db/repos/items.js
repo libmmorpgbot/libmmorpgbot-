@@ -158,7 +158,7 @@ async function hasRoomFor(db, playerId, itemId) {
 // That trade only existed because delivery could not be part of the same
 // transaction as the payment. It can be now, so the caller can refuse the
 // whole trade instead and nobody is left over the cap.
-async function add(db, playerId, itemId, { enhance = 0, qty = 1 } = {}) {
+async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, sourceRef = null } = {}) {
   const { rows: cat } = await query(db,
     'SELECT stackable, enhanceable FROM item_catalog WHERE item_id = $1 AND active', [itemId]);
   if (!cat.length) throw new Error(`items: unknown or retired item id ${itemId}`);
@@ -178,11 +178,45 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1 } = {}) {
 
   if (await usedSlots(db, playerId) >= SERVER_INV_MAX) return null;
 
+  // ── provenance ───────────────────────────────────────────────────────────
+  // This is the only INSERT of a player item in the whole live server, so it
+  // is the only place that can answer "where did this come from" — and until
+  // migration 011 it had nowhere to write the answer. money.reconcile() can
+  // prove currency integrity nightly because every movement leaves a ledger
+  // row; items had no equivalent, so the guarantee rested on code review.
+  //
+  // Asked of the schema once rather than assumed, so the deploy order between
+  // this code and its migration cannot break a grant. Before the migration the
+  // old statement runs and nothing is recorded; after it, everything is.
+  if (await _hasSourceCols(db)) {
+    const { rows } = await query(db, `
+      INSERT INTO player_items (player_id, container, item_id, enhance, qty, source, source_ref)
+      VALUES ($1, 'inventory', $2, $3, $4, $5, $6) RETURNING id`,
+      [playerId, itemId, enh, qty, source || null, sourceRef == null ? null : String(sourceRef).slice(0, 80)]);
+    return Number(rows[0].id);
+  }
   const { rows } = await query(db, `
     INSERT INTO player_items (player_id, container, item_id, enhance, qty)
     VALUES ($1, 'inventory', $2, $3, $4) RETURNING id`,
     [playerId, itemId, enh, qty]);
   return Number(rows[0].id);
+}
+
+// Does player_items carry the provenance columns yet? Asked once per process.
+// A failure here means "no" rather than an exception: a logging column must
+// never be able to refuse a grant.
+let _srcCols = null;
+async function _hasSourceCols(db) {
+  if (_srcCols !== null) return _srcCols;
+  try {
+    const { rows } = await query(db, `
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'player_items' AND column_name = 'source' LIMIT 1`);
+    _srcCols = rows.length > 0;
+  } catch (err) {
+    _srcCols = false;
+  }
+  return _srcCols;
 }
 
 // Takes `qty` units off the player's inventory, across as many rows as it
