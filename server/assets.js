@@ -82,7 +82,14 @@ const CSS_PATH = `/css/style.${cssHash}.css`;
 const INDEX_HTML = (() => {
   const raw = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   let out = raw;
-  const swaps = [['/bundle.js', JS_BUNDLE_PATH], ['css/style.css', CSS_PATH.slice(1)]];
+  const swaps = [
+    ['/bundle.js', JS_BUNDLE_PATH],
+    ['css/style.css', CSS_PATH.slice(1)],
+    // What the page believes it is running. Compared against the server's own
+    // value on every connection (see 'serverBuild'), which is how a player
+    // still holding yesterday's bundle finds out.
+    ['__BUNDLE_HASH__', jsBundleHash],
+  ];
   for (const [from, to] of swaps) {
     if (!out.includes(from)) {
       console.error(`[bundle] index.html has no "${from}" to rewrite — serving it unchanged, ` +

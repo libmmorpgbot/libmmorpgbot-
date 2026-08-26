@@ -608,6 +608,7 @@ Object.assign(I18N_UI, {
   armBottom:{ ru: 'нижний',  en: 'bottom', uk: 'нижній',   es: 'inferior',  tr: 'alt',    pt: 'inferior' },
   armRight: { ru: 'правый',  en: 'right',  uk: 'правий',   es: 'derecho',   tr: 'sağ',    pt: 'direito' },
   corridorSuffix: { ru: 'коридор', en: 'corridor', uk: 'коридор', es: 'corredor', tr: 'koridor', pt: 'corredor' },
+  updateReloading: { ru: 'Обновление — перезаходим…', en: 'Update — reconnecting…', uk: 'Оновлення — перезаходимо…', es: 'Actualización — reconectando…', tr: 'Güncelleme — yeniden bağlanılıyor…', pt: 'Atualização — reconectando…' },
   levelAbbrev: { ru: 'Ур.', en: 'Lv.', uk: 'Рів.', es: 'Niv.', tr: 'Sv.', pt: 'Nív.' },
   levelWord:   { ru: 'уровень', en: 'level', uk: 'рівень', es: 'nivel', tr: 'seviye', pt: 'nível' },
   lockedNeedLevel: { ru: '🔒 Нужен {n} уровень', en: '🔒 Level {n} required', uk: '🔒 Потрібен {n} рівень', es: '🔒 Se requiere nivel {n}', tr: '🔒 Seviye {n} gerekli', pt: '🔒 Necessário nível {n}' },

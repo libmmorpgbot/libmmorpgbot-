@@ -23,6 +23,9 @@ const items = require('./db/repos/items');
 const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
 const plog = require('./db/repos/playerlog');
+// The built bundle — required here only for its content hash, which is what
+// tells a connected client whether the code it is running is still current.
+const assets = require('./assets');
 const ops = require('./tg-ops');
 const workers = require('./workers');
 const adminAuth = require('./admin-auth');
@@ -268,6 +271,16 @@ const HEAVY = new Set([
 
 io.on('connection', (socket) => {
   const s = new Session(socket, io);
+
+  // ── which build this server is ───────────────────────────────────────────
+  // Sent before anything else, on every connection including a reconnect. A
+  // deploy restarts the process, every client reconnects within seconds, and
+  // this is the moment each of them learns its bundle is stale.
+  //
+  // It matters beyond tidiness: a client running an older bundle is a client
+  // whose idea of the protocol may differ from the server's, and that is
+  // exactly the sort of mismatch that turns into "какой-то бред в игре".
+  socket.emit('serverBuild', { build: assets.jsBundleHash });
 
   const rl = { heavy: { n: 0, at: 0 }, fast: { n: 0, at: 0 } };
   const bump = (b, max) => {

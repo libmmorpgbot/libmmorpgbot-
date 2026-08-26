@@ -776,6 +776,11 @@
 // event the game shows the player goes to /client-error, which turns it into
 // an alert in the operators' group. The server rate-limits it (20/min per
 // address) and collapses identical messages, so a loop cannot flood anyone.
+// Substituted at boot by server/assets.js, alongside the hashed bundle path
+// it belongs to. Left as the literal marker in the source so a missing
+// substitution is loud rather than silent — see INDEX_HTML there.
+window.__BUILD__ = '__BUNDLE_HASH__';
+
 window.__reportClientError = function (where, message, stack) {
   try {
     if (!message) return;

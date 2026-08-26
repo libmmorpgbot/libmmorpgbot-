@@ -305,6 +305,19 @@ function netMarginTick(anyMoving) {
 // below because that one ADVANCES the smoothing — the overlay must be able to
 // display the value without also driving it.
 function netInterpCurrent() { return _interpMs; }
+// A second of "обновление" instead of a silent freeze. Built as DOM rather
+// than drawn on a canvas: at this point the page is about to be replaced, and
+// the canvases may be mid-frame or not up at all.
+function _showReloadNotice() {
+  if (document.getElementById('build-reload')) return;
+  const d = document.createElement('div');
+  d.id = 'build-reload';
+  d.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'
+    + 'justify-content:center;background:rgba(6,6,16,.92);color:#edc174;'
+    + 'font:600 15px system-ui,Arial;text-align:center;padding:24px;';
+  d.textContent = (typeof t === 'function' ? t('updateReloading') : 'Обновление — перезаходим...');
+  document.body.appendChild(d);
+}
 // Enemy deltas this session had to throw away because the full record they
 // belong to never arrived (the world cast is volatile — it drops rather than
 // queues). A healthy link is 0; anything else is monsters that stood still or
@@ -707,6 +720,33 @@ function netConnect(onReady) {
       return data;
     }
   }
+
+  // ── a deploy landed while this page was open ─────────────────────────────
+  // The bundle is content-addressed, so a different hash means genuinely
+  // different code, not just a restart. Reloading is the only honest response:
+  // the alternative is a client speaking a protocol the server has moved on
+  // from, which is worse than a second of black screen.
+  //
+  // index.html is served no-cache (server/static.js), so a plain reload really
+  // does fetch the new page. Guarded against looping: if the mismatch survives
+  // a reload, something else is wrong — say so once and stop rather than
+  // spinning.
+  socket.on('serverBuild', ({ build } = {}) => {
+    const mine = window.__BUILD__ || '';
+    if (!build || !mine || build === mine) return;
+    let already = null;
+    try { already = sessionStorage.getItem('__buildReload'); } catch (e) { /* private mode */ }
+    if (already === build) {
+      if (typeof window.__reportClientError === 'function') {
+        window.__reportClientError('stale-bundle',
+          'перезагрузка не помогла: страница всё ещё ' + mine + ', сервер ' + build);
+      }
+      return;
+    }
+    try { sessionStorage.setItem('__buildReload', build); } catch (e) { /* ignore */ }
+    _showReloadNotice();
+    setTimeout(() => { try { location.reload(); } catch (e) { /* nothing left to try */ } }, 900);
+  });
 
   socket.on('gameStart', payload => {
     // When this payload ARRIVED, not when it is applied — the two differ by a
