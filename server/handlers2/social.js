@@ -23,7 +23,7 @@ const party = require('../party');
 const players = require('../db/repos/players');
 const { query } = require('../db');
 const { _sanitizeName, _sanitizeClanDesc } = require('../security');
-const { CLAN_CREATE_COST, CHAR_DEF } = require('../../shared/definitions');
+const { CHAR_DEF } = require('../../shared/definitions');
 
 const id = v => {
   const n = Math.floor(Number(v));
@@ -75,7 +75,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
 
   // ── membership ───────────────────────────────────────────────────────────
   safeOn('clanCreate', ({ name, icon } = {}) => s.act('clanCreate', 'clanError', async (t, pid) => {
-    const res = await clans.create(t, pid, _sanitizeName(name), icon);
+    await clans.create(t, pid, _sanitizeName(name), icon);
     await s.pushBalances(t);
     await pushClan(t);
   }));
@@ -157,7 +157,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
       // Stripped of control characters and bounded before storage. The client
       // escapes on output; this is the layer that keeps the stored value sane
       // regardless of what any future client does with it.
-      const desc = await clans.setDescription(t, pid, m.clanId, _sanitizeClanDesc(description));
+      await clans.setDescription(t, pid, m.clanId, _sanitizeClanDesc(description));
       await pushClan(t);
     }));
 
@@ -287,7 +287,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     try {
       const out = await translate.translateText(text.slice(0, 200), lang);
       s.socket.emit('translateChatResult', { reqId, text: out });
-    } catch (err) {
+    } catch {
       // Google throttles its free endpoints per IP and every player's click
       // leaves from this one server address, so this is "come back in a bit",
       // not a broken message.

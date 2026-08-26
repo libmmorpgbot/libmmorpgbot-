@@ -72,7 +72,7 @@ async function main() {
   eq(JSON.stringify(t3.newTiers), '[2,3]', 'обидва пропущені рівні потрапили в нагороди');
   eq((await prog.vipOf(null, v)).pending.join(','), '1,2,3', 'до отримання чекають три рівні');
 
-  const grant = tier => [{ id: 'sw1', qty: 1 }];
+  const grant = () => [{ id: 'sw1', qty: 1 }];
   const claimed = await tx(t => prog.claimVip(t, v, grant));
   eq(claimed.tiers.join(','), '1,2,3', 'забрано всі три рівні');
   eq(claimed.granted.length, 3, 'видано три предмети');

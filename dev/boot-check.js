@@ -17,7 +17,6 @@
 process.env.OPS_LIVE = '0';
 process.env.NODE_ENV = 'test';
 const crypto = require('crypto');
-const path = require('path');
 
 // A port of its own, so this never collides with a server already running on
 // the box. Set BEFORE requiring app.js, which reads it at load.
@@ -31,7 +30,7 @@ process.env.ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'boot-check-throwaway-token';
 
 const io = require('socket.io-client');
-const { boot, shutdown, server } = require('../server/app');
+const { boot, server } = require('../server/app');
 const { pool, close } = require('../server/db');
 
 let pass = 0, fail = 0, skipped = 0; const failures = [];
@@ -255,6 +254,7 @@ async function main() {
   sock.emit('chat', { text: 'привет [31m ' + 'x'.repeat(300) });
   const msg = await once(sock, 'chatMsg');
   ok(msg.text.length <= 100, `повідомлення обрізане до ${msg.text.length} символів`);
+  // eslint-disable-next-line no-control-regex -- naming them IS the assertion
   ok(!/[ -]/.test(msg.text), 'керуючі символи вирізані');
 
   // The cooldown is the security control here: this reaches every player.

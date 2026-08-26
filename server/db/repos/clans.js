@@ -173,6 +173,17 @@ async function setDescription(db, leaderId, clanId, text) {
 }
 
 // ── xp ──────────────────────────────────────────────────────────────────────
+// One point per monster killed, to the clan of whoever landed the killing
+// blow. That is the rate the retired build used (_clanXpAdd(myClanId, 1) in
+// server/handlers/world.js) and it is kept exactly, because CLAN_LEVELS is
+// scaled to it: 800 000 kills to level 10 is the curve the table was written
+// against, and paying every party member as well would quietly divide it by
+// the size of a party.
+//
+// Named rather than inlined so the detector asserts against the rate instead
+// of against a literal 1 that nobody would notice changing.
+const CLAN_XP_PER_KILL = 1;
+
 // A plain atomic increment. The old version accumulated xp in a process-local
 // Map and flushed it every 20 seconds (_clanXpPending), which meant a crash or
 // a deploy lost whatever had not flushed — and made the value impossible to
@@ -579,4 +590,5 @@ module.exports = {
   create, apply, accept, decline, kick, leave, disband, setDescription,
   addXp, deposit, allocate, claim, cancelAllocation, unlockStorage,
   fullView, clanOf, badgeOf, search, levelFor, ClanError,
+  CLAN_XP_PER_KILL,
 };

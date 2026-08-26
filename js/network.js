@@ -517,6 +517,7 @@ function netConnect(onReady) {
   _initMarketHandlers(socket);
   _initPetCraftHandlers(socket);
   _initEventBossHandlers(socket);
+  _initPrefsErrorHandler(socket);
 
   socket.on('_pong', t0 => { _pingMs = Date.now() - t0; _pongMissed = 0; });
 
@@ -834,6 +835,7 @@ function netConnect(onReady) {
     // whatever floor they were fetched/claimed on — stale entries from the
     // floor just left would otherwise survive the switch.
     _worldDropPending.clear();
+    _worldDropBagFull = false;
     _mapBlips = null;
     // Event boss: restore the countdown banner and any loot already lying on
     // the floor, so joining mid-event shows the same state as everyone else.
@@ -1614,6 +1616,16 @@ function netConnect(onReady) {
     if (profile && typeof showPeerProfileModal === 'function') showPeerProfileModal(fromName, profile);
   });
 
+  // Both requestPlayerProfile and getPvpHistory answer their refusals here,
+  // and nothing listened — so the Инфо button and the PvP-history tab each had
+  // a failure mode that looked exactly like a tap that never registered. The
+  // history one was not hypothetical: that handler selects a column that is
+  // absent on one of the two live schemas, throws, and refused on a channel
+  // with no listener (see getPvpHistory, server/handlers2/world.js).
+  socket.on('profileError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('profileErrorToast'), 'err');
+  });
+
   socket.on('healPartyMember', ({ amount }) => {
     if (!player || state !== 'playing') return;
     player.hp = Math.min(player.maxHp, player.hp + amount);
@@ -1783,6 +1795,7 @@ function netConnect(onReady) {
   // renders this one.
   socket.on('inventorySync', ({ inventory, equipment, storage } = {}) => {
     if (!player) return;
+    _worldDropBagFull = false;
     if (Array.isArray(inventory) && typeof _migrateInventory === 'function') {
       player.inventory = _migrateInventory(inventory);
     }
@@ -1847,6 +1860,32 @@ function netConnect(onReady) {
   // has drifted — see onQuestSync (js/quests.js).
   socket.on('questSync', (data) => {
     if (typeof onQuestSync === 'function') onQuestSync(data || {});
+  });
+
+  // ── a portal the server refused ─────────────────────────────────────────
+  // enterLocation answers a refusal on TWO channels, and until now neither had
+  // a handler here. That was not "a button that does nothing": _requestEnterLocation
+  // (js/game.js) raises the full-screen floor-loading overlay first, and that
+  // overlay only comes down when a gameStart arrives. A refused portal sends
+  // no gameStart — so the player was left staring at "Ожидание сервера..."
+  // with the game behind it, permanently, and the only way out was reloading.
+  //
+  // 'enterLocationDenied' carries the reason as a code (the gate), and the
+  // act() refusal that follows on 'locationError' carries the server's own
+  // Russian text (that one also covers everything the gate does not: an
+  // unknown floor key, a failed transaction). Both are handled, because
+  // handling only the first leaves every other refusal stuck, and handling
+  // only the second loses the reason.
+  socket.on('enterLocationDenied', ({ reason } = {}) => {
+    _locationDeniedAt = Date.now();
+    _abortFloorChange(reason === 'closed' ? t('locationClosedToast') : t('locationLevelToast'));
+  });
+  socket.on('locationError', ({ msg } = {}) => {
+    // The gate emits its event and then throws, so the pair arrives in the
+    // same tick and is ONE refusal said twice. The overlay still has to come
+    // down; only the message is suppressed.
+    const dup = Date.now() - _locationDeniedAt < 1000;
+    _abortFloorChange(dup ? null : (msg || t('locationDeniedToast')));
   });
 
   // The server refused a move as impossibly fast and is telling us where it
@@ -2157,6 +2196,21 @@ function netEnterLocation(target) {
   if (!socket?.connected) return;
   _pendingFloorChange = true;
   socket.emit('enterLocation', { target });
+}
+
+// When the gate last spoke, so its refusal and the act() refusal that follows
+// it are shown once rather than twice — see the two handlers above.
+let _locationDeniedAt = 0;
+
+// Everything a refused transition has to undo. _pendingFloorChange is this
+// file's own latch (it tells _applyGameStart to treat the next gameStart as a
+// floor change); csCancelFloorLoading takes down the loading overlay AND runs
+// the gate callback that clears _floorChangePending in js/game.js, which is
+// what lets the pad be stepped on again.
+function _abortFloorChange(msg) {
+  _pendingFloorChange = false;
+  if (typeof csCancelFloorLoading === 'function') csCancelFloorLoading();
+  if (msg && typeof _marketToast === 'function') _marketToast(msg, 'err');
 }
 
 function netPartyInvite(targetId) {
@@ -2546,6 +2600,30 @@ function _emitSaveProgress() {
   if (sig === _lastPrefsSent) return;
   _lastPrefsSent = sig;
   socket.emit('savePrefs', { prefs });
+}
+
+// ── the settings write that failed ──────────────────────────────────────────
+// savePrefs refuses on 'prefsError' and nobody was listening, which put the
+// player back in exactly the bug savePrefs was written to fix: language,
+// auto-potion threshold and auto-skill toggles silently not surviving a
+// reload, with no way to tell a failed write from a setting that never took.
+//
+// Throttled hard, and both halves of the throttle matter. The report is once a
+// minute because netSaveProgress is driven from combat on a 2s debounce, so an
+// endpoint that is failing for real would otherwise put a toast on screen every
+// two seconds. Clearing _lastPrefsSent is the retry — it is stamped BEFORE the
+// emit, so without this a refused save is never sent again and the setting is
+// lost until something else about it changes — and it is inside the same
+// throttle so the retry is once a minute too, not once every debounce.
+let _prefsErrAt = 0;
+function _initPrefsErrorHandler(s) {
+  s.on('prefsError', ({ msg } = {}) => {
+    const now = Date.now();
+    if (now - _prefsErrAt < 60000) return;
+    _prefsErrAt = now;
+    _lastPrefsSent = null;
+    if (typeof _marketToast === 'function') _marketToast(msg || t('prefsErrorToast'), 'err');
+  });
 }
 
 // Debounced — coalesce into at most one emit per 2s (trailing edge);
@@ -3299,7 +3377,12 @@ function _initEventBossHandlers(s) {
     if (typeof Sound !== 'undefined') Sound.loot();
     netSaveProgress();
   });
-  s.on('worldDropError', ({ msg }) => {
+  s.on('worldDropError', ({ msg, code }) => {
+    // A full backpack is not a race that will resolve itself, so asking again
+    // in two seconds is asking the same question with the same answer. The
+    // player is told once, and the loop stops until the inventory actually
+    // changes — see _worldDropBagFull in js/state.js.
+    if (code === 'no_room') _worldDropBagFull = true;
     if (typeof _marketToast === 'function') _marketToast(msg, 'err');
   });
   _initDeathBattleHandlers(s);
@@ -4044,6 +4127,14 @@ function _initGramHandlers(s) {
   });
   s.on('ratingData', ({ tab, rows }) => {
     if (typeof onRatingData === 'function') onRatingData(tab, rows);
+  });
+  // A refusal that REPEATS, which is why it gets a real body and not a toast.
+  // _ratingData[tab] stays null when the query fails, so _renderRatingBody
+  // keeps drawing the loading line — and the panel's own ticker re-asks every
+  // five minutes for as long as it is open (js/ui.js). A spinner that never
+  // resolves, over a request that never stops, with nothing said either way.
+  s.on('ratingError', ({ msg } = {}) => {
+    if (typeof onRatingError === 'function') onRatingError(msg);
   });
   s.on('vipUpdate', (data) => {
     window._vipData = data;

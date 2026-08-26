@@ -1,6 +1,6 @@
 'use strict';
 // One-off: why can nobody buy listing 229?
-const { pool, tx, close } = require('../server/db');
+const { tx, close } = require('../server/db');
 const market = require('../server/db/repos/market');
 
 (async () => {

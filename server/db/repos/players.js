@@ -81,6 +81,86 @@ async function setUsername(db, playerId, username) {
     [playerId, username]);
 }
 
+// ── who invited this player ─────────────────────────────────────────────────
+// The only writer of players.referred_by, and until it existed there was NONE.
+// Three finished features read that column and all three paid nobody: the 5%
+// commission on an invited friend's deposit (repos/gram.js), the season points
+// when they reach level 20 (repos/progression.js payReferralOnLevel) and the
+// invited-friends list the client shows (repos/shop.js referralsOf). Each of
+// them joins on a column that was empty for every account in the database, so
+// each was a query returning zero rows rather than anything that looked broken.
+//
+// referred_by holds a TELEGRAM ID and its type is text (migrations/001_core.sql)
+// — not a players.id, and not a number. Comparing it against an integer matches
+// nothing and raises nothing, which is the failure mode this whole file exists
+// to make impossible, so the id goes in as a string and is checked as one.
+//
+// ONE statement decides, rather than a read followed by a write. Two logins for
+// the same account arriving together — a refresh, a second device, the client
+// retrying a lost connect — both read "not referred yet", and the second then
+// overwrites the first referrer. `referred_by IS NULL` inside the UPDATE means
+// the loser writes nothing at all and is told `already`, which is also what a
+// player gets for opening a second person's link a week later: the first
+// referrer keeps the friend, forever, because the payouts above are once-only
+// and there is no way to take one back.
+//
+// Returns { ok } plus a reason the caller can put in the log. Four refusals,
+// each of them a thing somebody has asked an operator about:
+//
+//   malformed    a start_param that is not a telegram id at all
+//   self         the player's own link — the first thing anyone tries
+//   already      invited by somebody else, whether a second ago or last month
+//   no_referrer  a link built from an id that has no account here
+async function registerReferral(db, playerId, referrerTelegramId) {
+  const ref = String(referrerTelegramId == null ? '' : referrerTelegramId).trim();
+  // start_param is attacker-controlled text: it arrives in a URL a player
+  // composes themselves and, if it were stored, would be shown back to whoever
+  // opens the invited-friends panel. A telegram id is digits, so anything else
+  // never reaches the database at all.
+  if (!/^\d{1,20}$/.test(ref)) {
+    return { ok: false, reason: 'malformed', msg: 'Некорректная ссылка-приглашение', refId: ref.slice(0, 64) };
+  }
+
+  const { rows } = await query(db, `
+    UPDATE players p
+       SET referred_by = r.telegram_id, updated_at = now()
+      FROM players r
+     WHERE p.id = $1
+       AND r.telegram_id = $2
+       AND p.referred_by IS NULL
+       AND r.id <> p.id
+    RETURNING r.id AS referrer_id, r.username AS referrer_username`, [playerId, ref]);
+  if (rows.length) {
+    return {
+      ok: true, refId: ref,
+      referrerId: Number(rows[0].referrer_id),
+      referrerUsername: rows[0].referrer_username,
+    };
+  }
+
+  // Nothing was written, and WHICH of the four it was cannot be read off a row
+  // count of zero. One extra read, on a path that only runs when a referral was
+  // already refused, is what turns the log line from "не зарегистрировалось"
+  // into something an operator can answer a player with.
+  const { rows: why } = await query(db, `
+    SELECT p.telegram_id, p.referred_by,
+           EXISTS (SELECT 1 FROM players r WHERE r.telegram_id = $2) AS referrer_exists
+      FROM players p WHERE p.id = $1`, [playerId, ref]);
+  if (!why.length) return { ok: false, reason: 'no_player', msg: 'Игрок не найден', refId: ref };
+  // Self before already: an account that referred itself would otherwise be
+  // reported as "invited by someone else" and the someone else would be them.
+  if (why[0].telegram_id === ref) return { ok: false, reason: 'self', msg: 'Нельзя пригласить самого себя', refId: ref };
+  if (why[0].referred_by) {
+    return { ok: false, reason: 'already', msg: 'Игрок уже приглашён', refId: ref, referredBy: why[0].referred_by };
+  }
+  if (!why[0].referrer_exists) return { ok: false, reason: 'no_referrer', msg: 'Пригласивший не найден', refId: ref };
+  // Every condition the UPDATE tests has just been shown to hold, so reaching
+  // here means the row moved between the two statements. Named rather than
+  // folded into one of the four above, because a reason that cannot happen and
+  // then does is the one worth seeing in the log verbatim.
+  return { ok: false, reason: 'raced', msg: 'Приглашение не записано', refId: ref };
+}
+
 // ── progression reads ───────────────────────────────────────────────────────
 
 function _progress(r) {
@@ -256,6 +336,17 @@ async function grantXp(db, playerId, amount) {
     UPDATE player_progress SET lvl = $2, xp = $3, updated_at = now()
      WHERE player_id = $1`, [playerId, lvl, xp]);
 
+  // Battle Power is STORED (players.bm) and the rating board sorts on it, so
+  // it has to be rewritten wherever one of its inputs moves — and level is its
+  // largest single term. Here rather than at the call sites: four paths raise a
+  // level (a kill, a party share, claimQuest, completeSpecialQuest) and only
+  // the first ever refreshed, so levelling in a group or off a quest left the
+  // board sorting the player at the rating they had before.
+  //
+  // Gated on an actual level-up, which is what keeps it off the per-kill path:
+  // ordinary xp changes nothing battlePower() reads.
+  if (gained > 0) await require('./stats').refreshBm(db, playerId);
+
   return { lvl, xp, xpNext: xpToNext(lvl), levelsGained: gained };
 }
 
@@ -278,6 +369,14 @@ async function spendUpgrade(db, playerId, key) {
   const col = Object.hasOwn(UPG_COL, key) ? UPG_COL[key] : null;
   if (!col) throw new Error(`players: unknown upgrade ${key}`);
   if (!UPGRADE_KEYS.includes(key)) throw new Error(`players: ${key} is not in UPGRADE_KEYS`);
+
+  // The players row, before player_progress. This function now ends by writing
+  // players.bm, and the kill path takes those two locks the other way round
+  // (lockPlayer, then grantXp's FOR UPDATE) — buying a stat point while a kill
+  // is in flight would be a lock cycle, which is the exact thing lockPlayer's
+  // "FIRST statement" rule exists to make impossible. rebirth below already
+  // opens this way.
+  await require('./items').lockPlayer(db, playerId);
 
   const { rows } = await query(db, `
     SELECT lvl, rebirths, bonus_sp,
@@ -312,6 +411,11 @@ async function spendUpgrade(db, playerId, key) {
   const { rows: out } = await query(db, `
     UPDATE player_progress SET ${col} = ${col} + 1, updated_at = now()
      WHERE player_id = $1 RETURNING ${col} AS v`, [playerId]);
+  // All seven upgrade columns are battlePower() inputs — four through atk/def/
+  // maxHp and the other four as its `extras` term — so a point bought here is
+  // rating the board has to see. Only on the success path: the three returns
+  // above moved nothing.
+  await require('./stats').refreshBm(db, playerId);
   return { key, level: out[0].v, remaining: budget - Number(r.spent) - 1, cost, gold: goldLeft };
 }
 
@@ -343,7 +447,14 @@ async function bumpSkill(db, playerId, kind, key) {
       SET level = player_skills.level + 1
       WHERE player_skills.level < $4
     RETURNING level`, [playerId, kind, key, max]);
-  return rows.length ? { level: rows[0].level, changed: true } : { level: max, changed: false };
+  if (!rows.length) return { level: max, changed: false };
+  // A PASSIVE is a battlePower() input and an active skill is not: passives
+  // multiply atk, def and maxHp (passiveBonusTotal, repos/stats.js), while a
+  // Q/W/E/R level only decides a damage coefficient in combat. Studying
+  // "Кровавая ярость" to 10 really does raise a character's rating, and
+  // without this it raised it only on paper.
+  if (kind === 'passive') await require('./stats').refreshBm(db, playerId);
+  return { level: rows[0].level, changed: true };
 }
 
 // ── rebirth ─────────────────────────────────────────────────────────────────
@@ -391,6 +502,13 @@ async function rebirth(db, playerId, cost, { minLevel, bonusSp }) {
      WHERE player_id = $1
     RETURNING rebirths, bonus_sp, kept_sp`, [playerId, bonusSp, Number(st.spent)]);
 
+  // A rebirth is the single largest move a rating can make — level back to 1
+  // and every upgrade column zeroed — and it moves it DOWN, which is the
+  // direction nothing else here does. Left unwritten, a rebirthed character
+  // keeps its pre-rebirth place on the board indefinitely, because the next
+  // refresh is a level-up it now has to earn all over again.
+  await require('./stats').refreshBm(db, playerId);
+
   return {
     rebirths: out[0].rebirths, bonusSP: out[0].bonus_sp, keptSP: out[0].kept_sp,
     lvl: 1, spentReturned: Number(st.spent),
@@ -403,6 +521,10 @@ async function rebirth(db, playerId, cost, { minLevel, bonusSp }) {
 // reset — the second finds nothing spent.
 async function resetUpgrades(db, playerId, cost) {
   const money = require('./money');
+  // Same reason as spendUpgrade: this ends by writing players.bm, so the
+  // players row is taken before player_progress and the lock order stays the
+  // one every other path uses.
+  await require('./items').lockPlayer(db, playerId);
 
   const { rows } = await query(db, `
     SELECT upg_atk + upg_def + upg_hp + upg_atk_speed
@@ -434,6 +556,10 @@ async function resetUpgrades(db, playerId, cost) {
            kept_sp = 0, updated_at = now()
      WHERE player_id = $1`, [playerId]);
 
+  // Seven columns just went to zero. The refund buys the points back, but the
+  // rating that was standing on them is gone until they are re-spent.
+  await require('./stats').refreshBm(db, playerId);
+
   // Named as the client reads them. It destructures
   // { pointsReturned, keptSP, newNexumBalance } — `refunded`/`nexumLeft`
   // arrived as three undefineds, which set the on-screen Liberty balance to
@@ -463,7 +589,7 @@ async function idByTelegram(db, telegramId) {
 
 module.exports = {
   idByTelegram,
-  byTelegramId, ensure, setUsername,
+  byTelegramId, ensure, setUsername, registerReferral,
   progressOf, prefsOf, skillsOf,
   savePrefs, PREF_FIELDS,
   savePosition, setHp, setClass,

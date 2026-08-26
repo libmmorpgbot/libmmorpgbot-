@@ -847,7 +847,7 @@ function update(dt, realDt) {
   // added locally here — the worldDropPicked reply does that. Requests are
   // de-duplicated for 2s so standing on a contested pile doesn't emit every
   // frame while the answer is in flight.
-  if (worldDrops.size && player) {
+  if (worldDrops.size && player && !_worldDropBagFull) {
     const _nowMs = Date.now();
     worldDrops.forEach(d => {
       const wdx = d.x - player.x, wdy = d.y - player.y;

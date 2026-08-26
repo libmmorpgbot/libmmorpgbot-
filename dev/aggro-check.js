@@ -180,6 +180,77 @@ function main() {
   ok(known >= snap.length && known > 0,
     `сервер запамʼятав, що вже надіслав (${known} записів на ${snap.length} у знімку)`);
 
+  // ── прихованість, яку читає ШІ ───────────────────────────────────────────
+  // Room's targeting path skips a player carrying `_invis`, in two places:
+  // _closestTargetFor's scan, and the cached-target validity test in _tick.
+  // An audit read that as "the rogue's stealth has no server-side effect" and
+  // asked for the server to start granting it. The effect is real — the first
+  // assertion below is what proves it — but there is no rogue: the skill that
+  // set it was the assassin's E, and the assassin was deleted along with the
+  // rest of the old roster (commit e509cf7, "Assassin's mechanical slot ...
+  // was dropped rather than forced onto a character that doesn't fit it").
+  //
+  // Both halves are asserted, and they are asserted TOGETHER on purpose.
+  //
+  //   the behaviour   nothing exercises those two guards today, so nothing
+  //                   would notice them being dropped — and they are the
+  //                   foundation any future stealth is built on.
+  //   the premise     the day something does grant `_invis`, the second one
+  //                   fails and says so, instead of the grant quietly working
+  //                   or quietly not working.
+  console.log('\n  ── прихованість, яку читає ШІ ──');
+  // Alone in the room. 'b' is standing on the same tile the encounter places
+  // this player on and is the closer target on ties, so leaving them in made
+  // both runs measure the monster hitting somebody else — the hidden half
+  // passed for the wrong reason, which is the one outcome a check must never
+  // have.
+  room.removePlayer('b');
+  join(room, 'c');
+  const target3 = room.enemies.find(e => e.hp > 0 && !e.isBoss && !e.farmZone && !e.farmZone2);
+  const pc = room.players.get('c');
+
+  // The baseline matters as much as the hidden run: a dead player is skipped
+  // by the very same scan, so without proving the monster DOES come for this
+  // player first, the second half would pass over a corpse.
+  room.setPlayerHp('c', 900);
+  const seen = encounter(room, 'c', target3, 200);
+  ok(seen.aggroMs !== null && seen.damage > 0,
+    `монстр бачить звичайного гравця (агро ${seen.aggroMs}мс, шкода ${seen.damage})`);
+
+  room.setPlayerHp('c', 900);
+  pc._invis = true;
+  const hidden = encounter(room, 'c', target3, 200);
+  pc._invis = false;
+  ok(hidden.aggroMs === null && hidden.damage === 0,
+    `з _invis той самий монстр не бачить його зовсім (агро ${hidden.aggroMs}, шкода ${hidden.damage})`);
+
+  // Nothing in the live server sets it, and nothing in the client's own
+  // countdown raises invisTimer above zero. Read from source rather than
+  // trusted: this is the sentence the audit finding turned on.
+  const fs = require('fs');
+  const path = require('path');
+  const ROOT = path.join(__dirname, '..');
+  // COMMENTS ARE NOT CODE, and both halves of this codebase explain a rule by
+  // quoting the code that used to break it. The very handler this scan looks
+  // at documents the hole it closed by writing out `p._invis = !!invis` in
+  // prose — and the first version of this check read that sentence, matched it
+  // as an assignment, and reported that stealth was live. A checker that cries
+  // wolf on its own subject is worse than no checker.
+  const strip = src => src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*/g, '$1');
+  const readAll = (files) => files.map(f => strip(fs.readFileSync(path.join(ROOT, f), 'utf8'))).join('\n');
+  const serverSrc = readAll(['server/game/Room.js', 'server/handlers2/world.js']);
+  const grantsServer = (serverSrc.match(/_invis\s*=\s*([^;]+);/g) || [])
+    .filter(a => !/=\s*false\s*;/.test(a));
+  const clientSrc = readAll(['js/state.js', 'js/game.js', 'js/network.js', 'js/player.js']);
+  const grantsClient = (clientSrc.match(/invisTimer\s*=\s*([^;]+);/g) || [])
+    .filter(a => !/=\s*0\s*;/.test(a) && !/-=/.test(a));
+  ok(grantsServer.length === 0 && grantsClient.length === 0,
+    'жоден навик у грі не дає прихованості — гілки вище сплять, а не працюють',
+    `знайдено: ${[...grantsServer, ...grantsClient].join(' | ')} — прихованість тепер справжня, `
+    + 'тож сервер має її і видавати, і знімати (по таймеру, по удару), а не лише читати');
+
   room._stopLoop();
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

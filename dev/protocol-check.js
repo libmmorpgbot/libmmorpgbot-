@@ -258,8 +258,12 @@ const WIRE = new Set(['connect', 'disconnect', 'connect_error', 'error', 'reconn
 // Emitted deliberately for a client that does not handle it YET. Each entry is
 // a to-do with a name on it, not a place to file things away: the list is
 // printed on every run and the intent is for it to reach zero.
+// enterLocationDenied left this list the way an exemption is supposed to: the
+// client handles it now. It was never only cosmetic — _requestEnterLocation
+// (js/game.js) raises the floor-loading overlay before the request goes out,
+// and nothing but a gameStart takes it down, so a refused portal left the
+// player on a full-screen "Ожидание сервера..." until they reloaded.
 const UNHANDLED_BY_DESIGN = {
-  enterLocationDenied: 'клієнт гейтить портали сам (іконка замка) і поки не показує відмову сервера',
   prefsSync: 'підтвердження savePrefs — клієнт ще зберігає налаштування всередині старого блоба',
 };
 
@@ -278,6 +282,97 @@ ok(unheard.length === 0, `усі ${serverEmits.size} подій сервера �
 
 for (const [e, why] of Object.entries(UNHANDLED_BY_DESIGN)) {
   if (serverEmits.has(e)) console.log(`  [33mTODO[0m  ${e} — ${why}`);
+}
+
+// ── the server's own wiring ─────────────────────────────────────────────────
+// Two lists inside server/app.js name socket events, and a name in either one
+// is a claim about a handler that exists. Both were quietly wrong, and neither
+// could be wrong LOUDLY: a Set lookup that misses just returns false.
+console.log('  ── власна проводка сервера ──');
+{
+  const appSrc = read('server/app.js');
+
+  const heavyBlock = (appSrc.match(/const HEAVY = new Set\(\[([\s\S]*?)\]\);/) || [])[1] || '';
+  const heavy = [...heavyBlock.matchAll(/'([A-Za-z0-9_]+)'/g)].map(m => m[1]);
+  // A SCAN THAT FOUND NOTHING MUST NOT REPORT SUCCESS — same rule as the three
+  // floors above. `[].filter(...)` is empty, so a regex that stopped matching
+  // (HEAVY renamed, reformatted, moved out of app.js) would print a green line
+  // about a list it never read. Seventy-odd names today.
+  ok(heavy.length > 40, `є що перевіряти — ${heavy.length} імен у HEAVY`,
+    'сканування нічого не знайшло — зламана сама перевірка');
+  // 'balanceHistory' named nothing in either build, and 'craft' was split into
+  // craftGear/craftClassGear/craftBox/craftPet/craftMatUpgrade long before this
+  // list was copied across. So the forge and the pet crafter — which spend
+  // Liberty and destroy materials — sat in the 1500-per-5s bucket while the
+  // list read as though crafting were rate-limited.
+  const heavyGhosts = heavy.filter(e => !serverOn.has(e)).sort();
+  ok(heavyGhosts.length === 0,
+    `усі ${heavy.length} імен у HEAVY мають зареєстрований обробник`,
+    `нікого не обмежують (${heavyGhosts.length}): ${heavyGhosts.join(' ')}`);
+
+  // RL_ERR_EVENT is where a THROWN-AWAY packet is answered, and it answers on
+  // the panel's own channel so the button it disabled comes back. A channel
+  // the client does not listen for turns that back into the bare `return` it
+  // replaced — the refusal is on the wire and addressed to nobody.
+  const rlBlock = (appSrc.match(/const RL_ERR_EVENT = new Map\(\);[\s\S]*?\}\)\)/) || [])[0] || '';
+  const rlChannels = [...rlBlock.matchAll(/^\s{2}([A-Za-z0-9_]+):\s*\[/gm)].map(m => m[1]);
+  ok(rlChannels.length > 10, `є що перевіряти — ${rlChannels.length} каналів у RL_ERR_EVENT`,
+    'сканування нічого не знайшло — зламана сама перевірка');
+  const rlDeaf = rlChannels.filter(c => !clientOn.has(c)).sort();
+  ok(rlDeaf.length === 0,
+    `усі ${rlChannels.length} каналів RL_ERR_EVENT має хто слухати`,
+    `нікому не адресовані (${rlDeaf.length}): ${rlDeaf.join(' ')}`);
+
+  // ── a tuning constant with no reader tunes nothing ────────────────────────
+  // COOP_LIBERTY_CHANCE was declared inside server/game/coop.js, returned by
+  // that factory, and read by nobody in the live build. That is NOT the same
+  // as "the drop never happens", which is the easy conclusion and the wrong
+  // one: the kill-reward ladder simply had no co-op branch, so a co-op kill
+  // fell through to the corridor table and paid NEXUM_DROP_CHANCE[arm] —
+  // 0.5% on stage one against the 10% the constant states. Twenty times too
+  // little, off a number nothing was reading, in the mode's ONLY per-kill
+  // reward (no gold, no GRAM — see calcGoldDrop's `arm === 'coop'` branch).
+  const worldSrc = read('server/handlers2/world.js');
+  const ladder = (worldSrc.match(/const libertyChance = [\s\S]*?;\n/) || [])[0] || '';
+  ok(ladder.length > 0, 'є що перевіряти — знайдено драбину шансу Liberty',
+    'сканування нічого не знайшло — зламана сама перевірка');
+  ok(/coop/.test(ladder) && /COOP_LIBERTY_CHANCE/.test(ladder),
+    'кожна зона з власним шансом Liberty має власну гілку (coop, farm2, коридори)',
+    `кооператив падає в коридорну таблицю: ${ladder.replace(/\s+/g, ' ').slice(0, 170)}`);
+  // And exactly one definition of it, in the catalog both halves already read.
+  // A per-run factory is not somewhere a kill-reward handler can look.
+  const coopDefs = ['server/game/coop.js', 'shared/definitions.js']
+    .filter(f => /const COOP_LIBERTY_CHANCE\s*=/.test(read(f)));
+  ok(coopDefs.length === 1 && coopDefs[0] === 'shared/definitions.js',
+    'і константа лежить у каталозі, звідки обробник її й бере',
+    `оголошена в: ${coopDefs.join(', ') || '(ніде)'}`);
+
+  // ── a grace period must have a claim ──────────────────────────────────────
+  // Страх holds a disconnected entrant's run for FEAR_RECONNECT_GRACE_MS. The
+  // hold was ported; the CLAIM was not — so _fearDisconnectGrace was written
+  // on disconnect, expired 45s later, and read by nothing in between. That is
+  // a delayed deletion wearing the word "grace": a player who reconnected well
+  // inside the window came back with no run at all — the wave never advanced
+  // again (_fearTrackKill returns on `!run`), fearSync answered inRun:false,
+  // and dying in the hall did not even end it, with the attempt already spent.
+  //
+  // The client has expected the claim to work since it was written: its
+  // gameStart handler restores the wave HUD from the `fear` block and says so
+  // in as many words (js/network.js). It was reading a field nothing filled.
+  //
+  // Checked as three links rather than one grep, because each can break alone.
+  const fearSrc = read('server/game/fear.js');
+  const h2 = listJs('server/handlers2').map(read).join('\n');
+  ok(/function _fearClaimOnReconnect\s*\(/.test(fearSrc)
+     && /_fearClaimOnReconnect,/.test(fearSrc),
+    'Страх: утримання має чим забиратись назад (_fearClaimOnReconnect, експортована)',
+    'без неї _fearDisconnectGrace лише пишеться і протухає');
+  ok(/_fearClaimOnReconnect\(/.test(h2),
+    'і хтось у handlers2 справді її кличе на вході в гру',
+    'експортована, але не викликана — те саме, що її нема');
+  ok(/_fearResumeRun\(/.test(h2) && /_fearStartWave\(/.test(h2),
+    'і повертає забіг живому сокету (_fearResumeRun / _fearStartWave)',
+    'забрати утримання і не покласти його назад — це та сама втрата, лише швидша');
 }
 
 // ── keys the client sends and the server ignores ────────────────────────────

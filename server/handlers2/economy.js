@@ -17,10 +17,9 @@ const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
 const progression = require('../db/repos/progression');
 const consumables = require('../db/repos/consumables');
-const ops = require('../tg-ops');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, MARKET_FEE_PCT, GEAR_CRAFT_RECIPES, ITEM_DEF, MERCHANT_SHOP,
+  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
 

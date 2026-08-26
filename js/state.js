@@ -9,6 +9,14 @@ let worldDrops = new Map();
 // Pickup requests already sent and not yet answered, so walking over a pile
 // doesn't spam one emit per frame while the round trip is in flight.
 let _worldDropPending = new Map();
+// Set when the server refuses a pickup because the backpack is full, cleared
+// the moment the inventory changes or the floor does. The per-drop 2s dedupe
+// above is the right shape for a CONTESTED pile — the answer to "who got it"
+// arrives and settles the question. It is the wrong shape for a full bag,
+// because retrying cannot change the answer: 185 refusals in a week from two
+// players, each one a transaction on the server and a toast on the screen,
+// every two seconds, for as long as they stood on the loot.
+let _worldDropBagFull = false;
 let camera = { x: 0, y: 0 };
 let dungeonLvl = 1;
 let frameCount = 0;

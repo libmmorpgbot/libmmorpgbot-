@@ -4293,6 +4293,20 @@ function onRatingData(tab, rows) {
   if (_ratingTab === tab) _renderRatingBody();
 }
 
+// getRating refused. The tab is left EMPTY rather than filled with a lie, and
+// the panel says so instead of showing the loading line forever — which is
+// what it did while nothing listened for this: _ratingData[tab] stays null on
+// a refusal, _renderRatingBody draws t('questLoading') for null, and the
+// five-minute ticker below re-asks and fails again, silently, for as long as
+// the panel is open. Rendered into the body rather than toasted because the
+// player is looking at the panel: a toast four seconds long cannot explain a
+// spinner that stays.
+function onRatingError(msg) {
+  const el = document.getElementById('rating-body');
+  if (el) el.innerHTML = `<div class="rating-empty">${_escHtml(msg || t('ratingErrorToast'))}</div>`;
+  if (typeof _marketToast === 'function') _marketToast(msg || t('ratingErrorToast'), 'err');
+}
+
 function _ratingPanelOpen() {
   return document.getElementById('rating-panel')?.style.display === 'flex';
 }

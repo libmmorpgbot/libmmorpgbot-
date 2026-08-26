@@ -130,6 +130,10 @@ function destructureOf(fnName) {
 
 const clientReads = new Map();   // event -> { keys:Set, files:Set }
 const clientOpaque = new Map();  // event -> Set(files)
+// Every name the client listens for at all, destructured or not. The two maps
+// above split by whether the SHAPE is readable; the refusal check further down
+// only needs to know that somebody is on the other end.
+const clientListens = new Set();
 
 for (const dir of CLIENT) {
   for (const file of walk(path.join(ROOT, dir))) {
@@ -139,6 +143,7 @@ for (const dir of CLIENT) {
     let m;
     while ((m = re.exec(src))) {
       const event = m[2];
+      clientListens.add(event);
       const after = src.slice(re.lastIndex);
       if (after[0] === '{') {
         const lit = braceSpan(src, re.lastIndex);
@@ -187,6 +192,7 @@ for (const dir of CLIENT) {
 
 // ── what the server sends ───────────────────────────────────────────────────
 const serverSends = new Map();   // event -> { keys:Set, spread:bool, nonLiteral:bool, files:Set }
+const actChannels = new Map();   // refusal event -> Set('file:handler')
 
 for (const dir of SERVER) {
   for (const file of walk(path.join(ROOT, dir))) {
@@ -201,16 +207,20 @@ for (const dir of SERVER) {
     // is `emit(errEvent, …)` — a variable — so scanning for emits alone
     // reported all 30-odd of them as "never sent", which is exactly the kind of
     // noise that hides the three real ones.
-    const act = /\.act\(\s*['"][\w.-]+['"]\s*,\s*(['"])([\w:.-]+)\1\s*,/g;
+    const act = /\.act\(\s*(['"])([\w.-]+)\1\s*,\s*(['"])([\w:.-]+)\3\s*,/g;
     let a;
     while ((a = act.exec(src))) {
-      const event = a[2];
+      const event = a[4];
       if (!serverSends.has(event)) {
         serverSends.set(event, { keys: new Set(), spread: false, nonLiteral: false, files: new Set() });
       }
       const rec = serverSends.get(event);
       rec.keys.add('msg'); rec.keys.add('code');
       rec.files.add('session.act');
+      // Kept separately as well, because these are the REFUSAL channels and
+      // they get a check of their own below — one the shape diff cannot make.
+      if (!actChannels.has(event)) actChannels.set(event, new Set());
+      actChannels.get(event).add(`${rel}:${a[2]}`);
     }
 
     // `emitNearby(x, y, 'name', payload)` is an emit too — it is how every
@@ -323,8 +333,55 @@ if (unchecked) {
   }
 }
 
+// ── every refusal has somebody on the other end ─────────────────────────────
+// The diff above walks from the CLIENT's handlers outward, so it can only see
+// events the client already listens for. A refusal channel nobody listens for
+// is invisible to it by construction — and invisible to dev/protocol-check.js
+// too, which reads literal `.emit('name'` and cannot see act()'s, because act
+// emits through a variable (`this.socket.emit(errEvent, …)`, server/session.js).
+//
+// So these fell into the gap between two checkers that both looked clean. Four
+// of them at once, and each is a button whose failure mode is silence:
+//
+//   locationError   a portal that refuses — and worse than silence, because
+//                   the client raises a full-screen loading overlay first and
+//                   only a gameStart takes it down. The game simply stopped.
+//   ratingError     the rating panel's own body stays on the loading line and
+//                   its five-minute ticker re-asks, forever. A refusal that
+//                   REPEATS is worth more than one that happens once.
+//   profileError    the Инфо card and the PvP-history tab
+//   prefsError      the settings write — a language or auto-potion setting
+//                   that did not survive, reported by nothing
+//
+// A refusal the player cannot see is not a refusal, it is a second silence.
+// The server half of every one of these was already logged (`refuse:<name>` in
+// player_logs, session.act); it was the client half that was missing.
+const unheard = [...actChannels.keys()].filter(e => !clientListens.has(e)).sort();
+// Same floor as everywhere else in this file: an empty actChannels means the
+// `.act(` regex stopped matching, and `[].filter(...)` is empty too — a green
+// line over a scan that read nothing.
+let refuseBroken = 0;
+if (actChannels.size < 15) {
+  refuseBroken = 1;
+  console.log(`${RED}SCAN BROKEN${OFF} only ${actChannels.size} refusal channels found — `
+    + `the .act() scan is what is failing here, not the protocol.`);
+}
+if (unheard.length) {
+  refuseBroken = 1;
+  console.log(`${RED}UNHEARD${OFF}     ${unheard.length} refusal channel(s) nobody listens for:`);
+  for (const e of unheard) {
+    console.log(`            ${e}  ${DIM}<- ${[...actChannels.get(e)].join(', ')}${OFF}`);
+  }
+} else {
+  console.log(`${GRN}${actChannels.size} refusal channels, every one of them handled by the client${OFF}`);
+}
+
 console.log(`\n${GRN}${clean} clean${OFF} · ${RED}${broken} missing fields${OFF} · ${YEL}${unsent} never sent${OFF} · ${DIM}${unchecked} unverifiable${OFF}`);
-console.log(`${DIM}${clientOpaque.size} handlers take the payload whole and are not checked here.${OFF}\n`);
+console.log(`${DIM}${clientOpaque.size} handlers take the payload whole and are not checked here.${OFF}`);
+// Counted since this file was written and never printed, which left the
+// KNOWN_DEAD list unauditable: an entry that had stopped being dead looked
+// exactly like one that still was.
+console.log(`${DIM}${dead} known-dead channel(s) skipped by name.${OFF}\n`);
 // A new gap in either column is a regression, and this is the gate for it —
 // and so is a scan that had nothing to look at, which used to exit 0.
-process.exit(broken || unsent || scanBroken ? 1 : 0);
+process.exit(broken || unsent || scanBroken || refuseBroken ? 1 : 0);

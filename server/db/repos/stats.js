@@ -217,7 +217,22 @@ function battlePower(st, upgrades) {
 async function refreshBm(db, playerId) {
   const row = await load(db, playerId);
   if (!row) return null;
-  const st = compute(row);
+  // PERMANENT stats only. compute() applies whatever potion is running on top
+  // (×1.20 ATK, ×1.10 HP — see the buff block above), and for COMBAT that is
+  // exactly right: the buff is real while it lasts. For a RATING it is not.
+  // The board would sort on who happened to be nine minutes into a potion, a
+  // player's number would drop by itself when it wore off with nothing having
+  // changed, and two identical characters would compare differently depending
+  // on what was in their bag.
+  //
+  // It is also what the figure has always meant. Room.js's computeStats — the
+  // other place this formula lives — documents itself as permanent-only, and
+  // it is what the retired build's calcBM fed off.
+  //
+  // This became worth writing down when the number stopped being refreshed
+  // only on a level-up: nine paths now write it, so a buffed value no longer
+  // gets quietly corrected by the next kill.
+  const st = compute({ ...row, buffs: {} });
   const bm = battlePower(st, {
     critChance: row.upg_crit_chance, critPower: row.upg_crit_power,
     hpRegen: row.upg_hp_regen, atkSpeed: row.upg_atk_speed,

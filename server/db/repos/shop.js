@@ -28,8 +28,9 @@ const items = require('./items');
 const money = require('./money');
 const players = require('./players');
 const progression = require('./progression');
+const { refLink } = require('../../security');
 const {
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, VIP_THRESHOLDS,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS,
   seasonActive, seasonShopPoints,
 } = require('../../../shared/definitions');
 const {
@@ -287,9 +288,14 @@ async function referralsOf(db, playerId) {
      GROUP BY p.id, p.username
      ORDER BY bonus DESC, p.username`, [tg]);
 
+  // The same builder authOk uses, not a second copy of the string. This reply
+  // arrives AFTER authOk and the panel overwrites the link with whatever is in
+  // it, so the copy here is the one players actually send to their friends —
+  // and it was the one still pointing at ?start=, the form nothing in this
+  // build can read. See refLink() in server/security.js.
   return {
     friends: rows.map(r => ({ username: r.username, bonus: Number(r.bonus) })),
-    refLink: `https://t.me/${process.env.TG_BOT_USERNAME || 'LibertyMMORPGbot'}?start=ref_${tg}`,
+    refLink: refLink(tg),
   };
 }
 

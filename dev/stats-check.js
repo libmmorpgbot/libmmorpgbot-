@@ -18,7 +18,11 @@ const items = require('../server/db/repos/items');
 const players = require('../server/db/repos/players');
 const money = require('../server/db/repos/money');
 const stats = require('../server/db/repos/stats');
-const { CHAR_DEF, ITEM_DEF, enhanceBonus, upgradeCost } = require('../shared/definitions');
+const craft = require('../server/db/repos/craft');
+const {
+  CHAR_DEF, ITEM_DEF, enhanceBonus, upgradeCost, xpToNext, passivesForClass,
+  REBIRTH_LEVEL, REBIRTH_BONUS_SP, rebirthCostFor,
+} = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -209,6 +213,162 @@ async function main() {
   const { rows: bmRow } = await pool().query('SELECT bm FROM players WHERE id = $1', [p]);
   eq(bmRow[0].bm, bm, 'БМ порахована з тих самих статів і збережена');
   ok(bm > 0, 'БМ додатна');
+
+  // ── and something CALLS it, at every input that moves ────────────────────
+  // players.bm is a STORED column and the rating board is `ORDER BY bm DESC`,
+  // so a figure nobody rewrites is a board sorted on who a player used to be.
+  // refreshBm was reached from exactly one place — a level-up on the killer's
+  // own socket — which is why 3656 of the 3665 live rows still held zero:
+  // equipment, enhancement, bought stat points and rebirths moved nothing
+  // anyone could see.
+  //
+  // Every case below POISONS the column first (bm = 1, a value no live
+  // character can have — level alone is worth 50) and then asserts it came
+  // back equal to what the same numbers produce right now. That is what makes
+  // these fail if the wiring is taken out again: an assertion that only
+  // compares bm to itself passes just as well with nothing calling anything.
+  console.log('  ── БМ переписується сама ──');
+
+  const bmOf = async id =>
+    Number((await pool().query('SELECT bm FROM players WHERE id = $1', [id])).rows[0].bm);
+  // What refreshBm WOULD write, derived here instead of by calling it — so the
+  // comparison is against the live numbers rather than against the same
+  // function's own output a second time.
+  async function liveBm(id) {
+    const st = await stats.of(null, id);
+    const { rows } = await pool().query(`
+      SELECT upg_crit_chance, upg_crit_power, upg_hp_regen, upg_atk_speed
+        FROM player_progress WHERE player_id = $1`, [id]);
+    return stats.battlePower(st, {
+      critChance: rows[0].upg_crit_chance, critPower: rows[0].upg_crit_power,
+      hpRegen: rows[0].upg_hp_regen, atkSpeed: rows[0].upg_atk_speed,
+    });
+  }
+  const stale = id => pool().query('UPDATE players SET bm = 1 WHERE id = $1', [id]);
+
+  const bmp = await mk('bmp');
+  const bmSword = ITEM_DEF.find(i => i.id === 'sw3');
+  const wornRow = await tx(async t => { await items.lockPlayer(t, bmp); return items.add(t, bmp, bmSword.id); });
+
+  await stale(bmp);
+  await tx(t => items.moveTo(t, wornRow, bmp, 'equipment', 'weapon'));
+  eq(await bmOf(bmp), await liveBm(bmp), 'вдягнута зброя переписала БМ');
+
+  await stale(bmp);
+  await tx(t => items.moveTo(t, wornRow, bmp, 'inventory'));
+  eq(await bmOf(bmp), await liveBm(bmp), 'знята зброя теж');
+
+  // The other half of the same gate. An unequip and a withdrawal from storage
+  // are the SAME call with the same arguments, and only one of them is a
+  // battle-power input — refreshing on both would be as wrong as refreshing on
+  // neither, just more expensively.
+  await stale(bmp);
+  await tx(t => items.moveTo(t, wornRow, bmp, 'storage'));
+  await tx(t => items.moveTo(t, wornRow, bmp, 'inventory'));
+  eq(await bmOf(bmp), 1, 'перекладання у скриню й назад БМ не чіпає');
+
+  await tx(t => items.moveTo(t, wornRow, bmp, 'equipment', 'weapon'));
+
+  // ── a bought stat point ──────────────────────────────────────────────────
+  await money.credit(null, bmp, 'gold', upgradeCost(0) * 4,
+    { reason: 'seed', idemKey: `${TAG}:bm-gold` });
+  await stale(bmp);
+  ok(await tx(t => players.spendUpgrade(t, bmp, 'atk')) !== null, 'очко характеристики куплено');
+  eq(await bmOf(bmp), await liveBm(bmp), 'куплене очко характеристики переписало БМ');
+
+  // ── xp, and the level it may or may not buy ──────────────────────────────
+  await stale(bmp);
+  const noLevel = await tx(t => players.grantXp(t, bmp, 1));
+  eq(noLevel.levelsGained, 0, 'одна одиниця досвіду рівня не дала');
+  eq(await bmOf(bmp), 1, 'сам по собі досвід БМ не чіпає — battlePower його не читає');
+
+  await stale(bmp);
+  const levelled = await tx(t => players.grantXp(t, bmp, xpToNext(1) * 4));
+  ok(levelled.levelsGained > 0, `рівень піднявся до ${levelled.lvl}`);
+  eq(await bmOf(bmp), await liveBm(bmp), 'новий рівень переписав БМ');
+
+  // ── enhancement ──────────────────────────────────────────────────────────
+  // A blessed stone never burns the item, so the loop below can keep trying
+  // until the roll lands without risking the piece it is measuring. At 80% for
+  // +0 twenty attempts miss with probability 1e-14.
+  await tx(async t => { await items.lockPlayer(t, bmp); return items.add(t, bmp, 'bless_stone', { qty: 20 }); });
+  await stale(bmp);
+  let worn = null;
+  for (let i = 0; i < 20 && worn !== 'success'; i++) {
+    worn = (await tx(t => craft.enhance(t, bmp, wornRow, 'bless'))).outcome;
+  }
+  eq(worn, 'success', 'вдягнута зброя заточилась');
+  eq(await bmOf(bmp), await liveBm(bmp), 'заточка ВДЯГНУТОГО предмета переписала БМ');
+
+  // repos/stats.js adds enhanceBonus from the equipped rows and from nothing
+  // else, so sharpening something in the bag changes no number the board reads.
+  const bagRow = await tx(async t => { await items.lockPlayer(t, bmp); return items.add(t, bmp, bmSword.id); });
+  await stale(bmp);
+  let bagged = null;
+  for (let i = 0; i < 20 && bagged !== 'success'; i++) {
+    bagged = (await tx(t => craft.enhance(t, bmp, bagRow, 'bless'))).outcome;
+  }
+  eq(bagged, 'success', 'предмет у сумці теж заточився');
+  eq(await bmOf(bmp), 1, 'заточка предмета В СУМЦІ БМ не чіпає');
+
+  // ── a passive, which multiplies atk/def/hp ───────────────────────────────
+  // An active skill does not: a Q/W/E/R level only picks a damage coefficient
+  // in combat, and battlePower never sees it.
+  const atkPassive = passivesForClass('deathknight').find(pp => pp.stat === 'atkPct');
+  ok(!!atkPassive, 'у класу є пасивка на атаку');
+  await stale(bmp);
+  await tx(t => players.bumpSkill(t, bmp, 'passive', atkPassive.id));
+  eq(await bmOf(bmp), await liveBm(bmp), 'вивчена пасивка переписала БМ');
+
+  await stale(bmp);
+  await tx(t => players.bumpSkill(t, bmp, 'skill', 'Q'));
+  eq(await bmOf(bmp), 1, 'вивчений АКТИВНИЙ навик БМ не чіпає');
+
+  // ── rebirth: the only direction nothing else moves a rating in ───────────
+  const rbp = await mk('bmrb');
+  await pool().query('UPDATE player_progress SET lvl = $2 WHERE player_id = $1', [rbp, REBIRTH_LEVEL]);
+  const rbCost = rebirthCostFor(0);
+  for (const [id, n] of Object.entries(rbCost)) {
+    await tx(async t => { await items.lockPlayer(t, rbp); return items.add(t, rbp, id, { qty: n }); });
+  }
+  const bmHigh = (await tx(t => stats.refreshBm(t, rbp))).bm;
+  await tx(t => players.rebirth(t, rbp, rbCost, { minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP }));
+  const bmLow = await bmOf(rbp);
+  ok(bmLow < bmHigh, `переродження опустило БМ (${bmHigh} → ${bmLow})`);
+  eq(bmLow, await liveBm(rbp), 'і саме до перерахованого значення, а не до вчорашнього');
+
+  // ── a running potion must not move the rating ────────────────────────────
+  // Every case above happens to have an empty buffs map, so they would agree
+  // with a refreshBm that counted buffs just as readily as with one that does
+  // not. This is the case that tells them apart.
+  //
+  // The buff is set through the column rather than by drinking, because what
+  // is being tested is the READ: whether refreshBm strips it. And the setup is
+  // asserted before the conclusion is — an expiry written in the wrong shape,
+  // or a buff key compute() does not know, would leave nothing running and the
+  // real assertion would pass over a player with no buff at all.
+  const bmb = await mk('bmbuff');
+  const cleanAtk = (await stats.of(null, bmb)).atk;
+  await pool().query(
+    `UPDATE player_progress SET buffs = $2::jsonb WHERE player_id = $1`,
+    [bmb, JSON.stringify({ atk: Date.now() + 600000, hp: Date.now() + 600000 })]);
+  const buffedAtk = (await stats.of(null, bmb)).atk;
+  ok(buffedAtk > cleanAtk, `баф справді діє на бойові стати (${cleanAtk} → ${buffedAtk})`);
+
+  const rowB = await stats.load(null, bmb);
+  const permanent = stats.battlePower(stats.compute({ ...rowB, buffs: {} }), {
+    critChance: rowB.upg_crit_chance, critPower: rowB.upg_crit_power,
+    hpRegen: rowB.upg_hp_regen, atkSpeed: rowB.upg_atk_speed,
+  });
+  const withBuff = stats.battlePower(stats.compute(rowB), {
+    critChance: rowB.upg_crit_chance, critPower: rowB.upg_crit_power,
+    hpRegen: rowB.upg_hp_regen, atkSpeed: rowB.upg_atk_speed,
+  });
+  ok(withBuff > permanent, `і на БМ теж вплинув би (${permanent} → ${withBuff})`);
+
+  await stale(bmb);
+  eq((await tx(t => stats.refreshBm(t, bmb))).bm, permanent,
+    'але БМ рахується без бафів — рейтинг не сортує за тим, хто щойно випив');
 }
 
 async function cleanup() {

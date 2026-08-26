@@ -14,6 +14,7 @@ const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const clans = require('../server/db/repos/clans');
+const consumables = require('../server/db/repos/consumables');
 const {
   CLAN_MAX_MEMBERS, CLAN_CREATE_COST, UNIQUE_SHARDS, CLAN_STORAGE_MIN_DAYS,
 } = require('../shared/definitions');
@@ -207,6 +208,44 @@ async function main() {
   const after = await clans.fullView(null, c.clanId);
   eq(after.xp, xpBefore + 600, 'два одночасні нарахування досвіду клану не загубились');
   eq(after.level, clans.levelFor(after.xp), 'рівень клану порахований за таблицею');
+
+  // ── and something actually CALLS it ──────────────────────────────────────
+  // addXp above was complete, correct and reached by nothing: every clan in
+  // this build stood at level 1 with 0 xp for its whole life, so every perk
+  // CLAN_LEVELS gates on a level — the +atk% Room.js applies, the gold and xp
+  // lines the panel advertises — was inert for everyone who ever joined one.
+  //
+  // The award is back where the retired build had it: one point per monster to
+  // the clan of whoever landed the blow (_onKillClanXp, server/handlers/
+  // world.js), inside the transaction that pays the kill rather than in a Map
+  // a crash could empty. These assertions fail the moment that argument stops
+  // being read — which is the only way to tell this apart from the state the
+  // whole file is about.
+  const killer = fillers[0];
+  const beforeKill = (await clans.fullView(null, c.clanId)).xp;
+  await tx(t => consumables.grantKillReward(t, killer, {
+    gold: 0, xp: 0, drops: [], idemKey: `${TAG}:kill:1`, clanId: c.clanId,
+  }));
+  eq((await clans.fullView(null, c.clanId)).xp, beforeKill + clans.CLAN_XP_PER_KILL,
+    `вбитий монстр дав клану ${clans.CLAN_XP_PER_KILL} досвіду`);
+
+  // The same call WITHOUT a clan pays nobody. This is not a formality: the
+  // party share in handlers2/world.js deliberately passes no clanId, because
+  // paying every member would multiply the rate CLAN_LEVELS is scaled against
+  // by the size of the group.
+  await tx(t => consumables.grantKillReward(t, killer, {
+    gold: 0, xp: 0, drops: [], idemKey: `${TAG}:kill:2`,
+  }));
+  eq((await clans.fullView(null, c.clanId)).xp, beforeKill + clans.CLAN_XP_PER_KILL,
+    'вбивство без клану не нарахувало нікому нічого');
+
+  // A clan that vanished under a cached id answers null instead of throwing —
+  // the state the session drops its badge on. A throw here would roll back the
+  // gold and the loot of a kill that really happened.
+  const orphan = await tx(t => consumables.grantKillReward(t, killer, {
+    gold: 0, xp: 0, drops: [], idemKey: `${TAG}:kill:3`, clanId: 9007199254740000,
+  }));
+  eq(orphan.clanXp, null, 'досвід у неіснуючий клан — null, а не помилка');
 
   // ── one player, one clan — enforced by the schema ────────────────────────
   // fillers[0], not a1/a2: those two raced for the last slot and only the

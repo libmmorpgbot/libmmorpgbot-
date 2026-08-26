@@ -31,7 +31,6 @@
 // compromised account, and that log is what tells the two apart.
 
 const { tx, query } = require('./db');
-const players = require('./db/repos/players');
 const money = require('./db/repos/money');
 const stats = require('./db/repos/stats');
 const progression = require('./db/repos/progression');

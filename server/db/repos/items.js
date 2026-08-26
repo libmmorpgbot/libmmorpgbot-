@@ -27,7 +27,7 @@
 // insert; without a transaction those are two statements a concurrent grant
 // can land between, and the 150-slot cap becomes a suggestion.
 
-const { query } = require('../index');
+const { query, hasColumn } = require('../index');
 const { SERVER_INV_MAX } = require('../../anticheat');
 const { ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCEABLE_SLOTS, isStackableItem } =
   require('../../../shared/definitions');
@@ -173,7 +173,14 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
                     WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
                     ORDER BY id LIMIT 1)
       RETURNING id`, [playerId, itemId, qty]);
-    if (merged.length) return Number(merged[0].id);
+    if (merged.length) {
+      // The merge is the case a row-lifecycle ledger cannot see — no row is
+      // created, an existing one simply grows. It is recorded here exactly like
+      // an insert, which is the whole argument for counting quantities.
+      await ledger(db, playerId, itemId, qty,
+        { rowId: Number(merged[0].id), reason: source || 'unknown', refType: 'source', refId: sourceRef });
+      return Number(merged[0].id);
+    }
   }
 
   if (await usedSlots(db, playerId) >= SERVER_INV_MAX) return null;
@@ -188,18 +195,28 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
   // Asked of the schema once rather than assumed, so the deploy order between
   // this code and its migration cannot break a grant. Before the migration the
   // old statement runs and nothing is recorded; after it, everything is.
+  let rowId;
   if (await _hasSourceCols(db)) {
     const { rows } = await query(db, `
       INSERT INTO player_items (player_id, container, item_id, enhance, qty, source, source_ref)
       VALUES ($1, 'inventory', $2, $3, $4, $5, $6) RETURNING id`,
       [playerId, itemId, enh, qty, source || null, sourceRef == null ? null : String(sourceRef).slice(0, 80)]);
-    return Number(rows[0].id);
+    rowId = Number(rows[0].id);
+  } else {
+    const { rows } = await query(db, `
+      INSERT INTO player_items (player_id, container, item_id, enhance, qty)
+      VALUES ($1, 'inventory', $2, $3, $4) RETURNING id`,
+      [playerId, itemId, enh, qty]);
+    rowId = Number(rows[0].id);
   }
-  const { rows } = await query(db, `
-    INSERT INTO player_items (player_id, container, item_id, enhance, qty)
-    VALUES ($1, 'inventory', $2, $3, $4) RETURNING id`,
-    [playerId, itemId, enh, qty]);
-  return Number(rows[0].id);
+  // The reason IS the provenance label 011 already defined ('kill', 'craft',
+  // 'box', …) rather than a second vocabulary meaning the same things. Every
+  // one of the seventeen call sites already passes it, so the creation half of
+  // the ledger needed no change at any of them — and the column and the ledger
+  // row can never describe the same grant differently.
+  await ledger(db, playerId, itemId, qty,
+    { rowId, reason: source || 'unknown', refType: 'source', refId: sourceRef });
+  return rowId;
 }
 
 // Does player_items carry the provenance columns yet? Asked once per process.
@@ -213,10 +230,100 @@ async function _hasSourceCols(db) {
       SELECT 1 FROM information_schema.columns
        WHERE table_name = 'player_items' AND column_name = 'source' LIMIT 1`);
     _srcCols = rows.length > 0;
-  } catch (err) {
+  } catch {
     _srcCols = false;
   }
   return _srcCols;
+}
+
+// ── the item ledger ─────────────────────────────────────────────────────────
+// The append-only record of every quantity movement, and the item half of what
+// repos/money.js does for currency. See migration 012 for the shape and for
+// why it counts QUANTITIES rather than row lifecycles; the short version is
+// that a stackable is duplicated by `qty + n`, which creates no row for a
+// lifecycle ledger to notice.
+//
+// The invariant it buys: for every account and every catalog item, the sum of
+// every delta here equals the quantity that account holds. reconcile() below
+// is that sentence as one query.
+//
+// ── ordering, and why a failure here takes the grant down with it ───────────
+// This is called AFTER the item write and INSIDE the same transaction, and
+// both halves of that are deliberate.
+//
+// After, because qty_after is read from player_items — it is the quantity the
+// account holds once the movement has been applied, and asking before would
+// record the previous state as the new one.
+//
+// Inside, because the alternative is a grant that succeeded with no record of
+// itself. If this INSERT raises, the exception propagates, tx() rolls back,
+// and the item is not granted either. That is the right way round: an item
+// nobody can account for is the exact thing this table exists to make
+// impossible, so "the item exists and the ledger does not know" must not be a
+// reachable state. A player seeing an error they can retry is a far better
+// outcome than an item that reconcile() will alarm on every night from now on.
+//
+// The one exception is the schema probe below, and it is not a silent one.
+let _ledgerCols = null;
+let _ledgerWarned = false;
+async function _hasLedger() {
+  if (_ledgerCols !== null) return _ledgerCols;
+  try {
+    // hasColumn asks on the POOL, not on the caller's transaction — which
+    // matters more here than it looks. A statement that raises inside a
+    // transaction poisons it (25P02 on everything after), so a probe run on
+    // the caller's client would turn "the table is missing" into a failed
+    // player action. On the pool it cannot touch them.
+    _ledgerCols = await hasColumn('item_ledger', 'delta');
+  } catch {
+    // A probe that cannot answer means "no", never an exception: deciding
+    // whether the ledger exists must not be a way for an item grant to fail.
+    _ledgerCols = false;
+  }
+  if (!_ledgerCols && !_ledgerWarned) {
+    _ledgerWarned = true;
+    // Once per process, not once per grant: this is a condition, not an event,
+    // and a line per item handed out would bury the log it is meant to warn in.
+    // Loud all the same — while this prints, nothing is proving that items are
+    // conserved, and an operator has to be able to see that from the journal.
+    console.warn('[items] item_ledger отсутствует — миграция 012 не применена;'
+      + ' движения предметов НЕ записываются и сверка невозможна');
+  }
+  return _ledgerCols;
+}
+
+// One movement. `delta` is signed: positive when the account gains, negative
+// when it loses. Callers pass the row id where the movement is about one
+// identifiable row, which is what keeps "what happened to this Excalibur"
+// answerable after the row is deleted.
+async function ledger(db, playerId, itemId, delta, { rowId = null, reason, refType = null, refId = null, idemKey = null } = {}) {
+  if (!playerId || !itemId || !Number.isFinite(delta) || delta === 0) return false;
+  if (!reason) throw new Error('items.ledger: reason is required — see migration 012');
+  if (!await _hasLedger()) return false;
+  try {
+    // qty_after is computed by this statement rather than passed in, so it
+    // cannot disagree with what the table actually holds — the same reason
+    // money.js takes balance_after from the UPDATE's own RETURNING instead of
+    // recomputing it in JavaScript. Every container counts: an equipped sword
+    // is one the account holds.
+    await query(db, `
+      INSERT INTO item_ledger (player_id, row_id, item_id, delta, qty_after, reason, ref_type, ref_id, idem_key)
+      SELECT $1::bigint, $2::bigint, $3::text, $4::int,
+             COALESCE((SELECT sum(qty) FROM player_items
+                        WHERE player_id = $1::bigint AND item_id = $3::text), 0)::int,
+             $5::text, $6::text, $7::text, $8::text`,
+      [playerId, rowId, itemId, Math.trunc(delta), reason, refType,
+        refId == null ? null : String(refId).slice(0, 80),
+        idemKey == null ? null : String(idemKey).slice(0, 200)]);
+    return true;
+  } catch (err) {
+    // Named before it is rethrown. Without this the operator sees whatever the
+    // handler makes of a rolled-back transaction — "Ошибка сервера" — and no
+    // indication that the ledger was what refused, which is the one fact that
+    // explains why an otherwise ordinary grant stopped working.
+    console.error(`[items] ledger write failed (${reason} ${itemId} ${delta} for ${playerId}):`, err.message);
+    throw err;
+  }
 }
 
 // Takes `qty` units off the player's inventory, across as many rows as it
@@ -246,7 +353,7 @@ async function _hasSourceCols(db) {
 // Nothing is taken unless everything can be: `plan` is empty when the total
 // falls short, so the caller gets false and an untouched inventory rather than
 // a half-consumed one.
-async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnhance = null } = {}) {
+async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnhance = null, reason = 'consume', refType = null, refId = null } = {}) {
   // A row a past trade still names cannot be deleted while the reference
   // blocks (see assertDestroyable). Such a row is left out of the pool
   // entirely rather than drained part-way, because a plan that ends in
@@ -288,7 +395,17 @@ async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnh
     SELECT (COALESCE((SELECT sum(qty) FROM gone), 0)
           + COALESCE((SELECT sum(qty) FROM kept), 0))::int AS took`,
     [playerId, itemId, qty, enhance, minEnhance, guard]);
-  return Number(rows[0].took) === Number(qty);
+  const took = Number(rows[0].took);
+  // Only a COMPLETE take is recorded, because only a complete take happened —
+  // `plan` is empty when the total falls short, so a false return means the
+  // inventory was not touched and there is nothing to write down. Recording the
+  // shortfall would invent a movement that the item rows never made, and
+  // reconcile() would then alarm on the ledger's own bookkeeping.
+  if (took !== Number(qty)) return false;
+  // No rowId: a take may drain several rows at once, so there is no single one
+  // this movement is about. The column is nullable for exactly this case.
+  await ledger(db, playerId, itemId, -took, { reason, refType, refId });
+  return true;
 }
 
 // Takes `n` units of whatever matches a DESCRIPTION rather than an id — "ten
@@ -306,7 +423,7 @@ async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnh
 // Ordering, availability and the all-or-nothing rule are removeQty's, for the
 // same reasons — lowest enhancement first so salvage eats the +0 before the
 // +12, and nothing consumed at all unless the whole amount is there.
-async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null, stackable = null } = {}) {
+async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null, stackable = null, reason = 'consume', refType = null, refId = null } = {}) {
   const guard = await marketRefBlocksDelete(db);
   const { rows } = await query(db, `
     WITH pool AS (
@@ -334,18 +451,49 @@ async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null,
     ),
     gone AS (
       DELETE FROM player_items WHERE id IN (SELECT id FROM plan WHERE take >= qty)
-      RETURNING qty
+      RETURNING item_id, qty
     ),
     kept AS (
       UPDATE player_items pi SET qty = pi.qty - p.take
         FROM plan p WHERE pi.id = p.id AND p.take < p.qty
-      RETURNING p.take AS qty
+      RETURNING pi.item_id, p.take AS qty
+    ),
+    moved AS (
+      -- Aliased "drained" rather than "both": BOTH is a reserved word in
+      -- PostgreSQL (it belongs to TRIM(BOTH ...)), and a reserved word as a
+      -- subquery alias is a syntax error, not a warning.
+      SELECT item_id, sum(qty)::int AS taken
+        FROM (SELECT item_id, qty FROM gone
+              UNION ALL
+              SELECT item_id, qty FROM kept) drained
+       GROUP BY item_id
     )
     SELECT (SELECT total FROM avail) AS had,
-           (COALESCE((SELECT sum(qty) FROM gone), 0)
-          + COALESCE((SELECT sum(qty) FROM kept), 0))::int AS took`,
+           (SELECT COALESCE(sum(taken), 0) FROM moved)::int AS took,
+           m.item_id AS moved_item, m.taken AS moved_qty
+      FROM (SELECT 1 AS one) base
+      LEFT JOIN moved m ON true`,
     [playerId, n, itemIds, rarity, stackable, guard]);
-  return { ok: Number(rows[0].took) === Number(n), had: Number(rows[0].had) };
+
+  // The LEFT JOIN is what keeps this readable when nothing was taken: `moved`
+  // is empty then, and an inner join would return NO rows at all — so rows[0]
+  // would be undefined and the `had` count the caller needs to say "нужно 30,
+  // есть 24" would throw instead of arriving.
+  const had = Number(rows[0].had);
+  const took = Number(rows[0].took);
+  if (took !== Number(n)) return { ok: false, had };
+
+  // One ledger row per item id, not per player_items row. This function is the
+  // only consumer that drains ACROSS ids — ten skill books of any class, thirty
+  // commons of any kind — and the ledger's unit is (account, item), so the
+  // breakdown has to be grouped that way before it is written. Doing it in SQL
+  // above means the split recorded here is the split that actually happened,
+  // rather than one recomputed in JavaScript from the same inputs.
+  for (const r of rows) {
+    if (!r.moved_item) continue;
+    await ledger(db, playerId, r.moved_item, -Number(r.moved_qty), { reason, refType, refId });
+  }
+  return { ok: true, had };
 }
 
 // Turns whatever the client used to name an item into a row id it owns.
@@ -492,11 +640,18 @@ async function assertDestroyable(db, rowId) {
 
 // Removes one specific row — used where the caller already identified the
 // exact item (an equipped piece, a listing's item) rather than "one of these".
-async function removeRow(db, rowId, playerId) {
+async function removeRow(db, rowId, playerId, { reason = 'destroy', refType = null, refId = null } = {}) {
   await assertDestroyable(db, rowId);
-  const { rowCount } = await query(db,
-    'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
-  return rowCount === 1;
+  // RETURNING rather than a SELECT first: the ledger needs to know WHAT was
+  // destroyed, and reading it beforehand would be a second statement whose
+  // answer could be stale by the time the DELETE ran. The row tells us on its
+  // way out, which is the only moment both facts are certainly true together.
+  const { rows } = await query(db,
+    'DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING item_id, qty', [rowId, playerId]);
+  if (rows.length !== 1) return false;
+  await ledger(db, playerId, rows[0].item_id, -Number(rows[0].qty),
+    { rowId: Number(rowId), reason, refType, refId });
+  return true;
 }
 
 // Equip / unequip / storage, as one operation.
@@ -505,6 +660,28 @@ async function removeRow(db, rowId, playerId) {
 // player_items_equip_slot_key rather than silently replacing — the caller must
 // unequip first, in the same transaction, so there is never an instant where
 // the displaced item belongs nowhere.
+//
+// Writes NO ledger row, and that is a decision rather than an omission. The
+// item ledger counts how many of an item an ACCOUNT holds; equipping a sword
+// moves it between that account's own containers and changes the count by
+// nothing. `delta <> 0` means such a movement has no well-formed row to write,
+// and a table full of zeroes would bury the movements that matter under the
+// ones that cannot. Where an item sits is player_logs' subject.
+//
+// ── why the battle rating is written here ───────────────────────────────────
+// This is the only statement in the build that changes WHICH rows are worn,
+// and worn rows are most of what battlePower() adds up. players.bm is a stored
+// column that the rating board sorts on, so gear moving without rewriting it
+// leaves the board describing a character that no longer exists — which is
+// what it did for everyone, because outside a level-up nothing called
+// refreshBm at all.
+//
+// Here rather than in the two handlers so a sixth call site cannot forget it.
+// The price is that a swap (unequip the displaced piece, equip the new one)
+// refreshes twice inside one transaction; the first value is overwritten
+// before COMMIT, so nothing outside ever reads the intermediate, and two
+// statements on an action a player takes by hand is the cheaper half of the
+// trade.
 async function moveTo(db, rowId, playerId, container, slot = null) {
   if (container === 'equipment' && !slot) throw new Error('items: equipment move needs a slot');
   if (container !== 'equipment' && slot) throw new Error('items: only equipment has a slot');
@@ -513,10 +690,20 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
     // the old code's "unequip refuses when the inventory is full" scenario.
     return false;
   }
+  // Where the row is LEAVING from, read before the move: afterwards the column
+  // holds the destination and nothing is left to say it had been worn. An
+  // unequip and a withdrawal from storage are the same call with the same
+  // arguments, so the origin is the only thing that tells them apart.
+  const { rows: from } = await query(db,
+    'SELECT container FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
   const { rowCount } = await query(db, `
     UPDATE player_items SET container = $3, slot = $4
      WHERE id = $1 AND player_id = $2`, [rowId, playerId, container, slot]);
-  return rowCount === 1;
+  if (rowCount !== 1) return false;
+  if (container === 'equipment' || (from.length && from[0].container === 'equipment')) {
+    await require('./stats').refreshBm(db, playerId);
+  }
+  return true;
 }
 
 // ── market handoff ──────────────────────────────────────────────────────────
@@ -526,23 +713,115 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
 // the state the old model could not express, and its absence is why "listed
 // but still in the inventory" was reachable.
 
-async function detachForListing(db, rowId, playerId) {
-  const { rowCount } = await query(db, `
+// A listing IS a ledger movement, unlike an equip: the item leaves the
+// seller's holding for one that belongs to no account. Recording it is what
+// keeps the invariant exact on both sides of a trade — without it every active
+// listing would read as an item the seller still owes the ledger, and every
+// seller with something for sale would show as drift.
+async function detachForListing(db, rowId, playerId, { reason = 'market_list', refType = 'listing', refId = null } = {}) {
+  const { rows } = await query(db, `
     UPDATE player_items SET player_id = NULL, container = NULL, slot = NULL
-     WHERE id = $1 AND player_id = $2 AND container = 'inventory'`, [rowId, playerId]);
-  return rowCount === 1;
+     WHERE id = $1 AND player_id = $2 AND container = 'inventory'
+    RETURNING item_id, qty`, [rowId, playerId]);
+  if (rows.length !== 1) return false;
+  await ledger(db, playerId, rows[0].item_id, -Number(rows[0].qty),
+    { rowId: Number(rowId), reason, refType, refId });
+  return true;
 }
 
 // Hands a detached item to an account — the buyer on a sale, the seller on a
 // cancellation. Room must already have been checked by the caller INSIDE the
 // same transaction; if it was not, this still cannot overflow, because the
 // slot count is re-checked here.
-async function attachFromListing(db, rowId, playerId) {
+async function attachFromListing(db, rowId, playerId, { reason = 'market_buy', refType = 'listing', refId = null } = {}) {
   if (await usedSlots(db, playerId) >= SERVER_INV_MAX) return false;
-  const { rowCount } = await query(db, `
+  const { rows } = await query(db, `
     UPDATE player_items SET player_id = $2, container = 'inventory'
-     WHERE id = $1 AND player_id IS NULL`, [rowId, playerId]);
-  return rowCount === 1;
+     WHERE id = $1 AND player_id IS NULL
+    RETURNING item_id, qty`, [rowId, playerId]);
+  if (rows.length !== 1) return false;
+  await ledger(db, playerId, rows[0].item_id, Number(rows[0].qty),
+    { rowId: Number(rowId), reason, refType, refId });
+  return true;
+}
+
+// ── history ─────────────────────────────────────────────────────────────────
+// "Where did this sword come from" — the question migration 011 could only
+// answer while the row was alive. Keyed on the row id, and it keeps answering
+// after the row is deleted, because these rows are not attached to it.
+async function historyOfRow(db, rowId, limit = 50) {
+  const { rows } = await query(db, `
+    SELECT player_id, item_id, delta, qty_after, reason, ref_type, ref_id, created_at
+      FROM item_ledger
+     WHERE row_id = $1
+     ORDER BY id
+     LIMIT $2`, [rowId, Math.min(limit, 200)]);
+  return rows.map(r => ({
+    playerId: Number(r.player_id),
+    itemId: r.item_id,
+    delta: Number(r.delta),
+    qtyAfter: Number(r.qty_after),
+    reason: r.reason,
+    refType: r.ref_type,
+    refId: r.ref_id,
+    at: r.created_at,
+  }));
+}
+
+// ── reconcile ───────────────────────────────────────────────────────────────
+// The check that makes the item ledger worth having, and the exact counterpart
+// of money.reconcile(): for every account and every catalog item, the sum of
+// everything that ever moved must equal the quantity that account holds now.
+// Anything else means items were created or destroyed outside this file, and
+// this is the only way to find out.
+//
+// Returns the pairs that DISAGREE. An empty array is the expected result, and
+// the day it stops being empty is the day an item came from somewhere nobody
+// wrote down — which is precisely the signal that did not exist before, when an
+// inventory was a set of rows with no history to check it against.
+//
+// A FULL JOIN rather than money's LEFT JOIN, and the difference matters. Money
+// iterates `balances`, so an account with a ledger row and no balance row is
+// invisible to it — tolerable there, because credit() creates the balance row
+// in the same statement as the ledger row. Here the two failure directions are
+// both real and neither is rarer than the other: an item held with no ledger
+// row behind it (something inserted around items.add) and a ledger row with no
+// item left (something deleted around this file). A LEFT JOIN from either side
+// would silently report only half of them, which is the shape of a check that
+// looks like it is working.
+//
+// player_id IS NOT NULL on both sides: an item detached into a market listing
+// belongs to no account, so it is in neither sum. That is not an exclusion, it
+// is the same fact counted consistently on both sides.
+//
+// Meant to run nightly. It is a full aggregate over the ledger, so it is not
+// something to call from a request path.
+async function reconcile(db) {
+  if (!await _hasLedger()) return null;
+  const { rows } = await query(db, `
+    SELECT COALESCE(h.player_id, l.player_id) AS player_id,
+           COALESCE(h.item_id,   l.item_id)   AS item_id,
+           COALESCE(h.held, 0)                AS held,
+           COALESCE(l.ledger_total, 0)        AS ledger_total,
+           COALESCE(h.held, 0) - COALESCE(l.ledger_total, 0) AS drift
+      FROM (SELECT player_id, item_id, sum(qty)::int AS held
+              FROM player_items
+             WHERE player_id IS NOT NULL
+             GROUP BY player_id, item_id) h
+      FULL JOIN (SELECT player_id, item_id, sum(delta)::int AS ledger_total
+                   FROM item_ledger
+                  GROUP BY player_id, item_id) l
+        ON l.player_id = h.player_id AND l.item_id = h.item_id
+     WHERE COALESCE(h.held, 0) <> COALESCE(l.ledger_total, 0)
+     ORDER BY abs(COALESCE(h.held, 0) - COALESCE(l.ledger_total, 0)) DESC
+     LIMIT 500`);
+  return rows.map(r => ({
+    playerId: Number(r.player_id),
+    itemId: r.item_id,
+    held: Number(r.held),
+    ledgerTotal: Number(r.ledger_total),
+    drift: Number(r.drift),
+  }));
 }
 
 module.exports = {
@@ -552,5 +831,6 @@ module.exports = {
   add, removeQty, removeRow, moveTo,
   assertDestroyable, marketRefBlocksDelete,
   detachForListing, attachFromListing,
+  ledger, reconcile, historyOfRow,
   SERVER_INV_MAX,
 };

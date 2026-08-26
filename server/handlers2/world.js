@@ -27,14 +27,18 @@ const players = require('../db/repos/players');
 const stats = require('../db/repos/stats');
 const consumables = require('../db/repos/consumables');
 const progression = require('../db/repos/progression');
+const clans = require('../db/repos/clans');
+const plog = require('../db/repos/playerlog');
+const ops = require('../tg-ops');
 const { NC_FACING, NC_AOE_STYLES } = require('../../shared/netcodec');
 const party = require('../party');
 const loot = require('../game/loot');
 const { query } = require('../db');
 const {
-  CHAR_DEF, FLOOR_ENEMIES, FEAR_MAX_WAVE, COOP_STAGE_LEVELS,
+  CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
-  NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel,
+  NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
+  GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel, clanBonusOf,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -52,23 +56,84 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // One cast at a time per connection. Held here rather than on the session so
   // it is cleared with the handlers when the socket goes.
   let teleportTimer = null;
-  const { io, floorRooms, enterFloor, floorIdOf, resolveFloor } = deps;
+  const { io, enterFloor, floorIdOf, resolveFloor } = deps;
 
   // ── character selection ──────────────────────────────────────────────────
   // The class is written once and never again: setClass has `AND char_class IS
   // NULL` in its WHERE, so a second selectChar cannot re-roll a character into
   // a different class and keep the level.
-  safeOn('selectChar', ({ type } = {}) => s.act('selectChar', 'authError', async (t, pid) => {
-    const prog = await players.progressOf(t, pid);
-    if (!prog.charClass) {
-      if (!CHAR_DEF[type]) fail('Неизвестный класс', 'bad_class');
-      await players.setClass(t, pid, type);
+  safeOn('selectChar', async ({ type } = {}) => {
+    // `landed` rather than act()'s own return value: act logs `out` into
+    // player_logs through _resultMeta, and changing what a handler returns
+    // changes what that row says.
+    let landed = false;
+    await s.act('selectChar', 'authError', async (t, pid) => {
+      const prog = await players.progressOf(t, pid);
+      if (!prog.charClass) {
+        if (!CHAR_DEF[type]) fail('Неизвестный класс', 'bad_class');
+        await players.setClass(t, pid, type);
+      }
+      // Everything the client needs to build the world, from the database. The
+      // old gameStart carried a savedData blob the client had sent moments
+      // earlier; this carries what is actually stored.
+      await sendGameStart(t, null);
+      landed = true;
+    });
+    // Outside the transaction on purpose: this moves the connection between
+    // two Rooms and pushes a second gameStart, none of which belongs inside a
+    // database transaction, and it must not run at all if the login failed.
+    if (landed) _resumeHeldFearRun();
+  });
+
+  // ── a Страх run held across a disconnect ─────────────────────────────────
+  // This is where a reconnect inside FEAR_RECONNECT_GRACE_MS gets its run
+  // back, and it is the half that never came across in the rewrite: the
+  // disconnect side held the record and expired it, and nothing claimed it.
+  // See _fearClaimOnReconnect (server/game/fear.js) for what that cost.
+  //
+  // It has to happen HERE rather than inside enterFloor, because the fear
+  // floor is deliberately not STANDABLE (server/world.js): resolveFloor sends
+  // a stored fear floor to the hub, which is right for someone whose run is
+  // genuinely over, and the private Room a live run is happening in is not in
+  // floorRooms for anyone to walk into anyway. The only handle on it is the
+  // held record itself, which carries the Room.
+  function _resumeHeldFearRun() {
+    const m = deps.modes || require('../modes').modes;
+    if (!m || typeof m._fearClaimOnReconnect !== 'function') return;
+    const run = m._fearClaimOnReconnect(s.telegramId);
+    if (!run || !run.room) return;
+
+    // forceFloor's addPlayer is what reclaims the HALL (Room._fearGraceClaim),
+    // so nothing about the run can be trusted until after the move. The two
+    // windows are the same length and start together, so they can only ever
+    // disagree by a hair — but a run record pointing at a hall this player
+    // does not own is the state fearEnter refuses forever, so it is checked
+    // rather than assumed.
+    const p = s.forceFloor('fear', { room: run.room });
+    const held = !!p && run.room.fearLaneOf(s.socket.id) === run.lane;
+    if (!held) {
+      plog.log(s.playerId, 'refuse:fearResume', {
+        wave: run.wave, lane: run.lane, code: p ? 'hall_released' : 'move_failed',
+      });
+      const spot = p ? deps._returnToHub(s.socket.id) : null;
+      // Told, not just logged: the client's own HUD still says "in run" from
+      // before the drop, and only a fearFinished clears it.
+      s.socket.emit('fearFinished', {
+        cleared: false, wave: run.wave, x: spot && spot.x, y: spot && spot.y,
+      });
+      return;
     }
-    // Everything the client needs to build the world, from the database. The
-    // old gameStart carried a savedData blob the client had sent moments
-    // earlier; this carries what is actually stored.
-    await sendGameStart(t, null);
-  }));
+
+    m._fearResumeRun(s.socket.id, run);
+    plog.log(s.playerId, 'fearResume', { wave: run.wave, lane: run.lane });
+    // wave 0 means the drop happened inside the pre-fight countdown, and the
+    // timer that would have spawned wave 1 is a closure over a socket id that
+    // no longer exists — it no-ops by design (see fearEnter, handlers2/
+    // modes.js). Resuming a countdown nobody was watching would just be a
+    // second wait, so the wave starts now.
+    if (run.wave > 0) s.socket.emit('fearWave', { wave: run.wave, maxWave: FEAR_MAX_WAVE });
+    else m._fearStartWave(run.room, s.socket.id, run.lane, 1);
+  }
 
   // Login, a floor change and a respawn are the same event to the client: a
   // full 'gameStart' for wherever it now is. The rewrite had invented
@@ -187,6 +252,47 @@ module.exports = function registerWorld(s, safeOn, deps) {
     return out;
   }
 
+  // ── what a clan point means outside the transaction ───────────────────────
+  // Two states the committed row can be in that the session's cached badge
+  // cannot represent, and neither may pass in silence.
+  async function afterClanXp(clanId, res) {
+    try {
+      // The clan is gone. Its leader disbanded it while this player was
+      // mid-fight and the cached id outlived it, so addXp matched no row and
+      // answered null — ordinary, not an error. What is NOT ordinary is going
+      // on offering the same dead id on every subsequent kill, so the badge is
+      // dropped here and the fact that a point went nowhere leaves a row.
+      if (!res) {
+        plog.log(s.playerId, 'clanXpOrphan', { clanId });
+        await s.refreshClan();
+        return;
+      }
+      // A level is the only part of clan xp anyone can see, and it is not
+      // cosmetic: CLAN_LEVELS grants +atk% (clanAtkBonusPct), which reaches
+      // combat only through Room.setPlayerClan — Room.js has no database of
+      // its own. Told to nobody, a level-up is a perk that stays inert until
+      // every member happens to relog, which is the same shape as the xp that
+      // was never awarded in the first place.
+      if (!s.clan || res.level === s.clan.level) return;
+      const view = await clans.fullView(null, clanId);
+      for (const m of (view.members || [])) {
+        const sock = deps.socketForPlayerId && deps.socketForPlayerId(m.playerId);
+        if (!sock || !sock.data || !sock.data.session) continue;
+        // Their own session re-reads the badge — that is what puts the new
+        // atk% onto their Room player — and their panel is refreshed FROM the
+        // database rather than told a number to remember.
+        await sock.data.session.refreshClan();
+        sock.emit('clanData', await clans.dataView(null, clanId, m.playerId));
+      }
+    } catch (err) {
+      // Committed either way: the point is in the row. Only the announcement
+      // failed, and an announcement nobody hears is precisely the failure this
+      // whole path exists to stop being silent about.
+      ops.alertError('clanXp.announce', 'Не удалось разослать уровень клана', err,
+        { clanId, player: s.username }).catch(() => {});
+    }
+  }
+
   async function onKill(result) {
     if (!result || !result.killed) return;
 
@@ -235,8 +341,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // party member's VIP is theirs and not the group's.
     const vipB = VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {};
     const ticketOn = !!(s.seasonTicket && seasonActive());
-    const xpPct = (vipB.xp || 0) + (ticketOn ? (SEASON_TICKET_XP_PCT || 0) : 0);
-    const goldPct = vipB.gold || 0;
+    // The clan's two thirds of the same idea. CLAN_LEVELS lists gold, xp and
+    // atk at every level; only atk had a reader, so the tags the clan panel
+    // prints — "+15% золото", "+10% опыт" — were decoration. Additive with VIP
+    // and the ticket, like everything else here.
+    const clanB = clanBonusOf(s.clan && s.clan.level);
+    const xpPct = (vipB.xp || 0) + (ticketOn ? (SEASON_TICKET_XP_PCT || 0) : 0) + clanB.xp;
+    const goldPct = (vipB.gold || 0) + clanB.gold;
     const myGold = Math.round(baseGold * (1 + goldPct / 100));
     const myXp = Math.round(baseXp * (1 + xpPct / 100));
 
@@ -249,8 +360,21 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // The season card's third promise is here: +10% RELATIVE to the chance,
     // which is what SEASON_TICKET_LIBERTY_PCT is for and where it was never
     // read.
+    // Every zone with a table of its own is tested BEFORE the corridor table,
+    // and co-op is first because it is the one that reads as working without
+    // its branch: a co-op monster still has an rlvl, so armIndexForLevel gives
+    // a perfectly ordinary corridor number and NEXUM_DROP_CHANCE[arm] pays
+    // out at 0.5%-5% by stage instead of the flat COOP_LIBERTY_CHANCE. That
+    // is the whole reward of a co-op kill (no gold, no GRAM — see calcGoldDrop
+    // and myGram below), paying a twentieth of what it says on stage one, with
+    // the constant that says so sitting unread in server/game/coop.js.
+    //
+    // The season ticket's +10% stays on the corridor branch alone: it buys a
+    // better chance at the open world's Liberty, not at a fixed per-zone rate
+    // the mode's own balance is built on.
     const arm = armIndexForLevel(result.rlvl || 1);
-    const libertyChance = result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0)
+    const libertyChance = result.arm === 'coop' ? (COOP_LIBERTY_CHANCE || 0)
+      : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0)
       : result.farmZone ? 0
       : (NEXUM_DROP_CHANCE[arm] || 0) * (ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1);
     const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
@@ -274,6 +398,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // is the same value across a txRetry — which is the case the key exists for
     // — and different for every actual kill.
     const idem = `kill:${s.playerId}:${result.enemyUid}:${result.at || 0}`;
+
+    // The killer's clan, read off the session rather than the database. It is
+    // the KILLER's only: the retired build awarded one point per monster to
+    // whoever landed the blow (_onKillClanXp, server/handlers/world.js) and
+    // the party share below deliberately does not pass it, because paying each
+    // member would multiply the rate CLAN_LEVELS is scaled against by the size
+    // of the group.
+    const myClanId = (s.clan && s.clan.clanId) || null;
 
     // The transaction decides what happened; the packet reports it AFTERWARDS.
     // Emitting from inside meant the client was told its new balance before the
@@ -301,7 +433,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
       const reward = await consumables.grantKillReward(t, pid, {
         gold: paidGold, xp: paidXp, nexum: myNexum, gram: myGram,
-        drops: drops.items, idemKey: idem,
+        drops: drops.items, idemKey: idem, clanId: myClanId,
       });
       // The quest chain. `result.enemyName` — the field the rewrite passed here
       // — has never existed on a kill result, so this branch was dead and the
@@ -310,8 +442,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const quest = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
       if (quest) s.socket.emit('questSync', quest);
       let refBonus = null;
+      // The stats.refreshBm that used to be here has moved into
+      // players.grantXp. It was the only refresh in the build, and it sat on
+      // ONE level-up path of four: the party share below, claimQuest and
+      // completeSpecialQuest all raise a level through the same repository
+      // function and none of them reached this line, so a player who levelled
+      // in a group or off a quest kept the rating they had before.
       if (reward.xp && reward.xp.levelsGained > 0) {
-        await stats.refreshBm(t, pid);
         // Crossing level 20 pays whoever invited this player their season
         // points — once, ever. Nothing called this in the rewrite, so an
         // invited friend could hit the threshold and the referrer was neither
@@ -360,6 +497,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
       }
     }
 
+    // AFTER the killer has been paid and told. The clan point is committed
+    // either way; what happens here is a broadcast to other people's sessions,
+    // and on the two rare branches it costs several queries — none of which
+    // this player's own kill should be waiting behind.
+    if (myClanId) await afterClanXp(myClanId, reward.clanXp);
+
     // Party members are paid on their own sessions, each in its own
     // transaction: one member's full inventory must not undo another's gold.
     for (const mid of mates) {
@@ -374,8 +517,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
         const mBuff = t2 => Number((mProg.buffs || {})[t2] || 0) > mNow;
         const mVip = VIP_BONUSES[mate.vipLevel || 0] || VIP_BONUSES[0] || {};
         const mTicket = !!(mate.seasonTicket && seasonActive());
-        const mXpPct = (mVip.xp || 0) + (mTicket ? (SEASON_TICKET_XP_PCT || 0) : 0);
-        const mGold = Math.round(baseGold * (1 + (mVip.gold || 0) / 100)) * (mBuff('gold') ? 2 : 1);
+        // Their own clan too, for the same reason as their own VIP: a member
+        // of a level 10 clan grouped with someone clanless keeps their bonus,
+        // and does not lend it out.
+        const mClan = clanBonusOf(mate.clan && mate.clan.level);
+        const mXpPct = (mVip.xp || 0) + (mTicket ? (SEASON_TICKET_XP_PCT || 0) : 0) + mClan.xp;
+        const mGold = Math.round(baseGold * (1 + ((mVip.gold || 0) + mClan.gold) / 100)) * (mBuff('gold') ? 2 : 1);
         const mXp = Math.round(baseXp * (1 + mXpPct / 100)) * (mBuff('exp') ? 2 : 1);
         const r = await consumables.grantKillReward(t, pid, {
           gold: mGold, xp: mXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,
@@ -589,9 +736,28 @@ module.exports = function registerWorld(s, safeOn, deps) {
     });
   });
 
-  // The rogue's stealth ending. Only ever clears the flag — a client cannot
-  // ask to BECOME invisible, which is what the event name suggests and what it
-  // must never do: the room hides a player from the enemy AI while it is set.
+  // Stealth ending. Only ever clears the flag — a client cannot ask to BECOME
+  // invisible, which is what the event name suggests and what it must never
+  // do: the room hides a player from the enemy AI while `_invis` is set, so
+  // the old `p._invis = !!invis` was an unauthenticated, unbounded "no monster
+  // may see me" switch.
+  //
+  // AND NOTHING SETS IT. Worth saying here, because reading only these lines
+  // has already produced one audit finding asking the server to start granting
+  // stealth "the way the client already animates it". There is no such skill
+  // and no such animation: `_invis` was the assassin's E, and the assassin
+  // class was deleted with the rest of the old roster (commit e509cf7 —
+  // "Assassin's mechanical slot ... was dropped rather than forced onto a
+  // character that doesn't fit it"). The client's own invisTimer has had no
+  // assignment other than zero since that day, so every `playerInvis` on the
+  // wire today carries `invis: false` and nothing else ever could.
+  //
+  // The handler stays because the shipped bundle still emits the event, and
+  // the two `_invis` reads in server/game/Room.js stay because they are the
+  // correct half — dev/aggro-check.js asserts BOTH that the AI honours the
+  // flag and that nothing grants it, so the day a skill does, that check fails
+  // and says the grant/expiry rules (duration, break-on-damage) now have to be
+  // server-owned rather than taken from a client packet.
   safeOn('playerInvis', () => {
     if (!s.room) return;
     const p = s.room.players.get(s.socket.id);

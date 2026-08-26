@@ -25,7 +25,6 @@
 // windows, so their registration is exercised by asserting the REFUSAL and its
 // reason rather than by waiting up to an hour for a window.
 
-const path = require('path');
 const io = require('socket.io-client');
 const crypto = require('crypto');
 
@@ -40,8 +39,7 @@ process.env.OPS_LIVE = '0';
 process.env.NODE_ENV = 'test';
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 
-const { pool, close, tx, query } = require('../server/db');
-const players = require('../server/db/repos/players');
+const { pool, close, tx } = require('../server/db');
 const progression = require('../server/db/repos/progression');
 const app = require('../server/app');
 const party = require('../server/party');
@@ -243,6 +241,80 @@ async function main() {
   a.sock.emit('coopSync');
   const coop = await once(a.sock, 'coopState');
   ok(coop && Number.isFinite(coop.maxStage), `Сотрудництво відповідає (етапів ${coop.maxStage})`);
+
+  // ── Страх переживає обрив звʼязку ────────────────────────────────────────
+  // A disconnect mid-run holds the run for FEAR_RECONNECT_GRACE_MS — 45s,
+  // raised to that from 15s precisely because ordinary reconnects were missing
+  // the window. The hold came across in the rewrite and the CLAIM did not, so
+  // the whole thing was a deletion on a timer wearing the word "grace": a
+  // player who reconnected two seconds later came back to a hall still full of
+  // their own monsters with no run behind it. The wave never advanced again
+  // (_fearTrackKill returns on `!run`), fearSync answered inRun:false, and
+  // dying in there did not end it either — with the attempt already spent on
+  // entry, the only way out was walking to a portal.
+  //
+  // Driven end to end rather than by inspecting the maps, because the maps
+  // were never the broken part: _fearDisconnectGrace held exactly the right
+  // record for exactly the right length of time. What was missing was anybody
+  // asking it for one.
+  console.log('  ── Страх переживає обрив ──');
+  const modesRt = require('../server/modes').modes;
+  const TG_C = 900000003;
+  {
+    const c0 = await connectAs(TG_C, `${TAG}_c`);
+    await setLevel(c0.pid, 40);
+    await pool().query('DELETE FROM player_daily WHERE player_id = $1', [c0.pid]);
+    // The gate reads the ROOM's copy of the level, stamped at login — so the
+    // new level only counts from the next one.
+    c0.sock.disconnect();
+    await wait(300);
+    const c = await connectAs(TG_C, `${TAG}_c`);
+
+    c.sock.emit('fearEnter');
+    const started = await maybe(c.sock, 'fearStarted', 5000);
+    ok(!!started, `Страх почався (хвиль ${started && started.maxWave})`);
+
+    // Wave 1 spawns FEAR_START_DELAY_MS after entry. Waiting for it is what
+    // makes this a test of RESUMING something rather than of re-entering:
+    // wave 0 has its own path (the countdown timer is a closure over a socket
+    // id that no longer exists, so the claim starts the wave itself).
+    const w1 = started ? await maybe(c.sock, 'fearWave', 9000) : null;
+    ok(w1 && w1.wave === 1, `перша хвиля піднялась (${w1 && w1.wave})`);
+
+    if (w1) {
+      const oldSid = c.sock.id;
+      c.sock.disconnect();
+      await wait(500);
+      ok(!modesRt._fear.has(oldSid), 'обрив зняв забіг зі старого сокета');
+      ok(modesRt._fearDisconnectGrace.has(String(TG_C)),
+        'і поклав його в утримання, а не викинув');
+
+      // Back inside the window. Everything below this line is what did not
+      // exist before: without the claim, `fear` comes back null and _fear has
+      // no entry for the new socket at all.
+      const back = io(`http://127.0.0.1:${PORT}`, { transports: ['websocket'], forceNew: true });
+      await once(back, 'connect');
+      // The LAST gameStart, not the first: login lands in the hub (the fear
+      // floor is deliberately not STANDABLE), and the claim moves the
+      // connection into its private hall right after, which pushes a second.
+      let lastStart = null;
+      back.on('gameStart', d => { lastStart = d; });
+      back.emit('loginTelegramWebApp', { initData: initDataFor(TG_C, `${TAG}_c`) });
+      await once(back, 'authOk', 8000);
+      back.emit('selectChar', { type: 'deathknight' });
+      await wait(1500);
+
+      const fearBlock = lastStart && lastStart.fear;
+      ok(!!(fearBlock && fearBlock.inRun),
+        `gameStart після перезаходу каже, що забіг триває (${JSON.stringify(fearBlock)})`);
+      eq(fearBlock && fearBlock.wave, w1.wave, 'і на тій самій хвилі, а не з нуля');
+      ok(modesRt._fear.has(back.id), 'сервер знову веде цей забіг на новому сокеті');
+      ok(!modesRt._fearDisconnectGrace.has(String(TG_C)),
+        'утримання забране, а не лишене протухати поруч із живим забігом');
+      back.disconnect();
+      await wait(200);
+    }
+  }
 
   a.sock.emit('farm2Sync');
   const farm = await once(a.sock, 'farm2State');

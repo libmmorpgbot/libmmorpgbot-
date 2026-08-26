@@ -32,9 +32,67 @@
 // would read as drifted and the one alarm that says "money moved outside
 // money.js" would be permanently ringing. Each carried balance therefore gets
 // exactly one ledger row: reason 'migration_opening'.
+//
+// ── what the retired models knew ────────────────────────────────────────────
+// server/models/*.js is deleted the moment this has run, and it is the only
+// written record of the shapes below. Reading collections directly means this
+// file no longer depends on those models — but it does depend on KNOWING them,
+// so the knowledge is copied here rather than left in a file that is going
+// away. Every line was checked against server/models/*.js as it stands today.
+//
+//   COLLECTION NAMES  mongoose lowercases and pluralises the model name, so
+//         Player -> players, Clan -> clans, MarketListing -> marketlistings,
+//         GramTx -> gramtxes (the -x -> -xes rule), SpecialQuest ->
+//         specialquests. Those five literals below are the whole contract; a
+//         typo reads as an empty collection and migrates nobody, silently.
+//
+//   savedData IS `Mixed`  — Player.js declares no shape at all, so the field
+//         list this file transforms was recovered from _sanitizeSavedStats
+//         (server/anticheat.js), which is the allow-list every save passed
+//         through. Anything not named there was never stored.
+//
+//   USERNAME IS NOT UNIQUE IN MONGO  Player.js indexes `username` for
+//         case-insensitive lookup but does NOT declare it unique, and the
+//         value is _safeUsername(user.username || user.first_name) — a
+//         Telegram DISPLAY NAME when there is no @handle. Two accounts called
+//         "Иван" is ordinary. players.username here is `citext NOT NULL
+//         UNIQUE`, which is why _uniqueUsername below exists: without it a
+//         collision aborts that player's transaction and the account is lost
+//         entirely — every item, every coin — over a display name.
+//
+//   _ITEM_ID_ALIASES IS EMPTY  _catalogBase (server/anticheat.js) resolves an
+//         item id through an alias map before looking it up, so a renamed id
+//         would still resolve for the live build and NOT for this file's
+//         CATALOG. It is `Object.create(null)` with nothing ever added, in
+//         both copies (anticheat.js and index.js) — verified, so no item can
+//         be lost to a rename. If an alias is ever added before cutover it
+//         must be added to CATALOG here too, or every item under the old id is
+//         reported as unknown and dropped.
+//
+//   THE CEILINGS  _SANITIZE_MAX (server/anticheat.js) is what bounded these
+//         numbers on the way in: gold 1e12, xp 1e12, lvl 1000, kills 1e9,
+//         bonusSP 1e6, rebirths 1e4, maxHp 1e7, qty 1e6, potions 1e5,
+//         invLen 500, storageLen 200, buffDur 7200s. They are reproduced in
+//         MAX below because the PostgreSQL columns are narrower than a JS
+//         number: an unclamped forged value raises 22003 and takes the WHOLE
+//         account down with it, which is a far worse trade than clamping the
+//         number nobody should have had.
+//
+//   THE INVENTORY CAP IS NOT THE STORAGE CAP  SERVER_INV_MAX is 150 but
+//         _SANITIZE_MAX.invLen is 500, so Mongo can legitimately hold an
+//         inventory the new build considers full. Everything is carried
+//         anyway — dropping items is never the right answer — and counted, so
+//         the operator learns about it here rather than from a player whose
+//         drops stopped being picked up.
+//
+//   A LISTED ITEM IS ALREADY OUT OF THE BLOB  handlers/market.js removes the
+//         item from savedData.inventory and persists that removal before the
+//         listing goes live (_commitServerItems, 'market_list'). So carrying
+//         both the blob and the active listings does NOT duplicate: the item
+//         exists in exactly one of the two. See migrateListings.
 
 const mongoose = require('mongoose');
-const { pool, tx, query, close } = require('../server/db');
+const { tx, query, close } = require('../server/db');
 const items = require('../server/db/repos/items');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCEABLE_SLOTS, isStackableItem,
@@ -47,6 +105,14 @@ const CURRENT_SEASON = 2;
 const CATALOG = new Map([...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF].map(d => [d.id, d]));
 const EQ_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet', 'cloak', 'artifact']);
 const LANGS = new Set(['ru', 'en', 'uk', 'es', 'tr', 'pt']);
+// The HP potions, derived from the catalog exactly as anticheat.js derived
+// _HP_POTION_IDS — so adding a third potion needs no change here. Used only by
+// the legacy `potions` fallback in progressRow.
+const HP_POTION_IDS = ITEM_DEF.filter(d => d.slot === 'use').map(d => d.id);
+// SERVER_INV_MAX, repeated rather than imported: server/anticheat.js survives
+// the deletion, but this file must not start depending on the live build's
+// tuning constants for a number it only COUNTS with. See lost.overCap.
+const INV_CAP = 150;
 
 // Everything that could not be carried, by kind. Printed at the end and, more
 // importantly, kept per-player so a specific account can be answered about.
@@ -56,6 +122,19 @@ const lost = {
   clansSkipped: [],
   listingsSkipped: [],
   txSkipped: [],
+  // A display name that collided on players.username (citext UNIQUE, where
+  // Mongo had no uniqueness at all). The account is carried under the retired
+  // build's own `tg_<id>` fallback rather than lost — but the player is now
+  // called something they did not choose, so it is named here.
+  renamed: [],
+  // Carried inventories already past SERVER_INV_MAX. Nothing is dropped —
+  // that is never the right answer — but until the player trims one, drops
+  // are not picked up and market cancellations fail, and the operator should
+  // learn that here rather than from the complaint.
+  overCap: [],
+  // A claimed special-quest id with no quest behind it any more. The claim
+  // cannot be recorded, so that quest's reward is claimable a second time.
+  questClaimsLost: [],
 };
 
 // Seconds-remaining -> the moment it ends. A value that is already an expiry
@@ -79,6 +158,44 @@ const num = (v, d = 0) => {
 };
 const int = (v, d = 0) => Math.floor(num(v, d));
 const clampInt = (v, lo, hi, d = 0) => Math.max(lo, Math.min(hi, int(v, d)));
+const clampNum = (v, lo, hi, d = 0) => Math.max(lo, Math.min(hi, num(v, d)));
+
+// The ceilings _SANITIZE_MAX (server/anticheat.js) applied on the way in,
+// repeated here because the PostgreSQL columns are NARROWER THAN A JS NUMBER
+// and this is the last place the difference can be absorbed. `gold` is
+// numeric(24,8) — sixteen digits ahead of the point; `kills` is bigint; `bm`
+// and `hp` are plain integers at 2^31. An unclamped 1e30 in any one of them
+// raises 22003, which aborts THAT PLAYER'S WHOLE TRANSACTION: no items, no
+// balance, no level — the entire account lost to one number nobody should
+// have had. Clamping costs the holder of a forged figure the forgery; not
+// clamping costs a real account everything, and the two are not close.
+const MAX = {
+  gold: 1e12, gram: 1e12, nexum: 1e12,     // numeric(24,8)
+  kills: 1e9, xp: 1e12,                    // bigint
+  bm: 2147483647, hp: 1e7, floor: 100000,  // integer
+  questIdx: 100000, bonusSp: 1e6, rebirths: 1e4, upg: 1e5,
+  qty: 1000000, potions: 1e5,
+  vipDeposited: 1e12, seasonPoints: 1e15,
+};
+
+// The HP potions the account actually holds. Two shapes reach this, and the
+// older one is easy to miss: before potionBag existed the save carried a
+// single `potions` integer, and _sanitizeSavedStats migrated it to the first
+// potion id on every read — so an account that has not logged in since still
+// has only the old field, and reading potionBag alone hands that player an
+// empty bag and no way to heal. `{}` is written deliberately when there is
+// genuinely nothing: 007's default of 30 is what a NEW character starts with,
+// not what someone who spent theirs should be given.
+function _potionBag(sd) {
+  const raw = sd.potionBag;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const out = {};
+    for (const id of HP_POTION_IDS) out[id] = clampInt(raw[id], 0, MAX.potions);
+    return out;
+  }
+  const legacy = clampInt(sd.potions, 0, MAX.potions);
+  return legacy > 0 && HP_POTION_IDS.length ? { [HP_POTION_IDS[0]]: legacy } : {};
+}
 
 // ── the transform ───────────────────────────────────────────────────────────
 
@@ -104,28 +221,32 @@ function itemRow(raw, container, slot, playerTg) {
 function progressRow(sd) {
   const cls = CHAR_DEF[sd.type] ? sd.type : null;
   const u = (sd.upgrades && typeof sd.upgrades === 'object') ? sd.upgrades : {};
-  const lvl = clampInt(sd.lvl, 1, 1000, 1);
+  // `level` is the legacy spelling of `lvl` and is still read as a fallback by
+  // calcBM (server/anticheat.js). A blob old enough to carry only `level`
+  // would otherwise arrive at level 1 with its gear and its xp intact, which
+  // reads as a wipe to the person it happened to.
+  const lvl = clampInt(sd.lvl != null ? sd.lvl : sd.level, 1, 1000, 1);
   return {
     charClass: cls,
     lvl,
     // xp is clamped to what the level's own curve allows. A blob claiming
     // 1e12 xp at level 3 is not a level 3 character with a lot of xp — it is a
     // number nobody should carry forward.
-    xp: Math.max(0, Math.min(num(sd.xp), xpToNext(lvl))),
-    kills: Math.max(0, int(sd.kills)),
-    hp: Math.max(0, int(sd.hp, 100)),
-    bonusSp: Math.max(0, int(sd.bonusSP)),
-    keptSp: Math.max(0, int(sd.keptSP)),
-    rebirths: Math.max(0, int(sd.rebirths)),
+    xp: clampNum(sd.xp, 0, Math.min(xpToNext(lvl), MAX.xp)),
+    kills: clampInt(sd.kills, 0, MAX.kills),
+    hp: clampInt(sd.hp, 0, MAX.hp, 100),
+    bonusSp: clampInt(sd.bonusSP, 0, MAX.bonusSp),
+    keptSp: clampInt(sd.keptSP, 0, MAX.bonusSp),
+    rebirths: clampInt(sd.rebirths, 0, MAX.rebirths),
     upg: {
-      atk: Math.max(0, int(u.atk)), def: Math.max(0, int(u.def)), hp: Math.max(0, int(u.hp)),
-      atkSpeed: Math.max(0, int(u.atkSpeed)), critChance: Math.max(0, int(u.critChance)),
-      critPower: Math.max(0, int(u.critPower)), hpRegen: Math.max(0, int(u.hpRegen)),
+      atk: clampInt(u.atk, 0, MAX.upg), def: clampInt(u.def, 0, MAX.upg), hp: clampInt(u.hp, 0, MAX.upg),
+      atkSpeed: clampInt(u.atkSpeed, 0, MAX.upg), critChance: clampInt(u.critChance, 0, MAX.upg),
+      critPower: clampInt(u.critPower, 0, MAX.upg), hpRegen: clampInt(u.hpRegen, 0, MAX.upg),
     },
-    floor: int(sd.floor, 1) || 1,
+    floor: clampInt(sd.floor, 1, MAX.floor, 1) || 1,
     x: Number.isFinite(num(sd.x, NaN)) ? num(sd.x) : null,
     y: Number.isFinite(num(sd.y, NaN)) ? num(sd.y) : null,
-    questIdx: Math.max(0, int(sd.questIdx)),
+    questIdx: clampInt(sd.questIdx, 0, MAX.questIdx),
     questKills: (sd.questKills && typeof sd.questKills === 'object' && !Array.isArray(sd.questKills)) ? sd.questKills : {},
     // The old save held SECONDS REMAINING; the column now holds the millisecond
     // a buff ends. Carrying the number across verbatim would read as an expiry
@@ -133,7 +254,7 @@ function progressRow(sd) {
     // ever changed back, as a buff that never ends. Converted at the boundary,
     // where the two meanings meet.
     buffs: _buffsToExpiry(sd.buffs),
-    potionBag: (sd.potionBag && typeof sd.potionBag === 'object' && !Array.isArray(sd.potionBag)) ? sd.potionBag : {},
+    potionBag: _potionBag(sd),
     codex: (sd.codex && typeof sd.codex === 'object' && !Array.isArray(sd.codex)) ? sd.codex : {},
     starterBonus: !!sd.starterBonus,
   };
@@ -153,9 +274,35 @@ function prefsRow(sd) {
 
 // ── per-player migration ────────────────────────────────────────────────────
 
-async function migratePlayer(doc) {
+// players.username is `citext NOT NULL UNIQUE`. Mongo's was neither unique nor
+// case-folded, and the value is a Telegram DISPLAY NAME when the account has
+// no @handle — so two players called "Иван", or "Alex" and "alex", are both
+// ordinary and both collide here. The collision lands on the FIRST statement of
+// the player's transaction, so it does not merely drop a name: it aborts the
+// whole account, items and balances included, and leaves one ✗ line behind.
+//
+// Falling back to `tg_<id>` is the retired build's own shape for "no usable
+// name" (_safeUsername, server/security.js), and telegram_id being unique makes
+// it unique. Checked before the transaction rather than caught inside it,
+// because a 23505 poisons the transaction and everything after it would have to
+// be replayed on a fresh one — more moving parts than a single indexed lookup
+// in a script that runs once.
+async function _uniqueUsername(tg, raw) {
+  const wanted = String(raw || `tg_${tg}`).slice(0, 32);
+  const { rows } = await query(null, 'SELECT telegram_id FROM players WHERE username = $1', [wanted]);
+  // A row that is THIS account is a re-run, not a collision: the INSERT below
+  // is skipped by ON CONFLICT anyway, and treating it as a clash would rename
+  // nobody while filling the report with renames that never happened.
+  if (!rows.length || String(rows[0].telegram_id) === tg) return wanted;
+  const fallback = `tg_${tg}`.slice(0, 32);
+  lost.renamed.push(`${tg}: «${wanted}» зайнято → «${fallback}»`);
+  return fallback;
+}
+
+async function migratePlayer(doc, questIds = new Map()) {
   const tg = String(doc.telegramId);
   const sd = (doc.savedData && typeof doc.savedData === 'object') ? doc.savedData : {};
+  const username = await _uniqueUsername(tg, doc.username);
 
   return tx(async (t) => {
     // ON CONFLICT DO NOTHING is the whole idempotency story: an account already
@@ -165,7 +312,7 @@ async function migratePlayer(doc) {
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (telegram_id) DO NOTHING
       RETURNING id`,
-      [tg, String(doc.username || `tg_${tg}`).slice(0, 32), Math.max(0, int(doc.bm)),
+      [tg, username, clampInt(doc.bm, 0, MAX.bm),
        doc.referredBy ? String(doc.referredBy) : null, !!doc.banned, !!doc.adminNotified,
        doc.createdAt || new Date()]);
     if (!ins.length) return { skipped: true };
@@ -212,16 +359,30 @@ async function migratePlayer(doc) {
       }
     }
     for (const r of rows) {
+      // source = 'migration' is the answer migration 011 exists to be able to
+      // give. items.add() stamps every other grant path; this is the only
+      // INSERT that does not go through it, so without this line the oldest
+      // items in the game — everyone's — are the only ones that say nothing
+      // about where they came from, which is exactly the question 011 asks.
       await query(t, `
-        INSERT INTO player_items (player_id, container, slot, item_id, enhance, qty)
-        VALUES ($1,$2,$3,$4,$5,$6)`, [pid, r.container, r.slot, r.itemId, r.enhance, r.qty]);
+        INSERT INTO player_items (player_id, container, slot, item_id, enhance, qty, source, source_ref)
+        VALUES ($1,$2,$3,$4,$5,$6,'migration',$7)`,
+        [pid, r.container, r.slot, r.itemId, r.enhance, r.qty, tg]);
     }
+    // Mongo allowed 500 inventory entries (_SANITIZE_MAX.invLen); the game
+    // considers 150 full. Everything is carried — refusing an item somebody
+    // earned is not a trade this migration makes — but past the cap
+    // hasRoomFor() is false forever, so drops stop being picked up and a
+    // market cancellation has nowhere to return the item to. Counted, so the
+    // operator can ask those accounts to trim before they notice.
+    const invCount = rows.filter(r => r.container === 'inventory').length;
+    if (invCount > INV_CAP) lost.overCap.push(`${tg}: ${invCount} предметів в інвентарі (ліміт ${INV_CAP})`);
 
     // ── balances + the opening ledger entry ──────────────────────────────────
     const bals = {
-      gold: Math.max(0, num(sd.gold)),
-      gram: Math.max(0, num(sd.gramBalance)),
-      nexum: Math.max(0, num(sd.nexumBalance)),
+      gold: clampNum(sd.gold, 0, MAX.gold),
+      gram: clampNum(sd.gramBalance, 0, MAX.gram),
+      nexum: clampNum(sd.nexumBalance, 0, MAX.nexum),
     };
     for (const [cur, amount] of Object.entries(bals)) {
       if (amount <= 0) continue;
@@ -259,10 +420,11 @@ async function migratePlayer(doc) {
     await query(t, `
       INSERT INTO player_vip (player_id, level, deposited, pending, season_ticket)
       VALUES ($1,$2,$3,$4,$5)`,
-      [pid, clampInt(sd.vipLevel, 0, 32767), Math.max(0, num(sd.vipDeposited)), pending, !!sd.seasonTicket]);
+      [pid, clampInt(sd.vipLevel, 0, 32767), clampNum(sd.vipDeposited, 0, MAX.vipDeposited),
+       pending, !!sd.seasonTicket]);
 
     // ── season ───────────────────────────────────────────────────────────────
-    const pts = Math.max(0, int(sd.seasonPoints2));
+    const pts = clampInt(sd.seasonPoints2, 0, MAX.seasonPoints);
     if (pts > 0 || sd.seasonRefPaid || sd.seasonBossPaid) {
       await query(t, `
         INSERT INTO player_season (player_id, season, points, tier, boss_paid, ref_paid, quests)
@@ -272,13 +434,31 @@ async function migratePlayer(doc) {
          JSON.stringify((sd.seasonQuests && typeof sd.seasonQuests === 'object') ? sd.seasonQuests : {})]);
     }
 
+    // ── special quests already claimed ───────────────────────────────────────
+    // `specialQuestsDone` is a list of Mongo _id strings, and it is the ONLY
+    // record that a one-time reward has been paid. Without it every migrated
+    // player can claim every special quest a second time on day one — gold, xp
+    // and Liberty, for everyone, out of nothing. `questIds` maps the old _id to
+    // the row special_quests got, which is why migrateSpecialQuests has to run
+    // BEFORE this loop rather than after it.
+    for (const qid of (Array.isArray(sd.specialQuestsDone) ? sd.specialQuestsDone : [])) {
+      const newId = questIds.get(String(qid));
+      // A claim naming a quest that no longer exists cannot be recorded, and
+      // that is a real (if small) hole rather than a tidy no-op: if the quest
+      // is ever re-created, this player claims it again. Named, not swallowed.
+      if (!newId) { lost.questClaimsLost.push(`${tg}: квест ${qid} більше не існує`); continue; }
+      await query(t, `
+        INSERT INTO player_special_quests (player_id, quest_id) VALUES ($1,$2)
+        ON CONFLICT DO NOTHING`, [pid, newId]);
+    }
+
     return { skipped: false, playerId: pid, items: rows.length, balances: bals };
   });
 }
 
 // ── the rest ────────────────────────────────────────────────────────────────
 
-async function migrateClans(db) {
+async function migrateClans() {
   const Clan = mongoose.connection.collection('clans');
   const docs = await Clan.find({}).toArray();
   let made = 0;
@@ -293,7 +473,18 @@ async function migrateClans(db) {
           [String(c.name || '').slice(0, 10), clampInt(c.icon, 1, 30, 1),
            String(c.description || '').slice(0, 200), Math.max(1, int(c.level, 1)),
            Math.max(0, int(c.xp)), !!c.storageUnlocked, c.createdAt || new Date()]);
-        if (!rows.length) return;
+        // No row back means the name was taken. Two ways that happens and both
+        // must be visible: a re-run (this clan is already here, correct to
+        // skip) or a genuine collision — clans.name is `citext` UNIQUE where
+        // Mongo's was case-SENSITIVE, so "Ночь" and "ночь" were two clans and
+        // are now one. In the second case a whole clan's members and storage
+        // are silently not carried, which is precisely what this file promises
+        // never to do. Reported either way; on a first run into an empty
+        // database every line here is a real collision.
+        if (!rows.length) {
+          lost.clansSkipped.push(`${c.name}: назва вже зайнята (повторний прогін або збіг регістру)`);
+          return;
+        }
         const cid = Number(rows[0].id);
 
         for (const m of (Array.isArray(c.members) ? c.members : [])) {
@@ -330,25 +521,49 @@ async function migrateListings() {
   for (const l of docs) {
     try {
       await tx(async (t) => {
+        const ref = `listing:${l._id}`;
+        // Nothing else in this file needs a guard here, because everything else
+        // is keyed on telegram_id or a clan name. A listing has no natural key
+        // in the new schema, so a second run would INSERT a second detached
+        // item and a second lot — MINTING an item and a sale out of a re-run,
+        // which is the one thing a migration that calls itself idempotent must
+        // not do. player_items.source_ref carries the Mongo _id (exactly what
+        // 011 describes it as: "the listing id"), so the second run recognises
+        // its own work. The partial unique index on market_listings does not
+        // help: the duplicate points at a NEW item row, so it never collides.
+        const { rows: seen } = await query(t,
+          `SELECT 1 FROM player_items WHERE source = 'migration' AND source_ref = $1`, [ref]);
+        if (seen.length) return;
+
         const { rows: p } = await query(t, 'SELECT id FROM players WHERE telegram_id = $1', [String(l.sellerId)]);
         if (!p.length) { lost.listingsSkipped.push(`лот ${l._id}: продавця немає`); return; }
         const base = CATALOG.get(l.item && l.item.id);
         if (!base) { lost.listingsSkipped.push(`лот ${l._id}: предмет ${l.item && l.item.id} не в каталозі`); return; }
+
+        const enh = ENHANCEABLE_SLOTS.has(base.slot) ? clampInt(l.item.enhance, 0, ENHANCE_MAX) : 0;
+        const qty = isStackableItem(base) ? clampInt(l.item.qty, 1, MAX.qty, 1) : 1;
 
         // The item becomes a DETACHED row — owned by the listing, not by the
         // seller. That is the state the array model could not express, and
         // recreating it here is what makes "listed but still in the inventory"
         // unreachable after the migration as well as after it.
         const { rows: ir } = await query(t, `
-          INSERT INTO player_items (player_id, container, slot, item_id, enhance, qty)
-          VALUES (NULL, NULL, NULL, $1, $2, $3) RETURNING id`,
-          [base.id, ENHANCEABLE_SLOTS.has(base.slot) ? clampInt(l.item.enhance, 0, ENHANCE_MAX) : 0,
-           isStackableItem(base) ? Math.max(1, int(l.item.qty, 1)) : 1]);
+          INSERT INTO player_items (player_id, container, slot, item_id, enhance, qty, source, source_ref)
+          VALUES (NULL, NULL, NULL, $1, $2, $3, 'migration', $4) RETURNING id`,
+          [base.id, enh, qty, ref]);
 
+        // snap_* is what migration 010 added so a CLOSED lot still says what
+        // was traded: item_id becomes NULL the moment the buyer enhances or
+        // crafts the thing away (ON DELETE SET NULL), and history() then reads
+        // the snapshot instead. market.list() writes these on every live
+        // listing; a migrated lot without them renders as a blank row in the
+        // seller's history the first time the item is destroyed.
         await query(t, `
-          INSERT INTO market_listings (seller_id, item_id, price, status, created_at)
-          VALUES ($1,$2,$3,'active',$4)`,
-          [Number(p[0].id), Number(ir[0].id), Math.max(0.01, num(l.price, 0.01)), l.createdAt || new Date()]);
+          INSERT INTO market_listings (seller_id, item_id, price, status, created_at,
+            snap_item_id, snap_enhance, snap_qty)
+          VALUES ($1,$2,$3,'active',$4,$5,$6,$7)`,
+          [Number(p[0].id), Number(ir[0].id), Math.max(0.01, num(l.price, 0.01)),
+           l.createdAt || new Date(), base.id, enh, qty]);
         made++;
       });
     } catch (err) {
@@ -372,11 +587,23 @@ async function migrateGramTx() {
       await tx(async (t) => {
         const { rows: p } = await query(t, 'SELECT id FROM players WHERE telegram_id = $1', [String(g.telegramId)]);
         if (!p.length) { lost.txSkipped.push(`заявка ${g._id}: акаунта немає`); return; }
+        const amount = Math.max(0.01, num(g.amount, 0.01));
+        const createdAt = g.createdAt || new Date();
+        // gram_tx has no unique key a withdrawal can be recognised by, so a
+        // second run would create a second payout request for money that was
+        // already deducted once — and an admin looking at two identical cards
+        // in the ops group has no way to tell which is the duplicate. The
+        // account, the amount and the millisecond it was created identify it
+        // well enough for a one-shot import; the alternative is paying twice.
+        const { rows: seen } = await query(t, `
+          SELECT 1 FROM gram_tx
+           WHERE player_id = $1 AND type = 'withdraw' AND amount = $2 AND created_at = $3`,
+          [Number(p[0].id), amount, createdAt]);
+        if (seen.length) return;
         await query(t, `
           INSERT INTO gram_tx (player_id, type, amount, status, address, created_at)
           VALUES ($1,'withdraw',$2,'pending',$3,$4)`,
-          [Number(p[0].id), Math.max(0.01, num(g.amount, 0.01)),
-           String(g.address || '').slice(0, 128), g.createdAt || new Date()]);
+          [Number(p[0].id), amount, String(g.address || '').slice(0, 128), createdAt]);
         made++;
       });
     } catch (err) {
@@ -391,13 +618,24 @@ async function migrateSpecialQuests() {
   const docs = await S.find({}).toArray();
   const idMap = new Map();
   for (const q of docs) {
+    const title = String(q.title || '').slice(0, 200);
+    const createdAt = q.createdAt || new Date();
+    // special_quests has no unique constraint, so an unguarded re-run does not
+    // fail — it succeeds twice, and every quest appears in the panel a second
+    // time with a reward that is claimable again because the duplicate has its
+    // own id. Title plus creation time identifies the row a previous run wrote,
+    // and finding it also lets the map be rebuilt on a re-run: without that,
+    // resuming after a crash carries no claim histories at all.
+    const { rows: seen } = await query(null,
+      'SELECT id FROM special_quests WHERE title = $1 AND created_at = $2', [title, createdAt]);
+    if (seen.length) { idMap.set(String(q._id), Number(seen[0].id)); continue; }
     const { rows } = await query(null, `
       INSERT INTO special_quests (title, description, type, url, icon, reward_gold, reward_xp, reward_nexum, active, created_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-      [String(q.title || '').slice(0, 200), String(q.desc || ''), String(q.type || 'link'),
+      [title, String(q.desc || ''), String(q.type || 'link'),
        String(q.url || ''), String(q.icon || '*'),
        Math.max(0, int(q.reward && q.reward.gold)), Math.max(0, int(q.reward && q.reward.xp)),
-       Math.max(0, num(q.reward && q.reward.nexum)), q.active !== false, q.createdAt || new Date()]);
+       Math.max(0, num(q.reward && q.reward.nexum)), q.active !== false, createdAt]);
     idMap.set(String(q._id), Number(rows[0].id));
   }
   return idMap;
@@ -413,12 +651,48 @@ async function main() {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 15000 });
   console.log('mongo: підключено');
 
+  // ── the schema this file writes against ──────────────────────────────────
+  // Every player_items INSERT below names `source`, and every listing names
+  // snap_item_id. Against a database missing 011 or 010 that is 42703 on every
+  // single account — twenty thousand identical ✗ lines and a migration that
+  // carried nobody. Asked once, in a sentence that says what to do, rather
+  // than discovered per row.
+  const { rows: cols } = await query(null, `
+    SELECT table_name || '.' || column_name AS c FROM information_schema.columns
+     WHERE (table_name = 'player_items'     AND column_name IN ('source', 'source_ref'))
+        OR (table_name = 'market_listings'  AND column_name = 'snap_item_id')`);
+  const have = new Set(cols.map(r => r.c));
+  const missing = ['player_items.source', 'player_items.source_ref', 'market_listings.snap_item_id']
+    .filter(c => !have.has(c));
+  if (missing.length) {
+    console.error(`\nсхема застаріла — немає: ${missing.join(', ')}`);
+    console.error('Спочатку прогоніть міграції (ADMIN_URL=... bash server/db/migrate.sh),');
+    console.error('інакше кожен акаунт впаде на 42703 і не перенесеться жоден.');
+    process.exit(1);
+  }
+
   await tx(t => items.syncCatalog(t));
   console.log(`каталог: ${CATALOG.size} предметів`);
 
   const Players = mongoose.connection.collection('players');
   const total = await Players.countDocuments();
   console.log(`знайдено акаунтів: ${total}\n`);
+
+  // ── the rows that are already there ──────────────────────────────────────
+  // A player whose telegram_id already exists is SKIPPED, and that is right for
+  // a re-run and catastrophic for a first one: the test suites create accounts
+  // with ids shaped exactly like real ones (910000001, 930000631), so a
+  // leftover fixture does not merge with the real player — it stands in for
+  // them, and that account's items, gold and level never arrive at all. The
+  // count says nothing on its own, so it is printed rather than judged: on a
+  // FIRST run into a purged database it must be 0, and if it is not, stop.
+  const { rows: pre } = await query(null, 'SELECT count(*)::int n FROM players');
+  if (pre[0].n > 0) {
+    console.log(`⚠ у players уже ${pre[0].n} рядків.`);
+    console.log('  Якщо це ПЕРШИЙ прогін — зупиніться: тестові акаунти ще не вичищені,');
+    console.log('  і кожен збіг telegram_id мовчки замінить справжнього гравця фікстурою.');
+    console.log('  Якщо це повторний прогін після збою — так і має бути.\n');
+  }
 
   if (DRY) {
     // A dry run transforms everything and reports what WOULD be lost, without
@@ -440,12 +714,21 @@ async function main() {
     return;
   }
 
+  // BEFORE the players, not after. The per-player transaction writes
+  // player_special_quests from savedData.specialQuestsDone, and that needs the
+  // old _id -> new id map this returns. Run afterwards, as it used to be, the
+  // map is built and thrown away and every player can claim every special
+  // quest a second time.
+  console.log('спецквести…');
+  const questIds = await migrateSpecialQuests();
+  console.log(`  ${questIds.size}\n`);
+
   let migrated = 0, skipped = 0, itemCount = 0, failed = 0;
   const started = Date.now();
   const cursor = Players.find({});
   for await (const doc of cursor) {
     try {
-      const res = await migratePlayer(doc);
+      const res = await migratePlayer(doc, questIds);
       if (res.skipped) skipped++;
       else { migrated++; itemCount += res.items; }
     } catch (err) {
@@ -461,11 +744,7 @@ async function main() {
   console.log(`\nакаунти: ${migrated} перенесено, ${skipped} уже були, ${failed} з помилкою`);
   console.log(`предмети: ${itemCount}`);
 
-  console.log('\nспецквести…');
-  const sq = await migrateSpecialQuests();
-  console.log(`  ${sq.size}`);
-
-  console.log('клани…');
+  console.log('\nклани…');
   console.log(`  ${await migrateClans()}`);
 
   console.log('активні лоти…');
@@ -492,7 +771,12 @@ function report() {
   } else {
     console.log('\nпредмети: усі id відомі каталогу ✅');
   }
-  for (const [name, list] of [['клани', lost.clansSkipped], ['лоти', lost.listingsSkipped], ['заявки', lost.txSkipped]]) {
+  for (const [name, list] of [
+    ['клани', lost.clansSkipped], ['лоти', lost.listingsSkipped], ['заявки', lost.txSkipped],
+    ['перейменовані акаунти', lost.renamed],
+    ['інвентар понад ліміт', lost.overCap],
+    ['втрачені відмітки спецквестів', lost.questClaimsLost],
+  ]) {
     if (list.length) {
       console.log(`\n${name}, пропущено ${list.length}:`);
       for (const l of list.slice(0, 10)) console.log(`  ${l}`);

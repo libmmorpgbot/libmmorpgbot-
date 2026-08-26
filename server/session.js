@@ -32,7 +32,7 @@
 // same VPC that is ~0.3ms, and it is paid only on player ACTIONS — the 40Hz
 // simulation loop never touches this file.
 
-const { tx, txRetry, query } = require('./db');
+const { tx, txRetry } = require('./db');
 const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
 const items = require('./db/repos/items');

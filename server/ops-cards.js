@@ -194,7 +194,10 @@ async function handleWithdrawCallback(cq, { feePct, notifyPlayer }) {
     return 'denied';
   }
 
-  let result = null, toast = '';
+  // No initialisers: every branch below assigns both, and the catch returns
+  // without reaching the use. A default here could only hide a branch that
+  // forgot to.
+  let result, toast;
   try {
     if (action === 'ok') {
       result = await tx(t => gram.markWithdrawPaid(t, id, adminId));

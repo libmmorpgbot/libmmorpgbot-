@@ -42,7 +42,6 @@ async function mkPlayer(nick) {
 // catalog rather than invented — the FK would refuse anything else, which is
 // itself one of the tests below.
 const SWORD = 'sw1';
-const MAT = 'mat_iron';
 
 async function main() {
   console.log(`\nitems-check  (${TAG})\n`);

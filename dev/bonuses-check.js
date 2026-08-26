@@ -145,9 +145,13 @@ async function main() {
     // report every fix as the bug it fixed.
     .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');
   const reads = (name) => (worldSrc.match(new RegExp(`\\b${name}\\b`, 'g')) || []).length;
+  // clanBonusOf is here for the same reason the rest are: CLAN_LEVELS has
+  // advertised a gold and an xp bonus at every level since clans existed, the
+  // clan panel printed both, and nothing on the server read either. Twice —
+  // once for the killer, once for each party member on their own clan.
   for (const name of ['VIP_BONUSES', 'SEASON_TICKET_XP_PCT', 'SEASON_TICKET_LIBERTY_PCT',
                       'SEASON_TICKET_DROP_PCT', 'NEXUM_DROP_CHANCE', 'GRAM_DROP_CHANCE',
-                      'GRAM_PER_LEVEL']) {
+                      'GRAM_PER_LEVEL', 'clanBonusOf']) {
     ok(reads(name) >= 2, `${name} читається у виплаті за вбивство (${reads(name)} згадок)`,
       'імпортовано і не використано — саме так картка й не подвоювала нічого');
   }

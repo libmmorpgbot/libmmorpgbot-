@@ -45,7 +45,6 @@ const countOf = async (pid, itemId) => {
   const inv = await invOf(pid);
   return inv.filter(i => i.id === itemId).reduce((n, i) => n + i.qty, 0);
 };
-const gold = async id => (await money.balancesOf(null, id)).gold;
 const caught = async fn => { try { await fn(); return null; } catch (e) { return e.code || e.message; } };
 
 async function main() {

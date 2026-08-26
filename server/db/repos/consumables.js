@@ -15,7 +15,7 @@ const items = require('./items');
 const money = require('./money');
 const {
   ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
-  CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
+  codexSetById, codexItemMeetsReq, codexTotalBonus,
 } = require('../../../shared/definitions');
 
 class UseError extends Error {
@@ -263,7 +263,14 @@ async function pickupDrop(db, playerId, itemId, qty = 1, enhance = 0) {
 // So the balance is read whether or not anything moved. One extra query per
 // kill on the path that already did a write, in exchange for a number that
 // cannot lie.
-async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram = 0, drops = [], idemKey }) {
+//
+// `clanId` is the killer's clan, or null. It is passed in rather than looked
+// up because the session already holds it (Session.clan, refreshed on every
+// membership change) and a SELECT per kill to re-derive it is exactly the
+// per-kill cost the retired build's in-memory Map existed to avoid. Answering
+// with `clanXp` rather than swallowing the result is what lets the caller see
+// a level change — and see a clan that has vanished under a cached id.
+async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram = 0, drops = [], idemKey, clanId = null }) {
   // items.js states the rule at the top of the file: lockPlayer must be the
   // FIRST statement of any transaction that mutates items. This path granted
   // drops without it, so hasRoomFor -> add was a read-then-write across two
@@ -273,7 +280,7 @@ async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram
   // It was masked incidentally by grantXp taking FOR UPDATE on player_progress
   // first, which does not happen when xp is 0.
   await items.lockPlayer(db, playerId);
-  const out = { gold: 0, xp: null, nexum: 0, gram: 0, items: [] };
+  const out = { gold: 0, xp: null, nexum: 0, gram: 0, items: [], clanXp: null };
 
   if (gold > 0) {
     const r = await money.credit(db, playerId, 'gold', gold,
@@ -313,6 +320,23 @@ async function grantKillReward(db, playerId, { gold = 0, xp = 0, nexum = 0, gram
       { qty: d.qty || 1, enhance: d.enhance || 0, source: 'kill', sourceRef: idemKey });
     out.items.push(rowId === null ? { ...d, dropped: true } : { ...d, rowId });
   }
+  // ── the kill's clan point ─────────────────────────────────────────────────
+  // Here, and not on a timer, because a timer is what the port already threw
+  // away: the retired build banked these in a process-local Map and flushed
+  // every 20 seconds, so a crash or a deploy destroyed whatever had not
+  // flushed. Here the kill is already a transaction, so two more statements
+  // inside it are two more round trips on a path that already makes half a
+  // dozen — and the point cannot be lost independently of the gold and the xp
+  // it was earned alongside.
+  //
+  // LAST, deliberately. The clans row is the only thing this transaction
+  // touches that OTHER PLAYERS also write, so every clan-mate farming at once
+  // contends on it. Taking it after the payout means it is held for the quest
+  // counter and the commit rather than for the whole reward.
+  if (clanId) {
+    const clans = require('./clans');
+    out.clanXp = await clans.addXp(db, clanId, clans.CLAN_XP_PER_KILL);
+  }
   return out;
 }
 
@@ -350,12 +374,26 @@ async function registerCodexItem(db, playerId, setId, slotIdx, rowId) {
   if (filled.length !== set.slots.length) filled.length = set.slots.length;
   if (filled[idx]) err('already', 'Этот слот уже заполнен');
 
-  await query(db, 'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
+  // RETURNING so the ledger learns what was consumed from the statement that
+  // consumed it. Registering into the codex destroys the item outside
+  // repos/items.js, so this path records its own movement — a destruction with
+  // no ledger row is exactly the asymmetry migration 012 exists to close.
+  const { rows: eaten } = await query(db,
+    'DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING item_id, qty', [rowId, playerId]);
+  if (!eaten.length) err('not_found', 'Предмет не найден');
+  await items.ledger(db, playerId, eaten[0].item_id, -Number(eaten[0].qty),
+    { rowId, reason: 'codex_register', refType: 'codex', refId: setId });
   filled[idx] = true;
   codex[setId] = filled.map(Boolean);
 
   await query(db, 'UPDATE player_progress SET codex = $2, updated_at = now() WHERE player_id = $1',
     [playerId, JSON.stringify(codex)]);
+
+  // The codex adds FLAT atk/def/hp (codexTotalBonus, repos/stats.js), so this
+  // is one of the inputs the stored battle rating is built from. It is also
+  // the one a player has just paid for with a destroyed item, which makes a
+  // rating that does not move the most conspicuous place to get this wrong.
+  await require('./stats').refreshBm(db, playerId);
 
   const complete = codex[setId].every(Boolean);
   return { setId, slotIdx: idx, complete, codex, bonus: codexTotalBonus(codex) };

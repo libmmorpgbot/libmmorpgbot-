@@ -145,9 +145,17 @@ function _critDmg(base, critChance, critPower) {
 //
 // (The earlier bug this replaced was worse still: the cap ratcheted off the
 // client's OWN prior value, so repeated calls walked it up to 9999.)
-const ATK_BUFF_HEADROOM = 1.5;
-const DEF_BUFF_HEADROOM = 2.85;
-const HP_BUFF_HEADROOM  = 1.15;
+// The three ceilings that used to stand here are gone along with the message
+// they bounded. 'statsUpdate' was DELETED rather than validated — the server
+// computes every stat itself now (repos/stats.js, and computeStats below), so
+// there is no client-sent atk/def/maxHp left to cap. A clamp on an event that
+// cannot be sent is not a defence; it is a comment that fails lint.
+//
+// Written down rather than dropped in silence because the only thing still
+// reading those three names was a legacy detector that lifted their VALUES out
+// of this file as text — so it went on passing while the protection it
+// described did nothing at all. If a client-authored stat ever returns, the
+// margins were about 5% over the real buff maxima listed above.
 // Passive-regen ceiling used to bound how fast a playerMove-reported HP
 // increase is allowed to land (see syncPlayerHp) — real heals (potions,
 // faithShield/party heal, respawn) all go through their own dedicated,

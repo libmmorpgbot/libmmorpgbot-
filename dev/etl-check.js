@@ -32,16 +32,17 @@ const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, �
 
 const TAG = 'etl-' + String(process.pid).slice(-5);
 const made = [];
+const madeQuests = [];
 let n = 0;
 const tgOf = () => `${TAG}-${++n}`;
 
-async function migrate(savedData, extra = {}) {
+async function migrate(savedData, extra = {}, questIds = new Map()) {
   const tg = tgOf();
   const doc = {
     telegramId: tg, username: `${TAG}_u${n}`, bm: 500,
     savedData, createdAt: new Date('2025-01-01'), ...extra,
   };
-  const res = await etl.migratePlayer(doc);
+  const res = await etl.migratePlayer(doc, questIds);
   if (res.playerId) made.push(res.playerId);
   return { ...res, tg };
 }
@@ -176,6 +177,85 @@ async function main() {
   eq((await money.balancesOf(null, exploited.playerId)).gram, 0, 'нескінченність у GRAM стала нулем');
   eq((await players.progressOf(null, exploited.playerId)).lvl, 1000, 'рівень обрізано до стелі схеми');
 
+  // ── the account-shaped losses ────────────────────────────────────────────
+  // Everything below costs a WHOLE ACCOUNT when it goes wrong, not a field.
+  // The transform is one transaction whose first statement is the players
+  // INSERT, so anything that raises there — a duplicate name, a number wider
+  // than its column — takes the items and the balance down with it and leaves
+  // a single ✗ line behind. These are the cases that produce it.
+  console.log('  ── чого коштує один поганий рядок ──');
+
+  // Mongo never made username unique and the value is a Telegram display name,
+  // so two accounts called the same thing is ordinary. players.username is
+  // citext UNIQUE.
+  const shared = `${TAG}_dup`;
+  const dupA = await migrate({ gold: 100 }, { username: shared });
+  const dupB = await migrate({ gold: 200, inventory: [{ id: 'sw1' }] }, { username: shared });
+  ok(!dupA.skipped && !dupB.skipped, 'обидва акаунти з однаковим іменем перенесено');
+  eq((await money.balancesOf(null, dupB.playerId)).gold, 200,
+    'другий не втратив баланс через чуже імʼя');
+  eq((await items.inventoryOf(null, dupB.playerId)).inventory.length, 1,
+    'і не втратив предмети — а саме це коштує падіння на UNIQUE');
+  const { rows: dupName } = await pool().query('SELECT username FROM players WHERE id=$1', [dupB.playerId]);
+  eq(String(dupName[0].username), `tg_${dupB.tg}`, 'він переїхав на запасне імʼя tg_<id>');
+  ok(etl.lost.renamed.some(r => r.startsWith(dupB.tg)), 'перейменування НАЗВАНО у звіті');
+
+  // A forged figure wider than its column raises 22003 on INSERT, and the
+  // whole account goes with it. Clamping costs the forger the forgery.
+  const huge = await migrate({ gold: 1e30, kills: 1e25, inventory: [{ id: 'sw1' }] }, { bm: 1e20 });
+  ok(!huge.skipped, 'акаунт із числом ширшим за колонку не впав цілком');
+  eq((await items.inventoryOf(null, huge.playerId)).inventory.length, 1,
+    'його предмети на місці — заради цього число і обрізається');
+  ok((await money.balancesOf(null, huge.playerId)).gold > 0, 'золото обрізане, а не занулене');
+
+  // ── речі, які легко не помітити ──────────────────────────────────────────
+  console.log('  ── тихі втрати ──');
+
+  // Before potionBag existed the save carried a single `potions` integer.
+  // Reading only potionBag hands such an account an empty bag and no way to
+  // heal — and 007's default of 30 does not save them, because an explicit
+  // {} overrides a default.
+  const legacyPot = await migrate({ potions: 250 });
+  const { rows: lp } = await pool().query(
+    'SELECT potion_bag FROM player_progress WHERE player_id=$1', [legacyPot.playerId]);
+  eq(Number(Object.values(lp[0].potion_bag)[0]), 250, 'старе поле potions переїхало в potionBag');
+
+  // `level` is the legacy spelling of `lvl`. A blob carrying only it would
+  // otherwise arrive at level 1 with its gear intact, which reads as a wipe.
+  const legacyLvl = await migrate({ level: 31, type: 'mage' });
+  eq((await players.progressOf(null, legacyLvl.playerId)).lvl, 31, 'старе поле level дало рівень, а не 1');
+
+  // migration 011 asks "where did this sword come from". items.add() stamps
+  // every other grant path; this INSERT is the only one that bypasses it.
+  const { rows: src } = await pool().query(
+    'SELECT source FROM player_items WHERE player_id=$1 LIMIT 1', [full.playerId]);
+  eq(src[0].source, 'migration', 'перенесений предмет знає, звідки він — source=migration');
+
+  // Mongo allowed 500 inventory slots, the game considers 150 full. Nothing is
+  // dropped, but past the cap drops stop being picked up — so it is counted.
+  const fat = await migrate({ inventory: Array.from({ length: 151 }, () => ({ id: 'sw1' })) });
+  eq((await items.inventoryOf(null, fat.playerId)).inventory.length, 151,
+    'усі 151 предмет перенесено — обрізати інвентар не можна');
+  ok(etl.lost.overCap.some(r => r.startsWith(fat.tg)), 'переповнений інвентар НАЗВАНО у звіті');
+
+  // ── the once-only claims ─────────────────────────────────────────────────
+  // specialQuestsDone is the ONLY record that a one-time reward was paid. Lose
+  // it and every migrated player claims every special quest a second time.
+  console.log('  ── відмітки спецквестів ──');
+  const { rows: sq } = await pool().query(`
+    INSERT INTO special_quests (title, description, type, url, icon, reward_gold)
+    VALUES ($1,'','link','','*',500) RETURNING id`, [`${TAG}_quest`]);
+  madeQuests.push(Number(sq[0].id));
+  const claimed = await migrate(
+    { specialQuestsDone: ['65f000000000000000000001', '65f000000000000000000009'] },
+    {}, new Map([['65f000000000000000000001', Number(sq[0].id)]]));
+  const { rows: pq } = await pool().query(
+    'SELECT quest_id FROM player_special_quests WHERE player_id=$1', [claimed.playerId]);
+  eq(pq.length, 1, 'отриману нагороду записано — вдруге її вже не забрати');
+  eq(Number(pq[0].quest_id), Number(sq[0].id), 'записано саме той квест');
+  ok(etl.lost.questClaimsLost.some(r => r.startsWith(claimed.tg)),
+    'відмітка про квест, якого вже немає, НАЗВАНА, а не проковтнута');
+
   // ── THE GATE ─────────────────────────────────────────────────────────────
   console.log('  ── звірка після переносу ──');
   const mine = made.map(Number);
@@ -204,13 +284,21 @@ async function main() {
 
 async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
-  if (!made.length) return;
+  // The quest rows go LAST. quest_id carries no foreign key, so nothing would
+  // refuse the other order — which is exactly why it is written down: removing
+  // the quest first leaves a claim row naming a quest that no longer exists,
+  // and that is the shape this file is here to detect, not to create.
+  const dropQuests = async () => {
+    if (madeQuests.length) await q('DELETE FROM special_quests WHERE id = ANY($1)', [madeQuests]);
+  };
+  if (!made.length) { await dropQuests(); return; }
   for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs',
                    'player_season', 'player_special_quests', 'player_daily',
                    'player_progress', 'ledger', 'balances', 'gram_tx']) {
     await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
   }
   await q('DELETE FROM players WHERE id = ANY($1)', [made]);
+  await dropQuests();
 }
 
 main()

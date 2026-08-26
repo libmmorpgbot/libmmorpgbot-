@@ -167,7 +167,12 @@ async function cancel(db, playerId, listingId) {
      FOR UPDATE`, [listingId, playerId]);
   if (!rows.length) err('not_found', 'Лот не знайдено');
 
-  if (!await items.attachFromListing(db, rows[0].item_row_id, playerId)) {
+  // The reason is spelled out because attachFromListing serves both a
+  // cancellation and a sale, and its default names the sale. A cancelled lot
+  // recorded as a purchase would read, months later, as a trade that never
+  // happened.
+  if (!await items.attachFromListing(db, rows[0].item_row_id, playerId,
+    { reason: 'market_cancel', refType: 'listing', refId: String(listingId) })) {
     err('no_room', 'Інвентар повний — звільніть слот');
   }
   await query(db, `
@@ -249,7 +254,8 @@ async function buy(db, buyerId, listingId) {
   // lot.item_row_id is a player_items.id, NOT a catalog item id. The column is
   // named item_id in the table and that has already misled once — every
   // variable on this side spells out which of the two it holds.
-  if (!await items.attachFromListing(db, lot.item_row_id, buyerId)) {
+  if (!await items.attachFromListing(db, lot.item_row_id, buyerId,
+    { reason: 'market_buy', refType: 'listing', refId: String(listingId) })) {
     // Unreachable given the room check above, and deliberately a throw rather
     // than a refund: the transaction rolls the money back on its way out.
     err('no_room', 'Інвентар повний — покупку скасовано');

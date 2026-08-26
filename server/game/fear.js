@@ -218,10 +218,52 @@ module.exports = function createFear(deps) {
     return true;
   }
 
+  // ── the other half of the hold ─────────────────────────────────────────────
+  // Without a claim, the hold above is a DELAYED DELETION and not a grace at
+  // all: it takes the run out of _fear on the spot and schedules the held copy
+  // to be dropped 45s later, and nothing ever put it back. A player who
+  // reconnected well inside the window came back to a hall full of their own
+  // monsters with no run behind it — _fearTrackKill returns on `!run`, so the
+  // wave never advanced again once the current one was cleared; fearSync
+  // answered `inRun: false`; and _fearEliminate returned false, so dying in
+  // there did not end it either. The attempt was already spent on entry, and
+  // the only way out was walking to a portal.
+  //
+  // The client has expected this to work since it was written: the gameStart
+  // handler in js/network.js restores its wave HUD from the `fear` block and
+  // says in as many words that the common case is "a reconnect that landed
+  // back in a held hall". It was reading a field the server never filled.
+  //
+  // Deliberately splits taking the hold from re-registering the run. The
+  // caller has to move the connection back into that private Room first (the
+  // hall itself is held by the Room, on its own timer of the same length —
+  // see _fearGraceStart/_fearGraceClaim in server/game/Room.js), and a _fear
+  // record pointing at a hall this player does not own is worse than none:
+  // fearEnter checks _fear FIRST and would refuse every later entry, forever.
+  function _fearClaimOnReconnect(telegramId) {
+    if (!telegramId) return null;
+    const held = _fearDisconnectGrace.get(telegramId);
+    if (!held) return null;
+    clearTimeout(held.timer);
+    _fearDisconnectGrace.delete(telegramId);
+    return held.run;
+  }
+
+  // Puts a claimed run back on the new socket id, once the caller has actually
+  // landed them in the hall. _trackFearRoom because the sweep in _liveFearRooms
+  // will have dropped this Room while nobody was standing in it — without it
+  // the resumed run ticks along invisible to /health and to the shutdown pass.
+  function _fearResumeRun(socketId, run) {
+    if (!run || !run.room) return false;
+    _trackFearRoom(run.room);
+    _fear.set(socketId, run);
+    return true;
+  }
+
   return {
     FEAR_ATTEMPTS, FEAR_MIN_LEVEL, FEAR_START_DELAY_MS, FEAR_RECONNECT_GRACE_MS,
     _fear, _fearRooms, _createFearRoom, _liveFearRooms, _trackFearRoom,
     _fearStartWave, _fearTrackKill, _fearReleaseRun, _fearFinish, _fearEliminate,
-    _fearDisconnectGrace, _fearHoldOnDisconnect,
+    _fearDisconnectGrace, _fearHoldOnDisconnect, _fearClaimOnReconnect, _fearResumeRun,
   };
 };

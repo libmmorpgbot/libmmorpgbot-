@@ -2220,6 +2220,20 @@ const VIP_BONUSES = [
 // Index is the corridor number (armIndexForLevel), 1..5; index 0 is the hub.
 const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
 
+// ── Liberty from a Сотрудничество (Coop) kill ───────────────────────────────
+// One flat chance for the whole run, not the corridor table above: a co-op
+// stage escalates through COOP_STAGE_LEVELS, so the corridor its monsters
+// happen to fall in is an artefact of the stage number, not something the
+// player chose to farm.
+//
+// It lived as a local const inside server/game/coop.js and was returned by
+// that factory to nobody — the kill-reward path never had a `coop` branch, so
+// a co-op kill silently rolled NEXUM_DROP_CHANCE[arm] instead: 0.5% on stage
+// one against the 10% this says, and no reader anywhere to notice. Moved here
+// beside FARM2_LIBERTY_CHANCE, which is the same kind of per-zone override and
+// whose own comment has pointed at this constant all along.
+const COOP_LIBERTY_CHANCE = 0.1;
+
 // ── GRAM from an ordinary kill ──────────────────────────────────────────────
 // 7.5% of kills pay GRAM_PER_LEVEL per level of the monster — 0.0000001 each,
 // so a level-40 mob is 0.000004 GRAM. Tiny on purpose: this is the real-money
@@ -2255,20 +2269,36 @@ const CLAN_LEVELS = [
   { lvl:9,  xpReq:350000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
   { lvl:10, xpReq:800000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
 ];
+// Every perk the clan panel advertises at this level, as one object.
+//
+// clanAtkBonusPct was the only accessor for years, and `gold` and `xp` sat in
+// CLAN_LEVELS beside `atk` with no reader anywhere on the server. The client
+// read all three and printed them: _renderClanHome (js/clans.js) draws
+// "+15% золото" and "+10% опыт" tags from the same table. So the game
+// advertised two bonuses it did not pay — invisible until now only because
+// clan xp was never awarded either, and every clan in the database sat at
+// level 1 where all three are zero.
+//
+// Handing back the row rather than one field is the part that matters: a
+// forgotten column is now a visible omission at the call site, instead of an
+// accessor nobody notices is missing.
+function clanBonusOf(level) {
+  const b = CLAN_LEVELS[(level || 1) - 1]?.bonus;
+  return { gold: b?.gold || 0, xp: b?.xp || 0, atk: b?.atk || 0 };
+}
+
 // The % attack bonus for a clan currently at `level` — used identically by
 // the client (recompute(), js/player.js) and the server (computeStats below)
 // so a player's effective atk can't drift depending on which side computed
 // it last.
-function clanAtkBonusPct(level) {
-  return CLAN_LEVELS[(level || 1) - 1]?.bonus.atk || 0;
-}
+function clanAtkBonusPct(level) { return clanBonusOf(level).atk; }
 
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
   REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
   spentSkillPoints, availableSkillPoints, skillPointCeiling, migrateKeptSP,
-  CLAN_LEVELS, clanAtkBonusPct,
+  CLAN_LEVELS, clanAtkBonusPct, clanBonusOf,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
@@ -2294,7 +2324,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
-  NEXUM_DROP_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
+  NEXUM_DROP_CHANCE, COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,

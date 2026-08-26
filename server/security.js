@@ -78,7 +78,8 @@ function verifyTelegramAuth(data) {
 // present when the app was opened via a t.me/<bot>?startapp=... deep link (the
 // Mini App equivalent of a bot's ?start= deep link, but it opens the game
 // directly with no intermediate "press START in the bot chat" step — see
-// _refLink()/the referral registration in loginTelegramWebApp below).
+// refLink() just below, and the registration in loginTelegramWebApp,
+// server/app.js).
 function verifyTelegramWebApp(initData) {
   try {
     // Fail closed with no token — see the matching guard in verifyTelegramAuth:
@@ -102,6 +103,42 @@ function verifyTelegramWebApp(initData) {
     if (!userStr) return null;
     return { user: JSON.parse(userStr), startParam: params.get('start_param') || '' };
   } catch { return null; }
+}
+
+// ── the link a player hands to a friend ────────────────────────────────────
+// `?startapp=`, not `?start=`. The classic `t.me/<bot>?start=ref_<id>` deep
+// link this replaces opens the BOT'S CHAT, and the referral is registered only
+// by whatever reads the /start message that follows. Nothing in this build
+// reads it: server/workers.js polls the OPERATORS' bot and only that one,
+// deliberately, because Telegram allows exactly one getUpdates consumer per
+// token. So every referral link ever handed out was inert — players.referred_by
+// was never written by anything, and the 5% deposit commission, the season
+// payout at level 20 and the invited-friends list were three finished features
+// that could not fire.
+//
+// `?startapp=` opens the Mini App itself and Telegram delivers the parameter as
+// initData's start_param, which verifyTelegramWebApp above already returns and
+// loginTelegramWebApp (server/app.js) registers from: no second poller, and no
+// "press START in the bot chat" tap standing between a friend and the link.
+//
+// TG_MINIAPP_NAME is the app's short name and is optional — with it this is a
+// Direct Mini App link (t.me/<bot>/<app>), without it a Main Mini App link
+// (t.me/<bot>). Both carry start_param; which of the two a deployment can use
+// is settled in BotFather, which is not something this file can read.
+//
+// ONE definition, because there were two and they had already drifted:
+// server/app.js returned '' with no bot configured while
+// server/db/repos/shop.js fell back to a hard-coded name, and the friends panel
+// shows whichever answered last (it asks for the list right after login and
+// overwrites the link from authOk with the one in that reply).
+function refLink(telegramId) {
+  // The fallback is the name repos/shop.js has been shipping to players. It
+  // stays because dropping it blanks the referral card on any deployment that
+  // never set TG_BOT_USERNAME, and a deployment pointed at the wrong bot could
+  // not log anyone in anyway — its token would not verify their initData.
+  const bot = process.env.TG_BOT_USERNAME || 'LibertyMMORPGbot';
+  const app = process.env.TG_MINIAPP_NAME || '';
+  return `https://t.me/${bot}${app ? `/${app}` : ''}?startapp=ref_${telegramId}`;
 }
 
 // ── Admin auth helpers ─────────────────────────────────────────────────────────
@@ -165,7 +202,7 @@ function _clearLoginFails(ip) { _loginFails.delete(ip); }
 
 module.exports = {
   _sanitizeName, _safeUsername, _sanitizeClanDesc,
-  verifyTelegramAuth, verifyTelegramWebApp,
+  verifyTelegramAuth, verifyTelegramWebApp, refLink,
   _adminToken, _verifyAdminToken, _safeEqual,
   _loginLockedUntil, _recordLoginFail, _clearLoginFails, _tgEsc,
   ADMIN_PASSWORD,

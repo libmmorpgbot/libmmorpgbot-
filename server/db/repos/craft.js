@@ -33,7 +33,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ENHANCE_MAX, ENHANCEABLE_SLOTS, MERCHANT_SHOP, ITEM_DEF, BOX_DEF, CRAFT_MATS,
+  ENHANCE_MAX, ENHANCEABLE_SLOTS, ITEM_DEF, BOX_DEF, CRAFT_MATS,
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
   ADV_SKILL_BOOK_CRAFT, craftResultEnhance,
@@ -96,16 +96,46 @@ async function enhance(db, playerId, rowId, stoneType) {
   const rate = enhanceRate(it.enhance);
   const success = rand() * 100 < rate;
 
+  // Only a WORN piece moves the battle rating: enhanceBonus is added in
+  // repos/stats.js from the equipped rows and from nothing else, so sharpening
+  // something in the bag changes no number the board reads. `it.container` is
+  // already in hand from the SELECT above — the alternative is refreshing on
+  // every attempt, which would put a full load()+compute() behind the button
+  // players press hundreds of times in a row.
+  const worn = it.container === 'equipment';
+
   if (success) {
+    // No item_ledger row: the account holds exactly what it held a moment ago,
+    // one of this item, and the ledger counts quantities rather than value.
+    // The stone that paid for the attempt WAS recorded, by items.removeQty
+    // above — so the cost of enhancing is in the ledger even though the result
+    // is not. What the item is worth afterwards is player_logs' subject.
     await query(db, 'UPDATE player_items SET enhance = enhance + 1 WHERE id = $1', [rowId]);
+    if (worn) await require('./stats').refreshBm(db, playerId);
     return { outcome: 'success', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance + 1, rate };
   }
   if (stoneType === 'bless') {
+    // Nothing moved — a blessed stone's miss leaves the enhancement exactly
+    // where it was, so there is no rating to rewrite.
     return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance, rate };
   }
   // Burned. The row is deleted, which is what makes the loss real rather than
   // a flag some later read has to remember to honour.
-  await query(db, 'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
+  //
+  // RETURNING feeds the ledger what it needs from the row on its way out. This
+  // is one of the five paths that destroy an item WITHOUT going through
+  // repos/items.js, so the ledger write is here rather than inherited — a path
+  // that skips it is a hole in the invariant, not a missing log line.
+  const { rows: burned } = await query(db,
+    'DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING item_id, qty', [rowId, playerId]);
+  if (burned.length) {
+    await items.ledger(db, playerId, burned[0].item_id, -Number(burned[0].qty),
+      { rowId, reason: 'enhance_burn', refType: 'enhance', refId: String(it.enhance) });
+  }
+  // A worn piece that burned is a slot that just emptied — the largest single
+  // drop a rating can take outside a rebirth, and the one a player is most
+  // likely to check afterwards.
+  if (worn) await require('./stats').refreshBm(db, playerId);
   return { outcome: 'burned', rowId, itemId: it.item_id, from: it.enhance, to: null, rate };
 }
 

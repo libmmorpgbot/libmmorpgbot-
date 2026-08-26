@@ -69,7 +69,7 @@ module.exports = function registerProgression(s, safeOn) {
     if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
-    const res = await study(t, pid, 'skill', key, skillBookId(prog.charClass, key), SKILL_MAX_LEVEL);
+    await study(t, pid, 'skill', key, skillBookId(prog.charClass, key), SKILL_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
@@ -104,7 +104,7 @@ module.exports = function registerProgression(s, safeOn) {
 
   safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'progressError', async (t, pid) => {
     if (typeof id !== 'string' || !id) fail('Не выбран пассивный навык', 'bad_passive');
-    const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
+    await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL);
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
@@ -113,7 +113,7 @@ module.exports = function registerProgression(s, safeOn) {
   // js/ui.js). These two handlers shared one body and one price.
   safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'progressError', async (t, pid) => {
     if (typeof id !== 'string' || !id) fail('Не выбран пассивный навык', 'bad_passive');
-    const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL,
+    await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL,
       SKILL_UPGRADE_COST);
     await s.pushItems(t); await pushAfterStat(t);
   }));
@@ -186,6 +186,12 @@ module.exports = function registerProgression(s, safeOn) {
         fail('Задание не найдено', 'not_found');
       }
       try {
+        // The account lock first, as claimQuest above already does. grantXp
+        // now rewrites players.bm on a level-up, so this transaction ends by
+        // touching the players row after player_progress — the reverse of the
+        // order the kill path takes them in, and a lock cycle is the one thing
+        // lockPlayer's "FIRST statement" rule exists to rule out.
+        await items.lockPlayer(t, pid);
         const res = await progression.claimSpecialQuest(t, pid, id);
         if (res.xp > 0) await players.grantXp(t, pid, res.xp);
         await s.pushBalances(t); await pushAfterStat(t);

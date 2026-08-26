@@ -14,7 +14,7 @@
 // Every test creates its own accounts, and everything is removed at the end.
 // Safe to run against the live cluster before the game is on it.
 
-const { pool, tx, txRetry, close } = require('../server/db');
+const { pool, tx, close } = require('../server/db');
 const money = require('../server/db/repos/money');
 
 let pass = 0, fail = 0;

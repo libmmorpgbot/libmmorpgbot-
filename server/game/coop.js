@@ -4,7 +4,7 @@
 // there is no scheduled window here — every run is driven by the
 // per-connection coopGroup*/coopEnter handlers and the shared
 // _pvpEliminate/_reclaimQueues glue still in index.js.
-const { COOP_STAGE_LEVELS } = require('../../shared/definitions');
+const { COOP_STAGE_LEVELS, COOP_LIBERTY_CHANCE } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
 const Room = require('../game/Room');
 
@@ -33,9 +33,15 @@ module.exports = function createCoop(deps) {
   const COOP_START_DELAY_MS = 5000;
   // Flat per-kill Liberty chance — Coop's only per-kill reward besides xp; see
   // calcGoldDrop's `arm === 'coop'` branch (shared/definitions.js) for why
-  // there's no gold, and the coop-specific nexumDrop branch in the attack/
-  // skillAttack handlers below for how this is actually rolled.
-  const COOP_LIBERTY_CHANCE = 0.1;
+  // there's no gold, and the coop branch of the kill-reward path
+  // (server/handlers2/world.js) for how this is actually rolled.
+  //
+  // The number itself now lives in shared/definitions.js. It was declared here
+  // and returned to nobody: this factory's consumer was the retired build, and
+  // the live kill-reward path imports its drop chances from the catalog rather
+  // than reaching into a mode runtime. A tuning constant with no reader does
+  // not tune anything — the co-op Liberty roll was silently running on the
+  // ordinary corridor table instead.
 
   // socketId -> { room, lane, partnerId } for whoever currently has a run
   // going — read by the attack/skillAttack handlers to advance the run one

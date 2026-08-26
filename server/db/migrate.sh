@@ -100,6 +100,25 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- against something rewritable, i.e. checking nothing.
 REVOKE UPDATE, DELETE ON ledger FROM liberty_app;
 
+-- The item ledger, for the same reason and with the same force. Migration 012
+-- carries this REVOKE too, but it CANNOT be the one that holds: the GRANT
+-- above re-runs on every invocation of this script and hands UPDATE and DELETE
+-- straight back. A REVOKE that lives only in the migration is therefore undone
+-- by the next run of the script that applied it — which would leave items
+-- reconciled against a table the application can rewrite, i.e. reconciled
+-- against nothing. It has to be here, after the GRANT, to mean anything.
+--
+-- `IF EXISTS` because this script must keep working against a database that
+-- has not had 012 applied yet: the migrations run above, so a fresh database
+-- reaches this line with the table present, but re-running the script against
+-- an older one must not fail on a table that is not there.
+DO $$
+BEGIN
+  IF to_regclass('item_ledger') IS NOT NULL THEN
+    REVOKE UPDATE, DELETE ON item_ledger FROM liberty_app;
+  END IF;
+END $$;
+
 -- Schema history is a record of what happened to this database. The app has
 -- no reason to touch it at all.
 REVOKE ALL ON schema_migrations FROM liberty_app;

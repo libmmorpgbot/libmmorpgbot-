@@ -198,6 +198,15 @@ async function main() {
 
   const seenMoving = [...a.scr.enemies.values()].filter(e => e.moved).length;
   const seenAggro = [...a.scr.enemies.values()].filter(e => e.aggro).length;
+  // Both were computed and dropped. The complaint they answer was made in as
+  // many words — "в фарм зоні всі моби тупо стоять афк, я їх спокійно вбиваю" —
+  // so the evidence was being gathered here all along and never compared to
+  // anything. A floor rather than a total: the bot stands where it spawned,
+  // and only the enemies near it are simulated at all.
+  ok(seenMoving > 0, `монстри рухаються (${seenMoving} з ${a.scr.enemies.size})`,
+    'жоден не зрушив за 2.5 с — саме те, на що скаржаться');
+  ok(seenAggro > 0, `і помічають гравця (${seenAggro} агресивних)`,
+    'жоден не відреагував — гравець для них не існує');
 
   // ── walking and fighting ─────────────────────────────────────────────────
   // The bot navigates badly — it has no pathfinding and the arms have walls —
@@ -438,7 +447,9 @@ async function main() {
   const TG2 = TG + 1;
   const sock2 = io(BASE, { transports: ['websocket'], forceNew: true });
   await once(sock2, 'connect');
-  const scr2 = makeScreen(sock2);
+  // The screen is never read; it is attached so the second connection drains
+  // its own event stream instead of queueing it behind an unread socket.
+  makeScreen(sock2);
   sock2.emit('loginTelegramWebApp', { initData: initData(TG2, `${TAG}_second`) });
   await once(sock2, 'authOk', 12000);
   const { rows: r2 } = await pool().query('SELECT id FROM players WHERE telegram_id = $1', [String(TG2)]);
@@ -602,8 +613,10 @@ async function main() {
   // ── coming back ──────────────────────────────────────────────────────────
   // "Золото слетает при перезагрузке" — the whole session, reopened.
   console.log('  ── перезаход ──');
-  const goldBeforeReload = a.scr.gold;
-  const lvlBeforeReload = a.scr.lvl;
+  // Gold and level are re-read from the database below rather than compared
+  // against the pre-reload screen, because the quest and Страх sections in
+  // between legitimately pay. Nothing pays potions, so for those the
+  // before-value is still the right thing to compare against.
   const potsBeforeReload = a.scr.potions.pt1;
   a.sock.disconnect();
   await wait(500);

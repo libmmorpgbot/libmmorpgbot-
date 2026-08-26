@@ -528,8 +528,13 @@ module.exports = function registerAdminRoutes(app, deps) {
 
       const done = await tx(async (t) => {
         await items.lockPlayer(t, id);
+        // WHICH admin goes into the ledger on the way out too, for the same
+        // reason it goes in on the way in (see the grant below). A removal is
+        // the half an audit asks about first, and 'consume' — the default a
+        // player's own craft leaves — would file it as one.
+        const byAdmin = { reason: 'admin_remove', refType: 'admin', refId: who(req) };
         if (action === 'remove') {
-          const gone = await items.removeQty(t, id, body.itemId, n);
+          const gone = await items.removeQty(t, id, body.itemId, n, byAdmin);
           if (!gone) throw Object.assign(new Error('no'), { userMessage: 'У игрока столько нет' });
           return { removed: n, itemId: body.itemId };
         }
@@ -539,14 +544,14 @@ module.exports = function registerAdminRoutes(app, deps) {
           const cur = await items.inventoryOf(t, id);
           const row = (cur.inventory || [])[int(body.index, -1)];
           if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Такой ячейки уже нет — обновите карточку' });
-          await items.removeRow(t, row.rowId, id);
+          await items.removeRow(t, row.rowId, id, byAdmin);
           return { removed: row.qty || 1, itemId: row.id };
         }
         if (action === 'removeEq') {
           const cur = await items.inventoryOf(t, id);
           const row = (cur.equipment || {})[String(body.slot || '')];
           if (!row) throw Object.assign(new Error('gone'), { userMessage: 'В этом слоте пусто' });
-          await items.removeRow(t, row.rowId, id);
+          await items.removeRow(t, row.rowId, id, byAdmin);
           return { removed: 1, itemId: row.id, slot: body.slot };
         }
         if (!await items.hasRoomFor(t, id, body.itemId)) {

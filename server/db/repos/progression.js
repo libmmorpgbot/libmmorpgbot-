@@ -22,7 +22,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  VIP_THRESHOLDS, QUEST_DEF, questComplete, seasonActive, ENEMY_DEF, armIndexForLevel,
+  VIP_THRESHOLDS, QUEST_DEF, questComplete, seasonActive, armIndexForLevel,
   SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_PRIZES, SEASON_VIP_PRIZE, SEASON_ENHANCE_SPECIAL_SLOTS,
@@ -421,9 +421,14 @@ async function burnItem(db, playerId, rowId) {
   // the rollback would take the season points back out with it.
   await items.assertDestroyable(db, rowId);
 
-  const { rowCount } = await query(db,
-    'DELETE FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
-  if (!rowCount) err('not_found', 'Предмет не найден — список обновлён');
+  // RETURNING, so the ledger is told what was destroyed by the statement that
+  // destroyed it. One of the five paths that delete an item without going
+  // through repos/items.js, so the ledger write belongs here explicitly.
+  const { rows: gone } = await query(db,
+    'DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING item_id, qty', [rowId, playerId]);
+  if (!gone.length) err('not_found', 'Предмет не найден — список обновлён');
+  await items.ledger(db, playerId, gone[0].item_id, -Number(gone[0].qty),
+    { rowId, reason: 'season_burn', refType: 'season', refId: v.rarity });
 
   const total = await addSeasonPoints(db, playerId, v.points);
   return { burned: 1, points: v.points, total: total == null ? 0 : total, itemId: v.itemId };
@@ -440,25 +445,46 @@ async function burnAllOfRarity(db, playerId, rarity) {
   if (!per) err('cannot_burn', 'Эту редкость нельзя сжечь');
   await items.lockPlayer(db, playerId);
 
+  // The delete is wrapped in a CTE and its result GROUPED BY item id, because
+  // this is the only path that destroys an unbounded number of rows in one
+  // statement and the ledger has to record it as one movement per item rather
+  // than one per row. Per row would be wrong arithmetic, not merely verbose:
+  // qty_after is read after the statement has finished, so three rows of the
+  // same item would each claim the same final quantity and the running-sum
+  // check would disagree with every one of them. Grouped, a burn of three
+  // commons is what it actually was — one operation that took three.
   const { rows } = await query(db, `
-    DELETE FROM player_items pi
-     USING item_catalog c
-     WHERE c.item_id = pi.item_id
-       AND pi.player_id = $1 AND pi.container = 'inventory'
-       AND NOT c.stackable AND c.rarity = $2
-       -- Anything a past trade still names cannot be deleted while the
-       -- reference blocks (see items.assertDestroyable). Skipping those rows
-       -- burns everything else instead of failing the whole batch — and once
-       -- migration 010 makes the reference releasable, the sub-select is
-       -- simply never true.
-       AND ($3::bool = false OR NOT EXISTS (
-             SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
-    RETURNING pi.id`, [playerId, rarity, await items.marketRefBlocksDelete(db)]);
+    WITH gone AS (
+      DELETE FROM player_items pi
+       USING item_catalog c
+       WHERE c.item_id = pi.item_id
+         AND pi.player_id = $1 AND pi.container = 'inventory'
+         AND NOT c.stackable AND c.rarity = $2
+         -- Anything a past trade still names cannot be deleted while the
+         -- reference blocks (see items.assertDestroyable). Skipping those rows
+         -- burns everything else instead of failing the whole batch — and once
+         -- migration 010 makes the reference releasable, the sub-select is
+         -- simply never true.
+         AND ($3::bool = false OR NOT EXISTS (
+               SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
+      RETURNING pi.item_id, pi.qty
+    )
+    SELECT item_id, count(*)::int AS rows_gone, sum(qty)::int AS qty_gone
+      FROM gone GROUP BY item_id`, [playerId, rarity, await items.marketRefBlocksDelete(db)]);
   if (!rows.length) err('nothing', 'Нечего сжигать');
 
-  const points = rows.length * per;
+  // Rows destroyed, not stacks: these are all non-stackable (`NOT c.stackable`
+  // above), so the two agree today — counted properly anyway, because the day
+  // that filter changes is not the day anyone re-derives the points.
+  const burned = rows.reduce((n, r) => n + Number(r.rows_gone), 0);
+  for (const r of rows) {
+    await items.ledger(db, playerId, r.item_id, -Number(r.qty_gone),
+      { reason: 'season_burn', refType: 'season', refId: rarity });
+  }
+
+  const points = burned * per;
   const total = await addSeasonPoints(db, playerId, points);
-  return { burned: rows.length, points, total: total == null ? 0 : total };
+  return { burned, points, total: total == null ? 0 : total };
 }
 
 // Books are stackable, so they are addressed by id and count rather than by

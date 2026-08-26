@@ -37,7 +37,7 @@ const ROOT = path.join(__dirname, '..');
 const DIRS = ['server/db/repos', 'server/handlers2', 'server'];
 
 let pass = 0, fail = 0; const failures = [];
-const RED = '\x1b[31m', GRN = '\x1b[32m', YEL = '\x1b[33m', DIM = '\x1b[2m', OFF = '\x1b[0m';
+const RED = '\x1b[31m', GRN = '\x1b[32m', DIM = '\x1b[2m', OFF = '\x1b[0m';
 
 // Files that are not what runs — the retired Mongo build (see
 // dev/reachable-check.js) — and this file's own subject matter.

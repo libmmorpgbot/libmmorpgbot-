@@ -91,7 +91,9 @@ async function main() {
   sock.on('progressError', e => errors.push(e && e.msg));
   const rolled = [];
   sock.on('upgradeRolled', r => rolled.push(r));
-  let lastSkills = null;
+  // No initialiser: the handler below is the only writer, and both null and
+  // undefined fail the `lastSkills &&` guard at the assertions identically.
+  let lastSkills;
   sock.on('progressSync', d => { lastSkills = d; });
 
   sock.emit('loginTelegramWebApp', { initData: initData(TG, `${TAG}_p`) });

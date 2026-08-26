@@ -11,7 +11,6 @@
 // client then persists that nothing back over real progress. Here the listen
 // happens last, after the database answered and the catalog synced.
 
-const path = require('path');
 const http = require('http');
 const express = require('express');
 const helmet = require('helmet');
@@ -21,7 +20,6 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const items = require('./db/repos/items');
 const players = require('./db/repos/players');
-const stats = require('./db/repos/stats');
 const plog = require('./db/repos/playerlog');
 const bossstate = require('./db/repos/bossstate');
 // The built bundle — required here only for its content hash, which is what
@@ -39,9 +37,8 @@ const maintenance = require('./maintenance');
 const presence = require('./presence');
 const modeRewards = require('./mode-rewards');
 let modesRuntime = null;
-const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername } = require('./security');
+const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername, refLink } = require('./security');
 
-const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.PORT || 3000);
 
 const app = express();
@@ -254,20 +251,33 @@ function mountAdmin() {
 // Rate limiting, unchanged in shape from the build this replaces because the
 // shape was right: three buckets, because the events differ by what they COST
 // the server, not by what they are called.
+//
+// EVERY NAME HERE MUST BE A REGISTERED HANDLER. Two of them were not:
+// 'balanceHistory' names nothing in either build, and 'craft' was split into
+// craftGear/craftClassGear/craftBox/craftPet/craftMatUpgrade long before this
+// list was copied across. A stale name is not inert — it looks like coverage.
+// The forge and the pet crafter, which spend Liberty and destroy materials,
+// were sitting in the 1500-per-5s bucket the whole time while the list read
+// as though crafting were protected. dev/protocol-check.js now fails on a
+// name in here that no safeOn registers, so this cannot rot again quietly.
 const HEAVY = new Set([
   'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
-  'gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'balanceHistory',
-  'craft', 'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
+  'gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'gramShopBuy',
+  'craftGear', 'craftClassGear', 'craftBox', 'craftPet', 'craftMatUpgrade', 'craftAdvSkillBook',
+  'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
+  'buyTeleportStone', 'useTeleportStone',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
   'registerCodexSetItem', 'codexSync', 'spendUpgrade', 'usePotion', 'useBuffPotion',
   'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
-  'seasonRating', 'rebirth', 'resetUpgrades', 'getRating',
+  'seasonRating', 'seasonSync', 'seasonBurn', 'seasonBurnAll', 'seasonBurnBook',
+  'rebirth', 'resetUpgrades', 'getRating', 'starterBonusClaim',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanSetDescription', 'clanSearch', 'clanRequest',
   'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
   'clanStorageUnlock', 'clanStorageSync',
-  'chat', 'chatHistory', 'requestPlayerProfile', 'savePrefs',
+  'chat', 'chatHistory', 'clanChat', 'clanChatHistory', 'privMsg', 'privMsgHistory',
+  'requestPlayerProfile', 'getPvpHistory', 'getReferrals', 'savePrefs',
   'selectChar', 'enterLocation', 'respawn',
   // NOT here on purpose: mv, playerMove, attack, skillAttack, enemyResync.
   // Those arrive per frame and belong in the loose bucket — the tight one
@@ -275,6 +285,15 @@ const HEAVY = new Set([
   // would prevent. enemyResync has its own, much tighter bound inside the
   // handler (40 records per call) because it is cheap to ask for and
   // expensive to answer.
+  //
+  // pickupWorldDrop is the same case and is easy to mistake for a button: it
+  // is emitted from the frame loop (js/game.js), once per pile within reach
+  // every 2s, so walking through the event boss's loot field is a burst the
+  // player never asked for. It transacts, but the tight bucket would refuse
+  // the loot they are standing on.
+  //
+  // craftStone is absent because it costs nothing — it only answers "камни
+  // заточки больше не создаются" and touches neither database nor catalog.
 ]);
 
 // ── how a dropped packet reaches the player ─────────────────────────────────
@@ -287,13 +306,26 @@ const HEAVY = new Set([
 //
 // Grouped by channel because that is how the client is written (js/network.js),
 // and flattened once at load. Anything not named here answers on 'itemError'.
+//
+// The channel is the one the handler's OWN refusal uses (session.act's second
+// argument), so a throttled action and a refused one reach the same panel.
+// Where they disagreed the limiter's answer went to 'itemError' — the right
+// shape on the wire, addressed to a panel that was not listening: the forge,
+// the season altar, the rating table and the portal all had their limiter
+// refusal delivered somewhere the player was not looking.
 const RL_ERR_EVENT = new Map();
 for (const [channel, events] of Object.entries({
   marketError: ['marketBrowse', 'marketMyListings', 'marketHistory', 'marketBuy', 'marketCancel'],
   marketListError: ['marketList'],
-  gramError: ['gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'balanceHistory'],
-  gramShopError: ['claimVipRewards', 'vipSync'],
+  gramError: ['gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'getReferrals'],
+  gramShopError: ['claimVipRewards', 'vipSync', 'gramShopBuy'],
   craftAdvSkillBookError: ['craftAdvSkillBook'],
+  craftGearError: ['craftGear'],
+  craftClassGearError: ['craftClassGear'],
+  craftBoxError: ['craftBox'],
+  craftMatUpgradeError: ['craftMatUpgrade'],
+  petCraftError: ['craftPet'],
+  teleportStoneError: ['buyTeleportStone'],
   enhanceError: ['enhanceItem'],
   openBoxError: ['openLootBox'],
   goldError: ['buyPotion'],
@@ -301,15 +333,22 @@ for (const [channel, events] of Object.entries({
   progressError: ['learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive',
     'learnAdvSkill', 'toggleAdvSkill'],
   questClaimError: ['claimQuest', 'completeSpecialQuest'],
-  seasonError: ['seasonRating'],
+  seasonError: ['seasonRating', 'seasonSync'],
+  seasonBurnError: ['seasonBurn', 'seasonBurnAll', 'seasonBurnBook'],
+  starterBonusError: ['starterBonusClaim'],
   rebirthError: ['rebirth'],
   resetUpgradesError: ['resetUpgrades'],
+  ratingError: ['getRating'],
+  locationError: ['enterLocation'],
+  prefsError: ['savePrefs'],
+  profileError: ['requestPlayerProfile', 'getPvpHistory'],
   clanError: ['clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
     'clanDisband', 'clanSetDescription', 'clanSearch', 'clanRequest',
     'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
     'clanStorageUnlock'],
   clanStorageError: ['clanStorageSync'],
-  chatError: ['chat', 'chatHistory'],
+  chatError: ['chat', 'chatHistory', 'clanChat', 'clanChatHistory'],
+  privMsgError: ['privMsg', 'privMsgHistory'],
   authError: ['selectChar'],
 })) for (const ev of events) RL_ERR_EVENT.set(ev, channel);
 
@@ -500,7 +539,7 @@ io.on('connection', (socket) => {
   // either a scanner or a broken client.
   const authTimer = setTimeout(() => { if (!s.authed) socket.disconnect(true); }, 20000);
 
-  async function finishLogin(telegramId, username) {
+  async function finishLogin(telegramId, username, startParam = '') {
     const res = await s.login(String(telegramId), _safeUsername(username, telegramId));
     if (res.banned) {
       socket.emit('authError', { msg: 'Аккаунт заблокирован' });
@@ -595,7 +634,7 @@ io.on('connection', (socket) => {
       nexumBalance: bal.nexum,
       gramWallet: process.env.GRAM_WALLET || null,
       clanInfo,
-      refLink: refLinkFor(s.telegramId),
+      refLink: refLink(s.telegramId),
       vipData: { level: vip.level, deposited: vip.deposited, pending: vip.pending },
       seasonTicketActive: !!vip.seasonTicket,
       topPlayer: presence.topPlayer(),
@@ -619,15 +658,59 @@ io.on('connection', (socket) => {
       // A missing season panel is not a reason to fail a login.
       console.error('[login] seasonState:', err.message);
     }
+
+    // ── who invited this player ──────────────────────────────────────────
+    // LAST, and behind its own catch, for the same reason as the season block
+    // above: a referral is a bonus attached to a login, and a login that fails
+    // because a bonus could not be recorded is a player who cannot play at
+    // all. Outside s.login()'s transaction for the same reason — PostgreSQL
+    // refuses every statement after one that raised until the transaction is
+    // rolled back, so a fault here could not be caught and shrugged off in
+    // there: it would take the account creation down with it.
+    //
+    // start_param is the only way a referral reaches this build: see refLink()
+    // in server/security.js for why the old ?start=ref_<id> link could never
+    // register one. Attempted on EVERY login carrying the parameter, not only
+    // a new account — the repo refuses a second referrer itself, and a player
+    // who followed a link before their first launch would otherwise be the one
+    // case that never worked.
+    const sp = String(startParam || '');
+    if (sp.startsWith('ref_')) await registerReferral(sp.slice(4));
   }
 
-  // The classic deep link, not a Mini App startapp one: it opens the bot's own
-  // chat first, which is where the /start ref_<id> that registers the referral
-  // is actually sent. Telegram requires a manual tap before that message goes
-  // out — a platform anti-spam rule no code here can skip.
-  function refLinkFor(telegramId) {
-    const bot = process.env.TG_BOT_USERNAME || '';
-    return bot ? `https://t.me/${bot}?start=ref_${telegramId}` : '';
+  // Every outcome leaves a row in player_logs: a registration under
+  // 'referralRegistered', a refusal under 'refuse:referralRegistered' with the
+  // reason and the id that was refused — the same shape session.act() writes
+  // for a refused action, so both read the same way in the admin panel. A
+  // referral that did not take is precisely what operators get asked about,
+  // and until this existed the only available answer was that nothing anywhere
+  // had recorded the attempt.
+  async function registerReferral(refId) {
+    try {
+      const res = await players.registerReferral(null, s.playerId, refId);
+      if (!res.ok) {
+        plog.log(s.playerId, 'refuse:referralRegistered',
+          { code: res.reason, msg: res.msg, refId: res.refId });
+        return;
+      }
+      plog.log(s.playerId, 'referralRegistered',
+        { refId: res.refId, referrerId: res.referrerId, referrer: res.referrerUsername });
+      // The referrer is a different session and may be offline entirely. The
+      // room emit reaches every device they have open and is dropped when
+      // there are none — the referral itself is committed either way. Same
+      // shape as the season referral bonus in handlers2/world.js.
+      io.to(`tg_${res.refId}`).emit('friendJoined', { username: s.username });
+    } catch (err) {
+      // Not silent. This is the one path where a referral is lost to a fault
+      // rather than to a rule, and it is invisible from both sides: the
+      // invited player is never told a referral was attempted, and the
+      // referrer is simply never paid.
+      console.error('[login:referral]', err);
+      ops.alertError('login.referral', 'Не удалось записать реферала', err, {
+        player: s.username, telegramId: s.telegramId,
+        пригласил: String(refId).slice(0, 64),
+      }).catch(() => {});
+    }
   }
 
   // Both failures go through authCheckFailed (top of this file), which counts
@@ -636,7 +719,9 @@ io.on('connection', (socket) => {
   safeOn('loginTelegramWebApp', async ({ initData } = {}) => {
     const v = verifyTelegramWebApp(String(initData || ''));
     if (!v || !v.user) return authCheckFailed(socket, 'miniapp');
-    await finishLogin(v.user.id, v.user.username || v.user.first_name);
+    // startParam was verified alongside the user and then dropped on the
+    // floor here, which is where the whole referral feature ended.
+    await finishLogin(v.user.id, v.user.username || v.user.first_name, v.startParam || '');
   });
 
   safeOn('loginTelegram', async (data = {}) => {

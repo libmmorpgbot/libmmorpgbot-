@@ -349,6 +349,33 @@ function csOnServerReady() {
   _csCheckGate();
 }
 
+// ── the transition the server refused ───────────────────────────────────────
+// The overlay this puts up is gated on csOnServerReady, and the only thing
+// that calls it is a gameStart arriving. A refused enterLocation sends a
+// locationError instead and no gameStart ever comes — so the player sat on a
+// full-screen "Ожидание сервера..." for the rest of the session, over a
+// portal that had simply said no. That is worse than a button doing nothing:
+// the game is gone.
+//
+// The gate callback is run rather than discarded on purpose. It is the
+// caller's own release (`_floorChangePending = false`, js/game.js), and
+// running it is what lets them try the portal again — dropping it would trade
+// a stuck overlay for a pad that never fires a second time.
+function csCancelFloorLoading() {
+  // Nothing gated, nothing to cancel. The gate is SHARED with character
+  // creation (csStartLoading above), and a refusal that arrived while nothing
+  // was in flight must not take that screen down with it — a refused portal
+  // cannot reach a player who has not chosen a character yet, and this is what
+  // keeps that true if one ever could.
+  const cb = _csGateCb;
+  if (!cb) return;
+  _csGateCb = null;
+  _csGateSprites = false;
+  _csGateServer = false;
+  try { cb(); } catch (_e) { /* the overlay comes down either way */ }
+  csHide();
+}
+
 function _csCheckGate() {
   if (_csGateSprites && _csGateServer && _csGateCb) {
     csSetStatus(typeof t === 'function' ? t('csStarting') : 'Запуск!');

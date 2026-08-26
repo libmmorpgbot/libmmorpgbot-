@@ -16,6 +16,7 @@ const tgAdmin = require('./tg-admin');
 const cards = require('./ops-cards');
 const gram = require('./db/repos/gram');
 const money = require('./db/repos/money');
+const items = require('./db/repos/items');
 const { query, stats: poolStats } = require('./db');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('./shop');
 
@@ -257,6 +258,51 @@ async function reconcile() {
   }
 }
 
+// ── the same check, for items ───────────────────────────────────────────────
+// The item half of the sentence above: for every account and every catalog
+// item, the sum of everything that ever moved must equal the quantity that
+// account holds. Until migration 012 there was no such sum to compare against,
+// so an item that appeared from nowhere left no trace at all — which is the
+// asymmetry the ledger was built to close, and this is the thing that actually
+// reads it.
+//
+// A SEPARATE function on the same timer rather than two halves of one, because
+// a throw in either must not take the other's report with it. The money check
+// is the one that has been trusted for months; a new check next to it must not
+// be able to silence it.
+async function reconcileItems() {
+  try {
+    const drift = await items.reconcile(null);
+    // null, not an empty array: the ledger table does not exist yet, so there
+    // is nothing to compare and NOTHING IS BEING PROVED. Reported as its own
+    // state rather than as a clean run — "no drift found" and "no check ran"
+    // must never print the same way, which is how a switched-off check survives
+    // a release.
+    if (drift === null) {
+      console.warn('[workers] сверка предметов пропущена — миграция 012 не применена');
+      return { ok: false, skipped: true };
+    }
+    if (!drift.length) return { ok: true, drift: 0 };
+
+    const lines = drift.slice(0, 10).map(d =>
+      `• игрок ${d.playerId} · ${d.itemId}: на руках ${d.held}, журнал ${d.ledgerTotal} (расхождение ${d.drift})`);
+    // ops.alert for the same reason the money one uses it: drift is persistent
+    // state, so a plain send would repost the whole report every cycle until
+    // somebody fixed the row — past the throttle that exists to collapse
+    // exactly this, and into the muting that loses the NEXT one.
+    await ops.alert('items.drift', 'Расхождение предметов и журнала',
+      `Пар «счёт+предмет» с расхождением: ${drift.length}\n${lines.join('\n')}`
+      + (drift.length > 10 ? `\n… и ещё ${drift.length - 10}` : '')
+      + `\n\nЭто значит, что предметы появились или исчезли в обход repos/items.js.`,
+      { пар: drift.length });
+    return { ok: false, drift: drift.length };
+  } catch (err) {
+    console.error('[workers] reconcileItems:', err);
+    await ops.alertError('reconcile.items', 'Ошибка сверки предметов', err);
+    return null;
+  }
+}
+
 // ── maintenance ─────────────────────────────────────────────────────────────
 // Log partitions must exist before the month they cover. A partitioned table
 // with no partition for today rejects every insert, so this running late is a
@@ -285,6 +331,10 @@ function start(opts = {}) {
   // second time takes the live server's withdrawal buttons away from it, and
   // scanning aims the deposit reader at a wallet holding real money.
   timers.push(setInterval(() => reconcile(), RECONCILE_EVERY_MS));
+  // On the money check's clock, not one of its own. The two answer the same
+  // question about different nouns, and an operator reading the alerts should
+  // not have to work out which of two cadences a silence belongs to.
+  timers.push(setInterval(() => reconcileItems(), RECONCILE_EVERY_MS));
   timers.push(setInterval(() => maintain(), 6 * 3600 * 1000));
 
   const live = ops.isLive();
@@ -325,4 +375,4 @@ function status() {
   };
 }
 
-module.exports = { start, stop, status, scanDeposits, reconcile, maintain, pollOps };
+module.exports = { start, stop, status, scanDeposits, reconcile, reconcileItems, maintain, pollOps };

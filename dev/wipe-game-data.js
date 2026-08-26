@@ -18,7 +18,7 @@
 // It refuses without --yes, refuses unless WIPE_CONFIRM names the database,
 // and prints what it is about to destroy first.
 
-const { pool, close, query } = require('../server/db');
+const { close, query } = require('../server/db');
 
 // Order does not matter — one TRUNCATE with CASCADE handles the foreign keys —
 // but naming every table explicitly does: a table added later and forgotten
