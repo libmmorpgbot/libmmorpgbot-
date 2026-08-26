@@ -11,7 +11,8 @@
 # state nobody could describe. /srv/liberty/pgtest only ever holds what git has.
 #
 # tar over ssh rather than rsync: the developer machine is Windows, and Git Bash
-# ships tar but not rsync. `git ls-files` picks the payload, so a file that is
+# ships tar but not rsync — which also means the deletion half has to be done
+# by hand, below. `git ls-files` picks the payload, so a file that is
 # not committed (or at least not staged) is not tested — which matters more here
 # than speed does.
 set -euo pipefail
@@ -25,6 +26,26 @@ FILES=$(git ls-files --cached --others --exclude-standard \
 
 echo "$FILES" | tar -czf - -T - \
   | ssh -i "$KEY" -o BatchMode=yes "$HOST" "mkdir -p $DEST && tar -xzf - -C $DEST"
+
+# ── and delete what the working tree no longer has ──────────────────────────
+# tar MERGES. For a year that was invisible, because files only ever got added.
+# The first commit that deleted any left 27 of them sitting in $DEST, and
+# dev/reachable-check.js — whose whole job is "no file the server does not load
+# is in server/" — failed on the droplet while passing locally. The checkout was
+# right and the test directory was a state nobody could describe, which is the
+# exact failure this script's header says it exists to prevent.
+#
+# So the manifest goes over too, and anything not on it is removed. node_modules
+# is a SYMLINK to the running app's (see dev/deploy.sh for what happened the
+# last time something walked into it), so `find -type f` never descends it and
+# the path guard is belt and braces.
+printf '%s\n' "$FILES" \
+  | ssh -i "$KEY" -o BatchMode=yes "$HOST" "cat > $DEST/.sync-manifest && cd $DEST \
+      && find . -type f \
+           -not -path './node_modules/*' -not -path './.git/*' \
+           -not -name '.sync-manifest' -printf '%P\n' \
+         | grep -vxF -f .sync-manifest \
+         | xargs -r rm -f --"
 
 if [ $# -gt 0 ]; then
   # printf %q, not "$*": the arguments carry parentheses, quotes and $ signs,

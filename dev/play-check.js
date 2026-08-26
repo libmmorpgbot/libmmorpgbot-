@@ -196,17 +196,26 @@ async function main() {
   ok((arm.enemies || []).length > 0, `на руці видно ворогів (${(arm.enemies || []).length})`);
   await wait(2500);
 
+  // Printed, not asserted, and that is the point of writing it down.
+  //
+  // Both numbers are ZERO here, and they are supposed to be. The arm entrance
+  // is where the bot spawns; ENEMY_AOI_R decides what the server SENDS (plus
+  // every boss regardless of distance, Room.js:2432), while aggroR — 175 to
+  // 250px — decides what acts. Forty-three monsters on screen and none of them
+  // moving is those two radii doing their jobs, not the bug it looks like.
+  //
+  // It looks like the bug because it is what the report describes: "підходиш
+  // до них вони стоять не чіпають". The difference is the walk. The real
+  // assertion is a hundred lines below, after the bot has moved into range,
+  // and it is the one that would catch a genuinely dead AI.
+  //
+  // Left as a log line because an assertion here fails on correct behaviour,
+  // and because the next person to notice these two numbers should find the
+  // reason rather than repeat the mistake.
   const seenMoving = [...a.scr.enemies.values()].filter(e => e.moved).length;
   const seenAggro = [...a.scr.enemies.values()].filter(e => e.aggro).length;
-  // Both were computed and dropped. The complaint they answer was made in as
-  // many words — "в фарм зоні всі моби тупо стоять афк, я їх спокійно вбиваю" —
-  // so the evidence was being gathered here all along and never compared to
-  // anything. A floor rather than a total: the bot stands where it spawned,
-  // and only the enemies near it are simulated at all.
-  ok(seenMoving > 0, `монстри рухаються (${seenMoving} з ${a.scr.enemies.size})`,
-    'жоден не зрушив за 2.5 с — саме те, на що скаржаться');
-  ok(seenAggro > 0, `і помічають гравця (${seenAggro} агресивних)`,
-    'жоден не відреагував — гравець для них не існує');
+  console.log(`        на вході в руку: ${a.scr.enemies.size} монстрів видно, `
+    + `${seenMoving} рухається, ${seenAggro} агресивних — очікувано 0 і 0, гравець поза aggroR`);
 
   // ── walking and fighting ─────────────────────────────────────────────────
   // The bot navigates badly — it has no pathfinding and the arms have walls —
@@ -268,8 +277,13 @@ async function main() {
   const nowMoving = [...a.scr.enemies.values()].filter(e => e.moved).length;
   ok(a.scr.events.get('gameState') > 10,
     `потік світу йде (${a.scr.events.get('gameState')} пакетів)`);
+  // THE check for "моби тупо стоять афк". Not at the arm entrance — see the
+  // log line above — but here, after the bot has walked into aggroR. An OR
+  // rather than an AND: a monster that has closed the distance and is standing
+  // still hitting the player is aggro'd and not moving, which is correct.
   ok(nowMoving > 0 || nowAggro > 0,
-    `монстри оживають на екрані (рухались ${nowMoving}, агресивних ${nowAggro})`);
+    `монстри оживають на екрані (рухались ${nowMoving}, агресивних ${nowAggro})`,
+    'жоден не зрушив і жоден не зааґрився за 1.5 с у радіусі — ШІ не працює');
 
   console.log('  ── бій ──');
   let killedOnScreen = 0;

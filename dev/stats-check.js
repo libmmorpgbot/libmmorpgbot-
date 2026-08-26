@@ -348,6 +348,11 @@ async function main() {
   // or a buff key compute() does not know, would leave nothing running and the
   // real assertion would pass over a player with no buff at all.
   const bmb = await mk('bmbuff');
+  // A fresh character has atk 3, and Math.floor(3 × 1.20) is 3 — the buff
+  // applies and rounds away, so the setup assertion below failed on a correct
+  // build. Points rather than levels: it does not depend on any class's atk
+  // curve staying where it is.
+  await pool().query('UPDATE player_progress SET upg_atk = 50 WHERE player_id = $1', [bmb]);
   const cleanAtk = (await stats.of(null, bmb)).atk;
   await pool().query(
     `UPDATE player_progress SET buffs = $2::jsonb WHERE player_id = $1`,
