@@ -278,7 +278,6 @@ const I18N_UI = {
   seasonEndsIn:   { ru: 'До конца сезона: {t}', en: 'Season ends in {t}', uk: 'До кінця сезону: {t}', es: 'La temporada acaba en {t}', tr: 'Sezon bitişine {t}', pt: 'A temporada acaba em {t}' },
   seasonEnded:    { ru: 'Сезон завершён', en: 'Season is over', uk: 'Сезон завершено', es: 'La temporada terminó', tr: 'Sezon bitti', pt: 'A temporada acabou' },
   seasonLoading:  { ru: 'Загрузка...', en: 'Loading...', uk: 'Завантаження...', es: 'Cargando...', tr: 'Yükleniyor...', pt: 'Carregando...' },
-  seasonQuestDoneMsg: { ru: '✓ Квест сезона выполнен! +{n} очков', en: '✓ Season quest complete! +{n} points', uk: '✓ Квест сезону виконано! +{n} очок', es: '✓ ¡Misión de temporada completada! +{n} puntos', tr: '✓ Sezon görevi tamam! +{n} puan', pt: '✓ Missão da temporada concluída! +{n} pontos' },
   seasonEventDoneMsg: { ru: '+{n} очков сезона', en: '+{n} season points', uk: '+{n} очок сезону', es: '+{n} puntos de temporada', tr: '+{n} sezon puanı', pt: '+{n} pontos da temporada' },
   normStoneLbl:    { ru: 'обычных заточек', en: 'normal stones', uk: 'звичайних заточок', es: 'piedras normales', tr: 'normal taş', pt: 'pedras normais' },
   blessStoneLbl:   { ru: 'безопасных заточек', en: 'safe stones', uk: 'безпечних заточок', es: 'piedras seguras', tr: 'güvenli taş', pt: 'pedras seguras' },

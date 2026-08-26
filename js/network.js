@@ -4104,9 +4104,9 @@ function _initPetCraftHandlers(s) {
   // (dev/reply-shape-check.js carries it in its no-emitter list), so the
   // success twin that used to sit here was a handler waiting on an event
   // that never comes. It read as working code, and it kept onStoneCrafted
-  // (js/npc.js) looking live along with it, which is how a dead feature
-  // stays convincing enough that nobody deletes it. craftStoneError is
-  // still genuinely reachable, so it stays.
+  // (js/npc.js) looking live along with it — which is how a dead feature
+  // stays convincing enough that nobody deletes it. That one has since gone
+  // too. craftStoneError is still genuinely reachable, so it stays.
   s.on('craftStoneError', ({ msg }) => {
     if (typeof onStoneCraftError === 'function') onStoneCraftError(msg);
   });

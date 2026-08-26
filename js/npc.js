@@ -620,18 +620,12 @@ let _pendingPetCraftIdx = null; // recipe idx awaiting a server response
 // re-render once the server answers (see craftSpecificItem above).
 let _pendingStoneCraftIdx = null;
 
-// The server took the materials and added the stone itself, and its
-// inventorySync has already landed — so there's nothing to add here, only the
-// panel to refresh with the new balance and material counts.
-function onStoneCrafted(matId) {
-  const idx = _pendingStoneCraftIdx;
-  _pendingStoneCraftIdx = null;
-  const mat = CRAFT_MATS.find(m => m.id === matId);
-  if (typeof updateInvUI === 'function') updateInvUI();
-  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (mat ? mat.name : matId));
-  if (idx !== null) openCraftModal(idx);
-}
-
+// Only the failure half is left. Its success twin, onStoneCrafted, went with
+// the 'stoneCrafted' handler that was its sole caller — nothing on the server
+// has emitted that since enchant stones stopped being forged, so the two of
+// them sat here propping each other up: a function with a caller and a caller
+// with a function, and no event between them. That is what a dead feature
+// looks like from the inside, and it is why neither got deleted for so long.
 function onStoneCraftError(msg) {
   const idx = _pendingStoneCraftIdx;
   _pendingStoneCraftIdx = null;
