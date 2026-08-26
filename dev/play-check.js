@@ -297,7 +297,7 @@ async function main() {
   // whatever the world generated, and asserting against a hard-coded species
   // would be asserting about the map.
   console.log('  ── квести ──');
-  const { QUEST_DEF: QD, ENEMY_DEF: ED } = require('../shared/definitions');
+  const { QUEST_DEF: QD, ENEMY_DEF: ED, questKillsFor } = require('../shared/definitions');
   const killedNames = new Set(a.scr.killedEids
     .map(eid => (ED.find(e => e.eid === eid) || {}).name).filter(Boolean));
   const qIdx = QD.findIndex(q => q.type === 'kill'
@@ -344,8 +344,12 @@ async function main() {
 
     const { rows: qrow } = await pool().query(
       'SELECT quest_kills FROM player_progress WHERE player_id = $1', [madeId]);
-    const counted = qDef.enemies.reduce((n, name) =>
-      n + (Number((qrow[0].quest_kills || {})[name]) || 0), 0);
+    // Counted under the SPECIES ID. It used to be filed under the display name,
+    // which is why quests worked in Russian and nowhere else — see the eids
+    // binding in shared/definitions.js. The old name keys are read too, so a
+    // run against a build from before the change still measures something.
+    const counted = (qDef.eids || qDef.enemies).reduce((n, _x, i) =>
+      n + questKillsFor(qDef, qrow[0].quest_kills || {}, i), 0);
     ok(counted > 0, `лічильник завдання зрушив у базі (${counted}/${qDef.count})`);
     ok(a.scr.questSyncs.length > 0,
       `клієнт дізнався про це (questSync ×${a.scr.questSyncs.length})`);
