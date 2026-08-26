@@ -81,6 +81,64 @@ async function setUsername(db, playerId, username) {
     [playerId, username]);
 }
 
+// ── may the bot write to this player ────────────────────────────────────────
+// See migration 013. Telegram reports the grant ONCE, to the client, in an
+// initData field that is frozen at launch — so unless it is written down here
+// the player is asked again on every launch until Telegram happens to refresh
+// the payload. This is the only record of it that exists.
+//
+// Asked of the schema rather than assumed, exactly like _hasSourceCols in
+// repos/items.js: the migration is applied by hand with a credential the
+// deploy does not carry, so the code lands first and the column follows. A
+// server that crash-loops on a missing column between those two moments is
+// worse than one that forgets a grant for an hour — and this is the LOGIN
+// path, so the crash would be every player, not one screen.
+let _waCols = null;
+async function _hasWriteAccessCols(db) {
+  if (_waCols !== null) return _waCols;
+  try {
+    const { rows } = await query(db, `
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'players' AND column_name = 'can_message' LIMIT 1`);
+    _waCols = rows.length > 0;
+  } catch {
+    _waCols = false;
+  }
+  return _waCols;
+}
+
+// false before the migration, and false is the SAFE answer here: it makes the
+// client show the gate to somebody who has already granted, and Telegram
+// answers that prompt with an immediate yes rather than a popup. The opposite
+// default would let a player who has never been asked straight through, which
+// is the whole feature not happening.
+async function canMessage(db, playerId) {
+  if (!await _hasWriteAccessCols(db)) return false;
+  const { rows } = await query(db,
+    'SELECT can_message FROM players WHERE id = $1', [Number(playerId)]);
+  return !!(rows.length && rows[0].can_message);
+}
+
+// MONOTONIC, and migration 013 explains why at length: a grant sticks, a
+// refusal writes only the timestamp. The short version is that the client is
+// what reports this, and a client-driven path that can CLEAR a permission is a
+// packet that revokes its own account's notifications.
+//
+// Returns whether it was actually stored, so the caller can say "recorded" or
+// "the column is not there yet" instead of guessing — a silent no-op here
+// would look exactly like a working grant and be discovered a month later,
+// when somebody asked why every player is prompted on every launch.
+async function setWriteAccess(db, playerId, granted) {
+  if (!await _hasWriteAccessCols(db)) return { stored: false };
+  await query(db, `
+    UPDATE players
+       SET can_message     = can_message OR $2,
+           write_access_at = now(),
+           updated_at      = now()
+     WHERE id = $1`, [Number(playerId), !!granted]);
+  return { stored: true };
+}
+
 // ── who invited this player ─────────────────────────────────────────────────
 // The only writer of players.referred_by, and until it existed there was NONE.
 // Three finished features read that column and all three paid nobody: the 5%
@@ -590,6 +648,7 @@ async function idByTelegram(db, telegramId) {
 module.exports = {
   idByTelegram,
   byTelegramId, ensure, setUsername, registerReferral,
+  canMessage, setWriteAccess,
   progressOf, prefsOf, skillsOf,
   savePrefs, PREF_FIELDS,
   savePosition, setHp, setClass,

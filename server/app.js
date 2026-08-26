@@ -28,6 +28,9 @@ const assets = require('./assets');
 const ops = require('./tg-ops');
 const workers = require('./workers');
 const adminAuth = require('./admin-auth');
+// The game bot's own updates. Required at the top rather than at the mount
+// below because /health reports its counters and /health is defined above it.
+const tgWebhook = require('./routes/tg-webhook');
 const { Session, activeSessions, socketForTelegramId } = require('./session');
 const world = require('./world');
 const version = require('./version');
@@ -117,6 +120,16 @@ app.get('/health', async (req, res) => {
     // working game, and a hash-guessing burst looks like nothing at all.
     rateLimit: { ...rlStats },
     authFails: { total: _authFail.total, lastMinute: _authFail.n },
+    // The bot's webhook: what arrived, what was dropped as a retry, what was
+    // refused. `badSecret` is the one nobody would think to ask for until it
+    // mattered — the URL is public, and anything reaching that counter is not
+    // Telegram.
+    tgWebhook: tgWebhook.status(),
+    // How the write-access gate is going. `shown` minus (granted + refused) is
+    // the players who closed the app rather than answering — see _waGate. A
+    // non-zero `notStored` means migration 013 has not been applied yet and
+    // every grant is being forgotten.
+    writeAccess: { ..._waGate },
     // Per-floor tick timings. "Иногда тупит" was unanswerable without these:
     // nothing recorded whether the 25ms world loop was making its budget.
     // Reading RESETS the window, so each poll describes the interval since the
@@ -215,6 +228,13 @@ app.post('/client-error', (req, res) => {
   }
 });
 
+// ── the bot's own /start ────────────────────────────────────────────────────
+// Here, at module scope, and NOT inside boot(): the error handler is registered
+// at the end of mountAdmin, and express only dispatches an error to a handler
+// registered AFTER the route that raised it. A route mounted during boot would
+// sit past it, and its faults would go nowhere at all.
+tgWebhook.mount(app, { io });
+
 // ── the admin panel ─────────────────────────────────────────────────────────
 // Mounted lazily inside boot(), because half of it answers questions about the
 // event modes and those do not exist until the world does.
@@ -279,6 +299,10 @@ const HEAVY = new Set([
   'chat', 'chatHistory', 'clanChat', 'clanChatHistory', 'privMsg', 'privMsgHistory',
   'requestPlayerProfile', 'getPvpHistory', 'getReferrals', 'savePrefs',
   'selectChar', 'enterLocation', 'respawn',
+  // Two or three packets per login (gate shown, then the answer), and each
+  // answer writes to `players`. The tight bucket costs a real client nothing
+  // and stops a scripted one from turning the gate into an UPDATE loop.
+  'writeAccess',
   // NOT here on purpose: mv, playerMove, attack, skillAttack, enemyResync.
   // Those arrive per frame and belong in the loose bucket — the tight one
   // would throttle ordinary play, which is a worse outcome than the flood it
@@ -393,6 +417,48 @@ function authCheckFailed(socket, kind) {
       { канал: kind, ip }).catch(() => {});
   }
   socket.emit('authError', { msg: 'Проверка Telegram не пройдена' });
+}
+
+// ── the write-access gate, as a number ──────────────────────────────────────
+// A player who refuses to let the bot DM them does not get into the game (see
+// _waShowGate in js/network.js). That is the owner's decision and it is not
+// free: every refusal is an install that bounced off the front door. If most
+// people refuse, they need to know THIS WEEK, not from a month of flat
+// retention that looks like a hundred other things.
+//
+// player_logs carries every outcome per player and is the per-account answer;
+// players.write_access_at is the standing total that outlives log retention.
+// This is neither — it is the live rate, for /health, so the question can be
+// asked of a running server without opening a psql session.
+//
+// `shown` is reported by the client when the gate goes up and is therefore
+// bigger than granted + refused: the difference is people who closed the app
+// rather than answering, which is its own kind of refusal and is worth being
+// able to see separately.
+const _waGate = { shown: 0, granted: 0, refused: 0, notStored: 0, told: 0 };
+// The rate is only meaningful once there is a rate. Under this many answers a
+// single refusal is 100% and would alert on nothing at all.
+const WA_MIN_SAMPLE = Number(process.env.WA_MIN_SAMPLE || 20);
+const WA_REFUSE_ALERT_PCT = Number(process.env.WA_REFUSE_ALERT_PCT || 40);
+
+function _waRecord(outcome) {
+  if (outcome === 'shown') { _waGate.shown++; return; }
+  if (outcome === 'granted') _waGate.granted++; else _waGate.refused++;
+  const answered = _waGate.granted + _waGate.refused;
+  const pct = Math.round((_waGate.refused / answered) * 100);
+  // The RATE, not the event — the same rule authCheckFailed follows above, and
+  // for the same reason: one refusal is a person changing their mind, and an
+  // alert for it teaches everyone to ignore this key. Re-raised on every
+  // further answer past the threshold; ops.alert's own throttle collapses the
+  // repeats into one message plus a count.
+  if (answered >= WA_MIN_SAMPLE && pct >= WA_REFUSE_ALERT_PCT) {
+    _waGate.told++;
+    ops.alert('writeAccess.refused', 'Игроки отказываются пускать бота в личку',
+      `${pct}% отказов — ${_waGate.refused} из ${answered} ответивших. ` +
+      `Отказ = игрок не попал в игру.`,
+      { показан: _waGate.shown, разрешили: _waGate.granted, отказались: _waGate.refused })
+      .catch(() => {});
+  }
 }
 
 io.on('connection', (socket) => {
@@ -623,6 +689,24 @@ io.on('connection', (socket) => {
       : null;
     presence.setAura(s.username, vip.level);
 
+    // ── has this account already let the bot write to it ─────────────────
+    // The client cannot answer this on its own. `allows_write_to_pm` is frozen
+    // into initData at launch, so a player who granted access last session is
+    // reported as not having granted it until Telegram refreshes the payload —
+    // and would be shown the gate again on every launch. This is the
+    // remembered answer (migration 013), and it is what stops the prompt from
+    // becoming a thing players see forever.
+    //
+    // Behind its own catch: a login that fails because a PERMISSION FLAG could
+    // not be read is a player who cannot play, over a field whose worst case is
+    // one extra prompt. Same rule as the season and referral blocks below.
+    let canMessage = false;
+    try {
+      canMessage = await players.canMessage(null, s.playerId);
+    } catch (err) {
+      console.error('[login] canMessage:', err.message);
+    }
+
     socket.emit('authOk', {
       username: s.username,
       isNewAccount: res.isNew,
@@ -639,6 +723,10 @@ io.on('connection', (socket) => {
       seasonTicketActive: !!vip.seasonTicket,
       topPlayer: presence.topPlayer(),
       vipAuras: presence.auraUsers(),
+      // Whether the write-access gate has anything to ask. The client ORs this
+      // with initData's own allows_write_to_pm — see _waShouldGate in
+      // js/network.js — so either source saying yes is enough.
+      canMessage,
       build: version.COMMIT,
     });
 
@@ -668,14 +756,24 @@ io.on('connection', (socket) => {
     // rolled back, so a fault here could not be caught and shrugged off in
     // there: it would take the account creation down with it.
     //
-    // start_param is the only way a referral reaches this build: see refLink()
-    // in server/security.js for why the old ?start=ref_<id> link could never
-    // register one. Attempted on EVERY login carrying the parameter, not only
-    // a new account — the repo refuses a second referrer itself, and a player
-    // who followed a link before their first launch would otherwise be the one
-    // case that never worked.
+    // start_param is how a referral reaches the MINI APP: the ?startapp= link
+    // refLink() builds (server/security.js) opens the game directly and
+    // Telegram signs the parameter into initData. Attempted on EVERY login
+    // carrying it, not only a new account — the repo refuses a second referrer
+    // itself, and a player who followed a link before their first launch would
+    // otherwise be the one case that never worked.
+    //
+    // A login carrying nothing may still have one waiting. The classic
+    // t.me/<bot>?start=ref_<id> link opens the BOT'S chat, and at the moment
+    // that /start arrives the person usually has no account at all — so the
+    // webhook remembers the referrer rather than creating a half-account for
+    // them, and this is where it is redeemed (the reasoning for not creating
+    // the row there is written out in server/routes/tg-webhook.js). Through
+    // the same registerReferral below, deliberately: a referral that came by
+    // bot and one that came by Mini App must leave the same rows behind.
     const sp = String(startParam || '');
-    if (sp.startsWith('ref_')) await registerReferral(sp.slice(4));
+    const ref = sp.startsWith('ref_') ? sp.slice(4) : tgWebhook.takePendingRef(s.telegramId);
+    if (ref) await registerReferral(ref);
   }
 
   // Every outcome leaves a row in player_logs: a registration under
@@ -727,6 +825,77 @@ io.on('connection', (socket) => {
   safeOn('loginTelegram', async (data = {}) => {
     if (!verifyTelegramAuth(data)) return authCheckFailed(socket, 'widget');
     await finishLogin(data.id, data.username || data.first_name);
+  });
+
+  // ── "разреши боту писать тебе" ────────────────────────────────────────────
+  // What the client reports about the write-access gate. Three messages, all on
+  // one event because they are three states of one question:
+  //
+  //   { shown: true }      the gate is on screen — the player is being asked
+  //   { granted: true }    Telegram's requestWriteAccess called back with true
+  //   { granted: false }   they refused, or the 30s timeout expired
+  //
+  // THE CLIENT IS THE ONLY POSSIBLE SOURCE, and that is not a hole somebody
+  // forgot to close: Telegram delivers the answer to requestWriteAccess's
+  // callback in the Mini App and offers no API to ask afterwards. So a player
+  // who lies and claims a grant they did not give buys themselves exactly one
+  // thing — a bot that cannot DM them, which is where they already were. There
+  // is nothing here worth forging.
+  //
+  // It lives beside the login handlers rather than in handlers2 because it is
+  // part of getting in: it fires between authOk and the character select,
+  // before the player exists as a character at all.
+  safeOn('writeAccess', async ({ granted, shown } = {}) => {
+    if (!s.authed) return;
+    if (shown) {
+      _waRecord('shown');
+      // The row that says the player was ASKED. Without it a player who closed
+      // the app on the gate leaves no trace anywhere — not in players
+      // (write_access_at is only written by an answer) and not here — and
+      // "почему я не могу зайти" has no evidence behind it at all.
+      plog.log(s.playerId, 'writeAccessShown', null);
+      return;
+    }
+    if (granted) {
+      _waRecord('granted');
+      // Not through s.act: this is not a game action, it takes no transaction
+      // worth the name, and a failure must NOT emit an error channel the gate
+      // would have to handle — the player has already been let in by the time
+      // this lands. Failures are reported, not shown.
+      let stored = false;
+      try {
+        ({ stored } = await players.setWriteAccess(null, s.playerId, true));
+      } catch (err) {
+        console.error('[writeAccess] запись:', err.message);
+        ops.alertError('writeAccess.store', 'Не записано разрешение на личку', err,
+          { игрок: s.username, telegramId: s.telegramId }).catch(() => {});
+      }
+      // A grant that was not stored is a grant the player will be asked for
+      // again next launch. It is the expected state in the window between this
+      // code deploying and migration 013 being applied by hand — so it is
+      // counted and logged rather than alerted, and the count is what says
+      // whether that window is still open.
+      if (!stored) _waGate.notStored++;
+      plog.log(s.playerId, 'writeAccessGranted', { stored });
+      return;
+    }
+    _waRecord('refused');
+    // `refuse:` — the same prefix session.act writes for a refused action, so a
+    // player who was turned away at the door reads the same way in the admin
+    // panel as one who was refused a purchase. This is the row somebody looks
+    // for when a player says the game will not let them in, and before it
+    // existed the honest answer would have been "не знаю".
+    plog.log(s.playerId, 'refuse:writeAccess',
+      { code: 'write_access_denied', msg: 'Игрок не разрешил боту писать в личку' });
+    // The refusal is recorded on the account too, so "asked and said no" stops
+    // being indistinguishable from "never asked" the moment the app is closed
+    // and the log partition ages out. can_message is NOT cleared — see
+    // repos/players.setWriteAccess.
+    try {
+      await players.setWriteAccess(null, s.playerId, false);
+    } catch (err) {
+      console.error('[writeAccess] отказ:', err.message);
+    }
   });
 
   // ── the ported handlers ───────────────────────────────────────────────────

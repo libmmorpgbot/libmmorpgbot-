@@ -23,12 +23,25 @@
 //   * does registerReferral() write the column, once, for the right person —
 //     and refuse, in writing, when it must not
 //   * does a REAL LOGIN carrying a real start_param reach it
+//   * does the BOT's own /start reach it too — over the webhook, with the
+//     secret check that is the only thing standing between a public URL and
+//     anybody minting referrals for any pair of accounts they like
 //
 // The second half is not decoration. The bug was never in the SQL: it was that
 // loginTelegramWebApp verified start_param and then dropped it, so a repo-only
 // test would have passed on the broken build. It boots server/app.js, signs
 // initData the way Telegram signs it, and connects two socket.io clients — an
 // inviter and the friend who followed their link.
+//
+// The third is the classic `?start=ref_<id>` link, which opens the bot's chat
+// instead of the game. Those links are still in circulation in old posts and
+// old screenshots, where nobody can go back and edit them. They now arrive at a
+// webhook, so this file posts real Telegram-shaped updates at it and asks the
+// questions a public endpoint has to answer: a wrong secret refused, a missing
+// secret refused THE SAME WAY, a retry that doubles nothing, and — the one
+// that is easy to get backwards — a /start from somebody who has no account
+// yet, which must remember the referrer rather than create half an account for
+// them.
 
 // This process must not reach the operators' bot: boot() starts the workers,
 // and a second getUpdates poll takes the withdrawal buttons away from the live
@@ -50,6 +63,9 @@ process.env.ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'referral-check-throwaway-token';
 process.env.TG_BOT_USERNAME = 'referral_check_bot';
 delete process.env.TG_MINIAPP_NAME;
+// The webhook refuses everything without this, which is the point of it — so
+// the value only has to be the same on both sides, like the token above.
+process.env.TG_WEBHOOK_SECRET = 'referral-check-webhook-secret';
 
 const ioc = require('socket.io-client');
 const { boot, server } = require('../server/app');
@@ -59,6 +75,7 @@ const shop = require('../server/db/repos/shop');
 const prog = require('../server/db/repos/progression');
 const plog = require('../server/db/repos/playerlog');
 const { refLink } = require('../server/security');
+const tgWebhook = require('../server/routes/tg-webhook');
 const { SEASON_REF_LEVEL, SEASON_REF_POINTS, seasonActive } = require('../shared/definitions');
 
 let pass = 0, fail = 0, skipped = 0; const failures = [];
@@ -122,6 +139,68 @@ async function until(fn, ms = 6000) {
   }
 }
 
+// ── nothing here may reach Telegram ─────────────────────────────────────────
+// OPS_LIVE=0 above already shuts every send path, so this catches the case the
+// switch does not: a call written somewhere that does not consult it. It fails
+// the run rather than quietly succeeding, because "the test messaged a real
+// player" is not something that should be discovered from the player.
+const _realFetch = globalThis.fetch;
+let tgCalls = 0;
+globalThis.fetch = async (u, init) => {
+  if (String(u).startsWith('https://api.telegram.org/')) {
+    tgCalls++;
+    throw new Error('тест спробував піти в Telegram');
+  }
+  return _realFetch(u, init);
+};
+
+// What the bot composed, captured at the boundary rather than in Telegram.
+// tg-webhook calls `tgGame.send(...)` as a property lookup, so replacing the
+// export is enough — the real one still runs behind it, and still refuses to
+// send.
+const tgGame = require('../server/tg-game');
+const sends = [];
+const _realSend = tgGame.send;
+tgGame.send = async (chatId, html, opts) => {
+  sends.push({ chatId: String(chatId), html, buttons: (opts && opts.buttons) || null });
+  return _realSend(chatId, html, opts);
+};
+const lastSendTo = tg => [...sends].reverse().find(s => s.chatId === String(tg)) || null;
+
+// A POST shaped the way Telegram shapes one. `header:false` omits the secret
+// entirely, which has to be refused exactly as a wrong one is.
+let _upd = 900000;
+const nextUpd = () => ++_upd;
+async function hook(url, update, { secret, header = true } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (header) {
+    headers['X-Telegram-Bot-Api-Secret-Token'] =
+      secret === undefined ? process.env.TG_WEBHOOK_SECRET : secret;
+  }
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(update) });
+  const body = await res.json().catch(() => null);
+  return { status: res.status, body };
+}
+
+function startMsg(fromId, param, updateId) {
+  return {
+    update_id: updateId,
+    message: {
+      message_id: 1,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: Number(fromId), type: 'private' },
+      from: { id: Number(fromId), is_bot: false, first_name: 'Тест', username: `${TAG}_w` },
+      text: param ? `/start ${param}` : '/start',
+    },
+  };
+}
+
+// The route answers 200 BEFORE it does the work, so a refusal has nothing to
+// wait for — there is no row that will appear and no row that will not. This
+// is the pause that gives a write which should never happen its chance to
+// happen anyway.
+const settle = (ms = 500) => new Promise(r => setTimeout(r, ms));
+
 const sockets = [];
 function connect(url) {
   const s = ioc(url, { transports: ['websocket'], forceNew: true });
@@ -136,6 +215,7 @@ async function main() {
   await repoCheck();
   await consequencesCheck();
   await loginCheck();
+  await webhookCheck();
 }
 
 // ── the link a player copies ────────────────────────────────────────────────
@@ -355,6 +435,204 @@ async function loginCheck() {
     'і нічого не записано в колонку');
 
   for (const s of sockets) s.close();
+}
+
+// ── the classic link, through the bot ───────────────────────────────────────
+// `t.me/<bot>?start=ref_<id>` opens the BOT'S CHAT and the referral arrives on
+// the /start message that follows. Nothing read that message: workers.js polls
+// getUpdates for the OPERATORS' bot and only that one, because Telegram allows
+// one consumer per token. The webhook (server/routes/tg-webhook.js) is what
+// reads it now, and this is the half of the file that proves it — including
+// the two things a public POST endpoint has to get right before anything else
+// about it matters.
+async function webhookCheck() {
+  console.log('  ── вебхук бота ──');
+  const url = `http://127.0.0.1:${process.env.PORT}${tgWebhook.PATH}`;
+
+  // ── the reply itself ─────────────────────────────────────────────────────
+  // Checked directly, because the send is gated (see the end of this function)
+  // and a test can never see the message that would have gone out. The BUTTON
+  // is the load-bearing part: for somebody with no account yet the referrer
+  // cannot be written anywhere durable, so the only thing that carries it to
+  // their first launch is that this button is a real ?startapp= deep link
+  // rather than a plain game URL.
+  const carried = tgWebhook._welcome('Имя', 'inviter', refLink('777'));
+  const btn = carried.buttons[0][0];
+  eq(btn.url, refLink('777'), 'кнопка «Играть» несе реферала у start_param');
+  ok(!btn.web_app,
+    'і це URL-кнопка, а не web_app — web_app відкриває сторінку і start_param не доносить');
+  ok(carried.text.includes('inviter'), 'у привітанні названо, хто запросив');
+
+  process.env.GAME_URL = 'https://example.invalid/game';
+  const plain = tgWebhook._welcome('Имя', '', '');
+  ok(plain.buttons[0][0].web_app
+     && plain.buttons[0][0].web_app.url === 'https://example.invalid/game',
+    'без реферала кнопка відкриває гру просто в чаті');
+  delete process.env.GAME_URL;
+
+  // An unbalanced tag makes Telegram reject the WHOLE message with a 400, so
+  // an unescaped first_name is a /start that answers nothing at all.
+  ok(tgWebhook._welcome('<b>x</b>', '', '').text.includes('&lt;b&gt;x&lt;/b&gt;'),
+    'ім’я з розмітки екрановане — інакше Telegram відкине все повідомлення');
+
+  // ── a valid call registers ───────────────────────────────────────────────
+  const ref = await mk('wref');
+  const friend = await mk('wfriend');
+  const firstUpd = nextUpd();
+  const okRes = await hook(url, startMsg(friend.telegramId, `ref_${ref.telegramId}`, firstUpd));
+  eq(okRes.status, 200, 'валідний виклик прийнято');
+
+  const written = await until(async () =>
+    (await players.byTelegramId(null, friend.telegramId)).referredBy);
+  eq(written, ref.telegramId, '/start ref_<id> у бота записав реферера');
+
+  const hit = await until(async () => {
+    await plog.flush();
+    return (await plog.recent(null, friend.id, 50)).find(r => r.event === 'referralRegistered');
+  });
+  ok(!!hit, 'реєстрація через бота записана в журнал гравця');
+  eq(hit && hit.meta && hit.meta.via, 'bot',
+    'і в записі видно, що вона прийшла з бота, а не із застосунку');
+  ok(!!lastSendTo(friend.telegramId), '/start не лишився без відповіді');
+
+  // ── a wrong secret is refused ────────────────────────────────────────────
+  // Without this check the URL is a way to mint referrals for any pair of
+  // accounts, and referrals pay: 5% of every deposit the invited friend makes,
+  // plus season points at level 20. None of it can be taken back.
+  console.log('  ── секрет ──');
+  const forged = await mk('wforged');
+  const before = tgWebhook.status();
+  // ASCII, and not by preference: an HTTP header value is a ByteString, so
+  // fetch throws on the Cyrillic one that used to be here — which meant this
+  // assertion and the three below it never ran at all, and the file reported
+  // НЕОБРОБЛЕНА ПОМИЛКА instead of a result. Worth knowing beyond the fix:
+  // Telegram cannot send a non-latin-1 secret either, so a secret containing
+  // one could never match anything.
+  const wrong = await hook(url, startMsg(forged.telegramId, `ref_${ref.telegramId}`, nextUpd()),
+    { secret: 'not-the-secret' });
+  ok(wrong.status !== 200, `невірний секрет відхилено (${wrong.status})`);
+  await settle();
+  eq((await players.byTelegramId(null, forged.telegramId)).referredBy, null,
+    'і підроблений реферал у базу не потрапив');
+  eq(tgWebhook.status().badSecret, before.badSecret + 1,
+    'відмову пораховано — це і є сигнал, що URL знайшли');
+
+  // ── a missing secret is refused THE SAME WAY ─────────────────────────────
+  // Different shapes for "wrong" and "missing" tell a prober which half they
+  // already got right.
+  const none = await hook(url, startMsg(forged.telegramId, `ref_${ref.telegramId}`, nextUpd()),
+    { header: false });
+  eq(none.status, wrong.status, 'відсутній секрет — той самий код, що й невірний');
+  eq(JSON.stringify(none.body), JSON.stringify(wrong.body),
+    'і та сама відповідь — за нею не видно, що саме не так');
+  await settle();
+  eq((await players.byTelegramId(null, forged.telegramId)).referredBy, null,
+    'і знову нічого не записано');
+  eq(tgWebhook.status().badSecret, before.badSecret + 2, 'пораховано й цю відмову');
+
+  // ── self-referral ────────────────────────────────────────────────────────
+  console.log('  ── відмови ──');
+  const self = await mk('wself');
+  await hook(url, startMsg(self.telegramId, `ref_${self.telegramId}`, nextUpd()));
+  const refusedSelf = await until(async () => {
+    await plog.flush();
+    return (await plog.recent(null, self.id, 50)).find(r => r.event === 'refuse:referralRegistered');
+  });
+  ok(!!refusedSelf, 'самозапрошення через бота відмовлено і записано');
+  eq(refusedSelf && refusedSelf.meta && refusedSelf.meta.code, 'self', 'і причина названа');
+  eq(refusedSelf && refusedSelf.meta && refusedSelf.meta.via, 'bot', 'і те, що це був бот');
+  eq((await players.byTelegramId(null, self.telegramId)).referredBy, null,
+    'у колонці нічого не з’явилось');
+
+  // ── a retry must not double anything ─────────────────────────────────────
+  // Telegram resends any delivery it did not get a 200 for in time, and "in
+  // time" is its judgement, not ours.
+  console.log('  ── повтори ──');
+  const beforeRetry = tgWebhook.status();
+  const retry = await hook(url, startMsg(friend.telegramId, `ref_${ref.telegramId}`, firstUpd));
+  eq(retry.status, 200, 'повтор теж отримує 200 — інакше Telegram шле його ще раз');
+  await settle();
+  eq(tgWebhook.status().deduped, beforeRetry.deduped + 1,
+    'той самий update_id відкинуто як дубль');
+  eq(tgWebhook.status().registered, beforeRetry.registered,
+    'і вдруге нічого не зареєстровано');
+
+  // A genuinely new /start, from a second person's link. Not a duplicate —
+  // a rule, and the rule is that the first referrer keeps the friend.
+  const other = await mk('wother');
+  const already = await until(async () => {
+    await hook(url, startMsg(friend.telegramId, `ref_${other.telegramId}`, nextUpd()));
+    await plog.flush();
+    return (await plog.recent(null, friend.id, 50))
+      .find(r => r.event === 'refuse:referralRegistered' && r.meta && r.meta.code === 'already');
+  }, 4000);
+  ok(!!already, 'друге запрошення того самого гравця відмовлено і записано');
+  eq((await players.byTelegramId(null, friend.telegramId)).referredBy, ref.telegramId,
+    'перший реферер лишився');
+
+  // ── /start from somebody who has no account yet ──────────────────────────
+  // The ordinary case for a link that worked, and the one the retired build
+  // handled by creating the account on the spot. It must NOT do that: the
+  // client tells "this account is brand new" apart from "this session failed
+  // to load" by authOk's isNewAccount, and a row created before the first
+  // launch makes that false — after which the class-select screen is skipped
+  // and a shared device hands the player the previous account's class
+  // (js/network.js, _lastCharTypeKey).
+  console.log('  ── ще без акаунта ──');
+  const ref2 = await mk('wlate');
+  const newcomer = nextTg();
+  await hook(url, startMsg(newcomer, `ref_${ref2.telegramId}`, nextUpd()));
+  await settle();
+  eq(await players.byTelegramId(null, newcomer), null,
+    'бот НЕ створює акаунт — перший вхід має лишитись першим');
+  ok(tgWebhook._pending.has(newcomer), 'реферера запам’ятано до першого входу');
+
+  // In-memory, so a restart loses it. The BUTTON is the half that does not:
+  // a ?startapp= deep link makes the tap that opens the game the same tap that
+  // registers the referral, through the signed start_param the Mini App path
+  // already reads. A plain game URL — or a web_app button, which opens the page
+  // without a start_param — would leave nothing but the map.
+  const said = lastSendTo(newcomer);
+  ok(!!said, 'на /start бот склав відповідь');
+  const playBtn = said && said.buttons && said.buttons[0] && said.buttons[0][0];
+  eq(playBtn && playBtn.url, refLink(ref2.telegramId),
+    'кнопка «Играть» несе реферера у ?startapp= — це єдине, що переживе перезапуск');
+  ok(playBtn && !playBtn.web_app,
+    'і це URL-кнопка: web_app відкриває сторінку без start_param');
+
+  const d = connect(`http://127.0.0.1:${process.env.PORT}`);
+  await once(d, 'connect');
+  const dAuth = once(d, 'authOk', 10000);
+  // No start_param at all: this is the player opening the game from the chat
+  // list or an old bookmark instead of tapping the button in the welcome
+  // message. The referral has to survive that too.
+  d.emit('loginTelegramWebApp', {
+    initData: signInitData(process.env.TG_BOT_TOKEN,
+      { id: Number(newcomer), username: `${TAG}_wl` }),
+  });
+  const authD = await dAuth;
+  eq(authD.isNewAccount, true,
+    'для клієнта це справді перший вхід — екран вибору класу покажеться');
+
+  const late = await until(async () =>
+    (await players.byTelegramId(null, newcomer)).referredBy);
+  eq(late, ref2.telegramId, 'відкладений реферал застосовано при першому вході');
+  ok(!tgWebhook._pending.has(newcomer), 'і більше не висить у пам’яті');
+  const lateRow = await players.byTelegramId(null, newcomer);
+  if (lateRow) made.push(lateRow.id);
+
+  // ── and nothing of this reached a real person ────────────────────────────
+  // Every /start above composed a welcome message and handed it to the sender.
+  // The gate is what stopped each one, and `skipped` proves the messages were
+  // really built rather than the branch never being taken.
+  console.log('  ── шлюз ──');
+  const st = tgWebhook.status();
+  eq(st.send.live, false, 'відправлення гравцям вимкнене при NODE_ENV=test / OPS_LIVE=0');
+  ok(st.send.skipped > 0, `привітання складались і затримувались шлюзом (${st.send.skipped})`);
+  eq(st.send.sent, 0, 'жодного повідомлення не відправлено');
+  eq(tgCalls, 0, 'і жодного звернення до api.telegram.org за весь прогін');
+
+  d.close();
 }
 
 async function cleanup() {

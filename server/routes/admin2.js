@@ -395,6 +395,11 @@ module.exports = function registerAdminRoutes(app, deps) {
       if (!p) return deny(res, req, 404, 'Игрок не найден');
       const id = Number(p.id);
       const stamp = `${Date.now()}`;
+      // The RESULTING total, which is what the client's adminGive handler
+      // reads (newBonusSP). It used to be handed `sp` — the delta — so
+      // Number.isFinite(newBonusSP) was false every time and the granted
+      // points did not appear until the player reloaded.
+      let newBonusSP = null;
 
       const bal = await tx(async (t) => {
         for (const [cur, amt] of [['gold', gold], ['nexum', nexum], ['gram', gram]]) {
@@ -412,9 +417,11 @@ module.exports = function registerAdminRoutes(app, deps) {
           }
         }
         if (sp) {
-          await query(t, `
+          const { rows: spRows } = await query(t, `
             UPDATE player_progress SET bonus_sp = GREATEST(0, bonus_sp + $2)
-             WHERE player_id = $1`, [id, sp]);
+             WHERE player_id = $1
+            RETURNING bonus_sp`, [id, sp]);
+          newBonusSP = spRows.length ? Number(spRows[0].bonus_sp) : null;
         }
         return money.balancesOf(t, id);
       });
@@ -426,7 +433,7 @@ module.exports = function registerAdminRoutes(app, deps) {
       if (gold)  io.to(room).emit('goldSync', { gold: bal.gold });
       if (gram)  io.to(room).emit('gramBalanceUpdate', { balance: bal.gram });
       if (nexum) io.to(room).emit('nexumBalanceUpdate', { balance: bal.nexum });
-      io.to(room).emit('adminGive', { gold, nexum, gram, sp, newGold: bal.gold });
+      io.to(room).emit('adminGive', { gold, nexum, gram, sp, newGold: bal.gold, newBonusSP });
 
       res.json({ ok: true, balances: bal });
     } catch (e) {
@@ -463,7 +470,12 @@ module.exports = function registerAdminRoutes(app, deps) {
       });
 
       await adminAuth.audit(who(req), 'give_all', { meta: { by: who(req), gold, sp, players: n } });
-      io.emit('adminGive', { gold, nexum: 0, gram: 0, sp });
+      // No newBonusSP here on purpose: this is ONE broadcast to everybody,
+      // and the resulting total differs per player. The delta is sent so the
+      // toast can name it; each client picks the real total up on its next
+      // progress sync rather than being told a number that is right for one
+      // account and wrong for the rest.
+      io.emit('adminGive', { gold, nexum: 0, gram: 0, sp, newBonusSP: null });
       ops.alert('admin.giveall', 'Выдача всем игрокам', null,
         { админ: who(req), золото: gold || undefined, очки: sp || undefined, игроков: n }).catch(() => {});
       // `online` and `offline` because that is what the panel's toast prints.
@@ -486,7 +498,14 @@ module.exports = function registerAdminRoutes(app, deps) {
           SET points = GREATEST(0, player_season.points + $3)
         RETURNING points`, [p.id, progression.CURRENT_SEASON, pts]);
       await adminAuth.audit(who(req), 'season_points', { meta: { by: who(req), telegramId: p.telegram_id, points: pts } });
-      res.json({ ok: true, total: Number(rows[0].points) });
+      const total = Number(rows[0].points);
+      // The client has had a handler for this since the panel was written —
+      // its own comment says "an admin moved this account's season points by
+      // hand" — and nothing ever emitted it. So the number changed in the
+      // database and the open season panel went on showing the old one until
+      // the player reconnected, which reads as the button having done nothing.
+      io.to(`tg_${p.telegram_id}`).emit('seasonRefresh', { total });
+      res.json({ ok: true, total });
     } catch (e) { fail(res, e, req); }
   });
 

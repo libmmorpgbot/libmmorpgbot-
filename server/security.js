@@ -131,15 +131,28 @@ function verifyTelegramWebApp(initData) {
 // server/db/repos/shop.js fell back to a hard-coded name, and the friends panel
 // shows whichever answered last (it asks for the list right after login and
 // overwrites the link from authOk with the one in that reply).
-function refLink(telegramId) {
+//
+// The link shape is now built ONCE, here, and refLink() is one caller of it.
+// The other is the game bot's welcome message (server/routes/tg-webhook.js),
+// whose "Играть" button has to be a real ?startapp= link rather than a plain
+// game URL: that button is what carries a referral from somebody's first
+// /start across to their first login. Two hand-written copies of a t.me link
+// is exactly the drift this comment is already about.
+function miniAppLink(startParam = '') {
   // The fallback is the name repos/shop.js has been shipping to players. It
   // stays because dropping it blanks the referral card on any deployment that
   // never set TG_BOT_USERNAME, and a deployment pointed at the wrong bot could
   // not log anyone in anyway — its token would not verify their initData.
   const bot = process.env.TG_BOT_USERNAME || 'LibertyMMORPGbot';
   const app = process.env.TG_MINIAPP_NAME || '';
-  return `https://t.me/${bot}${app ? `/${app}` : ''}?startapp=ref_${telegramId}`;
+  // Encoded, not interpolated raw: every caller today passes `ref_<digits>`,
+  // which survives this untouched, but a start_param is a URL field and the
+  // day something else is put in one it must not be able to end the query.
+  const sp = encodeURIComponent(String(startParam == null ? '' : startParam));
+  return `https://t.me/${bot}${app ? `/${app}` : ''}${sp ? `?startapp=${sp}` : ''}`;
 }
+
+function refLink(telegramId) { return miniAppLink(`ref_${telegramId}`); }
 
 // ── Admin auth helpers ─────────────────────────────────────────────────────────
 function _adminToken(ts) {
@@ -202,7 +215,7 @@ function _clearLoginFails(ip) { _loginFails.delete(ip); }
 
 module.exports = {
   _sanitizeName, _safeUsername, _sanitizeClanDesc,
-  verifyTelegramAuth, verifyTelegramWebApp, refLink,
+  verifyTelegramAuth, verifyTelegramWebApp, refLink, miniAppLink,
   _adminToken, _verifyAdminToken, _safeEqual,
   _loginLockedUntil, _recordLoginFail, _clearLoginFails, _tgEsc,
   ADMIN_PASSWORD,

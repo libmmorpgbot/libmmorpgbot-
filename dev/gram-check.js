@@ -9,6 +9,8 @@
 // database with synthetic transfers, so no chain access is needed. The two
 // halves together cover what the scanner actually decides and does.
 
+const fs = require('fs');
+const path = require('path');
 const { pool, tx, close } = require('../server/db');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
@@ -84,13 +86,27 @@ async function main() {
     'ІНША транзакція з витраченим memo → на розгляд');
   eq(gram.classify(T(), I({ status: 'rejected' })).reason, 'comment_reused', 'відхилений інтент не приймає оплату');
 
+  // Runs before anything touches the database on purpose: it needs neither,
+  // and it is the half that answers "чи побачить гравець НАШ код".
+  depositCodeOwnership();
+
   // ── intents ──────────────────────────────────────────────────────────────
   console.log('  ── інтенти ──');
   const p = await mk('a');
   const i1 = await tx(t => gram.createIntent(t, p));
   const i2 = await tx(t => gram.createIntent(t, p));
   ok(/^LBT-[0-9A-F]{12}$/.test(i1.memo), `memo має очікуваний формат (${i1.memo})`);
-  ok(i1.memo !== i2.memo, 'два інтенти отримали різні memo');
+  // The SAME code twice. The unique index is on the memo, not on the player,
+  // so nothing in the database prevents a second open intent — and a player
+  // who opens the panel twice and sees two different codes has no reason to
+  // trust the one already pasted into their wallet.
+  eq(i2.memo, i1.memo, 'друге відкриття панелі віддає ТОЙ САМИЙ код, а не карбує новий');
+  eq(i1.reused, false, 'перший виклик карбує');
+  eq(i2.reused, true, 'другий переюзує і каже про це');
+  const { rows: openN } = await pool().query(
+    `SELECT count(*)::int n FROM gram_tx
+      WHERE player_id = $1 AND type = 'deposit' AND status = 'pending'`, [p]);
+  eq(openN[0].n, 1, 'у гравця рівно один відкритий інтент, скільки б разів він не тиснув');
 
   // ── crediting ────────────────────────────────────────────────────────────
   console.log('  ── зарахування ──');
@@ -112,9 +128,16 @@ async function main() {
   eq(await bal(child), 10, 'баланс не подвоївся');
   eq(await bal(referrer), 0.5, 'реферальний бонус не подвоївся');
 
-  // Two ticks racing on the same intent.
+  // The dangerous half of reuse. Reuse is keyed on status='pending', and a
+  // version keyed on anything looser would hand this player back the memo they
+  // have just SPENT — their next transfer would classify as comment_reused and
+  // land in unmatched_deposits while the panel told them it was fine.
   const ci2 = await tx(t => gram.createIntent(t, child));
+  ok(ci2.memo !== ci.memo, 'після зарахування видається НОВИЙ код, а не витрачений');
+  eq(ci2.reused, false, 'і він саме карбується, а не переюзується');
   txIds.push('EVY:0');
+
+  // Two ticks racing on the same intent.
   const race = await Promise.all([
     gram.creditOnce({ txId: 'EVY:0', comment: ci2.memo, amount: '5.0', sender: '0:bb' }, ci2.id),
     gram.creditOnce({ txId: 'EVY:0', comment: ci2.memo, amount: '5.0', sender: '0:bb' }, ci2.id),
@@ -215,6 +238,116 @@ async function main() {
 
   await addressCheck();
   await watermarkCheck();
+}
+
+// ── whose code the player is shown ──────────────────────────────────────────
+// A SOURCE check, not a database one, because this is the part of the deposit
+// path where being wrong costs money in silence.
+//
+// What it is guarding against, exactly: js/ui.js used to compute its own memo
+// in openGramDepositModal —
+//
+//     const memo = (player && player.telegramId) ? player.telegramId
+//                  : (netUsername || String(Date.now()));
+//
+// — print it as the deposit comment, and hand it to the wallet button. Nothing
+// in this bundle ever sets player.telegramId, so it was always the player's
+// USERNAME, which is drawn above their head in the world. Meanwhile the server
+// minted LBT-xxxxxxxxxxxx of its own and the scanner matched on THAT, so every
+// real transfer arrived carrying a comment nothing could match and went to
+// unmatched_deposits. Nothing threw, nothing was logged as an error, and the
+// only evidence was TON sitting on the chain with no owner.
+//
+// Three properties keep it dead, and losing any one of them brings it back:
+//   * the modal never invents a memo, not even as a fallback
+//   * the request that asks for one carries no payload the server could read
+//   * the handler that answers it takes no payload at all
+//
+// The first assertion is the only one that is not about the bug: it is about
+// this check having stopped LOOKING. Rename any of the six places below and
+// every assertion after it would search an empty string and report success —
+// the exact shape of the detectors this project has already shipped twice. It
+// is one line rather than one per group so that it cannot itself be half-true.
+// The BODY, past the parameter list. Skipping the parameter list is the whole
+// subtlety: `function onGramDepositIntent({ memo, address })` opens a brace
+// before the body does, and a version of this that took the first `{` returned
+// the destructure — so every check against that body searched four words and
+// reported a failure that was not there.
+function _fnBody(src, name) {
+  for (const needle of [`function ${name}(`, `${name} = function(`]) {
+    const at = src.indexOf(needle);
+    if (at < 0) continue;
+    let i = at + needle.length - 1, depth = 0;
+    for (; i < src.length; i++) {                       // past the parameters
+      if ('([{'.includes(src[i])) depth++;
+      else if (')]}'.includes(src[i]) && --depth === 0) { i++; break; }
+    }
+    const open = src.indexOf('{', i);
+    if (open < 0) continue;
+    depth = 0;
+    for (let j = open; j < src.length; j++) {
+      if (src[j] === '{') depth++;
+      else if (src[j] === '}' && --depth === 0) return src.slice(open, j + 1);
+    }
+  }
+  return null;
+}
+
+function depositCodeOwnership() {
+  console.log('  ── чий код пополнення ──');
+  const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const ui = read('js/ui.js');
+  const net = read('js/network.js');
+  const eco = read('server/handlers2/economy.js');
+
+  const modal = _fnBody(ui, 'openGramDepositModal');
+  const fromServer = _fnBody(ui, 'onGramDepositIntent');
+  const tc = _fnBody(ui, '_tcDepositSend');
+  const section = _fnBody(ui, '_renderTonDepositSection');
+  const emit = /_emitWhenAuthed\(\s*'gramDepositRequest'\s*,\s*([^)]*)\)/.exec(net);
+  const on = /safeOn\(\s*'gramDepositRequest'\s*,\s*(\([^)]*\))\s*=>/.exec(eco);
+
+  const gone = Object.entries({
+    openGramDepositModal: modal, onGramDepositIntent: fromServer,
+    _tcDepositSend: tc, _renderTonDepositSection: section,
+    'емісія gramDepositRequest': emit, 'обробник gramDepositRequest': on,
+  }).filter(([, v]) => !v).map(([k]) => k);
+  ok(gone.length === 0, 'усі шість місць знайдено — є що перевіряти',
+    `не знайдено: ${gone.join(', ')} — перевірки нижче шукали б у порожнечі`);
+  if (gone.length) return;
+
+  // ── the modal invents nothing ──
+  const invented = ['telegramId', 'netUsername', 'Date.now()'].filter(s => modal.includes(s));
+  eq(invented.length, 0, 'модалка не вигадує memo сама', `лишилось: ${invented.join(', ')}`);
+
+  // ── the memo has exactly one source, and it is the server ──
+  // Both halves in one assertion on purpose. "Рівно одне присвоєння" is true of
+  // the version that invented the memo too — it invented it exactly once. What
+  // makes it mean anything is WHERE that one write lives.
+  const nonNull = [...ui.matchAll(/window\._gramDepositMemo\s*=\s*([^;\n]+)/g)]
+    .map(m => m[1].trim()).filter(w => w !== 'null');
+  ok(nonNull.length === 1 && /window\._gramDepositMemo\s*=\s*memo\b/.test(fromServer),
+    'memo пишеться рівно з одного місця — з відповіді сервера (onGramDepositIntent)',
+    `не-null присвоєнь: ${nonNull.length} (${nonNull.join(' | ')})`);
+
+  // ── and both ways of paying read that one source ──
+  // Reading it is not enough by itself: the old version read the same global,
+  // it just held something the client had made up. Refusing to send while it is
+  // empty is the half that has teeth — this function builds the on-chain
+  // comment cell itself, so firing without one puts real TON on the chain with
+  // nothing to tie it to an account.
+  ok(tc.includes('window._gramDepositMemo') && /if\s*\(!memo/.test(tc),
+    'кнопка гаманця бере той самий memo і не відправляє, поки його немає');
+  ok(!/\bnet[A-Z][A-Za-z]*\(/.test(tc),
+    'і нічого не емітить після відправки — інтент уже існує, другий викликав би другий код');
+  ok(/!window\._gramDepositMemo/.test(section),
+    'кнопка гаманця взагалі не малюється, поки коду немає');
+
+  // ── the request carries nothing, and the handler reads nothing ──
+  eq(emit[1].trim(), '{}', 'запит на код не несе жодного поля',
+    'клієнт, який може назвати memo, може назвати чуже');
+  eq(on[1], '()', 'обробник не приймає payload узагалі',
+    'параметр тут — це місце, куди memo від клієнта колись повернеться');
 }
 
 // ── the address a person reads ──────────────────────────────────────────────

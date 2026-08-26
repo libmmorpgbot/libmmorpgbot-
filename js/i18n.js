@@ -427,6 +427,26 @@ const I18N_UI = {
   csLoadingSprites: { ru: 'Загрузка спрайтов...', en: 'Loading sprites...', uk: 'Завантаження спрайтів...', es: 'Cargando sprites...', tr: 'Sprite\'lar yükleniyor...', pt: 'Carregando sprites...' },
   csWaitingServer:  { ru: 'Ожидание сервера...', en: 'Waiting for server...', uk: 'Очікування сервера...', es: 'Esperando al servidor...', tr: 'Sunucu bekleniyor...', pt: 'Aguardando o servidor...' },
   csStarting:       { ru: 'Запуск!', en: 'Starting!', uk: 'Запуск!', es: '¡Iniciando!', tr: 'Başlatılıyor!', pt: 'Iniciando!' },
+  // ── Write-access gate (js/network.js _waShowGate) ──
+  // Shown before the character select to a Mini App player whose Telegram
+  // account has not let the bot DM them. Refusing means not entering, so the
+  // copy says that plainly rather than leaving it to be discovered.
+  //
+  // The reason list names what the bot ACTUALLY sends — the outcome of a GRAM
+  // withdrawal (server/ops-cards.js playerWithdrawText) — and nothing else.
+  // Promising notifications the bot does not have would be the first thing a
+  // player notices is untrue, on a screen whose whole job is to be believed.
+  waGateTitle:   { ru: 'Разреши боту писать тебе', en: 'Let the bot message you', uk: 'Дозволь боту писати тобі', es: 'Permite que el bot te escriba', tr: 'Botun sana yazmasına izin ver', pt: 'Permita que o bot te escreva' },
+  waGateBody:    { ru: 'Без этого бот не сможет отправить тебе ни одного сообщения.', en: 'Without it the bot cannot send you a single message.', uk: 'Без цього бот не зможе надіслати тобі жодного повідомлення.', es: 'Sin esto el bot no puede enviarte ni un mensaje.', tr: 'Bu olmadan bot sana tek bir mesaj bile gönderemez.', pt: 'Sem isso o bot não pode te enviar nenhuma mensagem.' },
+  waGateReason:  { ru: 'Заявка на вывод GRAM: выполнена, отменена или отклонена', en: 'GRAM withdrawal: completed, cancelled or declined', uk: 'Заявка на вивід GRAM: виконана, скасована або відхилена', es: 'Retiro de GRAM: completado, cancelado o rechazado', tr: 'GRAM çekimi: tamamlandı, iptal edildi veya reddedildi', pt: 'Saque de GRAM: concluído, cancelado ou recusado' },
+  waGateOnly:    { ru: 'Больше бот не пишет ни о чём — ни рассылок, ни рекламы.', en: 'The bot writes about nothing else — no mailouts, no ads.', uk: 'Більше бот не пише ні про що — ні розсилок, ні реклами.', es: 'El bot no escribe sobre nada más: sin correos masivos ni anuncios.', tr: 'Bot başka hiçbir şey yazmaz — toplu ileti yok, reklam yok.', pt: 'O bot não escreve sobre mais nada — sem disparos, sem anúncios.' },
+  waGateAllow:   { ru: 'Разрешить', en: 'Allow', uk: 'Дозволити', es: 'Permitir', tr: 'İzin ver', pt: 'Permitir' },
+  waGateWaiting: { ru: 'Ждём ответа Telegram...', en: 'Waiting for Telegram...', uk: 'Чекаємо відповідь Telegram...', es: 'Esperando a Telegram...', tr: 'Telegram bekleniyor...', pt: 'Aguardando o Telegram...' },
+  waGateRefused: { ru: 'Без разрешения в игру не пустим. Нажми ещё раз и выбери «Allow».', en: 'Without permission we cannot let you in. Tap again and choose “Allow”.', uk: 'Без дозволу в гру не пустимо. Натисни ще раз і обери «Allow».', es: 'Sin permiso no podemos dejarte entrar. Toca otra vez y elige «Allow».', tr: 'İzin olmadan oyuna alamayız. Tekrar dokun ve «Allow» seç.', pt: 'Sem permissão não podemos deixar você entrar. Toque de novo e escolha «Allow».' },
+  waGateRetry:   { ru: 'Попробовать ещё раз', en: 'Try again', uk: 'Спробувати ще раз', es: 'Intentar de nuevo', tr: 'Tekrar dene', pt: 'Tentar de novo' },
+  waGateThanks:  { ru: 'Спасибо!', en: 'Thanks!', uk: 'Дякуємо!', es: '¡Gracias!', tr: 'Teşekkürler!', pt: 'Obrigado!' },
+  waGateThanksBody: { ru: 'Пишем только по делу.', en: 'We only write when it matters.', uk: 'Пишемо тільки по суті.', es: 'Solo escribimos cuando importa.', tr: 'Sadece gerektiğinde yazarız.', pt: 'Só escrevemos quando importa.' },
+  waGateEnter:   { ru: 'Погнали', en: 'Let’s go', uk: 'Погнали', es: 'Vamos', tr: 'Hadi başlayalım', pt: 'Vamos lá' },
 
   // ── Quests ──
   questCompleteToast: { ru: 'Квест выполнен!', en: 'Quest complete!', uk: 'Квест виконано!', es: '¡Misión completada!', tr: 'Görev tamamlandı!', pt: 'Missão concluída!' },
@@ -902,17 +922,26 @@ Object.assign(I18N_UI, {
   txWaitingLbl: { ru: '⏳ Ожидание', en: '⏳ Waiting', uk: '⏳ Очікування', es: '⏳ Esperando', tr: '⏳ Bekleniyor', pt: '⏳ Aguardando' },
   depositTypeLbl: { ru: 'Пополнение', en: 'Deposit', uk: 'Поповнення', es: 'Depósito', tr: 'Yatırma', pt: 'Depósito' },
   withdrawTypeLbl: { ru: 'Вывод', en: 'Withdrawal', uk: 'Виведення', es: 'Retiro', tr: 'Çekme', pt: 'Saque' },
-  walletNotSetLbl: { ru: 'Адрес не настроен', en: 'Address not configured', uk: 'Адресу не налаштовано', es: 'Dirección no configurada', tr: 'Adres ayarlanmadı', pt: 'Endereço não configurado' },
   depositModalTitle: { ru: 'Пополнение GRAM', en: 'Deposit GRAM', uk: 'Поповнення GRAM', es: 'Depositar GRAM', tr: 'GRAM Yatır', pt: 'Depositar GRAM' },
   transferToWalletHint: { ru: 'Переведите GRAM на адрес кошелька:', en: 'Transfer GRAM to this wallet address:', uk: 'Переведіть GRAM на адресу гаманця:', es: 'Transfiere GRAM a esta dirección de billetera:', tr: 'GRAM\'ı bu cüzdan adresine transfer et:', pt: 'Transfira GRAM para este endereço de carteira:' },
   memoRequiredHint: { ru: 'Обязательно укажите MEMO (комментарий):', en: 'Be sure to include the MEMO (comment):', uk: "Обов'язково вкажіть MEMO (коментар):", es: 'Asegúrate de incluir el MEMO (comentario):', tr: 'MEMO (yorum) eklemeyi unutma:', pt: 'Certifique-se de incluir o MEMO (comentário):' },
   memoWarnHint: { ru: '⚠ Без мемо перевод не будет зачислен', en: "⚠ Without the memo, the transfer won't be credited", uk: '⚠ Без мемо переказ не буде зараховано', es: '⚠ Sin el memo, la transferencia no se acreditará', tr: '⚠ Memo olmadan transfer hesaba geçmez', pt: '⚠ Sem o memo, a transferência não será creditada' },
   transferAmountHint: { ru: 'Сумма перевода:', en: 'Transfer amount:', uk: 'Сума переказу:', es: 'Monto de la transferencia:', tr: 'Transfer tutarı:', pt: 'Valor da transferência:' },
   enterGramAmountPlaceholder: { ru: 'Введите сумму GRAM', en: 'Enter the GRAM amount', uk: 'Введіть суму GRAM', es: 'Ingresa el monto en GRAM', tr: 'GRAM tutarını gir', pt: 'Digite o valor em GRAM' },
+  // ── the deposit code the server issues ────────────────────────────────
+  // Shown in place of the code while it is being fetched, and instead of it
+  // when it could not be. The modal never invents one to fill the gap: a
+  // locally made-up comment is a transfer nothing can match to an account.
+  depositCodeLoadingLbl: { ru: 'Получаем код пополнения...', en: 'Getting your deposit code...', uk: 'Отримуємо код поповнення...', es: 'Obteniendo tu código de depósito...', tr: 'Yatırma kodun alınıyor...', pt: 'Obtendo seu código de depósito...' },
+  depositCodeErrorMsg: { ru: 'Не удалось получить код пополнения. Не отправляйте перевод без него — он не будет зачислен.', en: "Couldn't get your deposit code. Don't send a transfer without it — it won't be credited.", uk: 'Не вдалося отримати код поповнення. Не надсилайте переказ без нього — його не буде зараховано.', es: 'No se pudo obtener tu código de depósito. No envíes la transferencia sin él — no se acreditará.', tr: 'Yatırma kodun alınamadı. Onsuz transfer gönderme — hesabına geçmez.', pt: 'Não foi possível obter seu código de depósito. Não envie a transferência sem ele — não será creditada.' },
+  depositCodeTimeoutMsg: { ru: 'Сервер не ответил. Проверьте связь и повторите.', en: 'The server did not answer. Check your connection and try again.', uk: 'Сервер не відповів. Перевірте зв\'язок і повторіть.', es: 'El servidor no respondió. Revisa tu conexión e inténtalo de nuevo.', tr: 'Sunucu yanıt vermedi. Bağlantını kontrol edip tekrar dene.', pt: 'O servidor não respondeu. Verifique sua conexão e tente novamente.' },
+  depositRetryBtn: { ru: 'Повторить', en: 'Try again', uk: 'Повторити', es: 'Reintentar', tr: 'Tekrar dene', pt: 'Tentar novamente' },
+  depositCodeWaitToast: { ru: 'Код пополнения ещё не получен', en: 'The deposit code has not arrived yet', uk: 'Код поповнення ще не отримано', es: 'El código de depósito aún no ha llegado', tr: 'Yatırma kodu henüz gelmedi', pt: 'O código de depósito ainda não chegou' },
+  depositAutoCreditHint: { ru: 'Перевод зачислится автоматически — обычно в течение минуты после подтверждения сети.', en: 'The transfer is credited automatically — usually within a minute of network confirmation.', uk: 'Переказ зарахується автоматично — зазвичай протягом хвилини після підтвердження мережі.', es: 'La transferencia se acredita automáticamente — normalmente en un minuto tras la confirmación de la red.', tr: 'Transfer otomatik olarak hesabına geçer — genelde ağ onayından sonra bir dakika içinde.', pt: 'A transferência é creditada automaticamente — normalmente em um minuto após a confirmação da rede.' },
+  depositMinAmountFmt: { ru: 'Минимальная сумма — {n} TON', en: 'Minimum amount — {n} TON', uk: 'Мінімальна сума — {n} TON', es: 'Monto mínimo — {n} TON', tr: 'Minimum tutar — {n} TON', pt: 'Valor mínimo — {n} TON' },
+  depositCodeValidUntilFmt: { ru: 'Код действует до {n}', en: 'Code valid until {n}', uk: 'Код дійсний до {n}', es: 'Código válido hasta {n}', tr: 'Kod {n} tarihine kadar geçerli', pt: 'Código válido até {n}' },
   iPaidBtn: { ru: 'Я оплатил ✓', en: 'I paid ✓', uk: 'Я оплатив ✓', es: 'Ya pagué ✓', tr: 'Ödedim ✓', pt: 'Eu paguei ✓' },
-  minAmountErrToast: { ru: 'Введите сумму от 1 GRAM', en: 'Enter an amount of at least 1 GRAM', uk: 'Введіть суму від 1 GRAM', es: 'Ingresa un monto de al menos 1 GRAM', tr: 'En az 1 GRAM tutar gir', pt: 'Digite um valor de no mínimo 1 GRAM' },
   serviceUnavailableToast: { ru: 'Сервис недоступен', en: 'Service unavailable', uk: 'Сервіс недоступний', es: 'Servicio no disponible', tr: 'Hizmet kullanılamıyor', pt: 'Serviço indisponível' },
-  depositRequestCreatedToast: { ru: 'Заявка на пополнение создана — ожидайте подтверждения', en: 'Deposit request created — awaiting confirmation', uk: 'Заявку на поповнення створено — очікуйте підтвердження', es: 'Solicitud de depósito creada — espera confirmación', tr: 'Yatırma talebi oluşturuldu — onay bekleniyor', pt: 'Solicitação de depósito criada — aguarde confirmação' },
   withdrawModalTitle: { ru: 'Вывод GRAM', en: 'Withdraw GRAM', uk: 'Виведення GRAM', es: 'Retirar GRAM', tr: 'GRAM Çek', pt: 'Sacar GRAM' },
   availableFeeFmt: { ru: 'Доступно: {bal} GRAM · Комиссия 10%', en: 'Available: {bal} GRAM · 10% fee', uk: 'Доступно: {bal} GRAM · Комісія 10%', es: 'Disponible: {bal} GRAM · Comisión 10%', tr: 'Kullanılabilir: {bal} GRAM · %10 komisyon', pt: 'Disponível: {bal} GRAM · Taxa de 10%' },
   withdrawAmountHint: { ru: 'Сумма вывода (мин. {n} GRAM):', en: 'Withdrawal amount (min. {n} GRAM):', uk: 'Сума виведення (мін. {n} GRAM):', es: 'Monto a retirar (mín. {n} GRAM):', tr: 'Çekim tutarı (min. {n} GRAM):', pt: 'Valor do saque (mín. {n} GRAM):' },

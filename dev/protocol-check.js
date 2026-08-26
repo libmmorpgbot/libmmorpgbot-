@@ -375,6 +375,144 @@ console.log('  ── власна проводка сервера ──');
     'забрати утримання і не покласти його назад — це та сама втрата, лише швидша');
 }
 
+// ── ворота доступу до особистих повідомлень ─────────────────────────────────
+// The gate that asks a Mini App player to let the bot DM them, and does not
+// let them into the game if they refuse (js/network.js _waShowGate,
+// server/app.js safeOn('writeAccess'), migration 013).
+//
+// It is checked HERE, statically, because none of it can be checked anywhere
+// else: dev/boot-check.js needs a database, and the half that matters most —
+// WHO IS NOT SHOWN THE GATE — cannot be exercised at all without three
+// different Telegram clients, one of them deliberately out of date. The
+// failure mode is not a broken screen either. It is a player who opens the app
+// and cannot get in, which nobody here would ever see.
+//
+// Every assertion below is a separate way to lock somebody out or to lose the
+// grant, and each was verified to fail against the tree before this shipped —
+// `git archive HEAD | tar -x -C <dir>` and run this file there.
+console.log('  ── ворота доступу в лічку ──');
+{
+  const netSrc = read('js/network.js');
+  const appSrc = read('server/app.js');
+  const playersSrc = read('server/db/repos/players.js');
+
+  // ── who is never asked ────────────────────────────────────────────────────
+  // Three login paths reach a login event and only one of them can answer the
+  // prompt. The flag that says which is set in the Mini App branch and MUST
+  // NOT be set anywhere else — the dev stand-in fabricates initData onto an
+  // object with no requestWriteAccess, and the Android wrapper has no WebApp
+  // at all. Either of those reaching the gate is a permanently locked door.
+  const flagSets = [...netSrc.matchAll(/_waIsMiniApp\s*=\s*true/g)].map(m => m.index);
+  const miniAppBranch = netSrc.indexOf('if (twa && twa.initData)');
+  const devBranch = netSrc.indexOf("fetch('/dev/init-data'");
+  ok(flagSets.length === 1 && miniAppBranch > -1 && devBranch > miniAppBranch
+     && flagSets[0] > miniAppBranch && flagSets[0] < devBranch,
+    'ворота вмикає лише справжній Mini App (_waIsMiniApp — одне присвоєння, у гілці twa.initData)',
+    `присвоєнь: ${flagSets.length}, гілка Mini App @${miniAppBranch}, dev-гілка @${devBranch}, ` +
+    `присвоєння @${flagSets.join(',')}`);
+
+  // Four independent "no gate" answers, and they are asserted one by one
+  // rather than as "the function exists": each is a different population that
+  // gets locked out if it goes missing, and a refactor that drops one leaves
+  // the other three looking perfectly healthy.
+  const gateFn = (netSrc.match(/function _waShouldGate\([\s\S]*?\n\}/) || [''])[0];
+  ok(/if \(!_waIsMiniApp\) return false;/.test(gateFn),
+    '_waShouldGate: не Mini App — одразу в гру',
+    'без цього браузер і Android-обгортка впираються в питання, на яке нема чим відповісти');
+  ok(/if \(canMessage === true\) return false;/.test(gateFn),
+    '_waShouldGate: сервер уже пам\'ятає дозвіл — не питаємо вдруге',
+    'без цього дозвіл питають на кожному запуску, бо initData оновлюється не одразу');
+  ok(/if \(_waAllowsWriteToPm\(\)\) return false;/.test(gateFn),
+    '_waShouldGate: allows_write_to_pm з initData теж вважається дозволом',
+    'без цього гравці, які вже дозволили, бачать ворота знову');
+  ok(/return _waCanAsk\(\);/.test(gateFn)
+     && /typeof _waTwa\(\)\?\.requestWriteAccess === 'function'/.test(netSrc),
+    '_waShouldGate: старий клієнт без requestWriteAccess проходить без питань',
+    'ворота, які цей клієнт не вміє відчинити, — це зачинені двері назавжди');
+
+  // ── обіцянка, яка завжди виконується ─────────────────────────────────────
+  // Some Telegram clients take requestWriteAccess and never call back. A
+  // promise wrapped around that never settles, the button stays disabled, and
+  // the player sits on a full-screen overlay for the rest of the session —
+  // the same shape as the "Ожидание сервера..." screen this project has
+  // already had to fix twice.
+  const reqFn = (netSrc.match(/function _waRequest\(\)[\s\S]*?\n\}/) || [''])[0];
+  ok(/const WA_TIMEOUT_MS = 30000;/.test(netSrc)
+     && /setTimeout\(\(\) => finish\(false\), WA_TIMEOUT_MS\);/.test(reqFn),
+    '_waRequest: 30 секунд і відповідь «ні» — обіцянка завжди завершується',
+    'клієнт, який не викликає колбек, залишає гравця на екрані назавжди');
+
+  // ── відмова — це не глухий кут ───────────────────────────────────────────
+  // The button comes back for BOTH outcomes, and it comes back before the
+  // branch that decides which — so a future edit to the granted path cannot
+  // take the refusal path's way out with it.
+  const showFn = (netSrc.match(/function _waShowGate\([\s\S]*?\n\}\n/) || [''])[0];
+  const unbusy = showFn.indexOf('btn.disabled = false;');
+  const branch = showFn.indexOf('if (granted)');
+  ok(unbusy > -1 && branch > -1 && unbusy < branch && /waGateRetry/.test(showFn),
+    'відмова лишає робочу кнопку: розблокування раніше за гілку granted, і напис «ще раз»',
+    `розблокування @${unbusy}, гілка @${branch}`);
+
+  // ── сервер пам'ятає дозвіл ────────────────────────────────────────────────
+  ok(/safeOn\('writeAccess'/.test(appSrc),
+    'сервер слухає writeAccess (поруч із логіном, а не в handlers2)',
+    'без обробника дозвіл нікуди не записується і його питають щозапуску');
+  ok(/players\.setWriteAccess\(null, s\.playerId, true\)/.test(appSrc),
+    'дозвіл пишеться в базу (players.setWriteAccess)',
+    'allows_write_to_pm у initData застигає на час сесії — більше його взяти нізвідки');
+  ok(/canMessage: ?canMessage|canMessage,/.test(appSrc)
+     && /await players\.canMessage\(/.test(appSrc),
+    'і повертається клієнту в authOk як canMessage',
+    'записаний і не прочитаний дозвіл — те саме, що незаписаний');
+  // The CALL, not the declaration. `_waGateIfNeeded\(canMessage,` also matches
+  // `function _waGateIfNeeded(canMessage, onPass)` — which is present whatever
+  // the caller passes, so the first version of this line stayed green while the
+  // gate was fed a hardcoded false. An assertion that matches its own subject's
+  // definition is checking that the code exists, not that it is wired.
+  ok(/, canMessage \}\) => \{/.test(netSrc)
+     && /_waGateIfNeeded\(canMessage, \(\) =>/.test(netSrc),
+    'клієнт читає canMessage з authOk і віддає його воротам',
+    'сервер шле поле, яке ніхто не дістає з пакета');
+
+  // ── слід ─────────────────────────────────────────────────────────────────
+  // A refusal is the outcome nobody else records: the player is not in the
+  // game, so no later action will ever leave a row. `refuse:` is the prefix
+  // session.act writes for every refused action, so the admin panel reads a
+  // player turned away at the door the same way it reads a refused purchase.
+  ok(/plog\.log\(s\.playerId, 'writeAccessGranted'/.test(appSrc),
+    'дозвіл лишає рядок у player_logs',
+    'операторові нічим відповісти на «чому бот мені не пише»');
+  ok(/plog\.log\(s\.playerId, 'refuse:writeAccess'/.test(appSrc),
+    'відмова теж лишає рядок — refuse:writeAccess',
+    'гравець не потрапив у гру, і про це ніде нічого');
+  ok(/plog\.log\(s\.playerId, 'writeAccessShown'/.test(appSrc)
+     && /netWriteAccessShown\(\)/.test(netSrc),
+    'і сам показ воріт рахується — інакше того, хто закрив застосунок, не видно',
+    'без цього «скільки людей ці двері розвернули» відповіді не має');
+  ok(/writeAccess: \{ \.\.\._waGate \}/.test(appSrc)
+     && /ops\.alert\('writeAccess\.refused'/.test(appSrc),
+    'частка відмов видна в /health і б\'є на сполох, коли відмовляється більшість',
+    'ціна цих воріт — гравці, і її треба бачити до того, як вона стане помітною');
+
+  // ── міграція, якої ще може не бути ───────────────────────────────────────
+  // The owner applies migrations by hand with a credential the deploy does not
+  // carry, so the code lands first and the column follows. Between those two
+  // moments every query naming it raises 42703 — and this one is on the LOGIN
+  // path, so it would be every player rather than one screen.
+  ok(/function _hasWriteAccessCols\(/.test(playersSrc)
+     && (playersSrc.match(/await _hasWriteAccessCols\(db\)/g) || []).length >= 2,
+    'repos/players: обидва звернення до колонки проходять через пробу схеми',
+    'незастосована міграція не має права валити логін');
+
+  const migDir = path.join(ROOT, 'server/db/migrations');
+  const addsCol = fs.readdirSync(migDir).filter(f => f.endsWith('.sql'))
+    .filter(f => /ALTER TABLE players[\s\S]*can_message/
+      .test(fs.readFileSync(path.join(migDir, f), 'utf8')));
+  ok(addsCol.length === 1,
+    `колонка can_message має рівно одну міграцію (${addsCol.join(', ') || '(жодної)'})`,
+    'код читає колонку, якої ніхто не створює');
+}
+
 // ── keys the client sends and the server ignores ────────────────────────────
 // A note, not a failure — dropping a client-supplied value is often the fix.
 const notes = [];

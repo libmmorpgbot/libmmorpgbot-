@@ -5,10 +5,14 @@
 // via js/vendor/tonconnect-ui.min.js), auto-fill the withdrawal address from
 // it, and let a deposit be sent as an actual on-chain transfer straight from
 // the connected wallet instead of the player copy-pasting the address+memo
-// into their own wallet app by hand. Everything downstream is unchanged —
-// admin still approves the deposit from the GramTx record exactly as before
-// (js/network.js's gramDepositRequest / server's notifyAdminGram), this only
-// makes *sending* the transfer easier.
+// into their own wallet app by hand. This only makes *sending* the transfer
+// easier; nothing downstream changes.
+//
+// What downstream IS, since this said otherwise for a long time: an admin no
+// longer approves deposits at all, and there is no notifyAdminGram. The
+// server issues a code, the player sends TON carrying it as the comment, and
+// a chain scanner credits the matching intent exactly once (server/db/repos/
+// gram.js). A comment that matches no intent is money nobody can place.
 
 let _tonConnectUI = null;
 let _tonConnectedAddress = null;
@@ -141,10 +145,14 @@ function _bytesToBase64(bytes) {
 
 // Sends amountTon (GRAM==TON 1:1 in this game) from the connected wallet to
 // the game's deposit address, with `memo` as the on-chain comment — the same
-// MEMO the manual flow has the player type in themselves. Resolves once the
-// wallet confirms the user approved it; the deposit still only credits the
-// balance once the admin approves the matching GramTx, same as the manual
-// flow (see js/network.js gramDepositRequest / gramTxCreated).
+// code the copy-paste box shows, and the same one the server issued. Resolves
+// once the wallet confirms the user approved it; the balance moves later,
+// when the scanner sees the transfer on chain.
+//
+// `memo` is load-bearing in a way an argument rarely is: it is the ONLY thing
+// tying the transfer that leaves here to an account. Callers must pass the
+// server's code and nothing else — see _tcDepositSend (js/ui.js), which
+// refuses to call this at all until one has arrived.
 async function tcSendDeposit(walletAddress, amountTon, memo) {
   if (!_tonConnectUI || !_tonConnectedAddress) throw new Error('Кошелёк не подключен');
   const nanotons = Math.round(amountTon * 1e9).toString();

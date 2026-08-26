@@ -554,7 +554,7 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras, seasonTicketActive }) => {
+  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras, seasonTicketActive, canMessage }) => {
     _authOkReceived = true;
     netUsername = username;
     _seasonTicketActive = !!seasonTicketActive;
@@ -607,7 +607,15 @@ function netConnect(onReady) {
       _ls.classList.add('splash-out');
       setTimeout(() => { _ls.style.display = 'none'; }, 420);
     }
-    _showCharSelect(_savedData);
+    // The write-access gate, if this player needs one — see _waShouldGate for
+    // the four ways of not needing one. It stands BEFORE the character select
+    // rather than replacing it: refusing means never reaching the roster, and
+    // allowing hands over to exactly the flow that was here before, so none of
+    // csStartLoading's own two-gate latching (_csGateSprites / _csGateServer,
+    // js/charselect.js) has started yet and there is nothing for this to fight
+    // with. The callback reads _savedData at CALL time on purpose: a reconnect
+    // while the gate is up replaces it, and the player must land on the newest.
+    _waGateIfNeeded(canMessage, () => _showCharSelect(_savedData));
   });
 
   // `msg`, not `message`. Every error channel on this connection is
@@ -2324,6 +2332,25 @@ function showAuthError(msg) {
   if (el) el.textContent = msg;
 }
 
+// ── what the write-access gate tells the server ─────────────────────────────
+// One event, three states of one question — see the handler in server/app.js.
+// Neither of these blocks anything: an emit into a dropped socket is lost
+// silently, and the gate carries on regardless. Losing the report costs a log
+// row and a tally; making the door depend on the network would cost the player
+// the game.
+function netWriteAccessShown() {
+  if (socket?.connected) socket.emit('writeAccess', { shown: true });
+}
+// The grant is what the server has to REMEMBER (migration 013): Telegram bakes
+// allows_write_to_pm into initData at launch and does not revise it mid-session,
+// so without this line the next launch asks the same player again. The refusal
+// is sent for the opposite reason — nothing else would ever record it, and
+// "how many people does this door turn away" is the number that decides
+// whether the door stays.
+function netWriteAccess(granted) {
+  if (socket?.connected) socket.emit('writeAccess', { granted: !!granted });
+}
+
 
 
 // See the button's comment in index.html: only the Android app (detected by
@@ -2352,6 +2379,12 @@ function _initTelegramWidget() {
 
   if (twa && twa.initData) {
     // Full Telegram Mini App setup
+    // THE ONLY PLACE this is set. The write-access gate keys off it, and the
+    // two paths below — the dev stand-in, which fabricates initData onto an
+    // object with no requestWriteAccess, and the Android wrapper, which has no
+    // WebApp at all — must never reach a prompt they cannot answer. See
+    // _waShouldGate.
+    _waIsMiniApp = true;
     twa.ready();
     twa.expand();
     twa.disableVerticalSwipes?.();
@@ -2457,6 +2490,218 @@ function _showTelegramOnlySplash() {
       }
     })
     .catch(() => { /* keep the splash as-is */ });
+}
+
+// ── "разреши боту писать тебе" ──────────────────────────────────────────────
+// The owner's rule: a player who will not let the bot DM them does not get in.
+// This is that door, and it sits between authOk and the character select —
+// before a character exists, because refusing means there is no point creating
+// one, and after authOk because the SERVER's remembered answer is what stops
+// this being asked on every single launch (see below).
+//
+// ── who is NEVER shown this ────────────────────────────────────────────────
+// Three login paths reach loginTelegramWebApp/loginTelegram (see
+// _initTelegramWidget above) and only ONE of them can even ask the question:
+//
+//   the real Mini App        window.Telegram.WebApp with real initData. The
+//                            only path where requestWriteAccess exists and
+//                            means anything. _waIsMiniApp is set THERE and
+//                            nowhere else.
+//   the local dev stand-in   fabricates initData and a fake WebApp object with
+//                            no requestWriteAccess on it
+//   no WebApp at all         a desktop browser, or the Android wrapper in
+//                            android/ logging in through the Login Widget
+//
+// And within the Mini App, a client too old to carry requestWriteAccess is let
+// straight through as well. Every one of those is a "no gate" answer, and they
+// are separate checks rather than one clever condition because each is a
+// different way to be locked out of your own game and none of them may be lost
+// to a refactor. A gate that guesses wrong here does not degrade — it turns
+// the game off for whoever it guessed wrong about.
+let _waIsMiniApp = false;
+// The gate's own DOM, while it is up. Also the re-entry guard: socket.io
+// reconnects routinely mid-launch (the WebView drops the transport when the
+// app is backgrounded) and every reconnect produces a second authOk. Without
+// this a reconnect while the player is reading the gate would rebuild it
+// underneath them and throw away the tap they were in the middle of.
+let _waGateEl = null;
+// A grant already given THIS session. authOk's reconnect guard only short
+// -circuits once a character is live, and at gate time there is none — so
+// without this a reconnect between "Allow" and the character select would ask
+// the same player the same question again, seconds apart. A refusal is
+// deliberately NOT remembered: they are still outside, and asking again is the
+// only way back in.
+let _waGranted = false;
+
+function _waTwa() {
+  try { return window.Telegram?.WebApp || null; } catch (_) { return null; }
+}
+// Telegram's own answer, frozen into initData at launch. True here means the
+// account already allows DMs and there is nothing to ask.
+function _waAllowsWriteToPm() {
+  try { return _waTwa()?.initDataUnsafe?.user?.allows_write_to_pm === true; }
+  catch (_) { return false; }
+}
+// Whether this Telegram client can ask at all. Added in Bot API 6.9; anything
+// older has no such method, and a gate it cannot answer is a locked door.
+function _waCanAsk() {
+  try { return typeof _waTwa()?.requestWriteAccess === 'function'; }
+  catch (_) { return false; }
+}
+
+// Some Telegram clients accept requestWriteAccess and never invoke the
+// callback — no error, no rejection, nothing. A promise wrapped around it
+// would then never settle, and the gate would sit on screen with a disabled
+// button for the rest of the session: the black-screen failure this app has
+// shipped twice already, wearing a different hat. So the promise ALWAYS
+// settles, and a silence past this point counts as "no".
+const WA_TIMEOUT_MS = 30000;
+
+function _waRequest() {
+  const twa = _waTwa();
+  const fn = twa && twa.requestWriteAccess;
+  if (!twa || typeof fn !== 'function') return Promise.resolve(false);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = granted => { if (done) return; done = true; resolve(!!granted); };
+    try {
+      fn.call(twa, granted => finish(granted));
+    } catch (_) {
+      return finish(false);
+    }
+    setTimeout(() => finish(false), WA_TIMEOUT_MS);
+  });
+}
+
+// The whole decision, in one readable place rather than spread through the
+// authOk handler. `canMessage` is what the SERVER remembers (migration 013);
+// allows_write_to_pm is what THIS launch's initData claims. Either one saying
+// yes is enough — the server's answer covers the launch right after a grant,
+// when Telegram has not refreshed the payload yet.
+function _waShouldGate(canMessage) {
+  if (!_waIsMiniApp) return false;       // not the Mini App — nothing to ask with
+  if (_waGranted) return false;          // already said yes on this connection
+  if (canMessage === true) return false; // the server remembers a grant
+  if (_waAllowsWriteToPm()) return false;// Telegram says this launch already may
+  return _waCanAsk();                    // too old to ask ⇒ straight in
+}
+
+function _waGateIfNeeded(canMessage, onPass) {
+  if (!_waShouldGate(canMessage)) return onPass();
+  if (_waGateEl) return;                 // already up; its own onPass will run
+  _waShowGate(onPass);
+}
+
+function _waCloseGate() {
+  if (_waGateEl && _waGateEl.parentNode) _waGateEl.parentNode.removeChild(_waGateEl);
+  _waGateEl = null;
+}
+
+// Built here rather than in index.html because every other full-screen
+// splash-state in this file is (see _showTelegramOnlySplash above), and because
+// a node that only exists while the gate is up cannot be left behind by a code
+// path that forgot to hide it. Nothing interpolated below comes from a player
+// or from the server — every string is t(), out of the bundle — so there is no
+// escaping question here (dev/xss-check.js).
+function _waShowGate(onPass) {
+  const T = k => (typeof t === 'function' ? t(k) : k);
+  const el = document.createElement('div');
+  el.id = 'write-access-gate';
+  // position:fixed, so this does not depend on an ancestor being positioned,
+  // and above #char-select (100) and #login-screen (200) — the splash spends
+  // 420ms fading out underneath it.
+  el.style.cssText = 'position:fixed;inset:0;z-index:210;display:flex;padding:28px;'
+    + 'background:radial-gradient(ellipse at 50% 20%,#241b0c 0%,#100c04 100%);'
+    + 'color:#d1ccc5;text-align:center;overflow-y:auto;';
+  // margin:auto on the child, not align/justify-center on the parent. Centring
+  // a flex container that also scrolls pins the overflow to the TOP, out of
+  // reach — on a short screen the title and the sub-line would be above the
+  // scroll origin and simply gone, which on this particular screen means a
+  // player staring at a button with no idea what it agrees to.
+  el.innerHTML = `
+    <div style="margin:auto;display:flex;flex-direction:column;align-items:center;max-width:360px;width:100%;">
+      <div style="font-size:64px;line-height:1;margin-bottom:18px;">🤖</div>
+      <div id="wa-title" style="font-size:21px;font-weight:700;color:#fff;line-height:1.25;"></div>
+      <div id="wa-body" style="margin-top:12px;font-size:14px;line-height:1.5;color:#a89f92;"></div>
+      <div style="margin-top:22px;width:100%;background:rgba(255,255,255,.05);border-radius:14px;padding:14px 16px;text-align:left;">
+        <div id="wa-reason" style="font-size:13px;line-height:1.45;color:#d1ccc5;"></div>
+        <div id="wa-only" style="margin-top:10px;font-size:12px;line-height:1.45;color:#8b8378;"></div>
+      </div>
+      <div id="wa-err" style="margin-top:14px;font-size:12.5px;line-height:1.4;color:#ee6676;min-height:16px;"></div>
+      <button id="wa-btn" style="margin-top:18px;width:100%;padding:15px 20px;border:0;border-radius:14px;
+        background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;"></button>
+    </div>`;
+  (document.getElementById('app') || document.body).appendChild(el);
+  _waGateEl = el;
+
+  el.querySelector('#wa-title').textContent = T('waGateTitle');
+  el.querySelector('#wa-body').textContent = T('waGateBody');
+  el.querySelector('#wa-reason').textContent = '💎 ' + T('waGateReason');
+  el.querySelector('#wa-only').textContent = T('waGateOnly');
+  const btn = el.querySelector('#wa-btn');
+  const err = el.querySelector('#wa-err');
+  btn.textContent = T('waGateAllow');
+
+  // Counted server-side, and it is the number that says how many people this
+  // door is turning away rather than only how many refused out loud: somebody
+  // who closes the app on this screen answers nothing at all. See _waGate in
+  // server/app.js.
+  netWriteAccessShown();
+
+  let busy = false;
+  btn.onclick = async () => {
+    if (busy) return;
+    busy = true;
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    // Not a spinner over a dead button: the label says what is being waited
+    // for, because the honest worst case here is thirty seconds of a Telegram
+    // client that never calls back.
+    btn.textContent = T('waGateWaiting');
+    err.textContent = '';
+
+    let granted;
+    try {
+      granted = await _waRequest();
+    } catch (_) {
+      granted = false;
+    }
+
+    busy = false;
+    btn.disabled = false;
+    btn.style.opacity = '1';
+
+    netWriteAccess(granted);
+
+    if (granted) {
+      _waGranted = true;
+      _waShowThanks(el, onPass);
+      return;
+    }
+    // A refusal leaves a screen with a WORKING BUTTON, not a dead end. This is
+    // the whole difference between a gate and the "Ожидание сервера..." screen
+    // that had to be fixed hours ago: the player can always try again, and the
+    // only way out of the game is closing it themselves.
+    err.textContent = T('waGateRefused');
+    btn.textContent = T('waGateRetry');
+  };
+}
+
+function _waShowThanks(el, onPass) {
+  const T = k => (typeof t === 'function' ? t(k) : k);
+  el.innerHTML = `
+    <div style="margin:auto;display:flex;flex-direction:column;align-items:center;max-width:360px;width:100%;">
+      <div style="font-size:64px;line-height:1;margin-bottom:18px;">✅</div>
+      <div id="wa-title" style="font-size:22px;font-weight:700;color:#fff;"></div>
+      <div id="wa-body" style="margin-top:12px;font-size:14px;line-height:1.5;color:#a89f92;"></div>
+      <button id="wa-btn" style="margin-top:26px;width:100%;padding:15px 20px;border:0;border-radius:14px;
+        background:#7c3aed;color:#fff;font-size:15px;font-weight:600;cursor:pointer;"></button>
+    </div>`;
+  el.querySelector('#wa-title').textContent = T('waGateThanks');
+  el.querySelector('#wa-body').textContent = T('waGateThanksBody');
+  const go = el.querySelector('#wa-btn');
+  go.textContent = T('waGateEnter');
+  go.onclick = () => { _waCloseGate(); onPass(); };
 }
 
 function _showCharSelect(savedData) {
@@ -3215,8 +3460,20 @@ function _emitWhenAuthed(event, payload, triesLeft = 30) {
 function netIsLive() {
   return !!(socket?.connected && _authOkReceived);
 }
-function netGramDeposit(amount, memo) {
-  _emitWhenAuthed('gramDepositRequest', { amount, memo });
+// ── asking for a deposit code ───────────────────────────────────────────────
+// NO ARGUMENTS, and that is the point. This was netGramDeposit(amount, memo)
+// and it sent both: an amount the server has never read (the figure comes off
+// the chain) and a memo the CLIENT invented — the player's own username, which
+// is printed above their head in the world. The server mints its own
+// unguessable code and always has; the one the player was shown and pasted
+// into their wallet was the other one, so every real transfer arrived carrying
+// a comment nothing could match.
+//
+// A parameterless signature is what stops that coming back: there is no longer
+// anywhere for a caller to put a memo. The answer arrives on
+// 'gramDepositIntent', a refusal on 'gramError'.
+function netGramDepositIntent() {
+  _emitWhenAuthed('gramDepositRequest', {});
 }
 function netGramWithdraw(amount, address) {
   _emitWhenAuthed('gramWithdrawRequest', { amount, address });
@@ -4109,7 +4366,27 @@ function _initGramHandlers(s) {
   s.on('gramHistory', ({ txs }) => {
     if (typeof onGramHistory === 'function') onGramHistory(txs);
   });
+  // The server's own deposit code, and the ONLY place the deposit modal is
+  // allowed to get one from. Everything the player needs to pay is in here —
+  // where to send it, what comment to put on it, the minimum, and how long
+  // this view of the code is good for.
+  s.on('gramDepositIntent', ({ memo, address, minAmount, expiresAt }) => {
+    if (typeof onGramDepositIntent === 'function') {
+      onGramDepositIntent({ memo, address, minAmount, expiresAt });
+    }
+  });
   s.on('gramError', ({ msg }) => {
+    // A deposit modal waiting on its code has to hear about this, and the
+    // wallet panel's own message strip is behind the modal's backdrop where
+    // nobody can read it. Routed to the modal first, so a refusal that leaves
+    // the code unissued shows up as "не удалось — повторить" instead of a
+    // spinner that never stops.
+    //
+    // gramError is shared with the withdrawal and the history fetch, so the
+    // modal can be flipped to its error state by a refusal that was not
+    // strictly its own. That is the safe direction to be wrong in: the modal
+    // offers a retry, and it never shows a memo that would not be matched.
+    if (typeof _gramDepositFailed === 'function' && _gramDepositFailed(msg)) return;
     if (typeof _gramMsg === 'function') _gramMsg(msg, 'err');
   });
   s.on('refData', (data) => {

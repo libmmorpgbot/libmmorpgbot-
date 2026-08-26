@@ -45,6 +45,41 @@ async function createIntent(db, playerId) {
     e.code = 'no_wallet'; e.userMessage = e.message; throw e;
   }
 
+  // ── one open code per player ────────────────────────────────────────────
+  // Opening the deposit panel twice must show the SAME code twice. The unique
+  // index is on the memo, not on the player, so nothing in the database stops
+  // a second intent, and minting one per tap costs two things that both end in
+  // money nobody can place: a row per tap that the sweep only clears after
+  // INTENT_GRACE_MS, and a player watching their code change under them — who
+  // then stops trusting the one they already pasted into their wallet.
+  //
+  // expires_at is DISPLAY ONLY: the scanner matches on created_at against the
+  // grace window and never reads this column. So it is refreshed here to say
+  // honestly how long this view of the code is good for, and LEAST() caps it
+  // at the row's own grace deadline — a countdown that outlived the row's
+  // matchability would be a promise the scanner does not keep.
+  //
+  // Two opens racing with no row yet can still both insert. Deliberately not
+  // locked: both memos belong to the same player and both credit that player,
+  // so the cost is one spare row, while the only lock that would prevent it
+  // would serialise every deposit panel in the game behind one table.
+  const { rows: open } = await query(db, `
+    UPDATE gram_tx
+       SET expires_at = LEAST(created_at + ($3 || ' milliseconds')::interval,
+                              now()      + ($2 || ' milliseconds')::interval)
+     WHERE id = (SELECT g.id FROM gram_tx g
+                  WHERE g.player_id = $1 AND g.type = 'deposit' AND g.status = 'pending'
+                    AND g.created_at > now() - ($3 || ' milliseconds')::interval
+                  ORDER BY g.created_at DESC LIMIT 1)
+    RETURNING id, memo, expires_at`,
+    [playerId, String(INTENT_TTL_MS), String(INTENT_GRACE_MS)]);
+  if (open.length) {
+    return {
+      id: Number(open[0].id), memo: open[0].memo, address: addr,
+      minAmount: MIN_DEPOSIT_TON, expiresAt: open[0].expires_at, reused: true,
+    };
+  }
+
   // The partial unique index on (memo) WHERE type='deposit' AND status='pending'
   // is what makes a collision impossible rather than unlikely; the retry loop
   // is here so a collision costs a retry instead of an error to the player.
@@ -61,7 +96,7 @@ async function createIntent(db, playerId) {
         [playerId, MIN_DEPOSIT_TON, memo, String(INTENT_TTL_MS)]);
       return {
         id: Number(rows[0].id), memo: rows[0].memo, address: addr,
-        minAmount: MIN_DEPOSIT_TON, expiresAt: rows[0].expires_at,
+        minAmount: MIN_DEPOSIT_TON, expiresAt: rows[0].expires_at, reused: false,
       };
     } catch (e) {
       if (e.code !== '23505') throw e;            // not a memo collision

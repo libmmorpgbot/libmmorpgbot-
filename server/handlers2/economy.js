@@ -357,10 +357,32 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // does not state an amount, because the amount is whatever arrives on the
   // chain. That single change is what retires "send 0.1 TON, request 1000
   // GRAM, hope the admin is tired".
+  //
+  // NO PAYLOAD IS READ, and that is the other half of it. A client-supplied
+  // memo is the same class of bug as a client-supplied price, only worse:
+  // the memo is the ONLY thing that says whose an incoming transfer is (see
+  // _memo, repos/gram.js), so a client that could name one could name someone
+  // else's and be handed their money. The player RECEIVES a code; they never
+  // send one. The shipped client used to send `{ amount, memo }` here and this
+  // handler has always ignored both — the client is now changed to match, and
+  // this signature is what keeps it that way.
   safeOn('gramDepositRequest', () => s.act('gramDepositRequest', 'gramError', async (t, pid) => {
     const intent = await gram.createIntent(t, pid);
-    s.socket.emit('gramTxCreated', { tx: intent, newBalance: (await money.balancesOf(t, pid)).gram });
-  }));
+    // Its own event rather than gramTxCreated. An intent is not a transaction
+    // that happened: its `amount` is the minimum standing in for a figure only
+    // the chain knows, so feeding it to the history list drew a "Пополнение
+    // +0.05 GRAM · Ожидание" row for a deposit the player had not made.
+    s.socket.emit('gramDepositIntent', {
+      memo: intent.memo, address: intent.address,
+      minAmount: intent.minAmount, expiresAt: intent.expiresAt,
+    });
+    return intent;
+    // WHICH code this player was handed. When a transfer arrives carrying a
+    // comment, this row is what turns it back into an account — and `reused`
+    // separates re-opening the panel from minting a second code, which is the
+    // difference between one player looking twice and one player accumulating
+    // open intents.
+  }, r => r && { memo: r.memo, intentId: r.id, reused: r.reused }));
 
   safeOn('gramWithdrawRequest', ({ amount, address } = {}) =>
     s.act('gramWithdrawRequest', 'gramError', async (t, pid) => {

@@ -7422,10 +7422,31 @@ function onGramTxUpdate(id, status) {
 }
 
 // ── Deposit modal ─────────────────────────────────────────
+// The code comes from the SERVER and from nowhere else. The modal opens with a
+// loading state where the code goes and fills it in when 'gramDepositIntent'
+// arrives (see _initGramHandlers, js/network.js).
+//
+// What this replaces computed the memo right here:
+//
+//     const memo = (player && player.telegramId) ? player.telegramId
+//                  : (netUsername || String(Date.now()));
+//
+// Nothing in this bundle ever sets player.telegramId, so it was always the
+// second branch — the player's USERNAME, which is drawn above their head in
+// the world. The server has always minted its own LBT-xxxxxxxxxxxx and matched
+// on that, so every transfer sent with the shown comment matched nothing and
+// landed in unmatched_deposits for an admin to place by hand.
+//
+// There is deliberately NO fallback any more, not even a "temporary" one. A
+// locally invented memo is money sent to a comment nothing will match, so
+// showing no code at all — and saying so — is strictly better than showing one.
+let _gramDepositState = 'idle';       // idle | loading | ready | error
+let _gramDepositTimer = null;
+// How long the modal waits before calling the request lost. Longer than any
+// healthy round trip and shorter than a player's patience.
+const GRAM_DEPOSIT_WAIT_MS = 15000;
+
 function openGramDepositModal() {
-  const wallet = window._gramWallet || t('walletNotSetLbl');
-  const memo   = (player && player.telegramId) ? player.telegramId
-                 : (netUsername || String(Date.now()));
   const html = `
     <div id="gram-modal-overlay" onclick="closeGramModal()" style="position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;">
       <div onclick="event.stopPropagation()" style="width:100%;max-width:500px;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:22px 20px 36px;">
@@ -7436,26 +7457,22 @@ function openGramDepositModal() {
 
         <div style="margin-bottom:10px">
           <div class="gram-hint" style="margin-bottom:6px">${t('transferAmountHint')}</div>
-          <input id="gram-dep-amount" type="number" min="1" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_renderTonDepositSection()">
+          <!-- No floor until the server names one. It used to say min="1"
+               while the server's real minimum is 0.05 TON, so the browser
+               refused a legitimate small top-up before anything was sent. -->
+          <input id="gram-dep-amount" type="number" min="0" step="0.01" placeholder="${t('enterGramAmountPlaceholder')}" class="gram-input" style="width:100%;box-sizing:border-box" oninput="_renderTonDepositSection()">
         </div>
 
         <div id="ton-deposit-send-wrap" style="margin-bottom:6px"></div>
 
-        <div class="gram-hint" style="margin-bottom:6px">${t('transferToWalletHint')}</div>
-        <div class="gram-copy-box" onclick="gramCopy('gram-addr-val')">
-          <span id="gram-addr-val">${wallet}</span>
-          <span class="gram-copy-icon">⎘</span>
-        </div>
+        <!-- Address, code, expiry and the warning all live in here together,
+             because they are one thing: they are only true once the server has
+             issued the code. Showing the address on its own while the code is
+             still loading (or failed) is an invitation to pay without one, and
+             a payment with no comment is another unmatched_deposits row. -->
+        <div id="gram-dep-code"></div>
 
-        <div class="gram-hint" style="margin:12px 0 6px">${t('memoRequiredHint')}</div>
-        <div class="gram-copy-box" onclick="gramCopy('gram-memo-val')">
-          <span id="gram-memo-val">${memo}</span>
-          <span class="gram-copy-icon">⎘</span>
-        </div>
-
-        <div class="gram-warn">${t('memoWarnHint')}</div>
-
-        <button class="gram-btn gram-btn-green" style="width:100%;padding:14px;font-size:15px;margin-top:16px" onclick="gramDepositConfirm('${memo}')">
+        <button id="gram-dep-paid-btn" class="gram-btn gram-btn-green" style="width:100%;padding:14px;font-size:15px;margin-top:16px" onclick="gramDepositConfirm()" disabled>
           ${t('iPaidBtn')}
         </button>
         <div id="gram-modal-msg" class="gram-msg" style="display:none;margin-top:10px"></div>
@@ -7465,7 +7482,105 @@ function openGramDepositModal() {
   div.id = 'gram-modal-wrap';
   div.innerHTML = html;
   document.body.appendChild(div);
+  // Cleared, never carried over from the last open. A stale memo from a
+  // previous session is exactly as unmatched as an invented one.
+  window._gramDepositMemo = null;
+  _requestGramDepositCode();
+}
+
+// ── asking the server for this player's code ────────────────────────────────
+// The timeout is not decoration. _emitWhenAuthed drops the emit after its
+// retries if the socket never comes back, and the rate limiter can refuse the
+// packet outright — both leave the modal waiting on a reply that is never
+// coming. Without this the player watches a spinner forever and reads it as a
+// broken game; with it they get the reason and a button that tries again.
+function _requestGramDepositCode() {
+  if (typeof netGramDepositIntent !== 'function') {
+    _setGramDepositState('error', t('serviceUnavailableToast'));
+    return;
+  }
+  _setGramDepositState('loading');
+  clearTimeout(_gramDepositTimer);
+  _gramDepositTimer = setTimeout(() => {
+    _gramDepositFailed(t('depositCodeTimeoutMsg'));
+  }, GRAM_DEPOSIT_WAIT_MS);
+  netGramDepositIntent();
+}
+
+// The server answered. This is the ONLY writer of window._gramDepositMemo —
+// both ways of paying read it from here, so the copy-paste box and the wallet
+// button cannot end up carrying different comments.
+function onGramDepositIntent({ memo, address, minAmount, expiresAt }) {
+  clearTimeout(_gramDepositTimer);
+  // A code with no address is not payable, and neither is an address with no
+  // code. Refusing the pair rather than rendering half of it keeps the modal
+  // from ever showing something that looks like instructions and is not.
+  if (!memo || !address) { _gramDepositFailed(t('depositCodeErrorMsg')); return; }
   window._gramDepositMemo = memo;
+  // The wallet button sends to THIS address, not to the one authOk handed the
+  // client at login: both halves of the modal must carry the same destination
+  // and the same comment, and this is the pair the server just validated.
+  window._gramDepositAddress = address;
+  window._gramDepositMin = Number(minAmount) > 0 ? Number(minAmount) : null;
+  _setGramDepositState('ready', null, { memo, address, expiresAt });
+}
+
+// A refusal, a timeout, or a reply that made no sense. Returns true when it
+// actually belonged to a deposit modal that was waiting — js/network.js's
+// gramError handler uses that to decide whether the message still needs to go
+// to the wallet panel behind the modal.
+function _gramDepositFailed(msg) {
+  if (_gramDepositState !== 'loading') return false;
+  clearTimeout(_gramDepositTimer);
+  window._gramDepositMemo = null;
+  window._gramDepositAddress = null;
+  _setGramDepositState('error', msg || t('depositCodeErrorMsg'));
+  return true;
+}
+
+// Everything about the modal that depends on whether a code has arrived, in
+// one place: the code block, the amount field's minimum, the "I paid" button,
+// and the wallet button below it.
+function _setGramDepositState(state, msg, intent) {
+  _gramDepositState = state;
+  const el = document.getElementById('gram-dep-code');
+  if (!el) { _gramDepositState = 'idle'; return; }
+
+  if (state === 'loading') {
+    el.innerHTML = `<div class="gram-hint" style="text-align:center;padding:18px 0">${t('depositCodeLoadingLbl')}</div>`;
+  } else if (state === 'error') {
+    el.innerHTML = `<div class="gram-warn" style="margin-top:6px">${_esc(msg || t('depositCodeErrorMsg'))}</div>
+      <button class="gram-btn" style="width:100%;padding:12px;margin-top:10px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5" onclick="_requestGramDepositCode()">${t('depositRetryBtn')}</button>`;
+  } else {
+    const min = window._gramDepositMin;
+    const until = intent && intent.expiresAt ? new Date(intent.expiresAt) : null;
+    const untilTxt = until && !isNaN(until.getTime())
+      ? until.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : null;
+    el.innerHTML = `
+      <div class="gram-hint" style="margin-bottom:6px">${t('transferToWalletHint')}</div>
+      <div class="gram-copy-box" onclick="gramCopy('gram-addr-val')">
+        <span id="gram-addr-val">${_esc(intent.address)}</span>
+        <span class="gram-copy-icon">⎘</span>
+      </div>
+
+      <div class="gram-hint" style="margin:12px 0 6px">${t('memoRequiredHint')}</div>
+      <div class="gram-copy-box" onclick="gramCopy('gram-memo-val')">
+        <span id="gram-memo-val">${_esc(intent.memo)}</span>
+        <span class="gram-copy-icon">⎘</span>
+      </div>
+
+      <div class="gram-warn">${t('memoWarnHint')}</div>
+      <div class="gram-hint" style="margin-top:8px">${t('depositAutoCreditHint')}</div>
+      ${min ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositMinAmountFmt', { n: min })}</div>` : ''}
+      ${untilTxt ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositCodeValidUntilFmt', { n: untilTxt })}</div>` : ''}`;
+    // The server's floor, on the field, now that it is known.
+    const amt = document.getElementById('gram-dep-amount');
+    if (amt && min) amt.min = String(min);
+  }
+
+  const paid = document.getElementById('gram-dep-paid-btn');
+  if (paid) paid.disabled = state !== 'ready';
   _renderTonDepositSection();
 }
 
@@ -7473,10 +7588,18 @@ function openGramDepositModal() {
 // a connect prompt if no wallet is linked yet, or a one-tap "send from
 // wallet" button that fires an actual on-chain transfer once one is. The
 // manual copy-paste address/memo boxes below stay available either way —
-// TON Connect only makes *sending* easier, admin approval is unchanged.
+// TON Connect only makes *sending* easier.
+//
+// It is gated on the same code the copy-paste box shows, and that is the whole
+// point of the gate: this button builds the on-chain comment cell itself
+// (tcSendDeposit, js/tonconnect.js), so a version of it that could fire before
+// the code arrived would send a real transfer with an empty comment — money on
+// the chain that nothing can trace back to an account. Both ways of paying
+// carry the server's code or neither of them works.
 function _renderTonDepositSection() {
   const el = document.getElementById('ton-deposit-send-wrap');
   if (!el) return;
+  if (!window._gramDepositMemo) { el.innerHTML = ''; return; }
   const addr = typeof tcAddress === 'function' ? tcAddress() : null;
   if (!addr) {
     el.innerHTML = `<button class="gram-btn" style="width:100%;padding:12px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5;margin-bottom:10px" onclick="tcConnect()">${t('tcConnectBtn')}</button>
@@ -7489,19 +7612,28 @@ function _renderTonDepositSection() {
 }
 
 // Sends the entered amount as a real on-chain transfer from the connected
-// wallet, then registers the same pending GramTx the manual "I paid" flow
-// creates (netGramDeposit) so admin approval works identically either way.
+// wallet, carrying the server's code as the on-chain comment — the same code
+// the copy-paste box shows. Nothing is registered afterwards: the intent that
+// makes this transfer creditable already exists (it is what issued the code),
+// and emitting anything here would mint a SECOND one.
 async function _tcDepositSend() {
-  const amount = parseFloat(document.getElementById('gram-dep-amount')?.value);
-  if (!amount || amount < 1) { _gramModalMsg(t('tcEnterAmountFirstToast'), 'err'); return; }
-  const wallet = window._gramWallet;
   const memo = window._gramDepositMemo;
-  if (!wallet || typeof tcSendDeposit !== 'function') { _gramModalMsg(t('serviceUnavailableToast'), 'err'); return; }
+  const wallet = window._gramDepositAddress;
+  // Belt and braces with the render gate above: this is the last line before a
+  // real transfer leaves a real wallet, and a transfer with no comment cannot
+  // be matched to anyone afterwards.
+  if (!memo || !wallet) { _gramModalMsg(t('depositCodeWaitToast'), 'err'); return; }
+  const min = window._gramDepositMin || 0;
+  const amount = parseFloat(document.getElementById('gram-dep-amount')?.value);
+  if (!amount || amount < min) {
+    _gramModalMsg(min ? tVars('depositMinAmountFmt', { n: min }) : t('tcEnterAmountFirstToast'), 'err');
+    return;
+  }
+  if (typeof tcSendDeposit !== 'function') { _gramModalMsg(t('serviceUnavailableToast'), 'err'); return; }
   const btn = document.getElementById('ton-deposit-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = t('tcSendingLbl'); }
   try {
     await tcSendDeposit(wallet, amount, memo);
-    if (typeof netGramDeposit === 'function') netGramDeposit(amount, memo);
     closeGramModal();
     _gramMsg(t('tcTxSentToast'), 'ok');
   } catch (e) {
@@ -7510,16 +7642,16 @@ async function _tcDepositSend() {
   }
 }
 
-function gramDepositConfirm(memo) {
-  const amount = parseFloat(document.getElementById('gram-dep-amount').value);
-  if (!amount || amount < 1) { _gramModalMsg(t('minAmountErrToast'), 'err'); return; }
-  if (typeof netGramDeposit === 'function') {
-    netGramDeposit(amount, memo);
-    closeGramModal();
-    _gramMsg(t('depositRequestCreatedToast'), 'ok');
-  } else {
-    _gramModalMsg(t('serviceUnavailableToast'), 'err');
-  }
+// "Я оплатил" is an acknowledgement now, not a request. It used to be what
+// created the deposit record — which is why the record was created AFTER the
+// money had already left, with a comment the server had never seen. The record
+// exists before the modal shows a code, the chain scanner credits it on its
+// own, and there is nothing left for this button to send: emitting here would
+// mint a second code and teach the player the first one was wrong.
+function gramDepositConfirm() {
+  if (!window._gramDepositMemo) { _gramModalMsg(t('depositCodeWaitToast'), 'err'); return; }
+  closeGramModal();
+  _gramMsg(t('depositAutoCreditHint'), 'ok');
 }
 
 // ── Withdraw modal ────────────────────────────────────────
@@ -7627,6 +7759,15 @@ function gramCopy(elId) {
 function closeGramModal() {
   const w = document.getElementById('gram-modal-wrap');
   if (w) w.remove();
+  // The deposit code dies with the modal that showed it. Leaving it on window
+  // would let a later reopen paint a stale code — matchable or not, it would
+  // not be the one this open asked for — and would leave the pending timer
+  // firing into a modal that no longer exists.
+  clearTimeout(_gramDepositTimer);
+  _gramDepositState = 'idle';
+  window._gramDepositMemo = null;
+  window._gramDepositAddress = null;
+  window._gramDepositMin = null;
 }
 
 function _gramModalMsg(text, type) {

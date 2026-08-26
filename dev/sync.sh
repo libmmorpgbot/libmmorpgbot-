@@ -20,7 +20,10 @@ HOST="${LIBERTY_HOST:-root@178.128.136.68}"
 KEY="${LIBERTY_KEY:-$HOME/.ssh/liberty_do}"
 DEST=/srv/liberty/pgtest
 
-FILES=$(git ls-files --cached --others --exclude-standard \
+# -c core.quotepath=false: git escapes every non-ASCII byte in a filename by
+# default ("\320\230\321\201..."), and tar cannot stat what comes out. One
+# report file with a Cyrillic name was enough to abort the whole sync.
+FILES=$(git -c core.quotepath=false ls-files --cached --others --exclude-standard \
         | grep -vE '^(images/|audio/|node_modules/|android/)' || true)
 [ -n "$FILES" ] || { echo "sync: nothing to send" >&2; exit 1; }
 
