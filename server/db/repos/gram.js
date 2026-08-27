@@ -676,7 +676,7 @@ async function openUnmatched(db, limit = 50) {
   const n = Math.min(limit, 200);
   if (await hasDepositOpsCols()) {
     const { rows } = await query(db, `
-      SELECT id, tx_id, amount, comment, sender, reason, created_at
+      SELECT id, tx_id, amount, comment, sender, reason, created_at, event_id
         FROM unmatched_deposits WHERE resolved_at IS NULL
        ORDER BY created_at DESC LIMIT $1`, [n]);
     return rows.map(_unmatchedRow);
@@ -692,7 +692,7 @@ async function openUnmatched(db, limit = 50) {
 async function unmatchedById(db, id) {
   if (!(await hasDepositOpsCols())) return null;
   const { rows } = await query(db, `
-    SELECT id, tx_id, amount, comment, sender, reason, created_at,
+    SELECT id, tx_id, amount, comment, sender, reason, created_at, event_id,
            resolved_at, resolved_by, resolved_player_id, admin_msg_id, ops_chat_id
       FROM unmatched_deposits WHERE id = $1`, [id]);
   if (!rows.length) return null;
@@ -714,7 +714,7 @@ async function unmatchedById(db, id) {
 async function unmatchedByTx(db, txId) {
   if (!(await hasDepositOpsCols())) return null;
   const { rows } = await query(db, `
-    SELECT id, tx_id, amount, comment, sender, reason, created_at
+    SELECT id, tx_id, amount, comment, sender, reason, created_at, event_id
       FROM unmatched_deposits WHERE tx_id = $1`, [txId]);
   return rows.length ? _unmatchedRow(rows[0]) : null;
 }
