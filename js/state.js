@@ -1,4 +1,24 @@
-let canvas, ctx, W, H, DPR = 1;
+// W and H start at the window's own size, NOT undefined.
+//
+// They used to be declared bare, and every camera assignment in the client is
+// `player.x - W / (2 * ZOOM)` — undefined arithmetic, so NaN. Anything that set
+// the camera before the first resize() (which needs #app to have a layout size,
+// and on a phone in Telegram's WebView that can be later than the first
+// gameStart) produced camera NaN,NaN with a perfectly good player position.
+//
+// From there it never healed: updateCamera decays the camera→target OFFSET,
+// and `NaN - tx` is NaN, `Math.abs(NaN) < px` is false, so the NaN carried
+// itself frame after frame. The tile pass derives its chunk range from the
+// camera, Math.floor(NaN) is NaN, and `for (cx = NaN; cx <= NaN; ...)` never
+// iterates — zero chunks, black world, on a live renderer with a live socket.
+// That is the report from 27 Aug: "камера NaN,NaN · игрок 1770,1588 · чанки 0/0".
+//
+// innerWidth/innerHeight are the wrong numbers by a few pixels — #app is not
+// the whole window — but they are FINITE, which is the only property that
+// matters here. The first resize() corrects them a frame later.
+let canvas, ctx, DPR = 1;
+let W = (typeof window !== 'undefined' && window.innerWidth) || 360;
+let H = (typeof window !== 'undefined' && window.innerHeight) || 640;
 let state = 'select';
 let player = null, dungeon = null;
 let projs = [], otherProjs = [], drops = [], particles = [], dmgNums = [], aoeRings = [];

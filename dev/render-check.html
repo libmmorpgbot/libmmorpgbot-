@@ -518,6 +518,28 @@ const BLANK_WORLD = `window.__rcBlank2 = (function () {
   resetFaults(); buildTileCanvas();
   camera.x = NaN; draw();
   out.factsRange = _worldFacts();
+
+  // ── Б2. и ПОЧЕМУ камера вообще становилась NaN ─────────────────────────
+  // W и H объявлялись без значения, а каждое присваивание камеры в клиенте —
+  // это player.x - W / (2 * ZOOM). Всё, что ставило камеру до первого
+  // resize() (а он ждёт размера #app, и на телефоне в WebView это бывает
+  // позже первого gameStart), давало NaN при совершенно живом игроке —
+  // ровно отчёт от 27 августа: "камера NaN,NaN · игрок 1770,1588 · чанки 0/0".
+  //
+  // Дальше это не лечилось само: updateCamera затухает ОТСТУП камеры к цели,
+  // а (NaN - tx) — NaN, и Math.abs(NaN) < px — false. Один NaN держался всю
+  // сессию, и мир не рисовался всё это время.
+  //
+  // W/H проверяются первыми: это сам источник, и он ни от чего тут не зависит.
+  // updateCamera напрямую, а не весь update(): проверяется именно она, и один
+  // кадр — это и есть утверждение. Лечиться должно само, а не через восемь
+  // секунд и три страйка сторожа.
+  camera.x = NaN; camera.y = NaN;
+  updateCamera(1 / 60);
+  out.camHealedX = camera.x; out.camHealedY = camera.y;
+  resetFaults(); buildTileCanvas(); draw();
+  out.chunksAfterHeal = _chunkSprCache.size + '/' + _tileChunks.size;
+
   camera.x = savedCamX; camera.y = savedCamY;
 
   // ── В. the pass throws AFTER the build, where _layer() swallows it ──────
@@ -619,6 +641,13 @@ async function blankWorldChecks(w) {
      'отчёт называет ПУСТОЙ диапазон чанков — другая причина того же «0/0»',
      (b.factsRange.match(/диапазон[^·]*/) || ['—'])[0].trim());
   ok(!/СБОЙ_СБОРКИ/.test(b.factsRange), 'и не путает её со сбоем сборки');
+  ok(Number.isFinite(b.camHealedX) && Number.isFinite(b.camHealedY),
+    'камера NaN лечится за ОДИН кадр, а не за восемь секунд и три страйка',
+    b.camHealedX + ',' + b.camHealedY);
+  ok(b.chunksAfterHeal !== '0/0', 'и тайлы после этого строятся   ' + b.chunksAfterHeal);
+  // W/H тут проверять НЕЧЕГО: страница уже прошла layout и resize(), так что
+  // они конечны при любом объявлении. Источник проверяется по исходнику —
+  // dev/bundle-check.js, «W и H объявлены со значением».
 
   say('  В. слой упал после сборки: чанки ' + b.chunksLayer);
   ok(b.chunksLayer !== '0/0' && b.chunksLayer.indexOf('0/') === 0,

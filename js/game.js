@@ -277,6 +277,22 @@ function updateCamera(dt) {
   const visW = W / ZOOM, visH = _visH();
   const tx = player.x - visW / 2;
   const ty = player.y - visH / 2;
+  // A camera that is not a number cannot be decayed back into one: the offset
+  // below is `camera.x - tx`, and NaN survives every arithmetic step and every
+  // comparison in it. So one bad assignment used to last the whole session,
+  // and the tile pass drew nothing for as long as it did.
+  //
+  // Snapping instead of decaying is right here on its own terms too: there is
+  // no previous position to glide from, so there is nothing to smooth.
+  if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) {
+    camera.x = tx; camera.y = ty;
+    clampCamera();
+    return;
+  }
+  // Nor can it be aimed at a target that is not a number. Both W/H and the
+  // player are finite by the time anything calls this, but the world watchdog
+  // exists because "should be" and "is" have come apart here before.
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
   // Velocity-matched follow. A lerp toward the target trails the player by
   // speed/k while running, and frame-time noise makes that trail length
   // fluctuate — visible as the player wobbling ±1px on screen every uneven

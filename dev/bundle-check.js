@@ -152,6 +152,36 @@ function i18nCoverage(fs, file, espree) {
     `${badVars.length} расхождений — ${badVars.slice(0, 12).join('; ')}${badVars.length > 12 ? `; … ещё ${badVars.length - 12}` : ''}`);
 }
 
+// ── размеры экрана объявлены со значением ─────────────────────────────────
+// `let canvas, ctx, W, H, DPR = 1;` — значение получал только DPR. А каждое
+// присваивание камеры в клиенте это `player.x - W / (2 * ZOOM)`, поэтому всё,
+// что ставило камеру до первого resize() — а он ждёт размера #app, и на
+// телефоне в WebView это бывает позже первого gameStart — давало NaN при
+// совершенно живом игроке. Дальше NaN нёс себя через кадры сам (затухание
+// отступа камеры к цели), тайловый проход считал из камеры пустой диапазон, и
+// мир не рисовался всю сессию: "камера NaN,NaN · игрок 1770,1588 · чанки 0/0".
+//
+// Проверяется по ИСХОДНИКУ, а не в браузере, и это не лень: к моменту, когда
+// страница может что-то спросить, layout уже прошёл и W конечен при любом
+// объявлении. Браузерная проверка этого не поймала бы — она и не поймала.
+function screenDims(fs, file) {
+  console.log('\n  ── размеры экрана объявлены со значением ──');
+  const src = fs.readFileSync(file, 'utf8');
+  for (const name of ['W', 'H']) {
+    const m = src.match(new RegExp('^let\\s+' + name + '\\s*=([^;]+);', 'm'));
+    ok(!!m, `${name} объявлена со значением, а не голым let`,
+      'без него камера считается из undefined и получается NaN');
+    if (m) {
+      ok(!/^\s*(undefined|null)\s*$/.test(m[1]),
+        `${name} инициализируется чем-то конечным  ${m[1].trim().slice(0, 44)}`);
+    }
+  }
+  // И безымянного `let W,` в общем списке быть не должно — именно так это и
+  // выглядело до 27 августа.
+  ok(!/^let\s+[^=;\n]*\bW\s*,/m.test(src),
+    'W не объявлена в списке через запятую без значения');
+}
+
 function main() {
   console.log('\nbundle-check\n');
 
@@ -236,6 +266,7 @@ function main() {
   // /tmp/old.js` and run against a file that has the gap. A detector nobody has
   // ever watched fail is indistinguishable from one that cannot.
   i18nCoverage(fs, process.env.I18N_FILE || path.join(ROOT, 'js', 'i18n.js'), espree);
+  screenDims(fs, path.join(ROOT, 'js', 'state.js'));
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);
