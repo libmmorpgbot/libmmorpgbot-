@@ -2876,30 +2876,71 @@ function _pixiRetry(canvasEl, err) {
   }, delay);
 }
 
+// ── the one thing the player is ever told about the graphics failing ───────
+// Its own element, drawn over everything. showAuthError() writes into the
+// LOGIN screen's error line, which nobody in the game can see — the message
+// has to appear where the black rectangle is.
+//
+// ONE element id, deliberately, and that is what keeps two of these from
+// stacking. Three failures now end up here — the renderer gave up, the device
+// has no WebGL at all, the world never drew — and more than one of them can be
+// true at the same moment (a dead renderer is also a blank world). Two boxes
+// on top of each other tell a player nothing the first one didn't, so whoever
+// arrives first speaks and everyone after finds the id taken.
+//
+// `src` records who raised it, because only one of them can ever take it back
+// down: the watchdog can watch its own cause clear, _pixiGiveUp cannot — it
+// only runs once the retries are spent.
+//
+// The text is Russian in place rather than a t() lookup, the same way the
+// WebGL message this grew out of already was: this banner exists for a client
+// that is already failing, and reaching through the locale tables to explain
+// why the game is broken adds one more thing that can be broken.
+function _gfxBanner(src, text, actionLabel, action) {
+  if (document.getElementById('gfx-dead')) return;
+  const box = document.createElement('div');
+  box.id = 'gfx-dead';
+  box.dataset.src = src;
+  box.style.cssText = 'position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);'
+    + 'max-width:80vw;background:#2a1616;border:1px solid #b05a5a;color:#e8c4c4;'
+    + 'padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.45;'
+    + 'text-align:center;z-index:99999';
+  const msg = document.createElement('div');
+  msg.textContent = text;
+  box.appendChild(msg);
+  if (actionLabel) {
+    const btn = document.createElement('button');
+    btn.id = 'gfx-dead-btn';
+    // touch-action is `none` on everything (css/style.css `*`) so the game
+    // canvas never scrolls under a joystick drag; a button inside a banner is
+    // the one place that has to opt back in, or the tap is eaten on mobile —
+    // which would leave the player looking at a button that does nothing,
+    // which is worse than not offering one.
+    btn.style.cssText = 'margin-top:12px;background:#4a2222;border:1px solid #b05a5a;'
+      + 'color:#f0dede;padding:8px 18px;border-radius:9px;font-size:14px;'
+      + 'cursor:pointer;touch-action:manipulation';
+    btn.textContent = actionLabel;
+    btn.onclick = action;
+    box.appendChild(btn);
+  }
+  document.body.appendChild(box);
+}
+
 function _pixiGiveUp({ unsupported = false } = {}) {
   // The unsupported case has already reported itself, with a better message.
   if (!unsupported && typeof window.__reportClientError === 'function') {
     window.__reportClientError('pixi-dead',
       `сдались после ${_PIXI_MAX_RETRIES} попыток — ${pixiWebglDiagnosis(canvas)}`);
   }
-  // Its own element, drawn over everything. showAuthError() writes into the
-  // LOGIN screen's error line, which nobody in the game can see — the message
-  // has to appear where the grey rectangle is. Shown once: a second banner
-  // stacked on the first says nothing new.
-  if (document.getElementById('gfx-dead')) return;
-  const box = document.createElement('div');
-  box.id = 'gfx-dead';
-  box.style.cssText = 'position:fixed;left:50%;top:45%;transform:translate(-50%,-50%);'
-    + 'max-width:80vw;background:#2a1616;border:1px solid #b05a5a;color:#e8c4c4;'
-    + 'padding:14px 18px;border-radius:12px;font-size:14px;line-height:1.45;'
-    + 'text-align:center;z-index:99999';
-  box.textContent = unsupported
+  // No button on either: a device with no WebGL will not grow any by
+  // reloading, and the retries have already done the reloading equivalent
+  // five times over. The instruction is the only useful thing left to give.
+  _gfxBanner('gfx', unsupported
     ? 'Этот браузер не поддерживает WebGL, без него игра не рисуется. '
       + 'Откройте игру в Telegram или в Chrome/Safari — и проверьте, что в настройках '
       + 'браузера включено аппаратное ускорение.'
     : 'Графика не запустилась на этом устройстве. '
-      + 'Закройте и откройте игру заново — если не поможет, перезапустите Telegram.';
-  document.body.appendChild(box);
+      + 'Закройте и откройте игру заново — если не поможет, перезапустите Telegram.');
 }
 
 // Checked once a second, not every frame: the question is "has the world drawn
@@ -2927,8 +2968,15 @@ let _visibleSince = 0;
 // So the question has to be what the world CONTAINS. Each answer below has its
 // own recovery, because restarting the renderer fixes none of them.
 const _WD_GRACE_MS = 4000;
-const _wdReported = new Set();   // one alert per distinct cause per session
+const _wdReported = new Set();   // one alert per distinct cause per episode
 let _wdWhy = null, _wdWhySince = 0;
+// How many times the SAME cause has survived its own recovery. The recoveries
+// below get harder as this climbs, and at the end of them the player is told —
+// see _worldGiveUp. Not on the first strike: the recoveries usually work, and
+// a banner that flashes every time the world quietly heals itself is what
+// teaches a player to ignore the one time it doesn't.
+const _WD_GIVE_UP_STRIKES = 3;
+let _wdStrikes = 0;
 
 function _worldBlankWhy() {
   if (!canvas) return 'no-canvas';
@@ -2956,8 +3004,15 @@ const _n = v => (Number.isFinite(v) ? Math.round(v) : String(v));
 function _tileRangeStr() {
   if (typeof pixiTileRange !== 'function') return '?';
   const r = pixiTileRange();
+  // Written out rather than left to be worked out from four numbers, and NaN
+  // reads as ПУСТ too (every comparison against NaN is false), which is the
+  // shape a non-finite camera makes.
+  const empty = !(r.c0x <= r.c1x && r.c0y <= r.c1y);
   return 'x' + r.c0x + '..' + r.c1x + ' y' + r.c0y + '..' + r.c1y
-    + ' постр.' + r.built + (r.failed ? ' СБОЙ_СБОРКИ' : '');
+    + (empty ? ' ПУСТ' : '')
+    + ' постр.' + r.built
+    + ' проход ' + (r.ranAt ? Math.round(performance.now() - r.ranAt) + 'мс назад' : 'НЕ ШЁЛ')
+    + (r.failed ? ' СБОЙ_СБОРКИ x' + r.fails + ': ' + String(r.err).slice(0, 70) : '');
 }
 function _worldFacts() {
   const g = (typeof gpuStats === 'function') ? gpuStats() : { draws: -1, verts: -1 };
@@ -2965,22 +3020,112 @@ function _worldFacts() {
     'экран ' + W + 'x' + H + ' @' + (DPR || 0).toFixed(2),
     'canvas ' + (canvas ? canvas.clientWidth + 'x' + canvas.clientHeight : 'нет'),
     'pixi ' + (pixiAlive() ? 'жив' : 'мёртв'),
+    // dungeon.w/h is what the CHUNK RANGE is computed from; dungeon.grid is
+    // what the chunk builder indexes. They are supposed to agree and the
+    // report only ever carried the first — and every tile pass reads
+    // grid[ty][tx] unguarded inside a range derived from w/h, so a grid
+    // shorter than h is a TypeError on every chunk with a map that looks
+    // perfectly fine in the alert.
     'карта ' + (dungeon && dungeon.grid ? dungeon.w + 'x' + dungeon.h + ' эт.' + dungeonLvl : 'НЕТ'),
+    'сетка ' + (dungeon && dungeon.grid
+      ? dungeon.grid.length + 'x' + (dungeon.grid[0] ? dungeon.grid[0].length : '?')
+      : 'НЕТ'),
     'чанки ' + (typeof _chunkSprCache !== 'undefined' ? _chunkSprCache.size : '?') + '/' + _tileChunks.size,
     // "no tiles" has two very different causes and the first report of it
     // could not tell them apart: the tile pass computed an EMPTY chunk range
     // (camera outside the map — nothing to build), or it tried and the build
     // threw. The range and the camera say which.
     'диапазон ' + _tileRangeStr(),
+    // And a third cause neither of those can show, because it happens OUTSIDE
+    // the chunk build's own try/catch and is swallowed by _layer(): the tile
+    // pass throwing on the texture upload or on a container that died with a
+    // previous renderer. _layer reports that once, at the very start of the
+    // session, in a different alert nobody is reading next to this one — so
+    // the count is repeated here, where the question is being asked.
+    'слои ' + (typeof pixiLayerFaults === 'function' ? (pixiLayerFaults() || 'ок') : '?'),
     'камера ' + _n(camera.x) + ',' + _n(camera.y),
     'игрок ' + (player ? _n(player.x) + ',' + _n(player.y) : 'нет'),
     'draws ' + g.draws,
+    // Which recovery has already been tried and failed — and therefore
+    // whether the player is looking at the give-up banner while reading this.
+    'попытка ' + _wdStrikes,
     'контекст ' + (typeof pixiCtxCounts === 'function'
       ? (function (c) { return 'терял ' + c.lost + ', вернул ' + c.restored; })(pixiCtxCounts())
       : '?'),
     'сокет ' + (socket && socket.connected ? 'на связи' : 'НЕТ'),
     'кадр ' + Math.round(performance.now() - pixiLastRenderTs()) + 'мс назад',
   ].join(' · ');
+}
+
+// `чанки 0/0` on a valid map with a live renderer leaves exactly two
+// possibilities, and it is the ZERO that narrows it to two: the pass stores
+// the canvas in _tileChunks the instant _buildChunk returns, before any GPU
+// work at all, so one single successful build in the whole session would have
+// left a 1 there. Nothing was ever built. Which means either
+//
+//   the loop never entered its body — an empty chunk range; or
+//   every build threw — _built is incremented BEFORE the try, so two failing
+//   chunks spend the whole per-frame budget and nothing is ever stored.
+//
+// Only the first has a cheap fix, so it is tried on its own first.
+function _recoverNoTiles() {
+  if (_wdStrikes < 2) {
+    // buildTileCanvas() only CLEARS the caches — chunks are built lazily by
+    // the tile pass. So calling it here was not a recovery at all: it threw
+    // away whatever existed and built nothing in its place.
+    //
+    // What actually stops the tile pass is a camera whose chunk range comes
+    // out empty, and the only way that happens on a valid map is a camera
+    // (or a player) that is not a finite number inside it: a clamped camera's
+    // own bounds always overlap at least one chunk, so a finite one cannot
+    // produce an empty range. clamp puts it back; the pass builds next frame.
+    if (player && dungeon.spawn
+        && (!Number.isFinite(player.x) || !Number.isFinite(player.y))) {
+      player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
+    }
+    if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) {
+      camera.x = (player ? player.x : 0) - W / (2 * ZOOM);
+      camera.y = (player ? player.y : 0) - _visH() / 2;
+    }
+    clampCamera();
+    return;
+  }
+  // Once only, and only after the camera has been ruled out by having been
+  // fixed and changing nothing. What is left is the pass itself failing every
+  // frame, in one of the two places it can: inside _buildChunk (a 2D context
+  // the WebView refused under canvas-memory pressure — the low-end Android
+  // case), or after it, on the texture upload and _tileCt.addChild, which
+  // _layer() swallows silently after its one report.
+  //
+  // Everything in the second group belongs to the renderer, so a fresh one is
+  // the only lever that reaches it: a new element, a new context, new
+  // containers, and every stale GPU handle dropped. It also frees the whole
+  // chunk atlas, which is the largest thing this client holds and the most
+  // likely reason a WebView started refusing 2D contexts in the first place.
+  //
+  // The fault latches go with it: they describe a renderer that no longer
+  // exists, and leaving them set means the next failure — the one that says
+  // whether this helped — is swallowed as a repeat.
+  if (_wdStrikes !== 2) return;
+  if (typeof pixiResetFaults === 'function') pixiResetFaults();
+  if (!_pixiRebuild()) _pixiRetry(canvas, null);
+}
+
+// What the player is told once every recovery for this cause has been tried
+// and the world is still black. Deliberately not a stack trace and not a
+// cause code: they can act on "restart", and cannot act on 'no-tiles'.
+const _WD_GIVE_UP_MSG = {
+  'no-map': 'Сервер не прислал карту — строить мир не из чего. '
+    + 'Перезапустите игру; если чёрный экран останется, напишите в поддержку.',
+  'no-tiles': 'Карта пришла, но мир так и не отрисовался на этом устройстве. '
+    + 'Перезапустите игру; если чёрный экран останется, напишите в поддержку.',
+};
+const _WD_GIVE_UP_ANY = 'Мир не запустился на этом устройстве. '
+  + 'Перезапустите игру; если чёрный экран останется, напишите в поддержку.';
+
+function _worldGiveUp(why) {
+  _gfxBanner('world', _WD_GIVE_UP_MSG[why] || _WD_GIVE_UP_ANY,
+    'Перезапустить', () => location.reload());
 }
 
 function _worldWatchdog() {
@@ -2991,14 +3136,32 @@ function _worldWatchdog() {
   if (_pixiRetryTimer) return;                       // a retry is already in flight
 
   const why = _worldBlankWhy();
-  if (!why) { _wdWhy = null; return; }
+  if (!why) {
+    _wdWhy = null;
+    _wdStrikes = 0;
+    // Once per EPISODE, not once per session. The once-per-session rule was
+    // there so a phone that stays broken does not spend its battery saying so,
+    // and inside one episode that still holds — but a world that broke, healed
+    // and broke again is the second-most useful thing this could tell anyone,
+    // and it was the one report guaranteed never to be sent.
+    _wdReported.clear();
+    // The banner is a claim about right now, so a world that came back takes
+    // it away again — an apology left standing over a working world is the
+    // same kind of lie as the black screen that explained nothing. Only the
+    // watchdog's own: _pixiGiveUp's is raised after its retries are spent and
+    // nothing here has re-run them, so it is not this code's to withdraw.
+    const box = document.getElementById('gfx-dead');
+    if (box && box.dataset.src === 'world') box.remove();
+    return;
+  }
 
   // The same complaint has to hold across two checks before anything is done
   // about it: a single tick can land inside a floor change, where there is
   // legitimately no map for a moment.
-  if (_wdWhy !== why) { _wdWhy = why; _wdWhySince = performance.now(); return; }
+  if (_wdWhy !== why) { _wdWhy = why; _wdWhySince = performance.now(); _wdStrikes = 0; return; }
   if (performance.now() - _wdWhySince < _WD_GRACE_MS) return;
   _wdWhySince = performance.now();
+  _wdStrikes++;
 
   const facts = _worldFacts();
   console.error('[world] пусто:', why, facts);
@@ -3016,26 +3179,9 @@ function _worldWatchdog() {
       // size; the ResizeObserver below usually gets there first.
       if (_doResize) _doResize(true);
       break;
-    case 'no-tiles': {
-      // buildTileCanvas() only CLEARS the caches — chunks are built lazily by
-      // the tile pass. So calling it here was not a recovery at all: it threw
-      // away whatever existed and built nothing in its place.
-      //
-      // What actually stops the tile pass is a camera whose chunk range comes
-      // out empty, and the only way that happens on a valid map is a camera
-      // (or a player) that is not a finite number inside it. clamp puts it
-      // back; the pass builds on the next frame.
-      if (player && dungeon.spawn
-          && (!Number.isFinite(player.x) || !Number.isFinite(player.y))) {
-        player.x = dungeon.spawn.x; player.y = dungeon.spawn.y;
-      }
-      if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y)) {
-        camera.x = (player ? player.x : 0) - W / (2 * ZOOM);
-        camera.y = (player ? player.y : 0) - _visH() / 2;
-      }
-      clampCamera();
+    case 'no-tiles':
+      _recoverNoTiles();
       break;
-    }
     case 'no-map':
       // Only the server can answer this, and the only thing that makes it
       // answer is a fresh attachment.
@@ -3044,6 +3190,14 @@ function _worldWatchdog() {
     default:
       _pixiRetry(canvas, new Error('пустой мир: ' + why));
   }
+
+  // Every recovery for this cause has now been tried and the cause has
+  // outlived all of them. This is the whole point of the exercise: the report
+  // above goes to the operators, and until now the PLAYER — the one actually
+  // looking at the black rectangle — was told nothing at all, and given
+  // nothing to press. _pixiGiveUp has done this for a dead renderer since the
+  // day it was written; a world that never drew earns the same courtesy.
+  if (_wdStrikes >= _WD_GIVE_UP_STRIKES) _worldGiveUp(why);
 }
 
 window.addEventListener('load', () => {

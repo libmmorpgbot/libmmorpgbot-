@@ -64,6 +64,14 @@ jobs:
       - name: enemy streaming survives packet loss
         run: node dev/enemysync-check.js
 
+      # Настоящая страница и настоящий бандл в настоящем браузере. Два дефекта,
+      # которые владелец нашёл сам за полчаса — 404 на ассете и адрес кошелька
+      # в сырой форме — жили в коде, который эта проверка покрывает; её просто
+      # никто не запускал, потому что до сих пор она требовала человека с
+      # браузером. Выход 2 означает «прогнать не удалось», а не «прошло».
+      - name: страница рисуется (настоящий браузер)
+        run: node dev/render-check.js --run
+
       - name: install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 

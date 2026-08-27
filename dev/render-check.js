@@ -42,6 +42,9 @@ const MIME = {
 //   node dev/render-check.js         the readable bundle
 //   MIN=1 node dev/render-check.js   what actually ships
 const MINIFY = process.env.MIN === '1';
+// --run / RUN=1: открыть страницу самому, дождаться результата и выйти с
+// кодом. Без этого файл только подаёт страницу и ждёт человека с браузером.
+const RUN = process.env.RUN === '1' || process.argv.includes('--run');
 function bundle() {
   const raw = FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
   if (!MINIFY) return raw;
@@ -137,7 +140,53 @@ http.createServer((req, res) => {
     if (e) return send(404, 'text/plain', 'not found: ' + url);
     send(200, MIME[path.extname(f)] || 'application/octet-stream', d);
   });
-}).listen(PORT, '127.0.0.1', () => {
-  console.log('  render-check: http://127.0.0.1:' + PORT + '/render-check'
-    + (MINIFY ? '   [минифицированный бандл — то, что едет игрокам]' : ''));
+}).listen(PORT, '127.0.0.1', async () => {
+  const url = 'http://127.0.0.1:' + PORT + '/render-check';
+  if (!RUN) {
+    console.log('  render-check: ' + url
+      + (MINIFY ? '   [минифицированный бандл — то, что едет игрокам]' : ''));
+    console.log('  (`node dev/render-check.js --run` — прогнать самому и выйти с кодом)');
+    return;
+  }
+
+  // ── самостоятельный прогон ────────────────────────────────────────────────
+  // Без этого файл только ПОДАВАЛ страницу, а открыть её и прочитать результат
+  // должен был человек. Проверку, которую нельзя запустить одной командой, не
+  // запускают: за всё время её гоняли вручную, и ровно те два дефекта, которые
+  // владелец нашёл сам за полчаса — 404 на картинке и адрес кошелька в сырой
+  // форме — жили в коде, который эта проверка покрывает.
+  //
+  // channel:'chrome' — берётся УЖЕ УСТАНОВЛЕННЫЙ Chrome, а не скачивается свой:
+  // 300 МБ ради страницы, которую надо открыть один раз, того не стоят.
+  let browser;
+  try {
+    const { chromium } = require('playwright');
+    browser = await chromium.launch({ headless: true, channel: 'chrome' });
+    const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
+    // Страница пишет свой лог в DOM; забираем его целиком, а не по строчке,
+    // чтобы порядок и отступы дошли такими же, как их видит человек.
+    page.on('pageerror', e => console.error('  [страница]', e.message));
+
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    // Заголовок — сигнал завершения, который харнес ставит сам (см. finish()
+    // в render-check.html). Ждём его, а не фиксированную паузу: прогон длится
+    // от десяти секунд до минуты в зависимости от машины.
+    // Строкой, а не стрелкой: тело исполняется в БРАУЗЕРЕ, и стрелка здесь
+    // заставила бы линтер этого файла (окружение node) искать document.
+    await page.waitForFunction(
+      String.raw`/^render-check (OK|FAIL)/.test(document.title)`, null, { timeout: 240000 });
+
+    const out = await page.evaluate(`document.body.innerText`);
+    console.log(out.replace(/^/gm, '  '));
+    const title = await page.title();
+    const bad = /FAIL/.test(title);
+    await browser.close();
+    process.exit(bad ? 1 : 0);
+  } catch (err) {
+    if (browser) await browser.close().catch(() => {});
+    // Отсутствующий Chrome — это «проверка не выполнена», а не «проверка
+    // прошла». Разные коды выхода, чтобы CI не принял одно за другое.
+    console.error('  render-check не смог прогнаться: ' + err.message);
+    process.exit(2);
+  }
 });

@@ -419,6 +419,12 @@ async function run() {
   // guarded is the difference between ~18 and ~462, not the last unit.
   ok(perDrop > 0 && perDrop <= 24, 'куча лута = три спрайта, не круг + два скруглённых прямоугольника',
      perDrop.toFixed(1) + ' верш./кучу (было 462)' + (perDrop > 0 ? '' : ' — НИЧЕГО НЕ НАРИСОВАЛОСЬ'));
+
+  // Runs after every measurement above and before the wallet section, because
+  // it ends by REBUILDING THE RENDERER — a new canvas element, a new context,
+  // every GPU handle dropped. Nothing that counts vertices can survive that.
+  await blankWorldChecks(w);
+
   // LAST, and deliberately so. The wallet section is DOM work that takes a few
   // seconds, and the two vertex-per-object measurements above are differences
   // against a baseline measured on a live scene — a decal or a damage number
@@ -433,6 +439,222 @@ async function run() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  The black screen, and what the player is told about it
+// ═══════════════════════════════════════════════════════════════════════════
+// One real report of this reached the server and could not be acted on:
+//
+//   no-tiles — экран 360x704 · pixi жив · карта 68x68 эт.1 · чанки 0/0
+//            · draws 2 · сокет на связи · кадр 12мс назад
+//
+// A live renderer, a real map, frames going out — and an EMPTY chunk
+// structure. Not "built none of twelve": nothing was ever created to build.
+// The four ways that can happen look identical from the outside and have
+// nothing in common as fixes, so each one is reproduced here and the
+// diagnostic has to name it — and then the recovery has to be seen to fail
+// before the player is told anything, because the recoveries usually work.
+//
+// Everything below drives the client's OWN watchdog, _worldWatchdog(), the
+// same function setInterval calls once a second in play. Only the clock is
+// faked: _wdWhySince is back-dated so a tick counts, instead of the harness
+// sitting here for the twelve real seconds it takes.
+const BLANK_WORLD = `window.__rcBlank2 = (function () {
+  var out = {}, reports = [];
+  var realBuild = _buildChunk, realTileCt = _tileCt, realRep = window.__reportClientError;
+  var oldCanvas = canvas;
+  var savedCamX = camera.x, savedCamY = camera.y;
+  var savedVisible = _visibleSince;
+  var THROWS = function () { throw new TypeError('getContext вернул null'); };
+  window.__reportClientError = function (kind, msg) { reports.push(kind + ': ' + msg); };
+  // The watchdog refuses to run at all while document.hidden: rAF is paused
+  // then, so "nothing has drawn recently" means nothing. This pane is a
+  // background tab whenever nobody is looking at it — the same reason frames()
+  // above drives update/render directly instead of waiting on a vsync that
+  // never comes — so the flag is pinned false here and handed back at the end.
+  Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return false; } });
+  // Back-dated, not zeroed: the watchdog also stands down for four seconds
+  // after the app comes back to the foreground, and zero is not four seconds
+  // ago when the page itself is only two seconds old — which is exactly where
+  // in the run this lands.
+  state = 'playing'; activeTab = 0; _visibleSince = -1e9;
+  _wdWhy = null; _wdStrikes = 0; _wdReported.clear();
+  var b0 = document.getElementById('gfx-dead'); if (b0) b0.remove();
+
+  var trace = [];
+  // Guarded so this whole probe still RUNS against a client that has none of
+  // this — which is the only way its assertions can be shown to fail on the
+  // old code instead of all collapsing into one "the probe threw".
+  function resetFaults() { if (typeof pixiResetFaults === 'function') pixiResetFaults(); }
+  function draw() { render(1 / 60, performance.now()); }
+  function tick() {
+    draw();
+    _wdWhySince = -1e9;                      // the four seconds, without waiting them
+    // Kept in the output rather than only asserted on: when this section does
+    // fail, the first question is always whether the watchdog ran at all —
+    // it stands down for five separate reasons before it looks at anything —
+    // and a strike counter that never moves looks identical either way.
+    var pre = 'мир: ' + _worldBlankWhy() + ', взведён на ' + _wdWhy;
+    _worldWatchdog();
+    trace.push(pre + ' -> ' + _wdWhy + ', попытка ' + _wdStrikes
+      + (banner() ? ', БАННЕР' : ''));
+    if (_pixiRetryTimer) { clearTimeout(_pixiRetryTimer); _pixiRetryTimer = null; out.retried = true; }
+  }
+  function banner() { return document.getElementById('gfx-dead'); }
+
+  // ── А. every chunk build throws ─────────────────────────────────────────
+  // _built is incremented BEFORE the try, so two throwing chunks spend the
+  // whole per-frame budget and _tileChunks is never handed anything. This is
+  // the 0/0 from the real report.
+  _buildChunk = THROWS;
+  resetFaults(); buildTileCanvas(); draw();
+  out.whyBuild   = _worldBlankWhy();
+  out.chunksBuild = _chunkSprCache.size + '/' + _tileChunks.size;
+  out.factsBuild = _worldFacts();
+
+  // ── Б. the chunk range comes out empty ──────────────────────────────────
+  // The other 0/0, and the only one the old recovery could fix. A finite
+  // clamped camera cannot do this — its own bounds always overlap a chunk —
+  // so it takes a camera that is not a number at all.
+  _buildChunk = realBuild;
+  resetFaults(); buildTileCanvas();
+  camera.x = NaN; draw();
+  out.factsRange = _worldFacts();
+  camera.x = savedCamX; camera.y = savedCamY;
+
+  // ── В. the pass throws AFTER the build, where _layer() swallows it ──────
+  // The canvas is already in _tileChunks by the time the texture upload runs,
+  // so this one reads 0/N — which is how it tells itself apart from the two
+  // above, and why the layer fault count had to reach the same report.
+  resetFaults(); buildTileCanvas();
+  _tileCt = null; draw();
+  out.chunksLayer = _chunkSprCache.size + '/' + _tileChunks.size;
+  out.factsLayer = _worldFacts();
+  _tileCt = realTileCt;
+
+  // ── Г. recovery is given its chances, and then the player is told ───────
+  _buildChunk = THROWS;
+  resetFaults(); buildTileCanvas();
+  _wdWhy = null; _wdStrikes = 0; _wdReported.clear(); reports.length = 0;
+  tick(); out.armBanner    = !!banner();                     // first sighting only arms it
+  tick(); out.strike1      = _wdStrikes; out.b1 = !!banner(); // camera repair
+  tick(); out.strike2      = _wdStrikes; out.b2 = !!banner(); // renderer rebuilt
+  out.rebuilt = canvas !== oldCanvas;
+  tick(); out.strike3      = _wdStrikes; out.b3 = !!banner(); // told
+  var box = banner();
+  out.src    = box ? box.dataset.src : 'нет баннера';
+  out.text   = box ? box.textContent.slice(0, 40) : '';
+  var btn    = document.getElementById('gfx-dead-btn');
+  out.hasBtn = !!btn && typeof btn.onclick === 'function';
+  out.btnText = btn ? btn.textContent : '';
+  out.reports = reports.slice();
+  out.trace = trace.slice();
+
+  // ── Д. the world comes back — the banner is a claim about right now ─────
+  _buildChunk = realBuild;
+  resetFaults(); buildTileCanvas();
+  for (var i = 0; i < 30; i++) draw();
+  out.healthyAgain = _worldBlankWhy();
+  tick();
+  out.bannerWithdrawn = !banner();
+  out.strikesReset = _wdStrikes;
+
+  // ── Е. two banners can never stack ──────────────────────────────────────
+  // A dead renderer is also a blank world, so both of these can be true at
+  // the same moment. One element id is what makes the second one silent.
+  _pixiGiveUp({ unsupported: true });
+  if (typeof _worldGiveUp === 'function') _worldGiveUp('no-tiles');
+  out.count = document.querySelectorAll('#gfx-dead').length;
+  out.stackSrc = document.getElementById('gfx-dead').dataset.src;
+
+  // ── Ж. and is the thing actually ON SCREEN? ─────────────────────────────
+  // Appending to document.body is not the same as being visible: this app has
+  // shipped a message nobody could see before (locationError, under the
+  // "Ожидание сервера…" overlay). Every full-screen overlay that can be up
+  // when a renderer gives up is put up here and the browser is asked what is
+  // actually painted at the banner's own centre.
+  var covers = ['login-screen', 'char-select', 'cs-loading'];
+  var restore = covers.map(function (id) {
+    var el = document.getElementById(id);
+    return { el: el, was: el ? el.style.display : null };
+  });
+  restore.forEach(function (r) { if (r.el) r.el.style.display = ''; });
+  var bx = document.getElementById('gfx-dead');
+  var rc = bx.getBoundingClientRect();
+  var hit = document.elementFromPoint(Math.round(rc.left + rc.width / 2),
+                                      Math.round(rc.top + rc.height / 2));
+  out.onTop = !!hit && (hit === bx || bx.contains(hit));
+  out.hitBy = hit ? (hit.id || hit.tagName.toLowerCase()) : 'ничего';
+  out.covers = restore.filter(function (r) { return r.el; }).map(function (r) {
+    return r.el.id + ' z' + getComputedStyle(r.el).zIndex;
+  }).join(', ');
+  out.bannerZ = getComputedStyle(bx).zIndex;
+  restore.forEach(function (r) { if (r.el) r.el.style.display = r.was === null ? '' : r.was; });
+
+  // Put everything back the way the rest of the run expects to find it.
+  bx.remove();
+  delete document.hidden;               // back to the prototype getter
+  _visibleSince = savedVisible;
+  window.__reportClientError = realRep;
+  _wdWhy = null; _wdStrikes = 0; _wdReported.clear();
+  draw();
+  return out;
+})();`;
+
+async function blankWorldChecks(w) {
+  head('чёрный экран: чем он вызван и что видит игрок');
+  inject(w, BLANK_WORLD);
+  const b = w.__rcBlank2;
+  if (!b) { ok(false, 'проба чёрного экрана выполнилась'); return; }
+
+  say('  А. сборка чанка падает:  чанки ' + b.chunksBuild);
+  say('     ' + b.factsBuild);
+  ok(b.whyBuild === 'no-tiles', 'сторож называет это no-tiles', String(b.whyBuild));
+  ok(b.chunksBuild === '0/0', 'структура чанков ПУСТА — тот самый «чанки 0/0»', b.chunksBuild);
+  ok(/СБОЙ_СБОРКИ x\d+/.test(b.factsBuild) && /getContext/.test(b.factsBuild),
+     'отчёт называет причину: чанк не собрался, и чем именно',
+     (b.factsBuild.match(/СБОЙ_СБОРКИ[^·]*/) || ['—'])[0].trim());
+  ok(/слои ок/.test(b.factsBuild), 'и отличает это от упавшего слоя (слои ок)');
+
+  say('  Б. камера не число: ' + b.factsRange);
+  ok(/диапазон[^·]*ПУСТ/.test(b.factsRange),
+     'отчёт называет ПУСТОЙ диапазон чанков — другая причина того же «0/0»',
+     (b.factsRange.match(/диапазон[^·]*/) || ['—'])[0].trim());
+  ok(!/СБОЙ_СБОРКИ/.test(b.factsRange), 'и не путает её со сбоем сборки');
+
+  say('  В. слой упал после сборки: чанки ' + b.chunksLayer);
+  ok(b.chunksLayer !== '0/0' && b.chunksLayer.indexOf('0/') === 0,
+     'канва уже в _tileChunks, спрайта нет — 0/N, а не 0/0', b.chunksLayer);
+  ok(/слои tiles x\d+/.test(b.factsLayer),
+     'отчёт называет упавший слой, а не молчит о нём',
+     (b.factsLayer.match(/слои[^·]*/) || ['—'])[0].trim());
+
+  head('игроку говорят — но только когда починить не вышло');
+  (b.trace || []).forEach(t => say('  тик: ' + t));
+  ok(b.armBanner === false, 'на первом же тике баннера НЕТ (сторож только взводится)');
+  ok(b.strike1 === 1 && b.b1 === false, 'после первой попытки (камера) баннера нет');
+  ok(b.strike2 === 2 && b.b2 === false, 'после второй попытки (пересборка рендерера) баннера нет');
+  ok(b.rebuilt === true, 'вторая попытка действительно пересобрала рендерер (canvas заменён)');
+  ok(b.strike3 === 3 && b.b3 === true, 'после третьей — игрок наконец что-то видит');
+  ok(b.src === 'world', 'баннер помечен своим источником', String(b.src));
+  ok(/[А-Яа-я]/.test(b.text), 'текст по-русски', b.text + '…');
+  ok(b.hasBtn === true, 'и есть что нажать', b.btnText);
+  ok(b.reports.some(r => r.indexOf('world-blank') === 0), 'операторам ушёл отчёт',
+     (b.reports[0] || 'ни одного').slice(0, 60));
+
+  ok(b.healthyAgain === null && b.bannerWithdrawn === true,
+     'мир вернулся — баннер убран (извинение над рабочим миром — та же ложь)',
+     'сторож: ' + String(b.healthyAgain));
+  ok(b.strikesReset === 0, 'счётчик попыток сброшен');
+
+  head('баннер про графику: один, и его действительно видно');
+  ok(b.count === 1, 'два баннера не складываются друг на друга', b.count + ' шт');
+  ok(b.stackSrc === 'gfx', 'первый успевший говорит, второй молчит', String(b.stackSrc));
+  say('  поверх: ' + b.covers + '   баннер z' + b.bannerZ);
+  ok(b.onTop === true,
+     'баннер «нет WebGL» виден поверх сплэша, выбора персонажа и загрузки этажа',
+     b.onTop ? '' : 'в этой точке нарисован #' + b.hitBy);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  GRAM wallet tab
 // ═══════════════════════════════════════════════════════════════════════════
 // Everything else in this harness watches the WebGL world. The wallet tab is
@@ -442,16 +664,46 @@ async function run() {
 // neither can tell you that a credited deposit actually puts a number on the
 // screen — which is the one thing this tab now exists to do.
 //
-// The states below are driven through the client's OWN entry points
-// (onGramDepositIntent, onGramDepositCredited, onGramHistory), the same
-// functions js/network.js calls when a real socket frame lands, so what is
-// asserted is the real render path and not a mock of it.
+// The states below are driven from OUTSIDE the client — a fake socket and a
+// fake wallet library are handed the frames a real server and a real wallet
+// send, and everything after that is the shipped code. That is a deliberate
+// step further out than this section used to sit: it called the UI's own
+// handlers (onGramDepositIntent, onGramHistory) directly, which skipped
+// js/network.js entirely — and js/network.js is where an address is converted
+// into the form a person recognises. A test that starts after the conversion
+// cannot see the conversion missing.
+//
+// ── the two seams everything below is driven through ────────────────────────
+// Both are FAKES OF THE TRANSPORT, not of the client. Nothing in js/ is
+// replaced, so every line under test is the shipped one.
+//
+//   TON_CONNECT_UI — the wallet library. tcWarmUp used to be stubbed out here
+//     because the real one is 435 KB of third-party download, and stubbing it
+//     also stubbed out the one line that turns a wallet's RAW `0:…` address
+//     into the `UQ…` a person recognises (js/tonconnect.js, onStatusChange).
+//     So the address format could not be checked at all: the harness handed
+//     the row an already-friendly string and proved nothing about it.
+//     _tcLoadScript() resolves immediately when TON_CONNECT_UI already exists,
+//     so defining it here downloads nothing and lets _tcEnsure() build and
+//     wire the REAL callback. The tests then hand it the raw form, which is
+//     what a real wallet actually reports.
+//
+//   __rcSock — a socket carrying only the GRAM frames. js/network.js converts
+//     addresses as they arrive (_gramFriendly), so a test that called
+//     onGramDepositIntent() directly walked past the conversion it meant to
+//     check. __rcEmit(name, payload) is exactly what the server pushing that
+//     frame does.
 const WALLET_SETUP = `(function () {
-  // tcWarmUp downloads 435 KB of third-party wallet UI that has nothing to do
-  // with what is checked here, and it would do it on every run.
-  tcWarmUp = function () {};
-  window.__rcWallet = '';
-  tcAddress = function () { return window.__rcWallet || null; };
+  window.TON_CONNECT_UI = { TonConnectUI: function () {
+    window.__rcTcSent = [];
+    this.onStatusChange = function (cb) { window.__rcTcStatus = cb; return function () {}; };
+    this.openModal = function () {};
+    this.disconnect = function () { if (window.__rcTcStatus) window.__rcTcStatus(null); };
+    this.sendTransaction = function (req) { window.__rcTcSent.push(req); return Promise.resolve({ boc: 'stub' }); };
+  } };
+  window.__rcSock = { _h: {}, on: function (n, f) { this._h[n] = f; return this; } };
+  _initGramHandlers(window.__rcSock);
+  window.__rcEmit = function (n, p) { var f = window.__rcSock._h[n]; if (f) f(p); };
   activeTab = 5;
   window._profileTab = 'wallet';
   window._gramBalance = 12.5;
@@ -461,15 +713,40 @@ const WALLET_SETUP = `(function () {
   switchProfileTab('wallet');
 })();`;
 
+// ── raw → friendly, precomputed ─────────────────────────────────────────────
+// The expected values are NOT recomputed here by a second copy of the
+// algorithm — a check that reimplements what it is checking agrees with itself
+// however wrong both halves are. They were produced by server/ton.js's own
+// friendlyAddress, which has shipped for months and has its own suite in
+// dev/gram-check.js, and pasted in as constants. If the client's port ever
+// drifts from the server's, these go red.
+const RAW_WALLET = '0:8fe52cb8b8a1e0f0b1c2d3e4f5061728394a5b6c7d8e9f00112233445566778a';
+const UQ_WALLET  = 'UQCP5Sy4uKHg8LHC0-T1BhcoOUpbbH2OnwARIjNEVWZ3iipE';
+const RAW_PLAT   = '0:2b1c9d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a';
+const UQ_PLAT    = 'UQArHJ1OX2BxgpOktcbX6PkKGyw9Tl9gcYKTpLXG1-j5CkAw';
+const RAW_WD     = '0:cafe0babe1234567890abcdef1234567890abcdef1234567890abcdef1234567';
+const UQ_WD      = 'UQDK_gur4SNFZ4kKvN7xI0VniQq83vEjRWeJCrze8SNFZwXZ';
+// Any workchain, any 64 hex digits — the shape a raw address has and a friendly
+// one cannot. Used to sweep the whole rendered page rather than the one node a
+// test happened to think of.
+const RAW_ANYWHERE = /(^|[^\w])-?\d+:[0-9a-fA-F]{64}/;
+
 async function walletChecks(w) {
   const d = () => w.document;
   const q = sel => d().querySelector(sel);
   const all = sel => d().querySelectorAll(sel);
   const txt = sel => { const e = q(sel); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; };
+  // A promise inside the frame has to be allowed to settle before the DOM it
+  // writes can be read. Everything else here is synchronous; the wallet send
+  // is not.
+  const settle = () => new Promise(r => setTimeout(r, 40));
   const errBefore = (w.__rcErrors || []).length;
 
   head('кошелёк GRAM — вкладка');
   inject(w, WALLET_SETUP);
+  // updateGramUI calls the real tcWarmUp, which builds the (faked) library one
+  // microtask later. Nothing below can drive a wallet status before that.
+  await settle();
   ok(!!q('#gram-body .gram-balance-card'), 'вкладка отрисована: карточка баланса на месте');
   ok(!!q('.gram-balance-chip svg'), 'фирменный знак GRAM встроен в карточку (не <img>)');
   // The mark is a BRAND mark: if it ever picks up currentColor it changes
@@ -493,18 +770,43 @@ async function walletChecks(w) {
 
   head('кошелёк GRAM — подключённый кошелёк');
   ok(!!q('.gram-wallet-card-off') && !!q('.gram-connect-btn'), 'без кошелька — приглашение подключить');
-  inject(w, `window.__rcWallet = 'UQAvB3n5kQq7fY2wJ4tRr8sLd1xZc0PmNbVgHiOkUyTe9WqA'; _onTonConnectChange();`);
+  ok(typeof w.__rcTcStatus === 'function', 'библиотека кошелька поднялась и отдала свой onStatusChange');
+  // ── ФОРМАТ АДРЕСА ────────────────────────────────────────────────────────
+  // The wallet reports the RAW form and always has. What goes in here is
+  // exactly what TON Connect hands over; what comes out on screen has to be
+  // the UQ… a player can compare against their own wallet app.
+  inject(w, `__rcTcStatus({ account: { address: '${RAW_WALLET}' } });`);
   ok(!!q('.gram-wallet-chip-on'), 'подключённый кошелёк отрисован как карточка со значком');
-  ok(txt('#gram-tc-addr-val') === 'UQAvB3n5kQq7fY2wJ4tRr8sLd1xZc0PmNbVgHiOkUyTe9WqA',
-     'полный адрес доступен целиком, а не только огрызок UQ…9WqA', txt('#gram-tc-addr-val'));
-  ok(!!q('.gram-wallet-short'), 'короткая форма адреса тоже показана');
+  ok(txt('#gram-tc-addr-val') === UQ_WALLET,
+     'сырой 0:… адрес кошелька превращён в UQ… — тот же байт в байт, что даёт server/ton.js',
+     txt('#gram-tc-addr-val'));
+  ok(txt('#gram-tc-addr-val').length === 48, 'длина адреса — ровно 48 символов дружелюбной формы',
+     txt('#gram-tc-addr-val').length + ' симв.');
+  ok(!!q('.gram-wallet-short') && txt('.gram-wallet-short').indexOf('UQ') === 0,
+     'короткая форма тоже UQ…, а не 0:…', txt('.gram-wallet-short'));
+  // The sweep, not the node: a test that checks the one element it thought of
+  // is a test the next element added to this card walks straight past.
+  ok(!RAW_ANYWHERE.test(d().body.innerText || ''),
+     'сырой формат 0:… не отрисован НИГДЕ на странице',
+     (RAW_ANYWHERE.exec(d().body.innerText || '') || ['—'])[0]);
   // The rename the owner asked for. Checked as rendered text, not as a
   // translation key: a key can be right while the button still says the old
   // word because the render never picked it up.
   ok(txt('.gram-unlink-btn') === 'Отвязать', 'кнопка называется «Отвязать», а не «Отключить»', txt('.gram-unlink-btn'));
-  ok(!!q('.gram-unlink-btn svg'), '«Отвязать» — кнопка с иконкой, а не подчёркнутое слово');
+  // The owner asked for the icon gone, not smaller. Asserted as "no svg
+  // anywhere in the button" rather than as the absence of one helper, because
+  // the way an icon comes back is a different helper.
+  ok(!q('.gram-unlink-btn svg') && !q('.gram-unlink-btn img'),
+     'иконки на «Отвязать» нет — только слово');
+  ok(typeof w._gramIconUnlink !== 'function', 'и сама иконка удалена вместе с кнопкой, а не осталась лежать');
   ok(w.getComputedStyle(q('.gram-unlink-btn')).borderStyle !== 'none', 'у «Отвязать» есть настоящая рамка');
   ok(!!q('.gram-copy-chip'), 'адрес можно скопировать');
+
+  // The other place the connected address lands, and the one that would send
+  // money back to it: the withdrawal form auto-fills from tcAddress().
+  inject(w, `openGramWithdrawModal(); window.__rcWdAddr = (document.getElementById('gram-wd-addr') || {}).value;`);
+  ok(w.__rcWdAddr === UQ_WALLET, 'форма вывода подставляет UQ…, а не сырой адрес', String(w.__rcWdAddr));
+  inject(w, 'closeGramModal();');
 
   head('кошелёк GRAM — модалка пополнения');
   inject(w, 'openGramDepositModal();');
@@ -516,8 +818,14 @@ async function walletChecks(w) {
   ok(typeof w.gramDepositConfirm !== 'function', 'обработчик gramDepositConfirm удалён вместе с кнопкой');
   ok(!!q('#gram-dep-code .gram-spinner'), 'пока код не пришёл — состояние загрузки');
 
-  inject(w, `onGramDepositIntent({ memo: 'LBT-a1b2c3d4e5f6', address: 'UQCplatform000000000000000000000000000000000', minAmount: 0.05, expiresAt: new Date(Date.now() + 1800000).toISOString() });`);
-  ok(txt('#gram-addr-val').indexOf('UQCplatform') === 0, 'адрес пополнения показан');
+  // Through the SOCKET, not through onGramDepositIntent — the conversion lives
+  // in js/network.js, and a test that calls the UI entry point directly walks
+  // past it. GRAM_WALLET is configured by hand and server/ton.js validAddress
+  // accepts `0:…` as readily as `UQ…`, so this raw payload is a shape the
+  // server really can send.
+  inject(w, `__rcEmit('gramDepositIntent', { memo: 'LBT-a1b2c3d4e5f6', address: '${RAW_PLAT}', minAmount: 0.05, expiresAt: new Date(Date.now() + 1800000).toISOString() });`);
+  ok(txt('#gram-addr-val') === UQ_PLAT, 'адрес пополнения показан в UQ…, а не сырым', txt('#gram-addr-val'));
+  ok(!RAW_ANYWHERE.test(d().body.innerText || ''), 'и сырого 0:… нигде в открытой модалке нет');
   ok(txt('#gram-memo-val') === 'LBT-a1b2c3d4e5f6', 'код (memo) показан', txt('#gram-memo-val'));
   ok(all('#gram-dep-code .gram-copy-row').length === 2, 'адрес и код — две отдельные строки с копированием',
      all('#gram-dep-code .gram-copy-row').length + ' шт');
@@ -534,6 +842,80 @@ async function walletChecks(w) {
   ok(!!q('.gram-dep-ok .gram-credit-chip svg'), 'галочка нарисована SVG-иконкой');
   inject(w, 'window.__rcBal = window._gramBalance;');
   ok(w.__rcBal === 15, 'баланс взят с сервера, а не досчитан локально', String(w.__rcBal));
+
+  // ── THE ROUND TRIP TO THE WALLET AND BACK ────────────────────────────────
+  // The journey the owner reported: pick an amount, pay from the wallet, the
+  // wallet app takes over the screen, approve, come back. That is the NORMAL
+  // path, and the sheet used to be gone by the time the player returned —
+  // _tcDepositSend called closeGramModal() the instant sendTransaction
+  // resolved. Somebody who has just sent real money and finds a folded panel
+  // concludes it failed.
+  head('кошелёк GRAM — оплата из кошелька: лист обязан пережить поход туда и обратно');
+  inject(w, `closeGramModal(); openGramDepositModal();
+    __rcEmit('gramDepositIntent', { memo: 'LBT-pay000000001', address: '${RAW_PLAT}', minAmount: 0.05, expiresAt: new Date(Date.now() + 1800000).toISOString() });
+    document.getElementById('gram-dep-amount').value = '1.5';
+    _renderTonDepositSection();`);
+  ok(!!q('#ton-deposit-send-btn') && !q('#ton-deposit-send-btn[disabled]'),
+     'кнопка «отправить из кошелька» активна, когда сумма введена');
+  inject(w, '_tcDepositSend();');
+  await settle();
+  ok((w.__rcTcSent || []).length === 1, 'перевод ушёл в кошелёк ровно один раз',
+     (w.__rcTcSent || []).length + ' шт');
+  // The conversion is on the MONEY path too, not only on the display one.
+  ok(((w.__rcTcSent || [])[0] || { messages: [{}] }).messages[0].address === UQ_PLAT,
+     'и ушёл на UQ…-адрес, а не на сырой',
+     String((((w.__rcTcSent || [])[0] || { messages: [{}] }).messages[0] || {}).address));
+  ok(!!q('#gram-modal-wrap'), 'ЛИСТ НЕ СХЛОПНУЛСЯ после подписи — он на экране');
+  ok(!!q('.gram-dep-wait'), 'и показывает ожидание, а не пустоту');
+  ok(txt('.gram-dep-sent-amount').indexOf('1.5') >= 0, 'с суммой, которую только что отправили',
+     txt('.gram-dep-sent-amount'));
+  ok(txt('.gram-dep-sent-memo').indexOf('LBT-pay000000001') >= 0, 'и с кодом, по которому её найдут',
+     txt('.gram-dep-sent-memo'));
+  ok(!!q('.gram-dep-wait .gram-spinner'), 'спиннер крутится, пока ожидание обычное');
+  ok(txt('.gram-dep-wait').indexOf('закрыть') >= 0,
+     'и сказано, что окно можно закрыть — зачисление придёт push-ом', txt('.gram-dep-wait'));
+  // The form goes for the same reason it goes on success: a second signature
+  // against a code that is already carrying money is a real double payment.
+  ok(!!q('#gram-dep-form') && w.getComputedStyle(q('#gram-dep-form')).display === 'none',
+     'форма с суммой и кнопкой убрана — второй перевод по тому же коду был бы двойной оплатой');
+  inject(w, 'window.__rcSlowArmed = !!_gramSlowTimer;');
+  ok(w.__rcSlowArmed === true, 'заведён таймер, после которого спиннер перестанет обещать «вот-вот»');
+
+  // Возврат из кошелька: WebView уходит в фон и приходит обратно, и на это
+  // подписаны и js/game.js, и js/network.js. Именно на этом пути лист пропадал,
+  // и именно здесь его обязан не трогать любой будущий обработчик.
+  inject(w, `(function () {
+    var vis = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return vis; } });
+    document.dispatchEvent(new Event('visibilitychange'));
+    vis = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('resize'));
+    delete document.visibilityState;
+  })();`);
+  await settle();
+  ok(!!q('#gram-modal-wrap') && !!q('.gram-dep-wait'),
+     'после цикла «свернули — развернули» лист и ожидание на месте');
+  ok(txt('.gram-dep-sent-memo').indexOf('LBT-pay000000001') >= 0, 'и код не потерялся по дороге');
+
+  // Спиннер, который крутится вечно, — это отдельный баг. Что таймер заведён,
+  // проверено выше; здесь проверяется то, во что он переключает — ждать
+  // GRAM_DEPOSIT_SLOW_MS в наборе, который должен пройти за секунды, нельзя.
+  inject(w, `_setGramDepositState('slow');`);
+  ok(!!q('.gram-dep-wait-slow'), 'затянувшееся ожидание — отдельное состояние, а не тот же спиннер');
+  ok(!q('.gram-dep-wait .gram-spinner'), 'спиннер остановлен — он больше не обещает «вот-вот»');
+  ok(!!q('.gram-dep-wait svg'), 'на его месте часы');
+  ok(txt('.gram-dep-wait').indexOf('дней') >= 0,
+     'и сказано, что код живёт ещё несколько дней и деньги не потеряны', txt('.gram-dep-wait'));
+  ok(txt('.gram-dep-sent-amount').indexOf('1.5') >= 0, 'сумма и код никуда не делись');
+
+  // И зачисление всё равно переворачивает лист — из ЛЮБОГО ожидания.
+  inject(w, `onGramDepositCredited({ amount: 1.5, balance: 16.5, memo: 'LBT-pay000000001', txHash: 'aa11bb22', at: Date.now() });`);
+  ok(!!q('.gram-dep-ok'), 'зачисление переворачивает лист в успех прямо из ожидания');
+  ok(!q('.gram-dep-wait'), 'и ожидание убрано');
+  inject(w, 'window.__rcPendAfter = _gramSentPending;');
+  ok(w.__rcPendAfter === null,
+     'ожидание снято до отрисовки — таймер уже не перепишет успех обратно в «задерживается»');
 
   // The half that is easy to leave out: the credit arriving with nothing open.
   head('кошелёк GRAM — зачисление при ЗАКРЫТОЙ модалке');
@@ -577,16 +959,35 @@ async function walletChecks(w) {
   ok(all('.gram-tx-ok').length === 1 && all('.gram-tx-wait').length === 0,
      'живой статус credited понят так же, как confirmed из истории',
      txt('#gram-history-list .gram-tx-status'));
+  // gram_tx.address is whatever went into the row — for a withdrawal, what the
+  // player typed, which for months was the raw address this very client
+  // auto-filled. No row renderer prints it today; the conversion is at the
+  // boundary precisely so that the day one does, it cannot print a `0:…`.
+  inject(w, `__rcEmit('gramHistory', { txs: [
+      { id: 11, type: 'withdraw', amount: 10, status: 'pending', address: '${RAW_WD}', createdAt: Date.now() },
+      { id: 12, type: 'deposit',  amount: 1,  status: 'confirmed', memo: 'LBT-11', createdAt: Date.now() }
+    ] });
+    window.__rcHistAddr = (_gramTxList[0] || {}).address;`);
+  ok(w.__rcHistAddr === UQ_WD, 'адрес в строке истории нормализован ещё на входе с сокета',
+     String(w.__rcHistAddr));
+  ok(all('#gram-history-list .gram-tx-row').length === 2, 'строки истории всё так же отрисованы',
+     all('#gram-history-list .gram-tx-row').length + ' шт');
 
   head('кошелёк GRAM — чужой текст в DOM');
   // memo and address arrive over the socket. They are the server's own values,
   // but they land in innerHTML, and this asserts the escaping actually happens
   // at render time rather than being assumed upstream.
   inject(w, `onGramHistory([{ id: 9, type: 'deposit', amount: 1, status: 'confirmed', memo: '<img src=x onerror=window.__rcPwn=1>', createdAt: Date.now() }]);`);
-  inject(w, `openGramDepositModal(); onGramDepositIntent({ memo: '<img src=y onerror=window.__rcPwn=2>', address: '<svg onload=window.__rcPwn=3>', minAmount: 0, expiresAt: null });`);
+  // Through the socket, so the address converter is on the path: it has to
+  // hand anything that is not an address straight back, unchanged and still
+  // unescaped, leaving the escaping to the render exactly as before.
+  inject(w, `openGramDepositModal(); __rcEmit('gramDepositIntent', { memo: '<img src=y onerror=window.__rcPwn=2>', address: '<svg onload=window.__rcPwn=3>', minAmount: 0, expiresAt: null });`);
   ok(all('#gram-history-list img').length === 0, 'memo из истории не превратился в тег');
   ok(all('#gram-dep-code img').length === 0 && all('#gram-dep-code svg[onload]').length === 0,
      'memo и адрес из intent не превратились в теги');
+  ok(txt('#gram-addr-val') === '<svg onload=window.__rcPwn=3>',
+     'не-адрес прошёл через конвертер как есть — он не чинит и не портит чужой текст',
+     txt('#gram-addr-val'));
   inject(w, 'window.__rcPwnOut = window.__rcPwn || 0;');
   ok(!w.__rcPwnOut, 'ни один инъецированный обработчик не выполнился', String(w.__rcPwnOut));
   inject(w, 'closeGramModal();');
@@ -615,11 +1016,14 @@ async function walletChecks(w) {
   ok((w.__rcErrors || []).length === errBefore, 'вкладка кошелька не бросила ни одной ошибки',
      (w.__rcErrors || []).slice(errBefore).join(' | '));
 
-  // Put the frame back the way the world checks expect to find it.
+  // Put the frame back the way the world checks expect to find it. The wallet
+  // is disconnected through the library's own callback rather than by clearing
+  // a variable, so tcAddress() and the panel agree about it afterwards.
   inject(w, `closeGramModal();
+    if (window.__rcTcStatus) __rcTcStatus(null);
     var _t2 = document.getElementById('gram-credit-toast'); if (_t2) _t2.remove();
     var _p = document.getElementById('panel-profile'); if (_p) _p.style.display = 'none';
-    activeTab = 0; window.__rcWallet = '';`);
+    activeTab = 0;`);
 }
 
 function finish(w) {

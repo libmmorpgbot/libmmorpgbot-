@@ -785,12 +785,29 @@ function _npcTextures(id) {
 // mobile, where collection pauses show up as visible hitches.
 let _tileVisGen = 0;
 let _chunkBuildFailed = false;
+let _chunkBuildFails = 0;
+let _chunkBuildErr = '';
 // What the tile pass actually decided this frame. Read by the blank-world
 // diagnostic (js/game.js): "no tiles" and "no tiles because the camera is
 // outside the map" are different problems with different fixes, and the first
 // report of this could not tell them apart.
-const _tileRange = { c0x: -1, c1x: -1, c0y: -1, c1y: -1, built: 0, failed: false };
-function pixiTileRange() { _tileRange.failed = _chunkBuildFailed; return _tileRange; }
+//
+// `ranAt` is the third thing that report could not distinguish and the one
+// that costs the least: it is stamped as the first statement of the pass, so
+// a stale one means the pass DID NOT RUN — render() returned before the world
+// (a panel), or pixiWorldRender bailed on a lost context — rather than ran
+// and found nothing. Those look identical from the chunk counts alone and
+// have nothing in common as fixes.
+const _tileRange = {
+  c0x: -1, c1x: -1, c0y: -1, c1y: -1, built: 0,
+  ranAt: 0, failed: false, fails: 0, err: '',
+};
+function pixiTileRange() {
+  _tileRange.failed = _chunkBuildFailed;
+  _tileRange.fails = _chunkBuildFails;
+  _tileRange.err = _chunkBuildErr;
+  return _tileRange;
+}
 // Building a chunk (_buildChunk: 5-6 full passes over its tiles — wall fill,
 // floor, cliff caps, two shadow passes, props) plus the GPU texture upload
 // from PIXI.Texture.from() is real synchronous work per chunk. Revealing a
@@ -838,6 +855,10 @@ function _prewarmTexture(tex) {
   try { _pixiApp.renderer.texture.bind(tex); } catch (err) { /* context gone mid-build */ }
 }
 function _updateTiles(camX, camY) {
+  // FIRST statement, before every guard and before anything that can throw:
+  // this stamp answers "did the tile pass run at all", and it is only worth
+  // anything if nothing can get between being called and setting it.
+  _tileRange.ranAt = performance.now();
   if (!dungeon || !dungeon.grid) return;
   const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
   const maxCy = Math.ceil(dungeon.h * TILE / _CHUNK_PX) - 1;
@@ -873,8 +894,17 @@ function _updateTiles(camX, camY) {
           try {
             cv = _buildChunk(cx, cy);
           } catch (err) {
+            // Counted, not just latched. _built is incremented BEFORE this
+            // try, so a build that throws still spends its slot of the
+            // per-frame budget — a chunk that fails every time it is tried
+            // burns the whole budget every frame and nothing is ever put in
+            // _tileChunks. That is a permanently black floor with a live
+            // renderer, and the count is what tells it apart from one chunk
+            // that failed once at startup and was never tried again.
+            _chunkBuildFails++;
             if (!_chunkBuildFailed) {
               _chunkBuildFailed = true;
+              _chunkBuildErr = 'чанк ' + key + ': ' + ((err && err.message) || String(err));
               console.error('[tiles] чанк ' + key + ' не построился:', err);
               if (typeof window.__reportClientError === 'function') {
                 window.__reportClientError('chunk-build',
@@ -2076,17 +2106,50 @@ function _updatePets(dt) {
 // Each failure is reported ONCE per layer per session, with the real message
 // and stack. Silence is the thing being fixed; a swallowed exception that
 // nobody hears about would be the same bug wearing a different coat.
-const _layerBroken = new Set();
+//
+// Note what is and is NOT latched here, because it has been misread as the
+// cause of a blank floor: the layer is never disabled. It is re-run every
+// frame, forever, and only the REPORT is once — so a tile pass that throws on
+// every frame looks, from the outside, exactly like one that quietly drew
+// nothing, and says so exactly once at the very start of the session. That is
+// why the count and the message are kept: the blank-world diagnostic in
+// js/game.js reads them, and "слои tiles x41000" is the difference between a
+// pass that is failing and a pass that is finding nothing to do.
+const _layerFaults = new Map();   // layer name -> { n, msg }
 function _layer(name, fn) {
   try { fn(); } catch (err) {
-    if (!_layerBroken.has(name)) {
-      _layerBroken.add(name);
-      console.error('[pixi] слой "' + name + '" упал:', err);
-      if (typeof window.__reportClientError === 'function') {
-        window.__reportClientError('layer-' + name, err && err.message, err && err.stack);
-      }
+    const seen = _layerFaults.get(name);
+    if (seen) { seen.n++; return; }
+    _layerFaults.set(name, { n: 1, msg: (err && err.message) || String(err) });
+    console.error('[pixi] слой "' + name + '" упал:', err);
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('layer-' + name, err && err.message, err && err.stack);
     }
   }
+}
+// Empty string when every layer is fine, so the caller can print "ок".
+function pixiLayerFaults() {
+  if (!_layerFaults.size) return '';
+  const out = [];
+  _layerFaults.forEach((f, name) => out.push(name + ' x' + f.n + ': ' + String(f.msg).slice(0, 60)));
+  return out.join('; ');
+}
+
+// Both fault records — the layer faults above and the chunk-build latch by
+// _updateTiles — exist so a failure is reported once instead of sixty times a
+// second, and nothing ever cleared either of them. That is right while the
+// failure persists and wrong the moment something has actually been done
+// about it: after the renderer is rebuilt every one of those faults describes
+// a context that no longer exists, and the NEXT failure — the one that would
+// say whether the rebuild helped — is silently swallowed as a repeat.
+//
+// Called only from the blank-world watchdog's escalation (js/game.js), which
+// is the one place that changes anything about the renderer.
+function pixiResetFaults() {
+  _layerFaults.clear();
+  _chunkBuildFailed = false;
+  _chunkBuildFails = 0;
+  _chunkBuildErr = '';
 }
 
 function pixiWorldRender(dt, ts, camX, camY, theme) {
