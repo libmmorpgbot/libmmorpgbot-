@@ -251,7 +251,17 @@ async function main() {
 
   sock.emit('seasonRating', {});
   const season = await once(sock, 'seasonRatingData');
-  ok(season.board && season.me, 'сезонна таблиця і власне місце віддаються');
+  // `list`, not `board`, and me.username — the exact three fields
+  // _seasonRatingHTML reads. The old assertion checked `board`, which the
+  // renderer never looked at: it passed while the season table drew an empty
+  // list for every player. Naming the fields the CLIENT needs is the whole
+  // difference between this line and the one it replaces.
+  ok(Array.isArray(season.list), 'сезонна таблиця віддається під іменем list',
+    'рисувальник читає r.list — board він не бачить');
+  ok(season.me && typeof season.me.username === 'string',
+    'і власне місце приходить з іменем', JSON.stringify(season.me));
+  ok(Number.isFinite(season.minPoints),
+    'і поріг рейтингу — з сервера, а не зашитий у клієнт');
 
   // Chat: the message comes back escaped of control characters and bounded.
   sock.emit('chat', { text: 'привет [31m ' + 'x'.repeat(300) });
