@@ -53,6 +53,7 @@ process.env.ADMIN_TOKEN_SECRET = process.env.ADMIN_TOKEN_SECRET
 const { pool, close, tx } = require('../server/db');
 const players = require('../server/db/repos/players');
 const app = require('../server/app');
+const { wipeItemsAll } = require('./fixtures');
 
 const ROOT = path.join(__dirname, '..');
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -353,7 +354,11 @@ async function main() {
 async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
   if (made.length) {
-    for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_daily',
+    // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+    // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+    // про розходження — 216 пар 27 серпня, усі до одної тестові.
+    await wipeItemsAll(made);
+    for (const t of ['player_skills', 'player_vip', 'player_prefs', 'player_daily',
                      'player_season', 'player_progress', 'player_logs', 'ledger', 'balances']) {
       await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
     }

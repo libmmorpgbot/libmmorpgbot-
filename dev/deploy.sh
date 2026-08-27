@@ -32,6 +32,30 @@ fi
 echo "  синхронізую $COMMIT ..."
 bash "$(dirname "${BASH_SOURCE[0]}")/sync.sh" >/dev/null
 
+# ── картинки й звук їдуть окремо, і тільки ті, яких там немає ──────────────
+# images/ і audio/ виключені з sync.sh навмисно: 19 МБ на кожен тестовий
+# прогін — це хвилини, а міняються вони раз на місяць. На дроплеті це СИМЛІНКИ
+# на /srv/liberty/app, тобто спільне сховище, яке переживає деплой.
+#
+# Через це новий файл не доїжджав узагалі. images/airdrop.png лежав у git,
+# показувався в інтерфейсі й віддавав 404 у проді — мовчки, бо ніщо не
+# перевіряло, що ассет, на який посилається код, там є.
+#
+# Порівнюються ім'я та розмір: цього досить, щоб зловити «файла немає» і
+# «файл замінили», і на два порядки дешевше за передачу всіх 19 МБ.
+ASSETS=$(git -c core.quotepath=false ls-files images audio || true)
+if [ -n "$ASSETS" ]; then
+  LOCAL=$(echo "$ASSETS" | while IFS= read -r f; do
+            [ -f "$f" ] && printf '%s %s\n' "$(wc -c <"$f" | tr -d ' ')" "$f"; done | sort)
+  REMOTE=$("${SSH[@]}" "cd /srv/liberty/next && find -L images audio -type f -printf '%s %p\n' 2>/dev/null | sort" || true)
+  MISSING=$(comm -23 <(echo "$LOCAL") <(echo "$REMOTE") | sed 's/^[0-9]* //')
+  if [ -n "$MISSING" ]; then
+    echo "  надсилаю $(echo "$MISSING" | wc -l | tr -d ' ') нових/змінених ассетів ..."
+    echo "$MISSING" | tar -czf - -T - \
+      | "${SSH[@]}" "tar -xzf - -C /srv/liberty/next"
+  fi
+fi
+
 echo "  викочую ..."
 "${SSH[@]}" bash -s <<REMOTE
 set -euo pipefail

@@ -33,6 +33,7 @@ const { pool, close } = require('../server/db');
 const players = require('../server/db/repos/players');
 const money = require('../server/db/repos/money');
 const app = require('../server/app');
+const { wipeItemsAll } = require('./fixtures');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -339,7 +340,11 @@ async function main() {
 async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
   if (made.length) {
-    for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_daily',
+    // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+    // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+    // про розходження — 216 пар 27 серпня, усі до одної тестові.
+    await wipeItemsAll(made);
+    for (const t of ['player_skills', 'player_vip', 'player_prefs', 'player_daily',
                      'player_season', 'player_progress', 'ledger', 'balances']) {
       await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
     }

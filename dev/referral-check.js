@@ -159,6 +159,7 @@ globalThis.fetch = async (u, init) => {
 // export is enough — the real one still runs behind it, and still refuses to
 // send.
 const tgGame = require('../server/tg-game');
+const { wipeItemsAll } = require('./fixtures');
 const sends = [];
 const _realSend = tgGame.send;
 tgGame.send = async (chatId, html, opts) => {
@@ -641,7 +642,11 @@ async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
   // player_logs too: this file writes rows there on purpose, and a detector
   // that leaves its own evidence behind makes the next reader's search worse.
-  for (const t of ['player_logs', 'player_season', 'player_daily', 'player_items', 'player_skills',
+  // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+  // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+  // про розходження — 216 пар 27 серпня, усі до одної тестові.
+  await wipeItemsAll(made);
+  for (const t of ['player_logs', 'player_season', 'player_daily', 'player_skills',
                    'player_vip', 'player_prefs', 'player_progress', 'ledger', 'balances']) {
     await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
   }

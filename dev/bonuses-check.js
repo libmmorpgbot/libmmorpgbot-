@@ -34,6 +34,7 @@ const money = require('../server/db/repos/money');
 const stats = require('../server/db/repos/stats');
 const consumables = require('../server/db/repos/consumables');
 const items = require('../server/db/repos/items');
+const { wipeItemsAll } = require('./fixtures');
 const {
   VIP_BONUSES, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT,
   SEASON_TICKET_DROP_PCT, NEXUM_DROP_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL, ITEM_DEF,
@@ -204,7 +205,10 @@ main()
   .finally(async () => {
     const del = (t) => pool().query(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]).catch(() => {});
     if (made.length) {
-      for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_daily',
+      // Предмети — тими ж дверима, якими їх видали: сирий DELETE лишав у
+      // item_ledger видачу без рядків, і нічна звірка справедливо кричала.
+      await wipeItemsAll(made);
+      for (const t of ['player_skills', 'player_vip', 'player_prefs', 'player_daily',
                        'player_season', 'player_progress', 'player_logs', 'ledger', 'balances']) await del(t);
       await pool().query('DELETE FROM players WHERE id = ANY($1)', [made]).catch(() => {});
     }

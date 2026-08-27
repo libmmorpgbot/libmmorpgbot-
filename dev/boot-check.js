@@ -34,6 +34,7 @@ const path = require('path');
 const io = require('socket.io-client');
 const { boot, server } = require('../server/app');
 const { pool, close } = require('../server/db');
+const { wipeItemsAll } = require('./fixtures');
 
 let pass = 0, fail = 0, skipped = 0; const failures = [];
 function ok(c, name, detail) {
@@ -532,7 +533,11 @@ async function cleanup() {
     .catch(() => ({ rows: [] }));
   if (rows.length) {
     const id = rows.map(r => Number(r.id));
-    for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs',
+    // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+    // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+    // про розходження — 216 пар 27 серпня, усі до одної тестові.
+    await wipeItemsAll(id);
+    for (const t of ['player_skills', 'player_vip', 'player_prefs',
                      'player_progress', 'ledger', 'balances', 'gram_tx']) {
       await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [id]);
     }

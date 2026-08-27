@@ -15,6 +15,7 @@ const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const craft = require('../server/db/repos/craft');
+const { wipeItemsAll } = require('./fixtures');
 const {
   GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES, craftResultEnhance,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
@@ -420,7 +421,11 @@ async function main() {
 async function cleanup() {
   const q = (s, p) => pool().query(s, p).catch(() => {});
   if (!made.length) return;
-  for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_progress', 'ledger', 'balances']) {
+  // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+  // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+  // про розходження — 216 пар 27 серпня, усі до одної тестові.
+  await wipeItemsAll(made);
+  for (const t of ['player_skills', 'player_vip', 'player_prefs', 'player_progress', 'ledger', 'balances']) {
     await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
   }
   await q('DELETE FROM players WHERE id = ANY($1)', [made]);

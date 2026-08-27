@@ -32,6 +32,7 @@ if (!REMOTE) {
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 
 const { pool, close } = require('../server/db');
+const { wipeItemsAll } = require('./fixtures');
 const app = REMOTE ? null : require('../server/app');
 
 let pass = 0, fail = 0; const failures = [];
@@ -669,7 +670,11 @@ async function cleanup() {
   const ids = [madeId, second].filter(Boolean);
   if (ids.length) {
     await q('DELETE FROM chat_messages WHERE player_id = ANY($1)', [ids]);
-    for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs', 'player_daily',
+    // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+    // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+    // про розходження — 216 пар 27 серпня, усі до одної тестові.
+    await wipeItemsAll(ids);
+    for (const t of ['player_skills', 'player_vip', 'player_prefs', 'player_daily',
                      'player_season', 'player_progress', 'ledger', 'balances']) {
       await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [ids]);
     }

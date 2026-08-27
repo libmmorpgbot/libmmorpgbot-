@@ -22,6 +22,7 @@ const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const stats = require('../server/db/repos/stats');
 const { xpToNext, ENHANCE_MAX } = require('../shared/definitions');
+const { wipeItemsAll } = require('./fixtures');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -292,7 +293,11 @@ async function cleanup() {
     if (madeQuests.length) await q('DELETE FROM special_quests WHERE id = ANY($1)', [madeQuests]);
   };
   if (!made.length) { await dropQuests(); return; }
-  for (const t of ['player_items', 'player_skills', 'player_vip', 'player_prefs',
+  // Предметы — ТЕМИ Ж ДВЕРИМА, якими їх видали. Сирий DELETE лишав у
+  // item_ledger видачу без рядків, і нічна звірка справедливо кричала
+  // про розходження — 216 пар 27 серпня, усі до одної тестові.
+  await wipeItemsAll(made);
+  for (const t of ['player_skills', 'player_vip', 'player_prefs',
                    'player_season', 'player_special_quests', 'player_daily',
                    'player_progress', 'ledger', 'balances', 'gram_tx']) {
     await q(`DELETE FROM ${t} WHERE player_id = ANY($1)`, [made]);
