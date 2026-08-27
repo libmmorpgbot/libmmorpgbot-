@@ -27,6 +27,11 @@
 // "the client cannot touch it".
 
 const { query } = require('../index');
+// The address normaliser and validator, shared with the chain reader. Its
+// client twin is tcFriendlyAddress in js/tonconnect.js — same tag, same
+// polynomial, same 48 characters — because what the player is shown is what
+// they paste back into the withdrawal form.
+const ton = require('../../ton');
 const { xpToNext, skillPointBudget, upgradeCost, CHAR_DEF, UPGRADE_KEYS, SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL } =
   require('../../../shared/definitions');
 
@@ -137,6 +142,191 @@ async function setWriteAccess(db, playerId, granted) {
            updated_at      = now()
      WHERE id = $1`, [Number(playerId), !!granted]);
   return { stored: true };
+}
+
+// ── which wallet is this ACCOUNT's ──────────────────────────────────────────
+// See migration 015. The linked address is a fact about the ACCOUNT; a live
+// TON Connect session is a fact about the BROWSER. Only the first can live
+// here — and until it did, "на телефоні привязаний гаманець тон а на пк пише
+// підключити гаманець" was the correct behaviour of a value that existed
+// nowhere but in one browser's localStorage.
+//
+// Do not confuse this with GRAM_WALLET. That is the PROJECT's deposit address,
+// it is configuration, it is the same for every player, and it reaches the
+// client as `gramWallet`. This one is the player's own and reaches the client
+// as `linkedWallet`. Showing one where the other belongs tells a player to pay
+// themselves.
+//
+// Probed rather than assumed, exactly like _hasWriteAccessCols above and for
+// the same reason: the owner applies migrations by hand with a credential the
+// deploy does not carry, so this code lands first and the columns follow.
+// tonAddressOf is on the LOGIN path, so a server that crash-loops on a missing
+// column between those two moments is every player, not one panel.
+let _tonCols = null;
+async function _hasTonAddressCols(db) {
+  if (_tonCols !== null) return _tonCols;
+  try {
+    const { rows } = await query(db, `
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'players' AND column_name = 'ton_address' LIMIT 1`);
+    _tonCols = rows.length > 0;
+  } catch {
+    _tonCols = false;
+  }
+  return _tonCols;
+}
+
+// The pair, as the client needs to read it. `everLinked` is ton_address_at
+// being set at all, and it is not a statistic: it is what tells a device with a
+// restored wallet session whether it may publish that session to the account.
+//
+// Before the migration this answers "never linked, not stored", and that
+// default is the safe one in a way worth stating. The client publishes a
+// restored session only when the account has never had an address — so a
+// pre-migration server gets one wasted packet per launch and forgets it, which
+// is exactly the behaviour that shipped before 015. The opposite default
+// ("deliberately unlinked") would suppress the backfill entirely, and the bug
+// this whole change exists to fix would keep looking unfixed after the deploy.
+async function tonAddressOf(db, playerId) {
+  if (!await _hasTonAddressCols(db)) return { address: null, everLinked: false, stored: false };
+  const { rows } = await query(db,
+    'SELECT ton_address, ton_address_at FROM players WHERE id = $1', [Number(playerId)]);
+  if (!rows.length) return { address: null, everLinked: false, stored: true };
+  return {
+    address: rows[0].ton_address || null,
+    everLinked: rows[0].ton_address_at != null,
+    stored: true,
+  };
+}
+
+// ── what a lying client could gain, worked out once ─────────────────────────
+//
+// THE CLIENT IS THE ONLY POSSIBLE SOURCE of this address, the same way it is
+// for can_message: TON Connect reports the wallet to the page, and there is no
+// server-side callback to ask. So the question is not "can it be forged" — of
+// course it can — but "what does forging it buy", and the answer today is
+// NOTHING. Written down here so the next person does not have to redo it:
+//
+//   * WITHDRAWALS. The withdrawal form takes any address the player types, and
+//     gram.requestWithdraw validates the FORM of it and nothing else. Asserting
+//     a wallet you do not own gets you an auto-filled field you could have
+//     filled by hand. There is no gain because there was never a restriction.
+//   * DEPOSITS. A transfer is credited on its MEMO (repos/gram.js keys the
+//     ledger entry `deposit:memo:<memo>`), never on who sent it. gram_tx.sender
+//     is written from the chain and is evidence on an ops card, not an input.
+//     Claiming somebody's address credits you with nothing of theirs.
+//   * OTHER PLAYERS. The column is not unique (migration 015 says why at
+//     length), so claiming an address in use cannot lock its real owner out of
+//     linking it. That is the one griefing move a UNIQUE constraint would have
+//     handed out for free.
+//
+// THREE WAYS THAT STOPS BEING TRUE, and each of them is somebody else's future
+// change rather than this one:
+//
+//   1. Restricting withdrawals to the linked address as an anti-fraud measure.
+//      It would restrict nothing — the same packet that sets the destination
+//      sets the restriction — while reading, in a review, like a control.
+//   2. Crediting or attributing a deposit by its sender rather than its memo.
+//   3. Showing this address to an operator as though it were verified. It is a
+//      CLAIM. Every ops card that prints it must say so, or the first person to
+//      launder through it will do so behind a label that vouched for them.
+//
+// What would make it proof is TON Connect's `tonProof`: the wallet signs a
+// server-issued nonce and the server verifies the signature against the account
+// state. That is a real change with a real key check in it, and it is the thing
+// to build BEFORE any of the three above — not alongside.
+function _normalisedTonAddress(address) {
+  const raw = String(address == null ? '' : address).trim();
+  // validAddress accepts raw `0:hex…` as readily as friendly `UQ…`, so this
+  // refuses first and normalises second. Refusing anything that is not an
+  // address at all is the point: a free-text column that anything can be
+  // written into is a column an operator cannot read.
+  if (!ton.validAddress(raw)) {
+    const e = new Error('Некорректный TON-адрес');
+    e.code = 'bad_address'; e.userMessage = e.message;
+    throw e;
+  }
+  // FRIENDLY, always. A raw address in this column would be auto-filled into
+  // the withdrawal form and shown on the wallet card, and a player comparing
+  // `0:8fe52cb8…` against what their wallet app shows them concludes the game
+  // linked somebody else's account. js/tonconnect.js tcFriendlyAddress is this
+  // function's client twin and produces the same 48 characters.
+  return ton.friendlyAddress(raw);
+}
+
+// NEWEST WINS, and the caller decides what counts as new — see the handler in
+// server/app.js and _onTonConnectChange in js/ui.js. The rule the two halves
+// implement together: a wallet the player just connected ON THIS DEVICE
+// replaces whatever the account held; a session merely RESTORED from a
+// browser's storage publishes itself only when the account holds nothing.
+//
+// Oldest-wins and refuse were both rejected for the same reason: a player whose
+// old wallet is gone — phone lost, seed rotated, wallet app uninstalled — could
+// then never change their payout address without an operator, and there is one
+// operator. "Newest wins" is the only one of the three where the player can fix
+// their own account.
+//
+// The cost of newest-wins is that a change must never be silent, and it is not:
+// the previous address comes back from here, the handler writes it into a
+// player_logs row, and the wallet card shows the address in full on every
+// device rather than an elided "UQ6f…ab3f" nobody can check.
+async function setTonAddress(db, playerId, address) {
+  // Before the schema probe on purpose: an address that is not an address is
+  // refused whether or not the migration has been applied, so the refusal a
+  // player sees does not depend on the deploy window they hit.
+  const addr = _normalisedTonAddress(address);
+  if (!await _hasTonAddressCols(db)) return { stored: false, address: addr, previous: null, changed: false };
+  const pid = Number(playerId);
+  // FOR UPDATE, and `db` is a transaction client from session.act. The previous
+  // address is what the log row and the ops trail are about, so reading it and
+  // overwriting it have to be one indivisible step — otherwise the row says a
+  // wallet was replaced by one that had already replaced it.
+  const { rows } = await query(db,
+    'SELECT ton_address FROM players WHERE id = $1 FOR UPDATE', [pid]);
+  const previous = rows.length ? (rows[0].ton_address || null) : null;
+  // Nothing changed: no write, and `changed:false` so the caller logs nothing.
+  // A player opening the wallet panel on the same device every day would
+  // otherwise write a row and an UPDATE per launch, and player_logs is where
+  // the answer to "when did this address change" has to stay findable.
+  if (previous === addr) return { stored: true, address: addr, previous, changed: false };
+  await query(db, `
+    UPDATE players
+       SET ton_address    = $2,
+           ton_address_at = now(),
+           updated_at     = now()
+     WHERE id = $1`, [pid, addr]);
+  return { stored: true, address: addr, previous, changed: true };
+}
+
+// «Отвязать» means the ACCOUNT, not the device — that is what the word means to
+// the player who presses it, and a button that unlinks one browser while the
+// other one still withdraws to the same wallet is the same lie in the opposite
+// direction.
+//
+// ton_address_at is written, NOT cleared, and that is the whole point of the
+// pair. It is what separates "unlinked on purpose" from "never linked", and the
+// client reads exactly that difference to decide whether a device with a
+// restored TON Connect session may publish it. Clearing it would let the player
+// unlink on the desktop, open the phone, and have the phone link the wallet
+// straight back — an unlink undone by opening an app.
+//
+// It is written even when nothing was linked. Pressing «Отвязать» with no
+// server-side address is still the player saying "not this wallet", and the
+// device that offered the button is a device whose restored session would
+// otherwise publish itself on the next launch.
+async function clearTonAddress(db, playerId) {
+  if (!await _hasTonAddressCols(db)) return { stored: false, previous: null };
+  const pid = Number(playerId);
+  const { rows } = await query(db,
+    'SELECT ton_address FROM players WHERE id = $1 FOR UPDATE', [pid]);
+  const previous = rows.length ? (rows[0].ton_address || null) : null;
+  await query(db, `
+    UPDATE players
+       SET ton_address    = NULL,
+           ton_address_at = now(),
+           updated_at     = now()
+     WHERE id = $1`, [pid]);
+  return { stored: true, previous };
 }
 
 // ── who invited this player ─────────────────────────────────────────────────
@@ -649,6 +839,7 @@ module.exports = {
   idByTelegram,
   byTelegramId, ensure, setUsername, registerReferral,
   canMessage, setWriteAccess,
+  tonAddressOf, setTonAddress, clearTonAddress,
   progressOf, prefsOf, skillsOf,
   savePrefs, PREF_FIELDS,
   savePosition, setHp, setClass,

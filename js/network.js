@@ -591,7 +591,7 @@ function netConnect(onReady) {
     }
   });
 
-  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras, seasonTicketActive, canMessage }) => {
+  socket.on('authOk', ({ username, savedData, isNewAccount, clanInfo, gramBalance, gramWallet, refLink, vipData, nexumBalance, topPlayer, vipAuras, seasonTicketActive, canMessage, linkedWallet, walletEverLinked }) => {
     _authOkReceived = true;
     netUsername = username;
     _seasonTicketActive = !!seasonTicketActive;
@@ -619,6 +619,26 @@ function netConnect(onReady) {
     // today, and that is precisely why it is converted here: a raw address
     // parked on window is one render away from a player's screen.
     window._gramWallet    = _gramFriendly(gramWallet || '');
+    // ── the PLAYER's own wallet, which is a DIFFERENT address ──────────
+    // _gramWallet above is GRAM_WALLET: where everybody DEPOSITS TO. This one
+    // is the wallet this account has linked, and it is what the withdrawal
+    // form pre-fills and what the wallet card calls «привязан».
+    //
+    // It arrives from the server, so it is on every device — which is the whole
+    // bug: it used to live only in tcAddress(), and tcAddress() is TON Connect
+    // restoring a session out of THIS browser's localStorage. The phone
+    // remembered and the desktop had never heard of it.
+    //
+    // Normalised on arrival like every other address, even though the column
+    // can only hold the friendly form: the rule is that an address is converted
+    // at the boundary it enters this client through, not at each render site.
+    window._linkedWallet  = linkedWallet ? _gramFriendly(linkedWallet) : null;
+    // Whether the ACCOUNT has ever linked one — the bit that separates "never
+    // linked" from "unlinked on purpose". _onTonConnectChange reads it to decide
+    // whether a wallet session this browser merely RESTORED may be published to
+    // the account. Without it, unlinking on one device is undone by opening
+    // another.
+    window._walletEverLinked = !!walletEverLinked;
     window._refLink       = refLink       || '';
     window._vipData       = vipData       || { level: 0, deposited: 0, pending: [] };
     window._nexumBalance  = nexumBalance  || 0;
@@ -3539,6 +3559,25 @@ function netGramDepositIntent() {
 function netGramWithdraw(amount, address) {
   _emitWhenAuthed('gramWithdrawRequest', { amount, address });
 }
+// ── this wallet belongs to this ACCOUNT ─────────────────────────────────────
+// Reported by the client because nothing else can report it: TON Connect hands
+// the wallet to the page and offers no server-side callback. What a lying
+// client would gain by asserting an address it does not own is worked out in
+// full in server/db/repos/players.js (setTonAddress) and the answer is nothing
+// — the withdrawal form already accepts any address typed into it, and a
+// deposit is credited by its memo and never by its sender.
+//
+// Through _emitWhenAuthed rather than a bare emit: a wallet connects at exactly
+// the moment the app comes back from the wallet application, which is the
+// reconnect window that helper exists for.
+function netWalletLink(address) {
+  _emitWhenAuthed('walletLink', { address });
+}
+// Unlinks the ACCOUNT. The browser drops its own TON Connect session separately
+// (js/ui.js _gramUnlinkWallet) — that part no server can do.
+function netWalletUnlink() {
+  _emitWhenAuthed('walletUnlink', {});
+}
 function netGramShopBuy(pkgId, petId) {
   if (socket?.connected) socket.emit('gramShopBuy', { pkgId, petId });
 }
@@ -4502,6 +4541,52 @@ function _initGramHandlers(s) {
     // offers a retry, and it never shows a memo that would not be matched.
     if (typeof _gramDepositFailed === 'function' && _gramDepositFailed(msg)) return;
     if (typeof _gramMsg === 'function') _gramMsg(msg, 'err');
+  });
+  // ── the account's linked wallet, as the SERVER holds it ─────────────────
+  // The answer to walletLink and walletUnlink, and the only thing allowed to
+  // move _linkedWallet after login. The client never assumes its own report
+  // landed: a card that says «привязан» on the strength of a packet the database
+  // dropped is the same lie as the desktop saying «подключить» about a wallet
+  // that was linked — it just fails in the other direction.
+  //
+  // `stored:false` is the window between this code deploying and migration 015
+  // being applied by hand. Nothing was written, so nothing is claimed, and
+  // everLinked stays false — which leaves the client publishing a restored
+  // session on the next launch, exactly as it must until the column exists.
+  s.on('walletState', ({ address, everLinked, stored } = {}) => {
+    const had = window._linkedWallet || null;
+    window._linkedWallet = address ? _gramFriendly(address) : null;
+    window._walletEverLinked = !!everLinked;
+    // The unlink confirmation lives HERE, not on the local disconnect edge in
+    // js/ui.js, because «Кошелёк отвязан» is a claim about the ACCOUNT and the
+    // server is the only thing that can make it. Announcing it when the browser
+    // dropped its own session would claim an unlink that had not happened.
+    if (had && !window._linkedWallet && typeof _gramMsg === "function") {
+      _gramMsg(typeof t === 'function' ? t('tcUnlinkConfirmToast') : 'Кошелёк отвязан', 'ok');
+    }
+    // A link the database did not keep is not an error the player can act on —
+    // it is a migration the owner has not run — so it is reported to the console
+    // and to player_logs rather than shown. Silence here is what would make the
+    // pre-015 window indistinguishable from a working link.
+    if (stored === false) {
+      console.warn('[wallet] сервер не сохранил привязку — миграция 015 ещё не применена');
+      if (typeof window.__reportClientError === 'function') {
+        window.__reportClientError('walletState', 'linked wallet not stored — migration 015 pending');
+      }
+    }
+    if (typeof _onWalletStateChange === 'function') _onWalletStateChange();
+  });
+  // A refused or throttled link/unlink. Its own channel, not gramError: that
+  // one flips a deposit sheet waiting on its code into an error state, and a
+  // wallet refusal has no business killing a payment in progress.
+  s.on('walletError', ({ msg } = {}) => {
+    const text = msg || (typeof t === 'function' ? t('tcLinkFailedMsg') : 'Не удалось сохранить кошелёк');
+    console.warn('[wallet] отказ:', text);
+    if (typeof _gramMsg === 'function') _gramMsg(text, 'err');
+    // Re-drawn from what the SERVER still holds, so a card that was optimistically
+    // showing the new wallet goes back to the old one instead of keeping a state
+    // the account never reached.
+    if (typeof _onWalletStateChange === 'function') _onWalletStateChange();
   });
   s.on('refData', (data) => {
     if (typeof onRefData === 'function') onRefData(data);

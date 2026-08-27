@@ -717,6 +717,16 @@ async function blankWorldChecks(w) {
 //     wire the REAL callback. The tests then hand it the raw form, which is
 //     what a real wallet actually reports.
 //
+//   netWalletLink / netWalletUnlink — the client's two ways of telling the
+//     SERVER which wallet this account has. They go out through
+//     _emitWhenAuthed, which waits for a live, server-authed socket and gives
+//     up after ~6s — and this harness deliberately has neither, so the real
+//     ones could only ever sit in a retry loop and then toast «Нет соединения».
+//     Replaced here for the same reason __rcSock replaces the incoming half:
+//     they are the TRANSPORT. Nothing in the decision above them is faked, so
+//     what is under test is the rule about WHEN a device may speak for the
+//     account, which is the part that can be wrong.
+//
 //   __rcSock — a socket carrying only the GRAM frames. js/network.js converts
 //     addresses as they arrive (_gramFriendly), so a test that called
 //     onGramDepositIntent() directly walked past the conversion it meant to
@@ -733,6 +743,13 @@ const WALLET_SETUP = `(function () {
   window.__rcSock = { _h: {}, on: function (n, f) { this._h[n] = f; return this; } };
   _initGramHandlers(window.__rcSock);
   window.__rcEmit = function (n, p) { var f = window.__rcSock._h[n]; if (f) f(p); };
+  // Top-level function declarations in the bundle ARE properties of the frame's
+  // window (only let/const are not — see the note at the top of this file), so
+  // assigning here really does replace what _gramUnlinkWallet and
+  // _onTonConnectChange call.
+  window.__rcWalletSent = [];
+  window.netWalletLink = function (address) { window.__rcWalletSent.push({ ev: 'walletLink', address: address }); };
+  window.netWalletUnlink = function () { window.__rcWalletSent.push({ ev: 'walletUnlink' }); };
   activeTab = 5;
   window._profileTab = 'wallet';
   window._gramBalance = 12.5;
@@ -755,6 +772,11 @@ const RAW_PLAT   = '0:2b1c9d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7
 const UQ_PLAT    = 'UQArHJ1OX2BxgpOktcbX6PkKGyw9Tl9gcYKTpLXG1-j5CkAw';
 const RAW_WD     = '0:cafe0babe1234567890abcdef1234567890abcdef1234567890abcdef1234567';
 const UQ_WD      = 'UQDK_gur4SNFZ4kKvN7xI0VniQq83vEjRWeJCrze8SNFZwXZ';
+// The wallet the SERVER says this account is linked to — a different one from
+// RAW_WALLET on purpose, so "the desktop shows the account's wallet" cannot be
+// satisfied by accidentally showing the browser's session instead.
+const RAW_LINK   = '0:5e1b7c9d0a3f4e5d6c7b8a99887766554433221100ffeeddccbbaa9988776655';
+const UQ_LINK    = 'UQBeG3ydCj9OXWx7ipmId2ZVRDMiEQD_7t3Mu6qZiHdmVbZS';
 // Any workchain, any 64 hex digits — the shape a raw address has and a friendly
 // one cannot. Used to sweep the whole rendered page rather than the one node a
 // test happened to think of.
@@ -1042,6 +1064,176 @@ async function walletChecks(w) {
      'при открытой модалке отказ уходит в неё, а не под её же затемнение', String(w.__rcModalMsg));
   inject(w, 'closeGramModal();');
 
+
+  // ═════════════════════════════════════════════════════════════════════════
+  //  ПК и телефон: привязка живёт на СЕРВЕРЕ, подпись — на устройстве
+  // ═════════════════════════════════════════════════════════════════════════
+  // "на телефоні в мене привязаний гаманець тон а на пк пише підключити
+  // гаманець". The address lived in ONE browser's localStorage and was written
+  // down nowhere, so the desktop had nothing to show and said so — correctly,
+  // about a question it had no way to answer.
+  //
+  // Everything below is the DESKTOP: the wallet library is up (tcWarmUp built
+  // it when the tab rendered), no session was restored into it, and the server
+  // says the account has a wallet. Driven through the socket rather than by
+  // setting a variable, so js/network.js's walletState handler — and the
+  // address conversion inside it — are on the path.
+  head('кошелёк GRAM — ПК: сервер знает про кошелёк, а подписать здесь нечем');
+  inject(w, `if (window.__rcTcStatus) __rcTcStatus(null);
+    window.__rcWalletSent = [];
+    __rcEmit('walletState', { address: '${RAW_LINK}', everLinked: true, stored: true });
+    window.__rcLocal = (typeof tcAddress === 'function') ? tcAddress() : 'нет функции';`);
+  // The precondition, asserted rather than assumed: BOTH halves of the split at
+  // once. Without it every check below could be satisfied by a browser that
+  // still had a session — which is the phone, not the desktop, and the phone
+  // was never broken.
+  ok(w.__rcLocal === null && !!w._linkedWallet,
+     'это ПК: сервер сказал про кошелёк, а сессии TON Connect тут нет',
+     'локально ' + String(w.__rcLocal) + ' · на аккаунте ' + String(w._linkedWallet));
+  ok(!!q('.gram-wallet-chip-on') && !q('.gram-wallet-card-off'),
+     'ПК показывает ПРИВЯЗАННЫЙ кошелёк, а не приглашение подключить');
+  ok(txt('.gram-wallet-status') === 'Кошелёк привязан',
+     'и называет это привязкой (факт аккаунта), а не подключением (факт браузера)',
+     txt('.gram-wallet-status'));
+  // The sweep is folded into the same assertion, not left standing on its own:
+  // on a client that never renders the address at all, "no raw form anywhere" is
+  // true and means nothing. It is a claim ABOUT the address being on screen.
+  ok(txt('#gram-tc-addr-val') === UQ_LINK && !RAW_ANYWHERE.test(d().body.innerText || ''),
+     'адрес с сервера показан в UQ… и нигде не просочился сырым — конвертация на границе сокета',
+     txt('#gram-tc-addr-val'));
+  // The half that keeps the card honest. A device that cannot sign must not be
+  // shown the same card as one that can — otherwise «Отправить из кошелька»
+  // is offered to a browser that will refuse it, which is the black screen
+  // again in a smaller frame.
+  ok(!!q('#gram-wallet-note') && txt('#gram-wallet-note').indexOf('этом устройстве') >= 0,
+     'и тут же сказано, что ОТСЮДА отправить нельзя — карточка не выдаёт привязку за подпись',
+     txt('#gram-wallet-note'));
+  ok(!!q('#gram-wallet-note .gram-connect-btn'),
+     'с кнопкой подключить кошелёк ИМЕННО ЗДЕСЬ — выход, а не сообщение о тупике');
+  ok(txt('.gram-unlink-btn') === 'Отвязать',
+     '«Отвязать» на ПК есть — это тоже факт аккаунта, и убрать его можно откуда угодно',
+     txt('.gram-unlink-btn'));
+
+  // ── отправка обязана отказать там, где подписывать нечем ─────────────────
+  head('кошелёк GRAM — ПК: отправка из кошелька отказывает, а не врёт');
+  inject(w, `openGramDepositModal();
+    __rcEmit('gramDepositIntent', { memo: 'LBT-pc0000000001', address: '${RAW_PLAT}', minAmount: 0.05, expiresAt: new Date(Date.now() + 1800000).toISOString() });
+    document.getElementById('gram-dep-amount').value = '2';
+    _renderTonDepositSection();
+    window.__rcSentBefore = (window.__rcTcSent || []).length;`);
+  // Stated as a pair on purpose. "No send button" alone is also true of a client
+  // that knows nothing about any wallet, so it would pass for the wrong reason.
+  // What has to hold is that the ACCOUNT IS LINKED and the button is still not
+  // offered — because after this change _renderTonDepositSection is one edit away
+  // from using window._linkedWallet like everything else on the panel, and that
+  // edit would put a live «Отправить из кошелька» on a browser that cannot sign.
+  ok(!q('#ton-deposit-send-btn') && !!w._linkedWallet,
+     'кошелёк привязан, а кнопки «отправить из кошелька» на ПК всё равно нет — подписывать нечем',
+     'на аккаунте ' + String(w._linkedWallet));
+  ok(txt('#ton-deposit-send-wrap').indexOf('этом устройстве') >= 0,
+     'и сказано, что дело в УСТРОЙСТВЕ, а не в том, что кошелёк не привязан',
+     txt('#ton-deposit-send-wrap'));
+  // The render gate is not the guard. The sheet survives a round trip to the
+  // wallet app, a session can go away while it is open, and the old code
+  // answered that with «Не удалось отправить транзакцию» — a player told their
+  // transfer failed when nothing was ever attempted, and no way to act on it.
+  inject(w, '_tcDepositSend();');
+  await settle();
+  ok(txt('#gram-modal-msg').indexOf('этом устройстве') >= 0
+     && (w.__rcTcSent || []).length === w.__rcSentBefore,
+     'прямой вызов отправки отказал по-человечески и НИЧЕГО не отправил',
+     txt('#gram-modal-msg') + ' · переводов +' + ((w.__rcTcSent || []).length - w.__rcSentBefore));
+
+  // The other thing the desktop could not do: fill in where the money goes.
+  inject(w, `closeGramModal(); openGramWithdrawModal();
+    window.__rcWdPc = (document.getElementById('gram-wd-addr') || {}).value;
+    window.__rcWdHint = (document.getElementById('ton-wd-connect-wrap') || {}).innerHTML;`);
+  ok(w.__rcWdPc === UQ_LINK,
+     'форма вывода на ПК подставляет адрес АККАУНТА — раньше она открывалась пустой',
+     String(w.__rcWdPc));
+  ok(!/<button/.test(w.__rcWdHint || ''),
+     'и не зовёт подключать кошелёк ради поля, которое уже заполнено',
+     String(w.__rcWdHint || '').slice(0, 60));
+  inject(w, 'closeGramModal();');
+
+  // ── кто вправе говорить за аккаунт ───────────────────────────────────────
+  head('кошелёк GRAM — кто вправе говорить за аккаунт');
+  // A RESTORED session is what a launch looks like: no modal, the wallet simply
+  // appears. If that could overwrite the account, opening the phone would move
+  // the payout address back to a wallet the player had already replaced on the
+  // desktop — silently, and the withdrawal form would pre-fill it from then on.
+  inject(w, `window.__rcWalletSent = [];
+    __rcTcStatus({ account: { address: '${RAW_WALLET}' } });`);
+  ok((w.__rcWalletSent || []).length === 0
+     && txt('.gram-wallet-status') === 'Кошелёк привязан'
+     && txt('#gram-tc-addr-val') === UQ_LINK,
+     'восстановленная сессия НЕ перезаписывает привязку: телефон не отменяет выбор, сделанный на ПК',
+     'ушло ' + (w.__rcWalletSent || []).length + ' пакетов · на карточке ' + txt('#gram-tc-addr-val'));
+  ok(!!q('#gram-wallet-note') && txt('#gram-wallet-note').indexOf('другой кошелёк') >= 0,
+     'но про второй кошелёк на этом устройстве сказано, а не умолчано',
+     txt('#gram-wallet-note'));
+  // And the way out of that state without an operator — one press that makes
+  // the restored session a decision.
+  inject(w, '_gramLinkThisWallet();');
+  ok((w.__rcWalletSent || []).length === 1
+     && ((w.__rcWalletSent || [])[0] || {}).address === UQ_WALLET,
+     'одно нажатие «Привязать этот кошелёк» отправляет именно его — сменить кошелёк можно без поддержки',
+     JSON.stringify(w.__rcWalletSent || []));
+  // A wallet the player just picked in the modal always wins, restored session
+  // or not. tcConnect() is the only path a person can take, and it is what
+  // marks the status change that follows as deliberate.
+  inject(w, `window.__rcWalletSent = [];
+    __rcEmit('walletState', { address: '${RAW_LINK}', everLinked: true, stored: true });
+    tcConnect();`);
+  await settle();
+  inject(w, `__rcTcStatus({ account: { address: '${RAW_WD}' } });`);
+  ok((w.__rcWalletSent || []).length === 1
+     && ((w.__rcWalletSent || [])[0] || {}).address === UQ_WD,
+     'а кошелёк, подключённый игроком здесь и сейчас, заменяет привязку аккаунта — newest wins',
+     JSON.stringify(w.__rcWalletSent || []));
+
+  // ── «Отвязать» отвязывает АККАУНТ ────────────────────────────────────────
+  head('кошелёк GRAM — «Отвязать» отвязывает аккаунт, а не браузер');
+  inject(w, `window.__rcWalletSent = [];
+    __rcEmit('walletState', { address: '${RAW_LINK}', everLinked: true, stored: true });
+    _gramUnlinkWallet();`);
+  ok((w.__rcWalletSent || []).some(function (e) { return e.ev === 'walletUnlink'; }),
+     '«Отвязать» уходит на сервер — иначе на втором устройстве кошелёк остался бы привязан',
+     JSON.stringify(w.__rcWalletSent || []));
+  ok(txt('.gram-wallet-status') === 'Кошелёк привязан' && txt('#gram-tc-addr-val') === UQ_LINK,
+     'до ответа сервера карточка не заявляет, что аккаунт уже отвязан',
+     txt('.gram-wallet-status') + ' · ' + txt('#gram-tc-addr-val'));
+  // The strip is emptied first, so what fills it can only have come from the
+  // server's reply — the old client announced «Кошелёк отвязан» the moment the
+  // BROWSER dropped its own session, which is a claim it was not in a position
+  // to make.
+  inject(w, `var _ms = document.getElementById('gram-msg');
+    if (_ms) { _ms.textContent = ''; _ms.style.display = 'none'; }
+    __rcEmit('walletState', { address: null, everLinked: true, stored: true });`);
+  ok(!!q('.gram-wallet-card-off') && txt('#gram-msg').indexOf('твязан') >= 0,
+     'подтверждение приходит от СЕРВЕРА, и только тогда карточка становится «не привязан»',
+     txt('#gram-msg'));
+  // Pre-015 the column is not there, the server says so, and the panel must not
+  // draw a link the database refused to keep.
+  inject(w, `__rcEmit('walletState', { address: null, everLinked: false, stored: false });
+    window.__rcEverAfter = window._walletEverLinked;`);
+  ok(w.__rcEverAfter === false && !!q('.gram-wallet-card-off'),
+     'сервер без миграции 015 честно говорит «не сохранено» — и клиент не рисует привязку',
+     String(w.__rcEverAfter));
+  // The same window with a session on THIS device. The card may say «подключён»
+  // — a fact about the browser, which is true — and must not say «привязан», a
+  // fact about the account, which is not. That is the one thing a server
+  // echoing back an address it never wrote would have made it say, on every
+  // device the player opened next, until the following login quietly took it
+  // away again.
+  inject(w, `__rcTcStatus({ account: { address: '${RAW_WALLET}' } });
+    __rcEmit('walletState', { address: null, everLinked: false, stored: false });`);
+  ok(txt('.gram-wallet-status') === 'Кошелёк подключён'
+     && txt('#gram-tc-addr-val') === UQ_WALLET
+     && w._linkedWallet === null,
+     'до миграции 015 карточка говорит «подключён» про браузер, а не «привязан» про аккаунт',
+     txt('.gram-wallet-status') + ' · на аккаунте ' + String(w._linkedWallet));
+
   ok((w.__rcErrors || []).length === errBefore, 'вкладка кошелька не бросила ни одной ошибки',
      (w.__rcErrors || []).slice(errBefore).join(' | '));
 
@@ -1050,6 +1242,7 @@ async function walletChecks(w) {
   // a variable, so tcAddress() and the panel agree about it afterwards.
   inject(w, `closeGramModal();
     if (window.__rcTcStatus) __rcTcStatus(null);
+    window._linkedWallet = null; window._walletEverLinked = false;
     var _t2 = document.getElementById('gram-credit-toast'); if (_t2) _t2.remove();
     var _p = document.getElementById('panel-profile'); if (_p) _p.style.display = 'none';
     activeTab = 0;`);

@@ -141,6 +141,10 @@ app.get('/health', async (req, res) => {
     // non-zero `notStored` means migration 013 has not been applied yet and
     // every grant is being forgotten.
     writeAccess: { ..._waGate },
+    // The linked TON wallet. `notStored` above zero is the one number here
+    // that names a specific unfinished step: migration 015 is not applied, and
+    // every address a player links is being dropped on the floor.
+    wallet: { ..._walletGate },
     // Per-floor tick timings. "Иногда тупит" was unanswerable without these:
     // nothing recorded whether the 25ms world loop was making its budget.
     // Reading RESETS the window, so each poll describes the interval since the
@@ -314,6 +318,13 @@ const HEAVY = new Set([
   // answer writes to `players`. The tight bucket costs a real client nothing
   // and stops a scripted one from turning the gate into an UPDATE loop.
   'writeAccess',
+  // The address a player's money leaves to. One or two packets a session in
+  // ordinary use — a wallet connects, or «Отвязать» is pressed — and each one
+  // writes to `players`. The tight bucket costs a real client nothing and stops
+  // a scripted one from rewriting its own payout address in a loop, which is
+  // both an UPDATE storm and a player_logs flood over the one column an
+  // operator would later have to read a history out of.
+  'walletLink', 'walletUnlink',
   // NOT here on purpose: mv, playerMove, attack, skillAttack, enemyResync.
   // Those arrive per frame and belong in the loose bucket — the tight one
   // would throttle ordinary play, which is a worse outcome than the flood it
@@ -376,6 +387,10 @@ for (const [channel, events] of Object.entries({
   ratingError: ['getRating'],
   locationError: ['enterLocation'],
   prefsError: ['savePrefs'],
+  // NOT gramError. That channel flips a deposit modal waiting on its code into
+  // «не удалось — повторить» (js/network.js), and a throttled wallet link has
+  // no business killing a payment sheet the player is mid-way through.
+  walletError: ['walletLink', 'walletUnlink'],
   profileError: ['requestPlayerProfile', 'getPvpHistory'],
   clanError: ['clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
     'clanDisband', 'clanSetDescription', 'clanSearch', 'clanRequest',
@@ -447,6 +462,21 @@ function authCheckFailed(socket, kind) {
 // rather than answering, which is its own kind of refusal and is worth being
 // able to see separately.
 const _waGate = { shown: 0, granted: 0, refused: 0, notStored: 0, told: 0 };
+
+// ── the wallet link, as a number ────────────────────────────────────────────
+// The same shape as _waGate above and for the same reason: a link that is not
+// being stored looks exactly like a link that is.
+//
+// `notStored` above zero means migration 015 has NOT been applied yet, so every
+// wallet a player links is being forgotten and the desktop still says «подключить
+// кошелёк» with the fix already deployed. That window is expected — the owner
+// applies migrations by hand — and this is the only place its width is visible.
+//
+// `relinked` is a player changing wallets. Newest-wins is a deliberate choice
+// (see repos/players.setTonAddress) and its failure mode is flapping: two
+// devices holding two different wallets, each publishing on connect. A relink
+// count that tracks the login count is what that looks like from here.
+const _walletGate = { linked: 0, relinked: 0, unlinked: 0, notStored: 0 };
 // The rate is only meaningful once there is a rate. Under this many answers a
 // single refusal is 100% and would alert on nothing at all.
 const WA_MIN_SAMPLE = Number(process.env.WA_MIN_SAMPLE || 20);
@@ -718,6 +748,27 @@ io.on('connection', (socket) => {
       console.error('[login] canMessage:', err.message);
     }
 
+    // ── which wallet is this ACCOUNT's ─────────────────────────────────
+    // The whole of "на телефоні привязаний гаманець тон а на пк пише підключити
+    // гаманець". The address was kept in one browser's localStorage by
+    // TON Connect and written down nowhere, so a second device had no way to
+    // learn it existed. This is the account-level fact (migration 015).
+    //
+    // It is NOT a signing session. Being able to sign a transfer is per-device
+    // by construction — the wallet app approves on the phone it is paired with
+    // — and nothing on the wire can change that. The client shows which of the
+    // two it has; see _renderTonConnectRow in js/ui.js.
+    //
+    // Behind its own catch, same rule as canMessage above: a login that fails
+    // because a convenience field could not be read is a player who cannot
+    // play, and the worst case here is a wallet card that says "not linked".
+    let wallet = { address: null, everLinked: false, stored: false };
+    try {
+      wallet = await players.tonAddressOf(null, s.playerId);
+    } catch (err) {
+      console.error('[login] tonAddress:', err.message);
+    }
+
     socket.emit('authOk', {
       username: s.username,
       isNewAccount: res.isNew,
@@ -743,6 +794,22 @@ io.on('connection', (socket) => {
       // with initData's own allows_write_to_pm — see _waShouldGate in
       // js/network.js — so either source saying yes is enough.
       canMessage,
+      // ── the PLAYER's own wallet, not the project's ──────────────────────
+      // Named so it cannot be confused with `gramWallet` a few lines up, which
+      // is GRAM_WALLET — the address everyone DEPOSITS TO. Both land on the
+      // same panel, and swapping them tells a player to pay themselves.
+      //
+      // Already friendly (the column can hold nothing else — migration 015
+      // enforces the form), and converted AGAIN on arrival in js/network.js,
+      // because that client normalises every address at the boundary rather
+      // than trusting whoever sent it.
+      linkedWallet: wallet.address,
+      // Has this account EVER linked one. Not a statistic: a device holding a
+      // TON Connect session restored from its own storage publishes that
+      // session only when this is false. Without it the player unlinks on the
+      // desktop, opens the phone, and the phone links the wallet straight back
+      // — an unlink undone by opening an app. See migration 015.
+      walletEverLinked: !!wallet.everLinked,
       build: version.COMMIT,
     });
 
@@ -913,6 +980,101 @@ io.on('connection', (socket) => {
       console.error('[writeAccess] отказ:', err.message);
     }
   });
+
+  // ── «на телефоні привязаний гаманець, а на пк пише підключити» ────────────
+  // Two events for one account-level fact: which TON wallet this player's money
+  // goes to. They live here beside writeAccess, and not in handlers2/economy.js
+  // with the rest of the GRAM panel, because they are the same KIND of thing —
+  // a fact about the ACCOUNT that authOk carries at login, reported by the
+  // client because nothing else can report it, rather than an action a
+  // character performs.
+  //
+  // ── through s.act, where writeAccess deliberately is not ─────────────────
+  // The difference is what is at stake. A forged write-access grant buys a
+  // player a bot that cannot DM them, which is where they already were; this
+  // column is the address a player's money leaves to. act() refuses a socket
+  // that no longer owns the account — "Вы вошли с другого устройства" — and a
+  // superseded session quietly rewriting the payout address is the one failure
+  // on this path that could cost real money. It also writes the `refuse:`
+  // row and raises the ops alert without either being remembered here, on a
+  // channel the wallet panel listens to.
+  //
+  // walletError and NOT gramError: gramError flips a deposit sheet that is
+  // waiting on its code into «не удалось — повторить» (js/network.js), and a
+  // refused wallet link has no business killing a payment in progress.
+  //
+  // ── who wins when a second device connects a different wallet ────────────
+  // NEWEST WINS. The alternatives were both rejected because they end at the
+  // same place: a player whose old wallet is gone — phone lost, seed rotated,
+  // app uninstalled — could never change their payout address without an
+  // operator, and there is one operator. See repos/players.setTonAddress.
+  //
+  // What keeps newest-wins honest is that "newest" is not "most recently seen".
+  // The client publishes a wallet it merely RESTORED from browser storage only
+  // when the account has none; a wallet the player just connected on that
+  // device always wins. So opening the phone cannot silently revert a change
+  // made on the desktop — see _onTonConnectChange in js/ui.js.
+  safeOn('walletLink', ({ address } = {}) =>
+    s.act('walletLink', 'walletError', (t, pid) => players.setTonAddress(t, pid, address))
+      .then((out) => {
+        // null means act() refused it and has already told the player and the
+        // log. A bad address arrives here as `refuse:walletLink` with the same
+        // message the player saw.
+        if (!out) return;
+        if (!out.stored) _walletGate.notStored++;
+        if (out.changed) {
+          _walletGate[out.previous ? 'relinked' : 'linked']++;
+          // The row the owner asked for, and the PREVIOUS address is the half
+          // that cannot be recovered afterwards: the column holds one value and
+          // the next link overwrites it. A row naming only the new wallet would
+          // leave "which one was it before" answerable by nobody.
+          //
+          // Written only when something actually changed. A client re-reporting
+          // the address the account already holds is not a link, and a row per
+          // launch would bury the handful of rows that are — in the one place
+          // an operator has to be able to read a wallet's history out of.
+          plog.log(s.playerId, 'walletLink', {
+            address: out.address,
+            previous: out.previous || null,
+            stored: out.stored,
+          });
+        }
+        // What the SERVER NOW HOLDS, which is NOTHING while migration 015 is
+        // still pending — so `held` is not the address that just arrived.
+        // Echoing that back would paint «Кошелёк привязан», on every device the
+        // player opens next, on the strength of a write the database dropped;
+        // the next login's authOk reads the column, finds nothing, and takes it
+        // away again with no explanation. A client that is told the truth here
+        // keeps showing the local session instead, which is exactly the
+        // behaviour that shipped before 015 and is correct until it is applied.
+        const held = out.stored ? out.address : null;
+        socket.emit('walletState', {
+          address: held, everLinked: !!out.stored, stored: !!out.stored,
+        });
+      }));
+
+  // «Отвязать» unlinks the ACCOUNT, not the device — that is what the word means
+  // to the player pressing it. The device's own TON Connect session is dropped
+  // by the client in the same breath (js/ui.js _gramUnlinkWallet), because the
+  // browser is the only thing that can drop it.
+  safeOn('walletUnlink', () =>
+    s.act('walletUnlink', 'walletError', (t, pid) => players.clearTonAddress(t, pid))
+      .then((out) => {
+        if (!out) return;
+        if (!out.stored) _walletGate.notStored++;
+        _walletGate.unlinked++;
+        // Always a row, including when nothing was linked. Pressing this is the
+        // player saying "not this wallet", and repos/players.clearTonAddress
+        // records that as an answer (ton_address_at) whether or not there was an
+        // address to remove — so the log has to say the same thing the column
+        // does.
+        plog.log(s.playerId, 'walletUnlink', {
+          previous: out.previous || null, stored: out.stored,
+        });
+        socket.emit('walletState', {
+          address: null, everLinked: !!out.stored, stored: !!out.stored,
+        });
+      }));
 
   // ── the ported handlers ───────────────────────────────────────────────────
   const deps = {

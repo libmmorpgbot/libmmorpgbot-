@@ -45,8 +45,33 @@ const MINIFY = process.env.MIN === '1';
 // --run / RUN=1: открыть страницу самому, дождаться результата и выйти с
 // кодом. Без этого файл только подаёт страницу и ждёт человека с браузером.
 const RUN = process.env.RUN === '1' || process.argv.includes('--run');
+// ── proving an assertion can still go red ──────────────────────────────────
+// A check that has never failed is a check nobody has tested, and the only way
+// to see one of these fail used to be editing the client, running, and editing
+// it back — by hand, in the tree the owner is working in. dev/bundle-check.js
+// has I18N_FILE for exactly this reason ("that is how a change to them gets
+// proven still able to go red"); this had no equivalent, so the wallet
+// assertions above were written and never once seen red.
+//
+// PREV=<dir> serves any bundled file that EXISTS under <dir> in place of the
+// one in the repo; everything else still comes from the repo. So
+//
+//   mkdir -p /tmp/prev/js && git show HEAD:js/ui.js > /tmp/prev/js/ui.js
+//   PREV=/tmp/prev node dev/render-check.js --run
+//
+// runs TODAY's assertions against YESTERDAY's client, and the ones that stay
+// green are the ones that were never load-bearing. Nothing in the working
+// tree is touched, which is the whole point of doing it this way round.
+const PREV = process.env.PREV || '';
+function bundleSrc(f) {
+  if (PREV) {
+    const alt = path.join(PREV, f);
+    if (fs.existsSync(alt)) return alt;
+  }
+  return path.join(ROOT, f);
+}
 function bundle() {
-  const raw = FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n;\n');
+  const raw = FILES.map(f => fs.readFileSync(bundleSrc(f), 'utf8')).join('\n;\n');
   if (!MINIFY) return raw;
   const { minify_sync } = require('terser');
   const out = minify_sync(raw, {

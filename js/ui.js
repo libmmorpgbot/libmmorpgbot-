@@ -7506,7 +7506,11 @@ function _shortenTonAddr(addr) {
 function _tcSetBusy(busy) {
   const el = document.getElementById('ton-connect-row');
   if (!el) return;
-  const btn = el.querySelector('button');
+  // The CONNECT control, not "the first button in the row". Once this row could
+  // draw a linked card with a connect prompt inside it, the first button became
+  // the copy chip — so the loading state landed on the control the player had
+  // not pressed, and the one they had pressed stayed live and pressable.
+  const btn = el.querySelector('.gram-connect-btn') || el.querySelector('button');
   if (!btn) return;
   if (busy) {
     btn.dataset.label = btn.innerHTML;
@@ -7517,7 +7521,6 @@ function _tcSetBusy(busy) {
     btn.disabled = false;
   }
 }
-
 // The connected wallet, laid out like Rewardix's WalletSheet: an icon chip, a
 // status line, the address on its own row in mono, and the unlink control as a
 // real bordered button.
@@ -7526,20 +7529,68 @@ function _tcSetBusy(busy) {
 // with the address elided to "UQ6f…ab3f" and no way to read or copy the rest —
 // so the one question the row exists to answer ("is the wallet I think I
 // linked the one that is linked?") could not be answered from it.
+//
+// ── the two facts this row must not merge ──────────────────────────────────
+// It asked tcAddress() and nothing else, and tcAddress() is TON Connect
+// restoring a session out of THIS BROWSER'S localStorage. So the row was
+// answering "can this browser sign?" while looking like it answered "which
+// wallet is my money going to?" — which is why the phone said «Кошелёк
+// подключён» and the desktop said «Подключить кошелёк» about one account.
+//
+//   linked   the ACCOUNT's wallet, from the server (migration 015). The same
+//            on every device. What the withdrawal form pre-fills.
+//   local    a live TON Connect session, i.e. the ability to SIGN. Per-device
+//            by construction — the wallet app approves on the phone it is
+//            paired with — and no server can hand it to another browser.
+//
+// The row says WHICH of the two it has, and that is not decoration: offering
+// «Отправить из кошелька» on a device that cannot sign is the same lie as the
+// black screen — the tap does nothing and the player has no way to find out
+// why.
 function _renderTonConnectRow() {
   const el = document.getElementById('ton-connect-row');
   if (!el) return;
-  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
-  // The address comes back from the wallet library, not from the player, but
-  // it lands in innerHTML and it is the one value on this row this client did
-  // not author — escaped on the way in rather than trusted.
+  const local  = typeof tcAddress === 'function' ? tcAddress() : null;
+  const linked = window._linkedWallet || null;
+  // The ACCOUNT's answer wins the headline. `local` is the fallback for the one
+  // moment there is no account answer yet — a wallet just connected and the
+  // server has not replied, or migration 015 is not applied — where showing the
+  // session is better than showing nothing.
+  const addr = linked || local;
+  // Neither of these was authored by this client (one comes off the wire, one
+  // out of the wallet library) and both land in innerHTML — escaped on the way
+  // in rather than trusted.
   const safe = _esc(addr || '');
+
+  // ── what this DEVICE can do about it ─────────────────────────────────────
+  // Three states, and the two that are not "everything agrees" each get a way
+  // out that does not involve an operator.
+  let note = '';
+  if (addr && !local) {
+    // The desktop case the owner reported, said out loud instead of being
+    // rendered as «Подключить кошелёк» over a wallet that IS linked.
+    note = `<div class="gram-wallet-note" id="gram-wallet-note">
+        <div class="gram-hint">${t('tcNoSessionHere')}</div>
+        <button class="gram-connect-btn" onclick="tcConnect()">${t('tcConnectHereBtn')}</button>
+      </div>`;
+  } else if (addr && local && linked && local !== linked) {
+    // Two wallets, one account: this browser holds a session the account does
+    // not know about. It is NOT published on its own — a restored session that
+    // could overwrite the account would let opening the phone undo a change
+    // made on the desktop (see _walletPublishIfNeeded) — so the player is shown
+    // both and given one press that makes it deliberate.
+    note = `<div class="gram-wallet-note" id="gram-wallet-note">
+        <div class="gram-hint">${t('tcOtherWalletHere')}: ${_esc(_shortenTonAddr(local))}</div>
+        <button class="gram-connect-btn" onclick="_gramLinkThisWallet()">${t('tcUseThisWalletBtn')}</button>
+      </div>`;
+  }
+
   el.innerHTML = addr
     ? `<div class="gram-wallet-card">
         <div class="gram-wallet-head">
           <span class="gram-wallet-chip gram-wallet-chip-on">${_gramIconWallet(19)}</span>
           <div class="gram-wallet-head-txt">
-            <div class="gram-wallet-status">${t('tcConnectedLbl')}</div>
+            <div class="gram-wallet-status">${linked ? t('tcLinkedLbl') : t('tcConnectedLbl')}</div>
             <div class="gram-wallet-short">${_esc(_shortenTonAddr(addr))}</div>
           </div>
         </div>
@@ -7550,6 +7601,7 @@ function _renderTonConnectRow() {
             <button class="gram-copy-chip" onclick="gramCopy('gram-tc-addr-val')" aria-label="${_escAttr(t('tcAddressLbl'))}">${_gramIconCopy(15)}</button>
           </div>
         </div>
+        ${note}
         <button class="gram-unlink-btn" onclick="_gramUnlinkWallet()">${t('tcDisconnectBtn')}</button>
       </div>`
     : `<div class="gram-wallet-card gram-wallet-card-off">
@@ -7559,12 +7611,36 @@ function _renderTonConnectRow() {
       </div>`;
 }
 
-// Unlinking goes through here rather than straight to tcDisconnect() so the
-// player is TOLD it happened. tcDisconnect is fire-and-forget: if the library
-// never loaded, or the disconnect throws inside it, the row simply stays as it
-// was and the tap reads as a dead button — the exact silent-refusal shape this
-// tab is not allowed to have any more.
+// «Отвязать» unlinks the ACCOUNT, not this browser — that is what the word
+// means to the player pressing it, and a button that drops one device's session
+// while the other one still withdraws to the same wallet is the same lie as the
+// desktop not knowing about the phone.
+//
+// Both halves are needed and only one of them is ours to do: the server owns
+// the account fact, and the browser owns its own TON Connect session. Neither
+// can do the other's half.
+//
+// It goes through here rather than straight to tcDisconnect() so the player is
+// TOLD what happened. tcDisconnect is fire-and-forget: if the library never
+// loaded, or the disconnect throws inside it, the row simply stays as it was
+// and the tap reads as a dead button — the exact silent-refusal shape this tab
+// is not allowed to have any more.
 function _gramUnlinkWallet() {
+  // The ACCOUNT first, and before the local disconnect on purpose: it is the
+  // half that matters on the other device, and a library that throws below must
+  // not be able to swallow it.
+  if (typeof netWalletUnlink === 'function') {
+    netWalletUnlink();
+  } else {
+    // The bundle lost js/network.js's wallet half. The device can still be
+    // unlinked, the account cannot, and saying nothing here would leave the
+    // player believing an account-wide unlink that never left the browser.
+    console.warn('[wallet] netWalletUnlink отсутствует — отвязано только устройство');
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('walletUnlink', 'netWalletUnlink missing — device-only unlink');
+    }
+    _gramMsg(t('serviceUnavailableToast'), 'err');
+  }
   if (typeof tcDisconnect !== 'function') { _gramMsg(t('serviceUnavailableToast'), 'err'); return; }
   try {
     tcDisconnect();
@@ -7573,9 +7649,24 @@ function _gramUnlinkWallet() {
     console.warn('[wallet] unlink failed:', e);
     return;
   }
-  // The confirmation itself is left to _onTonConnectChange, which is the only
-  // thing that knows the wallet actually went away. Announcing it here would
-  // claim success for a disconnect that had not happened yet.
+  // The confirmation is left to the server's walletState reply (js/network.js),
+  // which is the only thing that knows the ACCOUNT's link actually went away.
+  // Announcing it here would claim an unlink that had not happened yet — and
+  // for an account-level fact, this browser is not in a position to claim it at
+  // all.
+}
+
+// «Привязать этот кошелёк» — the way out of the one state that cannot resolve
+// itself. This browser holds a session for a wallet the account does not know
+// about, and it was RESTORED rather than connected, so nothing published it.
+// One press makes it deliberate, which is exactly the distinction the publish
+// rule turns on — and it is what lets a player change their payout address
+// without an operator.
+function _gramLinkThisWallet() {
+  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  if (!addr) { _gramMsg(t('tcNoLocalSessionMsg'), 'err'); return; }
+  if (typeof netWalletLink !== 'function') { _gramMsg(t('serviceUnavailableToast'), 'err'); return; }
+  netWalletLink(addr);
 }
 
 // Whether a wallet was connected the last time the row was drawn. Kept so the
@@ -7586,15 +7677,81 @@ let _gramWalletWasOn = false;
 // Called by js/tonconnect.js whenever the wallet connect status changes —
 // keeps the wallet tab (and any open deposit/withdraw modal) in sync without
 // the player needing to close and reopen anything.
-function _onTonConnectChange() {
+//
+// `deliberate` is true only when the player just went through the connect modal
+// on THIS device; a session the library restored out of this browser's storage
+// arrives with it false. See js/tonconnect.js for why the two cannot be treated
+// alike.
+function _onTonConnectChange(deliberate) {
   const addr = typeof tcAddress === 'function' ? tcAddress() : null;
-  if (_gramWalletWasOn && !addr) _gramMsg(t('tcUnlinkConfirmToast'), 'ok');
+  // The «Кошелёк отвязан» confirmation moved to the server's walletState reply,
+  // because with an account-level link that sentence is a claim about the
+  // ACCOUNT and this callback only knows about the browser. What is left here
+  // is the one case the server has nothing to say about: a device session that
+  // went away with nothing linked to the account at all — a player who never
+  // published one, or a server without migration 015.
+  if (_gramWalletWasOn && !addr && !window._linkedWallet) _gramMsg(t('tcUnlinkConfirmToast'), 'ok');
   _gramWalletWasOn = !!addr;
+  _walletPublishIfNeeded(addr, deliberate);
+  _onWalletStateChange();
+}
+
+// ── when a device may speak for the ACCOUNT ─────────────────────────────────
+// The whole of "newest wins" lives in this function, and the reason it is not
+// simply "report whatever this device has" is that a device reports on every
+// launch, not only when the player decides something.
+//
+// Two devices, two wallets: the player connects wallet B on the desktop, then
+// opens the phone, whose library restores wallet A out of its own storage. If a
+// restore could publish, merely OPENING THE APP would move the account's payout
+// address back to a wallet the player had already replaced — silently, with the
+// withdrawal form pre-filling it from then on. That is the exact failure the
+// owner warned about: ending up withdrawing to an address you forgot about.
+//
+// So a restored session speaks only when the account has never had an address,
+// and that case is the BACKFILL — the reason the owner's own phone, which has a
+// wallet linked and a server that has never heard of it, fixes the desktop by
+// being opened once rather than by the player re-linking anything.
+//
+// `_walletEverLinked` is why the backfill cannot undo an unlink: after
+// «Отвязать» the account has no address but HAS been linked, so a restored
+// session stays quiet and only a fresh connect (or «Привязать этот кошелёк»)
+// speaks again.
+function _walletPublishIfNeeded(addr, deliberate) {
+  if (!addr) return;
+  if (typeof netWalletLink !== 'function') {
+    // The bundle lost js/network.js's wallet half: the wallet works on this
+    // device and the account will never learn about it, which looks exactly
+    // like the bug this whole change fixes.
+    console.warn('[wallet] netWalletLink отсутствует — привязка никуда не уйдёт');
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('walletLink', 'netWalletLink missing — address never reported');
+    }
+    return;
+  }
+  const linked = window._linkedWallet || null;
+  if (addr === linked) return;                    // the account already knows
+  if (!deliberate && (linked || window._walletEverLinked)) return;
+  netWalletLink(addr);
+}
+
+// Everything that depends on which wallet the account is linked to, in one
+// place: the panel row, the deposit sheet's send button and the withdrawal
+// form's address. Called both when THIS DEVICE's session changes and when the
+// SERVER says the account's did (js/network.js walletState), because either can
+// change what any of the three should show — and before this existed only the
+// first of the two could redraw anything.
+function _onWalletStateChange() {
   _renderTonConnectRow();
   const depBtn = document.getElementById('ton-deposit-send-wrap');
   if (depBtn) _renderTonDepositSection();
   const wdAddr = document.getElementById('gram-wd-addr');
-  if (wdAddr && addr && !wdAddr.value) wdAddr.value = addr;
+  // The ACCOUNT's address first. That is where this player's money is supposed
+  // to go, it is the same on every device, and on a desktop with no signing
+  // session it is the only address there is — which is the case that used to
+  // leave the field empty and the player pasting by hand.
+  const fill = window._linkedWallet || (typeof tcAddress === 'function' ? tcAddress() : null);
+  if (wdAddr && fill && !wdAddr.value) wdAddr.value = fill;
   if (document.getElementById('ton-wd-connect-wrap')) _renderTonWithdrawConnectHint();
 }
 
@@ -8120,9 +8277,21 @@ function _renderTonDepositSection() {
   const el = document.getElementById('ton-deposit-send-wrap');
   if (!el) return;
   if (!window._gramDepositMemo) { el.innerHTML = ''; return; }
+  // tcAddress() and NOT the linked address, deliberately. Sending needs a
+  // signature, and only this browser's TON Connect session can produce one —
+  // a linked address says where this account's money goes, not that anything
+  // here can move it.
   const addr = typeof tcAddress === 'function' ? tcAddress() : null;
   if (!addr) {
-    el.innerHTML = `<button class="gram-btn" style="width:100%;padding:12px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5;margin-bottom:10px" onclick="tcConnect()">${t('tcConnectBtn')}</button>
+    // A player who has just read «Кошелёк привязан» two rows up and is then
+    // offered a bare «Подключить кошелёк» concludes the button is broken. The
+    // prompt names the DEVICE when there is an account-level link to contrast
+    // it with.
+    const linked = window._linkedWallet || null;
+    const why = linked
+      ? `<div class="gram-hint" style="text-align:center;margin-bottom:8px">${t('tcNoSessionHere')}</div>`
+      : '';
+    el.innerHTML = why + `<button class="gram-btn" style="width:100%;padding:12px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5;margin-bottom:10px" onclick="tcConnect()">${linked ? t('tcConnectHereBtn') : t('tcConnectBtn')}</button>
       <div class="gram-hint" style="text-align:center;margin-bottom:10px">${t('tcOrManualHint')}</div>`;
     return;
   }
@@ -8150,6 +8319,32 @@ async function _tcDepositSend() {
   // real transfer leaves a real wallet, and a transfer with no comment cannot
   // be matched to anyone afterwards.
   if (!memo || !wallet) { _gramModalMsg(t('depositCodeWaitToast'), 'err'); return; }
+  // ── this device cannot sign ──────────────────────────────────────────────
+  // The render above hides the button when there is no session, and that is
+  // not enough. The sheet stays open across a round trip to the wallet app, a
+  // session can be dropped while it is open, and tcSendDeposit's own throw
+  // arrives here as the generic «Не удалось отправить транзакцию» — telling a
+  // player their transfer failed when nothing was ever attempted, and naming
+  // no way to fix it.
+  //
+  // A LINKED ADDRESS IS NOT A SESSION. On the desktop the account can be
+  // linked, the card correctly says so, and this browser still cannot move a
+  // single nanoton — so the refusal names the device, and the panel is redrawn
+  // with the connect prompt the player can actually act on.
+  const local = typeof tcAddress === 'function' ? tcAddress() : null;
+  if (!local) {
+    _gramModalMsg(t('tcNoLocalSessionMsg'), 'err');
+    // Into player_logs as `client:tcDepositSend`, the same reporter every other
+    // client-side failure uses. A refusal that only ever existed as a toast is
+    // a refusal nobody can count, and how often a player reaches the send
+    // button with no session is the only way to find out whether the card is
+    // still lying somewhere.
+    if (typeof window.__reportClientError === 'function') {
+      window.__reportClientError('tcDepositSend', 'send refused: no TON Connect session on this device');
+    }
+    _renderTonDepositSection();
+    return;
+  }
   const min = window._gramDepositMin || 0;
   const amount = parseFloat(document.getElementById('gram-dep-amount')?.value);
   if (!amount || amount < min) {
@@ -8232,18 +8427,27 @@ function openGramWithdrawModal() {
   div.id = 'gram-modal-wrap';
   div.innerHTML = html;
   document.body.appendChild(div);
-  const connectedAddr = typeof tcAddress === 'function' ? tcAddress() : null;
+  // The ACCOUNT's wallet first, and this is the half of the bug the player
+  // notices second: on the desktop this field used to open empty, because the
+  // only address the client had was a TON Connect session that lived in the
+  // phone's localStorage. It is the same address on every device now.
+  const connectedAddr = window._linkedWallet || (typeof tcAddress === 'function' ? tcAddress() : null);
   if (connectedAddr) document.getElementById('gram-wd-addr').value = connectedAddr;
   _renderTonWithdrawConnectHint();
 }
 
 // Small "connect wallet to autofill" link shown under the address field
 // while no wallet is linked; disappears once one connects (see
-// _onTonConnectChange, which re-renders this if the modal is still open).
+// _onWalletStateChange, which re-renders this if the modal is still open).
+//
+// The account's linked address counts, not just this browser's session: the
+// field above is already filled from it, and offering to connect a wallet in
+// order to fill a filled field is the desktop being told to fix something that
+// is not broken.
 function _renderTonWithdrawConnectHint() {
   const el = document.getElementById('ton-wd-connect-wrap');
   if (!el) return;
-  const addr = typeof tcAddress === 'function' ? tcAddress() : null;
+  const addr = window._linkedWallet || (typeof tcAddress === 'function' ? tcAddress() : null);
   el.innerHTML = addr ? '' : `<button style="background:none;border:none;color:#e5a546;font-size:12px;cursor:pointer;text-decoration:underline;padding:0" onclick="tcConnect()">${t('tcConnectBtn')}</button>`;
 }
 

@@ -18,6 +18,26 @@ let _tonConnectUI = null;
 let _tonConnectedAddress = null;
 let _tcLoading = null;
 
+// ── did the PLAYER just connect this wallet, or did the library remember it ─
+// The two are the same callback and they mean opposite things to the account.
+//
+// A player who taps «Подключить» and picks a wallet has made a decision, and
+// that decision is allowed to replace the address the account already holds —
+// which is how somebody whose old wallet is gone changes their payout address
+// without an operator.
+//
+// A session RESTORED out of this browser's localStorage is not a decision. It
+// is what this browser happened to be holding, and letting it overwrite the
+// account would mean the player unlinks on the desktop, opens the phone, and
+// the phone puts the old wallet back — an unlink undone by opening an app.
+// Worse, with two devices holding two wallets, whichever was opened last would
+// silently become the withdrawal destination.
+//
+// So the flag is set by tcConnect() — the only path a person can take through
+// the modal — and consumed by the first status change that follows it.
+// js/ui.js _onTonConnectChange is what acts on it.
+let _tcUserInitiated = false;
+
 // The TON Connect UI bundle is 435 KB (125 KB gzip) — a fifth of everything
 // the game downloads to start — for a wallet most players never open, and its
 // script tag sat ahead of the game's own bundle, so it delayed the first frame
@@ -53,7 +73,12 @@ async function _tcEnsure() {
     // the withdrawal form's auto-fill and anything added later; a conversion
     // per render site is a conversion the next render site forgets.
     _tonConnectedAddress = wallet ? tcFriendlyAddress(wallet.account.address) : null;
-    if (typeof _onTonConnectChange === 'function') _onTonConnectChange();
+    // Consumed here rather than read later: the flag describes THIS status
+    // change, and leaving it set would make the next restore — after a reload,
+    // days later — look like a deliberate connect.
+    const deliberate = _tcUserInitiated;
+    _tcUserInitiated = false;
+    if (typeof _onTonConnectChange === 'function') _onTonConnectChange(deliberate);
   });
   return true;
 }
@@ -71,7 +96,9 @@ async function tcConnect() {
   if (typeof _tcSetBusy === 'function') _tcSetBusy(true);
   const ok = await _tcEnsure();
   if (typeof _tcSetBusy === 'function') _tcSetBusy(false);
-  if (ok && _tonConnectUI) _tonConnectUI.openModal();
+  // Set BEFORE the modal opens, because the status change is what closes it and
+  // there is no line after openModal() that runs first.
+  if (ok && _tonConnectUI) { _tcUserInitiated = true; _tonConnectUI.openModal(); }
   else if (typeof _marketToast === 'function') _marketToast('Не удалось загрузить кошелёк', 'err');
 }
 

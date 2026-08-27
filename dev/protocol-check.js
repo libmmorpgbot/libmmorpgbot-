@@ -469,7 +469,16 @@ console.log('  ── ворота доступу в лічку ──');
   // the caller passes, so the first version of this line stayed green while the
   // gate was fed a hardcoded false. An assertion that matches its own subject's
   // definition is checking that the code exists, not that it is wired.
-  ok(/, canMessage \}\) => \{/.test(netSrc)
+  //
+  // The destructure half was `/, canMessage \}\) => \{/` — canMessage as the
+  // LAST field of the packet — and it went red the day authOk grew two more
+  // (linkedWallet, walletEverLinked), on a client that reads canMessage exactly
+  // as before. A check that fails when a NEIGHBOURING field is added is a check
+  // people learn to edit rather than read. It is anchored on the authOk handler
+  // itself now, which is the actual claim — the field is taken out of THAT
+  // packet — and stays just as able to go red: delete canMessage from the
+  // destructure, or feed the gate anything else, and both halves stop matching.
+  ok(/socket\.on\('authOk', \(\{[^}]*\bcanMessage\b[^}]*\}\)/.test(netSrc)
      && /_waGateIfNeeded\(canMessage, \(\) =>/.test(netSrc),
     'клієнт читає canMessage з authOk і віддає його воротам',
     'сервер шле поле, яке ніхто не дістає з пакета');
@@ -510,6 +519,65 @@ console.log('  ── ворота доступу в лічку ──');
       .test(fs.readFileSync(path.join(migDir, f), 'utf8')));
   ok(addsCol.length === 1,
     `колонка can_message має рівно одну міграцію (${addsCol.join(', ') || '(жодної)'})`,
+    'код читає колонку, якої ніхто не створює');
+
+  // ── прив'язаний гаманець: факт АКАУНТА, а не браузера ─────────────────────
+  // "на телефоні в мене привязаний гаманець тон а на пк пише підключити
+  // гаманець". Адреса жила в localStorage одного браузера і більше ніде, тож
+  // друга машина не мала звідки про неї дізнатись.
+  //
+  // dev/render-check.js доводить, що ПК тепер малює привʼязку і що відправка
+  // відмовляє там, де підписати нічим. Сервера він не бачить узагалі — а саме
+  // там лежить те, без чого малювати нічого: обробники, слід у player_logs і
+  // проба схеми.
+  console.log('  ── прив\u0027язаний гаманець ──');
+
+  ok(/safeOn\('walletLink'/.test(appSrc) && /safeOn\('walletUnlink'/.test(appSrc),
+    'сервер слухає walletLink і walletUnlink (поруч із логіном, як writeAccess)',
+    'без них адреса нікуди не пишеться і ПК так і питає «підключити гаманець»');
+
+  // Через s.act, а не в обхід: act() відмовляє сокету, який більше не володіє
+  // акаунтом. Це адреса, на яку йдуть гроші гравця, і переписати її зі старої
+  // вкладки — єдина відмова тут, що коштує справжніх грошей.
+  ok(/s\.act\('walletLink', 'walletError'/.test(appSrc)
+     && /s\.act\('walletUnlink', 'walletError'/.test(appSrc),
+    'обидва йдуть через s.act — і на власному каналі walletError, а не на gramError',
+    'gramError перекидає лист поповнення в помилку: відмова привʼязки вбила б чужу оплату');
+
+  ok(/plog\.log\(s\.playerId, 'walletLink'/.test(appSrc)
+     && /plog\.log\(s\.playerId, 'walletUnlink'/.test(appSrc),
+    'і привʼязка, і відвʼязка лишають рядок у player_logs',
+    'це адреса, на яку йдуть гроші гравця — зміну без сліду потім нічим показати');
+
+  // Колонка тримає ОДНЕ значення, і наступна привʼязка його затирає. Рядок,
+  // що назвав лише нову адресу, робить питання «а яка була до того» без
+  // відповіді назавжди.
+  ok(/previous: out\.previous \|\| null/.test(appSrc),
+    'у рядку про привʼязку є ПОПЕРЕДНЯ адреса — інакше її вже нізвідки взяти',
+    'колонка одна, і наступний запис затирає її без сліду');
+
+  ok(/wallet: \{ \.\.\._walletGate \}/.test(appSrc),
+    'стан привʼязок видно в /health — notStored каже, що міграцію 015 ще не застосовано',
+    'привʼязка, яку база не зберегла, виглядає точнісінько як збережена');
+
+  // Той самий припис, що й для can_message: код їде першим, колонка — потім.
+  // tonAddressOf лежить на шляху ЛОГІНУ, тож 42703 тут — це всі гравці.
+  ok(/function _hasTonAddressCols\(/.test(playersSrc)
+     && (playersSrc.match(/await _hasTonAddressCols\(db\)/g) || []).length >= 3,
+    'repos/players: усі три звернення до ton_address проходять через пробу схеми',
+    'незастосована міграція не має права валити логін');
+
+  // Клієнт стверджує цю адресу, і нормалізує її сервер — інакше в колонку
+  // потрапляє сирий 0:…, який гравець не впізнає у формі виводу.
+  ok(/ton\.validAddress\(raw\)/.test(playersSrc) && /ton\.friendlyAddress\(raw\)/.test(playersSrc),
+    'адреса з клієнта спершу перевіряється, потім приводиться до UQ… — і тільки тоді пишеться',
+    'validAddress приймає і сирий вигляд, тож без friendlyAddress у колонку ляже 0:…');
+
+  const addsWallet = fs.readdirSync(migDir).filter(x => x.endsWith('.sql'))
+    .filter(x => /ALTER TABLE players[\s\S]*ton_address/
+      .test(fs.readFileSync(path.join(migDir, x), 'utf8')));
+  ok(addsWallet.length === 1,
+    `колонка ton_address має рівно одну міграцію (${addsWallet.join(', ') || '(жодної)'})`,
     'код читає колонку, якої ніхто не створює');
 }
 
