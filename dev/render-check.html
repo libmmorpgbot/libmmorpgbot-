@@ -791,6 +791,30 @@ async function walletChecks(w) {
   // writes can be read. Everything else here is synchronous; the wallet send
   // is not.
   const settle = () => new Promise(r => setTimeout(r, 40));
+  // A real hit test: tap dx/dy away from a control's centre and ask the
+  // document what is there. The touch targets on this panel are widened by
+  // a ::after pseudo-element, and there is no other way to see one — you
+  // cannot ask ::after for a bounding rect.
+  const hits = (sel, dx, dy) => {
+    const e = q(sel); if (!e) return false;
+    const r = e.getBoundingClientRect();
+    const hit = d().elementFromPoint(Math.round(r.left + r.width / 2 + dx),
+                                     Math.round(r.top + r.height / 2 + dy));
+    return !!hit && (hit === e || e.contains(hit));
+  };
+  // Perceived brightness, so "is this legible on #16120a" is a number and
+  // not an opinion. The old deadline line was rgb(92,83,68) on rgb(22,18,10).
+  const css = (sel, prop) => { const e = q(sel); return e ? w.getComputedStyle(e)[prop] : ''; };
+  // Document order, both ends guarded: `b` follows `a`.
+  const after = (a2, b2) => {
+    const x = q(a2), y = q(b2);
+    return !!(x && y && (x.compareDocumentPosition(y) & 4));
+  };
+  const lum = sel => {
+    if (!q(sel)) return -1;
+    const c = (css(sel, 'color').match(/\d+/g) || [0, 0, 0]).map(Number);
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
   const errBefore = (w.__rcErrors || []).length;
 
   head('кошелёк GRAM — вкладка');
@@ -884,6 +908,54 @@ async function walletChecks(w) {
   ok(txt('.gram-dep-watch-sub').indexOf('закрыть') >= 0,
      'и что окно можно закрыть (зачисление придёт push-ом, а не по нажатию)', txt('.gram-dep-watch-sub'));
 
+  // ── СРОК КОДА ────────────────────────────────────────────────────────────
+  // «до якої години працює код поповнення має більш видно писати». Замерено
+  // на этой же странице ДО правки, на 390×844: строка шла последней, 11px,
+  // цветом rgb(92,83,68) на фоне rgb(22,18,10) — самое тусклое на панели, —
+  // ниже подсказки о минимальной сумме и в 49px от нижнего края экрана.
+  head('кошелёк GRAM — срок кода видно');
+  ok(!!q('#gram-dep-deadline'), 'срок кода — отдельный блок, а не строчка мелким шрифтом');
+  ok(/\d{1,2}:\d{2}/.test(txt('.gram-dep-deadline-main')),
+     'в нём стоит ЧАС, до которого код работает', txt('.gram-dep-deadline-main'));
+  ok(parseFloat(css('.gram-dep-deadline-main', 'fontSize')) >= 13,
+     'и набран не подсказочным кеглем',
+     css('.gram-dep-deadline-main', 'fontSize') || 'блока нет');
+  // Порядок в документе, а не координаты: координаты зависят от того, на
+  // каком экране гоняют набор, а «под кодом и до предупреждений» — нет.
+  ok(after('#gram-dep-deadline', '.gram-warn'),
+     'стоит СРАЗУ под кодом — раньше предупреждения и раньше подсказок');
+  ok(after('#gram-memo-val', '#gram-dep-deadline'),
+     'и именно под кодом, а не над ним');
+  ok(lum('.gram-dep-deadline-main') > lum('.gram-hint') + 25,
+     'и заметно светлее подсказок, а не тусклее их',
+     Math.round(lum('.gram-dep-deadline-main')) + ' против ' + Math.round(lum('.gram-hint')));
+  ok(/\d+:\d{2}/.test(txt('.gram-dep-deadline-left')),
+     'рядом — сколько осталось: час без обратного отсчёта требует знать, сколько сейчас времени',
+     txt('.gram-dep-deadline-left'));
+  const tick0 = txt('.gram-dep-deadline-left');
+  await new Promise(r => setTimeout(r, 1100));
+  ok(txt('.gram-dep-deadline-left') !== tick0,
+     'отсчёт идёт — через секунду написано другое',
+     tick0 + ' -> ' + txt('.gram-dep-deadline-left'));
+
+  // Ноль. Сервер не перестаёт принимать этот перевод: expires_at —
+  // отображение, сканер сверяется с created_at и семидневной отсрочкой
+  // (server/db/repos/gram.js). Панель обязана говорить это, а не намекать,
+  // что деньги куда-то делись.
+  inject(w, '_gramCodeUntil = Date.now() - 1000; _gramRenderDeadline();');
+  ok(!!q('.gram-dep-deadline-out'), 'кончившийся срок — отдельное состояние');
+  ok(!!q('.gram-dep-refresh'), 'и кнопка обновить код');
+  ok(txt('.gram-dep-deadline-out').indexOf('зачислится') >= 0,
+     'и сказано, что уже отправленный перевод всё равно зачислится',
+     txt('.gram-dep-deadline-out'));
+  inject(w, 'window.__rcTick = _gramCodeTimer;');
+  ok(w.__rcTick === null, 'таймер остановлен — он больше нечего считать');
+  // И умирает вместе с листом, а не тикает в узел, которого нет.
+  inject(w, `closeGramModal(); window.__rcTick2 = _gramCodeTimer;`);
+  ok(w.__rcTick2 === null, 'закрытие листа тоже останавливает отсчёт');
+  inject(w, `openGramDepositModal();
+    __rcEmit('gramDepositIntent', { memo: 'LBT-a1b2c3d4e5f6', address: '${RAW_PLAT}', minAmount: 0.05, expiresAt: new Date(Date.now() + 1800000).toISOString() });`);
+
   head('кошелёк GRAM — деньги пришли');
   inject(w, `onGramDepositCredited({ amount: 2.5, balance: 15, memo: 'LBT-a1b2c3d4e5f6', txHash: 'f00dcafe1234567890abcdef', at: Date.now() });`);
   ok(!!q('.gram-dep-ok'), 'модалка перевернулась в состояние успеха');
@@ -893,6 +965,24 @@ async function walletChecks(w) {
   ok(!!q('.gram-dep-ok .gram-credit-chip svg'), 'галочка нарисована SVG-иконкой');
   inject(w, 'window.__rcBal = window._gramBalance;');
   ok(w.__rcBal === 15, 'баланс взят с сервера, а не досчитан локально', String(w.__rcBal));
+
+  // ── ЕГО НАДО МОЧЬ ЗАКРЫТЬ ────────────────────────────────────────────────
+  // «важко закрити, на шо не тикай воно все не закривалось». Крестик листа
+  // был 28×28, крестик баннера — 24×24, а у всплывающей карточки крестика не
+  // было вовсе: единственный обработчик на ней ПЕРЕКИДЫВАЛ во вкладку
+  // кошелька, где то же сообщение ждало снова.
+  head('кошелёк GRAM — зачисление обязано закрываться');
+  ok(hits('.gram-sheet-close', 20, 0), 'мимо крестика листа — всё равно попадание: область касания шире кружка');
+  ok(!hits('.gram-sheet-close', 44, 0), 'а дальше — уже нет (проверка умеет говорить «нет», а не только «да»)');
+  // Закрыли из успеха — значит сообщение доставлено. Баннер с теми же
+  // словами, ждущий во вкладке, и был той петлёй, из которой не выйти.
+  inject(w, `switchProfileTab('wallet');`);
+  ok(!!q('.gram-credit-card'), 'пока лист открыт, во вкладке за ним уже лежит баннер с тем же текстом');
+  inject(w, `document.querySelector('.gram-dep-ok .gram-btn').click();`);
+  ok(!q('#gram-modal-wrap'), 'кнопка «Готово» закрывает лист');
+  ok(!q('.gram-credit-card'), 'и не оставляет позади баннер с тем же текстом');
+  inject(w, 'window.__rcLast = _gramLastCredit;');
+  ok(w.__rcLast === null, 'зачисление отмечено показанным, а не показывается снова при каждой отрисовке');
 
   // ── THE ROUND TRIP TO THE WALLET AND BACK ────────────────────────────────
   // The journey the owner reported: pick an amount, pay from the wallet, the
@@ -976,10 +1066,35 @@ async function walletChecks(w) {
   ok(!!q('#gram-credit-toast'), 'зачисление всё равно показано — всплывающей карточкой');
   ok(txt('#gram-credit-toast').indexOf('7.25') >= 0, 'с суммой', txt('#gram-credit-toast'));
   ok(txt('#gram-credit-toast').indexOf('22.25') >= 0, 'и с новым балансом');
+  // Крестика на ней не было вообще — только навигация по тапу.
+  ok(!!q('.gram-credit-x'), 'у всплывающей карточки есть чем её закрыть');
+  ok(hits('.gram-credit-x', 20, 0), 'и мимо неё — тоже попадание');
+  ok(!hits('.gram-credit-x', 44, 0), 'а дальше — нет');
   inject(w, 'switchProfileTab("wallet");');
   ok(!!q('.gram-credit-card'), 'и остаётся баннером наверху вкладки, когда её откроют');
   ok(txt('#gram-balance-val').indexOf('22.25') >= 0, 'баланс на карточке обновился', txt('#gram-balance-val'));
-  inject(w, 'var _t = document.getElementById("gram-credit-toast"); if (_t) _t.remove();');
+  // Тап по телу баннера. Именно это человек делает первым, и именно это не
+  // делало ничего: закрывала только точка 24×24 в углу.
+  inject(w, 'document.querySelector(".gram-credit-card").click();');
+  ok(!q('.gram-credit-card'), 'тап по самому баннеру закрывает его — не только по крестику');
+  ok(!q('#gram-credit-toast'), 'и одновременно убирает всплывающую карточку — это одно сообщение, а не два');
+
+  // Крестик на всплывающей карточке: закрывает её и НЕ перекидывает во
+  // вкладку, и не оставляет баннер на потом.
+  inject(w, `onGramDepositCredited({ amount: 1, balance: 23.25, memo: 'LBT-998', txHash: 'be', at: Date.now() });`);
+  ok(!!q('#gram-credit-toast'), 'карточка показана снова');
+  inject(w, 'document.querySelector(".gram-credit-x").click();');
+  ok(!q('#gram-credit-toast'), 'крестик её закрывает');
+  inject(w, 'switchProfileTab("wallet"); window.__rcLast2 = _gramLastCredit;');
+  ok(w.__rcLast2 === null && !q('.gram-credit-card'),
+     'и во вкладке кошелька то же сообщение уже не ждёт');
+
+  // Escape — на десктопе, где лист во весь экран не оставляет подложки,
+  // по которой можно промахнуться наружу.
+  inject(w, `openGramDepositModal();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));`);
+  ok(!q('#gram-modal-wrap'), 'Escape закрывает лист');
+  inject(w, 'var _t = document.getElementById("gram-credit-toast"); if (_t) _t.remove(); _gramDismissCredit();');
 
   head('кошелёк GRAM — статус каждой строки истории');
   inject(w, `onGramHistory([

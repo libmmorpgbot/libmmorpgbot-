@@ -7921,19 +7921,41 @@ function _renderGramCreditBanner() {
   if (!el) return;
   if (!_gramLastCredit) { el.innerHTML = ''; return; }
   const c = _gramLastCredit;
-  el.innerHTML = `<div class="gram-credit-card">
+  // The CARD closes it, not only the cross. This banner carries no action
+  // of its own — the balance it names is on the card above it and the row
+  // it names is in the list below — so every tap on it means the same
+  // thing, and a person who has read a message taps the message.
+  el.innerHTML = `<div class="gram-credit-card" onclick="_gramDismissCredit()">
     <span class="gram-credit-chip">${_gramIconCheck(24)}</span>
     <div class="gram-credit-txt">
       <div class="gram-credit-title">${t('depositCreditedTitle')}</div>
       <div class="gram-credit-amount">${tVars('depositCreditedAmountFmt', { n: _gramFmtAmount(c.amount) })}</div>
       <div class="gram-credit-sub">${tVars('depositNewBalanceFmt', { n: _gramFmtAmount(c.balance) })}</div>
     </div>
-    <button class="gram-credit-close" onclick="_gramDismissCredit()" aria-label="✕">✕</button>
+    <button class="gram-credit-close" onclick="event.stopPropagation();_gramDismissCredit()" aria-label="${_escAttr(t('closeLbl'))}">✕</button>
   </div>`;
 }
 
+// Every surface at once, because they are one message. Dismissing the toast
+// and then finding the same words waiting in the wallet tab — behind a
+// 24×24 dot — is what «на що не тикай, воно не закривалось» was.
+// Escape closes it too. The owner plays on a desktop as well as a phone,
+// and a sheet tall enough to fill the viewport leaves no overlay to click
+// beside it. Registered once, at load, next to nothing else that listens
+// for this key (index.html closes the chat on Escape; the two cannot both
+// be the topmost thing on screen).
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('gram-modal-wrap')) { closeGramModal(); return; }
+  if (document.getElementById('gram-credit-toast') || document.querySelector('.gram-credit-card')) {
+    _gramDismissCredit();
+  }
+});
 function _gramDismissCredit() {
   _gramLastCredit = null;
+  clearTimeout(_gramCreditToastTimer);
+  const toast = document.getElementById('gram-credit-toast');
+  if (toast) toast.remove();
   _renderGramCreditBanner();
 }
 
@@ -7954,9 +7976,17 @@ function _gramCreditToast(c) {
       <div class="gram-credit-amount">${tVars('depositCreditedAmountFmt', { n: _gramFmtAmount(c.amount) })}</div>
       <div class="gram-credit-sub">${tVars('depositNewBalanceFmt', { n: _gramFmtAmount(c.balance) })}</div>
     </div>
-    <span class="gram-credit-mark">${_gramMarkSvg(26)}</span>`;
-  // Tapping it takes the player to the wallet, where the banner and the
-  // history row are already waiting.
+    <button class="gram-credit-x" aria-label="${_escAttr(t('closeLbl'))}">✕</button>`;
+  // The GRAM mark used to sit here. It was decoration, and the owner was
+  // holding a card with NO way to dismiss it: the only handler on the whole
+  // toast navigated. Tapping to get rid of a message and being moved to
+  // another tab instead reads as the message following you.
+  el.querySelector('.gram-credit-x').onclick = (ev) => {
+    ev.stopPropagation();
+    _gramDismissCredit();
+  };
+  // The body still opens the wallet — that is the useful thing to do with a
+  // credit — and now it is a choice rather than the only outcome.
   el.onclick = () => {
     el.remove();
     clearTimeout(_gramCreditToastTimer);
@@ -7990,6 +8020,94 @@ let _gramDepositTimer = null;
 // How long the modal waits before calling the request lost. Longer than any
 // healthy round trip and shorter than a player's patience.
 const GRAM_DEPOSIT_WAIT_MS = 15000;
+
+// ── the code's deadline, somewhere it can actually be seen ───────────────
+// It used to be the LAST line of the sheet: 11px, #5c5344 on #16120a — the
+// dimmest thing on the panel — printed under the minimum and under the
+// «ничего не потеряется» note, 49px from the bottom edge of a 915px phone
+// and below the fold on anything shorter. Measured in a real browser at
+// 390×844 before it moved, not guessed at.
+//
+// It now sits directly under the code it belongs to, and it counts down. An
+// hour on its own answers nothing: a Mini App covers the phone's clock, so
+// «до 17:50» makes the player go and find out what time it is before the
+// line means anything.
+//
+// Honest about what expiry is here. server/db/repos/gram.js keeps ONE open
+// intent per player and refreshes expires_at on every open — the column is
+// display only, the scanner matches on created_at against a seven-day
+// grace and never reads it. So a transfer already sent still credits after
+// this reaches zero, and refreshing returns the SAME memo with a new
+// window. The expired panel says exactly that rather than implying the
+// money went somewhere.
+let _gramCodeUntil = null;      // ms epoch of the deadline on screen, or null
+let _gramCodeTimer = null;
+
+function _gramStopDeadline() {
+  clearInterval(_gramCodeTimer);
+  _gramCodeTimer = null;
+}
+
+// «до 17:50» when the deadline is today — a thirty-minute window almost
+// always is — and the date as well when it is not, so a code minted at 23:55
+// cannot read as one that expired eleven hours ago. ru-RU for the same
+// reason every other date in this file uses it: 24-hour and unambiguous,
+// where the browser's own locale would hand some players 5:50 PM.
+function _gramClockText(ms) {
+  const d = new Date(ms);
+  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return hm;
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ', ' + hm;
+}
+
+// One tick draws, and decides whether there will be another. Bound to the
+// ELEMENT rather than to the modal: if the node is gone — a redraw into
+// another state, a closed sheet, a reopened panel — the ticker stops itself
+// instead of writing once a second into something nobody is looking at.
+function _gramRenderDeadline() {
+  const el = document.getElementById('gram-dep-deadline');
+  if (!el || !_gramCodeUntil) { _gramStopDeadline(); return; }
+  const left = _gramCodeUntil - Date.now();
+  if (left > 0) {
+    const total = Math.round(left / 1000);
+    const mmss = Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+    el.className = 'gram-dep-deadline';
+    el.innerHTML = '<span class="gram-dep-deadline-ico">' + _gramIconClock(19) + '</span>'
+      + '<div class="gram-dep-deadline-txt">'
+      +   '<div class="gram-dep-deadline-main">'
+      +     tVars('depositCodeValidUntilFmt', { n: _gramClockText(_gramCodeUntil) })
+      +   '</div>'
+      +   '<div class="gram-dep-deadline-left">'
+      +     tVars('depositCodeLeftFmt', { n: mmss })
+      +   '</div>'
+      + '</div>';
+    return;
+  }
+  _gramStopDeadline();
+  el.className = 'gram-dep-deadline gram-dep-deadline-out';
+  el.innerHTML = '<span class="gram-dep-deadline-ico">' + _gramIconClock(19) + '</span>'
+    + '<div class="gram-dep-deadline-txt">'
+    +   '<div class="gram-dep-deadline-main">' + t('depositCodeExpiredTitle') + '</div>'
+    +   '<div class="gram-dep-deadline-left">' + t('depositCodeExpiredDesc') + '</div>'
+    +   '<button class="gram-dep-refresh" onclick="_requestGramDepositCode()">'
+    +     t('depositCodeRefreshBtn') + '</button>'
+    + '</div>';
+}
+
+function _gramStartDeadline(iso) {
+  _gramStopDeadline();
+  const at = iso ? new Date(iso).getTime() : NaN;
+  _gramCodeUntil = Number.isFinite(at) ? at : null;
+  const el = document.getElementById('gram-dep-deadline');
+  // No deadline from the server is not an excuse to invent one. The block
+  // stays empty and the code stays usable — expires_at is display only.
+  if (!_gramCodeUntil) { if (el) el.innerHTML = ''; return; }
+  _gramRenderDeadline();
+  _gramCodeTimer = setInterval(_gramRenderDeadline, 1000);
+}
 
 // ── what the player is waiting on, between signing and crediting ────────────
 // Held outside the DOM because the DOM is the thing that goes away: the player
@@ -8124,6 +8242,10 @@ function _setGramDepositState(state, msg, intent) {
   const el = document.getElementById('gram-dep-code');
   if (!el) { _gramDepositState = 'idle'; return; }
   const form = document.getElementById('gram-dep-form');
+  // The deadline belongs to the code, and every branch below either redraws
+  // it or replaces it wholesale. Stopping the ticker here — once, for all of
+  // them — is what keeps an interval from outliving its element.
+  _gramStopDeadline();
 
   if (state === 'loading') {
     el.innerHTML = `<div class="gram-dep-panel gram-dep-panel-center">
@@ -8174,14 +8296,16 @@ function _setGramDepositState(state, msg, intent) {
     </div>`;
   } else {
     const min = window._gramDepositMin;
-    const until = intent && intent.expiresAt ? new Date(intent.expiresAt) : null;
-    const untilTxt = until && !isNaN(until.getTime())
-      ? until.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-      : null;
     if (form) form.style.display = '';
     el.innerHTML = `
       ${_gramCopyRow(t('transferToWalletHint'), 'gram-addr-val', _esc(intent.address))}
       ${_gramCopyRow(t('memoRequiredHint'), 'gram-memo-val', _esc(intent.memo), 'code')}
+
+      <!-- Filled by _gramStartDeadline below, and rewritten every second
+           after that. Rendered empty here rather than with the first frame
+           of the countdown baked in, so there is exactly one function that
+           decides what this block says. -->
+      <div class="gram-dep-deadline" id="gram-dep-deadline"></div>
 
       <div class="gram-warn">${t('memoWarnHint')}</div>
 
@@ -8199,8 +8323,10 @@ function _setGramDepositState(state, msg, intent) {
         </div>
       </div>
       <div class="gram-hint" style="margin-top:8px">${t('depositSafeNote')}</div>
-      ${min ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositMinAmountFmt', { n: min })}</div>` : ''}
-      ${untilTxt ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositCodeValidUntilFmt', { n: untilTxt })}</div>` : ''}`;
+      ${min ? `<div class="gram-hint" style="margin-top:4px">${tVars('depositMinAmountFmt', { n: min })}</div>` : ''}`;
+    // After the innerHTML above, because that is the write that creates the
+    // node this ticks into.
+    _gramStartDeadline(intent && intent.expiresAt);
     // The server's floor, on the field, now that it is known.
     const amt = document.getElementById('gram-dep-amount');
     if (amt && min) amt.min = String(min);
@@ -8492,6 +8618,16 @@ function gramCopy(elId) {
 function closeGramModal() {
   const w = document.getElementById('gram-modal-wrap');
   if (w) w.remove();
+  _gramStopDeadline();
+  _gramCodeUntil = null;
+  // A sheet closed FROM the success panel has already delivered the news —
+  // whether by «Готово», the cross, or a tap outside. Leaving _gramLastCredit
+  // set would put the identical message back as a banner the moment the
+  // wallet tab redraws, which is the loop the owner was stuck in.
+  if (_gramDepositState === 'credited') {
+    _gramLastCredit = null;
+    _renderGramCreditBanner();
+  }
   // The deposit code dies with the modal that showed it. Leaving it on window
   // would let a later reopen paint a stale code — matchable or not, it would
   // not be the one this open asked for — and would leave the pending timer

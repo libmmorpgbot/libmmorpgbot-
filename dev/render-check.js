@@ -159,8 +159,16 @@ http.createServer((req, res) => {
   }
   if (url === '/render-check' || url === '/')
     return send(200, MIME['.html'], fs.readFileSync(path.join(__dirname, 'render-check.html')));
-  const f = path.join(ROOT, url);
-  if (!f.startsWith(ROOT)) return send(403, 'text/plain', 'no');
+  // PREV through the static handler too, not only through the bundle. It used
+  // to substitute bundled JS and nothing else, so css/style.css always came
+  // from the working tree — and every assertion about a touch target or a
+  // colour stayed green against an old client. An assertion that cannot go red
+  // is indistinguishable from one that does not work, which is the exact trap
+  // this switch exists to avoid.
+  const rel = url.replace(/^\/+/, '');
+  const f0 = path.join(ROOT, rel);
+  if (!f0.startsWith(ROOT)) return send(403, 'text/plain', 'no');
+  const f = bundleSrc(rel);
   fs.readFile(f, (e, d) => {
     if (e) return send(404, 'text/plain', 'not found: ' + url);
     send(200, MIME[path.extname(f)] || 'application/octet-stream', d);

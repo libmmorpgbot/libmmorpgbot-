@@ -1228,6 +1228,10 @@ canvas { display:block; width:100%; height:100%; }
   transition: opacity 0.15s;
 }
 .gram-btn:active { opacity: 0.7; }
+/* Anything full-width in a sheet is a primary action and gets a real
+   target: these were 41px. */
+.gram-dep-panel .gram-btn { min-height: 46px; }
+.gram-dep-again { min-height: 40px; }
 .gram-btn-green {
   background: linear-gradient(135deg, #29361e, #486133);
   color: #90d653;
@@ -1422,9 +1426,51 @@ canvas { display:block; width:100%; height:100%; }
 .gram-sheet-ico-wd  { background: rgba(229,165,70,0.13); color: #e5a546; }
 .gram-sheet-title { flex: 1; font-size: 16px; font-weight: 800; color: #f5dbae; }
 .gram-sheet-close {
-  width: 28px; height: 28px; flex-shrink: 0; border: none; border-radius: 50%;
+  position: relative;
+  width: 32px; height: 32px; flex-shrink: 0; border: none; border-radius: 50%;
   background: rgba(209,204,197,.08); color: #968a7a; cursor: pointer;
+  touch-action: manipulation;
 }
+/* The circle stays small; the TARGET is 46×46. A thumb is about 45px wide
+   and none of these controls were half that. */
+.gram-sheet-close::after { content: ''; position: absolute; inset: -7px; }
+.gram-sheet-close:active { background: rgba(234,181,89,.22); color: #f4d9aa; }
+
+/* The deposit code's deadline. It was the last line of the sheet in the
+   dimmest colour on the panel; it is now a card of its own, directly under
+   the code, in the amber this interface uses for «mind this». */
+.gram-dep-deadline {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; padding: 10px 12px;
+  background: rgba(229,165,70,0.07);
+  border: 1px solid rgba(229,165,70,0.26);
+  border-radius: 12px;
+}
+.gram-dep-deadline:empty { display: none; }
+.gram-dep-deadline-ico { flex-shrink: 0; color: #e5a546; }
+.gram-dep-deadline-txt { flex: 1; min-width: 0; }
+.gram-dep-deadline-main {
+  font-size: 13.5px; font-weight: 700; color: #f0c98a;
+}
+.gram-dep-deadline-left {
+  font-size: 11.5px; color: #a3957c; margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+/* Ran out: red-brown rather than amber, and it grows a button. */
+.gram-dep-deadline-out {
+  align-items: flex-start;
+  background: rgba(196,86,72,0.08); border-color: rgba(196,86,72,0.3);
+}
+.gram-dep-deadline-out .gram-dep-deadline-ico { color: #d9705f; }
+.gram-dep-deadline-out .gram-dep-deadline-main { color: #e8a396; }
+.gram-dep-deadline-out .gram-dep-deadline-left { line-height: 1.5; }
+.gram-dep-refresh {
+  margin-top: 9px; width: 100%; min-height: 42px; padding: 10px 14px;
+  border: 1px solid rgba(229,165,70,0.4); border-radius: 10px;
+  background: rgba(229,165,70,0.12); color: #f0c98a;
+  font-size: 13px; font-weight: 700; cursor: pointer; touch-action: manipulation;
+}
+.gram-dep-refresh:active { background: rgba(229,165,70,0.24); }
 
 .gram-dep-panel {
   background: rgba(209,204,197,0.035);
@@ -1516,13 +1562,26 @@ canvas { display:block; width:100%; height:100%; }
 .gram-credit-title { font-size: 12px; font-weight: 700; color: #b7d69a; letter-spacing: .2px; }
 .gram-credit-amount { font-size: 22px; font-weight: 800; color: #98e456; line-height: 1.15; margin-top: 1px; word-break: break-all; }
 .gram-credit-sub { font-size: 11.5px; color: #a3957c; margin-top: 2px; }
+.gram-credit-card { cursor: pointer; }
 .gram-credit-close {
-  flex-shrink: 0; align-self: flex-start;
-  width: 24px; height: 24px; border: none; border-radius: 50%;
-  background: rgba(0,0,0,0.25); color: #82745b; cursor: pointer; font-size: 12px;
+  position: relative; flex-shrink: 0; align-self: flex-start;
+  width: 30px; height: 30px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.3); color: #b7a98c; cursor: pointer; font-size: 13px;
   touch-action: manipulation;
 }
+.gram-credit-close::after { content: ''; position: absolute; inset: -8px; }
+.gram-credit-close:active { background: rgba(234,181,89,.24); color: #f4d9aa; }
 .gram-credit-mark { flex-shrink: 0; opacity: .85; }
+/* The toast's own cross. Same target, on a card that is floating over the
+   world and had no way off the screen but waiting eight seconds. */
+.gram-credit-x {
+  position: relative; flex-shrink: 0; align-self: center;
+  width: 30px; height: 30px; border: none; border-radius: 50%;
+  background: rgba(0,0,0,0.34); color: #b7a98c; cursor: pointer; font-size: 13px;
+  touch-action: manipulation;
+}
+.gram-credit-x::after { content: ''; position: absolute; inset: -8px; }
+.gram-credit-x:active { background: rgba(234,181,89,.24); color: #f4d9aa; }
 
 /* Floating confirmation, for a credit that lands while the player is in the
    world. z-index sits above the panels (400) and below nothing that matters —
