@@ -1,0 +1,171 @@
+═══════════════════════════════════════════════════════════════════════════════
+  ПРОМПТ ДЛЯ ГЕНЕРАЦИИ АССЕТОВ ИНТЕРФЕЙСА LIBERTY
+  Прикладывать вместе с файлом ref/hud.png
+═══════════════════════════════════════════════════════════════════════════════
+
+КАК ПОЛЬЗОВАТЬСЯ
+  1. Открыть любой генератор с приёмом картинки на вход
+     (Gemini «Nano Banana», GPT Image, Midjourney с --sref, Flux Kontext).
+  2. Приложить ref/hud.png как образец стиля.
+  3. Вставить блок между двумя линиями-разделителями ниже.
+  4. Если модель не тянет 34 предмета за раз — вставлять по одной группе:
+     сначала блок A, потом B, потом C. Стиль не разъедется: хвост
+     требований одинаковый во всех трёх.
+
+ГЛАВНОЕ ПРАВИЛО, РАДИ КОТОРОГО ПРОМПТ ТАКОЙ ДЛИННЫЙ
+  Всё, что на макете лежит ВНУТРИ рамки, у игры уже есть своё и настоящее:
+     images/potion/    — 8 зелий (hp, smallhp, bighp, atk, atkspeed, exp, gold, regen)
+     images/skill/     — умения, включая mteleport.png — тот самый вихрь с макета
+     images/arm/, acs/, artifact/, material/ — предметы инвентаря
+     спрайты пяти классов — для портрета
+     текст, числа, полосы, карта — рисует код
+  Поэтому от генератора нужны ПУСТЫЕ ОПРАВЫ. Если внутри гнезда окажется
+  нарисованное зелье, гнездо в игру не поставить: настоящее зелье ляжет
+  поверх нарисованного.
+
+ЧТО ПРОВЕРИТЬ, КОГДА ПРИДЁТ
+  □ ни одной буквы и ни одной цифры нигде
+  □ внутри круглых гнёзд и квадратных слотов — пусто (прозрачно/маджента)
+  □ в кольце портрета — пусто, силуэта нет
+  □ в панели миникарты — пусто, карты нет
+  □ предметы не соприкасаются друг с другом
+  □ блик у всех сверху-слева, а не вразнобой
+
+
+===PROMPT===
+
+Use the attached game HUD screenshot as the exact and only style reference.
+Redraw the interface CHROME from it as a sheet of separate, isolated assets.
+
+THE SINGLE MOST IMPORTANT RULE — THESE ARE EMPTY CONTAINERS, NOT PICTURES.
+The game engine draws its own content into them at runtime, so every frame,
+ring, socket and slot must be HOLLOW. Where the reference screenshot shows
+content inside a frame, leave that area completely empty.
+
+Absolutely NO:
+  - no text, no letters, no numbers, no labels, no captions, no watermark
+  - no potions, no flasks, no vials, no bottles
+  - no skill icons, no glowing swirls, no spell effects inside the round sockets
+  - no weapon or sword inside the large circular attack ring
+  - no character, portrait, face or silhouette inside the portrait ring
+  - no map, no rooms, no dots, no arrow inside the map panel
+  - no coloured fill inside the progress bars
+  - no drop shadow cast onto the background, no ground plane, no scenery
+
+STYLE — copy the reference exactly:
+Dark polished obsidian and carved dark stone. Warm antique gold and bronze
+trim, colour #c9a86a. Amethyst purple diamond-cut gems, colour #8b45d6, set at
+corners and cardinal points. Thin double-line gold borders with small notched
+corners. Soft rim light from the upper left, gentle inner shadow, faint bevel
+on every edge. Realistic rendered metal, not flat vector, not cartoon outline,
+not neon. Same weight of ornament as the reference — ornate but restrained.
+
+BACKGROUND AND ALPHA:
+Transparent background, and the hollow interior of every frame must also be
+transparent. If the tool cannot output transparency, use pure magenta #FF00FF
+for the background AND for every hollow interior — never black, because the
+assets themselves are almost black and would be impossible to cut out.
+
+LAYOUT:
+One item per cell on a regular grid. Each item centred in its cell, upright,
+orthographic front view, seen straight on. Leave a wide empty margin around
+every item so nothing touches or overlaps anything else. Do not draw grid
+lines, cards, borders or labels around the cells. Highest resolution
+available.
+
+────────────────────────────────────────────────────────────────
+GROUP A — LARGE FRAMES (hollow)
+────────────────────────────────────────────────────────────────
+A1  Stat panel. Horizontal rounded-rectangle frame, double gold border,
+    notched corners, one amethyst diamond at each of the four corners.
+    Hollow interior.
+A2  Map panel. Upright rounded-rectangle frame, one amethyst diamond at top
+    centre, gold border. Hollow interior.
+A3  Skill fan. Quarter-circle plate of carved dark stone with gold trim along
+    the curved edge and five hollow circular sockets with gold rims arranged
+    along the arc. Sockets empty.
+A4  Bottom navigation bar. Wide horizontal plate of dark stone, gold top edge
+    line with small amethyst diamonds spaced along it, six shallow hollow
+    square recesses in a row. Recesses empty.
+A5  Active tab plate. A single square recess lit from within by amethyst
+    purple glow, brighter gold border than the others. Hollow.
+A6  Joystick base. Circular pad, dark leather centre, gold outer rim with four
+    amethyst diamonds at the cardinal points, four engraved triangular
+    direction arrows on the rim. Hollow centre where the knob sits.
+A7  Joystick knob. Separate convex round cap, dark polished metal with a soft
+    highlight and a thin gold edge.
+A8  Chat bar. Long horizontal rounded plate, thin gold border. Hollow.
+
+────────────────────────────────────────────────────────────────
+GROUP B — SMALL FRAMES, RINGS AND SLOTS (hollow)
+────────────────────────────────────────────────────────────────
+B1  Portrait ring. Circular gold frame with an amethyst diamond at the top and
+    a fine engraved band. Interior completely empty.
+B2  Level badge ring. Small circular gold ring. Interior empty.
+B3  Currency plate. Small horizontal rounded plate with a gold border and a
+    round hollow socket set into its left end. Both hollow.
+B4  Plus button plate. Small rounded square plate with a gold border. Hollow,
+    with no plus sign drawn.
+B5  Round button rim. Plain circular gold rim, medium thickness. Interior empty.
+B6  Skill socket. Circular gold rim with a deeper bevel and inner shadow.
+    Interior empty.
+B7  Consumable slot. Small rounded square slot, gold border, bevelled inner
+    edge, inner shadow. Interior empty.
+B8  Attack ring. Large circular gold ring with four amethyst diamonds at the
+    cardinal points. Interior completely empty.
+B9  Counter badge. Small plain red circular badge with a thin darker edge.
+    No number.
+B10 Zone banner. Long thin rounded plate, thin gold border, one amethyst
+    diamond at each end. Hollow.
+B11 Menu plate. Small rounded-rectangle plate with a gold border. Hollow.
+B12 Amethyst diamond ornament on its own, drawn three times at three sizes:
+    small, medium, large.
+
+────────────────────────────────────────────────────────────────
+GROUP C — INTERFACE SYMBOLS
+These are the only items that DO have a drawing inside them, because they are
+interface symbols and not game content. Draw each as a solid object in the
+same gold-and-amethyst material as everything above. No frame, no plate and no
+background around them — the symbol alone.
+────────────────────────────────────────────────────────────────
+C1  Two crossed longswords, blades up, hilts crossing at the bottom.
+C2  Armoured knight bust from the front, helmet and pauldrons, face in shadow.
+C3  Folded map with a waypoint pin standing in the middle.
+C4  Hourglass in a gold frame with amethyst sand.
+C5  Heraldic shield crest with a vertical divide.
+C6  Portrait medallion: head and shoulders inside an upright oval.
+C7  Armillary globe: a dark sphere inside gold meridian rings.
+C8  Crosshair reticle: four spokes and a centre dot inside a thin ring.
+C9  Plain heater shield, front view.
+C10 Speech bubble, rounded, with a tail at the lower left.
+C11 Single broadsword pointing up and to the right, ornate hilt.
+C12 Thick gold coin at a slight angle with an embossed rune on its face.
+C13 Faceted amethyst gemstone, brilliant cut, deep purple.
+C14 Faceted ruby gemstone, brilliant cut, deep red.
+
+===END PROMPT===
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЕСЛИ МОДЕЛЬ ПРОСИТ ОДИН ПРЕДМЕТ ЗА РАЗ
+═══════════════════════════════════════════════════════════════════════════════
+Взять описание нужного пункта и приклеить к нему этот хвост:
+
+  , dark fantasy MMORPG interface asset, style of the attached reference,
+  dark polished obsidian and carved stone, warm antique gold trim #c9a86a,
+  amethyst purple gems #8b45d6, soft rim light from upper left, realistic
+  rendered metal, orthographic front view, single object centred, hollow
+  interior, transparent background, no text, no numbers, no content inside,
+  highest resolution
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЧЕГО В ЭТОМ СПИСКЕ НЕТ И ПОЧЕМУ
+═══════════════════════════════════════════════════════════════════════════════
+  зелья              — есть в images/potion/, восемь штук
+  умения             — есть в images/skill/, включая вихрь телепорта
+  предметы           — есть в images/arm/, acs/, artifact/, material/
+  портрет персонажа  — берётся из спрайтов класса
+  карта, точки, стрелка игрока — рисует код по данным этажа
+  полосы HP и XP     — рисует код, иначе они не смогут двигаться
+  числа, имена, подписи вкладок — рисует код, иначе не перевести
+                       на шесть языков и не поменять на лету
