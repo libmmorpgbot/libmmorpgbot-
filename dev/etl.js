@@ -157,7 +157,26 @@ const num = (v, d = 0) => {
   return Number.isFinite(n) ? n : d;
 };
 const int = (v, d = 0) => Math.floor(num(v, d));
-const clampInt = (v, lo, hi, d = 0) => Math.max(lo, Math.min(hi, int(v, d)));
+// Counted, not just applied. A ceiling that fires is a value the old database
+// held and this one cannot, and the --dry run is where that has to be visible:
+// bm is clamped to 2147483647 because the column is `integer`, which is a
+// guard against a failed INSERT, not against a nonsense figure. A real account
+// arriving at two billion Battle Power would sit at the top of the rating
+// until its owner next levelled — and nothing would have said so.
+//
+// Nothing here changes what is written. It changes whether anyone finds out.
+const clamped = new Map();      // field -> { n, worst }
+function _noteClamp(field, raw, out) {
+  const r = clamped.get(field) || { n: 0, worst: 0 };
+  r.n++;
+  if (Math.abs(Number(raw)) > Math.abs(r.worst)) r.worst = Number(raw);
+  clamped.set(field, r);
+  return out;
+}
+const clampInt = (v, lo, hi, d = 0, field = null) => {
+  const out = Math.max(lo, Math.min(hi, int(v, d)));
+  return (field && Number.isFinite(Number(v)) && Number(v) !== out) ? _noteClamp(field, v, out) : out;
+};
 const clampNum = (v, lo, hi, d = 0) => Math.max(lo, Math.min(hi, num(v, d)));
 
 // The ceilings _SANITIZE_MAX (server/anticheat.js) applied on the way in,
@@ -312,7 +331,7 @@ async function migratePlayer(doc, questIds = new Map()) {
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT (telegram_id) DO NOTHING
       RETURNING id`,
-      [tg, username, clampInt(doc.bm, 0, MAX.bm),
+      [tg, username, clampInt(doc.bm, 0, MAX.bm, 0, 'bm'),
        doc.referredBy ? String(doc.referredBy) : null, !!doc.banned, !!doc.adminNotified,
        doc.createdAt || new Date()]);
     if (!ins.length) return { skipped: true };
@@ -759,6 +778,15 @@ async function main() {
 
 function report() {
   console.log('\n── що НЕ перенеслось ──');
+  if (clamped.size) {
+    console.log('\nзначення, які довелось обрізати (колонки вужчі за число в Mongo):');
+    for (const [field, r] of [...clamped].sort((a, b) => b[1].n - a[1].n)) {
+      console.log(`  ${field}: ${r.n} шт., найбільше ${r.worst}`);
+    }
+    console.log('  це НЕ втрата речей — але, наприклад, обрізаний bm сидітиме');
+    console.log('  вгорі рейтингу, доки власник не візьме наступний рівень.');
+  }
+
   if (lost.unknownItems.size) {
     const tot = [...lost.unknownItems.values()].reduce((a, b) => a + b, 0);
     console.log(`\nпредмети з невідомими id: ${tot} штук у ${lost.playersWithLoss.size} гравців`);
