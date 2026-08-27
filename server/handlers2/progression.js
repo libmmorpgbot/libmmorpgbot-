@@ -22,6 +22,7 @@ const {
   rebirthCostFor, UPGRADE_RESET_COST, SKILL_UPGRADE_CHANCE,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
+  SEASON_RATING_MIN_POINTS,
 } = require('../../shared/definitions');
 const shop = require('../shop');
 
@@ -247,9 +248,34 @@ module.exports = function registerProgression(s, safeOn) {
   // scan. The Mongo version sorted the whole collection in memory on every
   // call — from a handler any client may fire.
   safeOn('seasonRating', () => s.act('seasonRating', 'seasonError', async (t, pid) => {
-    const board = await progression.seasonBoard(t, { limit: 50 });
+    // `list`, not `board`. The renderer reads `r.list` (_seasonRatingHTML,
+    // js/ui.js) and its own fallback shape is `{ list: [], me: null }` — so
+    // the season table drew an empty list for everybody, and the "нет игроков"
+    // line under a threshold nobody could see themselves against.
+    //
+    // The client takes this payload WHOLE (`_seasonRating = data`), which is
+    // why dev/reply-shape-check.js could not see the mismatch: it compares
+    // destructured keys, and there are none to compare. That blind spot is
+    // now checked separately — see the same file.
+    const list = await progression.seasonBoard(t, {
+      limit: 50,
+      // The board must agree with the threshold printed above it. It defaulted
+      // to 1, so the panel said "нужно 5000 очков" and then listed players
+      // with one.
+      minPoints: SEASON_RATING_MIN_POINTS,
+    });
     const mine = await progression.seasonOf(t, pid);
-    s.socket.emit('seasonRatingData', { board, me: mine });
+    s.socket.emit('seasonRatingData', {
+      list,
+      // seasonOf returns the player's season row and knows nothing about
+      // names, so `me.username` was undefined: the player's own line rendered
+      // blank, and "am I already in the list" compared undefined against every
+      // row. The session is the only thing here that knows who this is.
+      me: { ...mine, username: s.username },
+      // Printed by the panel. It had a hardcoded 5000 as a fallback, which was
+      // right by luck; changing the constant would have made the panel lie.
+      minPoints: SEASON_RATING_MIN_POINTS,
+    });
   }));
 
 

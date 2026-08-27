@@ -595,6 +595,60 @@ if (notes.length) {
   for (const n of notes.slice(0, 40)) console.log(`    · ${n}`);
 }
 
+console.log('\n  ── сезонный рейтинг: что шлём против того, что рисуем ──');
+
+// Точечная проверка одного события, и вот почему точечная.
+//
+// dev/reply-shape-check.js сравнивает ключи эмита с ДЕСТРУКТУРИЗАЦИЕЙ
+// клиентского обработчика. Здесь деструктуризации нет: клиент кладёт
+// payload целиком (`_seasonRating = data`), а поля читает уже через
+// локальный псевдоним (`const r = _seasonRating` в _seasonRatingHTML). Таких
+// обработчиков в клиенте 42, и все они у того файла числятся «непроверенными».
+//
+// Цена этой дыры: сервер слал { board, me }, а рисовальщик читает r.list,
+// r.me.username и r.minPoints. Таблица сезона рисовала ПУСТОЙ список у всех,
+// строка «ты» выходила без имени, а порог печатался из зашитого в клиент
+// числа. Ровно жалоба: «в рейтингах ники не показывает ни твоё ничьё».
+//
+// Общий обход псевдонимов писать не стал: он требует угадывать область
+// видимости, а проверка, которая угадывает, начинает врать. Здесь угадывать
+// нечего — оба конца читаются буквально.
+function seasonRatingShape() {
+  const srv = fs.readFileSync(path.join(ROOT, "server", "handlers2", "progression.js"), "utf8");
+  const ui = fs.readFileSync(path.join(ROOT, "js", "ui.js"), "utf8");
+
+  const emit = (srv.match(/emit\(\s*.seasonRatingData.[\s\S]{0,2000}?\}\);/) || [""])[0];
+  ok(emit.length > 20, "нашли эмит seasonRatingData на сервере");
+
+  const at = ui.indexOf("function _seasonRatingHTML");
+  const render = at < 0 ? "" : ui.slice(at, at + 2000);
+  ok(render.length > 100, "нашли _seasonRatingHTML в клиенте");
+
+  // Поля, которые рисовальщик читает с корня payload и с me.
+  const rootKeys = new Set([...render.matchAll(/\br\.([a-zA-Z_$][\w$]*)/g)].map(m => m[1]));
+  const meKeys = new Set([...render.matchAll(/\br\.me\.([a-zA-Z_$][\w$]*)/g)].map(m => m[1]));
+  rootKeys.delete("me");
+
+  ok(rootKeys.size >= 2 && meKeys.size >= 1,
+    `есть что сверять — ${rootKeys.size} полей и ${meKeys.size} у me`,
+    "рисовальщик разобран неверно, проверка ничего не значит");
+
+  for (const k of rootKeys) {
+    ok(new RegExp("\\b" + k + "\\s*[,:]").test(emit),
+      `сервер шлёт ${k} — рисовальщик его читает`,
+      "клиент прочтёт undefined и нарисует пустоту");
+  }
+  // me собирается из seasonOf плюс то, что добавляет обработчик.
+  const prog = fs.readFileSync(path.join(ROOT, "server", "db", "repos", "progression.js"), "utf8");
+  const seasonOf = (prog.match(/async function seasonOf[\s\S]*?\n\}/) || [""])[0];
+  for (const k of meKeys) {
+    ok(new RegExp("\\b" + k + "\\s*[,:]").test(seasonOf) || new RegExp("\\b" + k + "\\s*[,:]").test(emit),
+      `me.${k} действительно кладётся`,
+      "строка игрока нарисуется без него");
+  }
+}
+seasonRatingShape();
+
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (failures.length) console.log('  впали: ' + failures.join(' · '));
 process.exit(fail ? 1 : 0);
