@@ -48,7 +48,11 @@ async function _tcEnsure() {
     manifestUrl: window.location.origin + '/tonconnect-manifest.json',
   });
   _tonConnectUI.onStatusChange(wallet => {
-    _tonConnectedAddress = wallet ? wallet.account.address : null;
+    // Converted HERE, at the one line where a wallet address enters this
+    // client, and never again downstream. tcAddress() feeds the wallet card,
+    // the withdrawal form's auto-fill and anything added later; a conversion
+    // per render site is a conversion the next render site forgets.
+    _tonConnectedAddress = wallet ? tcFriendlyAddress(wallet.account.address) : null;
     if (typeof _onTonConnectChange === 'function') _onTonConnectChange();
   });
   return true;
@@ -76,6 +80,75 @@ function tcDisconnect() {
 }
 
 function tcAddress() { return _tonConnectedAddress; }
+
+// ── raw address → the form a person recognises ──────────────────────────────
+// TON Connect reports wallet.account.address as the RAW workchain:hash pair —
+// `0:8fe52cb8…` — and that is what every panel in this tab was printing.
+// Correct, and unreadable: it is not the `UQ…` the player's own wallet shows
+// them, an explorer's search box does not take it, and a player comparing the
+// two concludes the game linked somebody else's account. It is also the string
+// the withdrawal form auto-filled, so it was about to be sent BACK as the
+// payout destination.
+//
+// The friendly form is the same 33 bytes with a tag and a checksum, base64url:
+//
+//   [tag][workchain][32-byte hash][CRC16-CCITT of the previous 34]
+//
+// The tag says what the network does with a message that cannot be delivered.
+// 0x51 is non-bounceable — the `UQ` prefix, and what every wallet and explorer
+// shows for an ordinary account, because a payment to a person should stay put
+// rather than come back. 0x11 is bounceable, `EQ`, and belongs to contracts.
+//
+// The checksum is the reason the friendly form exists at all: a mistyped
+// character fails to decode instead of sending money to nobody.
+//
+// This is server/ton.js's friendlyAddress, byte for byte — same tag, same
+// polynomial, same base64url — because the two halves have to agree: what this
+// shows is what a player pastes into the withdrawal form, and it is
+// server/ton.js validAddress that decides whether to accept it. Rewardix does
+// the same conversion through @ton/core's Address.parseRaw (frontend/src/lib/
+// tonconnect.ts, toFriendlyAddress) — the same output, and no network call
+// there either; it is arithmetic over the 32 account bytes and nothing else.
+// There is no bundler here to import a package with, so it is written out.
+function _tcCrc16(bytes) {
+  // CRC16-CCITT (XModem), polynomial 0x1021 — what TON specifies.
+  let crc = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i] << 8;
+    for (let j = 0; j < 8; j++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xffff : (crc << 1) & 0xffff;
+  }
+  return crc;
+}
+
+function tcFriendlyAddress(raw, opts) {
+  const o = opts || {};
+  const s = String(raw == null ? '' : raw).trim();
+  // Already friendly: hand it back untouched rather than round-tripping it,
+  // which would silently rewrite an EQ someone gave us into a UQ.
+  if (/^[UEk0-9][QF][A-Za-z0-9_-]{46}$/.test(s)) return s;
+
+  const m = /^(-?\d+):([0-9a-fA-F]{64})$/.exec(s);
+  if (!m) return s;                       // not an address — show it as it came
+
+  const wc = Number(m[1]);
+  let tag = o.bounceable ? 0x11 : 0x51;
+  if (o.testnet) tag |= 0x80;
+
+  const body = new Uint8Array(34);
+  body[0] = tag;
+  body[1] = wc < 0 ? 0xff : wc & 0xff;    // -1 (masterchain) is stored as 0xff
+  for (let i = 0; i < 32; i++) body[2 + i] = parseInt(m[2].substr(i * 2, 2), 16);
+
+  const crc = _tcCrc16(body);
+  const out = new Uint8Array(36);
+  out.set(body, 0);
+  out[34] = (crc >>> 8) & 0xff;
+  out[35] = crc & 0xff;
+  // 36 bytes divide evenly into 12 base64 groups, so there is never padding to
+  // strip — the replace is there so a future change to the length cannot
+  // produce a `=` that a URL or a QR code would mangle.
+  return _bytesToBase64(out).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 // ── Minimal single-cell BOC encoder for a TON "text comment" payload ─────
 // Every wallet attaches a comment to a simple transfer the same way: one

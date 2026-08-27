@@ -179,7 +179,7 @@ function withdrawCard(w, { decided = false } = {}) {
     `👤 Игрок: <b>${esc(w.username || '?')}</b> · <code>${esc(w.telegramId || '')}</code>`,
     `💎 Списано с баланса: <b>${w.amount} GRAM</b>`,
     `💸 К отправке: <b>${w.payout} GRAM</b> <i>(комиссия ${w.fee})</i>`,
-    `📬 Адрес: <code>${esc(w.address)}</code>`,
+    `📬 Адрес: <code>${esc(ton.friendlyAddress(w.address))}</code>`,
     `💼 Баланс после списания: <b>${w.balanceAfter ?? '—'} GRAM</b>`,
     `🕐 Создана: ${when(w.createdAt)}`,
   ];
@@ -436,6 +436,7 @@ async function handleUnmatchedCallback(cq, { notifyCredit } = {}) {
       `💳 <b>Перевод зачислен вручную</b>\n\n`
       + `👤 Игрок: <b>${esc(res.username || playerId)}</b> · <code>${esc(res.telegramId || '')}</code>\n`
       + `💎 Сумма: <b>+${res.amount} GRAM</b>\n`
+      + (res.sender ? `📬 Отправитель: <code>${esc(ton.friendlyAddress(res.sender))}</code>\n` : '')
       + `💼 Баланс: <b>${res.balance} GRAM</b>\n`
       + `👮 Админ: <code>${esc(adminId)}</code>\n`
       + `🕐 ${when(Date.now())}`);
@@ -498,6 +499,7 @@ async function handleUnmatchedReply(message) {
   await ops.dm(chat,
     `💳 Зачислить <b>${u.amount} TON</b> как <b>${u.amount} GRAM</b>?\n\n`
     + `Комментарий перевода: <code>${esc(String(u.comment || '—').slice(0, 80))}</code>\n`
+    + (u.sender ? `📬 Отправитель: <code>${esc(ton.friendlyAddress(u.sender))}</code>\n` : '')
     + (u.link ? `🔗 <a href="${u.link}">Проверить на Tonviewer</a>\n` : '')
     // Repeated here and not only on the card: this is the message with the
     // button on it, and a warning the operator scrolled past two chats ago is
@@ -522,7 +524,7 @@ async function handleUnmatchedReply(message) {
 // game's player-facing text.
 function playerWithdrawText(w, action) {
   if (action === 'ok') {
-    return `✅ <b>Вывод выполнен</b>\n${w.payout} GRAM отправлены на\n<code>${esc(w.address)}</code>`;
+    return `✅ <b>Вывод выполнен</b>\n${w.payout} GRAM отправлены на\n<code>${esc(ton.friendlyAddress(w.address))}</code>`;
   }
   if (action === 'back') {
     return `↩️ <b>Заявка на вывод отменена</b>\n${w.amount} GRAM возвращены на ваш баланс.`;

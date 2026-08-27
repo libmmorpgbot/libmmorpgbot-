@@ -1363,14 +1363,20 @@ canvas { display:block; width:100%; height:100%; }
 /* «Отвязать». A real bordered control, not the underlined word it used to be:
    unbinding a wallet is a deliberate, irreversible-feeling action and it has
    to look like a button you decide to press, while staying visibly quieter
-   than the two things above it that move money. */
+   than the two things above it that move money.
+
+   Word only — the broken-chain glyph is gone (see _gramIconUnlink's epitaph in
+   js/ui.js). With nothing beside it the label has to hold the button on its
+   own, so it is centred, tracked out slightly and given the same 12px of
+   breathing room top and bottom that the two action buttons have. */
 .gram-unlink-btn {
-  width: 100%; margin-top: 12px; padding: 11px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; margin-top: 12px; padding: 12px;
+  display: block; text-align: center;
   border-radius: 11px; cursor: pointer; touch-action: manipulation;
   background: rgba(238,102,118,0.06);
   border: 1px solid rgba(238,102,118,0.28);
-  color: #ee8b97; font-size: 13px; font-weight: 600;
+  color: #ee8b97; font-size: 13px; font-weight: 600; letter-spacing: .3px;
+  font-family: inherit;
   transition: background .15s;
 }
 .gram-unlink-btn:active { background: rgba(238,102,118,0.16); }
@@ -1448,6 +1454,33 @@ canvas { display:block; width:100%; height:100%; }
 }
 .gram-spinner-sm { width: 17px; height: 17px; border-width: 2px; margin: 2px 0 0; flex-shrink: 0; border-top-color: #8ec9fb; }
 @keyframes gram-spin { to { transform: rotate(360deg); } }
+
+/* Signed, not yet credited — the panel between the wallet and the money. It
+   is deliberately BLUE and not green: green is what the credited state owns,
+   and a player who has just sent real money must not be able to mistake one
+   for the other at a glance. Same chip/title/amount rhythm as the success
+   panel so the flip from this to that reads as one thing progressing. */
+.gram-dep-wait { border-color: rgba(48,161,245,0.24); background: rgba(48,161,245,0.05); }
+.gram-wait-chip {
+  width: 58px; height: 58px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(48,161,245,0.13); color: #8ec9fb;
+  border: 1px solid rgba(48,161,245,0.3);
+}
+/* Past GRAM_DEPOSIT_SLOW_MS the panel stops promising "any second now". Amber,
+   not red: nothing is wrong, it is late — and the copy says the code stays
+   good for days. Red here would send a player looking for someone to blame. */
+.gram-dep-wait-slow { border-color: rgba(229,165,70,0.26); background: rgba(229,165,70,0.05); }
+.gram-wait-chip-slow {
+  background: rgba(229,165,70,0.13); color: #e5a546;
+  border-color: rgba(229,165,70,0.32);
+}
+.gram-dep-sent-amount { font-size: 24px; font-weight: 800; color: #f5dbae; margin-top: 4px; line-height: 1.1; }
+.gram-dep-sent-memo {
+  font-family: monospace; font-size: 12px; color: #a3957c;
+  margin-top: 4px; word-break: break-all;
+}
 
 /* The credited moment — the whole point of the redesign. Green, large, and
    carrying the number, because it is the only confirmation there is. */

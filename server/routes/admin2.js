@@ -20,6 +20,7 @@
 
 const adminAuth = require('../admin-auth');
 const ops = require('../tg-ops');
+const ton = require('../ton');
 const { query, tx } = require('../db');
 const money = require('../db/repos/money');
 const items = require('../db/repos/items');
@@ -627,7 +628,8 @@ module.exports = function registerAdminRoutes(app, deps) {
       res.json({
         txs: rows.map(r => ({
           id: Number(r.id), type: r.type, status: r.status, amount: Number(r.amount),
-          memo: r.memo, address: r.address, username: r.username, telegramId: r.telegram_id,
+          memo: r.memo, address: ton.friendlyAddress(r.address),
+          username: r.username, telegramId: r.telegram_id,
           createdAt: r.created_at, creditedAt: r.credited_at, txHash: r.paid_tx_hash,
         })),
       });

@@ -727,7 +727,12 @@ io.on('connection', (socket) => {
       // panels read directly.
       gramBalance: bal.gram,
       nexumBalance: bal.nexum,
-      gramWallet: process.env.GRAM_WALLET || null,
+      // friendlyAddress, for the same reason repos/gram.js normalises it: a
+      // raw GRAM_WALLET would be shown to every player as their deposit
+      // target, and validAddress accepts raw as readily as friendly, so
+      // nothing would have said so.
+      gramWallet: process.env.GRAM_WALLET
+        ? require('./ton').friendlyAddress(process.env.GRAM_WALLET) : null,
       clanInfo,
       refLink: refLink(s.telegramId),
       vipData: { level: vip.level, deposited: vip.deposited, pending: vip.pending },

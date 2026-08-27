@@ -614,7 +614,11 @@ function netConnect(onReady) {
     if (clanInfo && typeof onClanData === 'function') onClanData(clanInfo);
     // Store GRAM info globally
     window._gramBalance   = gramBalance   || 0;
-    window._gramWallet    = gramWallet    || '';
+    // Normalised on arrival like every other address (see _gramFriendly). It
+    // is the same GRAM_WALLET the deposit intent carries, nothing reads it
+    // today, and that is precisely why it is converted here: a raw address
+    // parked on window is one render away from a player's screen.
+    window._gramWallet    = _gramFriendly(gramWallet || '');
     window._refLink       = refLink       || '';
     window._vipData       = vipData       || { level: 0, deposited: 0, pending: [] };
     window._nexumBalance  = nexumBalance  || 0;
@@ -4406,6 +4410,28 @@ function netSeasonBurnAll(rarity) { if (socket?.connected) socket.emit('seasonBu
 // than by index/enhance identity.
 function netSeasonBurnBook(id, qty) { if (socket?.connected) socket.emit('seasonBurnBook', { id, qty }); }
 
+// ── every address the server sends is normalised HERE ───────────────────────
+// The rule for the whole wallet: an address is converted to the `UQ…`/`EQ…`
+// form at the boundary it enters the client through, never at a render site.
+// There are exactly two such boundaries — the wallet library (see
+// js/tonconnect.js, onStatusChange) and this socket — so there are exactly two
+// places to get it right, instead of one per panel that draws an address.
+//
+// A missing converter is reported rather than swallowed: it would mean the
+// bundle lost js/tonconnect.js, and the visible symptom would be nothing worse
+// than an ugly address, which is exactly the kind of failure that goes
+// unnoticed for a month.
+function _gramFriendly(addr) {
+  if (typeof tcFriendlyAddress === 'function') return tcFriendlyAddress(addr);
+  console.warn('[gram] tcFriendlyAddress missing — showing the raw address:', addr);
+  return addr;
+}
+
+function _gramFriendlyTx(tx) {
+  if (!tx || !tx.address) return tx;
+  return Object.assign({}, tx, { address: _gramFriendly(tx.address) });
+}
+
 // Incoming GRAM events
 function _initGramHandlers(s) {
   s.on('gramTxCreated', ({ tx, newBalance }) => {
@@ -4421,15 +4447,25 @@ function _initGramHandlers(s) {
     if (activeTab === 5 && window._profileTab === 'wallet') updateGramUI();
   });
   s.on('gramHistory', ({ txs }) => {
-    if (typeof onGramHistory === 'function') onGramHistory(txs);
+    // Same boundary rule as the intent below: gram_tx.address is whatever went
+    // into the row — a withdrawal destination the player typed, which may well
+    // have been the raw form this client used to auto-fill. Normalised once on
+    // arrival so no row renderer, present or future, has to remember to.
+    const rows = Array.isArray(txs) ? txs.map(_gramFriendlyTx) : txs;
+    if (typeof onGramHistory === 'function') onGramHistory(rows);
   });
   // The server's own deposit code, and the ONLY place the deposit modal is
   // allowed to get one from. Everything the player needs to pay is in here —
   // where to send it, what comment to put on it, the minimum, and how long
   // this view of the code is good for.
+  //
+  // The address is converted on the way IN. GRAM_WALLET is configured by hand
+  // and server/ton.js validAddress accepts the raw `0:…` form as readily as
+  // `UQ…`, so the destination the player is told to pay can arrive raw — and a
+  // deposit address nobody recognises is one nobody pastes.
   s.on('gramDepositIntent', ({ memo, address, minAmount, expiresAt }) => {
     if (typeof onGramDepositIntent === 'function') {
-      onGramDepositIntent({ memo, address, minAmount, expiresAt });
+      onGramDepositIntent({ memo, address: _gramFriendly(address), minAmount, expiresAt });
     }
   });
   // The chain scanner matched a transfer to this player's intent and credited

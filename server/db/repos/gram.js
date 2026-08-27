@@ -142,7 +142,12 @@ async function hasDepositOpsCols() {
 }
 
 async function createIntent(db, playerId) {
-  const addr = process.env.GRAM_WALLET || '';
+  // Normalised HERE rather than at each display site: this one value reaches
+  // the deposit sheet, the copy box, the TON Connect payload and the operator
+  // cards, and a GRAM_WALLET configured in raw form would have shown every one
+  // of them a string no wallet accepts. validAddress accepts both forms, so
+  // nothing upstream would have complained.
+  const addr = ton.friendlyAddress(process.env.GRAM_WALLET || '');
   if (!ton.validAddress(addr)) {
     const e = new Error('Приём депозитов временно недоступен');
     e.code = 'no_wallet'; e.userMessage = e.message; throw e;
@@ -628,7 +633,7 @@ async function historyOf(db, playerId, limit = 30) {
 function _historyRow(r) {
   return {
     id: Number(r.id), type: r.type, amount: Number(r.amount), status: r.status,
-    address: r.address, memo: r.memo, txHash: r.chain_tx_hash,
+    address: ton.friendlyAddress(r.address), memo: r.memo, txHash: r.chain_tx_hash,
     link: ton.explorerLink(r.chain_event_id || r.chain_tx_hash),
     createdAt: r.created_at, decidedAt: r.decided_at,
   };
@@ -652,7 +657,8 @@ function _historyRow(r) {
 function _unmatchedRow(r) {
   return {
     id: r.id === undefined ? null : Number(r.id),
-    txId: r.tx_id, amount: Number(r.amount), comment: r.comment, sender: r.sender,
+    txId: r.tx_id, amount: Number(r.amount), comment: r.comment,
+    sender: ton.friendlyAddress(r.sender),
     reason: r.reason, at: r.created_at,
     // Same two-era fallback as the deposit history: the 43 rows already in
     // this table hold a resolvable event id in tx_id, new ones hold a logical

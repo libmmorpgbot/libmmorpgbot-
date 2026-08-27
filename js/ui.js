@@ -7318,12 +7318,19 @@ function _gramIconWallet(size) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a2 2 0 0 1 2 2v1"/><path d="M3 7.5V17a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M21 10v4h-4a2 2 0 0 1 0-4z"/></svg>`;
 }
 
-// A broken chain link, not a pulled plug: the wallet is BOUND to the account
-// and the button that undoes it says «Отвязать», so the glyph has to agree.
-// This is the same shape Rewardix's WalletSheet uses for its unlink control.
-function _gramIconUnlink(size) {
-  const sz = size || 15;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex-shrink:0"><path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-.12-7.07 5 5 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 .12 7.07 5 5 0 0 0 6.95 0l1.71-1.71"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="16" y1="19" x2="16" y2="22"/><line x1="19" y1="16" x2="22" y2="16"/></svg>`;
+// There is no unlink glyph, deliberately. A broken-chain icon sat on
+// «Отвязать» and the owner asked for it gone: every other icon in this tab
+// labels something the player is meant to reach for — deposit, withdraw, copy,
+// the wallet itself — and dressing the one destructive control the same way
+// gave it the same invitation. The word alone says it, and the button's colour
+// and border already carry the warning.
+
+// What replaces the spinner once the wait stops being ordinary. A spinner
+// means "any second now" and after three minutes that is no longer true; a
+// clock means "later", which is what the panel underneath it goes on to say.
+function _gramIconClock(size) {
+  const sz = size || 26;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 2"/></svg>`;
 }
 
 function _gramIconCheck(size) {
@@ -7543,7 +7550,7 @@ function _renderTonConnectRow() {
             <button class="gram-copy-chip" onclick="gramCopy('gram-tc-addr-val')" aria-label="${_escAttr(t('tcAddressLbl'))}">${_gramIconCopy(15)}</button>
           </div>
         </div>
-        <button class="gram-unlink-btn" onclick="_gramUnlinkWallet()">${_gramIconUnlink(15)}<span>${t('tcDisconnectBtn')}</span></button>
+        <button class="gram-unlink-btn" onclick="_gramUnlinkWallet()">${t('tcDisconnectBtn')}</button>
       </div>`
     : `<div class="gram-wallet-card gram-wallet-card-off">
         <span class="gram-wallet-chip">${_gramIconWallet(19)}</span>
@@ -7727,6 +7734,12 @@ function onGramDepositCredited(data) {
     try { Sound.loot(); } catch (e) { console.warn('[wallet] credit cue failed:', e); }
   }
 
+  // Whatever the sheet was waiting for, the waiting is over. Cleared before
+  // anything is drawn so the slow timer cannot fire afterwards and rewrite a
+  // success panel into «зачисление задерживается».
+  _gramSentPending = null;
+  clearTimeout(_gramSlowTimer);
+
   const modalOpen = !!document.getElementById('gram-dep-code');
   if (modalOpen) {
     _setGramDepositState('credited');
@@ -7815,11 +7828,31 @@ function _gramCreditToast(c) {
 // There is deliberately NO fallback any more, not even a "temporary" one. A
 // locally invented memo is money sent to a comment nothing will match, so
 // showing no code at all — and saying so — is strictly better than showing one.
-let _gramDepositState = 'idle';       // idle | loading | ready | error | credited
+let _gramDepositState = 'idle';       // idle | loading | ready | error | sent | slow | credited
 let _gramDepositTimer = null;
 // How long the modal waits before calling the request lost. Longer than any
 // healthy round trip and shorter than a player's patience.
 const GRAM_DEPOSIT_WAIT_MS = 15000;
+
+// ── what the player is waiting on, between signing and crediting ────────────
+// Held outside the DOM because the DOM is the thing that goes away: the player
+// leaves for their wallet app and comes back, and the amount and the code have
+// to still be there to redraw the waiting panel with.
+let _gramSentPending = null;          // { amount, memo } while a transfer is in flight
+let _gramSlowTimer = null;
+
+// When a spinner stops being honest. The chain confirms in seconds, the trace
+// then has to settle (server/ton.js refuses an in_progress event, because its
+// id is provisional), and only then does the scanner see it — it runs every
+// 15s (DEPOSIT_SCAN_MS, server/workers.js). A healthy credit is under a minute
+// and a slow one is a couple; past three, something is different from the
+// happy path and saying nothing about it is the bug.
+//
+// It does NOT mean the money is lost, and the panel it switches to says so:
+// the intent stays matchable for INTENT_GRACE_MS — seven days — so a transfer
+// found on day three still credits. The state exists to stop a spinner
+// claiming "any second now" for an hour.
+const GRAM_DEPOSIT_SLOW_MS = 180 * 1000;
 
 function openGramDepositModal() {
   const html = `
@@ -7943,6 +7976,30 @@ function _setGramDepositState(state, msg, intent) {
   } else if (state === 'error') {
     el.innerHTML = `<div class="gram-warn" style="margin-top:6px">${_esc(msg || t('depositCodeErrorMsg'))}</div>
       <button class="gram-btn" style="width:100%;padding:12px;margin-top:10px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5" onclick="_requestGramDepositCode()">${t('depositRetryBtn')}</button>`;
+  } else if (state === 'sent' || state === 'slow') {
+    // ── signed, not yet credited ──────────────────────────────────────────
+    // The gap the owner was pointing at. This used to be closeGramModal():
+    // the player picked an amount, paid from their wallet, came back to the
+    // Mini App — and the sheet was gone, which after sending real money reads
+    // as "it failed". The sheet stays and says what it is doing instead.
+    //
+    // The form goes, for the same reason it goes on 'credited': a transfer
+    // against this code is already in flight, and a second one signed while
+    // the first is confirming is a genuine double payment (tcSendDeposit
+    // refuses it for five minutes, but an offer the player has to be refused
+    // is worse than no offer).
+    const p = _gramSentPending || { amount: 0, memo: window._gramDepositMemo || '' };
+    if (form) form.style.display = 'none';
+    const slow = state === 'slow';
+    el.innerHTML = `<div class="gram-dep-panel gram-dep-panel-center gram-dep-wait${slow ? ' gram-dep-wait-slow' : ''}">
+      <span class="gram-wait-chip${slow ? ' gram-wait-chip-slow' : ''}">${slow ? _gramIconClock(28) : '<span class="gram-spinner"></span>'}</span>
+      <div class="gram-dep-ok-title">${slow ? t('depositSlowTitle') : t('depositSentTitle')}</div>
+      <div class="gram-dep-sent-amount">${tVars('depositSentAmountFmt', { n: _gramFmtAmount(p.amount) })}</div>
+      ${p.memo ? `<div class="gram-dep-sent-memo">${tVars('depositSentCodeFmt', { n: _esc(p.memo) })}</div>` : ''}
+      <div class="gram-dep-panel-sub">${slow ? t('depositSlowDesc') : t('depositSentDesc')}</div>
+      <div class="gram-hint" style="margin-top:10px;line-height:1.5">${slow ? t('depositSlowNote') : t('depositSafeNote')}</div>
+      <button class="gram-btn" style="width:100%;padding:13px;margin-top:14px;background:rgba(209,204,197,.06);border:1px solid rgba(209,204,197,.15);color:#d1ccc5" onclick="closeGramModal()">${t('depositDoneBtn')}</button>
+    </div>`;
   } else if (state === 'credited') {
     // The moment the whole redesign exists for. The form and the code are gone
     // — that code is spent, and leaving it on screen invites a second transfer
@@ -7992,9 +8049,41 @@ function _setGramDepositState(state, msg, intent) {
     if (amt && min) amt.min = String(min);
   }
 
-  // Never while the success state is up: the wallet button sends against a
-  // code that has just been spent.
-  if (state !== 'credited') _renderTonDepositSection();
+  // Never while a transfer is settled or in flight: the wallet button sends
+  // against a code that has just been spent, or one that is already carrying
+  // money through the chain.
+  if (state !== 'credited' && state !== 'sent' && state !== 'slow') _renderTonDepositSection();
+}
+
+// ── the transfer left the wallet ────────────────────────────────────────────
+// Called by _tcDepositSend the moment TON Connect says the player approved and
+// signed. It is NOT a credit — the money is on the chain and the scanner has
+// not seen it yet — so everything this puts on screen has to be about waiting.
+//
+// Survives the trip to the wallet app for the plain reason that nothing tears
+// it down any more: the modal is a node under document.body, the visibility
+// handlers in js/game.js and js/network.js resync the world and the socket
+// without touching it, and this function no longer closes it.
+function _gramDepositSent(amount, memo) {
+  _gramSentPending = { amount, memo: memo || window._gramDepositMemo || '' };
+  clearTimeout(_gramSlowTimer);
+  _gramSlowTimer = setTimeout(() => {
+    // Only from 'sent'. A credit that landed meanwhile has already moved the
+    // panel on, and rewriting it back to "задерживается" over money that
+    // arrived is the one wrong answer a player will act on.
+    if (_gramDepositState !== 'sent') return;
+    console.info('[wallet] deposit not credited after ' + (GRAM_DEPOSIT_SLOW_MS / 1000) + 's, memo ' + _gramSentPending?.memo);
+    _setGramDepositState('slow');
+  }, GRAM_DEPOSIT_SLOW_MS);
+  // The sheet can genuinely be gone — the overlay closes on a tap outside, and
+  // the wallet's own modal sat on top of it for as long as the player took.
+  // Then there is nowhere to draw the waiting state, and a confirmation the
+  // player never sees is money sent into silence.
+  if (!document.getElementById('gram-dep-code')) {
+    _gramMsg(t('tcTxSentToast'), 'ok');
+    return;
+  }
+  _setGramDepositState('sent');
 }
 
 // "Пополнить ещё" from the success state. A fresh code, not the spent one —
@@ -8005,6 +8094,11 @@ function _gramDepositAgain() {
   window._gramDepositAddress = null;
   window._gramDepositMin = null;
   _gramLastCredit = null;
+  // The previous transfer is finished with. Leaving its amount and code behind
+  // would let the slow timer fire into a panel about a deposit that already
+  // credited.
+  _gramSentPending = null;
+  clearTimeout(_gramSlowTimer);
   const amt = document.getElementById('gram-dep-amount');
   if (amt) amt.value = '';
   _requestGramDepositCode();
@@ -8067,10 +8161,15 @@ async function _tcDepositSend() {
   if (btn) { btn.disabled = true; btn.textContent = t('tcSendingLbl'); }
   try {
     await tcSendDeposit(wallet, amount, memo);
-    closeGramModal();
-    _gramMsg(t('tcTxSentToast'), 'ok');
+    // The sheet STAYS. It used to close here, and that single line is what the
+    // player was reporting: paying from the wallet backgrounds the Mini App,
+    // sendTransaction resolves the moment they approve, and the first thing
+    // they saw on coming back was the sheet folding away. Nothing had failed
+    // and nothing said so.
+    _gramDepositSent(amount, memo);
   } catch (e) {
     _gramModalMsg(t('tcTxErrorToast'), 'err');
+    console.warn('[wallet] deposit send failed:', e);
     if (btn) { btn.disabled = false; _renderTonDepositSection(); }
   }
 }
@@ -8198,6 +8297,12 @@ function closeGramModal() {
   window._gramDepositMemo = null;
   window._gramDepositAddress = null;
   window._gramDepositMin = null;
+  // The waiting state dies with the sheet that showed it. The credit does not:
+  // it arrives on a socket push and onGramDepositCredited draws it as the
+  // floating card instead — which is what the panel promised when it said the
+  // window could be closed.
+  _gramSentPending = null;
+  clearTimeout(_gramSlowTimer);
 }
 
 // ── saying something the player can actually see ────────────────────────────
