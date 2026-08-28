@@ -3287,8 +3287,47 @@ const _clanChatMsgs = [];
 const _dmConvos = new Map(); // lowercased username -> { username, messages: [], unread }
 
 function _nowHHMM() {
-  const now = new Date();
-  return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+  return _hhmm(new Date());
+}
+
+// ── время строки чата ────────────────────────────────────────────────────
+// Живые сообщения приходят с уже готовым «22:07», а история — с тем, что
+// лежит в базе: created_at, то есть 2026-08-28T22:07:42.381Z. Клиент писал
+// это как есть, и после каждого перезахода в чате стояли не часы, а полные
+// метки времени с миллисекундами.
+//
+// Приводится ЗДЕСЬ, а не на сервере: время показывается в часовом поясе
+// того, кто смотрит, и сервер этого пояса не знает. Уже готовое «22:07»
+// проходит насквозь — по нему и отличается одно от другого.
+// ── отказ сервера на языке игрока ────────────────────────────────────────
+// Сервер отвечает { msg, code }. `msg` написан на языке того, кто писал
+// код, а игра — на шести языках, и владелец справедливо указал: «є моменти
+// що тільки українська».
+//
+// Переводится по КОДУ, а не по тексту: код — это то, что сервер обещает
+// не менять, а формулировку правят когда угодно. Что кода здесь нет —
+// нормально: тогда показывается серверная строка, ровно как раньше. Это
+// список того, что УЖЕ переведено, и он растёт по мере надобности, а не
+// стена из ста семнадцати ключей, половина которых никому не покажется.
+const _SRV_MSG = {
+  own_lot: 'marketOwnLotToast',
+};
+function _srvMsg(code, fallback) {
+  const key = code && _SRV_MSG[code];
+  if (key && typeof t === 'function') {
+    const s = t(key);
+    if (s && s !== key) return s;
+  }
+  return fallback;
+}
+
+function _hhmm(v) {
+  if (v == null) return '';
+  if (typeof v === 'string' && /^\d{1,2}:\d{2}$/.test(v)) return v;
+  const d = (v instanceof Date) ? v : new Date(v);
+  if (isNaN(d.getTime())) return '';
+  return d.getHours().toString().padStart(2, '0') + ':'
+       + d.getMinutes().toString().padStart(2, '0');
 }
 
 function _currentChatTab() { return (typeof _chatTab !== 'undefined' && _chatTab) || 'global'; }
@@ -3332,6 +3371,7 @@ function _chatScrollIfAtBottom(el, wasAtBottom) {
 }
 
 function _renderChatRow(el, username, text, time) {
+  time = _hhmm(time);
   const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
   const isMe = myName && username === myName;
   const row = document.createElement('div');
@@ -5090,8 +5130,8 @@ function _initMarketHandlers(s) {
   s.on('marketSold', (data) => {
     if (typeof onMarketSold === 'function') onMarketSold(data);
   });
-  s.on('marketError', ({ msg }) => {
-    if (typeof onMarketError === 'function') onMarketError(msg);
+  s.on('marketError', ({ msg, code }) => {
+    if (typeof onMarketError === 'function') onMarketError(_srvMsg(code, msg));
   });
   s.on('marketListError', ({ msg }) => {
     if (typeof onMarketListError === 'function') onMarketListError(msg);

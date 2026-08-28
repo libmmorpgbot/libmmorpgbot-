@@ -6496,8 +6496,16 @@ function _marketRowHtml(l, mode) {
   // this string is written straight into innerHTML below. Same reasoning as
   // _escAttr's comment in js/network.js.
   const sub = mode === 'buy' ? `@${_escHtml(l.sellerUsername || '?')}` : (statStr(it) || '');
+  // Свой лот купить нельзя, и сервер это отказывает (market.js: own_lot). Но
+  // до сих пор кнопка выглядела рабочей: игрок жал «Купить», ждал, и получал
+  // отказ — на действие, которое ни при каких условиях не могло состояться.
+  // Кнопка, которая не может сработать, не должна нажиматься.
+  const _mine = mode === 'buy' && typeof netUsername !== 'undefined' && netUsername
+    && String(l.sellerUsername || '').toLowerCase() === String(netUsername).toLowerCase();
   const action = mode === 'buy'
-    ? `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">${t('buyBtn')}</button>`
+    ? (_mine
+      ? `<button class="market-buy-btn disabled" disabled>${t('marketOwnLotBtn')}</button>`
+      : `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">${t('buyBtn')}</button>`)
     : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">${t('cancelListingBtn')}</button>`;
   return `<div class="market-row">
     <div class="market-row-icon">${_itemIcon(it, 28)}</div>

@@ -3343,7 +3343,27 @@ window.addEventListener('load', () => {
     try { new ResizeObserver(() => resize(false)).observe(appEl); } catch (e) { /* old WebView */ }
   }
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => resize(false));
+    // ── экранная клавиатура утаскивает страницу вверх ────────────────────
+    // «Написав повідомлення — і його перекосойобило, вниз закинуло, хрестик
+    // не працював.» Так и есть: #app лежит position:absolute; inset:0, и когда
+    // Telegram открывает клавиатуру, документ не ужимается, а ПРОКРУЧИВАЕТСЯ.
+    // Панель чата стоит на bottom:0 внутри #app, поэтому уезжает вместе с ним
+    // за нижний край, а крестик закрытия оказывается там, куда пальцем не
+    // дотянуться.
+    //
+    // Возврат прокрутки в ноль на каждом изменении видимой области: и когда
+    // клавиатура открылась, и когда закрылась. Игра — один экран, ей
+    // прокручиваться некуда, поэтому отнимать этим нечего.
+    const _unscroll = () => {
+      if (window.scrollY || window.pageYOffset) window.scrollTo(0, 0);
+      if (document.body && document.body.scrollTop) document.body.scrollTop = 0;
+      if (document.documentElement && document.documentElement.scrollTop) {
+        document.documentElement.scrollTop = 0;
+      }
+    };
+    window.visualViewport.addEventListener('resize', () => { _unscroll(); resize(false); });
+    window.visualViewport.addEventListener('scroll', _unscroll);
+    window.addEventListener('focusout', () => setTimeout(_unscroll, 60));
   }
   _talkBtn = document.getElementById('npc-talk-btn');
   initInput();

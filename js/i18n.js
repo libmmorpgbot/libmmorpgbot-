@@ -806,6 +806,8 @@ Object.assign(I18N_UI, {
   vipLevelsHdr: { ru: 'Уровни VIP', en: 'VIP Levels', uk: 'Рівні VIP', es: 'Niveles VIP', tr: 'VIP Seviyeleri', pt: 'Níveis VIP' },
   vipClaimBtn: { ru: 'Забрать награду', en: 'Claim Reward', uk: 'Забрати нагороду', es: 'Reclamar Recompensa', tr: 'Ödülü Al', pt: 'Resgatar Recompensa' },
   vipGoldShortSuffix: { ru: 'k зол.', en: 'k gold', uk: 'k зол.', es: 'k oro', tr: 'bin altın', pt: 'k ouro' },
+  marketOwnLotBtn: { ru: 'Ваш лот', en: 'Your listing', uk: 'Ваш лот', es: 'Tu anuncio', tr: 'Senin ilanın', pt: 'Seu anúncio' },
+  marketOwnLotToast: { ru: 'Нельзя купить собственный лот', en: 'You cannot buy your own listing', uk: 'Не можна купити власний лот', es: 'No puedes comprar tu propio anuncio', tr: 'Kendi ilanını satın alamazsın', pt: 'Você não pode comprar seu próprio anúncio' },
   buyBtn: { ru: 'Купить', en: 'Buy', uk: 'Купити', es: 'Comprar', tr: 'Satın Al', pt: 'Comprar' },
   cancelListingBtn: { ru: 'Снять', en: 'Cancel', uk: 'Зняти', es: 'Cancelar', tr: 'Kaldır', pt: 'Cancelar' },
   catWeapon: { ru: 'Оружие', en: 'Weapons', uk: 'Зброя', es: 'Armas', tr: 'Silahlar', pt: 'Armas' },
