@@ -1461,6 +1461,11 @@ let _vL = 0, _vR = 0, _vT = 0, _vB = 0;
 let _nowMs = 0;
 function render(dt, ts) {
   _nowMs = ts;
+  // Вторая линия к тому же: resize выше больше не пропустит ноль, но до
+  // ПЕРВОГО resize размера ещё нет ни у кого, а loop уже крутится. Рисовать
+  // в никуда нечем и незачем — и именно отсюда прилетали 'arc: radius -1' и
+  // 'drawImage: width or height of 0'.
+  if (!(W > 0) || !(H > 0)) return;
 
   // When a full-screen menu panel (inventory/map/quests/clans/profile) is open,
   // an opaque panel covers the whole viewport above the bottom nav — the PixiJS
@@ -3015,6 +3020,12 @@ function _worldBlankWhy() {
   // #app can be laid out at zero height for the first frames after Telegram
   // opens the Mini App, and every size in the game is derived from it — so a
   // zero here is a zero everywhere, including both canvases.
+  // Свёрнутое приложение — не поломка. document.hidden здесь именно для
+  // этого: раньше сторож честно видел экран 0x0 и честно об этом писал, но
+  // сообщал он о том, что игрок переключился на другое окно, а выглядело это
+  // как «у игрока чёрный экран». Настоящий нулевой экран у ВИДИМОЙ страницы
+  // по-прежнему докладывается.
+  if (document.hidden) return null;
   if (!(W > 8) || !(H > 8)) return 'zero-viewport';
   if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return 'zero-canvas';
   if (!pixiAlive()) return 'no-renderer';
@@ -3271,6 +3282,23 @@ window.addEventListener('load', () => {
   const resize = (force) => {
     const _dpr = Math.min(window.devicePixelRatio || 1, _isMobile ? 1.5 : 2);
     const _w = appEl.clientWidth, _h = appEl.clientHeight;
+    // ── нулевой размер НЕ ПРИНИМАЕТСЯ ────────────────────────────────────
+    // Свёрнутая игра, переключение приложений, зависший интернет в Telegram —
+    // WebView в любом из этих случаев отдаёт clientWidth/clientHeight равными
+    // нулю. Раньше это записывалось в W и H как есть, и дальше от них считали
+    // ВСЁ: радиусы кнопок уходили в минус, кадровый холст получал нулевую
+    // сторону, и каждый кадр падал:
+    //
+    //   Failed to execute 'arc': The radius provided (-1.5) is negative.
+    //   Failed to execute 'drawImage': the image argument is a canvas element
+    //     with a width or height of 0.
+    //
+    // По десять писем в минуту в операторский чат, и все — об одном: игру
+    // свернули. Настоящих ошибок за ними было не разглядеть.
+    //
+    // Ноль — это не новый размер экрана, это отсутствие ответа. Держим
+    // последний известный: WebView пришлёт настоящий, когда вернётся.
+    if (!(_w > 0 && _h > 0)) return;
     if (!force && _w === _rzW && _h === _rzH && _dpr === _rzDpr) return;
     _rzW = _w; _rzH = _h; _rzDpr = _dpr;
     DPR = _dpr;
