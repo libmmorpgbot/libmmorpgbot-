@@ -19,15 +19,44 @@ const SECS = Number(process.env.SECS || 12);
 async function login(browser, who) {
   const page = await browser.newPage({ viewport: { width: 420, height: 860 } });
   await page.goto(`${URL}/?dev=${who}`, { waitUntil: 'domcontentloaded' });
+
+  // ── аккаунт заводится ЗДЕСЬ, а не заранее ────────────────────────────────
+  // Раньше проверка полагалась на два готовых аккаунта, посеянных dev/seed.js.
+  // Этого файла в репозитории больше нет — его удалили, а ссылка на него в
+  // комментарии осталась. Так что проверка ждала state === 'playing' от
+  // аккаунта, которого никто не создавал, сорок пять секунд, и падала по
+  // таймауту: не «нашла баг», а не имела возможности начаться.
+  //
+  // Свежий аккаунт попадает на экран выбора класса. Выбрать его — одна
+  // кнопка, и после этого проверка ни от чего внешнего не зависит.
   await page.waitForFunction(
-    () => typeof state !== 'undefined' && state === 'playing' && typeof player !== 'undefined' && player,
+    () => (typeof state !== 'undefined' && state === 'playing')
+       || !!document.querySelector('#char-select .cs-card'),
     null, { timeout: 45000 });
+  const needPick = await page.evaluate(
+    () => !(typeof state !== 'undefined' && state === 'playing'));
+  if (needPick) {
+    // Кнопка подтверждения, а не карточка: карточка только листает карусель.
+    await page.click('#cs-btn-active');
+    await page.waitForFunction(
+      () => typeof state !== 'undefined' && state === 'playing',
+      null, { timeout: 45000 });
+  }
+  await page.waitForFunction(
+    () => typeof player !== 'undefined' && player, null, { timeout: 15000 });
   return page;
 }
 
 (async () => {
+  // channel:'chrome' — СИСТЕМНЫЙ Chrome, как в dev/render-check.js. По
+  // умолчанию Playwright берёт собственную сборку Chromium, которую надо
+  // ставить отдельно (`npx playwright install`), и без неё проверка падала
+  // ещё до первой строчки — то есть не запускалась вообще ни разу. На
+  // дроплете браузера нет вовсе, так что эта проверка по природе локальная.
   const browser = await chromium.launch(
-    process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+    process.env.CHROMIUM_PATH
+      ? { executablePath: process.env.CHROMIUM_PATH, headless: true }
+      : { headless: true, channel: 'chrome' });
   // The two seeded accounts (dev/seed.js) — they already have a character, so
   // the run starts in the world instead of on the class-select screen.
   const runner = await login(browser, process.env.RUNNER || 'hero');
