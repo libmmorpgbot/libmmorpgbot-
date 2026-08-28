@@ -30,6 +30,10 @@ const TOPICS = {
   deposits:    process.env.TG_TOPIC_DEPOSITS    || '',
   withdrawals: process.env.TG_TOPIC_WITHDRAWALS || '',
   alerts:      process.env.TG_TOPIC_ALERTS      || '',
+  // Отдельная ветка под «Новый игрок»: их десятки в день, и в общей ленте
+  // алертов они забивают то, ради чего эта лента и заведена. Не задан —
+  // уходят в alerts, что лучше, чем не уходить никуда.
+  players:     process.env.TG_TOPIC_PLAYERS     || process.env.TG_TOPIC_ALERTS || '',
 };
 // The ops bot may be the game bot or a separate one. Separate is better (its
 // token is not the one players talk to), but not required.

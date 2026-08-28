@@ -282,6 +282,10 @@ tgWebhook.mount(app, { io });
 // Mounted lazily inside boot(), because half of it answers questions about the
 // event modes and those do not exist until the world does.
 function mountAdmin() {
+  // Режиму обслуживания нужен io, чтобы выставить за дверь тех, кто уже
+  // внутри. Ставится здесь, а не в require: модуль должен читаться и без
+  // сервера (админка, тесты).
+  maintenance.attach(io);
   require('./routes/admin2')(app, {
     io,
     modes: modesRuntime,
@@ -714,6 +718,23 @@ io.on('connection', (socket) => {
   const authTimer = setTimeout(() => { if (!s.authed) socket.disconnect(true); }, 20000);
 
   async function finishLogin(telegramId, username, startParam = '') {
+    // ── технические работы ────────────────────────────────────────────────
+    // Кнопка в админке существовала, alert о включении уходил — а вход её не
+    // спрашивал НИКТО. Режим был выключателем, ни к чему не подключённым:
+    // «Не работает кнопка тех работ».
+    //
+    // Проверяется ДО s.login: смысл режима в том, чтобы к базе в этот момент
+    // никто не ходил, а логин — это полтора десятка запросов подряд.
+    //
+    // Админы заходят всегда, иначе включивший режим сам себя и запирает —
+    // ровно в тот момент, когда ему надо посмотреть, что происходит.
+    if (maintenance.isOn() && !ops.isAdmin(telegramId)) {
+      socket.emit('authError', {
+        msg: 'Технические работы — зайдите через несколько минут',
+        code: 'maintenance',
+      });
+      return socket.disconnect(true);
+    }
     const res = await s.login(String(telegramId), _safeUsername(username, telegramId));
     if (res.banned) {
       socket.emit('authError', { msg: 'Аккаунт заблокирован' });
@@ -924,6 +945,39 @@ io.on('connection', (socket) => {
     const sp = String(startParam || '');
     const ref = sp.startsWith('ref_') ? sp.slice(4) : tgWebhook.takePendingRef(s.telegramId);
     if (ref) await registerReferral(ref);
+
+    // ── «Новый игрок» ─────────────────────────────────────────────────────
+    // ПОСЛЕ registerReferral, чтобы в сообщении уже стояло, кто пригласил:
+    // наоборот органикой выглядел бы каждый приведённый по ссылке.
+    //
+    // Ровно один раз на аккаунт, потому что ключ — isNew из players.ensure, а
+    // тот приходит из `INSERT ... ON CONFLICT DO NOTHING RETURNING id`: строка
+    // либо создана этим запросом, либо нет. Отдельного флага (как adminNotified
+    // в прошлой сборке) для этого не нужно — база уже знает ответ.
+    if (res.isNew) notifyNewPlayer().catch(() => {});
+  }
+
+  // Не ждём и не мешаем входу: игрок заходит в игру независимо от того, дошло
+  // ли письмо операторам.
+  async function notifyNewPlayer() {
+    let refBy = null;
+    try {
+      const r = await players.referrerOf(null, s.playerId);
+      refBy = r && r.username;
+    } catch (err) {
+      // Не молча: без этой строки «Источник: органика» у приведённого игрока
+      // выглядел бы как факт, а не как сбой чтения.
+      console.error('[login:newPlayer] referrerOf:', err.message);
+    }
+    const esc = (v) => String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const line = refBy
+      ? `\n👥 Пригласил: @${esc(refBy)}`
+      : '\n👥 Источник: органика';
+    await ops.send('players', [
+      '🆕 <b>Новый игрок</b>',
+      `👤 @${esc(s.username)} (<code>${esc(s.telegramId)}</code>)${line}`,
+    ].join('\n')).catch(() => {});
   }
 
   // Every outcome leaves a row in player_logs: a registration under

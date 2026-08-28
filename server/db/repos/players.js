@@ -756,6 +756,21 @@ async function bumpSkill(db, playerId, kind, key) {
   return { level: rows[0].level, changed: true };
 }
 
+// Кто привёл этого игрока — ник, а не id: сообщение операторам читает человек,
+// и @ник в нём кликабелен, а число нет. referred_by хранит telegram_id, так что
+// это соединение с той же таблицей по нему.
+//
+// Возвращает null, когда пригласившего нет (органика) ИЛИ когда его аккаунт
+// удалён: и то и другое честно означает «сказать некого».
+async function referrerOf(db, playerId) {
+  const { rows } = await query(db, `
+    SELECT r.username, r.telegram_id
+      FROM players p
+      JOIN players r ON r.telegram_id = p.referred_by
+     WHERE p.id = $1`, [playerId]);
+  return rows.length ? { username: rows[0].username, telegramId: rows[0].telegram_id } : null;
+}
+
 // ── empower (Усиление) ──────────────────────────────────────────────────────
 // Grants permanent bonus skill points for a materials cost that grows with how
 // many empowerments have already happened. Everything in one transaction: the
@@ -951,5 +966,6 @@ module.exports = {
   savePosition, setHp, setClass,
   grantXp, spendUpgrade,
   setSkillLevel, bumpSkill,
+  referrerOf,
   empower, resetUpgrades,
 };
