@@ -11,6 +11,7 @@
 // craft can leave the materials spent AND the item granted.
 
 const { pool, tx, close } = require('../server/db');
+const progression = require('../server/db/repos/progression');
 const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
@@ -20,6 +21,7 @@ const {
   GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES, craftResultEnhance,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
   BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
+  QUEST_DEF, questComplete,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -94,6 +96,43 @@ async function main() {
     if (res.outcome === 'burned') { ok(false, 'благословенний камінь знищив предмет'); break; }
   }
   ok((await invOf(p)).some(x => x.rowId === safeRow), 'благословенний камінь: предмет пережив усі невдачі');
+
+  // ── квести на заточку ────────────────────────────────────────────────────
+  // «Заточи предмет до +N» зараховується по РЕЗУЛЬТАТУ вдалого кидка, а не за
+  // володіння річчю: куплений на ринку +5 квест не закриває. І кожен із трьох
+  // заробляється окремо — дійти до +5 на квесті з +2 не віддає два наступних.
+  console.log('  ── квести на заточку ──');
+  const eq2 = await mk('eq2');
+  const qi2 = QUEST_DEF.findIndex(q => q.id === 'f2q11');
+  const qi3 = QUEST_DEF.findIndex(q => q.id === 'f2q14');
+  ok(qi2 >= 0 && QUEST_DEF[qi2].type === 'enhance' && QUEST_DEF[qi2].enhance === 2,
+    'f2q11 — заточка до +2');
+  ok(qi3 >= 0 && QUEST_DEF[qi3].type === 'enhance' && QUEST_DEF[qi3].enhance === 3,
+    'f2q14 — заточка до +3');
+
+  await pool().query('UPDATE player_progress SET quest_idx = $2 WHERE player_id = $1', [eq2, qi2]);
+  const stOf = async () => (await pool().query(
+    'SELECT quest_idx, quest_kills FROM player_progress WHERE player_id = $1', [eq2])).rows[0];
+
+  ok(!questComplete(QUEST_DEF[qi2], (await stOf()).quest_kills, 30),
+    'до заточки квест НЕ виконано');
+
+  // Благословенні камені: невдача нічого не змінює, тож цикл дійде до +2.
+  const qRow = await give(eq2, 'sw1');
+  await give(eq2, 'bless_stone', 40);
+  for (let i = 0; i < 40; i++) {
+    const res = await tx(t => craft.enhance(t, eq2, qRow, 'bless'));
+    if (res.outcome === 'success') {
+      await tx(t => progression.questOnEnhance(t, eq2, res.to));
+      if (res.to >= 3) break;
+    }
+  }
+  const after = await stOf();
+  ok(questComplete(QUEST_DEF[qi2], after.quest_kills, 30),
+    'після заточки квест на +2 виконано');
+  // Дошли до +3 на квесті з +2 — наступний квест від цього НЕ закривається.
+  ok(!questComplete(QUEST_DEF[qi3], after.quest_kills, 30),
+    'квест на +3 від цього НЕ закрився — кожен заробляється окремо');
 
   // The rate curve, stated as the live build states it.
   eq(craft.enhanceRate(0), 80, 'шанс на +1 — 80%');

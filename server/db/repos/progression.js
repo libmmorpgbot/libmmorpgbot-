@@ -152,6 +152,33 @@ async function questOnKill(db, playerId, { eid, rlvl } = {}) {
   return null;
 }
 
+// ── заточка ────────────────────────────────────────────────────────────────
+// Квесты «Заточи предмет до +N» (type 'enhance' в QUEST_DEF). Зачитывается по
+// РЕЗУЛЬТАТУ успешного броска — из обработчика enhanceItem, единственного
+// места, где уровень заточки вообще достигается. Владение вещью не считается:
+// купленный на рынке +5 квест не закрывает.
+//
+// Отдельная функция, а не questOnEvent, по двум причинам, и обе про порог:
+//   ключ несёт сам порог (_enhance_2/_3/_5), так что каждый из трёх квестов
+//     зарабатывается отдельно — дойти до +5 на квесте с +2 не отдаёт два
+//     следующих;
+//   счётчик — ФЛАГ, а не сумма: bumpQuest прибавляет, и вторая заточка до
+//     того же порога записала бы двойку. Читается он через `>= 1`, так что на
+//     поведение это не влияет, но в записи игрока лежала бы неправда.
+//
+// Как и у остальных счётчиков, двигается только ТЕКУЩИЙ квест: иначе игрок
+// добирался бы до квеста уже выполненным.
+async function questOnEnhance(db, playerId, newEnhance) {
+  const lvl = Math.max(0, Math.floor(Number(newEnhance)) || 0);
+  const st = await questState(db, playerId);
+  if (!st) return null;
+  const q = QUEST_DEF[Math.max(0, Math.floor(Number(st.questIdx)) || 0)];
+  if (!q || q.type !== 'enhance' || lvl < q.enhance) return null;
+  const key = '_enhance_' + q.enhance;
+  if (Math.max(0, Math.floor(Number((st.questKills || {})[key])) || 0) >= 1) return null;
+  return bumpQuest(db, playerId, key, 1);
+}
+
 // Counters that are not kills. Each is only moved while the quest that reads
 // it is the active one, for the same reason questOnKill checks.
 async function questOnEvent(db, playerId, type, key, by = 1) {
@@ -584,7 +611,7 @@ async function secondsLeft(db, playerId, mode, budgetSeconds) {
 module.exports = {
   burnItem, burnAllOfRarity, burnBooks, burnValueOf, seasonState,
   claimSpecialQuest, claimedSpecialQuests,
-  bumpQuest, questState, questOnKill, questOnEvent, claimQuest,
+  bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,
   addSeasonPoints, paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
   takeAttempt, attemptsLeft, spendSeconds, secondsLeft,

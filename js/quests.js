@@ -274,6 +274,20 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   if (typeof netSaveProgress === 'function') netSaveProgress();
 }
 
+// Highest enhance level the player is currently carrying, bag and worn gear
+// alike. Display only — the enhance quests are completed by the server on a
+// successful roll, not by owning something (a +5 bought on the Market does not
+// finish "Заточи предмет до +5"), so this only makes the progress bar mean
+// something while the quest is open.
+function _bestEnhanceHeld() {
+  if (!player) return 0;
+  const best = it => Math.max(0, Math.floor(Number(it && it.enhance)) || 0);
+  let top = 0;
+  for (const it of (player.inventory || [])) top = Math.max(top, best(it));
+  for (const it of Object.values(player.equipment || {})) top = Math.max(top, best(it));
+  return top;
+}
+
 // ── HTML quest panel ──────────────────────────────────────
 function _questProgHtml(q, isCur) {
   if (!isCur) return '';
@@ -324,6 +338,20 @@ function _questProgHtml(q, isCur) {
   }
   if (q.type === 'craft') {
     return `<div class="quest-prog">${typeof t === 'function' ? t('questVisitBlacksmith') : 'Зайди к кузнецу'}</div>`;
+  }
+  // Заточка. There is no partial progress to show — the counter is a flag the
+  // server sets the moment a successful enhance reaches the threshold (see the
+  // enhanceItem handler, server/handlers/craft.js) — so this is a hint about
+  // where to go, the same shape as the craft/enter_zone rows around it. The
+  // best enhance the player currently holds is shown next to it so the target
+  // reads as a distance rather than a bare instruction.
+  if (q.type === 'enhance') {
+    const best = _bestEnhanceHeld();
+    const hint = typeof tVars === 'function'
+      ? tVars('questEnhanceHint', { n: q.enhance })
+      : `Заточи любой предмет до +${q.enhance} у кузнеца`;
+    return `<div class="quest-prog">${hint}<br>+${best} / +${q.enhance}
+      <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100, Math.round(best / q.enhance * 100))}%"></div></div></div>`;
   }
   if (q.type === 'enter_zone') {
     return `<div class="quest-prog">${typeof t === 'function' ? t('questEnterFarmZone') : 'Зайди в Фарм-зону через портал в Зале'}</div>`;

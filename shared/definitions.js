@@ -713,12 +713,12 @@ const QUEST_DEF = [
   { id:'f2q7',  floor:2, title:'Охотник на ящеров',   desc:'Убей 50 Ящер воин',          type:'kill',         enemies:['Ящер воин'],        count:50,  reward:{ xp:4000, gold:2000 } },
   { id:'f2q8',  floor:2, title:'Ярость орков',        desc:'Убей 50 Орк воин',           type:'kill',         enemies:['Орк воин'],         count:50,  reward:{ xp:4000, gold:2000 } },
   { id:'f2q10', floor:2, title:'Ветеран II',          desc:'Достигни 25 уровня',         type:'level',        level:25,                     reward:{ xp:7000, gold:3500 } },
-  { id:'f2q11', floor:2, title:'Покоритель II',       desc:'Дойди до конца верхнего коридора', type:'dungeon_clear', count:2,        reward:{ xp:8000, gold:4000, items:_BUFF_POTION_IDS } },
+  { id:'f2q11', floor:2, title:'Первая заточка',      desc:'Заточи предмет до +2',       type:'enhance',      enhance:2,                    reward:{ xp:8000, gold:4000, items:_BUFF_POTION_IDS } },
   { id:'f2q12', floor:2, title:'Мясник II',           desc:'Убей 100 Орк воин',          type:'kill',         enemies:['Орк воин'],         count:100, reward:{ xp:9000, gold:4500 } },
   { id:'f2q13', floor:2, title:'Берсерк II',          desc:'Убей 100 Орк страж',         type:'kill',         enemies:['Орк страж'],        count:100, reward:{ xp:9000, gold:4500 } },
-  { id:'f2q14', floor:2, title:'Почётный член',       desc:'Повысь ранг в гильдии',      type:'join_guild',                                 reward:{ xp:10000, gold:5000 } },
+  { id:'f2q14', floor:2, title:'Рука кузнеца',        desc:'Заточи предмет до +3',       type:'enhance',      enhance:3,                    reward:{ xp:10000, gold:5000 } },
   { id:'f2q9',  floor:2, title:'Убийца боссов II',    desc:'Убей Босс орков',            type:'kill',         enemies:['Босс орков'],       count:1,   reward:{ xp:6000, gold:3000 } },
-  { id:'f2q15', floor:2, title:'Вглубь тьмы',         desc:'Дойди до нижнего коридора',  type:'goto_floor',   targetFloor:3,                reward:{ xp:12000, gold:6000, items:_BUFF_POTION_IDS } },
+  { id:'f2q15', floor:2, title:'Мастер заточки',      desc:'Заточи предмет до +5',       type:'enhance',      enhance:5,                    reward:{ xp:12000, gold:6000, items:_BUFF_POTION_IDS } },
 
   // ── Нижний коридор · Кровавые чертоги (квесты 31-45) · награда ×4 ──
   { id:'f3q1',  floor:3, title:'Первая кровь III',    desc:'Убей 10 Лоза страж',         type:'kill',         enemies:['Лоза страж'],       count:10,  reward:{ xp:2000, gold:1000, items:_BUFF_POTION_IDS } },
@@ -2112,6 +2112,11 @@ function questComplete(q, kills, lvl) {
     case 'dungeon_clear': return n('_dungeon_' + q.floor) >= q.count;
     case 'join_guild':    return n('_guild') >= 1;
     case 'goto_floor':    return n('_floor_' + q.targetFloor) >= 1;
+    // Заточка: credited only while the quest is the current one (see
+    // _questOnEnhance, server/handlers/craft.js), and keyed by the threshold so
+    // each of the three enhance quests has to be earned on its own — reaching
+    // +5 during the +2 quest does not hand the later ones over.
+    case 'enhance':       return n('_enhance_' + q.enhance) >= 1;
     case 'enter_zone':    return n('_zone_' + q.zone) >= 1;
     default:              return false;
   }

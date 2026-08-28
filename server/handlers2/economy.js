@@ -182,6 +182,14 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       : await items.resolveRow(t, pid, { rowId, id, enhance }, 'inventory');
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const res = await craft.enhance(t, pid, row, stoneType === 'bless' ? 'bless' : 'norm');
+    // Квест «Заточи предмет до +N» — В ТОЙ ЖЕ транзакции, что и сама заточка.
+    // Отдельным шагом после неё зачёт мог бы не случиться на удавшемся броске:
+    // камень потрачен, вещь заточена, квест стоит. Порог и «только текущий
+    // квест» проверяются внутри questOnEnhance.
+    if (res && res.outcome === 'success') {
+      const _q = await progression.questOnEnhance(t, pid, res.to);
+      if (_q) s.socket.emit('questSync', _q);
+    }
     await pushAll(t);
     // NAMED FIELDS, not the repository's own object. The client reads
     // `{ id, slot, outcome, newEnhance }` and this used to forward
