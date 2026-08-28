@@ -33,6 +33,7 @@ const eq = (a, b, n) => ok(a === b, n, `очікував ${JSON.stringify(b)}, �
 
 const TAG = 'etl-' + String(process.pid).slice(-5);
 const made = [];
+let stuck = 0;          // скільки запитів прибирання база відмовила
 const madeQuests = [];
 let n = 0;
 const tgOf = () => `${TAG}-${++n}`;
@@ -281,10 +282,54 @@ async function main() {
   eq(opening('gold'), 12500, 'відкриваючий запис золота дорівнює перенесеному балансу');
   eq(opening('gram'), 7.25, 'і GRAM — до сотої');
   eq(opening('nexum'), 0.0000015, 'і Liberty — до сьомого знаку');
+
+  // ── ТІ САМІ ВОРОТА ДЛЯ ПРЕДМЕТІВ ─────────────────────────────────────────
+  // Грошова половина цих воріт стояла з самого початку. Предметної не було —
+  // і саме ту дірку, яку вона мала б ловити, файл і містив: dev/etl.js не
+  // згадував item_ledger жодного разу, тож кожен перенесений гравець із
+  // будь-яким майном дав би розходження на весь інвентар.
+  //
+  // Це не «одна зайва тривога». Сверка предметів існує, щоб ловити речі, що
+  // взялися з нізвідки. Тривога, яка після переносу кричить на всіх,
+  // вимикається — і наступне справжнє дублювання ховається у вимкненій.
+  const idrift = (await items.reconcile(null)).filter(r => mine.includes(r.playerId));
+  eq(idrift.length, 0,
+    'звірка предметів чиста: у кожного перенесеного предмета є відкриваючий запис',
+    idrift.slice(0, 3).map(d => `${d.playerId}/${d.itemId}: на руках ${d.held}, журнал ${d.ledgerTotal}`).join(' · '));
+
+  // І що саме відкриваючий запис це робить — інакше твердження вище пройшло б
+  // і на акаунті, у якого просто немає предметів.
+  const { rows: iled } = await pool().query(
+    `SELECT item_id, reason, delta, qty_after FROM item_ledger
+      WHERE player_id = $1 ORDER BY item_id`, [full.playerId]);
+  ok(iled.length > 0, 'відкриваючі записи предметів взагалі є', `рядків ${iled.length}`);
+  ok(iled.every(l => l.reason === 'migration_opening'), 'усі позначені як migration_opening');
+  // Журнал має збігтися з тим, що РЕАЛЬНО лежить у player_items, а не з тим,
+  // що ми думаємо, ніби туди поклали.
+  const { rows: heldRows } = await pool().query(
+    `SELECT item_id, sum(qty)::int AS qty FROM player_items
+      WHERE player_id = $1 GROUP BY item_id ORDER BY item_id`, [full.playerId]);
+  eq(iled.length, heldRows.length, 'по одному запису на кожен предмет, який є на руках');
+  ok(heldRows.every(h => {
+    const l = iled.find(x => x.item_id === h.item_id);
+    return l && Number(l.delta) === Number(h.qty) && Number(l.qty_after) === Number(h.qty);
+  }), 'і кількість у записі дорівнює тій, що на руках — по кожному предмету',
+     heldRows.map(h => `${h.item_id}:${h.qty}`).join(' '));
 }
 
 async function cleanup() {
-  const q = (s, p) => pool().query(s, p).catch(() => {});
+  // НЕ .catch(() => {}). Саме тут сміття й накопичувалось мовчки: DELETE на
+  // `ledger` застосунку відкликано (гроші не можна стирати), цей рядок падав
+  // беззвучно, далі DELETE FROM players впирався у той самий зовнішній ключ —
+  // і акаунт лишався жити разом з усім своїм розходженням у предметах.
+  // Шість фікстур за прогін, і жодного слова про це. Купка з датою 2025-01-01
+  // у нічній тривозі — рівно ця.
+  const q = async (sql, prm) => {
+    try { await pool().query(sql, prm); } catch (e) {
+      stuck++;
+      console.error('  ! прибирання не пройшло: ' + String(e.message).slice(0, 140));
+    }
+  };
   // The quest rows go LAST. quest_id carries no foreign key, so nothing would
   // refuse the other order — which is exactly why it is written down: removing
   // the quest first leaves a claim row naming a quest that no longer exists,
@@ -312,5 +357,9 @@ main()
     await cleanup(); await close();
     console.log(`\n  ${pass} пройшло, ${fail} впало`);
     if (failures.length) console.log('  впали: ' + failures.join(' · '));
+    if (stuck) {
+      console.log(`  ! ${stuck} запитів прибирання відмовлено — фікстури лишились у базі`);
+      console.log('    прибрати можна лише bash /srv/liberty/purge-test.sh (потрібен doadmin)');
+    }
     process.exit(fail ? 1 : 0);
   });

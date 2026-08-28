@@ -14,6 +14,7 @@ const { pool, tx, txRetry, close } = require('../server/db');
 const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const market = require('../server/db/repos/market');
+const { wipeItemsAll } = require('./fixtures');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -186,7 +187,9 @@ async function cleanup() {
   if (!made.length) return;
   const q = (s, p) => pool().query(s, p).catch(() => {});
   await q('DELETE FROM market_listings WHERE seller_id = ANY($1) OR buyer_id = ANY($1)', [made]);
-  await q(`DELETE FROM player_items WHERE player_id = ANY($1)`, [made]);
+  // Тими ж дверима, якими видали. Відчеплені на ринок рядки мають
+  // player_id NULL і сюди не потрапляють — їх знімає окремий запит нижче.
+  await wipeItemsAll(made).catch(() => {});
   // ── this line used to have no WHERE beyond "player_id IS NULL" ───────────
   // Which is not "leftover test rows". It is the market ESCROW state: listing
   // an item DETACHES the row from its owner (items.detachForListing), so

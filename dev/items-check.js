@@ -10,6 +10,7 @@
 
 const { pool, tx, close } = require('../server/db');
 const items = require('../server/db/repos/items');
+const { wipeItemsAll } = require('./fixtures');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -203,7 +204,15 @@ async function cleanup() {
   await pool().query('DELETE FROM market_listings WHERE seller_id = ANY($1)', [made]).catch(() => {});
   // `OR player_id IS NULL` here meant every live player's listed items — see
   // the note in dev/market-check.js's cleanup. Scoped to this run's rows.
-  await pool().query('DELETE FROM player_items WHERE player_id = ANY($1)', [made]).catch(() => {});
+  //
+  // І знімається тими ж дверима, якими видавалось. Один виняток лишається
+  // сирим нижче: рядок з item_id = 'no_such_item' цей файл вставляє в обхід
+  // репозиторію навмисно — доводить, що каталог відмовляє невідомому id, —
+  // а items.removeRow такий рядок зняти не може, бо не знає його предмета.
+  await wipeItemsAll(made).catch(() => {});
+  await pool().query(
+    `DELETE FROM player_items WHERE player_id = ANY($1) AND item_id = 'no_such_item'`,
+    [made]).catch(() => {});
   await pool().query('DELETE FROM players WHERE id = ANY($1)', [made]).catch(() => {});
 }
 

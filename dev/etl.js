@@ -397,6 +397,37 @@ async function migratePlayer(doc, questIds = new Map()) {
     const invCount = rows.filter(r => r.container === 'inventory').length;
     if (invCount > INV_CAP) lost.overCap.push(`${tg}: ${invCount} предметів в інвентарі (ліміт ${INV_CAP})`);
 
+    // ── відкриваючий запис у журналі предметів ───────────────────────────────
+    // Грошова половина нижче робить рівно це й пояснює навіщо. Предметна
+    // не робила НІЧОГО: у цьому файлі не було жодної згадки item_ledger.
+    //
+    // Ціна пропуску не «одна тривога». repos/items.js reconcile() звіряє суму
+    // журналу з тим, що на руках, і без відкриваючого запису кожен
+    // перенесений гравець дав би розходження на ВЕСЬ свій інвентар. Тобто
+    // сверка, яка існує щоб ловити предмети з нізвідки, з першого ж ранку
+    // після переносу кричала б на всіх — її б вимкнули, і наступне справжнє
+    // дублювання сховалося б усередині вимкненої тривоги.
+    //
+    // Читається З БАЗИ, а не підсумовується з масиву `rows`: журнал має
+    // збігтися з тим, що реально лежить у player_items, а не з тим, що ми
+    // думаємо, ніби туди поклали. Той самий принцип, з якого items.ledger()
+    // рахує qty_after запитом, а не бере його від того, хто викликав.
+    //
+    // Один рядок на пару (гравець, предмет) — саме так групує reconcile();
+    // стос із сорока каменів у сумі однаково один доданок.
+    const { rows: heldNow } = await query(t, `
+      SELECT item_id, sum(qty)::int AS qty FROM player_items
+       WHERE player_id = $1 GROUP BY item_id`, [pid]);
+    for (const h of heldNow) {
+      if (!(Number(h.qty) > 0)) continue;
+      // idem_key за тим самим зразком, що й у грошей, і теж UNIQUE: другий
+      // прогін переносу на ту саму базу впаде тут, а не подвоїть журнал.
+      await query(t, `
+        INSERT INTO item_ledger (player_id, item_id, delta, qty_after, reason, ref_type, ref_id, idem_key)
+        VALUES ($1,$2,$3,$3,'migration_opening','migration',$4,$5)`,
+        [pid, h.item_id, Number(h.qty), tg, `migration:${tg}:${h.item_id}`]);
+    }
+
     // ── balances + the opening ledger entry ──────────────────────────────────
     const bals = {
       gold: clampNum(sd.gold, 0, MAX.gold),

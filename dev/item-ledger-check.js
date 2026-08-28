@@ -224,6 +224,7 @@ function staticScan() {
 
 const TAG = 'ilchk-' + process.pid;
 const made = [];
+let leftover = false;   // прибирання не впоралось — код виходу має це показати
 async function mkPlayer(nick) {
   const { rows } = await pool().query(
     'INSERT INTO players (telegram_id, username) VALUES ($1,$2) RETURNING id',
@@ -420,9 +421,35 @@ async function cleanup() {
   // to N against zero held, or every deleted account would drift for ever.
   // So the players delete is enough, and the listings go first because their
   // FK is not.
-  await pool().query('DELETE FROM market_listings WHERE seller_id = ANY($1)', [made]).catch(() => {});
-  await pool().query('DELETE FROM player_items WHERE player_id = ANY($1)', [made]).catch(() => {});
-  await pool().query('DELETE FROM players WHERE id = ANY($1)', [made]).catch(() => {});
+  // Не в .catch(() => {}). Этот файл — единственный, который создаёт
+  // расхождение НАМЕРЕННО: раздутый стек, строка мимо items.add, строка,
+  // снесённая мимо репозитория. Если уборка не прошла, всё это остаётся в
+  // боевой базе навсегда и попадает в ночную тревогу как настоящая пропажа.
+  // Проглоченный отказ здесь — это шум, который потом заглушат вместе с
+  // настоящим сигналом.
+  const drop = async (sql) => {
+    try { await pool().query(sql, [made]); } catch (e) {
+      console.error('  ! прибирання не пройшло: ' + e.message);
+      leftover = true;
+    }
+  };
+  await drop('DELETE FROM market_listings WHERE seller_id = ANY($1)');
+  await drop('DELETE FROM player_items WHERE player_id = ANY($1)');
+  await drop('DELETE FROM players WHERE id = ANY($1)');
+
+  // И проверка результата, а не намерения: item_ledger уходит по ON DELETE
+  // CASCADE вместе с игроком — но только если игрок ушёл.
+  try {
+    const rest = (await items.reconcile(null)).filter(r => made.includes(Number(r.playerId)));
+    if (rest.length) {
+      leftover = true;
+      console.error(`  ! ПІСЛЯ ПРИБИРАННЯ ЛИШИЛОСЬ РОЗХОДЖЕННЯ: ${rest.length} пар`);
+      for (const r of rest.slice(0, 5)) {
+        console.error(`    гравець ${r.playerId} · ${r.itemId}: на руках ${r.held}, журнал ${r.ledgerTotal}`);
+      }
+      console.error('    це піде в нічну тривогу items.drift як справжня пропажа');
+    }
+  } catch (e) { console.error('  ! не вдалось перевірити залишки: ' + e.message); }
 }
 
 // The static half runs first and needs no database, so a misconfigured
@@ -435,5 +462,6 @@ main()
     await cleanup(); await close();
     console.log(`\n  ${pass} пройшло, ${fail} впало`);
     if (failures.length) console.log('  впали: ' + failures.join(' · '));
-    process.exit(fail ? 1 : 0);
+    if (leftover) console.log('  ! прибирання лишило сліди — див. вище');
+    process.exit(fail || leftover ? 1 : 0);
   });
