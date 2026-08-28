@@ -118,7 +118,7 @@ function makePlayer(type) {
     questKills: {},
     upgrades: { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 },
     bonusSP: 0,
-    // Points a rebirth carried across the level reset — a commitment the
+    // Points a Перерождение carried across its level reset — a commitment the
     // upgrades map already holds, never spendable capacity. Server-written;
     // see availableSkillPoints (shared/definitions.js).
     keptSP: 0,
@@ -127,7 +127,7 @@ function makePlayer(type) {
     // _sanitizeSavedStats); the HUD's Бонус button reads it to know whether
     // there is still anything to claim.
     starterBonus: false,
-    rebirths: 0,
+    empowers: 0,
     // Кодекс: { [setId]: boolean[] } filled-slot progress per set
     // (server-owned, see registerCodexSetItem/codexSync) and the flat stat
     // bonus every COMPLETED set totals to.
@@ -1089,7 +1089,7 @@ function restoreFromSave(data) {
   player.upgrades = data.upgrades || { atk:0, def:0, hp:0, atkSpeed:0, critChance:0, critPower:0, hpRegen:0 };
   player.bonusSP  = data.bonusSP  || 0;
   player.keptSP   = data.keptSP   || 0;
-  player.rebirths = data.rebirths || 0;
+  player.empowers = data.empowers || 0;
   player.starterBonus = !!data.starterBonus;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};

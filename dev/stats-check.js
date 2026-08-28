@@ -22,7 +22,7 @@ const craft = require('../server/db/repos/craft');
 const { wipeItemsAll } = require('./fixtures');
 const {
   CHAR_DEF, ITEM_DEF, enhanceBonus, upgradeCost, xpToNext, passivesForClass,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, rebirthCostFor,
+  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_MAX, empowerCostFor,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -325,18 +325,24 @@ async function main() {
   await tx(t => players.bumpSkill(t, bmp, 'skill', 'Q'));
   eq(await bmOf(bmp), 1, 'вивчений АКТИВНИЙ навик БМ не чіпає');
 
-  // ── rebirth: the only direction nothing else moves a rating in ───────────
+  // ── усиление НЕ двигает БМ ───────────────────────────────────────────────
+  // Перерождение опускало рейтинг — уровень до 1 и все улучшения в ноль, — и
+  // сценарий проверял именно падение. Усиление не трогает ни уровня, ни
+  // улучшений: оно выдаёт НЕРАСПРЕДЕЛЁННЫЕ очки, а БМ считается по тому, что
+  // вложено. Значит рейтинг обязан остаться на месте — и это проверяется,
+  // потому что «усилился и просел в рейтинге» было бы ровно тем откатом
+  // прогресса, из-за которого перерождение и заменили.
   const rbp = await mk('bmrb');
-  await pool().query('UPDATE player_progress SET lvl = $2 WHERE player_id = $1', [rbp, REBIRTH_LEVEL]);
-  const rbCost = rebirthCostFor(0);
+  await pool().query('UPDATE player_progress SET lvl = $2 WHERE player_id = $1', [rbp, EMPOWER_LEVEL]);
+  const rbCost = empowerCostFor(0);
   for (const [id, n] of Object.entries(rbCost)) {
     await tx(async t => { await items.lockPlayer(t, rbp); return items.add(t, rbp, id, { qty: n }); });
   }
-  const bmHigh = (await tx(t => stats.refreshBm(t, rbp))).bm;
-  await tx(t => players.rebirth(t, rbp, rbCost, { minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP }));
-  const bmLow = await bmOf(rbp);
-  ok(bmLow < bmHigh, `переродження опустило БМ (${bmHigh} → ${bmLow})`);
-  eq(bmLow, await liveBm(rbp), 'і саме до перерахованого значення, а не до вчорашнього');
+  const bmBefore = (await tx(t => stats.refreshBm(t, rbp))).bm;
+  await tx(t => players.empower(t, rbp, rbCost,
+    { minLevel: EMPOWER_LEVEL, bonusSp: EMPOWER_BONUS_SP, maxCount: EMPOWER_MAX }));
+  eq(await bmOf(rbp), bmBefore, `посилення не зрушило БМ (${bmBefore})`);
+  eq(await bmOf(rbp), await liveBm(rbp), 'і збережене значення збігається з перерахованим');
 
   // ── a running potion must not move the rating ────────────────────────────
   // Every case above happens to have an empty buffs map, so they would agree

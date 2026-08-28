@@ -1069,7 +1069,7 @@ async function openPlayer(tid) {
       <div class="prow"><span class="k">Уровень</span><span>${pg.lvl||1}</span></div>
       <div class="prow"><span class="k">Класс</span><span>${pg.charClass||'—'}</span></div>
       <div class="prow"><span class="k">Очки навыка (бонус)</span><span>${pg.bonusSP||0}</span></div>
-      <div class="prow"><span class="k">Перерождений</span><span>${pg.rebirths||0}${(pg.keptSP||0) ? ` · перенесено ${pg.keptSP} оч.` : ''}</span></div>
+      <div class="prow"><span class="k">Усилений</span><span>${pg.empowers||0}${(pg.keptSP||0) ? ` · перенесено ${pg.keptSP} оч.` : ''}</span></div>
       <div class="prow"><span class="k">Золото</span><span>${fmt(bal.gold||0)}</span></div>
       <div class="prow"><span class="k">Liberty</span><span>${fmt(bal.nexum||0)}</span></div>
       <div class="prow"><span class="k">GRAM</span><span>${fmt(bal.gram||0)}</span></div>

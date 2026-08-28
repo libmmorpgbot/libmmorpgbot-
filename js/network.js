@@ -1853,7 +1853,7 @@ function netConnect(onReady) {
     if (_changed) {
       // Same refresh set goldSync uses just above; the skill-point screen
       // isn't among them because it (like goldSync's own bonusSP-adjacent
-      // rebirthDone handler) reads player.bonusSP fresh whenever it's opened
+      // empowerDone handler) reads player.bonusSP fresh whenever it's opened
       // rather than needing a push.
       if (typeof refreshNpcPanel === 'function') refreshNpcPanel();
       if (typeof netSaveProgressNow === 'function') netSaveProgressNow();
@@ -2016,7 +2016,7 @@ function netConnect(onReady) {
     // the others would show a number the server does not agree with.
     if (Number.isFinite(data.bonusSP))  player.bonusSP  = data.bonusSP;
     if (Number.isFinite(data.keptSP))   player.keptSP   = data.keptSP;
-    if (Number.isFinite(data.rebirths)) player.rebirths = data.rebirths;
+    if (Number.isFinite(data.empowers)) player.empowers = data.empowers;
     if (data.skillLevels)     player.skillLevels     = { Q:0, W:0, E:0, R:0, ...data.skillLevels };
     if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
     if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
@@ -2809,7 +2809,7 @@ function _showCharSelect(savedData) {
 // What the client still owns. Everything else the character used to carry —
 // items, equipment, storage, gold, level, XP and the stats derived from it,
 // studied skills and passives, stat upgrades, quest progress, buffs, the potion
-// bag, bonusSP, rebirths — is applied and persisted server-side as it happens,
+// bag, bonusSP, empowers — is applied and persisted server-side as it happens,
 // and pinned there on the way in, so sending it would be sending a number
 // nobody reads.
 //
@@ -3677,11 +3677,12 @@ function netResetUpgrades() {
   if (socket?.connected) socket.emit('resetUpgrades');
 }
 
-// Item cost only (REBIRTH_COST, shared/definitions.js) — the server checks
-// and removes it, resets level/xp/upgrades and answers with 'rebirthDone'
-// (see the handler below).
-function netRebirth() {
-  if (socket?.connected) socket.emit('rebirth');
+// Item cost only (EMPOWER_COST, shared/definitions.js) — the server checks it,
+// removes it, grants the skill points and answers with 'empowerDone' (see the
+// handler below). Nothing is reset: the level, the experience and the upgrade
+// map are not part of this exchange at all.
+function netEmpower() {
+  if (socket?.connected) socket.emit('empower');
 }
 
 // "Набор новичка" — the free one-per-account kit behind the HUD's Бонус
@@ -4778,7 +4779,7 @@ function _initPetCraftHandlers(s) {
     if (!player) return;
     player.nexumBalance = newNexumBalance;
     player.upgrades = {};
-    // Emptying the map ends the commitment a rebirth carried, so the points
+    // Emptying the map ends the commitment Перерождение carried, so the points
     // that were covering it go with it — the server has already done exactly
     // this to its own copy (the resetUpgrades handler), and pointsReturned is
     // what actually became spendable rather than the raw old spend.
@@ -4791,30 +4792,29 @@ function _initPetCraftHandlers(s) {
     if (typeof onUpgradesResetError === 'function') onUpgradesResetError(msg);
   });
 
-  // Rebirth (Перерождение). Same "inventorySync already landed" shape as
-  // boxOpened above — the server's own _commitServerItems call inside the
-  // rebirth handler already pushed the item-cost removal; this only carries
-  // the progression reset (level/xp/upgrades/bonusSP/rebirths).
-  s.on('rebirthDone', ({ lvl, xp, xpNext, baseAtk, baseDef, baseMaxHp, upgrades, bonusSP, keptSP, rebirths } = {}) => {
+  // Усиление. Same "inventorySync already landed" shape as boxOpened above —
+  // the server's own item push inside the empower handler already carried the
+  // cost removal; this only carries what the empowerment itself changed.
+  //
+  // Три поля вместо десяти. Прежнее перерождение сбрасывало уровень, опыт,
+  // кривую, три базовых стата и карту улучшений, и пакет пересобирал
+  // персонажа целиком. Усиление не трогает ни одного из них: прислать их
+  // значило бы предложить клиенту переписать себя тем, что он и так знает, а
+  // любое расхождение в этих полях стало бы видимым откатом прогресса.
+  s.on('empowerDone', ({ bonusSP, keptSP, empowers } = {}) => {
     if (!player) return;
-    player.lvl = lvl; player.xp = xp; player.xpNext = xpNext;
-    player.baseAtk = baseAtk; player.baseDef = baseDef; player.baseMaxHp = baseMaxHp;
-    player.upgrades = upgrades || {};
     player.bonusSP = bonusSP || 0;
-    // What the kept upgrades cost. Without it the panel would read the kept
-    // spend as an unpaid debt against a level-1 curve and show 0 points where
-    // the rebirth's own reward should be.
+    // keptSP приходит и записывается, хотя усиление в него не пишет: его
+    // несут записи тех, кто успел перерождаться, и молча обнулить его здесь
+    // значило бы отнять у них потолок очков под уже вложенные улучшения.
     player.keptSP = keptSP || 0;
-    player.rebirths = rebirths || 0;
+    player.empowers = empowers || 0;
     if (typeof recompute === 'function') recompute();
-    // Rebirth is framed as a fresh start — full heal, matching the +HP an
-    // ordinary level-up already grants (applyLevelState, js/player.js).
-    player.hp = player.maxHp;
     if (typeof netSaveProgress === 'function') netSaveProgress();
-    if (typeof onRebirthDone === 'function') onRebirthDone();
+    if (typeof onEmpowerDone === 'function') onEmpowerDone();
   });
-  s.on('rebirthError', ({ msg }) => {
-    if (typeof onRebirthError === 'function') onRebirthError(msg);
+  s.on('empowerError', ({ msg }) => {
+    if (typeof onEmpowerError === 'function') onEmpowerError(msg);
   });
 
   // Набор новичка. Same "inventorySync already landed" shape as the crafting

@@ -19,8 +19,8 @@ const stats = require('../server/db/repos/stats');
 const con = require('../server/db/repos/consumables');
 const { wipeItemsAll } = require('./fixtures');
 const {
-  ITEM_DEF, CODEX_SETS, REBIRTH_LEVEL, REBIRTH_BONUS_SP,
-  rebirthCostFor, UPGRADE_RESET_COST, MERCHANT_SHOP, POTION_CAP,
+  ITEM_DEF, CODEX_SETS, EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_MAX,
+  empowerCostFor, empowerMultFor, UPGRADE_RESET_COST, MERCHANT_SHOP, POTION_CAP,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -274,29 +274,54 @@ async function main() {
   eq(await caught(() => tx(t => con.registerCodexItem(t, cx, 'нема_такого', 0, again))), 'no_set',
     'неіснуючий набір — відмова');
 
-  // ── rebirth ──────────────────────────────────────────────────────────────
-  console.log('  ── переродження ──');
+  // ── усиление ─────────────────────────────────────────────────────────────
+  // Главное свойство Усиления — оно НИЧЕГО не сбрасывает. Прежний сценарий
+  // проверял обратное: что уровень упал до 1, а вложенные очки уехали в kept.
+  // Здесь проверяется, что ни того, ни другого не произошло.
+  console.log('  ── посилення ──');
   const rb = await mk('rb');
-  const cost = rebirthCostFor(0);
-  eq(await caught(() => tx(t => players.rebirth(t, rb, cost, { minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP }))),
-    'low_level', `нижче ${REBIRTH_LEVEL} рівня переродження недоступне`);
+  const opts = { minLevel: EMPOWER_LEVEL, bonusSp: EMPOWER_BONUS_SP, maxCount: EMPOWER_MAX };
+  const cost = empowerCostFor(0);
+  eq(await caught(() => tx(t => players.empower(t, rb, cost, opts))),
+    'low_level', `нижче ${EMPOWER_LEVEL} рівня посилення недоступне`);
 
-  await pool().query('UPDATE player_progress SET lvl = $2 WHERE player_id = $1', [rb, REBIRTH_LEVEL]);
-  eq(await caught(() => tx(t => players.rebirth(t, rb, cost, { minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP }))),
+  await pool().query('UPDATE player_progress SET lvl = $2 WHERE player_id = $1', [rb, EMPOWER_LEVEL]);
+  eq(await caught(() => tx(t => players.empower(t, rb, cost, opts))),
     'no_mats', 'без матеріалів — відмова');
 
   for (const [id, n] of Object.entries(cost)) await give(rb, id, n);
-  // Spend some points first, so the keptSP preservation is actually exercised.
+  // Вкладені очки — саме те, що посилення НЕ має чіпати.
   for (let i = 0; i < 5; i++) await tx(t => players.spendUpgrade(t, rb, 'atk'));
-  const spentBefore = (await players.progressOf(null, rb)).upgrades.atk;
+  const empBefore = await players.progressOf(null, rb);
 
-  const done = await tx(t => players.rebirth(t, rb, cost, { minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP }));
-  eq(done.lvl, 1, 'рівень скинуто до 1');
-  eq(done.rebirths, 1, 'лічильник перероджень +1');
-  eq(done.bonusSP, REBIRTH_BONUS_SP, `нараховано ${REBIRTH_BONUS_SP} бонусних очок`);
-  eq(done.keptSP, spentBefore, `${spentBefore} витрачених очок ЗБЕРЕЖЕНО як kept — не вкрадено`);
-  eq((await players.progressOf(null, rb)).upgrades.atk, 0, 'самі покращення скинуті');
+  const done = await tx(t => players.empower(t, rb, cost, opts));
+  eq(done.lvl, EMPOWER_LEVEL, 'рівень НЕ скинуто');
+  eq(done.empowers, 1, 'лічильник посилень +1');
+  eq(done.bonusSP, empBefore.bonusSP + EMPOWER_BONUS_SP, `нараховано ${EMPOWER_BONUS_SP} бонусних очок`);
+  eq(done.keptSP, empBefore.keptSP, 'keptSP не зачеплено — скидати нічого');
+  eq((await players.progressOf(null, rb)).upgrades.atk, empBefore.upgrades.atk,
+    'вкладені покращення на місці');
   for (const [id] of Object.entries(cost)) eq(await countOf(rb, id), 0, `матеріал ${id} витрачено`);
+
+  // Ціна росте по діапазонах і тримається до кінця кожного — а не подвоюється
+  // на кожному п'ятому й падає назад. Перевіряється на межах: 4→5 стрибок,
+  // 5→6 тримається.
+  eq(empowerMultFor(4), 1, 'четверте посилення — базова ціна');
+  eq(empowerMultFor(5), 2, 'п’яте — ×2');
+  eq(empowerMultFor(6), 2, 'шосте ТЕЖ ×2, а не назад до базової');
+  eq(empowerMultFor(9), 2, 'дев’яте ще ×2');
+  eq(empowerMultFor(10), 4, 'десяте — ×4');
+  eq(empowerMultFor(EMPOWER_MAX), 40, `${EMPOWER_MAX}-те — ×40`);
+  eq(empowerCostFor(4).norm_stone, empowerCostFor(0).norm_stone * 2,
+    'ціна п’ятого рівно вдвічі від базової');
+
+  // Потолок. Счётчик ставится вручную: гонять тридцать реальных усилений
+  // ради этой проверки значило бы выдать материалов на тридцать усилений.
+  await pool().query('UPDATE player_progress SET empowers = $2 WHERE player_id = $1',
+    [rb, EMPOWER_MAX]);
+  for (const [id, n] of Object.entries(empowerCostFor(EMPOWER_MAX - 1))) await give(rb, id, n);
+  eq(await caught(() => tx(t => players.empower(t, rb, empowerCostFor(EMPOWER_MAX - 1), opts))),
+    'max_empowers', `понад ${EMPOWER_MAX} посилень — відмова`);
 
   // ── reset upgrades ───────────────────────────────────────────────────────
   console.log('  ── скидання покращень ──');

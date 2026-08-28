@@ -60,7 +60,7 @@ const WRITE_ACTIONS = new Set([
   'craftGear', 'craftPet', 'craftClassGear', 'craftMatUpgrade', 'craftBox', 'craftStone',
   'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
-  'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'rebirth',
+  'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',
   'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'claimQuest', 'completeSpecialQuest', 'claimVipRewards',
   'gramDepositRequest', 'gramWithdrawRequest',
@@ -539,7 +539,7 @@ class Session {
       equipment,
 
       upgrades: p.upgrades || {},
-      bonusSP: p.bonusSP, keptSP: p.keptSP, rebirths: p.rebirths,
+      bonusSP: p.bonusSP, keptSP: p.keptSP, empowers: p.empowers,
       starterBonus: !!p.starterBonusClaimed,
       questIdx: p.questIdx, questKills: p.questKills || {},
       // Read by the special-quests panel (js/quests.js) to grey out what is

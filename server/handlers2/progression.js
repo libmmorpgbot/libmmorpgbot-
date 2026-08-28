@@ -1,5 +1,5 @@
 'use strict';
-// ── Skills, quests, season, VIP, rebirth ────────────────────────────────────
+// ── Skills, quests, season, VIP, empower ────────────────────────────────────
 // Everything a player accumulates that is not an item or a balance. The shape
 // is the same as everywhere else in handlers2: the client asks, the server
 // decides, the answer is pushed back from the database.
@@ -16,10 +16,10 @@ const progression = require('../db/repos/progression');
 const items = require('../db/repos/items');
 const shopRepo = require('../db/repos/shop');
 const consumables = require('../db/repos/consumables');
-const stats = require('../db/repos/stats');
 const {
-  SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, REBIRTH_LEVEL, REBIRTH_BONUS_SP,
-  rebirthCostFor, UPGRADE_RESET_COST, SKILL_UPGRADE_CHANCE,
+  SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, EMPOWER_LEVEL, EMPOWER_BONUS_SP,
+  EMPOWER_MAX, empowerCostFor, UPGRADE_RESET_COST, SKILL_UPGRADE_CHANCE,
+  SEASON_EMPOWER_POINTS, seasonActive,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
   SEASON_RATING_MIN_POINTS,
@@ -363,32 +363,46 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('refData', await shopRepo.referralsOf(t, pid));
   }));
 
-  // ── rebirth and reset ────────────────────────────────────────────────────
-  safeOn('rebirth', () => s.act('rebirth', 'rebirthError', async (t, pid) => {
+  // ── empower (Усиление) and reset ─────────────────────────────────────────
+  // Усиление заменило Перерождение. Сбрасывать нечего: уровень, опыт, статы и
+  // вложенные улучшения остаются как были, начисляются только EMPOWER_BONUS_SP
+  // нераспределённых очков. Цена растёт по тирам от номера усиления, потолок —
+  // EMPOWER_MAX; и то, и другое проверяется внутри транзакции репозитория, а не
+  // здесь: прочитанный тут счётчик к моменту списания уже может устареть.
+  safeOn('empower', () => s.act('empower', 'empowerError', async (t, pid) => {
     // The hub-only rule is geometry, so it stays with the room rather than the
     // repository — but it is checked before anything is consumed.
-    if (s.floor !== 1) fail('Перерождение доступно только в Зале', 'wrong_floor');
+    if (s.floor !== 1) fail('Усиление доступно только в Зале', 'wrong_floor');
     const prog = await players.progressOf(t, pid);
-    const res = await players.rebirth(t, pid, rebirthCostFor(prog.rebirths), {
-      minLevel: REBIRTH_LEVEL, bonusSp: REBIRTH_BONUS_SP,
+    const res = await players.empower(t, pid, empowerCostFor(prog.empowers), {
+      minLevel: EMPOWER_LEVEL, bonusSp: EMPOWER_BONUS_SP, maxCount: EMPOWER_MAX,
     });
     await s.pushItems(t); await pushAfterStat(t);
-    // The client REBUILDS the character from this packet — level, experience,
-    // the curve, all three base stats and the upgrade map. The repo's return
-    // value carries four of those ten fields, so a rebirth set lvl, xp, xpNext
-    // and every base stat to undefined: the character on screen became NaN
-    // across the board and stayed that way until a reload.
-    const after = await players.progressOf(t, pid);
-    const st = await stats.of(t, pid);
-    s.socket.emit('rebirthDone', {
-      lvl: after.lvl, xp: after.xp, xpNext: st ? st.xpNext : 0,
-      baseAtk: st ? st.baseAtk : undefined,
-      baseDef: st ? st.baseDef : undefined,
-      baseMaxHp: st ? st.baseMaxHp : undefined,
-      upgrades: after.upgrades || {},
-      bonusSP: after.bonusSP, keptSP: after.keptSP, rebirths: after.rebirths,
-      spentReturned: res.spentReturned,
+    // Только то, что усиление действительно изменило: счётчик и очки. Прежний
+    // ответ пересобирал персонажа целиком, потому что перерождение сбрасывало
+    // уровень, опыт, кривую и все базовые статы — теперь ни одно из этих полей
+    // не двигается, и присылать их значило бы предлагать клиенту переписать
+    // себя тем, что он и так знает.
+    s.socket.emit('empowerDone', {
+      bonusSP: res.bonusSP, keptSP: res.keptSP, empowers: res.empowers,
     });
+
+    // Сезонные очки за усиление. Правила сезона обещают их (панель печатает
+    // SEASON_EMPOWER_POINTS отдельной строкой), но начислять их было некому:
+    // прежний обработчик перерождения константу не трогал вовсе, и строка в
+    // правилах была обещанием, за которым ничего не стояло.
+    //
+    // В ТОЙ ЖЕ транзакции, что списала материалы и выдала очки навыка: сезон
+    // тут — часть той же покупки, и «усиление прошло, а очки не начислились»
+    // было бы расхождением ровно того рода, из-за которого весь этот обмен и
+    // собран одной транзакцией.
+    if (seasonActive()) {
+      const total = await progression.addSeasonPoints(t, pid, SEASON_EMPOWER_POINTS);
+      if (total != null) {
+        s.socket.emit('seasonEventDone',
+          { task: 'empower', points: SEASON_EMPOWER_POINTS, total });
+      }
+    }
   }));
 
   safeOn('resetUpgrades', () => s.act('resetUpgrades', 'resetUpgradesError', async (t, pid) => {

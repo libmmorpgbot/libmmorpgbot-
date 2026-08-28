@@ -638,13 +638,14 @@ function onUpgradesResetError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  REBIRTH  (Персонаж → Перерождение)
-//  REBIRTH_LEVEL/REBIRTH_BONUS_SP/REBIRTH_COST live in shared/definitions.js
-//  (mirrored by the server's own rebirth handler, server/index.js) so the
-//  requirement/cost shown here can never drift from what actually gets
-//  charged and granted.
+//  EMPOWER  (Персонаж → Усиление)
+//  EMPOWER_LEVEL/EMPOWER_BONUS_SP/EMPOWER_COST/EMPOWER_TIERS live in
+//  shared/definitions.js — the server's own empower handler
+//  (server/handlers2/progression.js) reads the SAME functions, so the
+//  requirement, the price and the cap shown here can never drift from what
+//  actually gets charged and granted.
 // ─────────────────────────────────────────────────────────
-function _rebirthCostDef(id) {
+function _empowerCostDef(id) {
   return (typeof BOX_DEF !== 'undefined' && BOX_DEF.find(d => d.id === id))
       || (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(d => d.id === id))
       || null;
@@ -652,103 +653,116 @@ function _rebirthCostDef(id) {
 // dungeonLvl === 1 is the hub — server/game/floors.js's FLOOR_IDS.hub, which
 // the client never imports (it's server-only), so this mirrors that literal
 // the same way _resumeSameFloor (js/network.js) already compares dungeonLvl
-// against a raw floor id. The server's own rebirth handler enforces the real
+// against a raw floor id. The server's own empower handler enforces the real
 // gate (currentFloor !== FLOOR_IDS.hub); this is only what disables the
 // button so a player isn't sent to the confirm dialog just to have the
 // server refuse it a moment later.
 function _inHub() { return dungeonLvl === 1; }
-function _rebirthReady() {
+function _empowerReady() {
   if (!player) return false;
   if (!_inHub()) return false;
-  if ((player.lvl || 1) < REBIRTH_LEVEL) return false;
-  return Object.entries(rebirthCostFor(player.rebirths || 0)).every(([id, need]) => countMaterial(id) >= need);
+  if ((player.lvl || 1) < EMPOWER_LEVEL) return false;
+  // Потолок: тридцатое усиление — последнее, за ним у лестницы цен ничего
+  // нет. Сервер откажет и так, но кнопка не должна вести в диалог, который
+  // заведомо кончится отказом.
+  if ((player.empowers || 0) >= EMPOWER_MAX) return false;
+  return Object.entries(empowerCostFor(player.empowers || 0)).every(([id, need]) => countMaterial(id) >= need);
 }
 
 // One reward row — icon + label — shared by every shop/reward panel below
-// (rebirth cost, VIP tiers, GRAM packs, season packs). It was copy-pasted as a
+// (empower cost, VIP tiers, GRAM packs, season packs). It was copy-pasted as a
 // local `ri()` inside five of them, which is how the same markup ended up
 // maintained in five places at once.
 function ri(img, label, cls) {
   return `<div class="vip-ri${cls ? ' vip-ri-' + cls : ''}"><img class="vip-ri-img" src="${img}"><span class="vip-ri-label">${label}</span></div>`;
 }
 
-function updateRebirthUI() {
+function updateEmpowerUI() {
   if (!player) return;
-  const el = document.getElementById('rebirth-body');
+  const el = document.getElementById('empower-body');
   if (!el) return;
-  const lvlOk = (player.lvl || 1) >= REBIRTH_LEVEL;
-  const _nextRebirthN = (player.rebirths || 0) + 1;
-  const _doubled = _nextRebirthN % 5 === 0;
-  const rows = Object.entries(rebirthCostFor(player.rebirths || 0)).map(([id, need]) => {
-    const def = _rebirthCostDef(id);
+  const lvlOk = (player.lvl || 1) >= EMPOWER_LEVEL;
+  const done = player.empowers || 0;
+  const nextN = done + 1;
+  const capped = done >= EMPOWER_MAX;
+  // Множитель берётся из той же функции, что и цена, а не пересчитывается
+  // здесь по «каждое пятое ×2»: это правило больше не действует, цена растёт
+  // по диапазонам и держится до конца каждого.
+  const mult = capped ? 0 : empowerMultFor(nextN);
+  const rows = Object.entries(empowerCostFor(done)).map(([id, need]) => {
+    const def = _empowerCostDef(id);
     const have = countMaterial(id);
     const ok = have >= need;
     const label = `<span style="color:${ok ? '#98e456' : '#f88'}">${have}/${need}</span>`;
     return ri(def ? def.img : '', label, '');
   }).join('');
-  const ready = _rebirthReady();
-  const doubleHint = _doubled
-    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('rebirthDoubleCostFmt', { n: _nextRebirthN })}</div>`
+  const ready = _empowerReady();
+  const multHint = (!capped && mult > 1)
+    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('empowerMultFmt', { n: nextN, mult })}</div>`
+    : '';
+  const capHint = capped
+    ? `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#eb4e61">${tVars('empowerCapFmt', { max: EMPOWER_MAX })}</div>`
     : '';
   const hubHint = _inHub() ? '' :
-    `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#f88">${t('rebirthNeedHubLbl')}</div>`;
+    `<div style="padding:0 12px 10px;font-size:12.5px;font-weight:700;color:#f88">${t('empowerNeedHubLbl')}</div>`;
 
   el.innerHTML = `
-    <div class="sec-title">${t('rebirthTabLbl')}</div>
-    <div style="padding:0 12px 10px;font-size:12.5px;color:#a2988a;line-height:1.55">${t('rebirthDesc')}</div>
+    <div class="sec-title">${t('empowerTabLbl')}</div>
+    <div style="padding:0 12px 10px;font-size:12.5px;color:#a2988a;line-height:1.55">${t('empowerDesc')}</div>
     <div style="padding:0 12px 12px;font-size:13px;font-weight:700;color:${lvlOk ? '#98e456' : '#f88'}">
-      ${tVars('rebirthLevelReqFmt', { lvl: REBIRTH_LEVEL, cur: player.lvl || 1 })}
+      ${tVars('empowerLevelReqFmt', { lvl: EMPOWER_LEVEL, cur: player.lvl || 1 })}
     </div>
     ${hubHint}
-    ${doubleHint}
+    ${capHint}
+    ${multHint}
     <div class="vip-items-row" style="padding:0 12px">${rows}</div>
     <div style="padding:16px 12px 20px">
-      <button class="upg-reset-btn${ready ? '' : ' disabled'}" onclick="${ready ? 'openRebirthConfirm()' : ''}">
-        ${t('rebirthBtn')}
+      <button class="upg-reset-btn${ready ? '' : ' disabled'}" onclick="${ready ? 'openEmpowerConfirm()' : ''}">
+        ${t('empowerBtn')}
       </button>
-      <div class="upg-reset-hint">${tVars('rebirthCountFmt', { n: player.rebirths || 0 })}</div>
+      <div class="upg-reset-hint">${tVars('empowerCountFmt', { n: done, max: EMPOWER_MAX })}</div>
     </div>`;
 }
 
-function openRebirthConfirm() {
-  if (!_rebirthReady()) return;
-  const existing = document.getElementById('rebirth-confirm-ov');
+function openEmpowerConfirm() {
+  if (!_empowerReady()) return;
+  const existing = document.getElementById('empower-confirm-ov');
   if (existing) existing.remove();
   const ov = document.createElement('div');
-  ov.id = 'rebirth-confirm-ov';
+  ov.id = 'empower-confirm-ov';
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
-    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('rebirthConfirmTitle')}</div>
-    <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:16px">${t('rebirthConfirmBody')}</div>
+    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">${t('empowerConfirmTitle')}</div>
+    <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:16px">${t('empowerConfirmBody')}</div>
     <div style="display:flex;gap:10px">
-      <button onclick="document.getElementById('rebirth-confirm-ov').remove()" style="
+      <button onclick="document.getElementById('empower-confirm-ov').remove()" style="
         flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
         color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
-      <button onclick="_confirmRebirth()" style="
+      <button onclick="_confirmEmpower()" style="
         flex:1;padding:11px;border:none;border-radius:10px;
         background:linear-gradient(135deg,#4a3410,#6b4a17);color:#e5aa52;
-        font-size:14px;font-weight:700;cursor:pointer">${t('rebirthGo')}</button>
+        font-size:14px;font-weight:700;cursor:pointer">${t('empowerGo')}</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
 }
 
-function _confirmRebirth() {
-  const ov = document.getElementById('rebirth-confirm-ov');
+function _confirmEmpower() {
+  const ov = document.getElementById('empower-confirm-ov');
   if (ov) ov.remove();
-  if (typeof netRebirth === 'function') netRebirth();
+  if (typeof netEmpower === 'function') netEmpower();
 }
 
-function onRebirthDone() {
-  if (typeof updateRebirthUI === 'function') updateRebirthUI();
+function onEmpowerDone() {
+  if (typeof updateEmpowerUI === 'function') updateEmpowerUI();
   if (typeof updateUpgradeUI === 'function') updateUpgradeUI();
   if (typeof updateProfileUI === 'function') updateProfileUI();
   if (typeof updateInvUI === 'function') updateInvUI();
-  if (player) dmgNum(player.x, player.y - 30, t('rebirthDoneToast'), '#98e456');
+  if (player) dmgNum(player.x, player.y - 30, t('empowerDoneToast'), '#98e456');
 }
 
-function onRebirthError(msg) {
+function onEmpowerError(msg) {
   if (player) dmgNum(player.x, player.y - 30, msg || t('genericErrorLbl'), '#f88');
 }
 
@@ -2166,7 +2180,7 @@ function setInvTab(n) {
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
   if (n === 2) switchSkillTab(_activeSkillSubTab);
-  if (n === 3) updateRebirthUI();
+  if (n === 3) updateEmpowerUI();
 }
 
 // Chat floats above the world canvas and only makes sense while actually
@@ -2241,7 +2255,7 @@ function setTab(n) {
     if (n === 1) {
       if (_invTab === 1) updateProfileUI();
       else if (_invTab === 2) switchSkillTab(_activeSkillSubTab);
-      else if (_invTab === 3) updateRebirthUI();
+      else if (_invTab === 3) updateEmpowerUI();
       else updateInvUI();
     }
     if (n === 2) { setMapTab(); }
@@ -4841,7 +4855,7 @@ function _seasonTasksHTML() {
         <ul>${enhGearRows}</ul>
         <ul>
           <li>${tVars('season2AdvBookFmt', { n: st.advBookPoints || 300 })}</li>
-          <li>${tVars('season2RebirthFmt', { n: st.rebirthPoints || 500 })}</li>
+          <li>${tVars('season2EmpowerFmt', { n: st.empowerPoints || 500 })}</li>
           <li>${tVars('season2ShopFmt', { n: st.shopPointsPerGram || 100 })}</li>
           <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>
         </ul>
@@ -7268,15 +7282,17 @@ const _GRAM_SHOP_PKGS_UI = [
   // pkg300 ("Эпический"/"+Pack") used to sit here as the top regular-tab
   // tier. It's now sold only via the "+Pack" card on Профиль → Кошелёк
   // (_EPIC_PACK_PKG below) — see that comment for why.
-  // Перерождение tab — pure material packs (rebirth itself still happens
-  // from the Персонаж → Перерождение panel, see updateRebirthUI; these only
-  // grant the listed items).
-  { id:'rmat1', gram:25, get label() { return t('rebirthMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'rebirth',
-    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30  } },
-  { id:'rmat2', gram:40, get label() { return t('rebirthMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'rebirth',
-    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60  } },
-  { id:'rmat3', gram:80, get label() { return t('rebirthMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'rebirth',
-    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150 } },
+  // Усиление tab — pure material packs (the empowerment itself still happens
+  // from the Персонаж → Усиление panel, see updateEmpowerUI; these only grant
+  // the listed items). Зеркало серверного списка в server/shop.js — содержимое
+  // обязано совпадать до предмета, иначе витрина обещает одно, а приходит
+  // другое.
+  { id:'rmat1', gram:25, get label() { return t('empowerMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'empower',
+    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
+  { id:'rmat2', gram:40, get label() { return t('empowerMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'empower',
+    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
+  { id:'rmat3', gram:80, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
+    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
 ];
 
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
@@ -7530,10 +7546,10 @@ function closeGramShopPanel() {
 
 // "Паки" (the regular _GRAM_SHOP_PKGS_UI entries with no shopTab tag —
 // pkg1's "Базовый"/pkg10's "Стандарт" etc.) vs "Питомцы" (pet+cloak+artifact
-// bundles, _SPECIAL_PET_PKGS_UI) vs "Перерождение" (rmat1-3 — the same
-// _GRAM_SHOP_PKGS_UI array, tagged shopTab:'rebirth' — pure material packs
-// that only grant items; the actual rebirth is still done from the
-// Персонаж → Перерождение panel, see updateRebirthUI above).
+// bundles, _SPECIAL_PET_PKGS_UI) vs "Усиление" (rmat1-3 — the same
+// _GRAM_SHOP_PKGS_UI array, tagged shopTab:'empower' — pure material packs
+// that only grant items; the empowerment itself is still done from the
+// Персонаж → Усиление panel, see updateEmpowerUI above).
 let _shopTab = 'packs';
 
 function switchShopTab(tab) {
@@ -7551,8 +7567,8 @@ function _renderGramShopPanel() {
       ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
     </div>`;
   let body;
-  if (_shopTab === 'rebirth') {
-    body = _GRAM_SHOP_PKGS_UI.filter(pkg => pkg.shopTab === 'rebirth').map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
+  if (_shopTab === 'empower') {
+    body = _GRAM_SHOP_PKGS_UI.filter(pkg => pkg.shopTab === 'empower').map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   } else if (_shopTab === 'pets') {
     body = _SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('');
   } else {

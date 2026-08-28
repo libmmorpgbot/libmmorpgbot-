@@ -212,7 +212,7 @@ async function main() {
   has(card.body, ['username', 'telegramId', 'bm', 'banned', 'createdAt',
     'progress', 'balances', 'items', 'logs', 'seasonPoints', 'seasonLogs'],
     'картка гравця: пласка, з журналом і сезоном');
-  has(card.body.progress, ['lvl', 'charClass', 'bonusSP', 'rebirths'], 'картка: прогрес');
+  has(card.body.progress, ['lvl', 'charClass', 'bonusSP', 'empowers'], 'картка: прогрес');
   has(card.body.balances, ['gold', 'nexum', 'gram'], 'картка: баланси');
   has(card.body.items, ['inventory', 'equipment'], 'картка: речі');
   ok(card.body.player === undefined,

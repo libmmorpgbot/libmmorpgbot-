@@ -279,44 +279,66 @@ function xpTotalAt(lvl, xp) {
   return sum;
 }
 
-// ── Перерождение (Rebirth) ──────────────────────────────────────────────
-// Available once a character reaches REBIRTH_LEVEL: level resets to 1 and
-// the run starts over, in exchange for a flat, permanent REBIRTH_BONUS_SP
-// skill points that stick around across the reset (folded into bonusSP by
-// the caller — see the rebirth handler, server/index.js).
-const REBIRTH_LEVEL = 30;
-const REBIRTH_BONUS_SP = 15;
+// ── Усиление (Empowerment) ──────────────────────────────────────────────
+// Available once a character reaches EMPOWER_LEVEL. The level, the XP and the
+// upgrades are all left exactly as they are — an empowerment is purely a
+// purchase: it burns EMPOWER_COST worth of materials and grants a flat,
+// permanent EMPOWER_BONUS_SP skill points (folded into bonusSP by the caller —
+// see the empower handler, server/handlers/skills.js). Repeatable: the only
+// thing that changes between one empowerment and the next is the price.
+const EMPOWER_LEVEL = 30;
+const EMPOWER_BONUS_SP = 15;
 // box_uncommon/box_rare — BOX_DEF below. rece/recl — CRAFT_MATS' epic/
-// legendary recipe scrolls.
-const REBIRTH_COST = { box_uncommon: 10, box_rare: 5, rece: 100, recl: 30 };
-// Every 5th rebirth (the 5th, 10th, 15th, ...) costs double. `rebirths` is
-// the count BEFORE this rebirth (player.rebirths/_lastStats.rebirths) — the
-// rebirth about to happen is rebirths+1, coerced to a Number first (a
-// non-numeric value here, e.g. a string surviving from an old save, would
-// silently break the % check: "4"+1 is the string "41", not 5). Single
-// source both sides read (server/index.js's rebirth handler, js/ui.js's
-// rebirth panel) so the cost shown can never drift from what actually gets
-// charged.
-function rebirthCostFor(rebirths) {
-  const n = Math.max(0, Math.floor(Number(rebirths)) || 0);
-  const mult = (n + 1) % 5 === 0 ? 2 : 1;
+// legendary recipe scrolls. norm_stone — CRAFT_MATS' ordinary enhance stone.
+const EMPOWER_COST = {
+  box_uncommon: 10, box_rare: 5, rece: 100, recl: 30, norm_stone: 20,
+};
+// No more than EMPOWER_MAX empowerments total — the price ladder below has
+// nothing past its last tier, and this is what the empower handler
+// (server/handlers/skills.js) and the empower panel (js/ui.js) both gate on.
+const EMPOWER_MAX = 30;
+
+// Price scales in tiers by empowerment NUMBER (1-based — the 1st, 2nd, ...),
+// not per-empowerment doubling: empowerments 1-4 cost the base price, 5-9
+// cost ×2, 10-14 ×4, 15-19 ×8, 20-24 ×26, 25-30 ×40. Ranges are inclusive on
+// both ends and cover every number up to EMPOWER_MAX; nothing exists past it.
+const EMPOWER_TIERS = [
+  { upTo: 4, mult: 1 },
+  { upTo: 9, mult: 2 },
+  { upTo: 14, mult: 4 },
+  { upTo: 19, mult: 8 },
+  { upTo: 24, mult: 26 },
+  { upTo: EMPOWER_MAX, mult: 40 },
+];
+// `n` is the empowerment NUMBER (1-based), i.e. already empowers+1 — see
+// empowerCostFor below for why the +1 happens there and not here.
+function empowerMultFor(n) {
+  for (const { upTo, mult } of EMPOWER_TIERS) if (n <= upTo) return mult;
+  return EMPOWER_TIERS[EMPOWER_TIERS.length - 1].mult;
+}
+// `empowers` is the count BEFORE this empowerment (player.empowers/
+// _lastStats.empowers) — the empowerment about to happen is empowers+1, coerced
+// to a Number first (a non-numeric value here, e.g. a string surviving from
+// an old save, would silently break the tier lookup: "4"+1 is the string "41",
+// not 5). Single source both sides read (the empower handler,
+// server/handlers/skills.js, and js/ui.js's empower panel) so the cost shown
+// can never drift from what actually gets charged.
+function empowerCostFor(empowers) {
+  const n = Math.max(0, Math.floor(Number(empowers)) || 0);
+  const mult = empowerMultFor(n + 1);
   const out = {};
-  for (const [id, need] of Object.entries(REBIRTH_COST)) out[id] = need * mult;
+  for (const [id, need] of Object.entries(EMPOWER_COST)) out[id] = need * mult;
   return out;
 }
 
-// Skill points a character's level alone is worth — 3 per level, exactly as
-// before, UNLESS the account has rebirthed at least once AND hasn't yet
-// climbed back up to REBIRTH_LEVEL: until then, levelling grants no further
-// points (the flat REBIRTH_BONUS_SP from the rebirth itself, already folded
-// into bonusSP, is all there is), and the ordinary per-level curve resumes
-// exactly as if nothing had happened once level REBIRTH_LEVEL is reached
-// again. Both client (getAvailableSkillPoints, js/player.js) and server
-// (_sanitizeSavedStats' upgrades budget, server/index.js) call this so the
-// two can't drift apart — same reasoning as xpToNext above.
-function skillPointBudget(lvl, rebirths) {
+// Skill points a character's level alone is worth — a flat 3 per level. An
+// empowerment does not touch the level (it only grants bonusSP), so nothing
+// bends this curve any more. Both client (getAvailableSkillPoints,
+// js/player.js) and server (_sanitizeSavedStats' upgrades budget,
+// server/anticheat.js) call this so the two can't drift apart — same
+// reasoning as xpToNext above.
+function skillPointBudget(lvl) {
   const L = Math.max(1, Math.floor(lvl) || 1);
-  if ((rebirths || 0) > 0 && L < REBIRTH_LEVEL) return 0;
   return L * 3;
 }
 
@@ -325,31 +347,21 @@ function skillPointBudget(lvl, rebirths) {
 // every one of them is read through the functions below so client and server
 // can never disagree on the answer:
 //
-//   skillPointBudget(lvl, rebirths)  what the level curve is worth right now
-//   bonusSP                          permanently GRANTED extra points — the
-//                                    flat REBIRTH_BONUS_SP per rebirth, plus
-//                                    whatever the GRAM shop/admin handed out
-//   keptSP                           points already COMMITTED to upgrades that
-//                                    a rebirth carried across the level reset
+//   skillPointBudget(lvl)  what the level curve is worth right now
+//   bonusSP                permanently GRANTED extra points — the flat
+//                          EMPOWER_BONUS_SP per empowerment, plus whatever the
+//                          GRAM shop/admin handed out
+//   keptSP                 points already COMMITTED to upgrades that a level
+//                          reset carried across
 //
-// Splitting bonusSP and keptSP is what makes a rebirth worth exactly its
-// advertised reward. A rebirth keeps the upgrades a player already bought
-// while resetting the level that paid for them, so the spend sits above what
-// the (now level-1) character could earn. bonusSP used to be topped up to
-// cover that spend — and because the level curve pays for those same levels
-// AGAIN once REBIRTH_LEVEL is re-climbed, every cycle quietly handed out a
-// free REBIRTH_LEVEL*3 (90) points on top of the flat reward, with the whole
-// banked total falling out as spendable the moment Улучшения → Сбросить
-// cleared the map.
-//
-// keptSP carries that commitment instead, and it is subtracted from BOTH
-// sides of the sum below: the carried spend does not count against the
-// player, and neither does the part of the returning level curve that pays
-// for it. So the reward is spendable the instant the rebirth lands, the
-// re-climb to REBIRTH_LEVEL pays for the kept upgrades rather than for a
-// second copy of them, and from REBIRTH_LEVEL upward the total is exactly
-// skillPointBudget(lvl, rebirths) + bonusSP again — the same number anyone
-// else at that level has, plus REBIRTH_BONUS_SP per rebirth.
+// keptSP is legacy. The only thing that ever reset a character's level while
+// keeping the upgrades it had paid for was Перерождение, the feature
+// Усиление replaced — an empowerment leaves the level alone, so nothing sets
+// keptSP above 0 any more. It is still read, and still subtracted from BOTH
+// sides of the sum below (the carried spend does not count against the
+// player, and neither does the part of the level curve that pays for it), so
+// records written while Перерождение was live keep adding up instead of
+// failing the anti-cheat ceiling and losing their upgrades map.
 function spentSkillPoints(upgrades) {
   if (!upgrades || typeof upgrades !== 'object') return 0;
   return Object.values(upgrades)
@@ -368,7 +380,7 @@ function availableSkillPoints(st) {
   // field, _sanitizeSavedStats clamps it, and this is the third line of
   // defence — a stale keptSP must not become spendable capacity).
   const kept   = Math.min(Math.max(0, Math.floor(Number(st.keptSP)) || 0), spent);
-  const budget = skillPointBudget(st.lvl, st.rebirths);
+  const budget = skillPointBudget(st.lvl);
   return Math.max(0, bonus + Math.max(0, budget - kept) - (spent - kept));
 }
 
@@ -377,18 +389,41 @@ function availableSkillPoints(st) {
 // uses this — spending is gated by availableSkillPoints above.
 function skillPointCeiling(st) {
   if (!st) return 0;
-  return skillPointBudget(st.lvl, st.rebirths)
+  return skillPointBudget(st.lvl)
     + Math.max(0, Math.floor(Number(st.bonusSP)) || 0)
     + Math.max(0, Math.floor(Number(st.keptSP)) || 0);
 }
 
-// One-time repair for records written before keptSP existed, when a rebirth
-// banked the kept spend into bonusSP instead. Everything above the flat
-// REBIRTH_BONUS_SP per rebirth that is currently committed to upgrades was
-// banked spend, so it moves into keptSP where it belongs; the flat rewards,
-// and any shop/admin grant that isn't sitting in the upgrades map, stay
-// spendable. The sum of the two fields is unchanged, so the anti-cheat
+// ── Legacy records: Перерождение ────────────────────────────────────────────
+// Усиление replaced Перерождение, which reset the character's level. Two
+// one-time repairs below carry those accounts forward. Both are run at login,
+// on the STORED record, before anything else reads it (see the auth handler,
+// server/handlers/auth.js).
+//
+// _LEGACY_REBIRTH_BONUS_SP is the flat reward Перерождение paid, frozen here
+// as the historical number this arithmetic has to undo. It is deliberately
+// NOT EMPOWER_BONUS_SP: retuning what an empowerment is worth today must not
+// change how a record written years ago is read.
+const _LEGACY_REBIRTH_BONUS_SP = 15;
+
+// Сам счётчик здесь не мигрируется. Перерождение хранило его в `rebirths`,
+// лестница цен читает `empowers`, и это одна и та же тальи — переродившийся
+// четыре раза находится на четырёх усилениях. В Postgres это делает
+// переименование колонки (server/db/migrations/016_empowers.sql), а записи из
+// Mongo переносит ETL (dev/etl.js) — оба переносят ЗНАЧЕНИЕ, а не имя, и
+// обоим не нужна функция, которую пришлось бы звать на каждом логине.
+
+// The skill points. Records written before keptSP existed had Перерождение
+// bank the kept spend into bonusSP instead. Everything above the flat
+// _LEGACY_REBIRTH_BONUS_SP per reset that is currently committed to upgrades
+// was banked spend, so it moves into keptSP where it belongs; the flat
+// rewards, and any shop/admin grant that isn't sitting in the upgrades map,
+// stay spendable. The sum of the two fields is unchanged, so the anti-cheat
 // ceiling a legacy record already passed still covers it.
+//
+// Reads `rebirths`, not `empowers`: it runs on the raw stored record, and the
+// count it needs is the number of LEVEL RESETS that banked points, which is
+// exactly what the old field holds. Empowerments bank nothing.
 //
 // Returns null when there is nothing to do, so callers can skip the write.
 // Idempotent by construction: a record that carries a keptSP field at all —
@@ -400,7 +435,7 @@ function migrateKeptSP(st) {
   const bonusSP  = Math.max(0, Math.floor(Number(st.bonusSP)) || 0);
   if (rebirths <= 0) return { keptSP: 0, bonusSP };
   const banked = Math.max(0, Math.min(spentSkillPoints(st.upgrades),
-    bonusSP - REBIRTH_BONUS_SP * rebirths));
+    bonusSP - _LEGACY_REBIRTH_BONUS_SP * rebirths));
   return { keptSP: banked, bonusSP: bonusSP - banked };
 }
 
@@ -534,7 +569,7 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // Season 1 scored kills and burning; Season 2 drops the kill-quest grind
 // entirely and scores itemization/economy actions instead — enhancing gear,
 // crafting an advanced ("2 профессия") skill book, burning junk gear and
-// books, referring a friend, rebirthing, and buying on the market. Kept in
+// books, referring a friend, empowering, and buying on the market. Kept in
 // its own field (seasonPoints2, not the old seasonPoints) so Season 1's
 // final totals — already paid out — don't carry over as a Season 2 head
 // start.
@@ -592,14 +627,14 @@ const SEASON_BOOK_BURN_POINTS = 60;
 // Entering a scheduled event, and winning one. Read by mode-rewards.js and
 // shipped in seasonState so the season panel can name them alongside every
 // other source. Sized against their neighbours: below the referral bonus for
-// turning up, between the advanced book and a rebirth for taking the win.
+// turning up, between the advanced book and an empowerment for taking the win.
 const SEASON_EVENT_POINTS = 40;
 const SEASON_EVENT_WIN_POINTS = 400;
 const SEASON_REF_POINTS = 200;
 const SEASON_REF_LEVEL  = 20;
 
-// ── Перерождение ──────────────────────────────────────────────────────────
-const SEASON_REBIRTH_POINTS = 500;
+// ── Усиление ──────────────────────────────────────────────────────────────
+const SEASON_EMPOWER_POINTS = 500;
 
 // ── Покупка в магазине ────────────────────────────────────────────────────
 // Any GRAM shop purchase (server/shop.js's _GRAM_SHOP_PKGS — packages, pets,
@@ -2296,8 +2331,10 @@ function clanAtkBonusPct(level) { return clanBonusOf(level).atk; }
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
-  REBIRTH_LEVEL, REBIRTH_BONUS_SP, REBIRTH_COST, rebirthCostFor, skillPointBudget,
-  spentSkillPoints, availableSkillPoints, skillPointCeiling, migrateKeptSP,
+  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_COST, EMPOWER_MAX, EMPOWER_TIERS,
+  empowerMultFor, empowerCostFor, skillPointBudget,
+  spentSkillPoints, availableSkillPoints, skillPointCeiling,
+  migrateKeptSP,
   CLAN_LEVELS, clanAtkBonusPct, clanBonusOf,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
@@ -2308,7 +2345,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
-  SEASON_REBIRTH_POINTS,
+  SEASON_EMPOWER_POINTS,
   SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
   SEASON_RATING_MIN_POINTS, SEASON_PRIZES, SEASON_VIP_PRIZE,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,

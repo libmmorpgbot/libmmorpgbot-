@@ -71,7 +71,7 @@
 //
 //   THE CEILINGS  _SANITIZE_MAX (server/anticheat.js) is what bounded these
 //         numbers on the way in: gold 1e12, xp 1e12, lvl 1000, kills 1e9,
-//         bonusSP 1e6, rebirths 1e4, maxHp 1e7, qty 1e6, potions 1e5,
+//         bonusSP 1e6, empowers 1e4, maxHp 1e7, qty 1e6, potions 1e5,
 //         invLen 500, storageLen 200, buffDur 7200s. They are reproduced in
 //         MAX below because the PostgreSQL columns are narrower than a JS
 //         number: an unclamped forged value raises 22003 and takes the WHOLE
@@ -96,7 +96,7 @@ const { tx, query, close } = require('../server/db');
 const items = require('../server/db/repos/items');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCEABLE_SLOTS, isStackableItem,
-  CHAR_DEF, xpToNext, ENHANCE_MAX,
+  CHAR_DEF, xpToNext, ENHANCE_MAX, migrateKeptSP,
 } = require('../shared/definitions');
 
 const DRY = process.argv.includes('--dry');
@@ -192,7 +192,7 @@ const MAX = {
   gold: 1e12, gram: 1e12, nexum: 1e12,     // numeric(24,8)
   kills: 1e9, xp: 1e12,                    // bigint
   bm: 2147483647, hp: 1e7, floor: 100000,  // integer
-  questIdx: 100000, bonusSp: 1e6, rebirths: 1e4, upg: 1e5,
+  questIdx: 100000, bonusSp: 1e6, empowers: 1e4, upg: 1e5,
   qty: 1000000, potions: 1e5,
   vipDeposited: 1e12, seasonPoints: 1e15,
 };
@@ -254,9 +254,35 @@ function progressRow(sd) {
     xp: clampNum(sd.xp, 0, Math.min(xpToNext(lvl), MAX.xp)),
     kills: clampInt(sd.kills, 0, MAX.kills),
     hp: clampInt(sd.hp, 0, MAX.hp, 100),
-    bonusSp: clampInt(sd.bonusSP, 0, MAX.bonusSp),
-    keptSp: clampInt(sd.keptSP, 0, MAX.bonusSp),
-    rebirths: clampInt(sd.rebirths, 0, MAX.rebirths),
+    // ── keptSP: разовая починка ДО клампа, а не после ────────────────────
+    // Записи старше поля keptSP хранят перенесённую через сброс уровня трату
+    // внутри bonusSP. Скопировать их как есть — значит привезти в Postgres
+    // персонажа, у которого вложенные улучшения не покрыты ни кривой уровня,
+    // ни бонусом: анти-чит режет такую карту улучшений при первом же входе,
+    // и человек теряет всё, во что вложился.
+    //
+    // Наверху это делалось на каждом логине, потому что записи приходили по
+    // одной. У нас все записи проходят здесь ровно один раз — это и есть тот
+    // момент. Сумма bonusSP + keptSP не меняется, меняется только то, какая
+    // её часть считается свободной.
+    //
+    // migrateKeptSP читает СЫРУЮ запись, включая историческое поле rebirths:
+    // ему нужно число сбросов уровня, а не усилений. Возвращает null, если
+    // чинить нечего.
+    ...(() => {
+      const fix = migrateKeptSP(sd) || {};
+      const bonus = fix.bonusSP != null ? fix.bonusSP : sd.bonusSP;
+      const kept = fix.keptSP != null ? fix.keptSP : sd.keptSP;
+      return {
+        bonusSp: clampInt(bonus, 0, MAX.bonusSp),
+        keptSp: clampInt(kept, 0, MAX.bonusSp),
+      };
+    })(),
+    // Счётчик переехал из Перерождения в Усиление один к одному: игрок,
+    // переродившийся четыре раза, находится на четырёх усилениях, и его
+    // следующее — пятое. В Mongo поле называется rebirths, в Postgres —
+    // empowers; переносится значение, а не имя.
+    empowers: clampInt(sd.rebirths, 0, MAX.empowers),
     upg: {
       atk: clampInt(u.atk, 0, MAX.upg), def: clampInt(u.def, 0, MAX.upg), hp: clampInt(u.hp, 0, MAX.upg),
       atkSpeed: clampInt(u.atkSpeed, 0, MAX.upg), critChance: clampInt(u.critChance, 0, MAX.upg),
@@ -340,11 +366,11 @@ async function migratePlayer(doc, questIds = new Map()) {
     const pr = progressRow(sd);
     await query(t, `
       INSERT INTO player_progress (player_id, char_class, lvl, xp, kills, hp,
-        bonus_sp, kept_sp, rebirths,
+        bonus_sp, kept_sp, empowers,
         upg_atk, upg_def, upg_hp, upg_atk_speed, upg_crit_chance, upg_crit_power, upg_hp_regen,
         floor, pos_x, pos_y, quest_idx, quest_kills, buffs, potion_bag, codex, starter_bonus_claimed)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
-      [pid, pr.charClass, pr.lvl, pr.xp, pr.kills, pr.hp, pr.bonusSp, pr.keptSp, pr.rebirths,
+      [pid, pr.charClass, pr.lvl, pr.xp, pr.kills, pr.hp, pr.bonusSp, pr.keptSp, pr.empowers,
        pr.upg.atk, pr.upg.def, pr.upg.hp, pr.upg.atkSpeed, pr.upg.critChance, pr.upg.critPower, pr.upg.hpRegen,
        pr.floor, pr.x, pr.y, pr.questIdx, JSON.stringify(pr.questKills), JSON.stringify(pr.buffs),
        JSON.stringify(pr.potionBag), JSON.stringify(pr.codex), pr.starterBonus]);

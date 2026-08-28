@@ -55,7 +55,7 @@ const btn = (text, data) => ({ text, callback_data: data });
 async function load(id) {
   const { rows } = await query(null, `
     SELECT p.id, p.username, p.telegram_id, p.banned, p.bm,
-           g.lvl, g.xp, g.char_class, g.rebirths, g.floor
+           g.lvl, g.xp, g.char_class, g.empowers, g.floor
       FROM players p LEFT JOIN player_progress g ON g.player_id = p.id
      WHERE p.id = $1`, [id]);
   return rows[0] || null;
@@ -145,7 +145,7 @@ async function screenPlayer(id) {
       `<code>${esc(p.telegram_id)}</code>`,
       '',
       `Уровень <b>${p.lvl ?? '—'}</b> · ${esc(p.char_class || 'без класса')}`
-        + (p.rebirths ? ` · перерождений ${p.rebirths}` : ''),
+        + (p.empowers ? ` · усилений ${p.empowers}` : ''),
       st ? `Атака ${st.atk} · Защита ${st.def} · HP ${st.maxHp}` : '',
       '',
       `💰 Золото <b>${bal.gold}</b>`,

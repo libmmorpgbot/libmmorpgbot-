@@ -416,7 +416,7 @@ function _progress(r) {
     charClass: r.char_class,
     lvl: r.lvl, xp: Number(r.xp), xpNext: xpToNext(r.lvl),
     kills: Number(r.kills), hp: r.hp,
-    bonusSP: r.bonus_sp, keptSP: r.kept_sp, rebirths: r.rebirths,
+    bonusSP: r.bonus_sp, keptSP: r.kept_sp, empowers: r.empowers,
     upgrades: {
       atk: r.upg_atk, def: r.upg_def, hp: r.upg_hp,
       critChance: r.upg_crit_chance, critPower: r.upg_crit_power,
@@ -603,7 +603,7 @@ async function grantXp(db, playerId, amount) {
 // statement under the row lock taken by the SELECT, so two clicks arriving
 // together cannot both pass a check against the same remaining point.
 //
-// skillPointBudget(lvl, rebirths) + bonus_sp is the same function the client
+// skillPointBudget(lvl) + bonus_sp is the same function the client
 // uses to grey out the button, so the two can never disagree about how many
 // points exist.
 const UPG_COL = {
@@ -622,18 +622,18 @@ async function spendUpgrade(db, playerId, key) {
   // players.bm, and the kill path takes those two locks the other way round
   // (lockPlayer, then grantXp's FOR UPDATE) — buying a stat point while a kill
   // is in flight would be a lock cycle, which is the exact thing lockPlayer's
-  // "FIRST statement" rule exists to make impossible. rebirth below already
+  // "FIRST statement" rule exists to make impossible. empower below already
   // opens this way.
   await require('./items').lockPlayer(db, playerId);
 
   const { rows } = await query(db, `
-    SELECT lvl, rebirths, bonus_sp,
+    SELECT lvl, bonus_sp,
            upg_atk + upg_def + upg_hp + upg_atk_speed
          + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) return null;
   const r = rows[0];
-  const budget = skillPointBudget(r.lvl, r.rebirths) + r.bonus_sp;
+  const budget = skillPointBudget(r.lvl) + r.bonus_sp;
   if (Number(r.spent) >= budget) return null;          // no points left
 
   // The gold. money.spend fuses affordability and deduction into one
@@ -705,30 +705,39 @@ async function bumpSkill(db, playerId, kind, key) {
   return { level: rows[0].level, changed: true };
 }
 
-// ── rebirth ─────────────────────────────────────────────────────────────────
-// Resets the character to level 1 and grants permanent bonus skill points, in
-// exchange for a materials cost that grows with how many rebirths have already
-// happened. Everything in one transaction: the old handler consumed materials,
-// then reset the level, then granted the points, and a failure between any two
-// of those left a character that had paid and not been reset — or reset twice.
+// ── empower (Усиление) ──────────────────────────────────────────────────────
+// Grants permanent bonus skill points for a materials cost that grows with how
+// many empowerments have already happened. Everything in one transaction: the
+// materials must not leave the bag unless the points land, and the counter must
+// not advance unless both did — otherwise the price ladder steps forward for an
+// empowerment the player never got.
 //
-// keptSP is the subtlety. Points already spent on upgrades are PRESERVED across
-// a rebirth, so the reset must not simply zero the upgrades: it moves what was
-// committed into kept_sp, leaving the total the player controls unchanged.
-// Getting that wrong in either direction either steals progression or doubles it.
-async function rebirth(db, playerId, cost, { minLevel, bonusSp }) {
+// Nothing is reset. This replaced Перерождение, which dropped the character to
+// level 1 and moved the committed upgrade spend into kept_sp; an empowerment
+// leaves level, XP, stats and upgrades exactly as they are, so kept_sp is not
+// written here at all. It stays a read-only field carrying the records of
+// players who really did rebirth — see the note in shared/definitions.js.
+//
+// TWO ceilings are checked under the same row lock that charges: the level
+// floor and `maxCount`. The count check has to be here rather than in the
+// handler, because the handler reads the count outside the transaction: two
+// clicks racing on empowerment 30 would both pass a check made up there and
+// both charge.
+async function empower(db, playerId, cost, { minLevel, bonusSp, maxCount }) {
   const items = require('./items');
   await items.lockPlayer(db, playerId);
 
   const { rows } = await query(db, `
-    SELECT lvl, rebirths, bonus_sp, kept_sp,
-           upg_atk + upg_def + upg_hp + upg_atk_speed
-         + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
+    SELECT lvl, empowers, bonus_sp, kept_sp
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) throw Object.assign(new Error('Игрок не найден'), { code: 'no_player' });
   const st = rows[0];
   if (st.lvl < minLevel) {
     throw Object.assign(new Error(`Нужен ${minLevel} уровень`), { code: 'low_level', userMessage: `Нужен ${minLevel} уровень` });
+  }
+  if (maxCount != null && st.empowers >= maxCount) {
+    throw Object.assign(new Error('Достигнут предел усилений'),
+      { code: 'max_empowers', userMessage: `Больше ${maxCount} усилений не бывает` });
   }
 
   for (const [itemId, need] of Object.entries(cost)) {
@@ -739,27 +748,19 @@ async function rebirth(db, playerId, cost, { minLevel, bonusSp }) {
 
   const { rows: out } = await query(db, `
     UPDATE player_progress
-       SET lvl = 1, xp = 0,
-           rebirths = rebirths + 1,
+       SET empowers = empowers + 1,
            bonus_sp = bonus_sp + $2,
-           -- what was already committed stays committed, as kept points
-           kept_sp  = kept_sp + $3,
-           upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
-           upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
            updated_at = now()
      WHERE player_id = $1
-    RETURNING rebirths, bonus_sp, kept_sp`, [playerId, bonusSp, Number(st.spent)]);
+    RETURNING lvl, empowers, bonus_sp, kept_sp`, [playerId, bonusSp]);
 
-  // A rebirth is the single largest move a rating can make — level back to 1
-  // and every upgrade column zeroed — and it moves it DOWN, which is the
-  // direction nothing else here does. Left unwritten, a rebirthed character
-  // keeps its pre-rebirth place on the board indefinitely, because the next
-  // refresh is a level-up it now has to earn all over again.
-  await require('./stats').refreshBm(db, playerId);
+  // Боевая мощь не меняется — усиление не трогает ни уровень, ни улучшения, а
+  // только выдаёт нераспределённые очки. refreshBm сработает сам, когда игрок
+  // эти очки вложит: там же, где и любая другая покупка улучшения.
 
   return {
-    rebirths: out[0].rebirths, bonusSP: out[0].bonus_sp, keptSP: out[0].kept_sp,
-    lvl: 1, spentReturned: Number(st.spent),
+    empowers: out[0].empowers, bonusSP: out[0].bonus_sp, keptSP: out[0].kept_sp,
+    lvl: out[0].lvl,
   };
 }
 
@@ -791,7 +792,7 @@ async function resetUpgrades(db, playerId, cost) {
   if (!paid) throw Object.assign(new Error('Недостаточно Liberty'), { code: 'no_nexum', userMessage: 'Недостаточно Liberty' });
 
   // kept_sp goes with the map it was covering. It is the part of a previous
-  // rebirth's spend that the rebirth PRESERVED — emptying the upgrades ends
+  // Перерождение's spend that the reset PRESERVED — emptying the upgrades ends
   // that commitment, so leaving it set means the server keeps charging the
   // player for upgrades they no longer have. The client already zeroes its own
   // copy from this reply, so the two would silently disagree about how many
@@ -845,5 +846,5 @@ module.exports = {
   savePosition, setHp, setClass,
   grantXp, spendUpgrade,
   setSkillLevel, bumpSkill,
-  rebirth, resetUpgrades,
+  empower, resetUpgrades,
 };

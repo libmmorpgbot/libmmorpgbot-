@@ -551,7 +551,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
           name: rows[0].username, bm: rows[0].bm,
           charIcon: cd.icon || null, charColor: cd.color || null,
           className: cd.name || st.charClass,
-          lvl: st.level, rebirths: prog.rebirths,
+          lvl: st.level, empowers: prog.empowers,
           hp: Math.ceil(st.hp), maxHp: st.maxHp,
           atk: st.atk, def: st.def, atkSpeed: st.atkSpeed,
           critChance: st.critChance, critPower: st.critPower, hpRegen: st.hpRegen,
