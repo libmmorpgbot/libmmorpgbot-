@@ -1101,6 +1101,85 @@ async function walletChecks(w) {
   ok(txt('.gram-dep-watch-sub').indexOf('закрыть') >= 0,
      'и что окно можно закрыть (зачисление придёт push-ом, а не по нажатию)', txt('.gram-dep-watch-sub'));
 
+  // ── ПУЗЫРЬ ПОСЛЕДНЕГО СООБЩЕНИЯ ─────────────────────────────────────────
+  // Строка чата над кнопкой чата теперь стоит в раме A8_chat_bar — ассете со
+  // СКВОЗНОЙ серединой. Здесь два разных способа промахнуться, и оба видны
+  // только глазом на живом экране:
+  //
+  //   текст лёг НЕ В ОКНО, а на золотую оправу — окно у рамы 0.8844 × 0.6261,
+  //     и отступы обязаны совпасть с ним, иначе буквы уезжают на металл;
+  //   под окном нет тёмной подложки, и сквозь него видно подземелье — тогда
+  //     сообщение читается поверх монстров.
+  //
+  // Проверяется то, что реально посчитал браузер: getComputedStyle и
+  // getBoundingClientRect, а не формулы отсюда.
+  head('чат — сообщение попадает в окно рамы');
+  {
+    inject(w, `window.__rcChat = (function () {
+      const p = document.getElementById('chat-preview');
+      if (!p) return { ok: false };
+      // Показать принудительно: пузырь виден только при живом сообщении и
+      // открытой вкладке боя, а проверяем мы геометрию, а не условие показа.
+      const prev = p.style.display;
+      p.style.display = 'flex';
+      document.getElementById('chat-preview-name').textContent = 'Игрок:';
+      document.getElementById('chat-preview-text').textContent = 'Привет…';
+      const win = document.getElementById('chat-preview-win');
+      const cs = getComputedStyle(p);
+      const wcs = getComputedStyle(win);
+      const box = p.getBoundingClientRect();
+      const wb = win.getBoundingClientRect();
+      const name = document.getElementById('chat-preview-name').getBoundingClientRect();
+      const text = document.getElementById('chat-preview-text').getBoundingClientRect();
+      const out = {
+        ok: true,
+        w: Math.round(box.width), h: Math.round(box.height),
+        bg: cs.backgroundImage,
+        winBg: wcs.backgroundColor,
+        // Поле между краем рамы и окном.
+        padL: Math.round(wb.left - box.left),
+        padT: Math.round(wb.top - box.top),
+        contentTop: Math.round(Math.min(name.top, text.top) - box.top),
+        contentBot: Math.round(box.bottom - Math.max(name.bottom, text.bottom)),
+        contentL: Math.round(Math.min(name.left, text.left) - box.left),
+        contentR: Math.round(box.right - Math.max(name.right, text.right)),
+      };
+      p.style.display = prev;
+      return out;
+    })();`);
+    const r = w.__rcChat || { ok: false };
+    ok(r.ok, 'пузырь последнего сообщения есть в разметке');
+    if (r.ok) {
+      ok(/A8_chat_bar/.test(r.bg), 'фон — рама A8_chat_bar из комплекта, а не нарисованная коробка',
+         r.bg);
+      // Тёмная подложка под окном: без неё сквозь сквозную середину виден мир.
+      const _a = /rgba?\(([^)]+)\)/.exec(r.winBg);
+      const _alpha = _a ? Number(_a[1].split(',')[3] ?? 1) : 0;
+      ok(_alpha > 0.8, `под окном непрозрачная подложка (${r.winBg})`,
+         'сквозь него будет видно подземелье, и текст ляжет на монстров');
+      // Пропорция ассета: 714 / 200 = 3.57.
+      const ratio = r.w / r.h;
+      ok(Math.abs(ratio - 3.57) < 0.06,
+         `рама держит свою пропорцию ${ratio.toFixed(2)} : 1 (ассет 3.57)`,
+         'растянута непропорционально — гайд к комплекту это запрещает');
+      // Окно рамы: 0.8844 ширины и 0.6261 высоты, по центру. Значит поле
+      // слева/справа = 5.78% ширины, сверху/снизу = 18.7% высоты.
+      const wantX = Math.round(r.w * 0.0578);
+      const wantY = Math.round(r.h * 0.187);
+      ok(Math.abs(r.padL - wantX) <= 2,
+         `боковой отступ ${r.padL} px совпадает с окном рамы (${wantX})`);
+      ok(Math.abs(r.padT - wantY) <= 2,
+         `верхний отступ ${r.padT} px совпадает с окном рамы (${wantY})`);
+      // И сам текст внутри этого поля, а не только padding правильный.
+      ok(r.contentTop >= wantY - 2 && r.contentBot >= wantY - 2,
+         `обе строки внутри окна по высоте (сверху ${r.contentTop}, снизу ${r.contentBot})`,
+         'текст вылез на золотую оправу');
+      ok(r.contentL >= wantX - 2 && r.contentR >= wantX - 2,
+         `и по ширине (слева ${r.contentL}, справа ${r.contentR})`,
+         'текст вылез на золотую оправу');
+    }
+  }
+
   // ── СРОК КОДА ────────────────────────────────────────────────────────────
   // «до якої години працює код поповнення має більш видно писати». Замерено
   // на этой же странице ДО правки, на 390×844: строка шла последней, 11px,
