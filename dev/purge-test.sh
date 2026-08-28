@@ -50,28 +50,51 @@ URL="postgresql://doadmin:$(enc "$PGPASS")@${HOST}:${PORT}/${DB}?sslmode=require
 PGCONNECT_TIMEOUT=15 psql "$URL" -tAc 'SELECT 1' >/dev/null 2>&1 || {
   echo "  ✗ Не подключился — проверь пароль (нужен doadmin)." >&2; exit 1; }
 
+# ── PURGE_ALL=1: снести ВСЁ, включая два настоящих аккаунта ──────────────
+# Обычный режим их бережёт — они и есть причина, по которой в SQL ниже стоит
+# `telegram_id NOT IN (...)`. Перед импортом из Mongo беречь их нельзя, и ровно
+# по той причине, по которой ETL идемпотентен: он ПРОПУСКАЕТ telegram_id,
+# который уже есть в Postgres. Оставленный аккаунт — это занятое место, на
+# которое настоящий игрок из Mongo не приедет, и он останется с тем состоянием,
+# которое накрутили прогоны проверок.
+#
+# Отдельным флагом, а не правкой шаблона: «удалить фикстуры» и «удалить всё» —
+# два разных действия, и второе не должно случаться по опечатке в регулярке.
+PURGE_ALL="${PURGE_ALL:-0}"
+if [ "$PURGE_ALL" = "1" ]; then
+  echo
+  echo "  ⚠ PURGE_ALL=1 — будут удалены ВСЕ аккаунты, включая настоящие."
+  echo "    Делается один раз, перед импортом из Mongo."
+  printf '  Напиши YES заглавными, чтобы продолжить: '
+  read -r CONFIRM
+  [ "$CONFIRM" = "YES" ] || { echo "  Отменено."; exit 1; }
+  echo
+fi
+
 echo "  До очистки:"
 psql "$URL" -tAc "SELECT '    аккаунтов: ' || count(*) FROM players"
-psql "$URL" -tA -f - <<'COUNTSQL'
+psql "$URL" -tA -v purge_all="$PURGE_ALL" -f - <<'COUNTSQL'
 SELECT '    из них тестовых: ' || count(*) FROM players
- WHERE (username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)'
-        OR telegram_id !~ '^[0-9]+$')
-   AND telegram_id NOT IN ('1199957588','8868342638');
+ WHERE (:'purge_all' = '1')
+    OR ((username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)'
+         OR telegram_id !~ '^[0-9]+$')
+        AND telegram_id NOT IN ('1199957588','8868342638'));
 COUNTSQL
 echo
 
 # One transaction: either the fixtures and their whole history go, or nothing
 # does. That is also what made the first failed run harmless — it stopped on a
 # foreign key with three DELETEs already issued, and rolled all of them back.
-psql "$URL" -v ON_ERROR_STOP=1 --single-transaction -f - <<'SQL'
+psql "$URL" -v ON_ERROR_STOP=1 -v purge_all="$PURGE_ALL" --single-transaction -f - <<'SQL'
 -- A tag, a slice of a pid, a role — or a telegram id that is not a number,
 -- which no real Telegram account can have. The two ids never touched whatever
 -- the pattern says are the two real admins.
 CREATE TEMP TABLE doomed AS
 SELECT id, username, telegram_id FROM players
- WHERE (username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)'
-        OR telegram_id !~ '^[0-9]+$')
-   AND telegram_id NOT IN ('1199957588','8868342638');
+ WHERE (:'purge_all' = '1')
+    OR ((username ~ '^([a-z]{2,6}-[0-9]{3,6}[_-])|^(probe_|tester$|999$)'
+         OR telegram_id !~ '^[0-9]+$')
+        AND telegram_id NOT IN ('1199957588','8868342638'));
 
 -- ── the guard ────────────────────────────────────────────────────────────
 -- Every table in the list below is there because its foreign key to players
