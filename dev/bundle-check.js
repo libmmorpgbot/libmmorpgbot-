@@ -182,6 +182,48 @@ function screenDims(fs, file) {
     'W не объявлена в списке через запятую без значения');
 }
 
+
+// ── ассеты HUD: объявлено = лежит на диске ────────────────────────────────
+// Тот же класс, что уже стоил 404 на images/airdrop.png: файл упомянут в
+// коде, нарисован в интерфейсе и не существует. Разница в том, что HUD
+// рисуется на canvas — картинка, которой нет, не даёт ни битой иконки, ни
+// строки в консоли, ни следа в журнале. Просто пустое место, каждый кадр.
+//
+// Проверяется в обе стороны. Лишний файл в images/hud/ — это не «ничего
+// страшного»: dev/deploy.sh возит на дроплет всё, что знает git, а таблицу
+// геометрии пишет генератор, и расхождение значит, что кто-то правил
+// сгенерированное руками.
+function hudArt(fs, artFile, ROOT) {
+  console.log('\n  ── ассеты HUD ──');
+  const src = fs.readFileSync(artFile, 'utf8');
+  const keys = [...src.matchAll(/^\s{2}([A-D]\d+_[a-z0-9_]+):\s*\{/gm)].map(m => m[1]);
+  ok(keys.length > 20, `таблица геометрии разобрана — ${keys.length} ассетов`,
+    'разбор не нашёл ничего: проверка ничего не значит');
+
+  const dir = path.join(ROOT, 'images', 'hud');
+  const onDisk = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter(f => f.endsWith('.webp')).map(f => f.replace(/\.webp$/, ''))
+    : [];
+  const missing = keys.filter(k => !onDisk.includes(k));
+  ok(missing.length === 0,
+    'каждый объявленный ассет лежит в images/hud/',
+    'нет файлов: ' + missing.join(', '));
+
+  const extra = onDisk.filter(f => !keys.includes(f));
+  ok(extra.length === 0,
+    'и наоборот — лишних файлов в images/hud/ нет',
+    'не объявлены в таблице: ' + extra.join(', '));
+
+  // Вес. Присланный комплект весил 48.8 МБ при том, что весь images/ игры
+  // до него — 19. Конвейер ужимает до сотен килобайт, и если однажды кто-то
+  // положит сюда исходники напрямую, узнать об этом надо здесь, а не по
+  // жалобе «игра не открывается с телефона».
+  let bytes = 0;
+  for (const f of onDisk) bytes += fs.statSync(path.join(dir, f + '.webp')).size;
+  const kb = Math.round(bytes / 1024);
+  ok(kb > 0 && kb < 1500, `скин HUD весит ${kb} КБ — влезает в мобильный трафик`,
+    `${kb} КБ: похоже, в images/hud/ легли исходники, а не выход dev/hud-assets.js`);
+}
 function main() {
   console.log('\nbundle-check\n');
 
@@ -267,6 +309,7 @@ function main() {
   // ever watched fail is indistinguishable from one that cannot.
   i18nCoverage(fs, process.env.I18N_FILE || path.join(ROOT, 'js', 'i18n.js'), espree);
   screenDims(fs, path.join(ROOT, 'js', 'state.js'));
+  hudArt(fs, path.join(ROOT, 'js', 'hudart.js'), ROOT);
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

@@ -3348,3 +3348,38 @@ canvas { display:block; width:100%; height:100%; }
   color: #b2a288; font-size: 12.5px; font-weight: 700; cursor: pointer;
 }
 .codex-more-btn:active { background: rgba(209,204,197,.12); }
+
+/* Ползунок прозрачности джойстика (Профиль → Звук). Дорожка тёмная, а
+   заполнение золотое — чтобы значение читалось без числа рядом. */
+.joy-alpha-row { display: flex; align-items: center; gap: 12px; padding: 4px 2px; }
+.joy-alpha-row input[type="range"] {
+  flex: 1; -webkit-appearance: none; appearance: none; height: 26px;
+  background: transparent; touch-action: manipulation;
+}
+.joy-alpha-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, #4a3a1c, #c9a86a);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.8);
+}
+.joy-alpha-row input[type="range"]::-moz-range-track {
+  height: 6px; border-radius: 3px;
+  background: linear-gradient(90deg, #4a3a1c, #c9a86a);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.8);
+}
+/* 26px, а не 14: пальцем по шестнадцати попадают через раз. */
+.joy-alpha-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; margin-top: -10px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f7e6bc, #a8873f);
+  box-shadow: 0 0 0 1.5px #2a2018, 0 2px 6px rgba(0,0,0,.7); cursor: pointer;
+}
+.joy-alpha-row input[type="range"]::-moz-range-thumb {
+  width: 26px; height: 26px; border: none; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #f7e6bc, #a8873f);
+  box-shadow: 0 0 0 1.5px #2a2018, 0 2px 6px rgba(0,0,0,.7); cursor: pointer;
+}
+.joy-alpha-row input[type="range"]:focus-visible { outline: 2px solid #f0cf83; outline-offset: 2px; }
+.joy-alpha-val {
+  font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 700;
+  color: #f0cf83; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums;
+}

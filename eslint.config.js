@@ -107,7 +107,11 @@ const VENDOR_GLOBALS = { io: 'readonly', PIXI: 'readonly', TON_CONNECT_UI: 'read
 // callback differently from the surrounding Node code in the same file, so
 // they get the union of both worlds rather than losing no-undef entirely for
 // a whole file over a few page.evaluate() bodies.
-const browserEvalFiles = ['dev/harness.js', 'dev/smoke.js', 'dev/remote-motion-check.js', 'dev/egress.js'];
+const browserEvalFiles = ['dev/harness.js', 'dev/smoke.js', 'dev/remote-motion-check.js', 'dev/egress.js',
+  // Обрезает и сжимает HUD-ассеты, и делает это canvas'ом в настоящем
+  // браузере: своего декодера PNG с альфой у Node здесь нет, а тянуть его
+  // ради разового конвейера — лишняя зависимость в проде.
+  'dev/hud-assets.js'];
 const nodeFiles = ['server/**/*.js', 'dev/**/*.js', 'shared/**/*.js', 'eslint.config.js'];
 const clientFiles = BUNDLE_FILES.map(f => f.replace(/\\/g, '/'));
 

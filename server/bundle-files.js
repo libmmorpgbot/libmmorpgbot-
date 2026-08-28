@@ -10,6 +10,9 @@ module.exports = [
   'shared/definitions.js',
   'shared/netcodec.js',
   'js/constants.js',
+  // Таблица геометрии HUD-ассетов. Генерируется dev/hud-assets.js и должна
+  // стоять раньше ui.js, который по ней рисует.
+  'js/hudart.js',
   'js/utils.js',
   'js/state.js',
   'js/icons.js',

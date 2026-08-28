@@ -2606,10 +2606,65 @@ function drawHeader() {
 // ─────────────────────────────────────────────────────────
 //  JOYSTICK
 // ─────────────────────────────────────────────────────────
+// ── прозрачность ──────────────────────────────────────────────────────────
+// Джойстик лежит поверх мира в нижней трети экрана — там, куда игрок идёт.
+// Непрозрачная база закрывает ровно то место, на которое он смотрит, когда
+// решает, куда шагнуть; поэтому прозрачность здесь не украшение, а
+// настройка управления, и её ставит игрок, а не я.
+//
+// В localStorage, а не на сервере: это свойство ЭКРАНА, а не аккаунта. На
+// телефоне под солнцем нужно плотнее, на планшете дома — легче, и синхрон
+// между устройствами тут был бы вредом.
+const JOY_ALPHA_MIN = 0.15, JOY_ALPHA_MAX = 1;
+let _joyAlpha = null;
+function joyAlpha() {
+  if (_joyAlpha === null) {
+    let v;
+    // Приватный режим и заблокированные куки бросают на самом ЧТЕНИИ, а не
+    // возвращают null. Непойманное — это чёрный экран вместо игры.
+    try { v = parseFloat(localStorage.getItem('liberty.joyAlpha')); } catch (e) { v = NaN; }
+    _joyAlpha = Number.isFinite(v) ? Math.min(JOY_ALPHA_MAX, Math.max(JOY_ALPHA_MIN, v)) : 0.62;
+  }
+  return _joyAlpha;
+}
+function setJoyAlpha(v) {
+  const n = Math.min(JOY_ALPHA_MAX, Math.max(JOY_ALPHA_MIN, Number(v)));
+  if (!Number.isFinite(n)) return;
+  _joyAlpha = n;
+  try { localStorage.setItem('liberty.joyAlpha', String(n)); } catch (e) { /* приватный режим */ }
+}
+
+// Пропорции сняты с присланного комплекта, а не подобраны: ручка A7 имеет
+// alpha bounds 603×610 в холсте 1254, база A6 — 1184×1189 там же, и гайд
+// прямо задаёт «вписати максимум у 430×430» для ручки на том же холсте.
+// 430/1184 и есть это число.
+const JOY_BASE_D = JOY_R * 2.12;
+const JOY_KNOB_D = JOY_BASE_D * 0.363;
+// Насколько ручка уезжает от центра. Меньше радиуса базы за вычетом
+// половины ручки — гайд: «зсув має залишати її в межах внутрішнього кола».
+const JOY_TRAVEL  = JOY_BASE_D * 0.29;
+
 let _joyKnobGrad = null, _joyKnobGradKx = null, _joyKnobGradKy = null;
 function drawJoystick() {
   const jc = joyCenter();
-  ctx.globalAlpha = 0.52;
+
+  // ── версия на ассетах ───────────────────────────────────────────────────
+  if (typeof hudDraw === 'function' && hudImg('A6_joystick_base')) {
+    const a = joyAlpha();
+    hudDraw(ctx, 'A6_joystick_base', jc.x, jc.y, JOY_BASE_D, JOY_BASE_D, a);
+    const kx = jc.x + joy.dx * JOY_TRAVEL, ky = jc.y + joy.dy * JOY_TRAVEL;
+    // Ручка плотнее базы и не опускается ниже половины: база может быть
+    // почти прозрачной, но то, ЧЕМ игрок целится, должно оставаться видимым.
+    hudDraw(ctx, 'A7_joystick_knob', kx, ky, JOY_KNOB_D, JOY_KNOB_D,
+      Math.min(1, Math.max(0.5, a + 0.25)));
+    return;
+  }
+
+  // ── запасной вид ────────────────────────────────────────────────────────
+  // Остаётся не для красоты: ассет — это сетевой запрос, и первые кадры
+  // после входа он ещё не пришёл. Джойстик, которого нет полсекунды, — это
+  // управление, которого нет полсекунды.
+  ctx.globalAlpha = joyAlpha();
   ctx.strokeStyle = 'rgba(209,204,197,.6)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(209,204,197,.07)';
   ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.strokeStyle = 'rgba(209,204,197,.18)'; ctx.lineWidth = 1;
@@ -2874,7 +2929,13 @@ function drawTargetButton() {
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, 20, hasTarget ? '#f17e8b' : '#a49783');
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y - tb.r * 0.18, 18, hasTarget ? '#f17e8b' : '#a49783');
+
+  // Подпись под прицелом. До неё кнопка была кружком с крестиком, и что
+  // она делает, приходилось выяснять нажатием — а нажатие в бою меняет
+  // цель, то есть цена вопроса «что это» была промахом по врагу.
+  hudGoldText(ctx, t('targetAbbrev'), tb.x, tb.y + tb.r * 0.52,
+    Math.round(tb.r * 0.44), { dim: !hasTarget });
 
   ctx.restore();
 }
@@ -3361,9 +3422,22 @@ function drawAutoToggle() {
   ctx.lineWidth = 1.5;
   roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
 
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // Тиснёное золото, а не плоская заливка. Кнопка лежит поверх мира и
+  // поверх подсвеченного аметиста: одноцветная надпись читается на одном
+  // фоне и пропадает на другом, а тиснение держит букву на любом — у него
+  // есть тёмный край снизу и светлая грань сверху.
+  //
+  // Зелёный для АВТО остался, но не заливкой текста, а точкой-индикатором
+  // рядом: цвет надписи теперь означает «это кнопка», а состояние режима
+  // сообщает отдельная метка. Иначе игрок, который не различает зелёный и
+  // оранжевый, не различает и режимы.
+  hudGoldText(ctx, autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'),
+    ab.x + ab.w / 2, ab.y + ab.h / 2, Math.round(ab.h * 0.44));
+  const dot = 3;
+  ctx.beginPath();
+  ctx.arc(ab.x + ab.w - dot * 2.2, ab.y + dot * 2.2, dot, 0, Math.PI * 2);
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
-  ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), ab.x + ab.w / 2, ab.y + ab.h / 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -7102,7 +7176,25 @@ function _renderSoundPicker() {
       </button>
     </div>
     <div style="font-size:11px;color:#82745b;margin-top:12px;text-align:center">${t('sfxHint')}</div>
+
+    <div class="gram-section-title" style="margin:18px 0 10px">${t('joyAlphaTitle')}</div>
+    <div class="joy-alpha-row">
+      <input id="joy-alpha" type="range" min="15" max="100" step="5"
+             value="${Math.round(joyAlpha() * 100)}"
+             oninput="_onJoyAlpha(this.value)" aria-label="${_escAttr(t('joyAlphaTitle'))}">
+      <span id="joy-alpha-val" class="joy-alpha-val">${Math.round(joyAlpha() * 100)}%</span>
+    </div>
+    <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('joyAlphaHint')}</div>
   `;
+}
+
+// Только число рядом с ползунком, без перерисовки вкладки: перерисовка
+// пересоздала бы сам input и увела бы палец с ползунка на первом же
+// движении.
+function _onJoyAlpha(v) {
+  setJoyAlpha(Number(v) / 100);
+  const out = document.getElementById('joy-alpha-val');
+  if (out) out.textContent = Math.round(joyAlpha() * 100) + '%';
 }
 
 function _setSfxMuted(v) {

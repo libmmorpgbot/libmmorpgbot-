@@ -771,7 +771,11 @@ Object.assign(I18N_UI, {
   enhChanceFmt: { ru: 'Шанс: {rate}%', en: 'Chance: {rate}%', uk: 'Шанс: {rate}%', es: 'Probabilidad: {rate}%', tr: 'Şans: %{rate}', pt: 'Chance: {rate}%' },
   maxEnhanceLbl: { ru: '✦ Максимальная заточка', en: '✦ Max enchant', uk: '✦ Максимальне гартування', es: '✦ Encantamiento máximo', tr: '✦ Maks. büyü', pt: '✦ Encantamento máximo' },
   equippedLbl: { ru: 'Надето', en: 'Equipped', uk: 'Одягнено', es: 'Equipado', tr: 'Kuşanıldı', pt: 'Equipado' },
-  autoModeAbbrev: { ru: 'АВТО', en: 'AUTO', uk: 'АВТО', es: 'AUTO', tr: 'OTO', pt: 'AUTO' },
+  // Ровно три знака во всех шести. Кнопка режима — 30 CSS-пикселей в
+  // поперечнике, и четвёртая буква в неё не входит: «АВТО» на четыре знака
+  // упиралось в золотую окантовку и обрезалось краем ассета.
+  autoModeAbbrev: { ru: 'АВТ', en: 'AUT', uk: 'АВТ', es: 'AUT', tr: 'OTO', pt: 'AUT' },
+  targetAbbrev:   { ru: 'ЦЕЛ', en: 'TGT', uk: 'ЦІЛ', es: 'OBJ', tr: 'HDF', pt: 'ALV' },
   autoSkillsHdr: { ru: 'Умения в АВТО', en: 'Skills in AUTO', uk: 'Уміння в АВТО', es: 'Habilidades en AUTO', tr: 'OTO’da yetenekler', pt: 'Habilidades no AUTO' },
   autoSkillsMasterLbl: { ru: 'Кастовать умения автоматически', en: 'Cast skills automatically', uk: 'Кастувати уміння автоматично', es: 'Lanzar habilidades automáticamente', tr: 'Yetenekleri otomatik kullan', pt: 'Usar habilidades automaticamente' },
   autoSkillsHint: { ru: 'В режиме АВТО персонаж сам применяет отмеченные умения — по одному раз в 1,2 с и только в бою. Лечащие — лишь ниже 70% HP.', en: 'In AUTO the character casts the ticked skills itself — one every 1.2s, and only in a fight. Healing ones only below 70% HP.', uk: 'У режимі АВТО персонаж сам застосовує позначені уміння — по одному раз на 1,2 с і лише в бою. Лікувальні — тільки нижче 70% HP.', es: 'En AUTO el personaje lanza solo las habilidades marcadas: una cada 1,2 s y solo en combate. Las de curación, solo por debajo del 70% de HP.', tr: 'OTO modunda karakter işaretli yetenekleri kendisi kullanır — 1,2 saniyede bir ve yalnızca savaşta. İyileştirme yetenekleri yalnızca %70 HP altında.', pt: 'No AUTO o personagem usa sozinho as habilidades marcadas — uma a cada 1,2 s e só em combate. As de cura, apenas abaixo de 70% de HP.' },
@@ -956,6 +960,8 @@ Object.assign(I18N_UI, {
   depositCodeExpiredTitle: { ru: 'Срок этого кода истёк', en: 'This code has run out', uk: 'Строк цього коду вичерпано', es: 'Este código ha caducado', tr: 'Bu kodun süresi doldu', pt: 'Este código expirou' },
   depositCodeExpiredDesc: { ru: 'Обновите его — код останется прежним, продлится только срок. Уже отправленный перевод зачислится в любом случае.', en: 'Refresh it — the code stays the same, only the window is extended. A transfer already sent is credited either way.', uk: 'Оновіть його — код лишиться тим самим, продовжиться лише строк. Уже надісланий переказ буде зараховано в будь-якому разі.', es: 'Actualízalo: el código no cambia, solo se amplía el plazo. Una transferencia ya enviada se acredita igualmente.', tr: 'Yenile — kod aynı kalır, yalnızca süresi uzar. Zaten gönderilmiş transfer yine de hesaba geçer.', pt: 'Atualize — o código continua o mesmo, só o prazo é estendido. Uma transferência já enviada é creditada de qualquer forma.' },
   depositCodeRefreshBtn: { ru: 'Обновить код', en: 'Refresh code', uk: 'Оновити код', es: 'Actualizar código', tr: 'Kodu yenile', pt: 'Atualizar código' },
+  joyAlphaTitle: { ru: 'Прозрачность джойстика', en: 'Joystick opacity', uk: 'Прозорість джойстика', es: 'Opacidad del joystick', tr: 'Joystick saydamlığı', pt: 'Opacidade do joystick' },
+  joyAlphaHint: { ru: 'Джойстик лежит поверх мира. Чем ниже, тем лучше видно, куда идёшь.', en: 'The stick sits over the world. Lower it to see where you are going.', uk: 'Джойстик лежить поверх світу. Чим нижче, тим краще видно, куди йдеш.', es: 'El joystick va sobre el mundo. Bájalo para ver hacia dónde vas.', tr: 'Joystick dünyanın üstünde durur. Düşürünce nereye gittiğin daha iyi görünür.', pt: 'O joystick fica sobre o mundo. Diminua para ver para onde você vai.' },
   closeLbl: { ru: 'Закрыть', en: 'Close', uk: 'Закрити', es: 'Cerrar', tr: 'Kapat', pt: 'Fechar' },
   // ── the deposit landing ───────────────────────────────────────────────────
   // What the player sees the instant 'gramDepositCredited' arrives. It is the
