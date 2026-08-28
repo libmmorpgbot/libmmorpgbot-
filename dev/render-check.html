@@ -327,6 +327,30 @@ async function run() {
   ok(r.decalKinds.indexOf('ring') >= 0, 'кольцевые пады и ворота собраны');
   ok(r.decalKinds.indexOf('wall') >= 0, 'барьеры зон собраны');
 
+  // ── орнамент HUD ──────────────────────────────────────────────────────
+  // Раскладка считается по таблице HUD_ART, а рисуется картинками. Таблица
+  // может быть на месте, а WebP не доехать — тогда гнёзда стоят правильно, но
+  // панели вокруг них нет, и на снимке это выглядит как «содержимое висит в
+  // пустоте». Молча такое пропускать нельзя: проверка обязана краснеть.
+  head('орнамент HUD');
+  for (let i = 0; i < 100; i++) {
+    inject(w, 'window.__rcArt = (typeof hudArtStatus === "function") ? hudArtStatus() : null;');
+    const a = w.__rcArt;
+    if (a && a.ready + a.failed >= a.total) break;
+    await new Promise(res => setTimeout(res, 50));
+  }
+  inject(w, 'window.__rcArt = (typeof hudArtStatus === "function") ? hudArtStatus() : null;');
+  const art = w.__rcArt;
+  ok(!!art, 'загрузчик орнамента есть в сборке');
+  if (art) {
+    ok(art.total > 0, `в таблице ${art.total} ассетов`);
+    ok(art.failed === 0, `ни один файл не отвалился (готово ${art.ready} из ${art.total})`,
+       `${art.failed} шт не загрузились — гнёзда встанут по местам, а панели вокруг них не будет`);
+    inject(w, 'window.__rcG2 = !!(typeof hudImg === "function" && hudImg("G2_wide_header_with_map"));');
+    ok(w.__rcG2, 'панель шапки G2 загружена и готова к отрисовке');
+  }
+  await frames(w, 3);
+
   inject(w, SHOT);
   say('  снимок кадра отправлен -> dev/_render-shot.png');
 
@@ -819,15 +843,43 @@ async function p_layout(w) {
     // Три блока делят одну полосу, и ширины у них связаны: столбец валют —
     // это то, что осталось между панелью и картой. Подгонять его отдельно
     // значит однажды получить наложение на узком экране.
+    // ── шапка одной панелью: содержимое обязано попадать В гнёзда ───────
+    // Гнёзда измерены конвейером по прозрачности, а не заданы руками, и
+    // содержимое кладётся под панель. Промах наружу виден сразу — иконка
+    // или полоса вылезает из-под золотой окантовки, — но заметить его можно
+    // только глазом на скриншоте. Здесь это числа.
     const L = hdrLayout();
     out.hdrH = HEADER_H;
-    out.curW = Math.round(L.cur.w);
-    out.curGapL = Math.round(L.cur.x - (L.panel.x + L.panel.w));
-    out.curGapR = Math.round(L.map.x - (L.cur.x + L.cur.w));
-    out.hdrRight = Math.round(W - (L.map.x + L.map.w));
-    // Доля полосы, занятая валютами: «почти всё свободное место» — это
-    // измеримо, а не на глаз.
-    out.curFill = Math.round(100 * L.cur.w / (L.map.x - (L.panel.x + L.panel.w)));
+    // W и H — глобали ИГРОВОГО кадра, а проверка живёт на странице харнеса.
+    // Их надо вынести наружу, а не читать снаружи: на первом прогоне эта
+    // строка уронила весь набор с «H is not defined».
+    out.screenW = W; out.screenH = H;
+    out.hdrOne = !!L.one;
+    if (L.one) {
+      // curSlots, не slots: под этим именем уже живёт число мест под бафы,
+      // и запись сюда молча роняла ту проверку.
+      out.curSlots = L.cur.length;
+      // Каждое гнездо целиком внутри панели.
+      const box = [L.map, L.portrait, L.hp, L.xp].concat(L.cur);
+      out.outside = box.filter(b =>
+        b.x < L.panel.x - 1 || b.y < L.panel.y - 1 ||
+        b.x + b.w > L.panel.x + L.panel.w + 1 ||
+        b.y + b.h > L.panel.y + L.panel.h + 1).length;
+      // Четыре гнезда валют идут слева направо и не пересекаются.
+      let mono = true, minField = 9999;
+      for (let i = 0; i + 1 < L.cur.length; i++) {
+        if (L.cur[i + 1].x <= L.cur[i].x + L.cur[i].w) mono = false;
+        minField = Math.min(minField, Math.round(L.cur[i + 1].x - (L.cur[i].x + L.cur[i].w)));
+      }
+      // У последнего поле идёт до окна карты.
+      minField = Math.min(minField,
+        Math.round(L.map.x - (L.cur[L.cur.length - 1].x + L.cur[L.cur.length - 1].w)));
+      out.curMono = mono;
+      out.curField = minField;
+      out.barW = Math.round(L.hp.w);
+      out.portraitD = Math.round(Math.min(L.portrait.w, L.portrait.h));
+      out.mapD = Math.round(Math.min(L.map.w, L.map.h));
+    }
 
     out.potTgt = Math.round(Math.hypot(pot.x - tgt.x, pot.y - tgt.y) - (pot.r + tgt.r));
     // По дуге, а не по прямоугольнику: верхний левый угол прямоугольника
@@ -901,15 +953,27 @@ async function walletChecks(w) {
   ok(lay.tgtFan >= 0, `цель не заходит на веер (${lay.tgtFan} px по дуге)`);
   ok(lay.potFan >= 0, `и зелье тоже (${lay.potFan} px по дуге)`);
 
-  head('шапка — три блока делят полосу без наложений');
-  ok(lay.curGapL >= 2 && lay.curGapR >= 2,
-     `столбец валют не наезжает ни на панель, ни на карту (${lay.curGapL} и ${lay.curGapR} px)`);
-  ok(lay.hdrRight >= 0, `карта не выходит за правый край (${lay.hdrRight} px)`);
-  ok(lay.curFill >= 80,
-     `валюты занимают ${lay.curFill}% свободного места между панелью и картой`,
-     'меньше восьмидесяти: полоса пустует, ради чего её и сужали');
-  ok(lay.hdrH <= 96, `шапка не выше 96 px (сейчас ${lay.hdrH})`,
-     'выше — это уже восьмая часть экрана телефона под четыре числа');
+  head('шапка — содержимое попадает в гнёзда панели');
+  ok(lay.hdrOne, 'шапка собрана одной панелью G2, а не тремя блоками',
+     'G2 не доехал — работает запасная раскладка, и остальные проверки не о ней');
+  if (lay.hdrOne) {
+    ok(lay.curSlots === 4, `четыре гнезда под валюты (${lay.curSlots})`);
+    ok(lay.outside === 0, 'ни одно гнездо не выходит за пределы панели',
+       `${lay.outside} шт`);
+    ok(lay.curMono, 'гнёзда валют идут слева направо и не пересекаются');
+    ok(lay.curField >= 24,
+       `под самое тесное число остаётся ${lay.curField} px`,
+       'меньше двадцати четырёх: пятизначный баланс туда не влезет');
+    ok(lay.portraitD >= 40, `портрет ${lay.portraitD} px — лицо различимо`);
+    ok(lay.mapD >= 60, `окно карты ${lay.mapD} px`);
+    ok(lay.barW >= 120, `полосы HP и XP длиной ${lay.barW} px`);
+    // Панель держит СВОЮ пропорцию, поэтому высота шапки — следствие ширины
+    // экрана, а не назначенное число. Проверяется потолок: если однажды
+    // придёт панель другой формы, шапка не должна съесть треть экрана.
+    ok(lay.hdrH <= lay.screenH * 0.20,
+       `шапка ${lay.hdrH} px — не больше пятой части экрана (${Math.round(lay.screenH * 0.20)})`,
+       'панель такой формы съедает слишком много: нужна другая пропорция');
+  }
 
   head('кошелёк GRAM — вкладка');
   inject(w, WALLET_SETUP);

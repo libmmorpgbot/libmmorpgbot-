@@ -3286,7 +3286,12 @@ window.addEventListener('load', () => {
     _uiBtnGrads = null;
     _partyHpGrads = null;
     _recalcEnemySimR();
+    // Высота шапки зависит от ширины экрана: панель одна и держит свою
+    // пропорцию. Пересчитывается ПЕРЕД updateJoyCenter — джойстик стоит от
+    // низа, но всё остальное в раскладке отсчитывается от HEADER_H.
+    if (typeof updateHeaderH === 'function') updateHeaderH();
     updateJoyCenter();
+    _hdrSlotsCache = null;
     if (dungeon) clampCamera();
   };
   _doResize = resize;
