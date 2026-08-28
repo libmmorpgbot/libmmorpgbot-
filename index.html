@@ -877,6 +877,26 @@ window.__reportClientError = function (where, message, stack) {
     // fetch" and would fill the alerts topic with reports about working code
     // on a working server.
     if (navigator.onLine === false) return;
+    // ── свёрнутая игра — это не поломка ──────────────────────────────────
+    // Владелец: «вируби нахєр такі баги, лиши тільки жорсткі».
+    //
+    // Когда WebView сворачивают, он отдаёт нулевой размер экрана, и всё, что
+    // считается от него, идёт следом: радиусы кнопок в минус, кадровый холст
+    // нулевой стороной. Причину чинит resize (js/game.js — ноль больше не
+    // принимается за размер), но у страницы, которая висит в фоне со
+    // мёртвым сокетом, нового кода нет и не будет: она не переподключается,
+    // а значит и serverBuild её не перезагрузит. Такая вкладка может писать
+    // сутками.
+    //
+    // Отсекается не по тексту ошибки, а по СОСТОЯНИЮ: страница скрыта или
+    // экран нулевой. Настоящая поломка рендера у видимой страницы с обычным
+    // размером доложится как прежде — иначе от канала не осталось бы
+    // никакой пользы, ради чего его и чистим.
+    if (where === 'frame' || where === 'world-blank') {
+      if (document.hidden) return;
+      var _a = document.getElementById('app');
+      if (_a && (!(_a.clientWidth > 0) || !(_a.clientHeight > 0))) return;
+    }
     // Two of the same message in a row are one problem, not two. The server
     // throttles as well; this stops the requests being made at all.
     const sig = where + '|' + String(message).slice(0, 120);

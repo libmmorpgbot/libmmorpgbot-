@@ -184,6 +184,33 @@ require('./static').mount(app, { floorRooms: world.floorRooms });
 // alerts topic as everything else, through the same throttle, so a broken
 // build cannot flood it.
 const _clientErrRate = new Map();       // ip -> { n, until }
+// ── чего в канал алертов пускать не нужно ────────────────────────────────
+// Владелец: «вируби нахєр такі баги, лиши тільки жорсткі».
+//
+// Свёрнутый WebView отдаёт нулевой размер экрана, и всё, что от него
+// считается, идёт следом: радиус кнопки уходит в минус, кадровый холст
+// получает нулевую сторону. Клиент это уже не присылает (см. фильтр по
+// document.hidden в index.html), но страница, которая висит в фоне со
+// мёртвым сокетом, НОВОГО КОДА НЕ ПОЛУЧИТ НИКОГДА: она не
+// переподключается, значит serverBuild её не перезагрузит, и писать она
+// может сутками. Отсечь такую можно только здесь.
+//
+// Список узкий и по формулировке самого движка, а не по подстроке вроде
+// 'canvas': это ровно те две ошибки, которые НЕВОЗМОЖНО получить при
+// ненулевом экране. Любая другая поломка рендера доложится как прежде —
+// канал чистят ради того, чтобы в нём снова было видно настоящее.
+const _CLIENT_NOISE = [
+  /radius provided \(-[\d.]+\) is negative/i,
+  /canvas element with a width or height of 0/i,
+  /^zero-viewport/i,
+];
+function _isClientNoise(where, message) {
+  const w = String(where || '');
+  if (w !== 'frame' && w !== 'world-blank') return false;
+  const m = String(message || '');
+  return _CLIENT_NOISE.some(re => re.test(m));
+}
+
 app.post('/client-error', (req, res) => {
   // Answered before anything else can go wrong. A reporting endpoint that
   // returns an error is a reporting endpoint that starts a loop.
@@ -198,6 +225,7 @@ app.post('/client-error', (req, res) => {
     // throttle inside ops.alert would collapse them anyway — this stops the
     // work before it is done rather than after.
     if (++b.n > 20) return;
+    if (_isClientNoise(req.body && req.body.where, req.body && req.body.message)) return;
     if (_clientErrRate.size > 2000) {
       for (const [k, v] of _clientErrRate) if (v.until < now) _clientErrRate.delete(k);
     }
@@ -1176,6 +1204,7 @@ io.on('connection', (socket) => {
     const now = Date.now();
     if (now - _cerrAt > 60000) { _cerrAt = now; _cerrN = 0; }
     if (++_cerrN > 10) return;               // a looping client is one problem
+    if (_isClientNoise(where, message)) return;
     const w = String(where || 'client').slice(0, 60);
     const msg = String(message || '').slice(0, 400);
     if (!msg) return;
