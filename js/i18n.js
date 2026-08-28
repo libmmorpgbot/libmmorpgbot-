@@ -738,7 +738,6 @@ Object.assign(I18N_UI, {
   keysStonesHdr: { ru: 'Ключи и камни', en: 'Keys & Stones', uk: 'Ключі та камені', es: 'Llaves y Piedras', tr: 'Anahtarlar ve Taşlar', pt: 'Chaves e Pedras' },
   gearRarityFmt: { ru: 'Экипировка ({rn})', en: 'Gear ({rn})', uk: 'Спорядження ({rn})', es: 'Equipo ({rn})', tr: 'Ekipman ({rn})', pt: 'Equipamento ({rn})' },
   skillBooksAllClassesHdr: { ru: 'Книги навыков (все классы)', en: 'Skill Books (all classes)', uk: 'Книги навичок (всі класи)', es: 'Libros de Habilidad (todas las clases)', tr: 'Yetenek Kitapları (tüm sınıflar)', pt: 'Livros de Habilidade (todas as classes)' },
-  advSkillBooksAllClassesHdr: { ru: 'Книги 2 профессии (все классы)', en: 'Advanced skill books (all classes)', uk: 'Книги 2 професії (всі класи)', es: 'Libros de 2ª profesión (todas las clases)', tr: '2. Meslek Kitapları (tüm sınıflar)', pt: 'Livros da 2ª profissão (todas as classes)' },
   passiveBooksAllClassesHdr: { ru: 'Книги пассивок (все классы)', en: 'Passive Books (all classes)', uk: 'Книги пасивок (всі класи)', es: 'Libros Pasivos (todas las clases)', tr: 'Pasif Kitaplar (tüm sınıflar)', pt: 'Livros Passivos (todas as classes)' },
   commonTag: { ru: 'общая', en: 'common', uk: 'загальна', es: 'común', tr: 'ortak', pt: 'comum' },
   spdAbbrev: { ru: 'СПД', en: 'SPD', uk: 'ШВД', es: 'VEL', tr: 'HIZ', pt: 'VEL' },

@@ -98,7 +98,8 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
 
   // Skill books — restricted to a 5-book pool (one per class) that rotates
   // with this monster's own level; see levelSkillBookPool (shared/
-  // definitions.js).
+  // definitions.js). BASE books only: the advanced ("2 профессия") ones are
+  // farm-zone/forge-only and never roll here, at any level.
   const _skillBookPool = levelSkillBookPool(rlvl);
   if (_skillBookPool.length) {
     if (eType === 'boss') {
@@ -138,8 +139,10 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
 // roll for a random advanced-skill book, picked from the killed species' own
 // pool (FARM_SPECIES_BOOKS) rather than the full 20-book catalog — different
 // species now drop different shards and books instead of all sharing one
-// pool. This is the ONLY way to get an advanced-skill book at all; it never
-// drops anywhere else.
+// pool. Together with Элитная фарм-зона (_rollFarm2Loot below) and the forge
+// craft (craftAdvSkillBook, server/handlers/craft.js — 10 base books at
+// ADV_SKILL_BOOK_CRAFT.chance), this is the only way to get an advanced-skill
+// book: ordinary corridor monsters never drop one (_rollMobLoot above).
 function _rollFarmZoneLoot(inv, eid) {
   const granted = [];
   function addMat(id, qty) {

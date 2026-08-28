@@ -2068,15 +2068,16 @@ function _monsterDropBodyHtml(e, floor, lvl) {
 
   // Skill books — restricted to a 5-book pool (one per class) that rotates
   // with this monster's own level; see levelSkillBookPool (shared/
-  // definitions.js). Eight consecutive levels cover the base Q/W/E/R books
-  // and then the advanced ("2 профессия") ones — same roll/pool the server
-  // rolls in _rollMobLoot (server/game/loot.js), so this list is exactly what
-  // this monster can actually drop, not the full 40-book catalog.
+  // definitions.js). Four consecutive levels cover all twenty base Q/W/E/R
+  // books — same roll/pool the server rolls in _rollMobLoot (server/game/
+  // loot.js), so this list is exactly what this monster can actually drop,
+  // not the full 20-book catalog. The advanced ("2 профессия") books are not
+  // in it and must not be advertised here: they come from the farm zones and
+  // the forge craft only (see _farmSpeciesBookRows/_farm2AdvBookRows below).
   let bookSection = '';
   {
     const pool = typeof levelSkillBookPool === 'function' ? levelSkillBookPool(lvl) : CRAFT_MATS.filter(m => m.skillKey);
     if (pool.length) {
-      const isAdv = pool.some(b => b.advSkillKey);
       const rows = pool.map(b => {
         const className = (CHAR_DEF[b.forClass] || {}).name || b.forClass;
         const label = `${b.name} <span style="opacity:.6">(${className})</span>`;
@@ -2084,7 +2085,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
           ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / pool.length * 0.001 * zoneMult)}</b>`, '#98e456')
           : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / pool.length * zoneMult * 100)}</b>`);
       }).join('');
-      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t(isAdv ? 'advSkillBooksAllClassesHdr' : 'skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
+      bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
   }
 

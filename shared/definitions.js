@@ -879,22 +879,31 @@ const CRAFT_MATS = [
 // one per class — picked by the monster's OWN LEVEL, and every pool below
 // cycles on that level alone. Which zone the monster stands in no longer
 // decides anything: whatever a level-70 monster can drop, some level between
-// 1 and 40 drops too.
+// 1 and 20 drops too.
 //
-//   skill books      8-level cycle: base Q/W/E/R, then advanced ("2
-//                    профессия") Q/W/E/R, wrapping every 8 levels
+//   skill books      4-level cycle: base Q/W/E/R, wrapping every 4 levels
 //   class passives   alternate by level: offense on odd levels, defense on
 //                    even ones (2 per class, so nothing else to cycle)
 //   universal ones   one per level, wrapping every 6
 //
-// The zone split this replaced — base books and offense passives in arms 1-2,
+// The advanced ("2 профессия") books are deliberately NOT in any of these
+// pools: they are a capstone unlock, and ordinary dungeon monsters are not a
+// source of them at any level. They drop in Фарм-зона (FARM_ADV_SKILL_BOOK_
+// CHANCE, split per species by FARM_SPECIES_BOOKS) and Элитная фарм-зона
+// (FARM2_ADV_SKILL_BOOK_CHANCE), and are crafted at the forge out of 10 base
+// books (ADV_SKILL_BOOK_CRAFT) — nowhere else. A short-lived tuning did put
+// them on an 8-level cycle alongside the base books, which made them drop in
+// the corridors from level 5 on; that is what this replaces.
+//
+// The zone split THAT replaced — base books and offense passives in arms 1-2,
 // advanced books and defense passives in arms 3-4 — meant half the catalog
 // simply did not exist below level 41 (a Тёмный панцирь could not drop
-// anywhere a character under 41 could stand) and the other half stopped
-// existing above it, while base books are exactly what a level-10 skill, and
+// anywhere a character under 41 could stand) and the base books stopped
+// existing above it, though base books are exactly what a level-10 skill, and
 // therefore the advanced unlock, still needs at that point. Cycling on the
-// level instead keeps each pool at 5 — the per-book odds are unchanged — and
-// makes every one of the 56 books reachable in either half of the game.
+// level keeps each pool at 5 — the per-book odds are unchanged — and makes
+// every one of the 36 monster-droppable books reachable in either half of the
+// game.
 //
 // Shared so the server's roll (_rollMobLoot, server/game/loot.js) and the
 // map's drop-info panel (_monsterDropBodyHtml, js/ui.js) can never drift
@@ -913,7 +922,6 @@ function _booksByClassAndKey(pred, keyField) {
   return out;
 }
 const _BASE_SKILL_BOOKS_BY_CLASS = _booksByClassAndKey(m => m.skillKey, 'skillKey');
-const _ADV_SKILL_BOOKS_BY_CLASS  = _booksByClassAndKey(m => m.advSkillKey, 'advSkillKey');
 const _BOOK_CLASSES = Object.keys(_BASE_SKILL_BOOKS_BY_CLASS);
 // [offense book, defense book] pair per class — _PASSIVE_BOOK_SRC above
 // always lists the offense-flavored book before the defense-flavored one for
@@ -924,13 +932,13 @@ CRAFT_MATS.filter(m => m.passiveId && m.forClass).forEach(m => {
 });
 const UNIVERSAL_PASSIVE_BOOKS = CRAFT_MATS.filter(m => m.passiveId && !m.forClass);
 
-// Steps 0-3 of the cycle are the base books, 4-7 the advanced ones, so any
-// eight consecutive monster levels — in any arm — offer all forty.
+// One skill key per level, wrapping every four, so any four consecutive
+// monster levels — in any arm — offer all twenty base books. Advanced books
+// are never returned here; see this section's comment for where they come
+// from instead.
 function levelSkillBookPool(rlvl) {
-  const step = Math.max(0, (Math.floor(rlvl) || 1) - 1) % (BOOK_SKILL_KEYS.length * 2);
-  const byClass = step < BOOK_SKILL_KEYS.length ? _BASE_SKILL_BOOKS_BY_CLASS : _ADV_SKILL_BOOKS_BY_CLASS;
-  const key = BOOK_SKILL_KEYS[step % BOOK_SKILL_KEYS.length];
-  return _BOOK_CLASSES.map(cls => byClass[cls] && byClass[cls][key]).filter(Boolean);
+  const key = BOOK_SKILL_KEYS[Math.max(0, (Math.floor(rlvl) || 1) - 1) % BOOK_SKILL_KEYS.length];
+  return _BOOK_CLASSES.map(cls => _BASE_SKILL_BOOKS_BY_CLASS[cls] && _BASE_SKILL_BOOKS_BY_CLASS[cls][key]).filter(Boolean);
 }
 // Odd level → the offense-flavored half, even level → the defense one, so
 // both are a room away from each other everywhere in the dungeon.
