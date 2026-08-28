@@ -102,7 +102,8 @@ BEGIN
   WHERE (f.tbl, f.col) NOT IN (
     ('ledger', 'player_id'), ('gram_tx', 'player_id'),
     ('market_listings', 'seller_id'), ('market_listings', 'buyer_id'),
-    ('clan_allocations', 'allocated_by')
+    ('clan_allocations', 'allocated_by'),
+    ('unmatched_deposits', 'resolved_player_id')
   );
   IF unhandled IS NOT NULL THEN
     RAISE EXCEPTION
@@ -124,6 +125,27 @@ DELETE FROM market_listings WHERE seller_id IN (SELECT id FROM doomed)
 -- Real-money requests. No cascade there on purpose: a deposit or a withdrawal
 -- must not be erasable as a side effect of removing an account.
 DELETE FROM gram_tx WHERE player_id IN (SELECT id FROM doomed);
+
+-- Money that arrived on chain and was placed by hand. The ROW never goes: it
+-- is the record that the transfer was seen, and a record of real money must
+-- not be erasable as a side effect of tidying up test accounts.
+--
+-- Nor is the pointer simply nulled. Migration 014 gives that state a meaning:
+-- `resolved_player_id IS NULL` WITH `resolved_at` SET reads as "an operator
+-- looked at this and deliberately declined". Nulling the column alone would
+-- rewrite "credited to X" into "declined" — silently, in a money record.
+--
+-- So the row goes back to OPEN, which is what is actually true once the
+-- account it was credited to stops existing: nobody holds this money any
+-- more and a human has to decide again. It cannot double-credit anyone —
+-- the first credit went to an account being deleted in the same transaction.
+--
+-- Today this matches zero rows (dev/unmatched-who.js: the only resolved row
+-- points at a live player). It exists so that the day a detector resolves
+-- one to a fixture, the purge keeps working instead of stopping here.
+UPDATE unmatched_deposits
+   SET resolved_player_id = NULL, resolved_at = NULL, resolved_by = NULL
+ WHERE resolved_player_id IN (SELECT id FROM doomed);
 
 -- An allocation a fixture handed to a REAL member: the member's pending claim
 -- is theirs and stays. Only the record of who granted it is forgotten, because
