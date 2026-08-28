@@ -6,6 +6,7 @@ const _isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 let _pixiApp = null;
 let _worldCt  = null;   // Container — camera transform applied here
 let _tileCt   = null;
+let _voidSpr  = null;   // TilingSprite — порода за краем карты
 let _lightsCt = null;   // torch flames + warm glow (pooled additive sprites — see _updateLights)
 let _aoeGfx   = null;   // AOE rings (Graphics, cleared each frame)
 let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
@@ -556,6 +557,7 @@ function pixiInit(canvasEl) {
   try { _hookGpuCounters(_pixiApp.renderer.gl); } catch (e) { /* headless / no gl */ }
 
   _worldCt  = new PIXI.Container();
+  _voidSpr  = _makeVoidSprite();
   _tileCt   = new PIXI.Container();
   _lightsCt = new PIXI.Container();
   _aoeGfx   = new PIXI.Graphics();
@@ -572,8 +574,10 @@ function pixiInit(canvasEl) {
   _wallCt   = new PIXI.Container();
   _dmgNumCt = new PIXI.Container();
 
+  // _voidSpr идёт ПЕРВЫМ ребёнком — под всеми тайлами. Он не часть мира и
+  // не двигается вместе с ним: это фон за краем карты (см. _makeVoidSprite).
   _worldCt.addChild(
-    _tileCt, _decalCt, _lightsCt, _aoeGfx,
+    _voidSpr, _tileCt, _decalCt, _lightsCt, _aoeGfx,
     _npcCt, _dropCt, _partCt,
     _enemyCt, _otherPCt, _projGfx, _projCt,
     _petCt, _playerCt, _wallCt, _dmgNumCt
@@ -667,10 +671,183 @@ function pixiRemoveOtherPlayer(sid) {
   pixiRemovePet(sid);
 }
 
+// ── что лежит за краем карты ───────────────────────────────────────────────
+// «карту переробити щоб кінець карти не була темнота».
+//
+// За последним тайлом этажа не было ничего: renderer.background.color, то есть
+// ровная заливка цветом темы. На краю коридора мир просто обрывался в плоскую
+// темноту, и глазу не за что было зацепиться — не «бездна», а невыкрашенный
+// холст.
+//
+// Теперь там текстура: тёмный камень с трещинами и крошкой, замощённый
+// TilingSprite'ом. Три причины делать её КОДОМ, а не файлом:
+//
+//   она подкрашивается под тему (tint) — у костяного склепа, грибных пещер и
+//     крепости големов «пустота» разного цвета, и один файл на всех выглядел
+//     бы наклейкой;
+//   256 × 256 в атласе — это ещё один запрос и ещё сотня килобайт трафика
+//     ради фона, который читается расфокусированным зрением;
+//   рисуется она один раз за сессию, не за кадр.
+//
+// Один draw call: TilingSprite повторяет одну текстуру аппаратно.
+const _VOID_TEX_PX = 512;
+let _voidTexture = null;
+function _voidTexture2D() {
+  if (_voidTexture) return _voidTexture;
+  const N = _VOID_TEX_PX;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const g = cv.getContext('2d');
+
+  // Основа СВЕТЛАЯ, хотя на экране порода тёмная. Цвет ей задаёт тинт, а
+  // тинт УМНОЖАЕТ: тёмная текстура, помноженная на тёмный цвет темы, даёт
+  // почти чистый чёрный — первый заход так и вышел, средняя яркость 5 из
+  // 255, то есть ровно та темнота, ради ухода от которой всё и делалось.
+  // Светлая основа отдаёт тинту полный диапазон, и результат — цвет темы,
+  // а не его квадрат.
+  g.fillStyle = '#b0a89c';
+  g.fillRect(0, 0, N, N);
+
+  // Детерминированный шум. Math.random() дал бы разный фон на разных
+  // устройствах — и, что важнее, разный на каждой перезагрузке у одного
+  // игрока, а фон, меняющийся сам по себе, читается как баг.
+  let seed = 0x9e3779b9;
+  const rnd = () => {
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;  seed >>>= 0;
+    return seed / 4294967296;
+  };
+
+  // ── шов ──────────────────────────────────────────────────────────────
+  // Плитка повторяется на экране примерно раз в 512 px, то есть чаще, чем
+  // раз на ширину телефона. Первый заход рисовал каждое пятно и каждую
+  // трещину по одному разу: у краёв они обрезались, и на экране была видна
+  // прямоугольная сетка швов — фон читался как обои, а не как порода.
+  //
+  // wrap рисует одну и ту же фигуру девять раз, со сдвигом на ±N по обеим
+  // осям. Всё, что вылезло за край, тем самым въезжает с противоположной
+  // стороны, и стык становится неотличим от середины.
+  const wrap = (draw) => {
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        g.save(); g.translate(ox * N, oy * N); draw(); g.restore();
+      }
+    }
+  };
+
+  // Пятна породы — крупные, мягкие и МАЛОКОНТРАСТНЫЕ. Контраст здесь
+  // работает против: он делает узор узнаваемым, а узнаваемый узор на
+  // повторяющейся плитке сразу выдаёт повтор.
+  for (let i = 0; i < 220; i++) {
+    const x = rnd() * N, y = rnd() * N;
+    const r = 20 + rnd() * 90;
+    const up = rnd() < 0.5;
+    const lum = 0.05 + rnd() * 0.10;
+    const col = up ? '255,248,236' : '46,39,32';
+    wrap(() => {
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, `rgba(${col},${lum.toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${col},0)`);
+      g.fillStyle = grad;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    });
+  }
+
+  // Трещины — короткие, тонкие и ломаные. Длинная трещина через полплитки
+  // становится приметой, по которой глаз и находит повтор.
+  g.lineCap = 'round';
+  for (let i = 0; i < 70; i++) {
+    const x0 = rnd() * N, y0 = rnd() * N;
+    const a = rnd() * Math.PI * 2;
+    const w = 0.5 + rnd() * 0.9;
+    const alpha = 0.10 + rnd() * 0.16;
+    const segs = 2 + Math.floor(rnd() * 3);
+    const jag = [];
+    let ang = a;
+    for (let k = 0; k < segs; k++) {
+      ang += (rnd() - 0.5) * 1.1;
+      jag.push([Math.cos(ang) * (9 + rnd() * 16), Math.sin(ang) * (9 + rnd() * 16)]);
+    }
+    wrap(() => {
+      g.strokeStyle = `rgba(28,23,19,${alpha.toFixed(3)})`;
+      g.lineWidth = w;
+      g.beginPath(); g.moveTo(x0, y0);
+      let x = x0, y = y0;
+      for (const [dx, dy] of jag) { x += dx; y += dy; g.lineTo(x, y); }
+      g.stroke();
+    });
+  }
+
+  // Крошка — мелкая, частая и еле заметная: она даёт поверхности зерно, по
+  // которому глаз читает камень, и при этом не образует различимых фигур.
+  for (let i = 0; i < 3000; i++) {
+    const x = rnd() * N, y = rnd() * N;
+    const dark = rnd() < 0.5;
+    g.fillStyle = dark
+      ? `rgba(40,34,28,${(0.05 + rnd() * 0.10).toFixed(3)})`
+      : `rgba(255,250,240,${(0.05 + rnd() * 0.10).toFixed(3)})`;
+    g.fillRect(x, y, 1, 1);
+  }
+
+  _voidTexture = PIXI.Texture.from(cv);
+  return _voidTexture;
+}
+
+
+function _makeVoidSprite() {
+  const spr = new PIXI.TilingSprite(_voidTexture2D(), 64, 64);
+  // Мир и так рисуется в масштабе ZOOM (родитель _worldCt), а текстура фона
+  // не должна вместе с ним расти: она мельче тайла, и на увеличении крошка
+  // превратилась бы в пятна.
+  spr.tileScale.set(1 / ZOOM);
+  return spr;
+}
+
+// Растянуть на весь экран и сдвинуть под камеру. Спрайт живёт ВНУТРИ
+// _worldCt, который смещён камерой, поэтому позиция компенсирует этот сдвиг —
+// иначе фон уезжал бы за экран вместе с миром и оставлял голый цвет очистки.
+//
+// tilePosition сдвигается на ДОЛЮ смещения камеры (_VOID_PARALLAX), а не на
+// всё: фон «за краем» глубже пола, и двигаться он должен медленнее. На 1.0 он
+// читался бы вторым полом, на 0 — приклеенной к экрану картинкой.
+const _VOID_PARALLAX = 0.35;
+function _updateVoid(camX, camY) {
+  if (!_voidSpr) return;
+  const w = _pixiApp.renderer.width / _pixiApp.renderer.resolution;
+  const h = _pixiApp.renderer.height / _pixiApp.renderer.resolution;
+  // Из экранных координат в координаты _worldCt: он сдвинут на -cam*ZOOM и
+  // масштабирован на ZOOM, поэтому делим.
+  _voidSpr.x = camX;
+  _voidSpr.y = camY - HEADER_H / ZOOM;
+  _voidSpr.width = w / ZOOM;
+  _voidSpr.height = h / ZOOM;
+  _voidSpr.tilePosition.x = -camX * _VOID_PARALLAX / ZOOM;
+  _voidSpr.tilePosition.y = -camY * _VOID_PARALLAX / ZOOM;
+}
+
 function pixiResize(w, h, dpr) {
   if (!_pixiApp) return;
   _pixiApp.renderer.resolution = dpr;
   _pixiApp.renderer.resize(w, h);
+}
+
+// Цвет темы, поднятый до уровня, на котором порода ВИДНА, но заметно темнее
+// пола. Порода лежит ГЛУБЖЕ пола, и если она с ним вровень по яркости —
+// читается вторым полом, а край карты снова перестаёт быть краем.
+//
+// Числа подобраны по замеру на живом кадре, а не на глаз: тинт умножает
+// светлую основу текстуры (0xb0 ≈ 0.69), и при ×3 + 0x30 порода выходила
+// ярче пола. Здесь она садится примерно на две трети его яркости.
+//   0x1c — пол яркости: у самых тёмных тем (#0a0c10) собственного цвета
+//          почти нет, и без него порода ушла бы обратно в черноту;
+//   ×2   — сохраняет ОТТЕНОК темы: у грибных пещер он фиолетовый, у крепости
+//          големов рыжий, и это должно остаться заметно.
+function _voidTint(cssHex) {
+  const n = parseInt(String(cssHex).replace('#', ''), 16);
+  if (!Number.isFinite(n)) return 0x342e28;
+  const up = c => Math.min(255, Math.round(c * 2) + 0x1c);
+  return (up((n >> 16) & 255) << 16) | (up((n >> 8) & 255) << 8) | up(n & 255);
 }
 
 function pixiSetBg(cssHex) {
@@ -2174,7 +2351,16 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _gpuFrameStart();
 
   const bgCol = theme ? theme.bg : '#060610';
-  if (bgCol !== _lastBgColor) { pixiSetBg(bgCol); _lastBgColor = bgCol; }
+  if (bgCol !== _lastBgColor) {
+    pixiSetBg(bgCol);
+    // Тем же цветом подкрашивается и текстура за краем карты — одна серая
+    // порода на все этажи читалась бы наклейкой поверх темы. Множитель
+    // поднимает её над цветом очистки: тинт умножает, и в чистый цвет темы
+    // текстура ушла бы обратно в плоскую темноту, ради ухода от которой она
+    // и появилась.
+    if (_voidSpr) _voidSpr.tint = _voidTint(bgCol);
+    _lastBgColor = bgCol;
+  }
   _worldCt.visible = true;
   _worldCt.x = -camX * ZOOM;
   _worldCt.y = HEADER_H - camY * ZOOM;
@@ -2182,6 +2368,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   const pulse    = 0.5 + 0.5 * Math.sin(ts * 0.009);
   const bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
 
+  _layer('void', () => _updateVoid(camX, camY));
   _layer('tiles', () => _updateTiles(camX, camY));
   _layer('lights', () => _updateLights(ts));
   _layer('aoe', () => _updateAoeRings());

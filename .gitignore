@@ -17,3 +17,6 @@ dev/.scratch/
 # render-check leaves a composited frame behind so a human can look at it;
 # it is a run artefact, not a fixture.
 dev/_render-shot.png
+# И второй — кадр НА КРАЮ карты: по снимку из середины этажа, где тайлы во
+# весь экран, ничего не скажешь о том, что лежит за последним тайлом.
+dev/_edge-shot.png

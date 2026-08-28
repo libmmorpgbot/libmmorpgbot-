@@ -131,13 +131,20 @@ http.createServer((req, res) => {
   // The harness POSTs a composited frame here so the run leaves a picture
   // behind, not just a list of assertions. 'It drew something' and 'it drew
   // the right thing' are different claims and only one of them is testable.
+  // /shot?edge=1 — второй снимок, кадр НА КРАЮ карты. Обычный снимок берётся
+  // из середины этажа, где тайлы во весь экран, и по нему нельзя сказать
+  // ничего о том, что лежит за последним тайлом.
+  // url выше уже без строки запроса (см. его объявление), поэтому флаг
+  // читается из req.url, а не из него: первый заход искал edge=1 там, где
+  // его отрезали, и оба снимка легли в один файл.
   if (url === '/shot' && req.method === 'POST') {
+    const edge = req.url.indexOf('edge=1') >= 0;
     let body = '';
     req.on('data', c => { body += c; });
     req.on('end', () => {
       const comma = body.indexOf(',');
       const b64 = comma >= 0 ? body.slice(comma + 1) : body;
-      const out = path.join(__dirname, '_render-shot.png');
+      const out = path.join(__dirname, edge ? '_edge-shot.png' : '_render-shot.png');
       fs.writeFileSync(out, Buffer.from(b64, 'base64'));
       console.log('  снимок кадра -> ' + out + ' (' + (b64.length / 1365).toFixed(0) + ' KB)');
       send(200, 'text/plain', 'ok');

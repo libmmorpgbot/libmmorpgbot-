@@ -144,6 +144,37 @@ const SHOT = `(function () {
   x.send(out.toDataURL("image/png"));
 })();`;
 
+// Кадр НА КРАЮ этажа: слева пол, справа то, что за последним тайлом. Камера
+// ставится к правой границе карты, а не в середину, — именно там видно, во
+// что упирается мир.
+const EDGE_SHOT = `(function () {
+  var world = document.getElementById("canvas");
+  // Камера наводится на настоящую границу ПОЛА, а не на край сетки. Сетка
+  // хаба 68 × 68, а комнаты занимают её середину: у правого края сетки пола
+  // нет вовсе, и первый заход снял кадр, целиком состоящий из породы —
+  // сравнивать её было не с чем.
+  //
+  // Ищется самый правый проходимый тайл на строке, где пол вообще есть.
+  var _row = -1, _col = -1;
+  for (var _y = Math.floor(dungeon.h / 2); _y < dungeon.h && _row < 0; _y++) {
+    for (var _x = dungeon.w - 1; _x >= 0; _x--) {
+      if (dungeon.grid[_y] && dungeon.grid[_y][_x]) { _row = _y; _col = _x; break; }
+    }
+  }
+  if (_row < 0) { _row = Math.floor(dungeon.h / 2); _col = Math.floor(dungeon.w / 2); }
+  // camX — ЛЕВЫЙ край видимого мира, а не центр. Полширины экрана назад от
+  // границы — и в кадре обе половины сразу.
+  var _half = (typeof W === 'number' ? W : 412) / ZOOM / 2;
+  pixiWorldRender(1 / 60, performance.now(),
+    _col * TILE - _half, _row * TILE - _half, getTheme(dungeonLvl));
+  var out = document.createElement("canvas");
+  out.width = world.width; out.height = world.height;
+  out.getContext("2d").drawImage(world, 0, 0, out.width, out.height);
+  var x = new XMLHttpRequest();
+  x.open("POST", "/shot?edge=1", true);
+  x.send(out.toDataURL("image/png"));
+})();`;
+
 // Load the REAL map of the real hub, through the client's own loader.
 //
 // A synthetic grid proves the renderer runs; it does not prove it runs on the
@@ -327,6 +358,85 @@ async function run() {
   ok(r.decalKinds.indexOf('ring') >= 0, 'кольцевые пады и ворота собраны');
   ok(r.decalKinds.indexOf('wall') >= 0, 'барьеры зон собраны');
 
+  // ── ЗА КРАЕМ КАРТЫ ──────────────────────────────────────────────────────
+  // «карту переробити щоб кінець карти не була темнота». За последним тайлом
+  // была ровная заливка цветом темы — не «бездна», а невыкрашенный холст.
+  //
+  // Проверяется не «слой добавлен», а то, что на краю КАРТИНКА МЕНЯЕТСЯ.
+  // Камера уводится далеко за угол этажа, где тайлов нет вообще, и снятые
+  // оттуда пиксели сравниваются с цветом очистки: если фон так и остался
+  // заливкой, все пиксели там одного цвета, и разброс равен нулю.
+  head('за краем карты — порода, а не заливка');
+  {
+    inject(w, `window.__rcVoid = (function () {
+      const cv = document.getElementById('canvas');
+      const g = cv.getContext('webgl2') || cv.getContext('webgl');
+      // Читает квадрат 48 × 48 из кадра и считает по нему яркость.
+      const patch = (px0, py0) => {
+        const px = new Uint8Array(48 * 48 * 4);
+        g.readPixels(px0, py0, 48, 48, g.RGBA, g.UNSIGNED_BYTE, px);
+        let min = 255, max = 0, sum = 0;
+        const seen = new Set();
+        for (let i = 0; i < px.length; i += 4) {
+          const lum = Math.round(0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]);
+          if (lum < min) min = lum;
+          if (lum > max) max = lum;
+          sum += lum;
+          seen.add((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+        }
+        return { min, max, avg: Math.round(sum / (px.length / 4)), colors: seen.size };
+      };
+      // Кадр НА ГРАНИЦЕ: слева пол, справа порода. Один и тот же кадр — иначе
+      // сравнивались бы разные условия освещения.
+      let row = -1, col = -1;
+      for (let y = Math.floor(dungeon.h / 2); y < dungeon.h && row < 0; y++) {
+        for (let x = dungeon.w - 1; x >= 0; x--) {
+          if (dungeon.grid[y] && dungeon.grid[y][x]) { row = y; col = x; break; }
+        }
+      }
+      if (row < 0) return null;
+      const half = (typeof W === 'number' ? W : 412) / ZOOM / 2;
+      pixiWorldRender(1 / 60, performance.now(),
+        col * TILE - half, row * TILE - half, getTheme(dungeonLvl));
+      // readPixels считает от НИЖНЕГО левого угла. Обе пробы на одной высоте,
+      // в середине кадра по вертикали: там нет ни шапки, ни нижней панели.
+      const my = Math.round(cv.height / 2) - 24;
+      return {
+        floor: patch(Math.round(cv.width * 0.18), my),
+        voidp: patch(Math.round(cv.width * 0.80), my),
+      };
+    })();`);
+    const vv = w.__rcVoid || {};
+    const v = vv.voidp || {};
+    const fl = vv.floor || {};
+    ok(!!vv.voidp, 'кадр на границе этажа снят');
+    if (vv.voidp) {
+      ok(v.colors > 8,
+         `за краем карты ${v.colors} различимых цветов, а не один`,
+         'ровно один — значит там по-прежнему плоская заливка цветом темы');
+      ok((v.max - v.min) > 6,
+         `у породы есть рельеф: разброс яркости ${v.max - v.min} (${v.min}..${v.max})`,
+         'плоско — текстура не доехала или ушла в чёрное под тинтом');
+      // Сравнение с ПОЛОМ в том же кадре, а не абсолютная полоса. Первый
+      // заход прошёл абсолютную проверку со средней яркостью 5 из 255 —
+      // формально «не заливка», на глаз всё та же чернота. Второй — с 56, и
+      // порода оказалась СВЕТЛЕЕ пола, то есть читалась вторым полом.
+      //
+      // Правило одно и оно про смысл: то, что за краем, лежит ГЛУБЖЕ пола и
+      // обязано быть темнее его — но не настолько, чтобы снова стать чернотой.
+      const rel = fl.avg ? v.avg / fl.avg : 0;
+      // 0.80, а не 0.85: на 0.85 проверка проходила при 84%, то есть при
+      // разнице, которой глаз не видит, — граница читалась не как граница, а
+      // как чуть другой пол.
+      ok(rel < 0.80,
+         `порода темнее пола: ${v.avg} против ${fl.avg} (${Math.round(rel * 100)}%)`,
+         'вровень или светлее — читается вторым полом, и край перестаёт быть краем');
+      ok(rel > 0.40,
+         `и всё же различима: ${Math.round(rel * 100)}% яркости пола`,
+         'меньше сорока процентов — это снова та самая темнота');
+    }
+  }
+
   // ── орнамент HUD ──────────────────────────────────────────────────────
   // Раскладка считается по таблице HUD_ART, а рисуется картинками. Таблица
   // может быть на месте, а WebP не доехать — тогда гнёзда стоят правильно, но
@@ -353,6 +463,8 @@ async function run() {
 
   inject(w, SHOT);
   say('  снимок кадра отправлен -> dev/_render-shot.png');
+  inject(w, EDGE_SHOT);
+  say('  снимок КРАЯ карты отправлен -> dev/_edge-shot.png');
 
   head('сторож чёрного экрана');
   inject(w, BLANK_PROBE);
