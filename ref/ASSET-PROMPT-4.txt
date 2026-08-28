@@ -1,0 +1,143 @@
+═══════════════════════════════════════════════════════════════════════════════
+  ПАРТИЯ 4 — ОДНА ШИРОКАЯ ПАНЕЛЬ ШАПКИ ВМЕСТО ТРЁХ
+  Прикладывать: ref/hud.png (стиль) + свежий скриншот шапки (что заменяем)
+═══════════════════════════════════════════════════════════════════════════════
+
+ЗАЧЕМ
+  Сейчас шапка — три отдельных блока: панель статов, столбец валют и карта.
+  Между ними щели, а четыре баланса не влезают в один ряд и стоят сеткой
+  2×2. Ряд при этом полупустой: полосы HP и XP короткие, а справа от них
+  воздух.
+
+  Нужна ОДНА широкая панель, которая занимает всю строку до карты и держит
+  внутри всё сразу: портрет, имя, длинные полосы HP и XP и четыре валюты
+  в ОДИН ряд. Карта остаётся отдельной (G1) — но пусть будет и вариант,
+  где она встроена в ту же панель (G2), выберем по виду.
+
+  Внутри — непрозрачная заливка: сквозь шапку не должно быть видно мира.
+
+КАКИЕ КАРТИНКИ ПРИЛОЖИТЬ
+  1. ref/hud.png              — образец стиля
+  2. свежий скриншот шапки    — три блока, щели между ними и валюты 2×2
+  Первая — стиль. Вторая — что заменяем и в какой пропорции.
+
+ЧТО ПРОВЕРИТЬ, КОГДА ПРИДЁТ
+  □ ни одной буквы и ни одной цифры
+  □ середина панели НЕПРОЗРАЧНАЯ, кроме перечисленных гнёзд
+  □ гнёзда (портрет, две канавки, четыре кружка валют) — сквозные
+  □ четыре кружка валют стоят в ОДИН ряд и одинакового размера
+  □ к каждому предмету есть описание: что это, пропорция, что сквозное
+
+
+===PROMPT===
+
+Use the attached game HUD mockup (the ornate dark-fantasy one) as the single
+style reference. The second screenshot shows the game as it is now — it is
+there to show what is being replaced and in what proportion.
+
+Produce two separate assets, G1 and G2.
+
+ABSOLUTELY NO TEXT. This overrides everything below. The panel is described as
+holding a name, health values and four balances — every one of those is written
+by the game engine at run time, in six languages, and changes while the game
+runs. A painted number makes the panel unusable, because the real one lands on
+top of it. Where a description mentions a name or a number, leave that area as
+plain empty background.
+
+  - no text, no letters, no numbers, no captions, no labels, no watermark
+  - no icons inside any socket — the engine puts them there
+  - no drop shadow onto the background, no ground plane, no scenery
+
+INTERIOR
+The body of the panel is OPAQUE: dark, even, slightly textured stone and glass
+filling everything inside the ornate border. The game world lies behind it and
+must not show through. Keep the surface calm — names, numbers and coloured bars
+are drawn over it.
+
+The only transparent parts are the sockets listed below. Each socket is a hole
+running through the asset, because the engine draws underneath it: a portrait,
+a coloured bar, a currency icon. Every socket has its own thin gold rim and a
+bevelled inner wall, so it reads as cut into the metal.
+
+STYLE
+Dark polished obsidian and carved dark stone. Warm antique gold and bronze
+trim, colour #c9a86a. Amethyst purple diamond-cut gems, colour #8b45d6, at the
+corners. Thin double-line gold border with small notched corners. Soft rim
+light from the upper left, gentle inner bevel, faint inner shadow where a
+socket meets the surface. Realistic rendered metal and stone; not flat vector,
+not cartoon outline, not neon.
+
+BACKGROUND AND ALPHA
+Transparent background around the panel and inside every socket. If the tool
+cannot output transparency, use pure magenta #FF00FF for both — never black,
+because the panel itself is almost black.
+
+LAYOUT OF THE SHEET
+The two assets side by side with a wide empty margin around each. Nothing
+touching. No grid lines, no labels. Highest resolution available.
+
+FOR EACH ASSET, ALSO WRITE A SHORT DESCRIPTION
+Number, what it is, aspect ratio, and a list of its sockets with their
+approximate positions as fractions of the panel — I place them by those.
+
+────────────────────────────────────────────────────────────────
+G1 — WIDE STAT AND CURRENCY PANEL, aspect about 3.6 : 1
+────────────────────────────────────────────────────────────────
+One horizontal panel. Opaque body, ornate gold border, an amethyst diamond at
+each of the four corners. Inside it, arranged like this:
+
+  • FAR LEFT — one large circular socket for the character portrait, about
+    0.80 of the panel's height, its centre about 0.11 of the panel's width
+    from the left. Around it a heavier engraved gold ring than the other
+    sockets have, because it frames a face.
+
+  • UPPER MIDDLE AND RIGHT — a plain empty band running from just right of
+    the portrait to the right edge, about 0.20 of the panel's height. The
+    player's name is written here by the engine. No socket, no ornament, just
+    clean surface.
+
+  • BELOW IT — two long horizontal grooves stacked one above the other, both
+    starting just right of the portrait and running almost to the right edge.
+    Each is a capsule-shaped hole with a thin gold rim and a bevelled wall.
+    The upper one is slightly taller than the lower one. Coloured bars are
+    drawn underneath them.
+
+  • ACROSS THE BOTTOM — four small circular sockets in ONE row, evenly spaced
+    across the FULL width of the panel including under the portrait, all the
+    same size, about 0.30 of the panel's height. Between each socket and the
+    next there is plain empty surface where a number is written. A thin
+    engraved gold divider separates this bottom strip from the grooves above.
+
+────────────────────────────────────────────────────────────────
+G2 — THE SAME PANEL WITH THE MAP BUILT IN, aspect about 4.6 : 1
+────────────────────────────────────────────────────────────────
+Everything from G1, but the panel is wider and its RIGHT END carries an
+additional large square socket for the minimap: about 0.86 of the panel's
+height, with its own heavier gold frame and an amethyst diamond above it,
+separated from the rest of the panel by an engraved vertical gold divider. The
+portrait, the name band, the two grooves and the four currency sockets all
+live to the LEFT of that divider and are compressed accordingly.
+
+===END PROMPT===
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЕСЛИ МОДЕЛЬ ПРОСИТ ПО ОДНОМУ ПРЕДМЕТУ ЗА РАЗ
+═══════════════════════════════════════════════════════════════════════════════
+Взять описание нужного и приклеить хвост:
+
+  , dark fantasy MMORPG interface header panel, style of the attached
+  reference, opaque dark stone and glass body, warm antique gold trim
+  #c9a86a, amethyst purple gems #8b45d6, every socket a transparent hole with
+  its own thin gold rim, soft rim light from upper left, realistic rendered
+  metal and stone, orthographic front view, single object centred, transparent
+  background, no text, no numbers, no icons, highest resolution
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЧТО ЭТО ЗАМЕНИТ
+═══════════════════════════════════════════════════════════════════════════════
+  G1 → F1 (панель статов) + F3 (четыре плашки валют), карта F2 остаётся
+  G2 → F1 + F3 + F2 разом, одной картинкой
+
+  Возьму то, что лучше сядет: у G2 меньше швов, но он жёстко задаёт долю
+  экрана под карту, а у G1 карту можно двигать и менять отдельно.
