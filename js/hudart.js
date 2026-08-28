@@ -64,4 +64,11 @@ const HUD_ART = {
   E7_round_button_teal: { src: [1254, 1254], off: [119, 119], box: [1016, 1016], out: [138, 138], css: 46 },
   E8_zone_banner_filled: { src: [2172, 1024], off: [136, 378], box: [1900, 268], out: [570, 80], css: 190 },
   E9_enemy_target_frame: { src: [2172, 1024], off: [187, 288], box: [1798, 448], out: [570, 142], css: 190 },
+  F1_character_stat_panel_opaque: { src: [2048, 1200], off: [124, 100], box: [1800, 1000], out: [516, 287], css: 172 },
+  F2_map_panel_opaque: { src: [1254, 1254], off: [167, 127], box: [920, 1000], out: [276, 300], css: 100 },
+  F3_currency_plate_opaque: { src: [2172, 1024], off: [161, 262], box: [1850, 500], out: [288, 78], css: 96 },
+  F4_enemy_target_panel_hostile: { src: [2172, 1024], off: [186, 287], box: [1800, 450], out: [600, 150], css: 200 },
+  F5_buff_rail_six_hollow: { src: [2172, 1024], off: [135, 353], box: [1902, 317], out: [396, 66], css: 132, slots: [[0.2771,0.5047,0.1083,0.5868], [0.7229,0.5047,0.1083,0.5868], [0.5733,0.5047,0.1078,0.5868], [0.4272,0.5047,0.1078,0.5868], [0.128,0.5047,0.1078,0.5868], [0.8717,0.5047,0.1083,0.5868]] },
+  F6_buff_slot_hollow: { src: [1254, 1254], off: [177, 177], box: [900, 900], out: [96, 96], css: 28, slots: [[0.5006,0.4983,0.6811,0.6833]] },
+  F7_count_badge_opaque: { src: [1254, 1254], off: [77, 377], box: [1100, 500], out: [102, 46], css: 34 },
 };

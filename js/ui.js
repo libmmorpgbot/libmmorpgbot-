@@ -2365,10 +2365,21 @@ function drawHeader() {
 
   // Панель статов и рамка карты — до всего, что в них ложится.
   if (hasArt) {
-    hudDraw(ctx, 'A1_stat_panel', LAY.panel.x + LAY.panel.w / 2,
-      LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h);
-    hudDraw(ctx, 'A2_map_panel', LAY.map.x + LAY.map.w / 2,
-      LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h);
+    // Непрозрачные версии из третьей партии. У A1/A2 середина сквозная —
+    // это правильно для рамки, под которую кладут карту, но в шапке сквозь
+    // них было видно подземелье, и цифры баланса лежали прямо на нём.
+    // Прежние остаются запасным путём: hudDraw вернёт false, если файла
+    // нет, и обновление ассета не сможет обнулить шапку целиком.
+    if (!hudDraw(ctx, 'F1_character_stat_panel_opaque', LAY.panel.x + LAY.panel.w / 2,
+        LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h)) {
+      hudDraw(ctx, 'A1_stat_panel', LAY.panel.x + LAY.panel.w / 2,
+        LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h);
+    }
+    if (!hudDraw(ctx, 'F2_map_panel_opaque', LAY.map.x + LAY.map.w / 2,
+        LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h)) {
+      hudDraw(ctx, 'A2_map_panel', LAY.map.x + LAY.map.w / 2,
+        LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h);
+    }
   }
 
   // ── Minimap (right side) ──────────────────────────────────
@@ -2693,7 +2704,9 @@ function drawHeader() {
     for (let i = 0; i < rows.length; i++) {
       const cy = LAY.cur.y + gap + chh / 2 + i * (chh + gap);
       const cx = LAY.cur.x + cw / 2;
-      hudDrawW(ctx, 'B3_currency_plate', cx, cy, cw);
+      if (!hudDrawW(ctx, 'F3_currency_plate_opaque', cx, cy, cw)) {
+        hudDrawW(ctx, 'B3_currency_plate', cx, cy, cw);
+      }
       // Гнездо иконки и поле числа — измеренные отверстия плашки:
       // 0.1631 и 0.6322 её ширины.
       hudDraw(ctx, rows[i].icon, LAY.cur.x + cw * 0.1631, cy, chh * 0.62, chh * 0.62);
@@ -3052,7 +3065,8 @@ function drawPotionButton() {
   ctx.font = `bold 10px ${F}`;
   const _cntW = Math.max(26, ctx.measureText(_cntTxt).width + 14);
   const _cntX = pb.x + pb.r * 0.60, _cntY = pb.y + pb.r * 0.70;
-  if (!hudDrawW(ctx, 'E1_small_pill_button', _cntX, _cntY, _cntW)) {
+  if (!hudDrawW(ctx, 'F7_count_badge_opaque', _cntX, _cntY, _cntW)
+      && !hudDrawW(ctx, 'E1_small_pill_button', _cntX, _cntY, _cntW)) {
     ctx.fillStyle = 'rgba(12,9,6,0.85)';
     roundRect(ctx, _cntX - _cntW / 2, _cntY - 8, _cntW, 16, 8); ctx.fill();
     ctx.strokeStyle = 'rgba(201,168,106,0.6)'; ctx.lineWidth = 1;
@@ -3184,12 +3198,25 @@ function drawBuffStrip() {
   // Мир/Проф/+Pack. Полоса освободилась, когда убрали баннер безопасной
   // зоны, и она единственная на экране, где ничего не нажимается: бафы
   // читают, а не трогают.
-  const SZ = 22, GAP = 3;
-  const stripX = 8 + 80 + 10;                 // правее колонки кнопок
-  const stripY = HEADER_H + 8;
-  // До кнопки меню в правом верхнем углу: она шириной около 90 и лежит
-  // там же по высоте.
-  const COLS = Math.max(1, Math.floor((W - stripX - 96 + GAP) / (SZ + GAP)));
+  // ── где лежат бафы ──────────────────────────────────────────────────────
+  // Ровно ПОД колонкой Мир/Проф/+Pack и ровно её ширины: три в ряд.
+  // Ширина колонки — 80, зазор 3, значит гнездо (80 − 2·3) / 3 ≈ 24, и
+  // тройка встаёт под кнопку без свеса ни на пиксель.
+  //
+  // Так они и не закрывают ничего: слева от них мир, справа мир, а сама
+  // колонка — единственное место, где UI уже стоит вертикально и ещё одна
+  // строка под ним ничего не ломает.
+  const COLS = 3;
+  const GAP = 3;
+  const colW = 80;                                   // ширина кнопок слева
+  const SZ = Math.floor((colW - (COLS - 1) * GAP) / COLS);
+  const stripX = (typeof getPvpBtnPos === 'function') ? getPvpBtnPos().x : 8;
+  // От нижней кнопки колонки, а не от постоянного числа: «Бонус» появляется
+  // и исчезает, и на постоянной высоте бафы то отрывались от колонки, то
+  // налезали на неё.
+  const stripY = (typeof getStarterBonusBtnPos === 'function')
+    ? getStarterBonusBtnPos().y + getStarterBonusBtnPos().h + 8
+    : HEADER_H + 8;
   // Raised clear of the chat widgets rather than bottom-aligned with the
   // skills. #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
   // and stand up to ~46px tall, so they own the band from H-118 to H-72 —
@@ -3211,28 +3238,42 @@ function drawBuffStrip() {
     const cy = stripY + row * (SZ + GAP);
     const chip = chips[i];
 
-    // Background cell
+    // Тёмная подложка — всегда: у гнезда F6 сквозная середина, и без неё
+    // иконка бафа лежала бы прямо на подземелье.
     ctx.fillStyle = chip.debuff ? 'rgba(37,8,11,0.90)' : 'rgba(20,15,6,0.90)';
-    roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.fill();
-    ctx.globalAlpha = 0.75;
-    ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
-    roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.stroke();
-    ctx.globalAlpha = 1;
+    roundRect(ctx, cx + 2, cy + 2, SZ - 4, SZ - 4, 4); ctx.fill();
 
     // Icon (upper portion of cell)
     const iconCX = cx + SZ / 2, iconCY = cy + SZ / 2 - 3;
     if (chip.kind === 'pot' && chip.img) {
       const img = _getPotImg(chip.img);
       if (img && img.complete && img.naturalWidth > 0)
-        ctx.drawImage(img, cx + 3, cy + 2, 16, 13);
+        ctx.drawImage(img, cx + 3, cy + 2, SZ - 6, SZ - 9);
     } else {
       drawIconCtx(ctx, chip.icon, iconCX, iconCY, 11, chip.color);
     }
 
+    // Оправа гнезда ПОВЕРХ иконки — порядок из гайда третьей партии.
+    // Своей рамки больше нет: две рамки в гнезде 24 px не помещаются.
+    if (!hudDraw(ctx, 'F6_buff_slot_hollow', cx + SZ / 2, cy + SZ / 2, SZ + 3, SZ + 3)) {
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
+      roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // Дебафф красным ободком поверх оправы: у неё один вид на все бафы, а
+    // спутать «мне хорошо» с «мне плохо» дороже всего.
+    if (chip.debuff) {
+      ctx.strokeStyle = 'rgba(226,70,88,0.85)'; ctx.lineWidth = 1.5;
+      roundRect(ctx, cx + 1, cy + 1, SZ - 2, SZ - 2, 4); ctx.stroke();
+    }
+
     // Time label at bottom of cell
     ctx.font = `bold 6px ${F2}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 1.5);
     ctx.fillStyle = chip.color;
-    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 2);
+    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 2.5);
   }
 
   ctx.restore();
@@ -3549,8 +3590,14 @@ function drawTargetFrame() {
     hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#e69419';
   }
 
-  const bw = 160, bh = 42;
-  const bx = W / 2 - bw / 2;
+  // Уже прежнего и правее центра: слева под шапкой теперь колонка
+  // Мир/Проф/+Pack/Бонус и лента бафов под ней, и панель на 160 по центру
+  // ложилась на них краем. Ширина ограничена ещё и экраном — на узком
+  // телефоне середины между колонкой и кнопкой меню почти нет.
+  const _hostile = hudImg('F4_enemy_target_panel_hostile');
+  const bw = Math.min(168, Math.max(120, W - 8 - 96 - 100));
+  const bh = _hostile ? Math.round(hudHeightAt('F4_enemy_target_panel_hostile', bw)) : 42;
+  const bx = Math.min(W - 100 - bw, Math.max(96, W / 2 - bw / 2));
   const by = HEADER_H + 6;
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
@@ -3558,22 +3605,39 @@ function drawTargetFrame() {
   if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
 
-  ctx.fillStyle = _uiBtnGrads.tfBg;
-  roundRect(ctx, bx, by, bw, bh, 9); ctx.fill();
+  // Враждебная рамка из комплекта: багряная кайма, кровавые самоцветы и
+  // предупреждающая полоса слева уже нарисованы в ней. Свои рамки при этом
+  // не рисуются вовсе — иначе получаются две окантовки одна в другой.
+  if (_hostile) {
+    hudDrawW(ctx, 'F4_enemy_target_panel_hostile', bx + bw / 2, by + bh / 2, bw);
+  } else {
+    ctx.fillStyle = _uiBtnGrads.tfBg;
+    roundRect(ctx, bx, by, bw, bh, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(191,64,79,0.6)'; ctx.lineWidth = 1.5;
+    roundRect(ctx, bx, by, bw, bh, 9); ctx.stroke();
+    ctx.strokeStyle = 'rgba(209,86,101,0.1)'; ctx.lineWidth = 1;
+    roundRect(ctx, bx + 1.5, by + 1.5, bw - 3, bh - 3, 8); ctx.stroke();
+  }
 
-  ctx.strokeStyle = 'rgba(191,64,79,0.6)'; ctx.lineWidth = 1.5;
-  roundRect(ctx, bx, by, bw, bh, 9); ctx.stroke();
-  ctx.strokeStyle = 'rgba(209,86,101,0.1)'; ctx.lineWidth = 1;
-  roundRect(ctx, bx + 1.5, by + 1.5, bw - 3, bh - 3, 8); ctx.stroke();
-
-  drawIconCtx(ctx, 'crosshair', bx + 14, by + 10, 10, color);
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  // Имя — в спокойной верхней половине, как требует гайд к панели.
+  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(name.slice(0, 16), bx + 15, by + bh * 0.31 + 1);
   ctx.fillStyle = color;
-  ctx.fillText(name.slice(0, 16), bx + 22, by + 15);
+  ctx.fillText(name.slice(0, 16), bx + 14, by + bh * 0.31);
+  ctx.textBaseline = 'alphabetic';
 
-  const hbx = bx + 8, hby = by + 20, hbw = bw - 16, hbh = 10;
-  ctx.fillStyle = 'rgba(38,12,15,0.9)';
-  roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
+  // Полоса ограничена ВНУТРЕННЕЙ областью жёлоба, а не всей панелью: жёлоб
+  // у F4 непрозрачный и нарисован в самой картинке, и залить под ним всю
+  // ширину значило бы вылезти за его кромку.
+  const hbh = _hostile ? Math.round(bh * 0.26) : 10;
+  const hbx = bx + (_hostile ? bw * 0.075 : 8);
+  const hbw = bw - (_hostile ? bw * 0.15 : 16);
+  const hby = _hostile ? Math.round(by + bh * 0.62 - hbh / 2) : by + 20;
+  if (!_hostile) {
+    ctx.fillStyle = 'rgba(38,12,15,0.9)';
+    roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
+  }
   if (pct > 0) {
     ctx.fillStyle = pct > 0.5 ? _uiBtnGrads.hpHi : (pct > 0.25 ? _uiBtnGrads.hpMid : _uiBtnGrads.hpLo);
     roundRect(ctx, hbx, hby, hbw * pct, hbh, 4); ctx.fill();

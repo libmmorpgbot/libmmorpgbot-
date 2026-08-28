@@ -101,6 +101,18 @@ const PLAN = {
   E11_notification_badge_red:  { css: 18 },
   E12_notification_badge_blue: { css: 18 },
   E13_icon_socket_hollow:      { css: 46 },
+
+  // ── партия 3: панели с непрозрачным фоном ───────────────────────────────
+  // Заменяют A1/A2/B3 первой партии: у тех середина сквозная, и сквозь
+  // шапку было видно подземелье — цифры баланса лежали прямо на нём.
+  // A1/A2/B3 остаются в наборе как запасной путь, если F-файл не доедет.
+  F1_character_stat_panel_opaque: { css: 172 },
+  F2_map_panel_opaque:            { css: 100 },
+  F3_currency_plate_opaque:       { css: 96 },
+  F4_enemy_target_panel_hostile:  { css: 200 },
+  F5_buff_rail_six_hollow:        { css: 132 },
+  F6_buff_slot_hollow:            { css: 28 },
+  F7_count_badge_opaque:          { css: 34 },
 };
 
 // Никогда не потолок: минимум под мелкие ромбы, иначе B12 приедет 30 px и
