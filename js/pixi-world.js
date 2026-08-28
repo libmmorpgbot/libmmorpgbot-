@@ -862,10 +862,23 @@ function _updateTiles(camX, camY) {
   if (!dungeon || !dungeon.grid) return;
   const maxCx = Math.ceil(dungeon.w * TILE / _CHUNK_PX) - 1;
   const maxCy = Math.ceil(dungeon.h * TILE / _CHUNK_PX) - 1;
-  const c0x = Math.max(0, Math.floor(camX / _CHUNK_PX));
-  const c0y = Math.max(0, Math.floor(camY / _CHUNK_PX));
-  const c1x = Math.min(maxCx, Math.floor((camX + W / ZOOM) / _CHUNK_PX));
-  const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX));
+  // ── что на самом деле видно ─────────────────────────────────────────────
+  // Мир рисуется со сдвигом на HEADER_H, то есть camY — это мир на экранной
+  // высоте HEADER_H, а не на нуле. Пока шапка была сплошной плашкой, полоса
+  // над ней и правда не была видна. Теперь шапка — три отдельные панели, и
+  // между ними виден мир, которого в диапазоне чанков не было: сверху
+  // оставалась чёрная полоса, и она же появлялась при движении вверх, пока
+  // чанк не достроится.
+  //
+  // Плюс запас в один чанк во все стороны. Строить ровно то, что видно, —
+  // значит начинать строить в тот момент, когда оно уже нужно на экране;
+  // чанк вперёд даёт кадру время.
+  const _EDGE = 1;
+  const _topY = camY - HEADER_H / ZOOM;
+  const c0x = Math.max(0, Math.floor(camX / _CHUNK_PX) - _EDGE);
+  const c0y = Math.max(0, Math.floor(_topY / _CHUNK_PX) - _EDGE);
+  const c1x = Math.min(maxCx, Math.floor((camX + W / ZOOM) / _CHUNK_PX) + _EDGE);
+  const c1y = Math.min(maxCy, Math.floor((camY + (H - HEADER_H) / ZOOM) / _CHUNK_PX) + _EDGE);
 
   const dir = (typeof inputDir === 'function') ? inputDir() : null;
   const bx0 = (dir && dir.dx < -0.15) ? Math.max(0, c0x - _CHUNK_LOOKAHEAD) : c0x;

@@ -22,7 +22,7 @@ const stats = require('../db/repos/stats');
 const party = require('../party');
 const players = require('../db/repos/players');
 const { query } = require('../db');
-const { _sanitizeName, _sanitizeClanDesc } = require('../security');
+const { _sanitizeName, _sanitizeText, _sanitizeClanDesc } = require('../security');
 const { CHAR_DEF } = require('../../shared/definitions');
 
 const id = v => {
@@ -257,7 +257,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // Control characters out, length bounded. The client escapes on render;
     // this stops the stored copy from being something a future renderer has to
     // be careful with.
-    const msg = _sanitizeName(text.trim()).slice(0, MAX_LEN);
+    // _sanitizeText, а не _sanitizeName: второй режет до длины ИМЕНИ —
+    // тридцати двух знаков, — и slice(0, MAX_LEN) ниже уже ничего не делал.
+    // Так резались все три канала: общий, клановый и личные.
+    const msg = _sanitizeText(text, MAX_LEN);
     if (!msg) return;
     lastChatAt = now;
 
@@ -441,7 +444,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (typeof text !== 'string') return;
     const now = Date.now();
     if (now - lastChatAt < CHAT_COOLDOWN_MS) return;
-    const msg = _sanitizeName(text.trim()).slice(0, MAX_LEN);
+    // _sanitizeText, а не _sanitizeName: второй режет до длины ИМЕНИ —
+    // тридцати двух знаков, — и slice(0, MAX_LEN) ниже уже ничего не делал.
+    // Так резались все три канала: общий, клановый и личные.
+    const msg = _sanitizeText(text, MAX_LEN);
     if (!msg) return;
 
     const m = await clans.clanOf(t, pid);
@@ -474,7 +480,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (typeof text !== 'string' || typeof toUsername !== 'string') return;
     const now = Date.now();
     if (now - lastChatAt < CHAT_COOLDOWN_MS) return;
-    const msg = _sanitizeName(text.trim()).slice(0, MAX_LEN);
+    // _sanitizeText, а не _sanitizeName: второй режет до длины ИМЕНИ —
+    // тридцати двух знаков, — и slice(0, MAX_LEN) ниже уже ничего не делал.
+    // Так резались все три канала: общий, клановый и личные.
+    const msg = _sanitizeText(text, MAX_LEN);
     if (!msg) return;
 
     const target = await chat.playerByUsername(t, toUsername);

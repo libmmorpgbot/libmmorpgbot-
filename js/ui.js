@@ -2721,7 +2721,9 @@ function drawHeader() {
       }
       // Гнездо иконки и поле числа — измеренные отверстия плашки:
       // 0.1631 и 0.6322 её ширины.
-      hudDraw(ctx, rows[i].icon, LAY.cur.x + cw * 0.1631, cy, chh * 0.62, chh * 0.62);
+      // 0.86 вместо 0.62: гнездо под иконку в плашке — 0.19 её ширины, и
+      // иконка в 0.62 высоты болталась в нём с полем со всех сторон.
+      hudDraw(ctx, rows[i].icon, LAY.cur.x + cw * 0.1631, cy, chh * 0.86, chh * 0.86);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `bold ${Math.max(8, Math.round(chh * 0.42))}px ${F}`;
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
@@ -3091,10 +3093,10 @@ function drawPotionButton() {
   if (cd > 0) {
     ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f17e8b';
     ctx.fillText(cd.toFixed(1) + t('secAbbrev'), pb.x, pb.y + pb.r + 10);
-  } else {
-    ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(147,138,123,0.55)';
-    ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
   }
+  // Подсказки «[F]» больше нет: это горячая клавиша настольной версии, а
+  // играют с телефона, где клавиш нет вовсе. Под кнопкой она читалась как
+  // часть интерфейса, которая ничего не значит.
 
   ctx.restore();
 }

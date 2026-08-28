@@ -38,6 +38,29 @@ function _sanitizeName(raw) {
   return s;
 }
 
+// ── текст сообщения, а не имя ───────────────────────────────────────────────
+// _sanitizeName режет до _USERNAME_MAX_CHARS — до тридцати двух знаков. Он
+// применялся и к тексту чата, и MAX_LEN = 100 в обработчике не делал ничего:
+// строка приходила туда уже обрезанной. Ровно это и видел игрок — «пишет
+// только начало, а дальше пропадает».
+//
+// Управляющие символы и угловые скобки убираются по-прежнему: клиент
+// экранирует при выводе, но хранить в базе то, о чём завтрашнему рендереру
+// придётся помнить, незачем. А вот кавычки и амперсанд остаются — без них
+// «з'їв» превращается в «зїв», и это уже порча текста, а не защита.
+function _sanitizeText(raw, maxChars) {
+  const max = Math.max(1, Number(maxChars) || 100);
+  let s = String(raw == null ? '' : raw)
+    // eslint-disable-next-line no-control-regex -- the control-character range is the point, not a stray byte.
+    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .trim()
+    .slice(0, max);
+  // Байтовый потолок отдельно: колонка text без ограничения, но строка в
+  // мегабайт из четырёхбайтных эмодзи — это не сообщение, а нагрузка.
+  while (Buffer.byteLength(s, 'utf8') > max * 4) s = s.slice(0, -1);
+  return s;
+}
+
 // Same cleaning, with the "nothing usable left" fallback the login paths need.
 // Clan names use _sanitizeName directly instead, so that a clan legitimately
 // called "tg_something" isn't mistaken for the fallback.
@@ -214,6 +237,7 @@ function _tgEsc(s) {
 function _clearLoginFails(ip) { _loginFails.delete(ip); }
 
 module.exports = {
+  _sanitizeText,
   _sanitizeName, _safeUsername, _sanitizeClanDesc,
   verifyTelegramAuth, verifyTelegramWebApp, refLink, miniAppLink,
   _adminToken, _verifyAdminToken, _safeEqual,

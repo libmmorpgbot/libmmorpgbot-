@@ -1509,16 +1509,27 @@ function render(dt, ts) {
     _renderUI();
     ctx = _prevCtx;
   }
+  // ── подписи мира идут ПЕРВЫМИ, HUD ложится поверх ──────────────────────
+  // Имена игроков, названия залов, «Телепорт» и прочие метки рисуются в 60
+  // fps, а HUD — кэшированной картинкой в 15. Раньше картинка блитилась
+  // раньше подписей, и подписи оказывались НА ней: «Зал» и «Телепорт»
+  // просвечивали сквозь панель статов, кнопки и веер.
+  //
+  // Порядок обратный: мир и его метки внизу, интерфейс сверху. Это ещё и
+  // единственно верно по смыслу — интерфейс существует, чтобы его было
+  // видно поверх мира, а не наоборот.
+  if (player && dungeon) _drawPlayerNameOnUI();
+  if (dungeon) _drawOtherPlayerNamesOnUI();
+  drawDecalLabels();
+
   if (_hudCv) {
     _uiCtx.setTransform(1, 0, 0, 1, 0, 0);
     _uiCtx.drawImage(_hudCv, 0, 0);
     _uiCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
 
-  // Player name + joystick: 60fps (smooth, cheap)
-  if (player && dungeon) _drawPlayerNameOnUI();
-  if (dungeon) _drawOtherPlayerNamesOnUI();
-  drawDecalLabels();
+  // Джойстик — поверх всего: его двигают пальцем, и метка мира, легшая на
+  // ручку, читается как часть управления.
   if (activeTab === 0) drawJoystick();
 
   // Баннер «Безопасная зона» убран по решению владельца. Полоса под шапкой
