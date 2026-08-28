@@ -815,6 +815,20 @@ async function p_layout(w) {
     out.offscreen = off.length; out.offscreenList = off.join(', ');
     out.underNav = nav.length;  out.underNavList = nav.join(', ');
     out.hits = hit.length;      out.hitList = hit.join(', ');
+    // ── шапка ─────────────────────────────────────────────────────────
+    // Три блока делят одну полосу, и ширины у них связаны: столбец валют —
+    // это то, что осталось между панелью и картой. Подгонять его отдельно
+    // значит однажды получить наложение на узком экране.
+    const L = hdrLayout();
+    out.hdrH = HEADER_H;
+    out.curW = Math.round(L.cur.w);
+    out.curGapL = Math.round(L.cur.x - (L.panel.x + L.panel.w));
+    out.curGapR = Math.round(L.map.x - (L.cur.x + L.cur.w));
+    out.hdrRight = Math.round(W - (L.map.x + L.map.w));
+    // Доля полосы, занятая валютами: «почти всё свободное место» — это
+    // измеримо, а не на глаз.
+    out.curFill = Math.round(100 * L.cur.w / (L.map.x - (L.panel.x + L.panel.w)));
+
     out.potTgt = Math.round(Math.hypot(pot.x - tgt.x, pot.y - tgt.y) - (pot.r + tgt.r));
     // По дуге, а не по прямоугольнику: верхний левый угол прямоугольника
     // веера пуст, и первая версия этой строки объявила столкновением
@@ -886,6 +900,16 @@ async function walletChecks(w) {
   ok(lay.potTgt >= 4, `зазор между зельем и целью — ${lay.potTgt} px`);
   ok(lay.tgtFan >= 0, `цель не заходит на веер (${lay.tgtFan} px по дуге)`);
   ok(lay.potFan >= 0, `и зелье тоже (${lay.potFan} px по дуге)`);
+
+  head('шапка — три блока делят полосу без наложений');
+  ok(lay.curGapL >= 2 && lay.curGapR >= 2,
+     `столбец валют не наезжает ни на панель, ни на карту (${lay.curGapL} и ${lay.curGapR} px)`);
+  ok(lay.hdrRight >= 0, `карта не выходит за правый край (${lay.hdrRight} px)`);
+  ok(lay.curFill >= 80,
+     `валюты занимают ${lay.curFill}% свободного места между панелью и картой`,
+     'меньше восьмидесяти: полоса пустует, ради чего её и сужали');
+  ok(lay.hdrH <= 96, `шапка не выше 96 px (сейчас ${lay.hdrH})`,
+     'выше — это уже восьмая часть экрана телефона под четыре числа');
 
   head('кошелёк GRAM — вкладка');
   inject(w, WALLET_SETUP);

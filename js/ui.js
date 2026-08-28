@@ -2324,7 +2324,11 @@ function hdrLayout() {
   const panelW = Math.min(Math.round(W * 0.50), Math.round(h * 1.86));
   const panel = { x: pad, y: pad, w: panelW, h };
   const map = { x: W - pad - mapW, y: pad, w: mapW, h };
-  const cur = { x: panel.x + panel.w + 6, y: pad + 4, w: map.x - (panel.x + panel.w) - 12 };
+  // Столбец валют занимает всё, что осталось между панелью и картой —
+  // с отступом в четыре пикселя, а не в шесть с каждой стороны: это
+  // единственное место в шапке, где пустота ничего не значит.
+  const cur = { x: panel.x + panel.w + 4, y: pad, h,
+                w: map.x - (panel.x + panel.w) - 8 };
   return { pad, panel, map, cur };
 }
 
@@ -2586,7 +2590,7 @@ function drawHeader() {
   // Row 1: Name + Level
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
+  ctx.fillText(_ellipsis(netUsername || p.charDef.name, 13), infoX, 15);
   if (!hasArt) {
     ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
     ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
@@ -2700,7 +2704,14 @@ function drawHeader() {
   // была строка текста внутри панели статов, и на длинных числах она
   // упиралась в миникарту: GRAM печатается с семью знаками после точки.
   if (hasArt) {
-    const cw = LAY.cur.w;
+    // Сеткой 2×2, а не столбиком в четыре. Четыре плашки друг под другом
+    // при пропорции 3.7:1 упираются в высоту: чтобы влезть в шапку, каждая
+    // должна быть 17 px высотой и, значит, 63 шириной — а свободного места
+    // по ширине втрое больше, и оно оставалось пустым.
+    //
+    // Две колонки занимают его целиком и при этом вдвое ниже.
+    const CUR_COLS = 2, CUR_GAP = 4;
+    const cw = Math.floor((LAY.cur.w - CUR_GAP) / CUR_COLS);
     const chh = hudHeightAt('B3_currency_plate', cw);
     const rows = [
       { icon: 'C12_gold_coin',    color: '#f0c98a', val: _fmtCur(Math.floor(p.gold)) },
@@ -2712,10 +2723,12 @@ function drawHeader() {
       { icon: 'C11_single_broadsword', color: '#eaa742',
         val: _fmtCur(typeof calcBM === 'function' ? calcBM(p) : 0) },
     ];
-    const gap = Math.max(2, Math.round((LAY.panel.h - chh * rows.length) / (rows.length + 1)));
+    const CUR_ROWS = Math.ceil(rows.length / CUR_COLS);
+    const gap = Math.max(2, Math.round((LAY.cur.h - chh * CUR_ROWS) / (CUR_ROWS + 1)));
     for (let i = 0; i < rows.length; i++) {
-      const cy = LAY.cur.y + gap + chh / 2 + i * (chh + gap);
-      const cx = LAY.cur.x + cw / 2;
+      const col = i % CUR_COLS, row = Math.floor(i / CUR_COLS);
+      const cy = LAY.cur.y + gap + chh / 2 + row * (chh + gap);
+      const cx = LAY.cur.x + cw / 2 + col * (cw + CUR_GAP);
       if (!hudDrawW(ctx, 'F3_currency_plate_opaque', cx, cy, cw)) {
         hudDrawW(ctx, 'B3_currency_plate', cx, cy, cw);
       }
@@ -2723,13 +2736,14 @@ function drawHeader() {
       // 0.1631 и 0.6322 её ширины.
       // 0.86 вместо 0.62: гнездо под иконку в плашке — 0.19 её ширины, и
       // иконка в 0.62 высоты болталась в нём с полем со всех сторон.
-      hudDraw(ctx, rows[i].icon, LAY.cur.x + cw * 0.1631, cy, chh * 0.86, chh * 0.86);
+      const plateL = cx - cw / 2;
+      hudDraw(ctx, rows[i].icon, plateL + cw * 0.1631, cy, chh * 0.86, chh * 0.86);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `bold ${Math.max(8, Math.round(chh * 0.42))}px ${F}`;
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(rows[i].val, LAY.cur.x + cw * 0.6322, cy + 1);
+      ctx.fillText(rows[i].val, plateL + cw * 0.6322, cy + 1);
       ctx.fillStyle = rows[i].color;
-      ctx.fillText(rows[i].val, LAY.cur.x + cw * 0.6322, cy);
+      ctx.fillText(rows[i].val, plateL + cw * 0.6322, cy);
     }
     ctx.textBaseline = 'alphabetic';
   }
@@ -2740,6 +2754,13 @@ function drawHeader() {
 // Числа валют в шапке. Без сокращения GRAM печатался как 914.3503811 и
 // вылезал за плашку — а плашка узкая, потому что их три и между двумя
 // панелями.
+// Обрезка с многоточием. Просто slice даёт «AnonimMrBea» — строку, которая
+// выглядит настоящим именем и ничем не сообщает, что она укорочена.
+function _ellipsis(s, max) {
+  const str = String(s == null ? '' : s);
+  return str.length > max ? str.slice(0, max - 1) + '…' : str;
+}
+
 function _fmtCur(v, frac) {
   const n = Number(v) || 0;
   // Опыт на тысячном уровне — 2.6e+142. Приставки на такое не рассчитаны,
@@ -3612,10 +3633,15 @@ function drawTargetFrame() {
   // Правая граница считается от кнопки «Меню», а не от края экрана: кнопка
   // шириной около 104 и стоит в правом верхнем углу, и панель на прежнем
   // пределе заходила под неё краем.
-  const _menuLeft = W - 116;
-  const bw = Math.min(160, Math.max(112, _menuLeft - 100));
+  // По центру экрана, а не «где поместится». Кнопка меню стала уже, и
+  // ширина панели теперь подбирается так, чтобы центрированная она НЕ
+  // доставала ни до колонки кнопок слева, ни до меню справа — вместо того
+  // чтобы сдвигаться вбок и тем выдавать, что её положили куда влезло.
+  const _menuLeft = W - Math.floor(Math.min((HEADER_H - 12) * 1.3, W * 0.22)) - 18;
+  const _leftCol = 96;
+  const bw = Math.max(104, Math.min(144, (Math.min(_menuLeft, W - _leftCol) - _leftCol) - 8));
   const bh = _hostile ? Math.round(hudHeightAt('F4_enemy_target_panel_hostile', bw)) : 42;
-  const bx = Math.min(_menuLeft - bw - 6, Math.max(96, W / 2 - bw / 2));
+  const bx = Math.round(W / 2 - bw / 2);
   const by = HEADER_H + 6;
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
@@ -4647,7 +4673,10 @@ function _positionHudMenuBtn() {
   if (!btn) return;
   const mmPad = 6;
   const mmH = HEADER_H - mmPad * 2;
-  const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.27));
+  // Уже прежнего: она занимала 0.27 ширины экрана под одно слово, и
+  // панель цели, которую положено держать по центру, приходилось сдвигать
+  // влево, чтобы её обойти.
+  const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.22));
   const mmX = W - mmW - mmPad - 4;
   btn.style.top   = (HEADER_H + 6) + 'px';
   btn.style.left  = mmX + 'px';
