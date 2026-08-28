@@ -1022,8 +1022,11 @@ canvas { display:block; width:100%; height:100%; }
 /* 7.5px и без разрядки: «ПЕРСОНАЖ» — восемь заглавных букв, а ячейка
    66 px. На 8.5 с разрядкой хвост уходил в многоточие у трёх вкладок из
    шести. */
+/* 54, а не 58: на 58 строка упиралась в нижнюю кромку полосы и буквы с
+   нижним выносом подрезались. Между углублением (кончается на 62) и
+   подписью места нет — подпись садится в его нижнюю часть, как на макете. */
 .nav-tab .nl {
-  position:absolute; top:58px; left:0; right:0; z-index:1;
+  position:absolute; top:54px; left:0; right:0; z-index:1;
   font-size:7.5px; letter-spacing:0; text-transform:uppercase;
   text-align:center; line-height:1;
   text-shadow:0 1px 2px rgba(0,0,0,.95);
@@ -3431,3 +3434,44 @@ canvas { display:block; width:100%; height:100%; }
   font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 700;
   color: #f0cf83; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums;
 }
+
+/* ── кнопки HUD-меню на ассетах второй партии ──────────────────────────────
+   Семь пунктов меню и сама кнопка «Меню» рисовались семью почти одинаковыми
+   блоками: плоская заливка, рамка в 1 px и цветная полоска слева. Один ассет
+   вместо этого — E3 для строки, E4 для кнопки, которая меню открывает.
+
+   Цветная полоска слева ОСТАЁТСЯ: у ассета своя золотая, но она одна на все
+   строки, а игра различает семь пунктов именно цветом. Полоска сдвинута
+   внутрь и стала тоньше, чтобы не спорить с золотом рамки.
+
+   background-size: 100% 100% — единственное место, где пропорция ассета
+   намеренно не сохраняется: строки меню разной ширины задаёт текст, а
+   E3 — это 9-slice по своему гайду. Торцы у него узкие, и растяжение по
+   ширине их почти не трогает. */
+#hud-menu-btn,
+#rating-btn, #vip-btn, #market-btn, #gram-shop-btn,
+#events-btn, #season-btn, #codex-btn {
+  background: url('/images/hud/E3_wide_menu_row.webp') center / 100% 100% no-repeat;
+  border: none;
+  border-radius: 9px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  height: 32px;
+  padding-left: 9px;
+}
+#hud-menu-btn {
+  background-image: url('/images/hud/E4_menu_button.webp');
+  height: 34px;
+}
+/* Акцент — вставкой внутрь, а не рамкой снаружи: рамка вокруг рамки
+   читается как ореол. currentColor берётся из color самой кнопки, который
+   у каждого пункта свой и уже объявлен выше. */
+#rating-btn::before, #vip-btn::before, #market-btn::before,
+#gram-shop-btn::before, #events-btn::before, #season-btn::before,
+#codex-btn::before {
+  content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px;
+  width: 2px; border-radius: 1px;
+  background: currentColor; opacity: .85;
+}
+#hud-menu-btn:active,
+#rating-btn:active, #vip-btn:active, #market-btn:active, #gram-shop-btn:active,
+#events-btn:active, #season-btn:active, #codex-btn:active { filter: brightness(1.25); }

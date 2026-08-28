@@ -5,7 +5,11 @@ const POTION_R  = 26;
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
 function joyCenter() { return _joyCenter; }
-function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 130; }
+// Джойстик ниже, чем был: над ним теперь столбец круглых кнопок —
+// телепорт и чат, — и на прежней высоте они наезжали на его обод.
+// 96 вместо 130 опускает его к самой навигации, где ему и место: большой
+// палец левой руки лежит там, а не в середине экрана.
+function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 96; }
 
 function _inJoyZone(cx, cy) {
   const jc = joyCenter();
@@ -95,7 +99,10 @@ function getTargetBtnPos() {
   const f = fanSlots();
   if (f) {
     const r = fanRect();
-    return { x: r.x - 30, y: r.y + r.h * 0.62, r: 26 };
+    // Выше и правее прежнего: джойстик опустился к навигации, и на старом
+    // месте кнопка цели легла ему на обод. Две кнопки, которые в бою жмут
+    // разными руками, не должны стоять там, где палец задевает обе.
+    return { x: r.x - 22, y: r.y + r.h * 0.40, r: 26 };
   }
   const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
   const gridTop = H - NAV_H - 14 - 2 * sz - gap;

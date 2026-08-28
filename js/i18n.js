@@ -775,7 +775,9 @@ Object.assign(I18N_UI, {
   // поперечнике, и четвёртая буква в неё не входит: «АВТО» на четыре знака
   // упиралось в золотую окантовку и обрезалось краем ассета.
   autoModeAbbrev: { ru: 'АВТ', en: 'AUT', uk: 'АВТ', es: 'AUT', tr: 'OTO', pt: 'AUT' },
-  targetAbbrev:   { ru: 'ЦЕЛ', en: 'TGT', uk: 'ЦІЛ', es: 'OBJ', tr: 'HDF', pt: 'ALV' },
+  // Целиком, а не обрубком: кнопка круглая и 52 px в поперечнике, четыре
+  // буквы мелким кеглем в неё входят, а «ЦЕЛ» читалось как опечатка.
+  targetAbbrev:   { ru: 'ЦЕЛЬ', en: 'TARGET', uk: 'ЦІЛЬ', es: 'OBJETIVO', tr: 'HEDEF', pt: 'ALVO' },
   autoSkillsHdr: { ru: 'Умения в АВТО', en: 'Skills in AUTO', uk: 'Уміння в АВТО', es: 'Habilidades en AUTO', tr: 'OTO’da yetenekler', pt: 'Habilidades no AUTO' },
   autoSkillsMasterLbl: { ru: 'Кастовать умения автоматически', en: 'Cast skills automatically', uk: 'Кастувати уміння автоматично', es: 'Lanzar habilidades automáticamente', tr: 'Yetenekleri otomatik kullan', pt: 'Usar habilidades automaticamente' },
   autoSkillsHint: { ru: 'В режиме АВТО персонаж сам применяет отмеченные умения — по одному раз в 1,2 с и только в бою. Лечащие — лишь ниже 70% HP.', en: 'In AUTO the character casts the ticked skills itself — one every 1.2s, and only in a fight. Healing ones only below 70% HP.', uk: 'У режимі АВТО персонаж сам застосовує позначені уміння — по одному раз на 1,2 с і лише в бою. Лікувальні — тільки нижче 70% HP.', es: 'En AUTO el personaje lanza solo las habilidades marcadas: una cada 1,2 s y solo en combate. Las de curación, solo por debajo del 70% de HP.', tr: 'OTO modunda karakter işaretli yetenekleri kendisi kullanır — 1,2 saniyede bir ve yalnızca savaşta. İyileştirme yetenekleri yalnızca %70 HP altında.', pt: 'No AUTO o personagem usa sozinho as habilidades marcadas — uma a cada 1,2 s e só em combate. As de cura, apenas abaixo de 70% de HP.' },

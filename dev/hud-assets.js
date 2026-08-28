@@ -83,6 +83,24 @@ const PLAN = {
   C14_ruby_gem:             { css: 20 },
   D1_attack_button:         { css: 76 },
   D2_attack_mode_button:    { css: 30 },
+
+  // ── партия 2: кнопки с заливкой ─────────────────────────────────────────
+  // Отличаются от первой тем, ради чего первая писалась: там внутри дыра,
+  // потому что рушій кладёт туда своё. Здесь внутри стекло, а поверх идёт
+  // только текст. Два предмета — E10 и E13 — остались сквозными.
+  E1_small_pill_button:        { css: 96 },
+  E2_small_pill_button_accent: { css: 96 },
+  E3_wide_menu_row:            { css: 132 },
+  E4_menu_button:              { css: 84 },
+  E5_round_button:             { css: 56 },
+  E6_round_button_crimson:     { css: 52 },
+  E7_round_button_teal:        { css: 46 },
+  E8_zone_banner_filled:       { css: 190 },
+  E9_enemy_target_frame:       { css: 190 },
+  E10_bar_track_hollow:        { css: 128 },
+  E11_notification_badge_red:  { css: 18 },
+  E12_notification_badge_blue: { css: 18 },
+  E13_icon_socket_hollow:      { css: 46 },
 };
 
 // Никогда не потолок: минимум под мелкие ромбы, иначе B12 приедет 30 px и

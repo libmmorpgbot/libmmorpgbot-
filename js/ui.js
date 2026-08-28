@@ -2617,6 +2617,10 @@ function drawHeader() {
       roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
     }
   }
+  // Жёлоб ПОВЕРХ заливки — порядок слоёв из гайда ко второй партии: у E10
+  // сквозной центр, и цветная полоса ложится под него. Наоборот оправа
+  // просто скроется под заливкой и её не будет видно вовсе.
+  if (hasArt) hudDrawW(ctx, 'E10_bar_track_hollow', hbX + hbW / 2, hpY, hbW + 5);
   // Сокращённые числа: 12973/22052 ещё влезает, а 2.6e+142 у опыта — нет,
   // и раньше оно наезжало на собственную подпись «XP».
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
@@ -2644,6 +2648,7 @@ function drawHeader() {
     ctx.fillStyle = _xpShineGrad;
     roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
   }
+  if (hasArt) hudDrawW(ctx, 'E10_bar_track_hollow', xbX + xbW / 2, xpY, xbW + 5);
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(241,204,141,0.7)';
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
@@ -2987,21 +2992,20 @@ function drawPotionButton() {
 
   ctx.save();
 
-  // Гнездо расходника из комплекта. Круглая подложка под ним остаётся:
-  // B7 — квадратная рамка с пустой серединой, и зелье на просвечивающем
-  // мире читалось бы хуже, чем на своём тёмном поле.
-  const potArt = hudImg('B7_consumable_slot');
-  ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
-  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r * 0.92, 0, Math.PI * 2); ctx.fill();
-
+  // Круглая кнопка со своей заливкой. Зелёного ореола больше нет: он
+  // светился вокруг зелья постоянно, потому что «готово» — это обычное
+  // состояние, и подсветка, горящая всегда, не сообщает ничего, а бликом
+  // тянет взгляд к себе весь бой.
+  //
+  // Недоступность показывается наоборот — приглушением: отсутствие сигнала
+  // спокойнее постоянного сигнала.
+  const potArt = hudImg('E5_round_button');
   if (potArt) {
-    hudDraw(ctx, 'B7_consumable_slot', pb.x, pb.y, pb.r * 2.3, pb.r * 2.3);
-    if (ready && cd <= 0) {
-      // Готовность — зелёный ореол: своего «готового» вида у гнезда нет.
-      ctx.strokeStyle = 'rgba(144,199,96,0.42)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r * 1.02, 0, Math.PI * 2); ctx.stroke();
-    }
+    hudDraw(ctx, 'E5_round_button', pb.x, pb.y, pb.r * 2.16, pb.r * 2.16,
+      (ready && cd <= 0) ? 1 : 0.66);
   } else {
+    ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
+    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r * 0.92, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(84,70,46,0.6)';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
@@ -3050,24 +3054,21 @@ function drawTargetButton() {
 
   ctx.save();
 
-  const art = hudImg('B5_round_button_rim');
-
-  // Тёмный диск под ободом рисуется всегда: обод — только кольцо, и без
-  // подложки сквозь кнопку виден мир, а прицел на нём теряется.
-  ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
-  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
+  // Кнопка целиком из комплекта — со своей заливкой. Раньше под ободом
+  // рисовался ещё и градиентный диск, и на просвет получалось два разных
+  // тёмных круга один в другом.
+  const art = hudImg('E6_round_button_crimson');
 
   if (art) {
-    hudDraw(ctx, 'B5_round_button_rim', tb.x, tb.y, tb.r * 2.16, tb.r * 2.16);
-    if (hasTarget) {
-      // Захваченная цель — красный ореол вокруг обода. Своей «активной»
-      // версии у ободка нет, а различать состояния надо.
-      ctx.strokeStyle = 'rgba(235,73,92,0.5)'; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r * 1.06, 0, Math.PI * 2); ctx.stroke();
-    }
-    hudDraw(ctx, 'C8_crosshair_reticle', tb.x, tb.y - tb.r * 0.2,
-      tb.r * 0.92, tb.r * 0.92, hasTarget ? 1 : 0.6);
+    // Состояние — ЯРКОСТЬЮ самой кнопки, а не кольцом поверх неё. Кольцо
+    // читалось как вторая рамка и спорило с ободом.
+    hudDraw(ctx, 'E6_round_button_crimson', tb.x, tb.y, tb.r * 2.12, tb.r * 2.12,
+      hasTarget ? 1 : 0.72);
+    hudDraw(ctx, 'C8_crosshair_reticle', tb.x, tb.y - tb.r * 0.24,
+      tb.r * 0.78, tb.r * 0.78, hasTarget ? 0.95 : 0.5);
   } else {
+    ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
+    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(113,94,62,0.6)';
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
@@ -3077,8 +3078,13 @@ function drawTargetButton() {
   // Подпись под прицелом. До неё кнопка была кружком с крестиком, и что
   // она делает, приходилось выяснять нажатием — а нажатие в бою меняет
   // цель, то есть цена вопроса «что это» была промахом по врагу.
-  hudGoldText(ctx, t('targetAbbrev'), tb.x, tb.y + tb.r * 0.52,
-    Math.round(tb.r * 0.44), { dim: !hasTarget });
+  // Кегль считается от длины слова: «ЦЕЛЬ» — четыре знака, «OBJETIVO» —
+  // восемь, и один фиксированный размер вылезал бы за круг на половине
+  // языков. Ширина круга на уровне подписи меньше диаметра, отсюда 1.5.
+  const _tgTxt = t('targetAbbrev');
+  hudGoldText(ctx, _tgTxt, tb.x, tb.y + tb.r * 0.5,
+    Math.max(6.5, Math.min(tb.r * 0.38, tb.r * 1.5 / _tgTxt.length)),
+    { dim: !hasTarget });
 
   ctx.restore();
 }
@@ -3196,6 +3202,28 @@ function drawBuffStrip() {
 // ─────────────────────────────────────────────────────────
 //  PK / МИР BUTTON
 // ─────────────────────────────────────────────────────────
+// ── кнопка-пилюля из комплекта ────────────────────────────────────────────
+// Три кнопки слева — «Мир/ПК», «Проф», «+Pack» — рисовались тремя почти
+// одинаковыми кусками кода с собственными градиентами. Одна функция и один
+// ассет вместо этого: разной у них остаётся только подсветка состояния,
+// а она и есть единственное, что различается по смыслу.
+//
+// Возвращает false, если ассет не доехал — вызывающий тогда рисует
+// прежним способом, и кнопка не пропадает.
+function hudPill(b, opts) {
+  const o = opts || {};
+  if (!hudImg(o.accent ? 'E2_small_pill_button_accent' : 'E1_small_pill_button')) return false;
+  hudDrawW(ctx, o.accent ? 'E2_small_pill_button_accent' : 'E1_small_pill_button',
+    b.x + b.w / 2, b.y + b.h / 2, b.w + 6, o.dim ? 0.72 : 1);
+  if (o.hot) {
+    // Включённый режим ПК: красная кайма поверх, потому что своей «горячей»
+    // версии у пилюли нет, а перепутать мир с ПК — это потерянный персонаж.
+    ctx.strokeStyle = 'rgba(226,70,88,0.75)'; ctx.lineWidth = 1.6;
+    roundRect(ctx, b.x + 1, b.y + 1, b.w - 2, b.h - 2, b.h / 2); ctx.stroke();
+  }
+  return true;
+}
+
 function drawPvpButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
@@ -3204,16 +3232,16 @@ function drawPvpButton() {
 
   ctx.save();
 
-  ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(194,154,86,0.55)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-
-  if (pvpMode) {
-    ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
-    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+  if (!hudPill(pb, { hot: pvpMode })) {
+    ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
+    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+    ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(194,154,86,0.55)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+    if (pvpMode) {
+      ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
+      roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+    }
   }
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
@@ -3238,12 +3266,13 @@ function drawProfessionButton() {
 
   ctx.save();
 
-  ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(194,154,86,0.4)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+  if (!hudPill(pb, { dim: !ready })) {
+    ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
+    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+    ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(194,154,86,0.4)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+  }
 
   if (ready) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
@@ -3276,27 +3305,32 @@ function drawEpicPackButton() {
   // Shimmering dark-emerald fill — a bright band sweeps back and forth
   // across the button instead of sitting still ("переливается"). Rebuilt
   // every frame (not cached in _uiBtnGrads) so the sweep can move.
-  const sweep = (Math.sin(Date.now() / 1100) + 1) / 2; // 0..1
-  const bandStart = Math.max(0, sweep - 0.3);
-  const bandEnd = Math.min(1, sweep + 0.3);
-  const grad = ctx.createLinearGradient(pb.x, pb.y, pb.x + pb.w, pb.y + pb.h);
-  grad.addColorStop(0, '#062f1c');
-  grad.addColorStop(bandStart, '#0a4a2c');
-  grad.addColorStop(sweep, '#2fd68f');
-  grad.addColorStop(bandEnd, '#0a4a2c');
-  grad.addColorStop(1, '#062f1c');
-  ctx.fillStyle = grad;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = 'rgba(60,235,160,0.7)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-
-  // Always pulses — unlike Профессия's "ready" glow, this one's a
-  // permanent promo, not a state indicator.
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  ctx.strokeStyle = `rgba(60,235,160,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-  roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+  if (hudPill(pb, { accent: true })) {
+    // Пульсация по ПРОЗРАЧНОСТИ самой кнопки, а не второй рамкой поверх:
+    // рамка вокруг рамки читалась как ореол и спорила с золотом ассета.
+    // Переливающийся градиент снят целиком — он был способом выделить
+    // кнопку, пока не было акцентного ассета; теперь акцент в картинке.
+    ctx.save();
+    ctx.globalAlpha = 0.10 + 0.10 * pulse;
+    hudDrawW(ctx, 'E2_small_pill_button_accent', pb.x + pb.w / 2, pb.y + pb.h / 2, pb.w + 12);
+    ctx.restore();
+  } else {
+    const sweep = (Math.sin(Date.now() / 1100) + 1) / 2; // 0..1
+    const grad = ctx.createLinearGradient(pb.x, pb.y, pb.x + pb.w, pb.y + pb.h);
+    grad.addColorStop(0, '#062f1c');
+    grad.addColorStop(Math.max(0, sweep - 0.3), '#0a4a2c');
+    grad.addColorStop(sweep, '#2fd68f');
+    grad.addColorStop(Math.min(1, sweep + 0.3), '#0a4a2c');
+    grad.addColorStop(1, '#062f1c');
+    ctx.fillStyle = grad;
+    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(60,235,160,0.7)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+    ctx.strokeStyle = `rgba(60,235,160,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+  }
 
   drawIconCtx(ctx, 'coin', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, '#7cf5b6');
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -3356,23 +3390,31 @@ function drawStarterBonusButton() {
   // Warm amber, so it reads as a gift rather than as a second purchase button
   // next to +Pack's emerald. Same sweeping band, half a cycle out of phase,
   // so the two never pulse in lockstep.
-  const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
-  const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
-  grad.addColorStop(0, '#3a2408');
-  grad.addColorStop(Math.max(0, sweep - 0.3), '#5c3a0d');
-  grad.addColorStop(sweep, '#f0b44a');
-  grad.addColorStop(Math.min(1, sweep + 0.3), '#5c3a0d');
-  grad.addColorStop(1, '#3a2408');
-  ctx.fillStyle = grad;
-  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = 'rgba(240,180,74,0.7)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.stroke();
-
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-  roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
+  // Та же акцентная пилюля, что у +Pack, но пульс в противофазе: две
+  // кнопки-подарка рядом, мигающие в такт, читаются как одна мигающая
+  // полоса и обе перестают быть заметными.
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320 + Math.PI);
+  if (hudPill(bb, { accent: true })) {
+    ctx.save();
+    ctx.globalAlpha = 0.10 + 0.10 * pulse;
+    hudDrawW(ctx, 'E2_small_pill_button_accent', bb.x + bb.w / 2, bb.y + bb.h / 2, bb.w + 12);
+    ctx.restore();
+  } else {
+    const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
+    const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
+    grad.addColorStop(0, '#3a2408');
+    grad.addColorStop(Math.max(0, sweep - 0.3), '#5c3a0d');
+    grad.addColorStop(sweep, '#f0b44a');
+    grad.addColorStop(Math.min(1, sweep + 0.3), '#5c3a0d');
+    grad.addColorStop(1, '#3a2408');
+    ctx.fillStyle = grad;
+    roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(240,180,74,0.7)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.stroke();
+    ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+    roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
+  }
 
   drawIconCtx(ctx, 'star', bb.x + bb.w / 2 - 16, bb.y + bb.h / 2, 12, '#ffe0a3');
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
