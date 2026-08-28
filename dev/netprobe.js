@@ -26,18 +26,10 @@ const SPREAD = MODE === 'hub' ? 200 : MODE === 'far' ? 0 : 1500;
 
 const TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock'];
 
-let _mapPromise = null;
-function worldSpawn(version) {
-  if (!_mapPromise) {
-    _mapPromise = fetch(`${URL}/api/world-map/${version}`)
-      .then(r => r.arrayBuffer())
-      .then(buf => {
-        const jsonLen = new DataView(buf).getUint32(0, true);
-        return JSON.parse(Buffer.from(buf, 4, jsonLen).toString('utf8')).spawn;
-      });
-  }
-  return _mapPromise;
-}
+// Точка входа приходит в самом gameStart (worldPayload, server/session.js).
+// Здесь она вычитывалась из карты по адресу /api/world-map/<version>, которого
+// не существует — маршрут /api/world-map/:floor/:ver, — так что ответом был
+// HTML страницы 404 и разбор падал на ERR_BUFFER_OUT_OF_BOUNDS.
 
 async function connect(name, type) {
   const { initData } = await (await fetch(`${URL}/dev/init-data?dev=${name}`)).json();
@@ -45,7 +37,7 @@ async function connect(name, type) {
   s.on('connect', () => s.emit('loginTelegramWebApp', { initData }));
   s.on('authOk', () => s.emit('selectChar', { type, savedStats: null }));
   const spawn = await new Promise(res => s.on('gameStart',
-    ({ mapVersion }) => worldSpawn(mapVersion).then(res)));
+    ({ spawn }) => res(spawn)));
   return { s, spawn };
 }
 
