@@ -2704,6 +2704,15 @@ function _buildSkillBtnGrads() {
   });
 }
 
+// Металл веера поверх иконок. Отдельной функцией, а не внутри
+// drawSkillButtons, потому что рисуется он между двумя разными слоями:
+// после иконок и до кнопки атаки.
+function drawSkillFan() {
+  if (typeof fanSlots !== 'function' || !fanSlots()) return;
+  const r = fanRect();
+  hudDraw(ctx, 'A3_skill_fan', r.x + r.w / 2, r.y + r.h / 2, r.w, r.h);
+}
+
 const _F_SKILL = 'system-ui, -apple-system, Arial';
 function drawSkillButtons() {
   if (!player) return;
@@ -2724,10 +2733,21 @@ function drawSkillButtons() {
     const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const r = b.w / 2;
+    // Веер уже несёт и фон гнезда, и окантовку. Рисовать под иконку свой
+    // круг поверх него — это второй ободок внутри первого; гайд про это
+    // говорит отдельно: «не додавати другу золоту рамку».
+    const onFan = (typeof fanSlots === 'function') && !!fanSlots();
 
     // Background gradient (cached) — circular
-    ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    if (!onFan) {
+      ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    } else if (isFlash) {
+      // Вспышка применения — единственное, что рисуется под иконкой и на
+      // веере: без неё нажатие умения ничем не отзывается.
+      ctx.fillStyle = 'rgba(234,167,66,0.30)';
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    }
 
     // Icon — clipped to the circle and scaled to fully cover it, no padding
     // and no key-letter label, so the art fills the whole button.
@@ -2749,10 +2769,12 @@ function drawSkillButtons() {
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    // Border
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    // Border — только в запасной раскладке: на веере окантовка уже своя.
+    if (!onFan) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    }
 
     // Not-yet-studied skills show a lock instead of a cooldown countdown
     if (locked) {
@@ -3374,9 +3396,24 @@ function drawAttackButton() {
   const animBusy = (player.atkAnimTimer || 0) > 0;
   const ready = (player.atkTimer || 0) <= 0 && !animBusy;
 
+  // Веер несёт своё гнездо, D1 садится ВНУТРЬ него. Рисовать под кнопку
+  // собственный круг поверх веера — второй ободок внутри первого.
+  const onFan = (typeof fanSlots === 'function') && !!fanSlots();
+
   ctx.save();
-  ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
-  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
+  if (onFan) {
+    // Готовность и режим — прозрачностью и подсветкой, а не заливкой:
+    // сама кнопка одна, отличать состояния поверх неё.
+    hudDraw(ctx, 'D1_attack_button', ab.x, ab.y, ab.r * 2, ab.r * 2,
+      autoAttackMode ? 0.55 : (animBusy ? 0.7 : 1));
+    if (!autoAttackMode && hasTarget && ready) {
+      ctx.strokeStyle = 'rgba(235,73,92,0.55)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r * 1.02, 0, Math.PI * 2); ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
+    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
+  }
 
   // cooldown arc overlay while attack animation is playing
   if (animBusy && player.castDuration > 0) {
@@ -3388,19 +3425,21 @@ function drawAttackButton() {
     ctx.stroke();
   }
 
-  const borderColor = !autoAttackMode
-    ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
-    : 'rgba(84,70,46,0.45)';
-  ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
-  if (!autoAttackMode && hasTarget && ready) {
-    ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
-  }
+  if (!onFan) {
+    const borderColor = !autoAttackMode
+      ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
+      : 'rgba(84,70,46,0.45)';
+    ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
+    if (!autoAttackMode && hasTarget && ready) {
+      ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
+    }
 
-  ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
-  drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
+    ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
+    const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
+    drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
+  }
 
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -3414,13 +3453,23 @@ function drawAutoToggle() {
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const ab = _uiBtnGrads.autoBtn;
   const F = 'system-ui, -apple-system, Arial';
-  ctx.save();
-  ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
-  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
+  const onFan = (typeof fanSlots === 'function') && !!fanSlots();
 
-  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
+  ctx.save();
+  if (onFan) {
+    // Гайд: «це внутрішній фіолетовий диск без дублюючої золотої рамки» —
+    // окантовка гнезда уже нарисована в самом веере.
+    const cx = ab.x + ab.w / 2, cy = ab.y + ab.h / 2;
+    const d = ab.art || ab.w;
+    hudDraw(ctx, 'D2_attack_mode_button', cx, cy, d, d, autoAttackMode ? 1 : 0.82);
+  } else {
+    ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
+    roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
+
+    ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
+  }
 
   // Тиснёное золото, а не плоская заливка. Кнопка лежит поверх мира и
   // поверх подсвеченного аметиста: одноцветная надпись читается на одном
@@ -3431,11 +3480,14 @@ function drawAutoToggle() {
   // рядом: цвет надписи теперь означает «это кнопка», а состояние режима
   // сообщает отдельная метка. Иначе игрок, который не различает зелёный и
   // оранжевый, не различает и режимы.
+  // Кегль считается от РИСУНКА кнопки, а не от зоны нажатия: зона расширена
+  // до 44 px под палец, и надпись по ней была бы вдвое крупнее самой кнопки.
+  const _artD = ab.art || ab.h;
   hudGoldText(ctx, autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'),
-    ab.x + ab.w / 2, ab.y + ab.h / 2, Math.round(ab.h * 0.44));
+    ab.x + ab.w / 2, ab.y + ab.h / 2, Math.max(8.5, Math.round(_artD * 0.34)));
   const dot = 3;
   ctx.beginPath();
-  ctx.arc(ab.x + ab.w - dot * 2.2, ab.y + dot * 2.2, dot, 0, Math.PI * 2);
+  ctx.arc(ab.x + ab.w / 2 + _artD * 0.42, ab.y + ab.h / 2 - _artD * 0.42, dot, 0, Math.PI * 2);
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
   ctx.fill();
   ctx.restore();

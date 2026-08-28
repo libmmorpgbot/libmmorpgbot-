@@ -163,8 +163,61 @@ async function main() {
       fg.imageSmoothingQuality = 'high';
       fg.drawImage(cur, 0, 0, ow, oh);
 
+      // ── посадочные места ────────────────────────────────────────────────
+      // Полностью прозрачные области ВНУТРИ фигуры: гнёзда умений, окно
+      // портрета, поле карты, углубления вкладок. Гайд даёт координаты
+      // ровно для двух из них; остальные нигде не записаны, а рисовать
+      // контент надо во все.
+      //
+      // Область, касающаяся края bounds, — это фон вокруг фигуры, а не
+      // дырка в ней, и она отбрасывается: иначе «гнездом» станет весь
+      // воздух вокруг веера.
+      const seen = new Uint8Array(W * H);
+      const stack = new Int32Array(W * H);
+      const slots = [];
+      for (let sy = y0; sy <= y1; sy++) {
+        for (let sx = x0; sx <= x1; sx++) {
+          const si = sy * W + sx;
+          if (seen[si] || d[si * 4 + 3] > 8) continue;
+          let sp = 0; stack[sp++] = si; seen[si] = 1;
+          let n = 0, mnx = W, mxx = -1, mny = H, mxy = -1, edge = false;
+          while (sp) {
+            const i = stack[--sp];
+            const px = i % W, py = (i / W) | 0;
+            n++;
+            if (px < mnx) mnx = px; if (px > mxx) mxx = px;
+            if (py < mny) mny = py; if (py > mxy) mxy = py;
+            if (px <= x0 || px >= x1 || py <= y0 || py >= y1) edge = true;
+            const nb = [i - 1, i + 1, i - W, i + W];
+            for (let q = 0; q < 4; q++) {
+              const j = nb[q];
+              if (j < 0 || j >= W * H || seen[j]) continue;
+              const jx = j % W, jy = (j / W) | 0;
+              if (jx < x0 || jx > x1 || jy < y0 || jy > y1) continue;
+              if (d[j * 4 + 3] > 8) continue;
+              seen[j] = 1; stack[sp++] = j;
+            }
+          }
+          // Порог в 400 пикселей отсекает крапины антиалиасинга по резьбе:
+          // самое мелкое настоящее гнездо здесь — 94×95.
+          if (edge || n < 400) continue;
+          const hw = mxx - mnx + 1, hh = mxy - mny + 1;
+          slots.push({
+            cx: +((mnx + hw / 2 - x0) / bw).toFixed(4),
+            cy: +((mny + hh / 2 - y0) / bh).toFixed(4),
+            w: +(hw / bw).toFixed(4),
+            h: +(hh / bh).toFixed(4),
+            area: n,
+          });
+        }
+      }
+      // По площади: самое большое гнездо веера — место атаки, и код должен
+      // находить его первым, не пересчитывая порядок обхода.
+      slots.sort((a, b) => b.area - a.area);
+
       return {
         srcW: W, srcH: H, x0, y0, bw, bh, ow, oh,
+        slots: slots.map(sl => [sl.cx, sl.cy, sl.w, sl.h]),
         webp: fin.toDataURL('image/webp', 0.92),
       };
     }, { src: 'data:image/png;base64,' + b64, target });
@@ -212,12 +265,18 @@ async function main() {
     '// box   — его размер там же',
     '// out   — размер файла, который реально едет игроку',
     '// css   — на сколько CSS-пикселей он рассчитан на телефоне 390 px',
+    '// slots — посадочные места под контент: [cx, cy, w, h] в ДОЛЯХ от куска,',
+    '//         по убыванию площади. Измерены заливкой по прозрачности, а не',
+    '//         вписаны руками: гайд к комплекту называет координаты только',
+    '//         двух гнёзд веера, а рисовать надо во все.',
     'const HUD_ART_DIR = "/images/hud/";',
     'const HUD_ART = {',
   ];
   for (const r of rows) {
+    const slots = r.slots.length
+      ? `, slots: [${r.slots.map(sl => '[' + sl.join(',') + ']').join(', ')}]` : '';
     lines.push(`  ${r.key}: { src: [${r.srcW}, ${r.srcH}], off: [${r.x0}, ${r.y0}], `
-      + `box: [${r.bw}, ${r.bh}], out: [${r.ow}, ${r.oh}], css: ${r.css} },`);
+      + `box: [${r.bw}, ${r.bh}], out: [${r.ow}, ${r.oh}], css: ${r.css}${slots} },`);
   }
   lines.push('};', '');
   fs.writeFileSync(path.join(ROOT, 'js', 'hudart.js'), lines.join('\n'));

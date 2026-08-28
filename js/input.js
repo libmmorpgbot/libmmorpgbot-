@@ -13,7 +13,57 @@ function _inJoyZone(cx, cy) {
          dist(cx, cy, jc.x, jc.y) < JOY_R * 1.35;
 }
 
+// ── веер умений ───────────────────────────────────────────────────────────
+// Прямоугольник, в котором лежит A3_skill_fan. Правым краем чуть за экран —
+// так на макете: веер срезан краем, и это его форма, а не ошибка вёрстки.
+//
+// Ширина в долях экрана, а не константой: на 320-пиксельном телефоне веер
+// в 196 px занял бы больше половины ширины и налез на джойстик.
+function fanRect() {
+  const a = (typeof HUD_ART !== 'undefined') && HUD_ART.A3_skill_fan;
+  const w = Math.min(200, W * 0.47);
+  const h = a ? w * a.out[1] / a.out[0] : w;
+  // Правым краем ВПРИТЫК, а не за экран. На макете веер срезан краем, и
+  // соблазн повторить это буквально был; но малое гнездо переключателя режима
+  // лежит на 0.90 ширины веера, и при заезде за край кнопка уезжала вместе с
+  // ним — вместе со своей подписью. Форму приходится жертвовать той кнопке,
+  // которая должна нажиматься.
+  return { x: W - w - 2, y: H - NAV_H - h + 12, w, h };
+}
+
+// Гнёзда веера в порядке ДУГИ, а не по площади. Таблица отдаёт их
+// отсортированными по величине — так находится место атаки, — но умения
+// идут по дуге снизу вверх, и первое умение должно лежать в нижнем гнезде,
+// а не в том, которое случайно оказалось на пиксель больше.
+let _fanSlotsCache = null;
+function fanSlots() {
+  if (_fanSlotsCache) return _fanSlotsCache;
+  const a = (typeof HUD_ART !== 'undefined') && HUD_ART.A3_skill_fan;
+  if (!a || !a.slots || a.slots.length < 6) return null;
+  const all = a.slots.slice();
+  const attack = all.shift();              // самое большое
+  const mode = all.pop();                  // самое маленькое
+  all.sort((p, q) => q[1] - p[1]);         // сверху вниз по экрану → снизу вверх по дуге
+  _fanSlotsCache = { attack, mode, skills: all };
+  return _fanSlotsCache;
+}
+
+function _fanAt(slot) {
+  const r = fanRect();
+  return {
+    x: r.x + slot[0] * r.w,
+    y: r.y + slot[1] * r.h,
+    r: slot[2] * r.w / 2,
+  };
+}
+
 function getSkillBtnPos(idx) {
+  const f = fanSlots();
+  if (f) {
+    const p = _fanAt(f.skills[idx] || f.skills[0]);
+    return { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2 };
+  }
+  // Запасная сетка 2×2 — на случай, если таблица ассетов не доехала.
   const sz = SKILL_SZ, gap = SKILL_GAP;
   const rx = W - 14, by = H - NAV_H - 14;
   const col = idx % 2;             // 0=left, 1=right
@@ -30,12 +80,23 @@ function getSkillBtnPos(idx) {
 // Potion's-slot-sized) radius here, Potion the smaller one below — icon size
 // scales off these radii, so this alone swaps how big each icon renders.
 function getAttackBtnPos() {
+  const f = fanSlots();
+  // Радиус чуть меньше гнезда: D1 садится ВНУТРЬ отверстия, а золотая
+  // окантовка гнезда остаётся сверху — гайд про порядок слоёв.
+  if (f) { const p = _fanAt(f.attack); return { x: p.x, y: p.y, r: p.r * 0.94 }; }
   const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
   const gridTop = H - NAV_H - 14 - 2 * sz - gap;
   return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
 }
 
+// Цель — слева от веера, на уровне его верхней трети: место, где на макете
+// стоит «Target», и единственное свободное — веер занимает весь угол.
 function getTargetBtnPos() {
+  const f = fanSlots();
+  if (f) {
+    const r = fanRect();
+    return { x: r.x - 30, y: r.y + r.h * 0.62, r: 26 };
+  }
   const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
   const gridTop = H - NAV_H - 14 - 2 * sz - gap;
   return { x: W - 14 - sz - gap - sz / 2, y: gridTop - gap - r, r };
@@ -103,13 +164,35 @@ function getPartyInfoBtnPos() {
 }
 
 // Potion is above the attack/target row; AUTO sits directly above Potion
+// Фляга — над веером, как на макете: это расходник, а не умение, и она
+// намеренно вынесена из дуги, потому что промах по ней в бою дороже всего.
 function getPotionBtnPos() {
+  const f = fanSlots();
+  if (f) {
+    const r = fanRect();
+    return { x: r.x + r.w * 0.62, y: r.y - 26, r: 28 };
+  }
   const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
   const ab = getAttackBtnPos();
   return { x: W - 14 - sz / 2, y: ab.y - ab.r - gap - r, r };
 }
 
+// Переключатель ручной/авто садится в МАЛОЕ гнездо веера — гайд называет его
+// «єдине посадкове місце для D2_attack_mode_button».
 function getAutoBtnPos() {
+  const f = fanSlots();
+  if (f) {
+    const p = _fanAt(f.mode);
+    // Гнездо мелкое — 0.081 ширины веера, около 16 px, — а палец нет. Область
+    // нажатия расширена до 44: у макета тут одна кнопка, и она обязана
+    // нажиматься, а не «иногда нажиматься». art несёт размер РИСУНКА, чтобы
+    // отрисовка не раздувалась вместе с зоной попадания.
+    const d = Math.max(44, p.r * 2);
+    // Рисунок КРУПНЕЕ отверстия — так и на макете: «РУЧ» там не тонет в
+    // гнезде, а лежит на нём пилюлей. Само отверстие 0.081 ширины веера,
+    // около 16 px, и три буквы в него не помещаются никаким кеглем.
+    return { x: p.x - d / 2, y: p.y - d / 2, w: d, h: d, art: Math.max(30, p.r * 3.8) };
+  }
   const pb = getPotionBtnPos();
   const gap = SKILL_GAP;
   const w = 52, h = 22;

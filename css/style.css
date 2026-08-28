@@ -958,9 +958,12 @@ canvas { display:block; width:100%; height:100%; }
 
 /* ── BOTTOM NAV ────────────────────────── */
 #bottom-nav {
-  position:absolute; bottom:0; left:0; right:0; height:62px;
-  background:linear-gradient(0deg,var(--void),var(--leather-lo) 70%);
-  border-top:2px solid var(--gold-dim);
+  position:absolute; bottom:0; left:0; right:0; height:78px;
+  /* Кованая полоса из комплекта. Под ней сплошная заливка: PNG местами
+     полупрозрачен, и без подложки сквозь навигацию просвечивал бы мир. */
+  background:
+    url('/images/hud/A4_bottom_navigation_bar.webp') center / 100% auto no-repeat,
+    linear-gradient(0deg,var(--void),var(--leather-lo) 70%);
   z-index:50; display:none;
 }
 .nav-tabs { display:flex; height:100%; }
@@ -974,13 +977,28 @@ canvas { display:block; width:100%; height:100%; }
 }
 .nav-tab:active { opacity:0.7; }
 .nav-tab.active { color:var(--gold-hi); }
+/* Подсвеченная подложка A5 — под иконкой, над полосой. Углубления в A4
+   измерены конвейером и стоят на 0.532 её высоты, отсюда и смещение. */
 .nav-tab.active::before {
-  content:""; position:absolute; top:0; left:22%; right:22%; height:2px;
-  background:var(--gold-hi); box-shadow:0 0 6px var(--gold-hi);
+  content:""; position:absolute; left:50%; top:5px;
+  width:46px; height:46px; margin-left:-23px;
+  background:url('/images/hud/A5_active_tab_plate.webp') center / contain no-repeat;
+  pointer-events:none;
 }
-.nav-tab.active .ni { filter:drop-shadow(0 0 4px rgba(240,207,131,0.5)); }
-.nav-tab .ni { font-size:19px; line-height:1; }
-.nav-tab .nl { font-size:9.5px; letter-spacing:0.3px; text-transform:uppercase; }
+.nav-tab.active .ni { filter:drop-shadow(0 0 5px rgba(196,139,255,0.55)); }
+.nav-tab .ni {
+  font-size:19px; line-height:1; position:relative; z-index:1;
+  width:30px; height:30px; display:flex; align-items:center; justify-content:center;
+}
+/* Символы из комплекта — картинками, а не контурным SVG. У неактивной
+   вкладки тусклее: своего «выключенного» варианта у них нет, а разница
+   между вкладками обязана читаться и без цвета. */
+.nav-tab .ni img { width:100%; height:100%; object-fit:contain; opacity:.6; }
+.nav-tab.active .ni img { opacity:1; }
+.nav-tab .nl {
+  font-size:9.5px; letter-spacing:0.3px; text-transform:uppercase;
+  position:relative; z-index:1; text-shadow:0 1px 2px rgba(0,0,0,.9);
+}
 
 /* ── UPGRADE PANEL ────────────────────── */
 .upg-section-hdr {

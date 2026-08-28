@@ -1441,7 +1441,12 @@ function _renderUI() {
   drawPartyHUD();
   drawTargetFrame();
   if (activeTab === 0) {
+    // Порядок из гайда к комплекту: иконки умений → веер → атака →
+    // переключатель режима. Веер рисуется ПОВЕРХ иконок, чтобы золотая
+    // окантовка гнезда осталась сверху и отверстие читалось вырезанным
+    // в металле, а не заклеенным.
     drawSkillButtons();
+    drawSkillFan();
     drawPotionButton();
     drawTargetButton();
     drawAttackButton();
