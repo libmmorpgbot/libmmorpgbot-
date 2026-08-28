@@ -51,7 +51,18 @@ if [ -n "$ASSETS" ]; then
   MISSING=$(comm -23 <(echo "$LOCAL") <(echo "$REMOTE") | sed 's/^[0-9]* //')
   if [ -n "$MISSING" ]; then
     echo "  надсилаю $(echo "$MISSING" | wc -l | tr -d ' ') нових/змінених ассетів ..."
-    echo "$MISSING" | tar -czf - -T - \
+    # Перелік — через ФАЙЛ, а не через stdin. `tar -T -` читає список з того
+    # самого потоку, у який далі йде архів до ssh, і на Git Bash це рветься:
+    # 38 нових файлів поїхали, а на семи tar сказав «Cannot open: Invalid
+    # cross-device link» і вийшов з помилкою. Щоразу на тих самих семи —
+    # тобто це не блокування файлу й не антивірус, а спільний потік.
+    #
+    # trap, а не rm наприкінці: скрипт під `set -e`, і падіння tar інакше
+    # лишало б список у /tmp назавжди.
+    LIST=$(mktemp)
+    trap 'rm -f "$LIST"' EXIT
+    printf '%s\n' "$MISSING" > "$LIST"
+    tar -czf - -T "$LIST" \
       | "${SSH[@]}" "tar -xzf - -C /srv/liberty/next"
   fi
 fi
