@@ -2292,10 +2292,30 @@ function setTelegramAvatar(url) {
   _tgAvatarImg = img;
 }
 
+// ── раскладка шапки ───────────────────────────────────────────────────────
+// Три блока, как на макете: панель статов слева, столбец валют посередине,
+// рамка карты справа. Считается в одном месте, потому что ширины связаны:
+// столбец валют — это то, что осталось между панелью и картой, и подгонять
+// его отдельно значит однажды получить наложение на узком экране.
+function hdrLayout() {
+  const pad = 3;
+  const h = HEADER_H - pad * 2;
+  // Панель и карта держат СВОИ пропорции, ширина считается от высоты.
+  const mapW = Math.round(h * ((typeof HUD_ART !== 'undefined' && HUD_ART.A2_map_panel)
+    ? HUD_ART.A2_map_panel.out[0] / HUD_ART.A2_map_panel.out[1] : 0.92));
+  const panelW = Math.min(Math.round(W * 0.48), Math.round(h * 1.86));
+  const panel = { x: pad, y: pad, w: panelW, h };
+  const map = { x: W - pad - mapW, y: pad, w: mapW, h };
+  const cur = { x: panel.x + panel.w + 6, y: pad + 4, w: map.x - (panel.x + panel.w) - 12 };
+  return { pad, panel, map, cur };
+}
+
 function drawHeader() {
   if (!player || !dungeon) return;
   const p = player;
   const F = 'system-ui, -apple-system, sans-serif';
+  const LAY = hdrLayout();
+  const hasArt = (typeof hudImg === 'function') && !!hudImg('A1_stat_panel');
 
   ctx.save();
 
@@ -2321,17 +2341,35 @@ function drawHeader() {
   ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
 
+  // Панель статов и рамка карты — до всего, что в них ложится.
+  if (hasArt) {
+    hudDraw(ctx, 'A1_stat_panel', LAY.panel.x + LAY.panel.w / 2,
+      LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h);
+    hudDraw(ctx, 'A2_map_panel', LAY.map.x + LAY.map.w / 2,
+      LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h);
+  }
+
   // ── Minimap (right side) ──────────────────────────────────
   // Local window only — shows just the area around the player instead of
   // the whole (huge) world. The window follows the player continuously
   // (float-precision top-left, not tile-snapped) and is small enough
   // (~60×60 tiles) to redraw from scratch every frame with no cache needed.
   const _MM_RADIUS = 30; // tiles each direction from the player
+  // Карта садится в ОКНО рамки A2 — измеренное отверстие, а не выдуманный
+  // отступ: 0.8773 × 0.8027 её размера, центр на 0.4996 × 0.5268.
   const mmPad = 6;
-  const mmH = HEADER_H - mmPad * 2;
-  const mmW = mmH;
-  const mmX = W - mmW - mmPad - 4;
-  const mmY = mmPad;
+  let mmH, mmW, mmX, mmY;
+  if (hasArt) {
+    const win = Math.min(LAY.map.w * 0.86, LAY.map.h * 0.78);
+    mmW = mmH = Math.round(win);
+    mmX = Math.round(LAY.map.x + LAY.map.w * 0.4996 - mmW / 2);
+    mmY = Math.round(LAY.map.y + LAY.map.h * 0.5268 - mmH / 2);
+  } else {
+    mmH = HEADER_H - mmPad * 2;
+    mmW = mmH;
+    mmX = W - mmW - mmPad - 4;
+    mmY = mmPad;
+  }
   const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
   const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
@@ -2445,7 +2483,18 @@ function drawHeader() {
   ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
 
   // ── Avatar ────────────────────────────────────────────────
-  const avX = 30, avY = HEADER_H / 2, avR = 18;
+  // Внутри панели A1, а не в углу экрана: измеренное окно панели —
+  // 0.8883 × 0.7982 её размера, и портрет садится к его левому краю.
+  // Портрет целиком внутри экрана: при выносе за левый край панели за ним
+  // уезжало и кольцо уровня, а оно снизу-слева и вылезало за нулевую
+  // координату — половина цифры просто не рисовалась.
+  // Кольцо ШИРЕ портрета: его окно — 0.7762 собственного размера, значит
+  // внешний радиус равен 1.29 радиуса портрета. Отступ считается от кольца,
+  // а не от портрета, иначе золото уезжает за нулевую координату — что и
+  // было видно как срезанный слева обод.
+  const avR = hasArt ? Math.round(LAY.panel.h * 0.24) : 18;
+  const avX = hasArt ? Math.round(LAY.panel.x + avR * 1.29 + 3) : 30;
+  const avY = hasArt ? Math.round(LAY.panel.y + LAY.panel.h * 0.46) : HEADER_H / 2;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
@@ -2469,18 +2518,42 @@ function drawHeader() {
   ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
   ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
   if (!hasTgAvatar) drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 20, p.charDef.color);
+  if (hasArt) {
+    // Кольцо СВЕРХУ портрета: у него прозрачная середина, и портрет
+    // рендерится под ним — гайд про порядок слоёв для рамок.
+    hudDraw(ctx, 'B1_portrait_ring', avX, avY, avR * 2.62, avR * 2.62);
+    // Уровень — в своё кольцо, снизу слева от портрета, как на макете.
+    const lvR = Math.round(avR * 0.62);
+    const lvX = avX - avR * 0.72, lvY = avY + avR * 0.82;
+    ctx.fillStyle = 'rgba(12,9,16,0.94)';
+    ctx.beginPath(); ctx.arc(lvX, lvY, lvR * 0.9, 0, Math.PI * 2); ctx.fill();
+    hudDraw(ctx, 'B2_level_badge_ring', lvX, lvY, lvR * 2.3, lvR * 2.3);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${Math.max(9, Math.round(lvR * 0.95))}px ${F}`;
+    ctx.fillStyle = '#f4d8a7';
+    ctx.fillText(p.lvl, lvX, lvY);
+    ctx.textBaseline = 'alphabetic';
+  }
 
   // ── Info area ─────────────────────────────────────────────
-  const infoX = avX + avR + 9;
-  const infoRight = mpX - 10;
+  // Сдвиг вниз, а не переписывание всех координат строк: их тут полтора
+  // десятка, и каждая правка на глаз — шанс промахнуться на пиксель в
+  // одной из них. Блок целиком уезжает внутрь панели одним translate.
+  const infoX = hasArt ? avX + avR + 12 : avX + avR + 9;
+  const infoRight = hasArt ? (LAY.panel.x + LAY.panel.w - 14) : (mpX - 10);
   const infoW = infoRight - infoX;
+  const _infoDY = hasArt ? Math.round(LAY.panel.y + LAY.panel.h * 0.14) : 0;
+  ctx.save();
+  if (_infoDY) ctx.translate(0, _infoDY);
 
   // Row 1: Name + Level
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
   ctx.fillText((netUsername || p.charDef.name).slice(0, 15), infoX, 15);
-  ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
-  ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
+  if (!hasArt) {
+    ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
+    ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
+  }
 
   // Row 2: Class name + inline stats (gold / atk / def)
   ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
@@ -2491,46 +2564,14 @@ function drawHeader() {
   }
   let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
-  // БМ label + value
+  // БМ — рядом с классом: это боевая мощь персонажа, а не валюта, и в
+  // столбец плашек ей не место.
   const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
   ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
   ctx.fillText(t('bmAbbrev'), stxH, 24);
   const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
   ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
   ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
-  stxH += _bmLabelW + 3 + ctx.measureText(String(bmVal)).width + 10;
-  // Gold
-  drawIconCtx(ctx, 'coin', stxH + 5, 24, 11, '#e3941d');
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#e3941d';
-  const _goldDisp = Math.floor(p.gold);
-  ctx.fillText(_goldDisp, stxH + 13, 24);
-  stxH += 13 + ctx.measureText(String(_goldDisp)).width + 8;
-  // Nexum balance — shown unconditionally, same as GRAM below, so a currency
-  // doesn't appear/disappear from the HUD as its balance crosses zero.
-  const _nxBal = window._nexumBalance || 0;
-  {
-    const _nxImg = _nexumIconImg || (_nexumIconImg = (() => { const i = new Image(); i.src = '/images/nexum-coin_v2.png'; return i; })());
-    if (_nxImg.complete && _nxImg.naturalWidth > 0) {
-      ctx.drawImage(_nxImg, stxH, 24 - 6, 12, 12);
-    } else {
-      ctx.fillStyle = '#b2864d'; ctx.font = `bold 9px ${F}`;
-      ctx.fillText('N', stxH + 2, 24);
-    }
-    ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#b2864d';
-    ctx.fillText(_nxBal, stxH + 14, 24);
-    stxH += 14 + ctx.measureText(String(_nxBal)).width + 8;
-  }
-  // GRAM balance (tiny per-kill drop currency, see enemyKilled's 'gram' field)
-  const _grBal = window._gramBalance || 0;
-  const _grImg = _gramIconImg || (_gramIconImg = (() => { const i = new Image(); i.src = '/images/gram-icon.png'; return i; })());
-  if (_grImg.complete && _grImg.naturalWidth > 0) {
-    ctx.drawImage(_grImg, stxH, 24 - 6, 12, 12);
-  } else {
-    ctx.fillStyle = '#4fd67a'; ctx.font = `bold 9px ${F}`;
-    ctx.fillText('G', stxH + 2, 24);
-  }
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#4fd67a';
-  ctx.fillText(_grBal.toFixed(7), stxH + 14, 24);
   ctx.textBaseline = 'alphabetic';
 
   // Separator
@@ -2600,7 +2641,52 @@ function drawHeader() {
   // precision — only the display is whole.
   ctx.fillText(Math.floor(p.xp) + '/' + p.xpNext, xbX + xbW / 2, xpY);
 
+  // Конец сдвинутого блока: дальше снова экранные координаты.
   ctx.restore();
+
+  // ── валютные плашки ─────────────────────────────────────────────────────
+  // Три штуки столбиком между панелью и картой — как на макете. Раньше это
+  // была строка текста внутри панели статов, и на длинных числах она
+  // упиралась в миникарту: GRAM печатается с семью знаками после точки.
+  if (hasArt) {
+    const cw = LAY.cur.w;
+    const chh = hudHeightAt('B3_currency_plate', cw);
+    const gap = Math.max(2, Math.round((LAY.panel.h - chh * 3) / 4));
+    const rows = [
+      { icon: 'C12_gold_coin',    color: '#f0c98a', val: _fmtCur(Math.floor(p.gold)) },
+      { icon: 'C13_amethyst_gem', color: '#c9a4ff', val: _fmtCur(window._gramBalance || 0, 4) },
+      { icon: 'C14_ruby_gem',     color: '#f09a92', val: _fmtCur(window._nexumBalance || 0) },
+    ];
+    for (let i = 0; i < rows.length; i++) {
+      const cy = LAY.cur.y + gap + chh / 2 + i * (chh + gap);
+      const cx = LAY.cur.x + cw / 2;
+      hudDrawW(ctx, 'B3_currency_plate', cx, cy, cw);
+      // Гнездо иконки и поле числа — измеренные отверстия плашки:
+      // 0.1631 и 0.6322 её ширины.
+      hudDraw(ctx, rows[i].icon, LAY.cur.x + cw * 0.1631, cy, chh * 0.62, chh * 0.62);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `bold ${Math.max(8, Math.round(chh * 0.42))}px ${F}`;
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.fillText(rows[i].val, LAY.cur.x + cw * 0.6322, cy + 1);
+      ctx.fillStyle = rows[i].color;
+      ctx.fillText(rows[i].val, LAY.cur.x + cw * 0.6322, cy);
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  ctx.restore();
+}
+
+// Числа валют в шапке. Без сокращения GRAM печатался как 914.3503811 и
+// вылезал за плашку — а плашка узкая, потому что их три и между двумя
+// панелями.
+function _fmtCur(v, frac) {
+  const n = Number(v) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e5) return Math.round(n / 1e3) + 'K';
+  if (frac && n > 0 && n < 1000) return n.toFixed(Math.min(frac, 4)).replace(/0+$/, '').replace(/\.$/, '');
+  return String(Math.round(n * 100) / 100);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2885,16 +2971,24 @@ function drawPotionButton() {
 
   ctx.save();
 
-  // Circle background (cached gradient)
+  // Гнездо расходника из комплекта. Круглая подложка под ним остаётся:
+  // B7 — квадратная рамка с пустой серединой, и зелье на просвечивающем
+  // мире читалось бы хуже, чем на своём тёмном поле.
+  const potArt = hudImg('B7_consumable_slot');
   ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
-  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r * 0.92, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(84,70,46,0.6)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
-  if (ready && cd <= 0) {
-    ctx.strokeStyle = 'rgba(144,199,96,0.15)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r + 2, 0, Math.PI * 2); ctx.stroke();
+  if (potArt) {
+    hudDraw(ctx, 'B7_consumable_slot', pb.x, pb.y, pb.r * 2.3, pb.r * 2.3);
+    if (ready && cd <= 0) {
+      // Готовность — зелёный ореол: своего «готового» вида у гнезда нет.
+      ctx.strokeStyle = 'rgba(144,199,96,0.42)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r * 1.02, 0, Math.PI * 2); ctx.stroke();
+    }
+  } else {
+    ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(84,70,46,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
   }
 
   // Draw PNG image or fallback SVG icon
@@ -2940,18 +3034,29 @@ function drawTargetButton() {
 
   ctx.save();
 
+  const art = hudImg('B5_round_button_rim');
+
+  // Тёмный диск под ободом рисуется всегда: обод — только кольцо, и без
+  // подложки сквозь кнопку виден мир, а прицел на нём теряется.
   ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(113,94,62,0.6)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
-  if (hasTarget) {
-    ctx.strokeStyle = 'rgba(235,73,92,0.15)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
+  if (art) {
+    hudDraw(ctx, 'B5_round_button_rim', tb.x, tb.y, tb.r * 2.16, tb.r * 2.16);
+    if (hasTarget) {
+      // Захваченная цель — красный ореол вокруг обода. Своей «активной»
+      // версии у ободка нет, а различать состояния надо.
+      ctx.strokeStyle = 'rgba(235,73,92,0.5)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r * 1.06, 0, Math.PI * 2); ctx.stroke();
+    }
+    hudDraw(ctx, 'C8_crosshair_reticle', tb.x, tb.y - tb.r * 0.2,
+      tb.r * 0.92, tb.r * 0.92, hasTarget ? 1 : 0.6);
+  } else {
+    ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(113,94,62,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
+    drawIconCtx(ctx, 'crosshair', tb.x, tb.y - tb.r * 0.18, 18, hasTarget ? '#f17e8b' : '#a49783');
   }
-
-  drawIconCtx(ctx, 'crosshair', tb.x, tb.y - tb.r * 0.18, 18, hasTarget ? '#f17e8b' : '#a49783');
 
   // Подпись под прицелом. До неё кнопка была кружком с крестиком, и что
   // она делает, приходилось выяснять нажатием — а нажатие в бою меняет

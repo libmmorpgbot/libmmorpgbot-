@@ -366,12 +366,12 @@
      but usable from anywhere by spending a stone bought from the merchant
      (see buyTeleportStone/useTeleportStone, server/index.js). -->
 <button id="teleport-btn" onclick="_useTeleportStone()" style="display:none" title="Камни телепортации">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="M5 21h14"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><polyline points="9,8 12,11 15,8"/><polyline points="9,16 12,13 15,16"/></svg>
+  <img src="/images/skill/mteleport.png" alt="" width="22" height="22">
   <span id="teleport-stone-badge"></span>
 </button>
 <!-- Chat -->
 <button id="chat-btn" onclick="_chatOpen()" style="display:none">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  <img src="/images/hud/C10_speech_bubble.webp" alt="" width="22" height="22">
   <span id="chat-badge"></span>
 </button>
 <!-- Last-message preview bubble, floats above the chat button; tapping it
@@ -591,29 +591,41 @@
 </div><!-- #app -->
 
 <style>
+/* Обод B5 из комплекта поверх тёмного диска. Диск свой, а не в картинке:
+   ободу нужен фон, иначе сквозь кнопку виден мир и символ теряется. */
 #chat-btn {
-  position:absolute; bottom:72px; left:10px; z-index:62;
+  position:absolute; bottom:88px; left:10px; z-index:62;
   pointer-events:all; touch-action:manipulation;
-  width:42px; height:42px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, rgba(37,30,17,0.96), rgba(15,12,6,0.97));
-  border:1px solid rgba(203,161,89,0.55);
+  width:46px; height:46px; border-radius:50%;
+  background:
+    url('/images/hud/B5_round_button_rim.webp') center / 100% 100% no-repeat,
+    radial-gradient(circle at 35% 30%, rgba(37,30,17,0.94), rgba(12,9,14,0.96));
+  border:none;
   color:#eac47e; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(209,204,197,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5);
+}
+#chat-btn img, #teleport-btn img {
+  width:22px; height:22px; object-fit:contain; pointer-events:none;
 }
 #chat-btn:active { opacity:0.75; }
 /* Sits directly above #chat-btn (same left offset, one button-height plus
    gap higher) — same shell, blue accent so it reads as a different button
    at a glance. */
+/* Тот же обод, что у чата: на макете это одна и та же круглая оправа, и
+   разными кнопки делает то, что ВНУТРИ, а не рамка. Синяя подсветка
+   осталась — телепорт единственный, кто светится холодным. */
 #teleport-btn {
-  position:absolute; bottom:122px; left:10px; z-index:62;
+  position:absolute; bottom:142px; left:10px; z-index:62;
   pointer-events:all; touch-action:manipulation;
-  width:42px; height:42px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, rgba(17,28,37,0.96), rgba(6,11,15,0.97));
-  border:1px solid rgba(79,195,255,0.5);
+  width:46px; height:46px; border-radius:50%;
+  background:
+    url('/images/hud/B5_round_button_rim.webp') center / 100% 100% no-repeat,
+    radial-gradient(circle at 35% 30%, rgba(17,28,37,0.94), rgba(6,11,15,0.96));
+  border:none;
   color:#7fd7ff; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(209,204,197,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), 0 0 14px rgba(79,195,255,0.18);
 }
 #teleport-btn:active { opacity:0.75; }
 #teleport-stone-badge {
