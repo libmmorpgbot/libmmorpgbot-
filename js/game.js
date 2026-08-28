@@ -1521,32 +1521,10 @@ function render(dt, ts) {
   drawDecalLabels();
   if (activeTab === 0) drawJoystick();
 
-  // Safe zone HUD label (on top of HUD)
-  if (player && dungeon && typeof inSafeZone === 'function' && inSafeZone(player.x, player.y)) {
-    const lbl = typeof t === 'function' ? t('safeZoneLbl') : '🛡 Безопасная зона · реген HP';
-    _uiCtx.font = 'bold 11px system-ui, Arial';
-    _uiCtx.textAlign = 'center';
-    const lw = _uiCtx.measureText(lbl).width;
-    // Баннер из комплекта. Ширина — по тексту плюс поля, а не постоянная:
-    // строка переводится на шесть языков и в турецком заметно длиннее.
-    const bw = Math.min(W - 24, Math.max(150, lw + 46));
-    const by = HEADER_H + 10;
-    if (typeof hudDrawW === 'function'
-        && hudDrawW(_uiCtx, 'E8_zone_banner_filled', W / 2, by, bw)) {
-      _uiCtx.textBaseline = 'middle';
-      _uiCtx.fillStyle = 'rgba(0,0,0,0.75)';
-      _uiCtx.fillText(lbl, W / 2, by + 1);
-      _uiCtx.fillStyle = '#b6e88a';
-      _uiCtx.fillText(lbl, W / 2, by);
-      _uiCtx.textBaseline = 'alphabetic';
-    } else {
-      _uiCtx.textBaseline = 'alphabetic';
-      _uiCtx.fillStyle = 'rgba(0,0,0,0.55)';
-      _uiCtx.fillRect(W / 2 - lw / 2 - 6, HEADER_H + 6, lw + 12, 18);
-      _uiCtx.fillStyle = '#94d15e';
-      _uiCtx.fillText(lbl, W / 2, HEADER_H + 20);
-    }
-  }
+  // Баннер «Безопасная зона» убран по решению владельца. Полоса под шапкой
+  // освободилась под бафы, а сам факт безопасной зоны видно по самой зоне:
+  // она подсвечена на карте и в мире, и подпись поверх неё была третьим
+  // способом сказать то же самое.
 
   // Transition flash (topmost layer)
   if (transTimer > 0) {

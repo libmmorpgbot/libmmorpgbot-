@@ -2282,14 +2282,32 @@ const _MM_MARGIN = 2; // buffer margin (tiles) beyond the visible window
 // login (see _initTelegramWidget in network.js) — not every user has one,
 // so drawHeader() keeps the existing icon avatar as a fallback.
 let _tgAvatarImg = null, _tgAvatarReady = false;
+// crossOrigin='anonymous' стоял ради чистого холста — и был ровно тем, из-за
+// чего аватарки не было вообще. CDN телеграма (t.me/i/userpic/…) заголовков
+// CORS не шлёт, а с этим атрибутом браузер такую картинку не грузит НИКАК:
+// срабатывает onerror, и вместо лица игрока рисовалась иконка класса.
+//
+// Платили при этом ни за что: во всём клиенте нет ни одного getImageData и ни
+// одного toDataURL, то есть «испорченный» холст ничему не мешает. Проверено
+// поиском, а не по памяти.
+//
+// Порядок такой: сначала с CORS — вдруг однажды CDN начнёт их слать, и холст
+// останется чистым; при отказе тот же URL заново, уже без атрибута.
 function setTelegramAvatar(url) {
   if (!url) return;
-  const img = new Image();
-  img.crossOrigin = 'anonymous'; // avoid tainting the canvas if the CDN sends CORS headers
-  img.onload  = () => { _tgAvatarReady = true; };
-  img.onerror = () => { _tgAvatarReady = false; _tgAvatarImg = null; };
-  img.src = url;
-  _tgAvatarImg = img;
+  const load = (withCors) => {
+    const img = new Image();
+    if (withCors) img.crossOrigin = 'anonymous';
+    img.onload = () => { _tgAvatarImg = img; _tgAvatarReady = true; };
+    img.onerror = () => {
+      if (withCors) { load(false); return; }
+      _tgAvatarReady = false; _tgAvatarImg = null;
+      console.warn('[hud] аватар телеграма не загрузился: ' + url);
+    };
+    img.src = url;
+    if (!_tgAvatarImg) _tgAvatarImg = img;
+  };
+  load(true);
 }
 
 // ── раскладка шапки ───────────────────────────────────────────────────────
@@ -3027,9 +3045,21 @@ function drawPotionButton() {
   }
 
   ctx.globalAlpha = 1;
-  ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = ready && cd <= 0 ? '#90d653' : 'rgba(127,118,103,0.7)';
-  ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
+  // Счётчик в оправе, а не голой цифрой поверх зелья. Голая читалась хуже
+  // всего именно там, где важна: поверх светлой склянки. Пилюля из
+  // комплекта — та же, что у кнопок слева, только мелкая.
+  const _cntTxt = '×' + count;
+  ctx.font = `bold 10px ${F}`;
+  const _cntW = Math.max(26, ctx.measureText(_cntTxt).width + 14);
+  const _cntX = pb.x + pb.r * 0.60, _cntY = pb.y + pb.r * 0.70;
+  if (!hudDrawW(ctx, 'E1_small_pill_button', _cntX, _cntY, _cntW)) {
+    ctx.fillStyle = 'rgba(12,9,6,0.85)';
+    roundRect(ctx, _cntX - _cntW / 2, _cntY - 8, _cntW, 16, 8); ctx.fill();
+    ctx.strokeStyle = 'rgba(201,168,106,0.6)'; ctx.lineWidth = 1;
+    roundRect(ctx, _cntX - _cntW / 2, _cntY - 8, _cntW, 16, 8); ctx.stroke();
+  }
+  hudGoldText(ctx, _cntTxt, _cntX, _cntY, 10, { dim: !(ready && cd <= 0) });
+  ctx.textBaseline = 'alphabetic';
 
   // Show cooldown if active
   if (cd > 0) {
@@ -3064,8 +3094,6 @@ function drawTargetButton() {
     // читалось как вторая рамка и спорило с ободом.
     hudDraw(ctx, 'E6_round_button_crimson', tb.x, tb.y, tb.r * 2.12, tb.r * 2.12,
       hasTarget ? 1 : 0.72);
-    hudDraw(ctx, 'C8_crosshair_reticle', tb.x, tb.y - tb.r * 0.24,
-      tb.r * 0.78, tb.r * 0.78, hasTarget ? 0.95 : 0.5);
   } else {
     ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
@@ -3082,8 +3110,8 @@ function drawTargetButton() {
   // восемь, и один фиксированный размер вылезал бы за круг на половине
   // языков. Ширина круга на уровне подписи меньше диаметра, отсюда 1.5.
   const _tgTxt = t('targetAbbrev');
-  hudGoldText(ctx, _tgTxt, tb.x, tb.y + tb.r * 0.5,
-    Math.max(6.5, Math.min(tb.r * 0.38, tb.r * 1.5 / _tgTxt.length)),
+  hudGoldText(ctx, _tgTxt, tb.x, tb.y,
+    Math.max(7, Math.min(tb.r * 0.5, tb.r * 1.75 / _tgTxt.length)),
     { dim: !hasTarget });
 
   ctx.restore();
@@ -3147,10 +3175,21 @@ function drawBuffStrip() {
 
   // 2-column icon grid to the left of the skill buttons panel
   // Skill grid: left = W-14-(SKILL_SZ+SKILL_GAP)-SKILL_SZ = W-130, bottom = H-NAV_H-14
-  const SZ = 22, GAP = 3, COLS = 2;
-  const skillLeft  = W - 14 - (SKILL_SZ + SKILL_GAP) - SKILL_SZ;  // W-130
-  const gridRight  = skillLeft - 8;                                  // 8px gap from skills
-  const gridX      = gridRight - (COLS * SZ + (COLS - 1) * GAP);   // left edge of chip area
+  // ── где лежат бафы ──────────────────────────────────────────────────────
+  // Раньше — колонкой в два ряда у правого края, снизу вверх. Ровно там
+  // теперь веер умений, кнопка зелья и кнопка цели, и при трёх-четырёх
+  // бафах лента закрывала их целиком: «перекрывает UI процентов на сорок».
+  //
+  // Новое место — горизонтальная лента под шапкой, справа от колонки
+  // Мир/Проф/+Pack. Полоса освободилась, когда убрали баннер безопасной
+  // зоны, и она единственная на экране, где ничего не нажимается: бафы
+  // читают, а не трогают.
+  const SZ = 22, GAP = 3;
+  const stripX = 8 + 80 + 10;                 // правее колонки кнопок
+  const stripY = HEADER_H + 8;
+  // До кнопки меню в правом верхнем углу: она шириной около 90 и лежит
+  // там же по высоте.
+  const COLS = Math.max(1, Math.floor((W - stripX - 96 + GAP) / (SZ + GAP)));
   // Raised clear of the chat widgets rather than bottom-aligned with the
   // skills. #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
   // and stand up to ~46px tall, so they own the band from H-118 to H-72 —
@@ -3159,8 +3198,8 @@ function drawBuffStrip() {
   // used to land at H-98..H-76, entirely inside that band, so an incoming
   // chat message hid it completely. Chips grow upward from here, so only
   // this baseline needs to move.
-  const CHAT_STRIP_TOP = 72 + 46;   // keep in sync with #chat-btn/#chat-preview
-  const gridBottom = H - CHAT_STRIP_TOP - 6;                         // 6px breathing room
+  // Лента растёт ВНИЗ от полосы под шапкой, а не вверх от чата: сверху есть
+  // куда расти, снизу теперь везде кнопки.
   const F2 = 'system-ui, -apple-system, Arial';
 
   ctx.save();
@@ -3168,8 +3207,8 @@ function drawBuffStrip() {
   for (let i = 0; i < chips.length; i++) {
     const col = i % COLS;
     const row = Math.floor(i / COLS);
-    const cx = gridX + col * (SZ + GAP);
-    const cy = gridBottom - row * (SZ + GAP) - SZ;
+    const cx = stripX + col * (SZ + GAP);
+    const cy = stripY + row * (SZ + GAP);
     const chip = chips[i];
 
     // Background cell

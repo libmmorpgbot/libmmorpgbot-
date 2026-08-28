@@ -3462,16 +3462,10 @@ canvas { display:block; width:100%; height:100%; }
   background-image: url('/images/hud/E4_menu_button.webp');
   height: 34px;
 }
-/* Акцент — вставкой внутрь, а не рамкой снаружи: рамка вокруг рамки
-   читается как ореол. currentColor берётся из color самой кнопки, который
-   у каждого пункта свой и уже объявлен выше. */
-#rating-btn::before, #vip-btn::before, #market-btn::before,
-#gram-shop-btn::before, #events-btn::before, #season-btn::before,
-#codex-btn::before {
-  content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px;
-  width: 2px; border-radius: 1px;
-  background: currentColor; opacity: .85;
-}
+/* Цветной полоски слева больше нет ни у одного пункта: у ассета своя
+   золотая кромка, и вторая вертикальная черта рядом с ней читалась как
+   недорисованная рамка. Пункты и без неё различаются — цветом текста и
+   собственной иконкой. */
 #hud-menu-btn:active,
 #rating-btn:active, #vip-btn:active, #market-btn:active, #gram-shop-btn:active,
 #events-btn:active, #season-btn:active, #codex-btn:active { filter: brightness(1.25); }

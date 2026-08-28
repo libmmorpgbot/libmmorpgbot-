@@ -596,10 +596,13 @@
 /* Кнопка целиком из комплекта — со своей заливкой, без своего диска под
    ней: раньше картинка-обод лежала поверх градиента, и на просвет было
    видно два разных тёмных круга один в другом. */
+/* Внизу слева, вплотную к строке последнего сообщения: кнопка и то, что
+   она открывает, стоят рядом, а не в разных концах экрана. Место под ней
+   свободно — джойстик правее. */
 #chat-btn {
-  position:absolute; bottom:196px; left:12px; z-index:62;
+  position:absolute; bottom:90px; left:12px; z-index:62;
   pointer-events:all; touch-action:manipulation;
-  width:50px; height:50px; border-radius:50%;
+  width:46px; height:46px; border-radius:50%;
   background:url('/images/hud/E5_round_button.webp') center / 100% 100% no-repeat;
   border:none;
   color:#eac47e; cursor:pointer;
@@ -625,10 +628,12 @@
    осталась — телепорт единственный, кто светится холодным. */
 /* Своя бирюзовая кнопка из комплекта: телепорт единственный, кто светится
    холодным, и раньше это делалось тенью вокруг обычной кнопки. */
+/* Опустился туда, где стоял чат, и стал мельче: он остался единственным в
+   левом столбце, и держать его размером с основную кнопку больше незачем. */
 #teleport-btn {
-  position:absolute; bottom:252px; left:12px; z-index:62;
+  position:absolute; bottom:146px; left:12px; z-index:62;
   pointer-events:all; touch-action:manipulation;
-  width:50px; height:50px; border-radius:50%;
+  width:44px; height:44px; border-radius:50%;
   background:url('/images/hud/E7_round_button_teal.webp') center / 100% 100% no-repeat;
   border:none;
   color:#7fd7ff; cursor:pointer;
@@ -648,9 +653,12 @@
    the button, not floating above it. Right edge is capped well clear of the
    2x2 skill-button grid, which starts at W-130 (js/input.js getSkillBtnPos)
    — see the max-width formula below. */
+/* Строка последнего сообщения — СПРАВА от кнопки чата и на одной с ней
+   высоте: кнопка ушла вниз, и на прежнем месте пузырь висел бы сам по себе
+   посреди экрана. */
 #chat-preview {
-  position:absolute; bottom:72px; left:58px; z-index:61;
-  max-width:min(200px, calc(100vw - 200px));
+  position:absolute; bottom:94px; left:66px; z-index:61;
+  max-width:min(210px, calc(100vw - 210px));
   pointer-events:all; touch-action:manipulation; cursor:pointer;
   background:rgba(15,12,6,0.94); border:1px solid rgba(203,161,89,0.4);
   border-radius:4px 14px 14px 14px; padding:7px 12px;

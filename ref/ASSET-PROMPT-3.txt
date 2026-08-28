@@ -1,0 +1,150 @@
+═══════════════════════════════════════════════════════════════════════════════
+  ПАРТИЯ 3 — ПАНЕЛИ С НЕПРОЗРАЧНЫМ ФОНОМ + РАМКА ВРАГА + БАФЫ
+  Прикладывать: ref/hud.png (цель) + свежие скриншоты игры
+═══════════════════════════════════════════════════════════════════════════════
+
+ЗАЧЕМ ЭТА ПАРТИЯ
+  Панели первой партии — A1 (статы), A2 (карта), B3 (валюта) — сделаны со
+  СКВОЗНОЙ серединой. Это правильно для рамки, под которую кладут карту или
+  портрет, но у шапки сквозь них видно мир, и читается это плохо: цифры
+  баланса лежат прямо на подземелье. Нужны те же панели, но с собственным
+  тёмным фоном внутри.
+  Плюс рамка врага в прицеле — её должно быть видно как ВРАЖДЕБНУЮ, — и
+  оправа под бафы, которых сейчас нет вовсе и они лежат на экране голыми
+  квадратами.
+
+КАКИЕ КАРТИНКИ ПРИЛОЖИТЬ
+  1. ref/hud.png              — образец стиля
+  2. скриншот шапки           — видно, что сквозь панели просвечивает мир
+  3. скриншот с врагом в цели — рамка «Разъярённый Орк» с полосой HP
+  4. скриншот с бафами        — ряд квадратов, которые сейчас лежат поверх UI
+
+ЧТО ПРОВЕРИТЬ, КОГДА ПРИДЁТ
+  □ ни одной буквы и ни одной цифры ни на одном предмете
+  □ у F1–F4 середина НЕПРОЗРАЧНАЯ, тёмная и ровная
+  □ у F5 и F6 гнёзда сквозные — туда лягут иконки бафов
+  □ предметы не соприкасаются, блик у всех сверху-слева
+  □ к каждому предмету есть описание: что это, пропорция, фон или дыра
+
+
+===PROMPT===
+
+Use the attached game HUD mockup (the ornate dark-fantasy one) as the single
+style reference. The other screenshots show the game as it is now — they are
+there to show what is being replaced and in what proportion. Match the style of
+the first image.
+
+Produce a sheet of separate UI assets.
+
+ABSOLUTELY NO TEXT. This overrides every description below. Several items are
+described as panels that will show a name, a number or a status line — all of
+that is written by the game engine at run time, in six languages, and it
+changes while the game runs. A painted caption makes the panel unusable,
+because the real one lands on top of it. Where a description mentions text,
+leave that area as plain empty background.
+
+  - no text, no letters, no numbers, no captions, no labels, no watermark
+  - no icons inside a panel unless the description asks for one
+  - no drop shadow onto the background, no ground plane, no scenery
+
+WHAT IS DIFFERENT ABOUT THIS BATCH
+Items F1 to F4 must have an OPAQUE interior: a dark, even, slightly textured
+stone-and-glass surface filling the whole area inside the ornate border. Not
+transparent, not a hole — the game world lies behind these panels and must not
+show through. Keep the interior calm and free of detail in the middle, because
+names, numbers and bars are drawn over it.
+
+Items F5 and F6 are the opposite and are marked HOLLOW.
+
+STYLE
+Dark polished obsidian and carved dark stone. Warm antique gold and bronze
+trim, colour #c9a86a. Amethyst purple diamond-cut gems, colour #8b45d6, at
+corners and cardinal points. Thin double-line gold borders with small notched
+corners. Soft rim light from the upper left, gentle inner bevel, faint inner
+shadow where the interior meets the border. Realistic rendered metal, stone and
+glass; not flat vector, not cartoon outline, not neon.
+
+BACKGROUND AND ALPHA
+Transparent background around each item. If the tool cannot output
+transparency, use pure magenta #FF00FF for the background and for the hollow
+sockets of F5 and F6 — never black, because the assets themselves are almost
+black.
+
+LAYOUT
+One item per cell on a regular grid, each centred, upright, orthographic front
+view, with a wide empty margin around it. No grid lines, no labels. Highest
+resolution available.
+
+FOR EACH ITEM, ALSO WRITE A SHORT DESCRIPTION
+Output a plain-text list next to the image: number, what it is, aspect ratio,
+and whether the interior is opaque or hollow.
+
+────────────────────────────────────────────────────────────────
+ITEMS
+Reminder: NO TEXT ON ANY ITEM.
+────────────────────────────────────────────────────────────────
+
+F1  Character stat panel, OPAQUE interior. Horizontal rounded rectangle,
+    roughly 1.8 : 1, ornate double gold border with notched corners and one
+    amethyst diamond at each corner. The whole inside is filled with dark
+    stone-and-glass. A round portrait, a name, and two horizontal bars are
+    drawn over it by the engine, so leave the interior plain.
+
+F2  Map panel, OPAQUE interior. Upright rounded rectangle, roughly 0.92 : 1,
+    gold border, one amethyst diamond at top centre. Interior filled with dark
+    stone. A square map is drawn over the middle by the engine.
+
+F3  Currency plate, OPAQUE interior. Small horizontal rounded plate, roughly
+    3.7 : 1, gold border, and a round recessed socket set into its LEFT end
+    with its own thin gold rim. The socket and the rest of the interior are
+    both filled with dark glass — a coin icon is drawn over the socket and a
+    number over the right part.
+
+F4  Enemy target panel, OPAQUE interior. Horizontal rounded rectangle, roughly
+    4 : 1. This one is HOSTILE and must read as such at a glance: the border
+    is crimson-tinted gold, the interior is dark with a deep red inner glow
+    rising from the bottom edge, and there are small blood-red gems at the
+    corners instead of amethyst ones. Along the LEFT edge, inside the border,
+    there is a narrow vertical crimson bar. In the lower half of the interior
+    there is a long recessed horizontal channel with a thin gold edge — the
+    empty groove for a health bar, sunk into the surface and filled with very
+    dark glass. The enemy's name goes in the upper half, so leave that plain.
+
+F5  Buff rail, HOLLOW sockets. A long horizontal bar, roughly 6 : 1, of dark
+    carved stone with a thin gold edge along the top and bottom, containing a
+    row of SIX small square sockets with rounded corners and their own thin
+    gold rims. Every socket is a transparent hole running through the asset,
+    because a buff icon is drawn underneath it. The stone between and around
+    the sockets is opaque.
+
+F6  Single buff slot, HOLLOW. One small square socket with rounded corners, a
+    thin gold rim and a bevelled inner wall, with a completely transparent
+    centre. Used on its own when there are fewer buffs than the rail holds.
+
+F7  Count badge, opaque. A small horizontal capsule, roughly 2.2 : 1, dark
+    glass interior with a thin warm gold rim and a faint inner glow. It sits
+    on the corner of a round button and shows how many charges are left, so it
+    must read clearly against both a dark button and a bright one.
+
+===END PROMPT===
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЕСЛИ МОДЕЛЬ ПРОСИТ ПО ОДНОМУ ПРЕДМЕТУ ЗА РАЗ
+═══════════════════════════════════════════════════════════════════════════════
+Взять описание нужного пункта и приклеить к нему этот хвост:
+
+  , dark fantasy MMORPG interface panel, style of the attached reference,
+  opaque dark stone and glass interior, warm antique gold trim #c9a86a,
+  amethyst purple gems #8b45d6, soft rim light from upper left, realistic
+  rendered metal and stone, orthographic front view, single object centred,
+  transparent background around the object, no text, no numbers, no icons,
+  highest resolution
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЧЕГО В СПИСКЕ НЕТ И ПОЧЕМУ
+═══════════════════════════════════════════════════════════════════════════════
+  баннер «Безопасная зона» — убираем из игры совсем, он больше не нужен
+  прицел на кнопке ЦЕЛЬ    — убираем, останется только слово
+  цветные полоски у пунктов меню — убираем, у ассета своя золотая
+  аватар игрока            — берётся из Telegram, рисовать нечего
