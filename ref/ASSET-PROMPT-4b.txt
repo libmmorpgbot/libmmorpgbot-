@@ -1,0 +1,145 @@
+═══════════════════════════════════════════════════════════════════════════════
+  ПАРТИЯ 4, ВТОРОЙ ЗАХОД — ТА ЖЕ ПАНЕЛЬ, НО С ТОЧНЫМИ КООРДИНАТАМИ
+  Прикладывать: ref/hud.png + G1_wide_stat_currency_panel.png (прошлый заход)
+═══════════════════════════════════════════════════════════════════════════════
+
+ЧТО НЕ ТАК С ПРОШЛЫМ ЗАХОДОМ — ИЗМЕРЕНО, НЕ НА ГЛАЗ
+  Я обмерил присланные файлы. Отверстия там есть и вырезаны правильно,
+  проблема в РАЗМЕРАХ:
+
+  1. Пропорция. Просил 3.6 : 1, пришло 4.64 : 1 — панель вышла слишком
+     плоской. На телефоне 390 px она будет 300 в ширину и всего 65 в высоту,
+     и нижняя полоска под валюты — 11 px. В одиннадцать пикселей не
+     помещается ни иконка, ни число.
+
+  2. Кружки валют. В G1 диаметр 0.039 ширины панели — это 12 px на экране.
+     В G2 ещё теснее: между соседними кружками 0.04 ширины, то есть 15 px
+     на число вроде «914.3504». Число туда не влезет никаким кеглем.
+
+  3. Нижняя полоса не использует левую четверть — под портретом пусто, а
+     кружки сбиты в кучу правее.
+
+  Поэтому ниже — не описание словами, а ТАБЛИЦА КООРДИНАТ. Каждое гнездо
+  задано долями от ширины и высоты панели. Их нужно соблюсти.
+
+ЧТО ПРОВЕРИТЬ, КОГДА ПРИДЁТ
+  □ панель РОВНО в 3.6 раза шире, чем выше (G1) и в 4.6 (G2)
+  □ четыре кружка валют одинаковые и стоят по всей ширине, а не в середине
+  □ между кружком и следующим кружком — ЧИСТАЯ поверхность, без ромбов
+  □ все гнёзда сквозные, тело панели непрозрачное
+  □ ни одной буквы и ни одной цифры
+
+
+===PROMPT===
+
+Use the attached ornate dark-fantasy HUD mockup as the only style reference.
+The second attached image is your previous attempt at this panel: the style was
+right, the proportions were not. This time the geometry is given as exact
+fractions and must be followed.
+
+ABSOLUTELY NO TEXT. The panel holds a name and four numbers, all of them
+written by the game engine at run time in six languages. A painted number makes
+the panel unusable, because the real one lands on top of it. Every place a
+number or a name goes is described below as "plain empty surface" — leave it
+exactly that.
+
+  - no text, no letters, no numbers, no captions, no watermark
+  - no icons inside any socket — the engine puts them there
+  - no decorative gems, diamonds or filigree ANYWHERE inside the bottom strip:
+    that space belongs to the numbers, and an ornament there is an ornament
+    with a number printed over it
+
+PROPORTION — THE FIRST THING TO GET RIGHT
+G1 is exactly 3.6 times as wide as it is tall. G2 is exactly 4.6 times as wide
+as it is tall. Not flatter. The previous attempt came out at 4.64 for G1, and
+everything inside it shrank with the height.
+
+INTERIOR
+The body is OPAQUE: dark, even, slightly textured stone and glass filling
+everything inside the ornate border. The world lies behind the panel and must
+not show through. Only the listed sockets are transparent holes; each has its
+own thin gold rim and a bevelled inner wall so it reads as cut into the metal.
+
+STYLE
+Dark polished obsidian and carved stone. Warm antique gold and bronze trim,
+colour #c9a86a. Amethyst purple diamond gems at the four outer corners only.
+Thin double-line gold border with notched corners. Soft rim light from the
+upper left, gentle inner bevel, faint inner shadow around every socket.
+Realistic rendered metal and stone; not flat vector, not cartoon, not neon.
+
+BACKGROUND AND ALPHA
+Transparent around the panel and inside every socket. If transparency is not
+available, use pure magenta #FF00FF for both — never black, the panel is
+almost black itself.
+
+────────────────────────────────────────────────────────────────
+G1 — WIDE STAT AND CURRENCY PANEL
+Aspect 3.6 : 1. All coordinates are fractions of the panel: x from 0 at the
+left edge to 1 at the right, y from 0 at the top to 1 at the bottom.
+────────────────────────────────────────────────────────────────
+
+PORTRAIT SOCKET — one circle
+  centre  x 0.085   y 0.34
+  diameter 0.58 of the panel HEIGHT
+  A heavier engraved gold ring than the other sockets: it frames a face.
+  It sits in the UPPER part only, so the bottom strip stays clear across the
+  whole width.
+
+NAME BAND — no socket, plain empty surface
+  from x 0.19 to x 0.98, y from 0.06 to 0.26
+  Clean stone. The player's name is written here by the engine.
+
+TWO BARS — two capsule-shaped horizontal holes, one above the other
+  both from x 0.19 to x 0.98
+  upper: y centre 0.38, height 0.13 of the panel height
+  lower: y centre 0.56, height 0.11 of the panel height
+  Coloured bars are drawn underneath them.
+
+DIVIDER — a thin engraved gold line across the full width at y 0.66
+
+BOTTOM STRIP — the four currencies, y from 0.68 to 0.98
+  Four identical cells side by side, each exactly one quarter of the panel's
+  width. Cell 1 starts at x 0.00, cell 2 at 0.25, cell 3 at 0.50, cell 4 at
+  0.75. The strip runs the FULL width, including under the portrait.
+
+  In every cell:
+    • a circular socket, centre at the cell's left edge + 0.045, y centre
+      0.83, diameter 0.22 of the panel HEIGHT — noticeably larger than the
+      four small circles in your previous attempt;
+    • to its right, plain empty surface all the way to the end of the cell.
+      That is where the number goes. Nothing may be drawn there — no gem, no
+      divider, no engraving.
+
+  The four cells are identical and evenly spaced. Do not cluster them in the
+  middle.
+
+────────────────────────────────────────────────────────────────
+G2 — THE SAME PANEL WITH THE MAP BUILT IN
+Aspect 4.6 : 1.
+────────────────────────────────────────────────────────────────
+Everything above, compressed into the LEFT 0.78 of the panel, and then:
+
+  VERTICAL DIVIDER — an engraved gold line at x 0.78, running the full height
+  MAP SOCKET — one large rounded-square hole
+    centre x 0.89   y 0.50
+    width 0.19 of the panel width, height 0.80 of the panel height
+    Its own heavier gold frame and one amethyst diamond centred above it.
+
+  Inside the left 0.78, scale every G1 coordinate by 0.78 along x. The four
+  currency cells then each take 0.195 of the panel width, starting at x 0.00,
+  0.195, 0.39 and 0.585.
+
+===END PROMPT===
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  ПОЧЕМУ ИМЕННО ЭТИ ЧИСЛА
+═══════════════════════════════════════════════════════════════════════════════
+  На телефоне 390 px панель G1 будет 300 × 83. Тогда:
+    портрет     48 px  — лицо различимо
+    полосы HP/XP 11 и 9 px, длиной 237 — видно и цифры внутри влезают
+    ячейка валюты 75 px: кружок 18, число 52 — «914.3504» девятым кеглем
+    занимает 42, то есть с запасом
+
+  При прошлой пропорции 4.64 те же места выходили 65 px высотой, кружок 12,
+  число 15. Отсюда и «непонятные дырки».
