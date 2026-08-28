@@ -203,6 +203,12 @@ function csShow(savedData) {
 }
 
 function csHide() {
+  // Сотня ставится ЗДЕСЬ, а не когда полоса дойдёт сама: экран уходит ровно в
+  // этот момент, и только теперь «100%» — правда. Полоса, добравшаяся до сотни
+  // раньше, чем открылась игра, и есть та фальшивая загрузка, ради ухода от
+  // которой всё это переписано.
+  csLoadWatch(false);
+  _csPaintBar(100);
   _csStopAnim();
   const el = document.getElementById('char-select');
   if (el) el.style.display = 'none';
@@ -310,6 +316,12 @@ function csStartLoading(type, onReady) {
 // backdrop for #cs-loading (same trick _showCharSelect uses for the very
 // first load) and let onReady's caller csHide() it again when done.
 function csStartFloorLoading(label, icon, onReady) {
+  // Счётчики с нуля: экран показывается не только на первом входе, но и на
+  // каждой смене этажа, и полоса, начинающая со вчерашних 99%, не сообщает
+  // ничего.
+  _csSpriteDone = 0; _csSpriteTotal = 1; _csLoadShown = 0;
+  _csPaintBar(0);
+  csLoadWatch(true);
   _csGateSprites = false;
   _csGateServer  = false;
   _csGateCb      = onReady;
@@ -335,6 +347,56 @@ function csStartFloorLoading(label, icon, onReady) {
 function csSetStatus(text) {
   const el = document.getElementById('csl-status');
   if (el) el.textContent = text;
+}
+
+// ── настоящая полоса загрузки ─────────────────────────────────────────────
+// Складывает то, что действительно грузится, и ничего не выдумывает:
+//
+//   листы спрайтов  сообщает loadSprites через onProgress — по одному вызову
+//                   на разобранный лист;
+//   файлы орнамента hudArtStatus() (js/hud.js) — ready+failed из total;
+//   ответ сервера   gameStart, последняя десятая доля.
+//
+// Ползёт до 99 и ждёт: сотня ставится ровно тогда, когда экран уходит. Полоса,
+// добежавшая до 100% раньше, чем игра открылась, — это и есть та фальшивая
+// загрузка, ради ухода от которой всё переписано.
+let _csLoadShown = 0;
+function csLoadProgress(spriteDone, spriteTotal) {
+  if (spriteDone != null)  _csSpriteDone = spriteDone;
+  if (spriteTotal != null) _csSpriteTotal = spriteTotal;
+
+  let done = _csSpriteDone, total = Math.max(1, _csSpriteTotal);
+  // Орнамент грузится лениво, по первому обращению, поэтому в знаменатель идёт
+  // не весь комплект, а только то, что уже запрошено: иначе полоса стояла бы
+  // на трети и ждала файлы, которых никто не просил.
+  if (typeof hudArtStatus === 'function') {
+    const a = hudArtStatus();
+    const asked = (a.ready || 0) + (a.failed || 0);
+    if (asked > 0) { done += asked; total += asked; }
+  }
+  if (_csGateServer) { done += 1; }
+  total += 1;
+
+  const pct = Math.max(0, Math.min(99, Math.round(done / total * 100)));
+  // Только вперёд. Знаменатель растёт по мере того, как запрашивается
+  // орнамент, и без этой строки полоса дёргалась бы назад — что читается как
+  // сбой, а не как прогресс.
+  if (pct > _csLoadShown) _csLoadShown = pct;
+  _csPaintBar(_csLoadShown);
+}
+function _csPaintBar(pct) {
+  const fill = document.getElementById('csl-fill');
+  const lbl  = document.getElementById('csl-pct');
+  if (fill) fill.style.width = pct + '%';
+  if (lbl)  lbl.textContent  = pct + '%';
+}
+let _csSpriteDone = 0, _csSpriteTotal = 1;
+let _csLoadTimer = null;
+// Орнамент и ответ сервера о себе не сообщают, поэтому полоса ещё и
+// опрашивается — но только пока экран на виду.
+function csLoadWatch(on) {
+  if (_csLoadTimer) { clearInterval(_csLoadTimer); _csLoadTimer = null; }
+  if (on) _csLoadTimer = setInterval(() => csLoadProgress(), 200);
 }
 
 function csOnSpritesReady() {

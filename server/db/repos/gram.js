@@ -43,7 +43,10 @@ const ton = require('../../ton');
 
 // GRAM is 1:1 with TON in this game (see js/tonconnect.js's tcSendDeposit,
 // which sends amountTon for a GRAM figure).
-const MIN_DEPOSIT_TON = Number(process.env.GRAM_MIN_DEPOSIT || 0.05);
+// 1, а не 0.05: перевод зачисляется один к одному (money.credit ниже берёт
+// amount перевода как сумму в GRAM), так что минимум — это ровно «1 GRAM».
+// Пять сотых стоили дороже в комиссии сети, чем сам перевод.
+const MIN_DEPOSIT_TON = Number(process.env.GRAM_MIN_DEPOSIT || 1);
 const INTENT_TTL_MS = 30 * 60 * 1000;            // shown to the player as "expires in"
 // Matching continues well past expiry: a player who left the tab open and sent
 // an hour later still gets credited. Only after this does a memo stop matching,

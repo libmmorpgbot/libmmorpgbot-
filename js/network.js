@@ -1885,6 +1885,20 @@ function netConnect(onReady) {
     _addChatMsg(username, text);
   });
 
+  // ── кто вообще ПРОСИТ историю ────────────────────────────────────────────
+  // Никто не просил. Обработчик на сервере есть (handlers2/social.js, последние
+  // 50 строк), приёмник здесь есть — а запроса между ними не было, поэтому
+  // после каждого перезахода чат открывался пустым: «чат после релога
+  // очищается».
+  //
+  // Просится один раз за подключение, на gameStart: раньше него нет ни
+  // playerId, ни сессии, которой сервер мог бы ответить.
+  socket.on('gameStart', () => {
+    if (_chatHistoryAsked) return;
+    _chatHistoryAsked = true;
+    socket.emit('chatHistory');
+  });
+
   socket.on('chatHistory', (msgs) => {
     if (!Array.isArray(msgs)) return;
     _setChannelHistory('global', _chatMsgs, _GLOBAL_CHAT_CAP, msgs);
@@ -2357,6 +2371,9 @@ function netConnect(onReady) {
   });
 
   socket.on('disconnect', () => {
+    // Историю спрашиваем заново после переподключения: пока связи не было, в
+    // общий чат могли написать, и клиент об этом не знает.
+    _chatHistoryAsked = false;
     _authOkReceived = false;
     // A marketList request may be in flight right now (item already spliced
     // out of the local inventory optimistically, see _confirmMarketList in
@@ -3256,6 +3273,10 @@ function netRequestDmHistory(withUsername) {
 // stores and replays this many global messages, so a smaller cap here would
 // silently throw away part of the restored history on arrival.
 const _GLOBAL_CHAT_CAP = 50;
+// Один запрос истории на подключение. Сбрасывается на disconnect, потому что
+// после переподключения история нужна снова — сообщения могли прийти, пока
+// связи не было.
+let _chatHistoryAsked = false;
 const _chatMsgs = [];
 const _clanChatMsgs = [];
 // Беседа keeps one entry PER partner (not a single overwritten thread) so
@@ -3287,6 +3308,27 @@ function _chatListFor(tabKey) {
   if (tabKey === 'clan') return _clanChatMsgs;
   if (tabKey === 'dm') { const c = _dmConvo(_currentDmUser(), false); return c ? c.messages : []; }
   return _chatMsgs;
+}
+
+// ── прокрутка, которая не выдёргивает из чтения ──────────────────────────
+// «Коли нове повідомлення приходить, тебе в самий низ кидає». Так и было:
+// каждая пришедшая строка безусловно ставила scrollTop в конец, поэтому
+// прочитать что-то выше в живом чате было нельзя — на любом новом сообщении
+// экран уезжал вниз.
+//
+// Теперь вниз уезжает только тот, кто и так внизу. Порог в 60 px, а не
+// точное равенство: у строк дробная высота, у мобильных браузеров —
+// инерционная прокрутка, и «ровно в конце» там не наступает почти никогда.
+//
+// Ничего не показываем тому, кто читает выше: владелец сказал прямо —
+// «візуально нічо сказати немає». Непрочитанное и так считает значок на
+// кнопке чата (_bumpChatUnread).
+const _CHAT_BOTTOM_SLACK = 60;
+function _chatAtBottom(el) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= _CHAT_BOTTOM_SLACK;
+}
+function _chatScrollIfAtBottom(el, wasAtBottom) {
+  if (wasAtBottom) el.scrollTop = el.scrollHeight;
 }
 
 function _renderChatRow(el, username, text, time) {
@@ -3410,9 +3452,12 @@ function _pushChatMsg(tabKey, list, cap, username, text, time) {
   if (activeTabKey === tabKey) {
     const el = document.getElementById('chat-msgs');
     if (el) {
+      // Замеряется ДО вставки: после неё scrollHeight уже вырос, и «был ли
+      // игрок внизу» ответить нечем.
+      const atBottom = _chatAtBottom(el);
       _renderChatRow(el, username, text, time);
       while (el.children.length > cap) el.removeChild(el.firstChild);
-      el.scrollTop = el.scrollHeight;
+      _chatScrollIfAtBottom(el, atBottom);
     }
   }
   if (!visible) _bumpChatUnread();
@@ -3436,9 +3481,10 @@ function _recordDmMessage(otherUsername, senderUsername, text, time) {
   if (isActive) {
     const el = document.getElementById('chat-msgs');
     if (el) {
+      const atBottom = _chatAtBottom(el);
       _renderChatRow(el, senderUsername, text, time);
       while (el.children.length > 50) el.removeChild(el.firstChild);
-      el.scrollTop = el.scrollHeight;
+      _chatScrollIfAtBottom(el, atBottom);
     }
   } else {
     convo.unread = true;

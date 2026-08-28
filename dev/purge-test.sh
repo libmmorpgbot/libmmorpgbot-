@@ -138,12 +138,27 @@ $guard$;
 
 -- An item held by a listing has player_id NULL, so the cascade from players
 -- never reaches it: the listing goes first, then the orphan it was holding.
-DELETE FROM player_items WHERE player_id IS NULL AND id IN (
-  SELECT item_id FROM market_listings
-   WHERE item_id IS NOT NULL AND (seller_id IN (SELECT id FROM doomed)
-                                  OR buyer_id IN (SELECT id FROM doomed)));
+--
+-- Комментарий выше описывал правильный порядок, а код делал обратный: сначала
+-- предмет, потом лот. У market_listings.item_id внешний ключ ON DELETE SET
+-- NULL, поэтому удаление предмета ЗАНУЛЯЛО item_id ещё живого лота — и если
+-- лот active, это нарушает market_active_has_item_ck:
+--
+--   ERROR: new row for relation "market_listings" violates check constraint
+--          "market_active_has_item_ck"
+--
+-- В обычном режиме не срабатывало: у фикстур активных лотов не оставалось.
+-- Вылезло на PURGE_ALL, где сносится настоящий аккаунт с живой витриной.
+--
+-- Id предметов снимаются ДО удаления лотов: после него их уже негде взять.
+CREATE TEMP TABLE doomed_items AS
+SELECT item_id AS id FROM market_listings
+ WHERE item_id IS NOT NULL AND (seller_id IN (SELECT id FROM doomed)
+                                OR buyer_id IN (SELECT id FROM doomed));
 DELETE FROM market_listings WHERE seller_id IN (SELECT id FROM doomed)
                                OR buyer_id  IN (SELECT id FROM doomed);
+DELETE FROM player_items WHERE player_id IS NULL
+                           AND id IN (SELECT id FROM doomed_items);
 
 -- Real-money requests. No cascade there on purpose: a deposit or a withdrawal
 -- must not be erasable as a side effect of removing an account.

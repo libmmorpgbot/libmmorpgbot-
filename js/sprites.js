@@ -746,9 +746,13 @@ function loadSpritePreviewFrame(charType, onDone) {
   cache['front-idle'] = img;
 }
 
-function loadSprites(charType, onDone) {
+// onProgress(done, total) — необязательный третий аргумент, по одному вызову
+// на разобранный лист. Экран загрузки рисует по нему НАСТОЯЩУЮ полосу: до
+// этого там крутились три точки, которые анимировались одинаково и на быстрой
+// сети, и на застрявшей загрузке, то есть не значили ничего.
+function loadSprites(charType, onDone, onProgress) {
   const def = SPRITE_DEF[charType];
-  if (!def) { onDone(); return; }
+  if (!def) { if (onProgress) onProgress(1, 1); onDone(); return; }
   if (_spriteLoadPromises[charType]) { _spriteLoadPromises[charType].then(onDone); return; }
   spriteCache[charType] = spriteCache[charType] || {};
   const cache = spriteCache[charType];
@@ -756,7 +760,11 @@ function loadSprites(charType, onDone) {
   let total = keys.length, done = 0;
   let resolveReady;
   _spriteLoadPromises[charType] = new Promise(res => { resolveReady = res; });
-  function tick() { if (++done >= total) resolveReady(); }
+  function tick() {
+    done++;
+    if (onProgress) { try { onProgress(done, total); } catch (e) { /* екран не зобов’язаний існувати */ } }
+    if (done >= total) resolveReady();
+  }
   keys.forEach(key => {
     const existing = cache[key];
     // Already rasterized (char-select preview) — nothing left to do.
@@ -778,7 +786,7 @@ function loadSprites(charType, onDone) {
     img.onerror = tick;
     cache[key] = img;
   });
-  if (total === 0) resolveReady();
+  if (total === 0) { if (onProgress) onProgress(1, 1); resolveReady(); }
   _spriteLoadPromises[charType].then(onDone);
 }
 

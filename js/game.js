@@ -1562,7 +1562,15 @@ function selectChar(type) {
   // Gate the loading screen on BOTH player and floor-1 enemy sprites being decoded.
   const _floor1Eids = (FLOOR_ENEMIES[1]?.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);
   let _spritesPending = 1 + _floor1Eids.length;
-  const _onSpriteSetReady = () => { if (--_spritesPending === 0) csOnSpritesReady(); };
+  // Полоса считает НАБОРЫ, а не листы: наборов ровно столько, сколько ждёт
+  // _spritesPending, и это то число, по которому видно, сколько осталось.
+  const _spritesTotal = _spritesPending;
+  const _onSpriteSetReady = () => {
+    if (typeof csLoadProgress === 'function') {
+      csLoadProgress(_spritesTotal - _spritesPending + 1, _spritesTotal);
+    }
+    if (--_spritesPending === 0) csOnSpritesReady();
+  };
   _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
   loadSprites(type, _onSpriteSetReady);
   netSelectChar(type, savedStats);

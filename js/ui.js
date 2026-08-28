@@ -2936,7 +2936,22 @@ function drawHeader() {
       // целиком вместо того чтобы болтаться внутри с полем по кругу. Для
       // невписывающихся в круг иконок ряд задаёт свой fit.
       const fit = rows[i].fit || 1.5;
-      hudDraw(ctx, rows[i].icon, sl.cx, sl.cy, d * fit, d * fit);
+      if (rows[i].img) {
+        // Обычный файл из /images, с небольшим запасом. Обе монеты —
+        // подробные рисунки 250-320 px с тёмной каймой по краю, и в гнезде на
+        // 21 px кайма съедала половину диаметра: Liberty читалась тёмным
+        // пятном. 1.18 отдаёт кайму под золотой рим гнезда, который и так
+        // обрежет лишнее, и оставляет на виду сам знак.
+        const im = _getPotImg(rows[i].img);
+        if (im && im.complete && im.naturalWidth > 0) {
+          const g = d * 1.18;
+          const k = Math.min(g / im.naturalWidth, g / im.naturalHeight);
+          const w = im.naturalWidth * k, h = im.naturalHeight * k;
+          ctx.drawImage(im, sl.cx - w / 2, sl.cy - h / 2, w, h);
+        }
+      } else {
+        hudDraw(ctx, rows[i].icon, sl.cx, sl.cy, d * fit, d * fit);
+      }
       // Поле числа — от края гнезда до следующего гнезда, а на последнем до
       // вертикального разделителя перед картой.
       // Число ложится на чистую ПОВЕРХНОСТЬ справа от гнезда, а не в него,
@@ -3042,8 +3057,15 @@ let _hdrDrawnName = null;
 function _hdrCurrencies(p) {
   return [
     { icon: 'C12_gold_coin',    color: '#f0c98a', val: _fmtCur(Math.floor(p.gold)) },
-    { icon: 'C13_amethyst_gem', color: '#c9a4ff', val: _fmtCur(window._gramBalance || 0, 4) },
-    { icon: 'C14_ruby_gem',     color: '#f09a92', val: _fmtCur(window._nexumBalance || 0) },
+    // Свои монеты, а не самоцветы из комплекта HUD. C13/C14 — аметист и рубин:
+    // красивые, но это не GRAM и не Liberty, и в шапке они читались как «какие-то
+    // кристаллы». У обеих валют есть собственный знак, и он должен быть тем же,
+    // что на карточке кошелька.
+    //
+    // img вместо icon: файл лежит в /images и в таблицу HUD_ART не входит, так
+    // что рисуется он не hudDraw, а обычной картинкой — см. ниже.
+    { img: '/images/gram-icon.png',     color: '#c9a4ff', val: _fmtCur(window._gramBalance || 0, 4) },
+    { img: '/images/nexum-coin_v2.png', color: '#6fc7ff', val: _fmtCur(window._nexumBalance || 0) },
     // fit: во сколько раз иконка больше отверстия. Монета и самоцветы
     // круглые — их можно пускать с запасом, рим обрежет лишнее и гнездо
     // заполнится целиком. Меч вытянутый: на том же запасе круглый рим
