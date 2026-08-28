@@ -782,6 +782,51 @@ const UQ_LINK    = 'UQBeG3ydCj9OXWx7ipmId2ZVRDMiEQD_7t3Mu6qZiHdmVbZS';
 // test happened to think of.
 const RAW_ANYWHERE = /(^|[^\w])-?\d+:[0-9a-fA-F]{64}/;
 
+// Считает раскладку боевого экрана ВНУТРИ страницы теми же функциями,
+// которыми она рисуется. Снаружи повторять формулы нельзя: повтор
+// подтверждает не то, что видит игрок, а то, что помнит проверка.
+async function p_layout(w) {
+  inject(w, `window.__rcLay = (function () {
+    const out = { slots: 0, offscreen: 0, underNav: 0, hits: 0,
+                  offscreenList: '', underNavList: '', hitList: '', minGap: 999 };
+    if (typeof buffSlotPos !== 'function') return out;
+    const joy = joyCenter();
+    const pot = getPotionBtnPos();
+    const tgt = getTargetBtnPos();
+    const fan = fanRect();
+    const round = [
+      { n: 'джойстик', x: joy.x, y: joy.y, r: JOY_R * 1.06 },
+      { n: 'зелье',    x: pot.x, y: pot.y, r: pot.r },
+      { n: 'цель',     x: tgt.x, y: tgt.y, r: tgt.r },
+    ];
+    const off = [], nav = [], hit = [];
+    for (let i = 0; i < BUFF_MAX; i++) {
+      const b = buffSlotPos(i);
+      out.slots++;
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2, br = b.w / 2;
+      if (b.x < 0 || b.x + b.w > W || b.y < 0) off.push(i);
+      if (b.y + b.h > H - NAV_H) nav.push(i);
+      for (const o of round) {
+        const gap = Math.hypot(cx - o.x, cy - o.y) - (o.r + br);
+        if (gap < 0) hit.push(i + '/' + o.n);
+        if (gap < out.minGap) out.minGap = Math.round(gap);
+      }
+    }
+    out.offscreen = off.length; out.offscreenList = off.join(', ');
+    out.underNav = nav.length;  out.underNavList = nav.join(', ');
+    out.hits = hit.length;      out.hitList = hit.join(', ');
+    out.potTgt = Math.round(Math.hypot(pot.x - tgt.x, pot.y - tgt.y) - (pot.r + tgt.r));
+    // По дуге, а не по прямоугольнику: верхний левый угол прямоугольника
+    // веера пуст, и первая версия этой строки объявила столкновением
+    // воздух. Проверка, которая меряет не то, ловит не то.
+    const fo = fanOuter();
+    out.tgtFan = Math.round(Math.hypot(tgt.x - fo.x, tgt.y - fo.y) - fo.r - tgt.r);
+    out.potFan = Math.round(Math.hypot(pot.x - fo.x, pot.y - fo.y) - fo.r - pot.r);
+    return out;
+  })();`);
+  return w.__rcLay;
+}
+
 async function walletChecks(w) {
   const d = () => w.document;
   const q = sel => d().querySelector(sel);
@@ -816,6 +861,31 @@ async function walletChecks(w) {
     return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
   };
   const errBefore = (w.__rcErrors || []).length;
+
+  // ── БОЕВОЙ ЭКРАН: НИЧЕГО НЕ НАЛЕЗАЕТ ────────────────────────────────────
+  // Раскладка боевого экрана перебиралась десяток раз, и каждый раз ответ
+  // на «не налезает ли» приходилось искать глазами по скриншоту. Здесь она
+  // считается тем же кодом, которым рисуется, и сверяется числом.
+  //
+  // Двенадцать гнёзд бафов, джойстик, зелье, цель, навигация и края экрана.
+  // Это ровно те пары, которые уже сталкивались: бафы уезжали под
+  // навигацию, цель ложилась на обод джойстика, зелье налезало на веер.
+  head('боевой экран — раскладка без наложений');
+  const lay = await p_layout(w);
+  ok(lay.slots === 12, `двенадцать мест под бафы (${lay.slots})`);
+  ok(lay.offscreen === 0, 'ни одно гнездо не выходит за край экрана',
+     lay.offscreenList);
+  ok(lay.underNav === 0, 'ни одно не уезжает под нижнюю навигацию',
+     lay.underNavList);
+  ok(lay.hits === 0, 'ни одно не пересекается с джойстиком, зельем или целью',
+     lay.hitList);
+  ok(lay.minGap >= 6,
+     `самый тесный зазор между гнездом и кнопкой — ${lay.minGap} px`,
+     'меньше шести: на телефоне это уже «слиплось»');
+  // И сами кнопки между собой.
+  ok(lay.potTgt >= 4, `зазор между зельем и целью — ${lay.potTgt} px`);
+  ok(lay.tgtFan >= 0, `цель не заходит на веер (${lay.tgtFan} px по дуге)`);
+  ok(lay.potFan >= 0, `и зелье тоже (${lay.potFan} px по дуге)`);
 
   head('кошелёк GRAM — вкладка');
   inject(w, WALLET_SETUP);

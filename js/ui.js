@@ -2321,7 +2321,7 @@ function hdrLayout() {
   // Панель и карта держат СВОИ пропорции, ширина считается от высоты.
   const mapW = Math.round(h * ((typeof HUD_ART !== 'undefined' && HUD_ART.A2_map_panel)
     ? HUD_ART.A2_map_panel.out[0] / HUD_ART.A2_map_panel.out[1] : 0.92));
-  const panelW = Math.min(Math.round(W * 0.48), Math.round(h * 1.86));
+  const panelW = Math.min(Math.round(W * 0.50), Math.round(h * 1.86));
   const panel = { x: pad, y: pad, w: panelW, h };
   const map = { x: W - pad - mapW, y: pad, w: mapW, h };
   const cur = { x: panel.x + panel.w + 6, y: pad + 4, w: map.x - (panel.x + panel.w) - 12 };
@@ -2599,16 +2599,20 @@ function drawHeader() {
     _hdrNameStr = p.charDef.name;
     _hdrNameW = ctx.measureText(p.charDef.name).width;
   }
-  let stxH = infoX + _hdrNameW + 10;
   ctx.textBaseline = 'middle';
-  // БМ — рядом с классом: это боевая мощь персонажа, а не валюта, и в
-  // столбец плашек ей не место.
-  const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
-  ctx.fillText(t('bmAbbrev'), stxH, 24);
-  const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
-  ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
-  ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
+  // БМ уехал в столбец плашек четвёртой строкой. Здесь он печатался справа
+  // от названия класса, то есть от строки ПЕРЕМЕННОЙ длины: у «Целителя»
+  // он влезал, у класса подлиннее — вылезал за панель. Место, которое
+  // зависит от чужого текста, рано или поздно кончается.
+  if (!hasArt) {
+    const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
+    const stxH = infoX + _hdrNameW + 10;
+    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
+    ctx.fillText(t('bmAbbrev'), stxH, 24);
+    const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
+    ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
+    ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
+  }
   ctx.textBaseline = 'alphabetic';
 
   // Separator
@@ -2616,7 +2620,10 @@ function drawHeader() {
   ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
 
   // ── HP bar ────────────────────────────────────────────────
-  const hpY = 42, hbH = 9;
+  // 7, а не 9: жёлоб E10 рисуется поверх заливки и добавляет к ней свою
+  // кромку, так что видимая толщина полосы — это hbH плюс оправа. На
+  // девяти она выходила толще, чем имя над ней.
+  const hpY = 42, hbH = 7;
   const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
@@ -2656,7 +2663,7 @@ function drawHeader() {
   ctx.fillText(_fmtCur(Math.ceil(p.hp)) + '/' + _fmtCur(p.maxHp), hbX + hbW / 2, hpY);
 
   // ── XP bar ────────────────────────────────────────────────
-  const xpY = 55, xbH = 6;
+  const xpY = 55, xbH = 5;
   const xpPct = Math.min(1, p.xp / p.xpNext);
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(237,190,110,0.9)';
@@ -2695,12 +2702,17 @@ function drawHeader() {
   if (hasArt) {
     const cw = LAY.cur.w;
     const chh = hudHeightAt('B3_currency_plate', cw);
-    const gap = Math.max(2, Math.round((LAY.panel.h - chh * 3) / 4));
     const rows = [
       { icon: 'C12_gold_coin',    color: '#f0c98a', val: _fmtCur(Math.floor(p.gold)) },
       { icon: 'C13_amethyst_gem', color: '#c9a4ff', val: _fmtCur(window._gramBalance || 0, 4) },
       { icon: 'C14_ruby_gem',     color: '#f09a92', val: _fmtCur(window._nexumBalance || 0) },
+      // Боевая мощь — не валюта, но ведёт себя как она: одно число, которое
+      // растёт и на которое смотрят. В строке класса оно упиралось в край
+      // панели, здесь у него своя ширина и оно не зависит ни от чьей длины.
+      { icon: 'C11_single_broadsword', color: '#eaa742',
+        val: _fmtCur(typeof calcBM === 'function' ? calcBM(p) : 0) },
     ];
+    const gap = Math.max(2, Math.round((LAY.panel.h - chh * rows.length) / (rows.length + 1)));
     for (let i = 0; i < rows.length; i++) {
       const cy = LAY.cur.y + gap + chh / 2 + i * (chh + gap);
       const cx = LAY.cur.x + cw / 2;
@@ -3199,24 +3211,22 @@ function drawBuffStrip() {
   // зоны, и она единственная на экране, где ничего не нажимается: бафы
   // читают, а не трогают.
   // ── где лежат бафы ──────────────────────────────────────────────────────
-  // Ровно ПОД колонкой Мир/Проф/+Pack и ровно её ширины: три в ряд.
-  // Ширина колонки — 80, зазор 3, значит гнездо (80 − 2·3) / 3 ≈ 24, и
-  // тройка встаёт под кнопку без свеса ни на пиксель.
+  // Дугой вдоль внешнего края веера умений. Под колонкой кнопок они мешали
+  // списку пати, который встаёт ровно туда, а колонкой у правого края —
+  // закрывали сам веер.
   //
-  // Так они и не закрывают ничего: слева от них мир, справа мир, а сама
-  // колонка — единственное место, где UI уже стоит вертикально и ещё одна
-  // строка под ним ничего не ломает.
-  const COLS = 3;
-  const GAP = 3;
-  const colW = 80;                                   // ширина кнопок слева
-  const SZ = Math.floor((colW - (COLS - 1) * GAP) / COLS);
-  const stripX = (typeof getPvpBtnPos === 'function') ? getPvpBtnPos().x : 8;
-  // От нижней кнопки колонки, а не от постоянного числа: «Бонус» появляется
-  // и исчезает, и на постоянной высоте бафы то отрывались от колонки, то
-  // налезали на неё.
-  const stripY = (typeof getStarterBonusBtnPos === 'function')
-    ? getStarterBonusBtnPos().y + getStarterBonusBtnPos().h + 8
-    : HEADER_H + 8;
+  // Дуга не подобрана на глаз. Четыре гнезда умений в A3 лежат на
+  // окружности; по трём из них считается её центр — (0.898, 0.897) размера
+  // веера — и радиус 0.707 его ширины. Бафы идут по той же окружности
+  // радиусом побольше, поэтому лента повторяет форму веера, а не просто
+  // висит рядом.
+  //
+  // Двенадцать мест: столько буффов и дебаффов может висеть разом на
+  // максимуме, и ряд, который на тринадцатом уезжает за экран, — это ряд,
+  // который однажды спрячет нужное.
+  // Геометрия — в js/input.js рядом с остальной раскладкой, чтобы её можно
+  // было проверить, не рисуя.
+  const SZ = BUFF_SZ, MAXB = BUFF_MAX;
   // Raised clear of the chat widgets rather than bottom-aligned with the
   // skills. #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
   // and stand up to ~46px tall, so they own the band from H-118 to H-72 —
@@ -3231,11 +3241,13 @@ function drawBuffStrip() {
 
   ctx.save();
 
-  for (let i = 0; i < chips.length; i++) {
-    const col = i % COLS;
-    const row = Math.floor(i / COLS);
-    const cx = stripX + col * (SZ + GAP);
-    const cy = stripY + row * (SZ + GAP);
+  const shown = Math.min(chips.length, MAXB);
+  for (let i = 0; i < shown; i++) {
+    // Шаг постоянный, а не «поделить дугу на число бафов»: иначе при двух
+    // бафах они расползались бы по всей дуге, а при десяти сползались в
+    // кучу, и одно и то же зелье каждый раз оказывалось в новом месте.
+    const _bp = buffSlotPos(i);
+    const cx = _bp.x, cy = _bp.y;
     const chip = chips[i];
 
     // Тёмная подложка — всегда: у гнезда F6 сквозная середина, и без неё
@@ -3595,9 +3607,13 @@ function drawTargetFrame() {
   // ложилась на них краем. Ширина ограничена ещё и экраном — на узком
   // телефоне середины между колонкой и кнопкой меню почти нет.
   const _hostile = hudImg('F4_enemy_target_panel_hostile');
-  const bw = Math.min(168, Math.max(120, W - 8 - 96 - 100));
+  // Правая граница считается от кнопки «Меню», а не от края экрана: кнопка
+  // шириной около 104 и стоит в правом верхнем углу, и панель на прежнем
+  // пределе заходила под неё краем.
+  const _menuLeft = W - 116;
+  const bw = Math.min(160, Math.max(112, _menuLeft - 100));
   const bh = _hostile ? Math.round(hudHeightAt('F4_enemy_target_panel_hostile', bw)) : 42;
-  const bx = Math.min(W - 100 - bw, Math.max(96, W / 2 - bw / 2));
+  const bx = Math.min(_menuLeft - bw - 6, Math.max(96, W / 2 - bw / 2));
   const by = HEADER_H + 6;
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
@@ -3630,10 +3646,13 @@ function drawTargetFrame() {
   // Полоса ограничена ВНУТРЕННЕЙ областью жёлоба, а не всей панелью: жёлоб
   // у F4 непрозрачный и нарисован в самой картинке, и залить под ним всю
   // ширину значило бы вылезти за его кромку.
-  const hbh = _hostile ? Math.round(bh * 0.26) : 10;
-  const hbx = bx + (_hostile ? bw * 0.075 : 8);
-  const hbw = bw - (_hostile ? bw * 0.15 : 16);
-  const hby = _hostile ? Math.round(by + bh * 0.62 - hbh / 2) : by + 20;
+  // Жёлоб у F4 занимает нижнюю треть панели и его центр — на 0.70 её
+  // высоты. Полоса встаёт ВНУТРЬ него и с запасом по толщине: на 0.26
+  // высоты она была толще самого жёлоба и накрывала его кромку.
+  const hbh = _hostile ? Math.max(5, Math.round(bh * 0.17)) : 10;
+  const hbx = bx + (_hostile ? bw * 0.085 : 8);
+  const hbw = bw - (_hostile ? bw * 0.17 : 16);
+  const hby = _hostile ? Math.round(by + bh * 0.70 - hbh / 2) : by + 20;
   if (!_hostile) {
     ctx.fillStyle = 'rgba(38,12,15,0.9)';
     roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
@@ -3644,9 +3663,12 @@ function drawTargetFrame() {
     ctx.fillStyle = _uiBtnGrads.tfShine;
     roundRect(ctx, hbx, hby, hbw * pct, hbh * 0.45, 4); ctx.fill();
   }
-  ctx.font = `bold 7.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(209,204,197,0.92)';
-  ctx.fillText(Math.ceil(hp) + ' / ' + maxHp, hbx + hbw / 2, hby + hbh / 2);
+  ctx.font = `bold ${_hostile ? 6.5 : 7.5}px ${F}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(0,0,0,0.8)';
+  ctx.fillText(_fmtCur(Math.ceil(hp)) + ' / ' + _fmtCur(maxHp), hbx + hbw / 2, hby + hbh / 2 + 0.7);
+  ctx.fillStyle = 'rgba(240,236,230,0.95)';
+  ctx.fillText(_fmtCur(Math.ceil(hp)) + ' / ' + _fmtCur(maxHp), hbx + hbw / 2, hby + hbh / 2);
 
   ctx.restore();
 }
