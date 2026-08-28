@@ -251,7 +251,22 @@ function progressRow(sd) {
     // xp is clamped to what the level's own curve allows. A blob claiming
     // 1e12 xp at level 3 is not a level 3 character with a lot of xp — it is a
     // number nobody should carry forward.
-    xp: clampNum(sd.xp, 0, Math.min(xpToNext(lvl), MAX.xp)),
+    // clampInt, а не clampNum: колонка `xp` — bigint (001_core.sql), а в Mongo
+    // опыт БЫВАЕТ дробным. Награда за убийство в группе делится на участников
+    // (result.xp / members), и сложение float'ов оставляет хвост: 171.5,
+    // 959.666667, 13899.833333. PostgreSQL отвечает на такое
+    //
+    //   invalid input syntax for type bigint: "171.5"
+    //
+    // а это ошибка ВСЕЙ транзакции аккаунта: ни предметов, ни баланса, ни
+    // уровня. Пятнадцать живых игроков — с классами, уровнями до 17 и
+    // инвентарём — молча остались в Mongo на первом же прогоне.
+    //
+    // Округление вниз, а не вверх: клиент и так печатает пол (Math.floor в
+    // строке опыта, js/ui.js), то есть игрок никогда не видел этот хвост и не
+    // заметит его отсутствия. Отдать ему лишнюю единицу опыта было бы хуже —
+    // это выдача из ниоткуда.
+    xp: Math.floor(clampNum(sd.xp, 0, Math.min(xpToNext(lvl), MAX.xp))),
     kills: clampInt(sd.kills, 0, MAX.kills),
     hp: clampInt(sd.hp, 0, MAX.hp, 100),
     // ── keptSP: разовая починка ДО клампа, а не после ────────────────────
