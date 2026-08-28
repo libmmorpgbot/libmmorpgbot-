@@ -48,8 +48,15 @@ even, and free of busy detail in the middle.
 
 Exactly two items keep a transparent hole; they are marked HOLLOW below.
 
-ABSOLUTELY NO:
-  - no text, no letters, no numbers, no captions on any item
+ABSOLUTELY NO TEXT. This is the single most important rule and it overrides
+every description below. Some items are described as buttons that will later
+show a word or a status line — that word is written by the game engine at run
+time, in six languages, and it changes while the game is running. If you draw
+it into the picture, the button is unusable: the real caption lands on top of
+your painted one. Where a description mentions a caption, leave that area as
+plain empty interior.
+
+  - no text, no letters, no numbers, no captions, no labels, no watermark
   - no icons inside the buttons unless the item description asks for one
   - no drop shadow onto the background, no ground plane, no scenery
   - no rounded-rectangle "card" behind an item
@@ -79,11 +86,15 @@ that list to place them correctly in the engine.
 
 ────────────────────────────────────────────────────────────────
 ITEMS
+Reminder before the list: NO TEXT ON ANY ITEM. Where an item is described as
+carrying a caption, that caption is added by the engine — leave the space
+empty.
 ────────────────────────────────────────────────────────────────
 
 E1  Small pill button, filled. Horizontal rounded capsule, roughly 2.6 : 1,
     dark glass interior, thin gold border, one small amethyst diamond at each
-    end. This is a compact toolbar button that will carry a single short word.
+    end. A compact toolbar button; the engine puts one short word on it later,
+    so the interior stays empty.
 
 E2  Small pill button, accent version, filled. Same shape and size as E1, but
     the interior glows faintly warm green-gold from within and the border is
@@ -91,8 +102,8 @@ E2  Small pill button, accent version, filled. Same shape and size as E1, but
 
 E3  Wide menu row, filled. Horizontal rounded rectangle, roughly 4.5 : 1, dark
     glass interior, gold border, and a narrow vertical accent bar inset along
-    the LEFT edge inside the border. One row of a vertical menu; it will carry
-    a small icon on the left and a word beside it.
+    the LEFT edge inside the border. One row of a vertical menu; the engine
+    puts an icon and a word on it later, so the interior stays empty.
 
 E4  Menu button, filled. Compact rounded rectangle, roughly 2.8 : 1, dark glass
     interior, gold border, slightly heavier and more ornate than E1 — this is
@@ -113,7 +124,8 @@ E7  Round button, filled, teal. Same as E5 but the interior glows cold teal.
 
 E8  Zone banner, filled. Long low capsule, roughly 7 : 1, dark glass interior
     with a faint green tint, thin gold border, one amethyst diamond at each
-    end. A short status line will be written across it.
+    end. The engine writes a status line across it later — leave the middle
+    empty.
 
 E9  Enemy target frame, filled. Horizontal rounded rectangle, roughly 4 : 1,
     dark glass interior with a faint crimson tint and a slightly brighter
