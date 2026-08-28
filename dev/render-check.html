@@ -877,6 +877,33 @@ async function p_layout(w) {
       out.curMono = mono;
       out.curField = minField;
       out.barW = Math.round(L.hp.w);
+      // Ник не должен выходить за отведённую ему полосу. Проверяется не
+      // формула, а РЕЗУЛЬТАТ: шапка перерисовывается с заведомо длинным
+      // ником и публикует, что вышло на экран после обрезки. Пересчитывать
+      // те же формулы здесь нельзя — это подтвердило бы память проверки, а
+      // не картинку.
+      //
+      // Три случая: обычный ник, длинный кириллицей и широкими буквами
+      // («ЩЩЩ» и «iii» одной длины занимают разное место — по числу знаков
+      // обрезка врёт), и ник из одних пробелов, на котором цикл обрезки
+      // легко зацикливается.
+      const _saveName = netUsername;
+      out.names = [];
+      const probes = ['render-check',
+                      'ЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩ',
+                      'iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii',
+                      'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM'];
+      for (let i = 0; i < probes.length; i++) {
+        netUsername = probes[i];
+        _hdrDrawnName = null;
+        drawHeader();
+        const d = _hdrDrawnName;
+        out.names.push(d
+          ? { over: Math.round(d.x + d.w - d.limit), txt: d.text, src: probes[i] }
+          : { over: 9999, txt: '', src: probes[i] });
+      }
+      netUsername = _saveName;
+      drawHeader();
       out.portraitD = Math.round(Math.min(L.portrait.w, L.portrait.h));
       out.mapD = Math.round(Math.min(L.map.w, L.map.h));
     }
@@ -967,6 +994,14 @@ async function walletChecks(w) {
     ok(lay.portraitD >= 40, `портрет ${lay.portraitD} px — лицо различимо`);
     ok(lay.mapD >= 60, `окно карты ${lay.mapD} px`);
     ok(lay.barW >= 120, `полосы HP и XP длиной ${lay.barW} px`);
+    const over = (lay.names || []).filter(n => n.over > 0);
+    ok(over.length === 0,
+       `ник не выходит за свою полосу ни на одном из ${(lay.names || []).length} проверенных`,
+       over.map(n => `«${n.src}» вылез на ${n.over} px, нарисовано «${n.txt}»`).join('; '));
+    const cut = (lay.names || []).filter(n => n.src.length > 20);
+    ok(cut.every(n => n.txt.slice(-1) === '…'),
+       'длинный ник кончается многоточием, а не обрывом',
+       cut.map(n => `«${n.txt}»`).join('; '));
     // Панель держит СВОЮ пропорцию, поэтому высота шапки — следствие ширины
     // экрана, а не назначенное число. Проверяется потолок: если однажды
     // придёт панель другой формы, шапка не должна съесть треть экрана.
