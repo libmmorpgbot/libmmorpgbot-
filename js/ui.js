@@ -3263,7 +3263,6 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
-  const pack = getEpicPackBtnPos();
   const pty = getPartyBtnPos();
   const tfW = 160, tfH = 42;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
@@ -3321,7 +3320,7 @@ function _buildUiBtnGrads() {
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, packBtn: pack, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3698,66 +3697,7 @@ function drawProfessionButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  +PACK BUTTON — below Профессия, opens the epic-pack (former pkg300, now
-//  600 GRAM) purchase confirm. See openEpicPackFromHud/_EPIC_PACK_PKG below
-//  and _checkEpicPackBtnTouch/getEpicPackBtnPos, js/input.js.
-// ─────────────────────────────────────────────────────────
-function drawEpicPackButton() {
-  if (!player) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
-  const pb = _uiBtnGrads.packBtn;
-  const F = 'system-ui, -apple-system, Arial';
-
-  ctx.save();
-
-  // Shimmering dark-emerald fill — a bright band sweeps back and forth
-  // across the button instead of sitting still ("переливается"). Rebuilt
-  // every frame (not cached in _uiBtnGrads) so the sweep can move.
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  if (hudPill(pb, { accent: true })) {
-    // Пульсация по ПРОЗРАЧНОСТИ самой кнопки, а не второй рамкой поверх:
-    // рамка вокруг рамки читалась как ореол и спорила с золотом ассета.
-    // Переливающийся градиент снят целиком — он был способом выделить
-    // кнопку, пока не было акцентного ассета; теперь акцент в картинке.
-    ctx.save();
-    ctx.globalAlpha = 0.10 + 0.10 * pulse;
-    hudDrawW(ctx, 'E2_small_pill_button_accent', pb.x + pb.w / 2, pb.y + pb.h / 2, pb.w + 12);
-    ctx.restore();
-  } else {
-    const sweep = (Math.sin(Date.now() / 1100) + 1) / 2; // 0..1
-    const grad = ctx.createLinearGradient(pb.x, pb.y, pb.x + pb.w, pb.y + pb.h);
-    grad.addColorStop(0, '#062f1c');
-    grad.addColorStop(Math.max(0, sweep - 0.3), '#0a4a2c');
-    grad.addColorStop(sweep, '#2fd68f');
-    grad.addColorStop(Math.min(1, sweep + 0.3), '#0a4a2c');
-    grad.addColorStop(1, '#062f1c');
-    ctx.fillStyle = grad;
-    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(60,235,160,0.7)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-    ctx.strokeStyle = `rgba(60,235,160,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
-  }
-
-  drawIconCtx(ctx, 'coin', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, '#7cf5b6');
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#7cf5b6';
-  ctx.fillText('+Pack', pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
-
-  ctx.restore();
-}
-
-// Tapped from the HUD button (drawEpicPackButton). Always opens — unlike a
-// shop card (which never calls openGramShopConfirm at all while unaffordable,
-// see its own canAfford-gated onclick), the modal itself now shows the
-// insufficient-balance state on its buy button instead of refusing to open.
-function openEpicPackFromHud() {
-  openGramShopConfirm(_EPIC_PACK_PKG.id);
-}
-
-// ─────────────────────────────────────────────────────────
-//  БОНУС BUTTON — below +Pack, the free one-per-account "Набор новичка".
+//  БОНУС BUTTON — below Профессия, the free one-per-account "Набор новичка".
 //  Contents: STARTER_BONUS (shared/definitions.js); granted by the
 //  starterBonusClaim handler (server/handlers/gram.js). See
 //  getStarterBonusBtnPos/_checkStarterBonusBtnTouch, js/input.js.
@@ -7280,9 +7220,10 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
   { id:'pkg100', gram:180, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // pkg300 ("Эпический"/"+Pack") used to sit here as the top regular-tab
-  // tier. It's now sold only via the "+Pack" card on Профиль → Кошелёк
-  // (_EPIC_PACK_PKG below) — see that comment for why.
+  // pkg300 («Эпический» / «+Pack») стоял здесь верхним тиром обычной
+  // вкладки, потом уехал на собственную кнопку HUD. Товара больше нет вовсе:
+  // ни кнопки, ни карточки, ни строки в server/shop.js — купить его нельзя
+  // ниоткуда.
   // Усиление tab — pure material packs (the empowerment itself still happens
   // from the Персонаж → Усиление panel, see updateEmpowerUI; these only grant
   // the listed items). Зеркало серверного списка в server/shop.js — содержимое
@@ -7650,32 +7591,8 @@ function _boxesLine(boxes) {
   }).join(', ');
 }
 
-// "+Pack" — the former pkg300 regular-tab tier. Pulled off the GRAM shop's
-// Паки tab (see the comment above _GRAM_SHOP_PKGS_UI) and sold instead from
-// its own HUD button below Профессия (drawEpicPackButton/
-// openEpicPackFromHud, js/ui.js; getEpicPackBtnPos/_checkEpicPackBtnTouch,
-// js/input.js). Same id/rewards server/index.js's gramShopBuy already
-// grants for 'pkg300' — only the price moved (300 → 600) and where it's
-// sold. `perks` are the real-world mentorship items bundled on top of the
-// in-game rewards; the server never sees them, they're pure presentation
-// (rendered by openGramShopConfirm's modal via _epicPackPerksHtml).
-const _EPIC_PACK_PKG = {
-  id:'pkg300', gram:600, get label() { return t('gramPkgLabel_pkg300'); }, gold:0, potions:100,
-  armor:'Epic', weapon:'Epic', bonusSP:20, color:'#2fd68f', skillBooks:{ each:15 }, enhance:3,
-  nexum:10000, stones:{ bless_stone:50 },
-  perks: ['epicPackPerk1', 'epicPackPerk2', 'epicPackPerk3', 'epicPackPerk4', 'epicPackPerk5'],
-};
-
-function _epicPackPerksHtml(pkg) {
-  if (!pkg.perks) return '';
-  return `<div style="margin-bottom:10px">
-    <b style="color:${pkg.color}">${t('epicPackIncludesHdr')}</b>
-    ${pkg.perks.map(k => `<div style="color:#c5bfb7;margin-top:4px">• ${t(k)}</div>`).join('')}
-  </div>`;
-}
-
 function openGramShopConfirm(pkgId) {
-  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId) || (pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === pkgId);
   if (!pkg) return;
   const bal = window._gramBalance || 0;
   const price = pkgPrice(pkg);
@@ -7684,19 +7601,12 @@ function openGramShopConfirm(pkgId) {
   if (existing) existing.remove();
   const kGold = pkg.gold >= 1000 ? (pkg.gold / 1000).toFixed(0) + 'k' : pkg.gold;
   const enhSuffix  = pkg.enhance ? ` +${pkg.enhance}` : '';
-  const perksHtml  = _epicPackPerksHtml(pkg);
-  // "+Pack" has no shop card of its own to preview icons on anymore (it's
-  // bought straight off the HUD button, see openEpicPackFromHud) — show the
-  // same icon row the shop cards use (_gramShopPkgHtml) instead of the
-  // plain text lines every other package's confirm still uses below.
+  // Ветка `pkg.perks` жила здесь ради одного товара — «+Pack», у которого
+  // сверх игровых наград шли внеигровые: видеокурс, закрытый чат,
+  // консультации. Товара нет, поля perks нет ни у одного пакета, и ветка
+  // была бы кодом, который нельзя выполнить.
   let itemsHtml;
-  if (pkg.perks) {
-    let rows = pkg.gold ? ri(_shopCoinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold') : '';
-    rows += _shopExtraRewardRows(pkg, ri);
-    if (pkg.skillBooks) rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
-    if (pkg.stones) rows += Object.entries(pkg.stones).map(([id, qty]) => ri(_stoneOrMatImg(id), `×${qty}`, '')).join('');
-    itemsHtml = `<div class="vip-items-row">${rows}</div>`;
-  } else {
+  {
     const goldLine   = pkg.gold ? `<div style="color:#c5bfb7">${tVars('goldAmountFmt', { n: kGold })}</div>` : '';
     const potionLine = pkg.potions ? `<div style="color:#c5bfb7">${tVars('eachPotionFmt', { n: pkg.potions })}</div>` : '';
     const armorLine  = pkg.armor  ? `<div style="color:#c5bfb7">${tVars('fullArmorSetFmt', { rarity: pkg.armor })}${enhSuffix}</div>` : '';
@@ -7722,7 +7632,7 @@ function openGramShopConfirm(pkgId) {
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
-        ${perksHtml}${itemsHtml}
+        ${itemsHtml}
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
@@ -7763,8 +7673,11 @@ function onGramShopResult(data) {
   // The server says so outright now (seasonTicket); the package-id test is
   // kept as the fallback for a client that is one deploy behind.
   if (data.seasonTicket || data.pkgId === 'season_ticket') _seasonTicketActive = true;
-  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId)
-    || (data.pkgId === _EPIC_PACK_PKG.id ? _EPIC_PACK_PKG : null);
+  // Ищется только среди живых товаров. Купленный когда-то "+Pack" (pkg300)
+  // среди них больше не значится — товар убран целиком, — и его чек честно
+  // подпишется общим «Пакет» из packageFallbackLbl, а не именем позиции,
+  // которой в игре уже нет.
+  const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
   // Pet+cloak+artifact packages (petpkg1/2/3) — bought through this same
   // handler but shown on the GRAM shop's own Питомцы tab
   // (_SPECIAL_PET_PKGS_UI), so they have no label of their own either.
@@ -7777,9 +7690,8 @@ function onGramShopResult(data) {
   // panel/tab pair, so a single re-render covers whichever tab is open.
   const panel = document.getElementById('gram-shop-panel');
   if (panel && panel.style.display !== 'none') _renderGramShopPanel();
-  // "+Pack" (pkg300) is bought from its own HUD button, not the shop panel —
-  // if the wallet tab happens to be open behind it, keep its balance number
-  // in sync too.
+  // Кошелёк мог остаться открытым за панелью магазина — держим его число
+  // в синхроне.
   if (activeTab === 5 && window._profileTab === 'wallet') updateGramUI();
   updateInvUI();
   if (activeTab === 1 && _invTab === 1) updateProfileUI();

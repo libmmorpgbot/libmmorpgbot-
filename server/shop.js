@@ -59,15 +59,16 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg10',  gram:20,  gold:7000,   potions:20,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:5 }, enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
   { id:'pkg100', gram:180, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // "Эпический" tier ("+Pack") — full epic armor+weapon set at +3, 50
-  // safe-enchant (bless_stone) stones, 60 class skill books (each:15 × the
-  // class's 4 books), a full buff-potion restock, bonus skill points and
-  // Liberty. No longer sold on the regular shop tab — bought only via the
-  // "+Pack" card on Профиль → Кошелёк (js/ui.js's _EPIC_PACK_PKG), which
-  // also bundles real-world mentorship perks that this handler knows
-  // nothing about. Same id/rewards as before, just 300 → 600 GRAM.
-  { id:'pkg300', gram:600, gold:0, potions:100, armor:'epic', weapon:'epic', bonusSP:20,
-    skillBooks:{ each:15 }, enhance:3, nexum:10000, stones:{ bless_stone:50 } },
+  // pkg300 («Эпический» / «+Pack») стоял здесь — полный эпический комплект
+  // с оружием в +3, 50 благословенных камней, 60 классовых книг, Liberty и
+  // бонусные очки навыка за 600 GRAM. Товар убран целиком по просьбе
+  // владельца: кнопки на HUD нет, карточки в магазине нет, и этой строки
+  // нет — значит gramShopBuy на 'pkg300' отвечает «нет такого пакета», а не
+  // списывает GRAM за то, чего в игре уже не существует.
+  //
+  // Прошлые покупки при этом остаются в GramTx как были: id в чеке — это
+  // запись о том, что случилось, а не ссылка на живой товар. Подпишется
+  // такой чек общим «Пакет» (packageFallbackLbl, js/ui.js).
   // Pet+cloak+artifact packages (rendered on the GRAM shop's own Питомцы
   // tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same handler
   // since petChoice/classCloak/classArtifact/enhance are already fully

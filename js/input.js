@@ -129,21 +129,17 @@ function getProfessionBtnPos() {
   return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 
-// Directly below Профессия, same column — opens the "+Pack" epic-pack
-// purchase (600 GRAM). See _checkEpicPackBtnTouch/input.js and
-// drawEpicPackButton/openEpicPackFromHud, js/ui.js.
-function getEpicPackBtnPos() {
-  const prof = getProfessionBtnPos();
-  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
-}
-
-// Directly below +Pack, same column — opens the free "Набор новичка" kit
+// Directly below Профессия, same column — opens the free "Набор новичка" kit
 // (openStarterBonusPanel, js/ui.js). Only drawn while the account still has
 // it to claim, but the position is unconditional: the party list below is
 // laid out from it either way (see _partyHudStartY).
+//
+// Раньше между ним и Профессией стояла кнопка "+Pack". Её убрали целиком —
+// вместе с товаром, — и Бонус поднялся в освободившийся слот, а не остался
+// висеть с дыркой над собой.
 function getStarterBonusBtnPos() {
-  const pack = getEpicPackBtnPos();
-  return { x: pack.x, y: pack.y + pack.h + 6, w: pack.w, h: pack.h };
+  const prof = getProfessionBtnPos();
+  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
 }
 
 function getPartyLeaveBtnPos() {
@@ -154,10 +150,10 @@ function getPartyLeaveBtnPos() {
 }
 
 // Party member list starts directly below the Бонус slot (which sits below
-// +Pack, which sits below Профессия) — used to be two slots further down,
-// past the since-removed Special and "ТЕХ" gift buttons. Laid out from that
-// slot whether or not the button is currently drawn, so the list does not
-// jump the moment the kit is claimed.
+// Профессия) — used to be further down, past the since-removed +Pack,
+// Special and "ТЕХ" gift buttons. Laid out from that slot whether or not the
+// button is currently drawn, so the list does not jump the moment the kit is
+// claimed.
 function _partyHudStartY() {
   const bonus = getStarterBonusBtnPos();
   return bonus.y + bonus.h + 6;
@@ -480,14 +476,6 @@ function _checkProfessionBtnTouch(cx, cy) {
   return false;
 }
 
-function _checkEpicPackBtnTouch(cx, cy) {
-  const pb = getEpicPackBtnPos();
-  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
-    if (typeof openEpicPackFromHud === 'function') openEpicPackFromHud();
-    return true;
-  }
-  return false;
-}
 
 // Same gate the drawing uses (_starterBonusAvailable, js/ui.js): once the kit
 // is claimed the button is gone, and its slot must stop swallowing taps meant
@@ -659,7 +647,6 @@ function onTS(e) {
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
-    if (_checkEpicPackBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
@@ -737,7 +724,6 @@ function onMD(e) {
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
-  if (_checkEpicPackBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
@@ -794,17 +780,16 @@ const _JOY_DEADZONE = 0.12;
 const _inputDirResult = { dx: 0, dy: 0, len: 0 };
 function inputDir() {
   let dx = joy.dx, dy = joy.dy;
-  if (keys['ArrowLeft']  || keys['a']) dx -= 1;
-  if (keys['ArrowRight'] || keys['d']) dx += 1;
-  // 'w' is intentionally NOT a move-up alias here (unlike a/s/d) — it's also
-  // the W skill hotkey (see initInput() below), and treating it as movement
-  // too meant holding "up" on WASD kept re-triggering the W skill instead of
-  // turning the character to face up: the skill's cast animation takes over
-  // player.atkAnimTimer, which gates the movement/facing code below out
-  // entirely for as long as it plays. ArrowUp remains a full, unambiguous
-  // way to move up from the keyboard.
-  if (keys['ArrowUp']) dy -= 1;
-  if (keys['ArrowDown']  || keys['s']) dy += 1;
+  // Полный WASD наравне со стрелками. W раньше движением НЕ был: он же хоткей
+  // навыка W, и удержание «вверх» вместо поворота персонажа раз за разом
+  // кастовало навык — анимация каста забирает player.atkAnimTimer, который
+  // глушит весь код движения и поворота, пока играет. Теперь навыки живут на
+  // Q/E/R и на цифрах 1-4 (см. initInput ниже), W освободился под движение, а
+  // повторный keydown от удержания клавиши навык больше не перезапускает.
+  if (keys['ArrowLeft']  || keys['KeyA']) dx -= 1;
+  if (keys['ArrowRight'] || keys['KeyD']) dx += 1;
+  if (keys['ArrowUp']    || keys['KeyW']) dy -= 1;
+  if (keys['ArrowDown']  || keys['KeyS']) dy += 1;
   const l = Math.hypot(dx, dy);
   if (l > _JOY_DEADZONE) {
     _inputDirResult.dx = dx / l; _inputDirResult.dy = dy / l; _inputDirResult.len = Math.min(1, l);
@@ -825,15 +810,29 @@ function initInput() {
     // sets keys to false, so a skipped keydown cannot strand a key down).
     const el = e.target;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
-    keys[e.key] = true;
+    keys[e.code] = true;
     if (state === 'playing' && activeTab === 0) {
-      const map = { q:0, w:1, e:2, r:3, Q:0, W:1, E:2, R:3 };
-      if (e.key in map) useSkill(map[e.key]);
-      if (e.key === 'f' || e.key === 'F') usePotion();
-      if (e.key === 'Tab') { e.preventDefault(); cycleTarget(); }
+      // e.repeat — удержание клавиши. Браузер повторяет keydown, пока клавишу
+      // держат, и без этой проверки зажатая клавиша навыка слала каст каждые
+      // несколько десятков миллисекунд.
+      if (e.repeat) return;
+      // По ФИЗИЧЕСКОЙ клавише, а не по букве: с кириллической раскладкой Q
+      // печатает «й», и ни один навык с клавиатуры не кастовался.
+      //
+      // W в этой таблице нет — он ушёл под движение. Второй навык остался на
+      // цифре 2, и все четыре продублированы цифрами 1-4: это обычная для
+      // такой игры раскладка, и она не спорит с WASD ни одной клавишей.
+      const map = {
+        KeyQ: 0, KeyE: 2, KeyR: 3,
+        Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3,
+        Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3,
+      };
+      if (e.code in map) useSkill(map[e.code]);
+      if (e.code === 'KeyF') usePotion();
+      if (e.code === 'Tab') { e.preventDefault(); cycleTarget(); }
     }
   });
-  window.addEventListener('keyup', e => { keys[e.key] = false; });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
   bindCanvasInput(canvas);
   window.addEventListener('mousemove',   onMM);
   window.addEventListener('mouseup',     onMU);
