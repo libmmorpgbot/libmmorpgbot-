@@ -1019,9 +1019,12 @@ canvas { display:block; width:100%; height:100%; }
    между вкладками обязана читаться и без цвета. */
 .nav-tab .ni img { width:100%; height:100%; object-fit:contain; opacity:.55; }
 .nav-tab.active .ni img { opacity:1; }
+/* 7.5px и без разрядки: «ПЕРСОНАЖ» — восемь заглавных букв, а ячейка
+   66 px. На 8.5 с разрядкой хвост уходил в многоточие у трёх вкладок из
+   шести. */
 .nav-tab .nl {
-  position:absolute; top:57px; left:0; right:0; z-index:1;
-  font-size:8.5px; letter-spacing:0.1px; text-transform:uppercase;
+  position:absolute; top:58px; left:0; right:0; z-index:1;
+  font-size:7.5px; letter-spacing:0; text-transform:uppercase;
   text-align:center; line-height:1;
   text-shadow:0 1px 2px rgba(0,0,0,.95);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;

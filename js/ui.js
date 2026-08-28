@@ -2334,12 +2334,16 @@ function drawHeader() {
     _hdrSepGrad.addColorStop(0.85,'rgba(170,133,70,0.75)');
     _hdrSepGrad.addColorStop(1,   'rgba(119,92,46,0)');
   }
-  ctx.fillStyle = _hdrBgGrad;
-  ctx.fillRect(0, 0, W, HEADER_H);
-
-  // Bottom separator glow
-  ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
+  // Сплошная плашка во всю ширину — только в запасном виде. С ассетами шапка
+  // это ТРИ отдельные панели, и между ними должен быть виден мир: заливка
+  // поперёк экрана съедает полосу игрового поля ни за чем и выдаёт то, что
+  // панели просто положены на прямоугольник.
+  if (!hasArt) {
+    ctx.fillStyle = _hdrBgGrad;
+    ctx.fillRect(0, 0, W, HEADER_H);
+    ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
+  }
 
   // Панель статов и рамка карты — до всего, что в них ложится.
   if (hasArt) {
@@ -2529,9 +2533,13 @@ function drawHeader() {
     ctx.beginPath(); ctx.arc(lvX, lvY, lvR * 0.9, 0, Math.PI * 2); ctx.fill();
     hudDraw(ctx, 'B2_level_badge_ring', lvX, lvY, lvR * 2.3, lvR * 2.3);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `bold ${Math.max(9, Math.round(lvR * 0.95))}px ${F}`;
+    // Кегль сжимается под длину числа: на 1000 уровне четыре знака при
+    // прежнем размере вылезали за кольцо в обе стороны.
+    const lvTxt = String(p.lvl);
+    const lvFit = lvR * 1.5 / Math.max(1.6, lvTxt.length * 0.62);
+    ctx.font = `bold ${Math.max(7, Math.round(Math.min(lvR * 0.9, lvFit)))}px ${F}`;
     ctx.fillStyle = '#f4d8a7';
-    ctx.fillText(p.lvl, lvX, lvY);
+    ctx.fillText(lvTxt, lvX, lvY);
     ctx.textBaseline = 'alphabetic';
   }
 
@@ -2609,8 +2617,10 @@ function drawHeader() {
       roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
     }
   }
+  // Сокращённые числа: 12973/22052 ещё влезает, а 2.6e+142 у опыта — нет,
+  // и раньше оно наезжало на собственную подпись «XP».
   ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
-  ctx.fillText(Math.ceil(p.hp) + '/' + p.maxHp, hbX + hbW / 2, hpY);
+  ctx.fillText(_fmtCur(Math.ceil(p.hp)) + '/' + _fmtCur(p.maxHp), hbX + hbW / 2, hpY);
 
   // ── XP bar ────────────────────────────────────────────────
   const xpY = 55, xbH = 6;
@@ -2639,7 +2649,7 @@ function drawHeader() {
   // on the server), so xp is legitimately fractional and float addition turns
   // that into "858.9999999999418" on the bar. The stored value keeps its
   // precision — only the display is whole.
-  ctx.fillText(Math.floor(p.xp) + '/' + p.xpNext, xbX + xbW / 2, xpY);
+  ctx.fillText(_fmtCur(Math.floor(p.xp)) + '/' + _fmtCur(p.xpNext), xbX + xbW / 2, xpY);
 
   // Конец сдвинутого блока: дальше снова экранные координаты.
   ctx.restore();
@@ -2682,6 +2692,12 @@ function drawHeader() {
 // панелями.
 function _fmtCur(v, frac) {
   const n = Number(v) || 0;
+  // Опыт на тысячном уровне — 2.6e+142. Приставки на такое не рассчитаны,
+  // а печатать сто сорок знаков в полосу шириной 90 px тем более нельзя:
+  // выше 999 триллионов остаётся показательная запись, но короткая.
+  if (!Number.isFinite(n)) return '—';
+  if (n >= 1e15) return n.toExponential(1).replace('e+', 'e');
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
   if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e5) return Math.round(n / 1e3) + 'K';

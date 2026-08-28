@@ -1,0 +1,161 @@
+═══════════════════════════════════════════════════════════════════════════════
+  ПАРТИЯ 2 — КНОПКИ С ЗАЛИВКОЙ
+  Прикладывать: ref/hud.png (цель) + скриншоты текущей игры (что заменяем)
+═══════════════════════════════════════════════════════════════════════════════
+
+ЧЕМ ЭТА ПАРТИЯ ОТЛИЧАЕТСЯ ОТ ПЕРВОЙ
+  В первой партии всё было ПУСТОЕ: рамки, кольца, гнёзда. Потому что внутрь
+  них рушій кладёт своё — зелья, умения, портрет, карту.
+  Здесь наоборот: это КНОПКИ, и внутри у них должна быть красивая заливка —
+  тёмное полированное стекло с фаской. Сверху рушій пишет только текст или
+  ставит одну иконку. Пустые остаются лишь два предмета, они помечены.
+
+КАКИЕ КАРТИНКИ ПРИЛОЖИТЬ К ЗАПРОСУ
+  1. ref/hud.png                  — образец стиля, к которому идём
+  2. скриншот боя (14:54)         — шапка, зелье, ЦЕЛ, кнопки Мир/Проф/+Pack
+  3. скриншот с открытым меню     — строки Рейтинг / VIP / Маркет / Магазин /
+                                    События / Сезон / Кодекс
+  4. скриншот в безопасной зоне   — баннер «Безопасная зона · реген HP»
+  5. скриншот с врагом в цели     — рамка «Разъярённый Орк» с полосой HP
+  Первая — что должно получиться. Остальные — что именно заменяем: по ним
+  видно размеры, пропорции и сколько текста должно влезать.
+
+ЧТО ПРОВЕРИТЬ, КОГДА ПРИДЁТ
+  □ ни одной буквы и ни одной цифры ни на одном предмете
+  □ у кнопок заливка ЕСТЬ, у двух помеченных — сквозная дыра
+  □ предметы не соприкасаются друг с другом
+  □ блик у всех сверху-слева
+  □ к каждому предмету есть текстовое описание — что это и где стоит
+
+
+===PROMPT===
+
+Use the attached game HUD mockup (the ornate dark-fantasy one) as the single
+style reference. The other attached screenshots show the game as it looks NOW —
+they are there so you can see which elements are being replaced, how much text
+must fit inside each one, and their proportions. Match the style of the first
+image, not of the screenshots.
+
+Produce a sheet of separate UI assets.
+
+WHAT IS DIFFERENT FROM THE PREVIOUS BATCH
+These are BUTTONS AND BANNERS, not empty frames. Each one must have a finished
+interior: dark polished obsidian glass with a soft inner bevel and a faint
+gradient, sitting inside its ornate golden border. The game engine draws only
+TEXT or a single small icon on top of that interior, so the interior must look
+good empty and must not compete with a caption laid over it — keep it dark,
+even, and free of busy detail in the middle.
+
+Exactly two items keep a transparent hole; they are marked HOLLOW below.
+
+ABSOLUTELY NO:
+  - no text, no letters, no numbers, no captions on any item
+  - no icons inside the buttons unless the item description asks for one
+  - no drop shadow onto the background, no ground plane, no scenery
+  - no rounded-rectangle "card" behind an item
+
+STYLE
+Dark polished obsidian and carved dark stone. Warm antique gold and bronze
+trim, colour #c9a86a. Amethyst purple diamond-cut gems, colour #8b45d6, at
+corners and ends. Thin double-line gold borders with small notched corners.
+Soft rim light from the upper left, gentle inner bevel on every edge, faint
+inner shadow where the interior meets the border. Realistic rendered metal and
+glass, not flat vector, not cartoon outline, not neon.
+
+BACKGROUND AND ALPHA
+Transparent background. If the tool cannot output transparency, use pure
+magenta #FF00FF for the background and for the two hollow interiors — never
+black, because the assets themselves are almost black.
+
+LAYOUT
+One item per cell on a regular grid, each centred, upright, orthographic front
+view, with a wide empty margin around it so nothing touches anything else. No
+grid lines, no labels, no watermark. Highest resolution available.
+
+FOR EACH ITEM, ALSO WRITE A SHORT DESCRIPTION
+Next to the image, output a plain-text list: for every item — its number, what
+it is, its aspect ratio, and whether its interior is filled or hollow. I need
+that list to place them correctly in the engine.
+
+────────────────────────────────────────────────────────────────
+ITEMS
+────────────────────────────────────────────────────────────────
+
+E1  Small pill button, filled. Horizontal rounded capsule, roughly 2.6 : 1,
+    dark glass interior, thin gold border, one small amethyst diamond at each
+    end. This is a compact toolbar button that will carry a single short word.
+
+E2  Small pill button, accent version, filled. Same shape and size as E1, but
+    the interior glows faintly warm green-gold from within and the border is
+    brighter gold. This marks the one button that offers a purchase.
+
+E3  Wide menu row, filled. Horizontal rounded rectangle, roughly 4.5 : 1, dark
+    glass interior, gold border, and a narrow vertical accent bar inset along
+    the LEFT edge inside the border. One row of a vertical menu; it will carry
+    a small icon on the left and a word beside it.
+
+E4  Menu button, filled. Compact rounded rectangle, roughly 2.8 : 1, dark glass
+    interior, gold border, slightly heavier and more ornate than E1 — this is
+    the button that opens the menu, and it should read as the most important
+    control in its corner.
+
+E5  Round button, filled. Circle with a thick engraved golden rim and a dark
+    glass interior with a soft highlight at the upper left. Neutral colour. A
+    consumable item icon will be drawn on top of the interior, so the middle
+    must stay calm and dark.
+
+E6  Round button, filled, crimson. Same as E5 but the interior glows deep
+    crimson from within, and the rim carries a faint red heat. This is the
+    target-selection button.
+
+E7  Round button, filled, teal. Same as E5 but the interior glows cold teal.
+    This is the teleport button.
+
+E8  Zone banner, filled. Long low capsule, roughly 7 : 1, dark glass interior
+    with a faint green tint, thin gold border, one amethyst diamond at each
+    end. A short status line will be written across it.
+
+E9  Enemy target frame, filled. Horizontal rounded rectangle, roughly 4 : 1,
+    dark glass interior with a faint crimson tint and a slightly brighter
+    crimson border. Inside its lower half there is a long recessed horizontal
+    channel with its own thin gold edge — the empty groove for a health bar.
+    The groove is part of the same asset, sunk into the interior.
+
+E10 Bar track, HOLLOW. A long, low, capsule-shaped recessed channel, roughly
+    14 : 1, with a thin gold edge and a dark bevelled inner wall. The centre
+    of the channel is a transparent hole running its whole length, because a
+    coloured fill is drawn underneath it by the engine. Only the rim and the
+    bevel are drawn.
+
+E11 Notification badge, red. Small circle, deep red enamel interior with a
+    glossy highlight and a thin dark gold rim. No number.
+
+E12 Notification badge, blue. Same as E11 but cold blue enamel.
+
+E13 Icon socket, HOLLOW. A small circle of engraved gold rim with a completely
+    transparent centre, thinner and plainer than E5 — it is laid over an
+    existing round icon to frame it, so nothing may cover the middle.
+
+===END PROMPT===
+
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЕСЛИ МОДЕЛЬ ПРОСИТ ПО ОДНОМУ ПРЕДМЕТУ ЗА РАЗ
+═══════════════════════════════════════════════════════════════════════════════
+Взять описание нужного пункта и приклеить к нему этот хвост:
+
+  , dark fantasy MMORPG interface button, style of the attached reference,
+  dark polished obsidian glass interior with soft inner bevel, warm antique
+  gold trim #c9a86a, amethyst purple gems #8b45d6, soft rim light from upper
+  left, realistic rendered metal and glass, orthographic front view, single
+  object centred, transparent background, no text, no numbers, no icons,
+  highest resolution
+
+═══════════════════════════════════════════════════════════════════════════════
+  ЧЕГО В СПИСКЕ НЕТ И ПОЧЕМУ
+═══════════════════════════════════════════════════════════════════════════════
+  заливка полос HP и XP  — рисует код: она обязана двигаться и менять цвет
+  текст на кнопках       — рисует код: шесть языков и меняется на лету
+  иконки внутри кнопок   — уже есть в первой партии (C1–C14) и в images/
+  сплошная подложка шапки — её вообще не будет: между панелями станет
+                            прозрачно, это правка кода, а не картинка
