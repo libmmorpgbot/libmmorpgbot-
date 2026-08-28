@@ -70,8 +70,18 @@ if [ -n "$ASSETS" ]; then
     trap 'rm -f "$LIST"' EXIT
     printf '%s\n' "$MISSING" > "$LIST"
     tar -czf - -T "$LIST" \
-      | "${SSH[@]}" 'T=$(mktemp -d) && tar -xzf - -C "$T" \
-                     && cp -a "$T"/. /srv/liberty/next/ && rm -rf "$T"'
+      | "${SSH[@]}" 'set -e; T=$(mktemp -d); trap "rm -rf $T" EXIT
+                     tar -xzf - -C "$T"
+                     # По ВМІСТУ кожного каталогу, а не каталогом цілком:
+                     # `cp -a "$T"/. next/` бачить next/images як звичайний
+                     # файл і відмовляється «overwrite non-directory with
+                     # directory». Зі скісною рискою в кінці призначення cp
+                     # проходить симлінк і кладе файли у сховище за ним.
+                     for d in "$T"/*/; do
+                       n=$(basename "$d")
+                       mkdir -p "/srv/liberty/next/$n"
+                       cp -a "$d". "/srv/liberty/next/$n/"
+                     done'
   fi
 fi
 
