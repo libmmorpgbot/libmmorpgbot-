@@ -502,6 +502,45 @@ function _waRecord(outcome) {
   }
 }
 
+// ── the work a disconnect starts, and nobody used to wait for ───────────────
+// Every socket that leaves runs the 'disconnect' handler below, and the only
+// thing in it that touches the database is `s.close(reason)` — the flush of
+// the player's position and HP. That call is awaited INSIDE the handler and by
+// nothing outside it: socket.io emits 'disconnect' from a plain EventEmitter,
+// so an async listener's promise is dropped on the floor the moment it yields.
+//
+// For an ordinary logout that is fine — the process keeps running and the
+// write lands a millisecond later. For a DEPLOY it is the whole bug: shutdown()
+// closes the pool and calls process.exit(0) while hundreds of those flushes are
+// still queued behind a 12-connection pool, and every one that has not been
+// dispatched yet is simply lost. That is the rubber-band after every restart.
+//
+// So each flush registers itself here for the length of its life, and
+// shutdown() waits on this set instead of on a socket map socket.io has
+// already emptied (see the long note there). Entries remove themselves, so in
+// steady state this is empty and costs nothing.
+const _teardowns = new Set();
+// Teardowns that rejected outright. s.close() swallows its own savePosition
+// failure (server/session.js logs and returns), so this counts the rarer case:
+// the flush itself threw. Reported at shutdown rather than only printed,
+// because a number nobody is shown is a number nobody acts on.
+let _teardownErrors = 0;
+
+function _trackTeardown(p) {
+  _teardowns.add(p);
+  // .then(ok, err) rather than .finally(): finally returns a NEW promise that
+  // inherits the rejection, and that one would have no handler — an
+  // unhandledRejection alert raised BY the code that exists to make failures
+  // visible would be a poor joke. Both branches here return undefined, so the
+  // derived promise can never reject. The original `p` is what goes in the
+  // set, so shutdown's allSettled still sees the real outcome.
+  p.then(
+    () => { _teardowns.delete(p); },
+    () => { _teardowns.delete(p); _teardownErrors++; },
+  );
+  return p;
+}
+
 io.on('connection', (socket) => {
   const s = new Session(socket, io);
 
@@ -1262,8 +1301,13 @@ io.on('connection', (socket) => {
     // null. Reading s.room after it — which is what the old order allowed —
     // would now skip removePlayer entirely and leave the player standing in
     // the floor forever, which is a worse bug than the one being fixed.
+    //
+    // _trackTeardown is what lets shutdown() wait for this: the flush below is
+    // the one database write a leaving player still owes, and during a restart
+    // nothing outside this handler could see that it was still in flight. See
+    // the declaration above.
     const room = s.room;
-    try { await s.close(reason); } catch (e) { console.error('[disconnect]', e); }
+    try { await _trackTeardown(s.close(reason)); } catch (e) { console.error('[disconnect]', e); }
 
     if (room) {
       try { room.removePlayer(socket.id); }
@@ -1412,6 +1456,16 @@ async function boot() {
 
 // ── shutdown ────────────────────────────────────────────────────────────────
 let _shuttingDown = false;
+// How long the position flush may take before the process stops waiting for
+// it. Unchanged: the budget was always five seconds, it just had nothing to
+// spend itself on (see below). A restart that hangs is worse than a restart
+// that loses a few writes and SAYS SO, which is what the alert below is for.
+const SHUTDOWN_FLUSH_MS = 5000;
+// The alert has to reach Telegram over the network, out of a process that is
+// about to exit. Bounded for the same reason as the flush: `fetch` here has no
+// timeout of its own, and an unreachable api.telegram.org must not turn a
+// ten-second deploy into a systemd kill.
+const SHUTDOWN_ALERT_MS = 2000;
 // `exit` is false when a test calls this: the process has to survive long
 // enough to print its own summary. A signal still exits, because that is what
 // a signal means — and the first version exited unconditionally, so every
@@ -1426,15 +1480,128 @@ async function shutdown(signal, { exit = true } = {}) {
   // Stop taking new connections first, so the flush below is bounded by the
   // sessions that already exist rather than racing new ones.
   server.close();
-  io.close();
 
-  // Positions, in parallel and bounded. Each is one small UPDATE; there is no
-  // unwritten player state to flush, because the session never held any.
+  // ── the flush that never flushed anything ────────────────────────────────
+  // What used to stand here was:
+  //
+  //     io.close();
+  //     await Promise.race([
+  //       Promise.allSettled([...io.sockets.sockets.values()].map(sk =>
+  //         sk.data && sk.data.session ? sk.data.session.close(signal) : null)),
+  //       new Promise(r => setTimeout(r, 5000)),
+  //     ]);
+  //
+  // and it was dead code from the day it was written. socket.io 4.8.3,
+  // node_modules/socket.io/dist/index.js close():
+  //
+  //     await Promise.allSettled([...this._nsps.values()].map(async (nsp) => {
+  //       nsp.sockets.forEach((socket) => { socket._onclose("server shutting down"); });
+  //       await nsp.adapter.close();
+  //     }));
+  //
+  // An `async` function body runs SYNCHRONOUSLY up to its first await, and the
+  // first await in there comes AFTER the forEach. So every `_onclose` has
+  // already run by the time `io.close()` hands back its promise — awaited or
+  // not. And `_onclose` (dist/socket.js:536-553) calls `this._cleanup()` →
+  // `nsp._remove(this)` → `this.sockets.delete(socket.id)` (namespace.js:286)
+  // BEFORE it emits 'disconnect'.
+  //
+  // Which means the very next line read an ALREADY EMPTY map: allSettled([])
+  // resolved on the spot, the five-second budget written for exactly this was
+  // never spent, and `sk.data.session` — set in finishLogin — was never once
+  // reached. Awaiting io.close() would not have helped either: it awaits the
+  // adapter and the HTTP listener, never the 'disconnect' listeners, which are
+  // plain EventEmitter callbacks whose promises it drops.
+  //
+  // Positions WERE still written, but only by the per-socket 'disconnect'
+  // handler, and nothing awaited those either. Each is two sequential queries
+  // against a pool of 12 (PG_POOL_MAX, server/db/index.js); the lines below
+  // then closed the pool — after which pg stops dispatching its queue — and
+  // process.exit(0) killed whatever was left. With more than a handful of
+  // players online most of those UPDATEs never got a connection. That is the
+  // deploy rubber-band: back up to one posTimer period (20s) of walking, at
+  // the HP the player had 20s ago, for most of the people online.
+  //
+  // Counted BEFORE io.close(), because after it there is nothing left to count
+  // — that being the whole defect. Two numbers, because they answer different
+  // questions: how many sockets socket.io is about to tear down (every one of
+  // them must reach the tracked flush, logged in or not — an unauthenticated
+  // one just resolves immediately), and how many of those actually owe a
+  // position write. Only the second is interesting to a person reading the
+  // alert; the first is what makes the alert able to notice that a socket
+  // vanished without running its handler at all.
+  const flushSockets = io.sockets.sockets.size;
+  const flushSessions = [...io.sockets.sockets.values()]
+    .filter(sk => sk.data && sk.data.session).length;
+  // Fires every 'disconnect' handler synchronously, as established above. Each
+  // one registers its own flush in _teardowns before it awaits anything, so by
+  // the time this statement returns the set below is fully populated.
+  //
+  // The returned promise is deliberately NOT awaited: it only resolves once
+  // httpServer.close() calls back, which waits on every lingering keep-alive
+  // connection and can outlive the whole shutdown budget. The .catch is there
+  // so a rejection out of engine.close() cannot wake the unhandledRejection
+  // handler below and try to send a Telegram alert from a dying process.
+  io.close().catch(() => {});
+
+  const flushStarted = _teardowns.size;
   await Promise.race([
-    Promise.allSettled([...io.sockets.sockets.values()].map(sk =>
-      sk.data && sk.data.session ? sk.data.session.close(signal) : null)),
-    new Promise(r => setTimeout(r, 5000)),
+    Promise.allSettled([..._teardowns]),
+    new Promise(r => setTimeout(r, SHUTDOWN_FLUSH_MS)),
   ]);
+  // Whatever is still in the set when the budget runs out is a write that
+  // db.close() and process.exit(0) are about to destroy.
+  const flushLost = _teardowns.size;
+
+  // ── say it out loud ──────────────────────────────────────────────────────
+  // The lost writes used to produce one `console.error('[session] savePosition:')`
+  // per failure and nothing else — no counter, no alert, no way for anyone to
+  // learn from outside the journal that a deploy had rolled players back. The
+  // standing rule in this codebase is that every failure leaves a trace an
+  // operator can see, and a restart that silently eats player progress is the
+  // exact shape of failure the rule is about.
+  //
+  // ops.alert, not ops.send: this is a CONDITION worth collapsing under one
+  // key across restarts, the same way config.problems is at boot. It goes out
+  // BEFORE plog.flush() and db.close() because it travels over HTTP, not over
+  // the pool, and because after those two lines the process may not get
+  // another scheduling turn.
+  //
+  // NOTE: this counts flushes that did not FINISH. It cannot count a flush
+  // that finished having failed — session.savePosition catches its own error,
+  // logs it and returns, so s.close() resolves just as happily either way.
+  // Surfacing those needs a change in server/session.js, which this build does
+  // not own.
+  //
+  // The third term is not the same failure as the first two and is here
+  // because it is the ONLY thing that can catch this whole mechanism having
+  // quietly stopped working — which is exactly what happened to the code it
+  // replaces. A socket that socket.io closed without its 'disconnect' handler
+  // reaching the flush would make flushLost read a comforting zero.
+  const flushMissing = Math.max(0, flushSockets - flushStarted);
+  if (flushLost || _teardownErrors || flushMissing) {
+    const detail =
+      `сессий было ${flushSessions} (сокетов ${flushSockets}); ` +
+      `не успели за ${SHUTDOWN_FLUSH_MS}мс: ${flushLost} из ${flushStarted}` +
+      (_teardownErrors ? `; завершились ошибкой: ${_teardownErrors}` : '') +
+      (flushMissing
+        ? `; ${flushMissing} сокетов вообще не дошли до сброса — обработчик disconnect не отработал`
+        : '') +
+      '. Эти игроки вернутся в точку и с HP, которые были у них до ' +
+      'последнего сохранения позиции (до 20с ходьбы).';
+    console.error(`[shutdown] позиции не записаны — ${detail}`);
+    await Promise.race([
+      ops.alert('shutdown.flush', 'Позиции игроков не записаны при остановке', detail, {
+        сигнал: signal, сборка: version.COMMIT,
+      }).catch(() => {}),
+      new Promise(r => setTimeout(r, SHUTDOWN_ALERT_MS)),
+    ]);
+  } else if (flushStarted) {
+    // The successful case leaves a trace too. "0 из 12 потеряно" in the journal
+    // is what makes the alert above readable as a real signal rather than as
+    // something nobody has ever seen either way.
+    console.log(`shutdown: flushed ${flushSessions}/${flushStarted} session(s), none lost`);
+  }
 
   // Whatever is still queued goes out before the pool closes. The buffer is
   // what makes logging cheap; flushing here is what keeps an ordinary restart

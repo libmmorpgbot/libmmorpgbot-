@@ -78,6 +78,11 @@ run_one() {
   if [ -z "$summary" ]; then
     summary=$(echo "$clean_out" | grep -oE '[0-9]+ збігається · [0-9]+ без поля' | tail -1)
   fi
+  # snapshot-check печатает JSON без поля "ok": здоровье потока читается по
+  # доле повторов и по тому, что сервер не отклонил ни одного хода.
+  if [ -z "$summary" ]; then
+    summary=$(echo "$clean_out" | grep -oE '"positionsRefused": [0-9]+' | tail -1)
+  fi
 
   # Ни подсказки, ни нулевого кода возврата — значит проверка не дошла до
   # своих проверок. Печатаем ХВОСТ вывода: без него следующий человек будет
@@ -88,7 +93,7 @@ run_one() {
     fail=$((fail + 1)); failed+=("$name(сломана)")
     return
   fi
-  if echo "$summary" | grep -qE ', 0 (впало|упало|УПАЛО)|"ok": true|0 missing fields|запитів перевірено базою|0 без поля'; then
+  if echo "$summary" | grep -qE ', 0 (впало|упало|УПАЛО)|"ok": true|0 missing fields|запитів перевірено базою|0 без поля|"positionsRefused": 0'; then
     printf '  \033[32mок\033[0m       %-16s %s\n' "$name" "$summary"
     pass=$((pass + 1))
   else

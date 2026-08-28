@@ -470,8 +470,46 @@ async function main() {
   const { rows: r2 } = await pool().query('SELECT id FROM players WHERE telegram_id = $1', [String(TG2)]);
   second = Number(r2[0].id);
   await pool().query('UPDATE player_progress SET lvl = 30 WHERE player_id = $1', [second]);
+
+  // ── клас перевіряється СПИСКОМ, а не істинністю ──────────────────────────
+  // `if (!CHAR_DEF[type])` пропускав будь-який ключ прототипу: CHAR_DEF —
+  // звичайний об'єкт, і CHAR_DEF['constructor'] правдивий. Далі baseHP у
+  // такого «класу» undefined, тож maxHp, atk і def стають NaN — а NaN <= 0
+  // хибне, і персонаж не вмирає НІКОЛИ: ні від монстрів, ні в PvP. Він
+  // забирає битву на смерть (нагорода в GRAM, тобто в реальних грошах),
+  // арену і Башню. Його atk теж NaN, тож будь-який моб, якого він ударить,
+  // стає безсмертним для всіх.
+  //
+  // Запис незворотний: setClass має `AND char_class IS NULL`, другого шансу
+  // в акаунта нема.
+  //
+  // ['lev'] у списку не для повноти: ключі властивостей зводяться до рядка,
+  // тож Object.hasOwn(CHAR_DEF, ['lev']) правдивий — і в char_class лягав би
+  // масив. Це той випадок, який ловить лише перевірка типу.
+  console.log('  ── клас: ключі прототипу ──');
+  for (const bad of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty', ['lev']]) {
+    const denied = once(sock2, 'authError', 3000).catch(() => null);
+    const slipped = once(sock2, 'gameStart', 3000).catch(() => null);
+    sock2.emit('selectChar', { type: bad });
+    const e = await denied;
+    ok(e && e.code === 'bad_class',
+      `selectChar(${JSON.stringify(bad)}) відмовлено`,
+      `відповідь: ${JSON.stringify(e)} — ключ прототипу пройшов у setClass`);
+    ok(!(await slipped), `і гра не почалась з класом ${JSON.stringify(bad)}`);
+  }
+  // Головне: у базі НІЧОГО не записалось. Відмова, яка все одно записала
+  // char_class, гірша за пропуск — акаунт після неї не відновити.
+  eq((await pool().query('SELECT char_class FROM player_progress WHERE player_id = $1',
+    [second])).rows[0].char_class, null,
+    'жоден із них не записався в char_class');
+
   sock2.emit('selectChar', { type: 'mage' });
-  await once(sock2, 'gameStart', 12000);
+  const start2 = await once(sock2, 'gameStart', 12000);
+  // Наслідок, а не лише відмова: якби хоч один ключ пройшов, справжній вибір
+  // став би пустишкою (AND char_class IS NULL), і сюди приїхав би NaN.
+  ok(start2 && start2.stats && Number.isFinite(start2.stats.maxHp) && start2.stats.maxHp > 0,
+    `справжній клас дав скінченне здоров'я (${start2 && start2.stats && start2.stats.maxHp})`,
+    'maxHp = NaN — NaN ніколи не <= 0, персонаж безсмертний');
   // Onto the SAME floor. The profile card is deliberately only for someone
   // standing next to you — racePairAllowed refuses a pair that is not in one
   // room — so a test that leaves them on different floors is testing the
@@ -576,11 +614,50 @@ async function main() {
   // because a respawn that looks right on screen and stores the death spot is
   // the version that bites on the next login.
   console.log('  ── смерть ──');
+
+  // ── воскресіння ЖИВОГО тепер відмовляється ───────────────────────────────
+  // Раніше 'respawn' не перевіряв, чи гравець мертвий, узагалі: живий діставав
+  // повне лікування і безкоштовний телепорт у Зал звідки завгодно, у важкому
+  // кошику — сорок разів за п'ять секунд. Камінь телепорту робить те саме,
+  // але коштує 20 Liberty, має каст і відмовляється в Залі.
+  //
+  // Перевіряється ДО смерті: після неї відмовляти вже нема за що.
+  const gsAlive = once(a.sock, 'gameStart', 3000).catch(() => null);
+  const errAlive = once(a.sock, 'itemError', 3000).catch(() => null);
+  a.sock.emit('respawn');
+  const eAlive = await errAlive;
+  ok(eAlive && eAlive.code === 'not_dead',
+    `воскресіння живого відмовлено${eAlive ? '' : ' — відповіді не було'}`);
+  ok(!(await gsAlive),
+    'живому не прийшов gameStart — інакше це безкоштовний телепорт у Зал');
+  // Відмова не лікує. Це та половина, що важить більше за телепорт: повне
+  // здоров'я на вимогу вирішує будь-який бій.
+  await pool().query('UPDATE player_progress SET hp = 5 WHERE player_id = $1', [madeId]);
+  a.sock.emit('respawn');
+  await wait(400);
+  eq(Number((await pool().query('SELECT hp FROM player_progress WHERE player_id = $1',
+    [madeId])).rows[0].hp), 5, 'відмова нічого не вилікувала');
+
+  // ── чому одного UPDATE замало, щоб убити ─────────────────────────────────
+  // Рядок у базі — не єдина копія здоров'я. Бій іде по копії в кімнаті, і саме
+  // її читає перевірка 'respawn'. UPDATE кімнати не чіпає, тож сервер
+  // справедливо відповів би «ви живі», і всі перевірки нижче впали б на
+  // СПРАВНОМУ коді.
+  //
+  // Кімната бере здоров'я з рядка при вході на поверх (sendGameStart →
+  // setPlayerHp, server/handlers2/world.js), тому смерть доводиться саме так.
+  // Через сокет, а не прямим викликом: під PLAY_AGAINST сервер в іншому
+  // процесі, і кімнати тут нема.
+  await pool().query('UPDATE player_progress SET hp = 0 WHERE player_id = $1', [madeId]);
+  a.sock.emit('enterLocation', { target: 'left' });
+  await once(a.sock, 'gameStart', 12000).catch(() => null);
+  await wait(300);
+
+  // Читається ПІСЛЯ пересадки: вхід на поверх ставить гравця туди, де він
+  // збережений, і саме ця точка — місце смерті, з якою порівнюється
+  // воскресіння.
   const deathFloor = a.scr.floor;
   const diedAt = { x: a.scr.x, y: a.scr.y };
-  // Killed outright rather than waiting to be worn down: what is under test is
-  // where the player comes back, not how long it takes to lose.
-  await pool().query('UPDATE player_progress SET hp = 0 WHERE player_id = $1', [madeId]);
   const gs = once(a.sock, 'gameStart', 12000).catch(() => null);
   a.sock.emit('respawn');
   const revived = await gs;

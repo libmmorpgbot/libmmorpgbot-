@@ -124,7 +124,17 @@ async function main() {
     ok(alive(a.st).length > 0,
       `і там є монстри (${alive(a.st).length}) — «монстри не появляються» саме про це`);
   }
-  a.sock.emit('fearReturn');
+  // ── выход из ЖИВОГО забега — порталом, а не кнопкой результата ──────────
+  // 'fearReturn' теперь пускает домой только завершённый забег: он и на клиенте
+  // отправляется ровно из одного места — обработчика fearFinished, после того
+  // как показан итог (js/network.js). Здесь забег живой, и раньше эта строка
+  // работала как «бросить забег» — то есть как бесплатный выход, которого у
+  // игрока нет. Отказ оставлял запись в _fear, и следующая же секция получала
+  // «Вы сейчас в Страхе».
+  //
+  // Настоящий выход — портал: enterLocation проходит через
+  // modes.leaveInstanceFloor, который освобождает зал и снимает запись.
+  a.sock.emit('enterLocation', { target: 'hub' });
   await once(a.sock, 'gameStart', 8000).catch(() => null);
   await wait(400);
 
@@ -159,6 +169,10 @@ async function main() {
     // The partner's attempt count comes back through the line that used to
     // throw, so an undefined here is that bug returning.
     ok(Number.isFinite(sa.attemptsLeft), `лишок спроб порахований (${sa.attemptsLeft})`);
+    // gameStart про новий поверх приходить ПІСЛЯ coopStarted: forceFloor
+    // читає повний стан з бази і шле його вже з .then. Читати поверх одразу
+    // після coopStarted — гонка, яка досі просто щастила.
+    await once(a.sock, 'gameStart', 8000).catch(() => null);
     eq(a.st.floor, FLOOR_IDS.coop, 'перенесено на поверх кооперативу');
     const st1 = await stage1;
     ok(!!st1 && st1.stage === 1,
@@ -167,8 +181,17 @@ async function main() {
     ok(alive(a.st).length > 0,
       `і на ній є монстри (${alive(a.st).length}) — «монстри не появляються» саме про це`);
   }
-  a.sock.emit('coopReturn');
-  b.sock.emit('coopReturn');
+  // ── вихід із ЖИВОГО забігу — порталом ────────────────────────────────────
+  // 'coopReturn' тепер пускає додому лише завершений забіг, і клієнт шле його
+  // рівно з одного місця — після показу підсумку. Тут забіг живий, і ця
+  // строка працювала як «кинути забіг»: відмова лишала запис у _coop, а
+  // наступна секція отримувала «Вы сейчас в Сотрудничестве».
+  a.sock.emit('enterLocation', { target: 'hub' });
+  b.sock.emit('enterLocation', { target: 'hub' });
+  await Promise.all([
+    once(a.sock, 'gameStart', 8000).catch(() => null),
+    once(b.sock, 'gameStart', 8000).catch(() => null),
+  ]);
   await wait(900);
 
   // ── Элитная фарм-зона ────────────────────────────────────────────────────

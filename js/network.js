@@ -305,18 +305,102 @@ function netMarginTick(anyMoving) {
 // below because that one ADVANCES the smoothing — the overlay must be able to
 // display the value without also driving it.
 function netInterpCurrent() { return _interpMs; }
-// A second of "обновление" instead of a silent freeze. Built as DOM rather
-// than drawn on a canvas: at this point the page is about to be replaced, and
-// the canvases may be mid-frame or not up at all.
+// ── the one place a disconnected player is told anything ────────────────────
+// Built as DOM rather than drawn on a canvas: when this is needed the page is
+// either about to be replaced or the world has stopped ticking, and the
+// canvases may be mid-frame or not up at all.
+//
+// It carries TWO states, because for months it only carried one and the other
+// one had nowhere to go:
+//
+//   'blocking'  — a deploy landed, the page reloads in 900ms. Full screen,
+//                 opaque, and latched: nothing may take it down, because the
+//                 document behind it is already dead.
+//
+//   'banner'    — the socket is down and we are trying to get it back. A strip
+//                 across the top, pointer-events:none, removed the moment
+//                 'connect' fires. Deliberately NOT full screen: the link may
+//                 come back in 300ms, and blacking out a game that is about to
+//                 resume is its own bug.
+//
+// The second state exists because showAuthError() — the only thing every
+// connect_error path called — writes into #auth-error, which lives inside
+// #login-screen (index.html), which is display:none 420ms after login. So an
+// in-game player got the correct string, in all six languages, written into a
+// hidden element. What they actually saw during a deploy was: the world
+// freezes, four seconds later every monster and every other player vanishes
+// and the chat and teleport buttons disappear (_scheduleWorldWipe), then two
+// to ten seconds standing alone on an empty map with NO TEXT ANYWHERE, then
+// the reload banner. Indistinguishable from the game being broken, and the
+// reason "игра сломалась" arrives after every restart.
+const _NET_NOTICE_ID = 'build-reload';   // id kept: it is the reload overlay's
+let _netNoticeLatched = false;           // set by the reload state, never unset
+
+function _netNotice(text, blocking) {
+  if (_netNoticeLatched) return;
+  let d = document.getElementById(_NET_NOTICE_ID);
+  if (!d) {
+    d = document.createElement('div');
+    d.id = _NET_NOTICE_ID;
+    document.body.appendChild(d);
+  }
+  d.style.cssText = blocking
+    ? 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'
+      + 'justify-content:center;background:rgba(6,6,16,.92);color:#edc174;'
+      + 'font:600 15px system-ui,Arial;text-align:center;padding:24px;'
+    // pointer-events:none is not cosmetic. This element is put up by a timer
+    // and taken down by a socket event, and if those two ever fail to pair up
+    // a full-width bar that ate taps would lock the player out of the game
+    // entirely. It can be wrong and still be harmless.
+    : 'position:fixed;left:0;right:0;top:0;z-index:99998;pointer-events:none;'
+      + 'display:flex;align-items:center;justify-content:center;'
+      + 'background:rgba(6,6,16,.92);color:#edc174;'
+      + 'font:600 13px system-ui,Arial;text-align:center;'
+      + 'padding:calc(6px + env(safe-area-inset-top)) 14px 6px;';
+  d.textContent = text;
+  if (blocking) _netNoticeLatched = true;
+}
+
+function _hideNetNotice() {
+  if (_netNoticeLatched) return;
+  const d = document.getElementById(_NET_NOTICE_ID);
+  if (d) d.remove();
+}
+
+// A second of "обновление" instead of a silent freeze.
 function _showReloadNotice() {
-  if (document.getElementById('build-reload')) return;
-  const d = document.createElement('div');
-  d.id = 'build-reload';
-  d.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'
-    + 'justify-content:center;background:rgba(6,6,16,.92);color:#edc174;'
-    + 'font:600 15px system-ui,Arial;text-align:center;padding:24px;';
-  d.textContent = (typeof t === 'function' ? t('updateReloading') : 'Обновление — перезаходим...');
-  document.body.appendChild(d);
+  _netNotice(typeof t === 'function' ? t('updateReloading') : 'Обновление — перезаходим...', true);
+}
+
+// ── when the banner goes up ─────────────────────────────────────────────────
+// Not immediately. A socket that drops and is back inside a second is the
+// single most common event in this client — mobile backgrounding alone does it
+// several times an hour — and flashing a bar for it would be its own kind of
+// broken. socket.io's reconnect backoff starts at ~1s, so anything that
+// recovers cleanly recovers before this fires.
+//
+// The ceiling is set by _WORLD_WIPE_AFTER_MS (4000): the player MUST have been
+// told before the world empties under them, because an empty map with no text
+// is precisely the frame this whole change exists to delete.
+const _NET_NOTICE_AFTER_MS = 1500;
+let _netNoticeTimer = null;
+
+function _scheduleNetNotice() {
+  // A kicked session is over by the server's decision and the 'kicked' handler
+  // has already put the splash back up with its own explanation
+  // (loggedInElsewhere). Telling that player there is "no connection to the
+  // server" would be both wrong and the last thing they read.
+  if (_kicked || _netNoticeTimer || _netNoticeLatched) return;
+  _netNoticeTimer = setTimeout(() => {
+    _netNoticeTimer = null;
+    if (_kicked || (socket && socket.connected)) return;
+    _netNotice(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером', false);
+  }, _NET_NOTICE_AFTER_MS);
+}
+
+function _cancelNetNotice() {
+  if (_netNoticeTimer) { clearTimeout(_netNoticeTimer); _netNoticeTimer = null; }
+  _hideNetNotice();
 }
 // Enemy deltas this session had to throw away because the full record they
 // belong to never arrived (the world cast is volatile — it drops rather than
@@ -517,9 +601,66 @@ function _netClientTag() {
   return _clientTag;
 }
 
+// ── не логиниться в сервер, с которого мы всё равно сейчас уйдём ────────────
+// Каждый деплой каждый игрок логинился ДВАЖДЫ, и вот почему.
+//
+// 'connect' вызывал onReady() безусловно — то есть socket.emit('loginTelegram
+// WebApp'). Сразу за этим приходил 'serverBuild', обнаруживал, что хеш бандла
+// на странице устарел, и через 900мс делал location.reload(). Логин при этом
+// никто не отменял: он уже ушёл на сервер и был выполнен целиком.
+//
+// Один логин — это около 15 последовательных обращений к базе (s.login() →
+// _claimSlot, refreshVip, refreshClan, шесть чтений fullState(), затем
+// savedView, vipOf, clanOf, dataView, canMessage, tonAddressOf в finishLogin).
+// Значит каждый игрок делал ~30 вместо ~15 — против пула на 12 соединений, в
+// ту самую секунду, когда переподключаются все сразу. Первые 15 из них не
+// нужны никому: страница перезагрузится и всё это повторит заново.
+//
+// Порядок здесь важнее самого флага. 'serverBuild' отправляется сервером в
+// начале обработчика connection (server/app.js), то есть ПОСЛЕ пакета CONNECT,
+// на который клиент поднимает событие 'connect'. Одного флага «мы уже знаем
+// про несовпадение» мало: на первом же переподключении к новой сборке флага
+// ещё нет, и лишний логин снова уходит. Поэтому логин не отменяется, а
+// ЗАДЕРЖИВАЕТСЯ до ответа на вопрос «та ли это сборка» — и оба порядка событий
+// становятся одинаково правильными.
+//
+// Цена задержки в норме нулевая: 'serverBuild' летит тем же TCP-потоком сразу
+// за CONNECT, снимает гейт в том же круге событий и логин уходит немедленно.
+// Таймер ниже — только страховка на случай, если пакет не дошёл вовсе; без
+// него потерянный 'serverBuild' означал бы игрока, навсегда застрявшего на
+// сплеше, что куда хуже лишнего логина.
+const _LOGIN_GATE_MS = 1000;
+let _buildMismatch = false;   // сборка сервера не наша — идём на reload, не на логин
+let _pendingLogin = null;     // onReady, который ещё не выполнен
+let _loginGateTimer = null;
+
+function _gateLogin(onReady) {
+  if (!onReady) return;
+  if (_buildMismatch) return;
+  _pendingLogin = onReady;
+  if (_loginGateTimer) clearTimeout(_loginGateTimer);
+  _loginGateTimer = setTimeout(_releaseLogin, _LOGIN_GATE_MS);
+}
+
+// Вызывается из обработчика 'serverBuild' — на совпадении сборок и на ветке
+// «перезагрузка не помогла». Вторая важна не меньше первой: там мы сознательно
+// НЕ перезагружаемся, и если бы гейт не снимался, игрок со старым бандлом
+// остался бы на сплеше навсегда вместо того, чтобы просто войти в игру.
+function _releaseLogin() {
+  if (_loginGateTimer) { clearTimeout(_loginGateTimer); _loginGateTimer = null; }
+  const fn = _pendingLogin;
+  _pendingLogin = null;
+  if (!fn || _buildMismatch) return;
+  fn();
+}
+
 // ── Socket setup ──────────────────────────────────────────────
 function netConnect(onReady) {
-  if (socket && socket.connected) { if (onReady) onReady(); return; }
+  // Уже подключены — сборка на этом соединении давно проверена, гейт бы только
+  // добавил секунду ожидания на ровном месте. Флаг всё равно проверяется:
+  // reload уже назначен, логин отсюда был бы ровно тем лишним логином, ради
+  // которого всё это написано.
+  if (socket && socket.connected) { if (onReady && !_buildMismatch) onReady(); return; }
   if (socket) { socket.disconnect(); socket = null; }
   socket = io(SERVER_URL, {
     transports: ['websocket'],  // skip polling — polling adds 200-400ms per packet
@@ -531,7 +672,12 @@ function netConnect(onReady) {
   });
 
   socket.on('connect', () => {
-    if (onReady) onReady();
+    // Соединение есть — плашка «нет связи» больше не описывает реальность, и
+    // снимается до всего остального, чтобы она не пережила даже те несколько
+    // миллисекунд, что занимает восстановление сессии ниже.
+    _cancelNetNotice();
+    // Не onReady() напрямую: логин ждёт 'serverBuild'. См. _gateLogin.
+    _gateLogin(onReady);
     // A fresh socket knows nothing about what we last told the server —
     // force the next netSendMove to send rather than compare against a
     // position the old connection reported.
@@ -582,7 +728,12 @@ function netConnect(onReady) {
   });
 
   socket.on('connect_error', (err) => {
+    // Обе половины, и обе нужны. showAuthError пишет в #auth-error внутри
+    // #login-screen — это правильный адрес РОВНО до логина, пока сплеш ещё на
+    // экране, и мёртвый адрес через 420мс после него. Плашка ниже — то же
+    // самое сообщение там, где его увидит игрок, который уже в игре.
     showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
+    _scheduleNetNotice();
     // Not while the page is hidden: a backgrounded tab loses its socket as a
     // matter of course, and every app switch would be an alert about a player
     // who is simply not looking at the game right now.
@@ -709,6 +860,11 @@ function netConnect(onReady) {
     const msg = (code === 'another_device' ? fallback : reason) || fallback;
     showAuthError(msg);
     _kicked = true;
+    // Сплеш сейчас вернётся на экран со своим текстом, а socket.disconnect()
+    // ниже поднимет 'disconnect'. Плашка «нет соединения с сервером» и не
+    // нужна, и неверна: соединения нет потому, что мы вошли с другого
+    // устройства, и это игроку уже сказано. _kicked закрывает её и на будущее.
+    _cancelNetNotice();
     if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null; }
     if (socket.io) socket.io.reconnection(false);
     socket.disconnect();
@@ -815,9 +971,16 @@ function netConnect(onReady) {
   // does fetch the new page. Guarded against looping: if the mismatch survives
   // a reload, something else is wrong — say so once and stop rather than
   // spinning.
+  //
+  // Этот обработчик — единственное место, которое отвечает на вопрос «та ли
+  // это сборка», а значит и единственное, которое снимает гейт логина
+  // (_gateLogin). Каждый выход отсюда обязан либо отпустить логин, либо
+  // осознанно его отменить — иначе игрок остаётся на сплеше до таймаута гейта.
   socket.on('serverBuild', ({ build } = {}) => {
     const mine = window.__BUILD__ || '';
-    if (!build || !mine || build === mine) return;
+    // Сборки совпали (или сервер/страница не назвали свою — тогда судить не о
+    // чем): проверка пройдена, логин уходит немедленно, без ожидания таймера.
+    if (!build || !mine || build === mine) return _releaseLogin();
     let already = null;
     try { already = sessionStorage.getItem('__buildReload'); } catch (e) { /* private mode */ }
     if (already === build) {
@@ -825,9 +988,19 @@ function netConnect(onReady) {
         window.__reportClientError('stale-bundle',
           'перезагрузка не помогла: страница всё ещё ' + mine + ', сервер ' + build);
       }
-      return;
+      // Перезагружаться второй раз мы отказались, значит играть придётся на
+      // этом бандле — и логин нужен. Раньше он уже был отправлен из 'connect',
+      // и эта ветка ничего не была должна; теперь он ждёт нас.
+      return _releaseLogin();
     }
     try { sessionStorage.setItem('__buildReload', build); } catch (e) { /* ignore */ }
+    // Отсюда и до перезагрузки логиниться нельзя ни на этом соединении, ни на
+    // тех, которые socket.io успеет открыть за следующие 900мс: это ~15
+    // обращений к базе на игрока, выброшенных в момент, когда база и так
+    // разгребает переподключение всех сразу.
+    _buildMismatch = true;
+    _pendingLogin = null;
+    if (_loginGateTimer) { clearTimeout(_loginGateTimer); _loginGateTimer = null; }
     _showReloadNotice();
     setTimeout(() => { try { location.reload(); } catch (e) { /* nothing left to try */ } }, 900);
   });
@@ -2214,6 +2387,11 @@ function netConnect(onReady) {
     // a few seconds later, so nothing downstream sees a shape it didn't
     // before.
     _scheduleWorldWipe();
+    // …and the player is told, which until now they were not. The banner is
+    // scheduled on a shorter fuse than the wipe on purpose: there must never
+    // again be a frame in which the world has been emptied and nothing on
+    // screen says why. See _scheduleNetNotice.
+    _scheduleNetNotice();
   });
 }
 

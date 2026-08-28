@@ -19,6 +19,13 @@
 //
 // So this drives a real socket, kills a real monster, and asserts on what
 // ARRIVES AT THE CLIENT rather than on what lands in the tables.
+//
+// Three exploit scenarios ride along at the end, for the same reason they are
+// here rather than in exploit-check.js: each of them is about what a live,
+// authenticated socket can do to a floor with real combat running on it, and
+// that is precisely what this file already stands up. They are the splash
+// ("Безумие") flag, a prototype key used as a character class, and the movement
+// budget — each with its own note where it begins.
 
 const crypto = require('crypto');
 const io = require('socket.io-client');
@@ -28,6 +35,13 @@ process.env.PORT = String(PORT);
 process.env.OPS_LIVE = '0';
 process.env.NODE_ENV = 'test';
 process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
+// СНИМАЕТСЯ, а не выставляется. Блок «бюджет руху» в конце спрашивает именно
+// про ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ — про то, что guard включён у всех, кто ничего не
+// настраивал, потому что ровно этого и не было в проде. Унаследованный из
+// оболочки MOVE_GUARD=off (его требуют fanout-check и snapshot-check, и его
+// легко оставить экспортированным в том же терминале) сделал бы эту проверку
+// зелёной, ничего не проверив.
+delete process.env.MOVE_GUARD;
 
 const { pool, close } = require('../server/db');
 const players = require('../server/db/repos/players');
@@ -331,6 +345,195 @@ async function main() {
     }
     await wait(400);
     eq((await money.balancesOf(null, w.pid)).gold, wGoldBefore, 'і золото свідка не змінилось');
+  }
+
+  // ── «Безумие»: чей это навык и сколько ударов он стоит ────────────────────
+  // splash — это АОЕ-побочка ПРОДВИНУТОГО E рыцаря смерти: пока крутится
+  // 5-секундный баф, каждый обычный удар задевает соседей на 50% урона. Ни
+  // одно из двух условий, которые её описывают, на сервере не проверялось.
+  //
+  //   КТО. Обработчик брал splash:true прямо с провода. Ни класса, ни
+  //   изученного слота, ни купленной книги, ни включённого продвинутого
+  //   варианта — `socket.emit('attack', { enemyId, splash: true })` был
+  //   бесплатным полуударом для мага первого уровня.
+  //
+  //   СКОЛЬКО. splash никогда не трогал attacker._lastAtk, поэтому после него
+  //   ничего не перезаряжалось: в окно 200 мс после настоящего замаха
+  //   помещалось столько пакетов, сколько пропускал БЫСТРЫЙ лимитер сокета
+  //   (1500 за 5 с, server/app.js) — около 150 полных ударов в секунду против
+  //   6.7 легальных. Каждое убийство платит через consumables.grantKillReward,
+  //   так что это ×22 к золоту, опыту, роллам дропа, Liberty и GRAM — и победа
+  //   в любом спорном киле: башня войны гильдий, босс гонки, мировой босс.
+  //
+  // Монстрам здесь ставится огромный hp: проверяется НЕ смерть, а сколько hp
+  // сняли. Умерший монстр обнулил бы разницу и тест прошёл бы по неправильной
+  // причине — ровно та ошибка, ради которой переписан блок про золото выше.
+  console.log('  ── splash («Безумие») ──');
+  const spTarget = alive()[0];
+  ok(!!spTarget, 'є живий монстр для перевірки splash');
+  if (spTarget) {
+    spTarget.hp = spTarget.maxHp = 5e6;
+
+    // ── 1. чужой класс ──────────────────────────────────────────────────────
+    const wp = sessW.room.players.get(w.sock.id);
+    wp.x = spTarget.x; wp.y = spTarget.y;
+    // Обычный удар открывает те самые 200 мс, внутри которых splash вообще
+    // рассматривается. Без него проверка ниже была бы про окно, а не про класс.
+    w.sock.emit('attack', { enemyId: spTarget.id });
+    await wait(80);
+    const afterMage = spTarget.hp;
+    ok(afterMage < 5e6, 'звичайний удар мага пройшов — вікно для splash справді відкрите');
+    for (let i = 0; i < 30; i++) w.sock.emit('attack', { enemyId: spTarget.id, splash: true });
+    await wait(400);
+    eq(spTarget.hp, afterMage,
+      'маг із splash:true не зняв жодного hp — «Безумие» це продвинутий E рицаря смерті, а не прапорець у пакеті');
+
+    // ── 2. правильный класс, но без книги ──────────────────────────────────
+    // Самая интересная половина: класс совпадает, а права нет. Проверка только
+    // на p.type прошла бы здесь и оставила дыру открытой для каждого рыцаря
+    // смерти в игре, включая тех, кто E никогда не изучал.
+    me.x = spTarget.x; me.y = spTarget.y;
+    b.sock.emit('attack', { enemyId: spTarget.id });
+    await wait(80);
+    const afterDk = spTarget.hp;
+    for (let i = 0; i < 30; i++) b.sock.emit('attack', { enemyId: spTarget.id, splash: true });
+    await wait(400);
+    eq(spTarget.hp, afterDk,
+      'рицар смерті без вивченого E теж нічого не зняв — сам клас права не дає');
+
+    // ── 3. настоящий владелец навыка, очередь в одну цель ──────────────────
+    // Книга и очко навыка выдаются через ту же таблицу, из которой их читает
+    // repos/stats.js, и pushStats доносит их до комнаты — иначе проверялась бы
+    // подставленная в память заглушка, а не то, что видит сервер.
+    await pool().query(`
+      INSERT INTO player_skills (player_id, kind, key, level)
+           VALUES ($1,'skill','E',3), ($1,'adv_learned','E',1), ($1,'adv_active','E',1)
+      ON CONFLICT (player_id, kind, key) DO UPDATE SET level = EXCLUDED.level`, [a.pid]);
+    await sess.pushStats();
+    ok(!!(me._advLearned && me._advLearned.E && me._advActive && me._advActive.E),
+      'кімната бачить, що E куплений і ввімкнений — інакше решта перевірки нічого не доводить');
+
+    b.sock.emit('attack', { enemyId: spTarget.id });
+    await wait(80);
+    const afterOwner = spTarget.hp;
+    const oneSwing = afterDk - afterOwner;
+    ok(oneSwing > 0, `замах власника навички проходить (${oneSwing} hp)`);
+    const N = 30;
+    for (let i = 0; i < N; i++) b.sock.emit('attack', { enemyId: spTarget.id, splash: true });
+    await wait(500);
+    const splashDmg = afterOwner - spTarget.hp;
+    // N пакетов НЕ стоят N половин удара. Настоящее «Безумие» бьёт СОСЕДЕЙ, по
+    // одному разу каждого (js/player.js пропускает `e.id === pa.id`), поэтому
+    // цель, которую замах уже ударил, от этого же замаха splash не получает —
+    // ноль, а не «поменьше».
+    eq(splashDmg, 0,
+      `${N} splash-пакетів в одне вікно зняли 0 hp замість ~${N}×половини удару — ` +
+      'ціль, яку замах уже вдарив, від цього ж замаху splash не отримує');
+    ok(splashDmg < oneSwing * 0.5 * N,
+      `тобто черга з ${N} пакетів коштує менше, ніж ${N} половин удару ` +
+      `(${splashDmg} проти ${Math.round(oneSwing * 0.5 * N)})`);
+
+    // ── 4. легальный случай всё ещё работает ───────────────────────────────
+    // Если бы фикс просто запретил splash, эта проверка стала бы красной, а
+    // навык, за который заплачены книга и очки, перестал бы существовать —
+    // и вернулась бы «AOE иногда не работает», ради которой окно 200 мс и
+    // появилось.
+    const crowd = alive().filter(e => e.id !== spTarget.id).slice(0, 30);
+    crowd.forEach(e => { e.x = spTarget.x; e.y = spTarget.y; e.hp = e.maxHp = 5e6; });
+    ok(crowd.length > 16, `сусідів більше за межу (${crowd.length}) — інакше межа не перевіряється`);
+    b.sock.emit('attack', { enemyId: spTarget.id });
+    await wait(80);
+    const before = new Map(crowd.map(e => [e.id, e.hp]));
+    for (const e of crowd) b.sock.emit('attack', { enemyId: e.id, splash: true });
+    await wait(600);
+    const hurt = crowd.filter(e => e.hp < before.get(e.id)).length;
+    ok(hurt > 0, `сусіди справді отримують splash (${hurt} з ${crowd.length})`);
+    // MAX_SPLASH_PER_SWING, server/game/Room.js. Радіус 90px стільки тіл не
+    // вміщає навіть в Елітній фарм-зоні — це стеля, а не робоче число.
+    ok(hurt <= 16, `але не більше 16 за один замах (${hurt}) — саме цієї межі не існувало`);
+  }
+
+  // ── класс из прототипа ────────────────────────────────────────────────────
+  // CHAR_DEF — обычный объектный литерал (shared/definitions.js:36), поэтому
+  // CHAR_DEF['constructor'], ['__proto__'], ['toString'], ['valueOf'] и
+  // ['hasOwnProperty'] ВСЕ истинны и проходили `if (!cd) return`, хотя
+  // Object.hasOwn(CHAR_DEF,'constructor') — ложь. cd.baseHP у них undefined,
+  // значит maxHp/atk/def становились NaN.
+  //
+  // NaN поглощающий: `Math.max(0, hp - dmg)` остаётся NaN, а `NaN <= 0` —
+  // ЛОЖЬ, поэтому такой игрок не умирает никогда. Его atk тоже NaN, и первый
+  // же монстр, которого он ударит, получает hp = NaN и становится неубиваемым
+  // ДЛЯ ВСЕХ — один пакет снимает с игры мирового босса и башню войны гильдий.
+  console.log('  ── ключ прототипу як клас ──');
+  const wasType = me.type, wasHp = me.maxHp, wasAtk = me.atk;
+  for (const key of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+    room.setPlayerChar(b.sock.id, key);
+  }
+  eq(me.type, wasType, 'клас не змінився на ключ прототипу');
+  eq(me.maxHp, wasHp, 'maxHp той самий');
+  eq(me.atk, wasAtk, 'atk той самий');
+  ok(Number.isFinite(me.maxHp) && Number.isFinite(me.atk) &&
+     Number.isFinite(me.def) && Number.isFinite(me.hp),
+    `стати лишились числами (maxHp ${me.maxHp}, atk ${me.atk}, hp ${me.hp})`);
+  // То, ради чего всё остальное: смертельный удар должен убивать. Именно это
+  // сравнение и ломалось — не «мало урона», а бессмертие.
+  ok(Math.max(0, me.hp - 1e9) <= 0,
+    'смертельний удар доводить hp до нуля — NaN hp не задовольняє hp<=0 НІКОЛИ, і саме тому персонаж ставав безсмертним');
+
+  // Тот же ключ, но со стороны базы: `CHAR_DEF[x] || CHAR_DEF.lev` читается как
+  // запасной вариант и им не был — `||` не срабатывает ровно для тех значений,
+  // ради которых он написан.
+  const statsRepo = require('../server/db/repos/stats');
+  const badSt = statsRepo.compute({ ...(await statsRepo.load(null, a.pid)), char_class: 'constructor' });
+  ok(Number.isFinite(badSt.atk) && Number.isFinite(badSt.def) && Number.isFinite(badSt.maxHp),
+    `stats.compute падає на 'lev' замість NaN (atk ${badSt.atk}, maxHp ${badSt.maxHp})`);
+
+  // И последний барьер: даже если NaN придёт откуда-то ещё — из строки, где
+  // миграция оставила null, из будущего изменения арифметики — в запись игрока
+  // он не попадает.
+  room.setPlayerStats(b.sock.id, {
+    level: 40, atk: NaN, def: NaN, maxHp: NaN, critChance: NaN, critPower: NaN,
+  });
+  ok(Number.isFinite(me.atk) && Number.isFinite(me.maxHp) && me.atk === wasAtk,
+    'setPlayerStats відмовляє нескінченним статам — один Number.isFinite на вході робить увесь цей клас помилок неможливим');
+
+  // ── бюджет движения ───────────────────────────────────────────────────────
+  // Guard'а в проде не было вовсе. Значение по умолчанию было 'log' — посчитать
+  // перерасход, написать строку раз в 30 секунд и ВСЁ РАВНО применить ход, — а
+  // MOVE_GUARD не выставлен ни в репозитории, ни в /srv/liberty/env дроплета.
+  // Значит телепорт в любую точку этажа (на башню войны гильдий, на мирового
+  // босса, из арены) и постоянный спидхак работали всё это время.
+  //
+  // Проверяется _mvRefused, а не только posCorrect: стена отвечает тем же
+  // событием (handlers2/world.js), и без этого различия тест мог бы пройти на
+  // совсем другой проверке. При MOVE_GUARD='log' счётчик остаётся нулём —
+  // именно потому, что ход применялся.
+  console.log('  ── бюджет руху ──');
+  const far = alive().reduce((best, e) => {
+    const d = Math.hypot(e.x - me.x, e.y - me.y);
+    return d > best.d ? { e, d } : best;
+  }, { e: null, d: 0 });
+  ok(far.e && far.d > 1400,
+    `є точка для стрибка (${Math.round(far.d)}px; відро тримає ~1386px руху)`);
+  if (far.e) {
+    const A = { x: me.x, y: me.y }, B = { x: far.e.x, y: far.e.y };
+    me._mvRefused = 0;
+    const corrected = once(b.sock, 'posCorrect', 6000).catch(() => null);
+    // Двенадцать прыжков за ~300 мс: первый пакет сессии только заводит часы
+    // бюджета (_mvAt), дальше каждый — перерасход, и на пятом за 3 секунды
+    // guard обязан отказать. Метались туда-сюда между двумя ТОЧКАМИ, на
+    // которых стоят монстры, то есть заведомо проходимыми — иначе отказала бы
+    // проверка стены и мерялось бы не то.
+    for (let i = 0; i < 12; i++) {
+      const t = i % 2 ? A : B;
+      b.sock.emit('mv', [Math.round(t.x * 2), Math.round(t.y * 2), 0, Math.round(me.hp), 1]);
+      await wait(25);
+    }
+    const corr = await corrected;
+    ok((me._mvRefused || 0) > 0,
+      `сервер ВІДМОВИВ у русі (${me._mvRefused || 0} разів) — при MOVE_GUARD='log' тут нуль, бо хід застосовувався попри все`);
+    ok(!!corr, 'і надіслав posCorrect — інакше клієнт лишився б там, куди сервер його ніколи не пустить');
+    eq(corr && corr.reason, undefined, 'саме від бюджету руху, а не від стіни (у стіни reason: \'wall\')');
   }
 
   b.sock.disconnect(); w.sock.disconnect();

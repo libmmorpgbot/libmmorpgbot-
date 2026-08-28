@@ -32,6 +32,7 @@
 // same VPC that is ~0.3ms, and it is paid only on player ACTIONS — the 40Hz
 // simulation loop never touches this file.
 
+const { AsyncLocalStorage } = require('async_hooks');
 const { tx, txRetry } = require('./db');
 const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
@@ -128,6 +129,13 @@ const sessionClaims = {
   reclaims: 0,         // the same client took its own slot back after a drop
   refusedActions: 0,   // an action refused because the session lost the slot
   lastTakeoverAt: null,
+  // ── the two position writes that were being thrown away ──────────────────
+  // savePosition's guard used to be a bare `return` and left no trace, so
+  // "меня закинуло на другой этаж" could not be told from "я не так помню".
+  // Both of these are counted rather than logged per-event: they fire on a
+  // timer, and a row per tick would drown the player_logs the log exists for.
+  posSkipped: 0,       // the slot was gone before the write — nothing written
+  posRewritten: 0,     // the floor moved while the write was in flight
 };
 
 // ── the tag that tells a second device from a reconnect ─────────────────────
@@ -147,6 +155,143 @@ function _clientTagOf(sock) {
     const tag = sock && sock.handshake && sock.handshake.auth && sock.handshake.auth.client;
     return (typeof tag === 'string' && tag.length >= 8 && tag.length <= 64) ? tag : null;
   } catch { return null; }
+}
+
+// ── the outbox: what a handler SAYS, held until the transaction COMMITS ─────
+// Every player action runs inside act(), and act() runs it inside a
+// transaction. So every push below (pushItems / pushStats / pushProgress /
+// pushBalances) and every socket.emit a handler made left the server BEFORE
+// the COMMIT, and there are two ways that turns into a lie on the screen:
+//
+//   * txRetry re-runs fn on a 40001/40P01. The first attempt has already told
+//     the client what it did, and PostgreSQL has already rolled it back.
+//   * the COMMIT itself can fail — statement_timeout (5s), the
+//     idle_in_transaction killer (10s), or a dropped connection; see
+//     server/db/index.js. The whole transaction is gone and the client was
+//     told about all of it.
+//
+// handlers2/world.js already names this for killReward — "A player watching
+// gold appear and then revert on the next push is describing exactly that" —
+// and fixed it for that ONE handler, by moving its pushes below `await
+// s.act(...)`. Everywhere else still pushed from inside. empower is the worked
+// example: materials consumed, bonusSP +15, season points added, all of it on
+// screen, all of it reverted by the next push, and the next spendUpgrade
+// refusing the points the player can still see. «покращення зникли» /
+// «мій прогрес відкотився».
+//
+// So the sends are COLLECTED while fn runs and FLUSHED once the transaction
+// has committed. No handler had to change: they still call s.socket.emit and
+// s.pushItems(t) exactly as they did.
+//
+// ── why the async context and not a flag on the session ────────────────────
+// The gate has to tell "this emit came from the handler I am running" apart
+// from "this emit came from something else that happens to share the socket",
+// and there is a great deal of the latter: Room._tick fires
+// sock.volatile.emit('gameState') at 40Hz and sock.emit('playerHurt') from the
+// monster AI — on this socket, on this thread, in the gaps between this
+// transaction's awaits. A boolean on the session would swallow those into the
+// transaction's outbox and drop a player's health bar on a rollback.
+//
+// AsyncLocalStorage draws exactly the line wanted: a timer callback is not
+// inside act()'s async context, finds no box, and goes out untouched. The cost
+// is one getStore() per emit, which is a property read on the current context
+// frame.
+const _outbox = new AsyncLocalStorage();
+
+// Replaces socket.emit ONCE per connection. `emit` on a socket.io Socket is
+// the send-to-this-client method and nothing else: incoming packets are
+// dispatched through super.emitUntyped (dispatch(), socket.io/dist/socket.js)
+// and the reserved events through emitReserved, and neither goes near this
+// property. Replacing it therefore cannot affect anything the client SENDS.
+//
+// Installed once and never restored, deliberately. Wrapping and unwrapping
+// around each act() would go wrong the moment one connection has two actions
+// in flight — which is ordinary, socket.io does not serialise handlers — with
+// each restoring the other's wrapper and leaving the socket permanently gated
+// or permanently raw. Installed once, the state is a function of the async
+// context alone and there is nothing to sequence.
+function _gateEmit(sock) {
+  if (!sock || typeof sock.emit !== 'function') return null;
+  if (sock._libertyRawEmit) return sock._libertyRawEmit;
+  const raw = sock.emit.bind(sock);
+  sock._libertyRawEmit = raw;
+  sock.emit = function gatedEmit(...args) {
+    const box = _outbox.getStore();
+    // No transaction in this async context — a room tick, a mode timer, the
+    // login path — or one whose fate is already decided. Send it now.
+    if (!box || !box.open) return raw(...args);
+    // Not `sock.volatile.emit(...)`-safe, and it does not have to be: the flags
+    // socket.io sets on the way in are consumed by whichever emit reaches the
+    // real one next, and nothing inside a handler uses them. Room._tick is the
+    // only volatile sender and it never runs inside a transaction.
+    box.sends.push({ fire: () => raw(...args), state: false });
+    return true;
+  };
+  return raw;
+}
+
+// What comes out of the outbox, and when:
+//
+//   'all'      the transaction COMMITTED. Everything the handler said is true.
+//   'refusal'  the handler threw a domain error — it decided "no", and the
+//              transaction rolled back. Its OWN words still have to arrive:
+//              enterLocation emits 'enterLocationDenied' and then throws, and
+//              completeSpecialQuest emits 'specialQuestError' and then throws
+//              precisely because that event is the only thing that re-enables
+//              the button the client disabled on click ("A generic toast
+//              leaves the button dead for the rest of the session"). What must
+//              NOT arrive is anything DESCRIBING state read inside the
+//              rolled-back transaction — the `state` sends, which are dropped.
+//   'drop'     a retry attempt that was superseded, a crash, or a COMMIT that
+//              failed. Nothing happened, so nothing is said.
+//
+// The box is closed FIRST. Anything that emits during the flush — or later,
+// from a timer the handler started, whose callback inherits this same async
+// context — then finds a closed box and goes out immediately instead of into a
+// queue nobody will ever read again. That is the direction this whole
+// mechanism is built to fail in: an extra send, never a swallowed one.
+//
+// The one case that does not get that protection: a timer a handler starts
+// that fires INSIDE the few milliseconds the transaction is still open. Its
+// emit joins the box and shares the transaction's fate, so a crash would drop
+// it. Nothing does that today — the shortest of them is fear's wave countdown,
+// measured in seconds — but a handler that ever wants a send in the same
+// millisecond, come what may, should use _emitRaw.
+function _flushOutbox(box, mode) {
+  if (!box) return;
+  box.open = false;
+  const sends = box.sends;
+  box.sends = [];
+  if (mode === 'drop') return;
+  for (const s of sends) {
+    if (s.state && mode !== 'all') continue;
+    // One malformed payload must not swallow the sends behind it in the queue.
+    try { s.fire(); } catch (err) { console.error('[session] outbox:', err && err.message); }
+  }
+}
+
+// ── the last resort behind forceFloor's stat carry ──────────────────────────
+// NOT the live path: forceFloor hands the destination room the block the
+// database computed (Session._roomStats, filled by every fullState and every
+// pushStats), and that block is complete by construction. This exists for the
+// case where a session reaches forceFloor having never read its own state —
+// which cannot happen today, because the only thing that puts a session in a
+// Room at all is world.enterFloor, and its one caller reads fullState first.
+//
+// It carries the room record's own numbers across, INCLUDING the three the
+// hand-built version used to omit (see the comment in forceFloor). If it ever
+// runs it says so in the log, because a silent fallback here is how the
+// original bug survived for so long: the cast simply did nothing, and nothing
+// anywhere said why.
+function _statsFromRoomRecord(p) {
+  return {
+    level: p.lvl, atk: p.atk, def: p.def, maxHp: p.maxHp,
+    critChance: p.critChance, critPower: p.critPower,
+    atkSpeed: p.atkSpeed, hpRegen: p.hpRegen, skillPct: p.skillPct,
+    // Room's own private names for them — _skillMultFor reads p._skillLevels,
+    // p._advLearned and p._advActive, and setPlayerStats is what fills those.
+    skillLevels: p._skillLevels, advSkillLearned: p._advLearned, advSkillActive: p._advActive,
+  };
 }
 
 // Floors whose rooms are created per run rather than once at boot. Their
@@ -178,6 +323,25 @@ class Session {
     // { clanId, name, icon, level, atkBonus } or null — see refreshClan.
     this.clan = null;
     this.connectedAt = Date.now();
+    // ── the block the last database read computed ────────────────────────
+    // This is NOT the old build's s.lastStats that the header above damns.
+    // Nothing READS it to decide anything — no handler consults it, no rule
+    // is evaluated against it, and it is never written back. It has exactly
+    // one use: forceFloor has to hand a complete stat block to a Room
+    // SYNCHRONOUSLY, and stats.of() is async. So the last block the database
+    // computed is kept, and handed over unchanged.
+    //
+    // The Room already holds a copy of these numbers — it must, the 40Hz loop
+    // cannot await — so this is a mirror of a copy that already exists, not a
+    // second source of truth.
+    this._roomStats = null;
+    // Bumped on every completed forceFloor, so the asynchronous half of a move
+    // can tell whether it is still describing where the player is. See there.
+    this._moveSeq = 0;
+    // The send-to-this-client method as it was before the outbox wrapped it —
+    // see _gateEmit. Kept because a few things must reach the player whatever
+    // the transaction decided; see _emitRaw.
+    this._rawEmit = _gateEmit(socket);
   }
 
   get authed() { return this.playerId !== null; }
@@ -319,6 +483,14 @@ class Session {
     const inv      = await items.inventoryOf(db, this.playerId);
     const balances = await money.balancesOf(db, this.playerId);
     const st       = await stats.of(db, this.playerId);
+    // The moment the whole player was read is also the moment the stat block
+    // is freshest, and forceFloor needs one it can hand over without awaiting.
+    // Recorded here rather than only in pushStats because the login path never
+    // calls pushStats at all: handlers2/world.js's sendGameStart takes
+    // state.stats from THIS call and writes it into the Room itself, so
+    // without this line the session would not know the numbers its own room is
+    // running on until the player's first equip.
+    if (st) this._roomStats = st;
     return { progress, prefs, skills, items: inv, balances, stats: st };
   }
 
@@ -353,11 +525,28 @@ class Session {
       sessionClaims.refusedActions++;
       plog.log(this.playerId, `refuse:${name}`,
         { code: 'session_replaced', msg: 'Сессия заменена входом с другого устройства' });
-      this.socket.emit(errEvent, { msg: 'Вы вошли с другого устройства', code: 'session_replaced' });
+      this._emitRaw(errEvent, { msg: 'Вы вошли с другого устройства', code: 'session_replaced' });
       return null;
     }
+    // ── the outbox ────────────────────────────────────────────────────────
+    // A fresh box per ATTEMPT, not per action: txRetry re-runs fn after a
+    // serialisation conflict, and the sends of the attempt PostgreSQL rolled
+    // back must not be delivered beside the sends of the one that stuck. The
+    // superseded box is CLOSED rather than emptied, so if anything of that
+    // attempt is somehow still running it finds the box shut and sends
+    // immediately — a duplicate that the next push corrects, rather than a
+    // state change the player never sees.
+    let box = null;
     try {
-      const out = await txRetry(t => fn(t, this.playerId));
+      const out = await txRetry((t) => {
+        if (box) box.open = false;
+        box = { sends: [], open: true };
+        return _outbox.run(box, () => fn(t, this.playerId));
+      });
+      // COMMITTED. Everything the handler said is now true of the database, so
+      // all of it goes — including the pushes that read through this very
+      // transaction and could not have been sent before it landed.
+      _flushOutbox(box, 'all');
       // Only the actions that CHANGE something. Logging a read would bury the
       // rows that matter under vipSync and getRating — see WRITE_ACTIONS.
       if (WRITE_ACTIONS.has(name)) plog.log(this.playerId, name, _resultMeta(name, meta, out));
@@ -367,38 +556,89 @@ class Session {
       // is a bug and must not have its text shown — an internal message in a
       // player's face is both confusing and an information leak.
       if (err && err.userMessage) {
+        // The handler DECIDED to refuse, and several handlers explain that
+        // refusal with an event of their own immediately before throwing —
+        // enterLocation's 'enterLocationDenied', completeSpecialQuest's
+        // 'specialQuestError', which is the only thing that re-enables the
+        // button the client disabled on click. Those go. The state pushes do
+        // not: the transaction rolled back, so they describe nothing that
+        // exists. See _flushOutbox.
+        _flushOutbox(box, 'refusal');
         // A REFUSAL IS RECORDED. This is the hole the market bug fell into:
         // the player was told no, and nobody else was told anything, so "не мог
         // купить лот, и никаких ошибок наш лог не выбил" was literally true.
         // One line per refusal, with the reason the player saw.
         plog.log(this.playerId, `refuse:${name}`, { code: err.code, msg: err.userMessage });
-        this.socket.emit(errEvent, { msg: err.userMessage, code: err.code });
+        this._emitRaw(errEvent, { msg: err.userMessage, code: err.code });
         return null;
       }
+      // A crash, or a COMMIT that failed — the second of the two triggers this
+      // outbox exists for (statement_timeout, the idle-transaction killer, a
+      // dropped connection). Nothing was written, so nothing is said about it.
+      _flushOutbox(box, 'drop');
       console.error(`[act:${name}]`, err);
       plog.log(this.playerId, 'error', { action: name, msg: String(err && err.message || err).slice(0, 300) });
       ops.alertError(`act.${name}`, `Ошибка в обработчике ${name}`, err, {
         player: this.username, telegramId: this.telegramId,
       });
-      this.socket.emit(errEvent, { msg: 'Ошибка сервера — попробуйте ещё раз' });
+      this._emitRaw(errEvent, { msg: 'Ошибка сервера — попробуйте ещё раз' });
       return null;
     }
+  }
+
+  // ── the ungated send ──────────────────────────────────────────────────────
+  // For the few things that must reach this client whatever the transaction
+  // decided, and which therefore must not sit in an outbox that may be dropped:
+  //
+  //   * act()'s own refusal and error reports. A player told NOTHING is the one
+  //     outcome worse than a player told the wrong thing — and if act() is ever
+  //     called from inside another action's handler, its report would otherwise
+  //     land in that outer action's box and be judged by that action's fate.
+  //   * forceFloor's gameStart. The move it describes is a change to MEMORY
+  //     that has already happened and that no rollback undoes, so a client left
+  //     drawing the floor it is no longer standing on would be a worse bug than
+  //     the one the outbox fixes.
+  _emitRaw(...args) {
+    if (this._rawEmit) return this._rawEmit(...args);
+    return this.socket ? this.socket.emit(...args) : false;
+  }
+
+  // A push describes THE DATABASE. Inside act() it reads through the open
+  // transaction — that is the whole point of threading `t` down into it, it has
+  // to see what the handler just wrote — so it may not leave the server until
+  // that transaction has COMMITTED. Outside act() (killReward, which already
+  // pushes after the fact) there is no box and it goes now.
+  _sendState(fire) {
+    const box = _outbox.getStore();
+    if (box && box.open) { box.sends.push({ fire, state: true }); return; }
+    fire();
   }
 
   // ── pushes ───────────────────────────────────────────────────────────────
   // The client is told what changed; it never decides. Each of these reads
   // back from the database rather than echoing what the handler thinks it
   // wrote, so a push cannot describe a state the database does not hold.
+  //
+  // Each one READS immediately — inside the caller's transaction, where it must
+  // be — and SENDS through _sendState, which holds it until that transaction
+  // commits. That is the split the bug needed: the read has to be inside, the
+  // send has to be outside, and before this they were both inside.
 
   async pushItems(db = null) {
     const inv = await items.inventoryOf(db, this.playerId);
-    this.socket.emit('inventorySync', inv);
-    // A pet is drawn beside its owner on everyone ELSE's screen, and the only
-    // way they learn about it is this event. The old build derived it from the
-    // save blob the client sent; there is no blob any more, so it comes off
-    // the equipment we have just read. Every equip and unequip goes through
-    // pushItems, so this is where it changes.
-    this.syncPet(inv.equipment);
+    this._sendState(() => {
+      this._emitRaw('inventorySync', inv);
+      // A pet is drawn beside its owner on everyone ELSE's screen, and the only
+      // way they learn about it is this event. The old build derived it from the
+      // save blob the client sent; there is no blob any more, so it comes off
+      // the equipment we have just read. Every equip and unequip goes through
+      // pushItems, so this is where it changes.
+      //
+      // Deferred with the rest of the push, and for the same reason: a pet
+      // broadcast out of a transaction that then rolled back shows every other
+      // player on the floor a familiar its owner does not have equipped.
+      this.syncPet(inv.equipment);
+    });
   }
 
   // Broadcast only when it CHANGES — a pet is a rare event and this is called
@@ -416,9 +656,11 @@ class Session {
   // every balance on screen stayed at whatever it was at login.
   async pushBalances(db = null) {
     const b = await money.balancesOf(db, this.playerId);
-    this.socket.emit('goldSync', { gold: b.gold });
-    this.socket.emit('gramBalanceUpdate', { balance: b.gram });
-    this.socket.emit('nexumBalanceUpdate', { balance: b.nexum });
+    this._sendState(() => {
+      this._emitRaw('goldSync', { gold: b.gold });
+      this._emitRaw('gramBalanceUpdate', { balance: b.gram });
+      this._emitRaw('nexumBalanceUpdate', { balance: b.nexum });
+    });
     return b;
   }
 
@@ -436,21 +678,43 @@ class Session {
   async pushStats(db = null) {
     const st = await stats.of(db, this.playerId);
     if (!st) return null;
-    // The base figures ride along: applyLevelState reads them, and without
-    // them a level-up raised the level on screen while the character stayed as
-    // strong as it was at level one.
-    this.socket.emit('xpSync', {
-      lvl: st.level, xp: st.xp, xpNext: st.xpNext,
-      baseAtk: st.baseAtk, baseDef: st.baseDef, baseMaxHp: st.baseMaxHp,
+    this._sendState(() => {
+      // The base figures ride along: applyLevelState reads them, and without
+      // them a level-up raised the level on screen while the character stayed as
+      // strong as it was at level one.
+      this._emitRaw('xpSync', {
+        lvl: st.level, xp: st.xp, xpNext: st.xpNext,
+        baseAtk: st.baseAtk, baseDef: st.baseDef, baseMaxHp: st.baseMaxHp,
+      });
+      // The ROOM's copy waits for the commit too, and that is not tidiness. It
+      // is what decides damage: an empower whose transaction is rolled back
+      // used to leave the room fighting on the boosted numbers until the next
+      // push happened to correct it, which in a Fear run may be never.
+      this._applyStats(st);
     });
-    if (this.room) this.room.setPlayerStats(this.socket.id, st);
+    return st;
+  }
+
+  // ── the one writer of a stat block into a Room ────────────────────────────
+  // Every stat block the room fights on comes through here, and it is handed
+  // over WHOLE — never field by field. The hand-built version that used to live
+  // in forceFloor listed nine of its fields and dropped the three that decide
+  // whether a skill does any damage at all; a list like that loses the next
+  // field somebody adds, so there is no longer a list.
+  //
+  // `room` is an argument because forceFloor has to seed the room it is moving
+  // the player INTO, at a moment when this.room is still the one being left.
+  _applyStats(st, room = this.room) {
+    if (!st) return null;
+    this._roomStats = st;
+    if (room) room.setPlayerStats(this.socket.id, st);
     return st;
   }
 
   async pushProgress(db = null) {
     const prog = await players.progressOf(db, this.playerId);
     const skills = await players.skillsOf(db, this.playerId);
-    this.socket.emit('progressSync', { ...prog, ...skills });
+    this._sendState(() => this._emitRaw('progressSync', { ...prog, ...skills }));
   }
 
   // Everyone who can see this point, optionally including the sender. The
@@ -717,15 +981,48 @@ class Session {
     dest.addPlayer(this.socket.id, this.username, clan && clan.name, clan && clan.icon,
       (clan && clan.atkBonus) || 0, this.telegramId, clan && clan.clanId);
     dest.setPlayerChar(this.socket.id, was.type);
-    dest.setPlayerStats(this.socket.id, {
-      level: was.lvl, atk: was.atk, def: was.def, maxHp: was.maxHp,
-      critChance: was.critChance, critPower: was.critPower,
-      atkSpeed: was.atkSpeed, hpRegen: was.hpRegen, skillPct: was.skillPct,
-    });
+    // ── THE WHOLE STAT BLOCK, not the nine fields somebody typed out ────────
+    // This is where every skill in every instanced mode did ZERO damage.
+    //
+    // addPlayer above creates a BRAND-NEW record in `dest`, and the block that
+    // used to be built here by hand carried level, atk, def, maxHp, crit,
+    // atkSpeed, hpRegen and skillPct — and not skillLevels, advSkillLearned or
+    // advSkillActive. Room.setPlayerStats only assigns those three `if
+    // (st.skillLevels)`, and its comment says the guard is there so THIS caller
+    // "cannot blank them" — but there was nothing to blank in a record that had
+    // just been created, so they were never set at all. setPlayerChar with no
+    // savedStats leaves p._sd = {}, so the fallback under them was empty too,
+    // and Room._skillMultFor then read `p._skillLevels || sd.skillLevels || {}`,
+    // found lvl 0, returned a multiplier of 0 — and the cast was dropped with
+    // no damage, no enemyHurt, no error and no log line.
+    //
+    // Every entry through forceFloor was affected: Страх, co-op, the Elite farm
+    // zone, Кровавая Башня, arena3, the death battle, the guild-war close, the
+    // teleport stone, the fear reconnect resume and modes.returnToHub. For the
+    // whole run the player had spent every book on Q/W/E/R for nothing — «я
+    // активировал навык, а книги на месте / навыка нет» — and it healed only if
+    // some unrelated action happened to call pushStats, which in a Fear run may
+    // never happen.
+    //
+    // The fix is not another field in the list; it is that there is no list.
+    // _roomStats is the block stats.of() computed, kept whole, and _applyStats
+    // is the only thing that ever hands one to a Room.
+    const carried = this._roomStats || _statsFromRoomRecord(was);
+    if (!this._roomStats) {
+      console.error('[session] forceFloor: нет stats из БД, переношу запись комнаты — ' +
+        `player=${this.playerId} floor=${this.floor}->${target}`);
+    }
+    this._applyStats(carried, dest);
+    // AFTER the stats, always: setPlayerHp clamps to p.maxHp, so a room whose
+    // maxHp is still the class baseline would silently cut the player's HP down
+    // to it and never raise it back — setPlayerStats never raises current HP.
     dest.setPlayerHp(this.socket.id, was.hp);
 
     this.floor = target;
     this.room = dest;
+    // Which move this is. The asynchronous half below reads it back to find out
+    // whether it is still describing where the player is.
+    const seq = ++this._moveSeq;
     if (!INSTANCED_FLOORS.has(target)) this.socket.join(`floor_${target}`);
 
     const p = dest.players.get(this.socket.id);
@@ -737,10 +1034,25 @@ class Session {
     // The client rebuilds a floor from gameStart and nothing else, so a move it
     // did not ask for still has to arrive as one. Sent after the fact, because
     // the caller needs its answer now and the client can afford one tick.
+    //
+    // And the block that comes back is APPLIED, not merely forwarded. Until now
+    // this read the authoritative stats and handed them to the client while the
+    // room kept whatever the partial above had given it. It is the belt to that
+    // brace: if anything upstream ever puts a session here with stale numbers,
+    // this is where the room is corrected, one round trip in.
     this.fullState(null)
-      .then(state => this.socket.emit('gameStart', {
-        ...state, ...this.worldPayload(target, dest),
-      }))
+      .then((state) => {
+        // A second move can land while this read is in flight — a mode
+        // deploying an entrant and the run ending underneath them is two moves
+        // in the same tick, and world.enterFloor can take the player out from
+        // under this one without touching _moveSeq at all. Either way, applying
+        // THIS move's answer now would re-seat the stats of a room the player
+        // has already left and put the wrong floor's payload on their screen.
+        // Whatever moved them last sends its own gameStart.
+        if (seq !== this._moveSeq || this.room !== dest) return;
+        this._applyStats(state.stats, dest);
+        this._emitRaw('gameStart', { ...state, ...this.worldPayload(target, dest) });
+      })
       .catch(err => console.error('[session] forceFloor push:', err.message));
 
     return p || null;
@@ -776,14 +1088,67 @@ class Session {
     //
     // A session that is no longer the account's active one has nothing true
     // left to say about where that account is.
-    if (activeSessions.get(this.telegramId) !== this.socket.id) return;
-    const p = this.room.players.get(this.socket.id);
-    if (!p) return;
-    try {
-      await players.savePosition(null, this.playerId, this.floor, p.x, p.y);
-      if (p.hp > 0) await players.setHp(null, this.playerId, p.hp);
-    } catch (err) {
-      console.error('[session] savePosition:', err.message);
+    //
+    // ── and the guard has to be checked WHERE THE WRITE IS ────────────────
+    // It used to be checked once, here, and then two separate autocommit
+    // statements went out through the pool, each of them after an await. Both
+    // gaps were losses:
+    //
+    //   cross-session   a takeover landing between the check and the UPDATE let
+    //                   this dead session's floor, coordinates and HP land on
+    //                   top of the live one's. Next login: wrong floor, old
+    //                   position, old HP. And with two statements rather than
+    //                   one, a takeover could land BETWEEN them and leave the
+    //                   row holding this session's floor beside the other's HP,
+    //                   which is a state neither session was ever in.
+    //
+    //   same socket     handlers2/world.js writes position inside a transaction
+    //                   on a DIFFERENT connection (enterLocation, respawn). A
+    //                   timer tick that issues its UPDATE while that transaction
+    //                   holds the row lock waits for it and then applies on top
+    //                   — the player lands back on the floor they just left.
+    //
+    // So: one transaction for both writes, the ownership re-checked inside it
+    // (after the wait for a connection, which is where the gap actually was),
+    // and the floor compared again afterwards. The last one is what catches the
+    // lock-wait case, because respawn takes the row lock with setHp BEFORE it
+    // changes the session's floor — no check made before the statement can see
+    // that coming, and only looking afterwards can.
+    const owns = () => activeSessions.get(this.telegramId) === this.socket.id;
+    if (!owns()) { sessionClaims.posSkipped++; return; }
+    // Two passes at most: the write, and one correction if the floor moved
+    // underneath it. Bounded rather than a loop-until-stable, because the thing
+    // it is racing is a player walking through portals and that has no end.
+    for (let pass = 0; pass < 2; pass++) {
+      if (!this.room) return;
+      const p = this.room.players.get(this.socket.id);
+      if (!p) return;
+      const floor = this.floor, x = p.x, y = p.y, hp = p.hp;
+      let wrote = false;
+      try {
+        await tx(async (t) => {
+          if (!owns() || this.floor !== floor) { sessionClaims.posSkipped++; return; }
+          await players.savePosition(t, this.playerId, floor, x, y);
+          if (hp > 0) await players.setHp(t, this.playerId, hp);
+          wrote = true;
+        });
+      } catch (err) {
+        console.error('[session] savePosition:', err.message);
+        return;
+      }
+      if (!wrote) return;                     // superseded before it went out
+      if (!owns()) {
+        // The account was taken over WHILE this was in flight, so this row may
+        // now be sitting on top of the live session's. Nothing here can undo it
+        // — the other session owns the account — but it is exactly the event
+        // behind "меня закинуло не туда после входа с телефона", and it left no
+        // trace at all before this line.
+        sessionClaims.posSkipped++;
+        console.warn(`[session] savePosition: слот перехвачен во время записи — player=${this.playerId}`);
+        return;
+      }
+      if (this.floor === floor) return;       // still where we said they were
+      sessionClaims.posRewritten++;
     }
   }
 

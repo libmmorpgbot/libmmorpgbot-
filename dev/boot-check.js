@@ -177,6 +177,15 @@ async function main() {
   // shape the rewritten handler used to ignore: it read { id, slot }, got two
   // undefineds, hit its guard and returned. No error, no log, no failing test —
   // the equip button simply did nothing.
+  // ── обе подписки ДО отправки ─────────────────────────────────────────────
+  // inventorySync и xpSync приходят из одного обработчика, и с тех пор как
+  // act() копит отправки в outbox и выпускает их ПОСЛЕ COMMIT, они уходят
+  // одной синхронной очередью. Раньше между ними лежал запрос к базе
+  // (stats.of), и подписаться на второе успевали уже после первого. Теперь
+  // зазора нет: подписка на xpSync после await inventorySync опаздывает на
+  // событие, которое уже прошло, и проверка падала по таймауту на исправном
+  // коде.
+  const xpWait = once(sock, 'xpSync');
   sock.emit('equipItem', { idx: 0 });
   const inv = await once(sock, 'inventorySync');
   ok(inv.equipment && inv.equipment.weapon, 'предмет вдягнено за ІНДЕКСОМ, як шле клієнт');
@@ -185,7 +194,7 @@ async function main() {
   // The client works out its own displayed numbers; what the server owes it is
   // the level and the curve. The room gets the full stat block — that is the
   // copy that decides damage.
-  const xp = await once(sock, 'xpSync');
+  const xp = await xpWait;
   ok(Number.isFinite(xp.lvl) && Number.isFinite(xp.xpNext), 'xpSync несе рівень і криву');
 
   // ── a row that is not theirs ─────────────────────────────────────────────
@@ -519,7 +528,13 @@ async function main() {
   const appSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'app.js'), 'utf8');
   const discon = (appSrc.match(/socket\.on\('disconnect'[\s\S]*?\n {2}\}\);/) || [''])[0];
   ok(discon.length > 200, 'знайшли обробник disconnect у server/app.js');
-  const iClose = discon.indexOf('await s.close(');
+  // Шукається САМ виклик, а не одна його обгортка. close() тепер загорнутий у
+  // _trackTeardown — це те, що дає shutdown() дочекатися зливу позицій: без
+  // нього п'ятисекундний бюджет не витрачався взагалі, бо io.close() спорожняє
+  // io.sockets.sockets ще до того, як його встигнуть прочитати. Перевірка
+  // вимагала дослівного `await s.close(` і почервоніла на виправленому коді:
+  // вона сторожила запис, а не порядок, який тут насправді має значення.
+  const iClose = discon.search(/s\.close\(/);
   const iRemove = discon.indexOf('removePlayer(');
   ok(iClose !== -1 && iRemove !== -1, 'у ньому є і close(), і removePlayer()');
   ok(iClose < iRemove,

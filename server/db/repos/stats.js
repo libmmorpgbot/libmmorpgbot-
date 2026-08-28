@@ -104,7 +104,50 @@ async function load(db, playerId) {
 // Pure, given the loaded row — so it can be tested against recompute() without
 // a database.
 function compute(row) {
-  const cd = CHAR_DEF[row.char_class] || CHAR_DEF.lev;
+  // Object.hasOwn, not `CHAR_DEF[row.char_class] || CHAR_DEF.lev`. The `||`
+  // reads like a safe fallback and is not one: CHAR_DEF is a plain object
+  // literal (shared/definitions.js:36), so it inherits from Object.prototype
+  // and 'constructor', '__proto__', 'toString', 'valueOf' and 'hasOwnProperty'
+  // are all TRUTHY — the fallback is skipped for exactly the values that need
+  // it. `Object.hasOwn(CHAR_DEF, 'constructor')` is false, which is the
+  // question actually being asked. Same rule as PREF_FIELDS and UPG_COL in
+  // players.js (:513, :617); UPG_COL's comment names 'constructor' too.
+  //
+  // What got through was not a crash. cd.baseHP on the Object constructor is
+  // undefined, so baseAtk/baseDef/baseMaxHp below come out NaN and so does
+  // every number derived from them — atk, def, maxHp. Those go to
+  // Room.setPlayerStats, and NaN is absorbing: `Math.max(0, hp - dmg)` stays
+  // NaN and `NaN <= 0` is FALSE, so the player never dies, while their NaN atk
+  // writes NaN into the hp of the first enemy they hit and makes it unkillable
+  // by everyone. One stored char_class of 'constructor' is a denial of the
+  // world boss and the guild-war tower for the whole server.
+  //
+  // char_class reaching this function is a stored column, so this alone does
+  // not stop a bad value being WRITTEN — the selectChar/setClass gates own
+  // that. It stops a bad value that is already in the table from turning into
+  // an immortal character, which is the part this file can answer for.
+  //
+  // The resolved KEY is kept, not just the definition it points at, because
+  // it is needed a second time below (passiveBonusTotal takes a class name).
+  // Handing that the raw column instead is the same bug wearing a different
+  // hat: passivesForClass does `PASSIVE_CLASS_DEF[cls] || []` and spreads the
+  // result, so 'constructor' gets it the Object constructor and throws
+  // "is not iterable" out of a stats load — which is at least loud, but it is
+  // still one packet taking a player's every stat refresh down.
+  const known = Object.hasOwn(CHAR_DEF, row.char_class);
+  const charClass = known ? row.char_class : 'lev';
+  const cd = CHAR_DEF[charClass];
+  // NULL is the ordinary case — char_class is "NULL until the player picks
+  // one" (001_core.sql:75) and every fresh account loads stats before ever
+  // choosing — so it is not worth a line. A non-null value that is not a class
+  // is: char_class_t is a Postgres ENUM of the five real classes, so the
+  // column cannot hold one, and if this ever fires it means the row did not
+  // come from that column and the fallback is quietly changing somebody's
+  // combat numbers. Logged rather than swallowed, so that shows up as
+  // something an operator can read instead of as "персонаж сломался".
+  if (!known && row.char_class != null) {
+    console.warn(`[stats] unknown char_class ${JSON.stringify(row.char_class)} — using 'lev'`);
+  }
   const level = row.lvl;
   const lvl = level - 1;                        // recompute() uses level-1 throughout
 
@@ -143,7 +186,12 @@ function compute(row) {
     if (base.skillPct)   skillPct  += base.skillPct;
   }
 
-  const pt = passiveBonusTotal(row.passives || {}, row.char_class);
+  // The RESOLVED class, not the raw column — see the note at the top of this
+  // function. passivesForClass spreads `PASSIVE_CLASS_DEF[cls] || []`, and a
+  // prototype key makes that the Object constructor, which is truthy and not
+  // iterable. Passing the same key the base stats above were taken from also
+  // means the passives can never describe a different class from them.
+  const pt = passiveBonusTotal(row.passives || {}, charClass);
   hpPct += pt.hpPct;
   h = Math.floor(h * (1 + hpPct));
 

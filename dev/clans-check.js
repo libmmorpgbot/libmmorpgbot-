@@ -92,6 +92,45 @@ async function main() {
   eq(await caught(() => tx(t => clans.create(t, rich, `${TAG.slice(-4)}a`, 5))), 'name_taken',
     'зайнята назва (без огляду на регістр) відхилена');
   eq(await gold(rich), 500, 'за невдале створення золото НЕ списалось');
+  eq(Number((await pool().query('SELECT clan_epoch FROM players WHERE id = $1', [rich]))
+    .rows[0].clan_epoch), 0,
+  'і лічильник заснованих кланів теж не зрушив — невдала спроба відкотилась цілком');
+
+  // ── та сама назва після розформування — і вдруге теж за золото ────────────
+  // Підтверджена дірка, та сама формою, що й безкоштовні покращення в
+  // repos/players.js, лише дешевша.
+  //
+  // idemKey був `clan_create:<pid>:<назва>`, а disband робить DELETE FROM
+  // clans і звільняє назву (clans.name — citext UNIQUE). ledger append-only,
+  // старий ключ лишається — тож «Alpha» → розформувати → «Alpha» знову давало
+  // ТОЙ САМИЙ ключ. money.spend ішов у гілку replay і повертав
+  // { balance, replayed: true }, тобто ІСТИНУ, тож `if (!paid)` пропускав її
+  // далі й клан діставався за 0 замість CLAN_CREATE_COST.
+  //
+  // money.reconcile() цього не бачить: по гілці replay не пишеться нічого, і
+  // баланс із ledger сходяться. Тому перевірка дивиться на ЗОЛОТО і на
+  // кількість рядків у ledger, а не на те, чи створився клан: він створювався
+  // і тоді, коли все було зламано.
+  const founder = await mk('founder', CLAN_CREATE_COST * 3);
+  const NAME = `${TAG.slice(-4)}D`;
+  const f1 = await tx(t => clans.create(t, founder, NAME, 2));
+  eq(await gold(founder), CLAN_CREATE_COST * 2, 'перше створення списало золото');
+
+  await tx(t => clans.disband(t, founder, f1.clanId));
+  eq(await gold(founder), CLAN_CREATE_COST * 2, 'розформування золота не повертає');
+
+  const f2 = await tx(t => clans.create(t, founder, NAME, 2));
+  clanIds.push(f2.clanId);
+  ok(f2.clanId !== f1.clanId, 'це новий клан, а не воскреслий старий');
+  eq(await gold(founder), CLAN_CREATE_COST,
+    'ПОВТОРНЕ створення тієї самої назви теж списало золото, а не 0');
+  eq(Number((await pool().query(
+    `SELECT count(*)::int n FROM ledger WHERE player_id = $1 AND reason = 'clan_create'`,
+    [founder])).rows[0].n), 2,
+  'у ledger два списання, а не одне — ключі різні');
+  eq(Number((await pool().query('SELECT clan_epoch FROM players WHERE id = $1', [founder]))
+    .rows[0].clan_epoch), 2,
+  'clan_epoch дорівнює кількості заснованих кланів — саме він робить другий ключ іншим');
 
   // ── applications ─────────────────────────────────────────────────────────
   const m1 = await mk('m1'), m2 = await mk('m2');
@@ -272,7 +311,10 @@ async function main() {
     'INSERT INTO clan_members (clan_id, player_id) VALUES ($1,$2)', [c2.clanId, inClan])),
   '23505', 'другий клан неможливий навіть прямим записом повз застосунок (23505)');
 
-  eq((await clans.search(null, TAG.slice(-4))).length, 2, 'пошук знаходить обидва клани');
+  // ТРИ, а не два: A, C і перестворений D. Розформований f1 сюди не потрапляє
+  // — disband справді видаляє рядок, і саме тому назва звільняється, і саме
+  // тому старий ключ оплати ставав придатним до повтору.
+  eq((await clans.search(null, TAG.slice(-4))).length, 3, 'пошук знаходить усі три живі клани');
 }
 
 async function cleanup() {

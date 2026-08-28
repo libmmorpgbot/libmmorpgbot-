@@ -70,7 +70,40 @@ module.exports = function registerWorld(s, safeOn, deps) {
     await s.act('selectChar', 'authError', async (t, pid) => {
       const prog = await players.progressOf(t, pid);
       if (!prog.charClass) {
-        if (!CHAR_DEF[type]) fail('Неизвестный класс', 'bad_class');
+        // ── the class gate, and why it is a membership test ────────────────
+        // Object.hasOwn, not `CHAR_DEF[type]`. CHAR_DEF is a plain object
+        // literal (shared/definitions.js) and so inherits Object.prototype:
+        // 'constructor', '__proto__', 'toString', 'valueOf' and
+        // 'hasOwnProperty' each answer something TRUTHY that is not a class,
+        // and this handler is handed whatever JSON the socket carried — so
+        // the client picks the key. This is the same mistake
+        // players.js already documents twice, at PREF_FIELDS and at UPG_COL,
+        // whose comment names 'constructor' outright.
+        //
+        // What it cost HERE is not a crash. setClass wrote the key, and every
+        // later read of CHAR_DEF[type] — baseHP/baseAtk/baseDef, in
+        // Room.setPlayerChar and computeStats — is undefined, so maxHp, atk
+        // and def all come out NaN. Damage is applied as
+        // Math.max(0, hp - dmg), and `NaN <= 0` is FALSE: the player never
+        // dies. Not to monsters, not in open PvP, not in the death battle —
+        // which pays its winner GRAM, the real-money currency — and not in
+        // arena3 or race10, all three of which they sweep by outlasting the
+        // field. Their atk is NaN as well, so the first enemy they touch gets
+        // NaN hp and becomes unkillable for everyone else on the floor.
+        //
+        // And it is IRREVERSIBLE: setClass has `AND char_class IS NULL` in its
+        // WHERE, so the row can never be re-rolled. Nothing short of an
+        // operator's UPDATE recovers the account — which is exactly why the
+        // check belongs at the front door and not only at the far end where
+        // the value is finally read.
+        //
+        // The typeof is part of the check, not decoration. Property keys are
+        // coerced to strings, so Object.hasOwn(CHAR_DEF, ['lev']) is TRUE, and
+        // it would be that array — not the string — that setClass then binds
+        // into char_class.
+        if (typeof type !== 'string' || !Object.hasOwn(CHAR_DEF, type)) {
+          fail('Неизвестный класс', 'bad_class');
+        }
         await players.setClass(t, pid, type);
       }
       // Everything the client needs to build the world, from the database. The
@@ -177,9 +210,43 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // position; that refusal has to reach the client, or the two silently
   // disagree about where the player is and every subsequent packet is judged
   // against the wrong origin.
+
+  // ── which way the player is looking, as an allowlist ─────────────────────
+  // The same shape as the class gate above, one packet type down. `facing`
+  // arrives two ways — as an INDEX into NC_FACING from the packed 'mv' form,
+  // as one of the eight NAMES from 'playerMove' — and neither was checked:
+  // 'mv' did `NC_FACING[a[2]] || 'front'`, which reads as a fallback and is
+  // not one, because NC_FACING is an Array and so NC_FACING['constructor'] is
+  // the Array constructor — truthy, so the `||` never fires — while
+  // 'playerMove' handed its string through untouched, so `facing: 'lol'` was
+  // simply stored.
+  //
+  // Room.updatePlayerPos writes this verbatim onto the player record, and the
+  // ONE thing that has kept a non-name off the wire is a clamp in a different
+  // file: encodeGameState (shared/netcodec.js) sends
+  // Math.max(0, NC_FACING.indexOf(p.facing)), which turns anything unknown
+  // into 0 — 'front'. That clamp is why this has never been visible, and it
+  // is not a check: it is one `indexOf` in a codec, standing in for a rule
+  // nobody wrote. The moment a player's facing reaches a client as JSON
+  // instead (the nearPlayers entries Room.js builds are already objects with
+  // the raw value in them), getOtherPlayerAnimKey (js/game.js) builds
+  // `${facing}-idle` from it and _playerTextures (js/pixi-world.js) answers
+  // null for a key no sprite sheet has — the branch that sets
+  // spr.visible = false. A garbage `facing` is an invisible player, and an
+  // invisible player in the death battle or the 3v3 arena is the match.
+  //
+  // Integers are safe to index with (they cannot name a prototype key) so the
+  // index form stays a lookup; the name form is a membership test.
+  const facingOf = (v) => {
+    if (Number.isInteger(v)) return NC_FACING[v] || 'front';
+    return NC_FACING.includes(v) ? v : 'front';
+  };
+
   function applyMove(x, y, facing, moving) {
     if (!s.room) return;
-    const res = s.room.updatePlayerPos(s.socket.id, x, y, facing, moving);
+    // Normalised HERE rather than in each handler, so a third movement packet
+    // added later cannot get into the room without passing the same gate.
+    const res = s.room.updatePlayerPos(s.socket.id, x, y, facingOf(facing), moving);
     if (res && res.refused) {
       s.socket.emit('posCorrect', { x: res.x, y: res.y, reason: res.refused });
     }
@@ -189,7 +256,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // halved on the wire (see shared/netcodec.js) so they fit a smaller integer.
   safeOn('mv', (a) => {
     if (!Array.isArray(a) || a.length < 4) return;
-    applyMove(a[0] / 2, a[1] / 2, NC_FACING[a[2]] || 'front', a.length > 4 ? !!a[4] : undefined);
+    applyMove(a[0] / 2, a[1] / 2, a[2], a.length > 4 ? !!a[4] : undefined);
   });
 
   safeOn('playerMove', ({ x, y, facing, moving } = {}) => applyMove(x, y, facing, moving));
@@ -575,6 +642,19 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // splash: "Безумие" (advanced deathknight E) — a half-damage hit that
     // rides along with a real one. Dropping the flag turned it into a second
     // full-strength attack.
+    //
+    // The flag is a REQUEST and nothing more, and it is worth saying so here,
+    // because reading only these lines is what produced the exploit report:
+    // `splash: true` off the wire was a free half-damage hit for every class
+    // at level one, as many of them per swing as the socket limiter allowed.
+    // The three things that decide it — may this player splash at all
+    // (Room._canSplash: deathknight, E studied, the book learned AND the
+    // toggle on), how soon after a real swing, and how many per swing — are
+    // all in Room.attackEnemy, and they belong there rather than here: two of
+    // them are per-swing state on the room's own player record, and the third
+    // reads the skill levels setPlayerStats pushed down from the database.
+    // This handler knows nothing the room does not, so a check here could only
+    // be a second, drifting copy of that one.
     resolveHit(enemyId, s.room.attackEnemy(s.socket.id, enemyId, { splash: !!splash }));
   });
 
@@ -591,6 +671,61 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // one of the few live values that is also persisted — a player who dies and
   // reconnects must not come back still dead.
   safeOn('respawn', () => s.act('respawn', 'itemError', async (t, pid) => {
+    // ── only the dead may respawn ──────────────────────────────────────────
+    // There was no check of any kind here. This handler is a full heal in the
+    // room AND in player_progress, plus a free ride to floor 1, and it sits in
+    // the 40-per-5s bucket — so any living player could top themselves up on
+    // demand, mid-fight, and do it again two seconds later. In PvP, in the
+    // death battle, in the 3v3 arena and in Страх that is not a convenience,
+    // it is the whole fight.
+    //
+    // It also obsoleted the sanctioned way home. useTeleportStone (below)
+    // burns an item that costs 20 Liberty, refuses when already in the hall,
+    // refuses while dead, and holds the player still for a cast timer.
+    // 'respawn' did the same journey for free, instantly, with a heal on top,
+    // and the stone's whole price is the fact that there is no other way.
+    //
+    // The ROOM is the authority on death, and it is the only one there is.
+    // player_progress.hp cannot be used for this: the two writers are this
+    // handler (which writes maxHp) and Session.savePosition, which writes hp
+    // only `if (p.hp > 0)` — so that column holds the last POSITIVE hp the
+    // account was seen with and is never 0. Testing `st.hp <= 0` would refuse
+    // every genuine respawn in the game.
+    //
+    // ── and why the refusal talks back ─────────────────────────────────────
+    // The two sides can honestly disagree, and the disagreement is routine on
+    // mobile: a player dies, the socket drops before they press anything, and
+    // the re-join seats their room hp from that same never-zero column — so
+    // the server has them alive while their client is still holding the death
+    // screen it was shown before the drop.
+    //
+    // Refusing in SILENCE there is a loop, not a one-off annoyance.
+    // js/game.js's respawnPlayer hides the modal and writes that client's own
+    // hp down to 10% of maxHp before it ever emits — and nothing on the server
+    // reads a client's hp back to correct it: the packed 'mv' form carries one
+    // and this file does not even destructure it, and Room.syncPlayerHp, which
+    // exists for exactly that, has no caller anywhere. So the client keeps the
+    // 10% as its base, every later playerHurt subtracts the monster's damage
+    // FROM IT rather than from the server's number (js/network.js), it reaches
+    // zero while the server still has them at half health, playerDie runs
+    // again — and the player presses respawn again, and is refused again, for
+    // a death only their own client believes in.
+    //
+    // So the refusal sends the truth FIRST: one playerHurt carrying the room's
+    // own hp and no dmg, which is the branch of that same client handler that
+    // assigns hp outright instead of subtracting from it, and that does not
+    // re-run playerDie. They end up alive, at the number the server actually
+    // holds, and told why.
+    //
+    // No room record at all means nothing in memory can say they are alive,
+    // and a player who is authed with no room entry is exactly who the heal-
+    // and-send-to-the-hall below exists for — so that case is allowed. It
+    // cannot be farmed either: there is no room to be fighting in.
+    const me = s.room && s.room.players.get(s.socket.id);
+    if (me && me.hp > 0) {
+      s.socket.emit('playerHurt', { id: s.socket.id, hp: me.hp });
+      fail('Вы живы — возрождение не требуется', 'not_dead');
+    }
     const st = await stats.of(t, pid);
     // No stat row means no character to bring back. Returning here told act()
     // the respawn succeeded, so the log said the player was revived while the

@@ -21,6 +21,7 @@ const { wipeItemsAll } = require('./fixtures');
 const {
   ITEM_DEF, CODEX_SETS, EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_MAX,
   empowerCostFor, empowerMultFor, UPGRADE_RESET_COST, MERCHANT_SHOP, POTION_CAP,
+  upgradeCost, skillPointBudget, availableSkillPoints, spentSkillPoints,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -345,6 +346,150 @@ async function main() {
   eq(reset.refunded, 1, 'повернуто 1 очко');
   eq((await players.progressOf(null, rs)).upgrades.atk, 0, 'покращення скинуті');
   eq((await money.balancesOf(null, rs)).nexum, 0, 'Liberty списано рівно раз');
+
+  // ── покупка ПІСЛЯ скидання — і вона теж має коштувати золота ──────────────
+  // Головна перевірка цього файлу, і те, що раніше мовчки проходило.
+  //
+  // idemKey покупки містив ПОТОЧНИЙ рівень характеристики
+  // (`upg:<pid>:<стат>:<рівень>`), а resetUpgrades повертав усі сім колонок
+  // upg_* у 0. ledger append-only, старі ключі нікуди не діваються — тож
+  // покупка atk після скидання давала `upg:<pid>:atk:0`, ключ, який уже є.
+  // money.spend йшов у гілку replay і повертав { balance, replayed: true } —
+  // це ІСТИНА, тож `if (!paid)` пропускав її далі й очко видавалось, не
+  // списавши жодної монети. Знято на живій схемі:
+  //
+  //   куплено 3 очка atk:      золото 100000 → 98200  (списано 1800)
+  //   после сброса:            золото 98200
+  //   куплено 3 очка ПОВТОРНО: золото 98200 → 98200  (списано 0), upg_atk = 3
+  //
+  // money.reconcile() цього не бачила й не могла: по гілці replay не пишеться
+  // НІЧОГО, тож баланс і сума ledger сходяться до копійки. Єдиний свідок —
+  // золото, яке не зменшилось. Саме тому перевірка дивиться на ЗОЛОТО, а не на
+  // те, чи зʼявилось очко: очко зʼявлялось і тоді, коли все було зламано.
+  console.log('  ── покупка після скидання ──');
+  const gOf = async pid => (await money.balancesOf(null, pid)).gold;
+  const rp = await mk('replay');
+  await money.credit(null, rp, 'gold', 100000, { reason: 'seed', idemKey: `${TAG}:rp-g` });
+  await money.credit(null, rp, 'nexum', UPGRADE_RESET_COST, { reason: 'seed', idemKey: `${TAG}:rp-nx` });
+
+  // Рівно бюджет першого рівня — три очки, як у звіті. Ціна кола рахується
+  // через upgradeCost, а не вписана числом: ставку може бути перебалансовано,
+  // а властивість «друге коло коштує стільки ж, скільки перше» — ні.
+  const POINTS = skillPointBudget(1);
+  const ROUND = Array.from({ length: POINTS }, (_, l) => upgradeCost(l)).reduce((a, b) => a + b, 0);
+
+  const g0 = await gOf(rp);
+  for (let i = 0; i < POINTS; i++) {
+    ok(await tx(t => players.spendUpgrade(t, rp, 'atk')) !== null,
+      `перше коло: очко ${i + 1} з ${POINTS} куплено`);
+  }
+  const g1 = await gOf(rp);
+  eq(g0 - g1, ROUND, `перше коло списало ${ROUND} золота`);
+
+  const rr = await tx(t => players.resetUpgrades(t, rp, UPGRADE_RESET_COST));
+  eq(rr.refunded, POINTS, `скидання повернуло ${POINTS} очки`);
+  eq((await players.progressOf(null, rp)).upgrades.atk, 0, 'карта покращень порожня');
+  eq(await gOf(rp), g1, 'саме скидання золота не чіпає — за нього платять Liberty');
+
+  for (let i = 0; i < POINTS; i++) {
+    ok(await tx(t => players.spendUpgrade(t, rp, 'atk')) !== null,
+      `друге коло: очко ${i + 1} з ${POINTS} куплено`);
+  }
+  eq(g1 - (await gOf(rp)), ROUND,
+    `ДРУГЕ коло теж списало ${ROUND} золота, а не 0 — ось це й проходило мовчки`);
+  eq((await players.progressOf(null, rp)).upgrades.atk, POINTS, 'і очки на місці');
+
+  // Той самий факт з боку ledger: ключі різні, тож списань шість, а не три.
+  // Гілка replay не пише рядка взагалі, тож повторений ключ видно тут одразу.
+  const upgRows = Number((await pool().query(
+    `SELECT count(*)::int n FROM ledger WHERE player_id = $1 AND reason = 'upgrade'`,
+    [rp])).rows[0].n);
+  eq(upgRows, POINTS * 2, `у ledger ${POINTS * 2} списань за покращення, а не ${POINTS}`);
+  eq((await pool().query(
+    'SELECT upg_epoch FROM player_progress WHERE player_id = $1', [rp])).rows[0].upg_epoch, 1,
+  'скидання підняло upg_epoch — саме він робить ключі другого кола іншими');
+
+  // Ключ мусить бути ОДНАКОВИЙ у двох спробах ОДНІЄЇ покупки: txRetry повторює
+  // весь обробник після відкату, і ключ, що залежить від часу чи випадковості,
+  // повтор не впізнає — тобто захисту немає взагалі (див. «bad» у
+  // repos/money.js). Відкочена спроба не лишає ні золота, ні очка, ні ключа.
+  await pool().query('UPDATE player_progress SET bonus_sp = bonus_sp + 1 WHERE player_id = $1', [rp]);
+  const g2 = await gOf(rp);
+  let rolled = null;
+  await tx(async t => {
+    rolled = await players.spendUpgrade(t, rp, 'def');
+    throw new Error('відкат');
+  }).catch(() => {});
+  // Спершу — що відкочувати БУЛО що: без цього три перевірки нижче однаково
+  // проходять і на відмові, і на успіху, тобто не перевіряють нічого.
+  ok(rolled !== null, 'усередині транзакції покупка сама по собі пройшла');
+  eq(await gOf(rp), g2, 'відкочена спроба золота не списала');
+  eq((await players.progressOf(null, rp)).upgrades.def, 0, 'і очка не видала');
+  ok(await tx(t => players.spendUpgrade(t, rp, 'def')) !== null,
+    'повтор тієї самої покупки проходить — ключ не «згорів» на відкоченій спробі');
+  eq(g2 - (await gOf(rp)), upgradeCost(0), 'і списав рівно один раз');
+
+  // ── скидання не має ані знищувати очки, ані друкувати їх ──────────────────
+  // kept_sp — поле «Перерождения», фічі, яку замінило Посилення (довга нотатка
+  // «Legacy records» у shared/definitions.js). Воно віднімається з ОБОХ боків
+  // суми в availableSkillPoints: перенесена трата не рахується проти гравця,
+  // але й кривая рівня, яка її покриває, не рахується за нього. Тобто ємність
+  // акаунта — це bonusSP + max(skillPointBudget(lvl), keptSP).
+  //
+  // Старий resetUpgrades ставив kept_sp = 0 разом із сімома колонками. Поки
+  // kept ≤ budget це те саме число і не втрачалось нічого — але легась-запис,
+  // яка ще не перелевелилась назад, має kept > budget, і різниця зникала
+  // назавжди. За 200 Liberty, які гравець сам за це й заплатив.
+  console.log('  ── kept_sp легась-акаунта ──');
+  const capOf = async pid => {
+    // Ємність = вкладено + доступно, обидва доданки через ті самі спільні
+    // функції, якими рахує панель клієнта. Рахувати її тут своєю формулою
+    // означало б перевіряти дві реалізації одна проти одної.
+    const pr = await players.progressOf(null, pid);
+    return spentSkillPoints(pr.upgrades) + availableSkillPoints(pr);
+  };
+
+  const lg = await mk('legacy');
+  await pool().query(`
+    UPDATE player_progress
+       SET lvl = 1, bonus_sp = 15, kept_sp = 30, upg_atk = 30
+     WHERE player_id = $1`, [lg]);
+  await money.credit(null, lg, 'nexum', UPGRADE_RESET_COST, { reason: 'seed', idemKey: `${TAG}:lg-nx` });
+  const capLg = await capOf(lg);
+  eq(capLg, 45, 'до скидання ємність — bonusSP 15 + kept 30 = 45 очок');
+
+  const lgReset = await tx(t => players.resetUpgrades(t, lg, UPGRADE_RESET_COST));
+  eq(lgReset.keptSP, 0, 'зобовʼязання «Перерождения» закрите');
+  eq(await capOf(lg), capLg, 'а ЄМНІСТЬ та сама — 27 очок більше не зникають');
+  eq(lgReset.bonusSP, 15 + (30 - skillPointBudget(1)),
+    'непокрита кривою частина kept (30 − 3) переїхала в bonus_sp');
+
+  // Зворотний бік того самого правила. Коли кривая рівня вже покрила kept,
+  // втрачати нічого — і додавати теж. Наївне `bonus_sp = bonus_sp + kept_sp`
+  // видало б тут 30 очок з повітря: той самий клас помилки, що й безкоштовні
+  // покращення вище, лише в інший бік, і ledger його теж не побачить — очки
+  // навичок у ньому не лежать.
+  const lg2 = await mk('legacy2');
+  await pool().query(`
+    UPDATE player_progress
+       SET lvl = 20, bonus_sp = 15, kept_sp = 30, upg_atk = 30
+     WHERE player_id = $1`, [lg2]);
+  await money.credit(null, lg2, 'nexum', UPGRADE_RESET_COST, { reason: 'seed', idemKey: `${TAG}:lg2-nx` });
+  const capLg2 = await capOf(lg2);
+  eq(capLg2, 15 + skillPointBudget(20), 'кривая 20-го рівня вже покриває kept 30 — ємність 75');
+
+  const lg2Reset = await tx(t => players.resetUpgrades(t, lg2, UPGRADE_RESET_COST));
+  eq(await capOf(lg2), capLg2, 'ємність та сама — скидання не створює очок з повітря');
+  eq(lg2Reset.bonusSP, 15, 'bonus_sp не виріс: кривая цей kept уже оплатила');
+
+  // Два скидання підряд — два різні ключі, тож друге теж коштує Liberty.
+  // З randomUUID у ключі це проходило, але з тієї ж причини не пережило б
+  // повтору txRetry; з епохою вірні обидві властивості одразу.
+  await money.credit(null, lg2, 'nexum', UPGRADE_RESET_COST, { reason: 'seed', idemKey: `${TAG}:lg2-nx2` });
+  await money.credit(null, lg2, 'gold', upgradeCost(0), { reason: 'seed', idemKey: `${TAG}:lg2-g` });
+  ok(await tx(t => players.spendUpgrade(t, lg2, 'def')) !== null, 'куплено очко для другого скидання');
+  await tx(t => players.resetUpgrades(t, lg2, UPGRADE_RESET_COST));
+  eq((await money.balancesOf(null, lg2)).nexum, 0, 'друге скидання теж списало Liberty');
 }
 
 async function cleanup() {

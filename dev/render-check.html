@@ -569,9 +569,174 @@ async function run() {
   // checks first made that check flake at 6.2 against a limit of 6.
   await walletChecks(w);
 
+  // ПОСЛЕДНИМИ: этот блок подменяет window.io заглушкой, и всё, что шло бы
+  // после него, работало бы с ней, а не с настоящим сокетом.
+  await deployChecks(w);
+
   ok((w.__rcErrors || []).length === 0, 'ни одной ошибки за весь прогон', (w.__rcErrors || []).slice(0, 5).join(' | '));
 
   finish(w);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Что видит игрок в момент выката обновления
+// ═══════════════════════════════════════════════════════════════════════════
+// Вопрос владельца дословно: «при загрузці оновлення всіх буде викидувати».
+// Выбрасывает — и это правильно: старый клиент против нового сервера хуже.
+// Плохо было другое, и обе половины проверяются здесь.
+//
+// ── половина первая: игроку не говорили НИЧЕГО ─────────────────────────────
+// showAuthError писал «Нет соединения с сервером» в #auth-error, который лежит
+// внутри #login-screen — а тот скрыт через 420 мс после входа. То есть весь
+// текст об обрыве уходил в невидимый элемент. Через 4 секунды _scheduleWorldWipe
+// вычищал монстров, других игроков и прятал кнопки, и человек стоял на пустой
+// карте без единой надписи. От сломавшейся игры это неотличимо.
+//
+// ── половина вторая: каждый входил ДВАЖДЫ ──────────────────────────────────
+// На переподключении onReady() слал логин безусловно, а serverBuild приходил
+// следом и планировал перезагрузку. Логин никто не отменял, поэтому каждый
+// игрок делал полный вход (около пятнадцати последовательных запросов к базе),
+// выбрасывал страницу и делал его заново — тридцать вместо пятнадцати, в тот
+// самый момент, когда переподключаются все сразу, на пуле из двенадцати
+// соединений.
+//
+// Заглушка io ставится ДО netConnect, поэтому проверяется настоящий
+// netConnect настоящей сборки, а не его пересказ.
+const NET_SETUP = `
+window.__rcNet = { h: {}, logins: 0, swallowed: 0 };
+window.io = function () {
+  var s = { connected: false, id: 'rc-net',
+    io: { engine: { transport: { name: 'stub' } }, reconnection: function () {} },
+    on: function (n, f) { (__rcNet.h[n] = __rcNet.h[n] || []).push(f); return s; },
+    once: function () { return s; }, off: function () { return s; },
+    onAny: function () { return s; }, emit: function () { return s; },
+    connect: function () { return s; }, disconnect: function () { return s; } };
+  return s;
+};
+window.__rcFire = function (n, p) { (__rcNet.h[n] || []).forEach(function (f) { f(p); }); };
+// Глотает таймеры, заведённые за ОДИН синхронный вызов. Нужно только вокруг
+// расхождения сборок: его location.reload() через 900 мс унёс бы весь прогон,
+// а подменить location.reload нельзя — члены Location неперезаписываемы.
+window.__rcNoTimers = function (fn) {
+  var real = window.setTimeout;
+  window.setTimeout = function () { __rcNet.swallowed++; return 0; };
+  try { fn(); } finally { window.setTimeout = real; }
+};
+window.__rcNotice = function () {
+  var d = document.getElementById('build-reload');
+  if (!d) return null;
+  var cs = getComputedStyle(d), r = d.getBoundingClientRect();
+  return { text: d.textContent, inLogin: !!d.closest('#login-screen'),
+           pe: cs.pointerEvents, display: cs.display, h: r.height };
+};
+window.__rcReset = function () {
+  __rcNet.h = {}; __rcNet.logins = 0; __rcNet.swallowed = 0;
+  try { sessionStorage.removeItem('__buildReload'); } catch (e) {}
+  var d = document.getElementById('build-reload'); if (d) d.remove();
+};
+window.__BUILD__ = 'BUILD_AAA';`;
+
+async function deployChecks(w) {
+  const N = () => w.__rcNet;
+  const notice = () => { inject(w, 'window.__rcN = __rcNotice();'); return w.__rcN; };
+
+  inject(w, NET_SETUP);
+
+  // ── ПОРЯДОК ЗДЕСЬ ЗНАЧИМ, и это не стиль ────────────────────────────────
+  // Два состояния клиента ЗАЩЁЛКИВАЮТСЯ и не снимаются никогда — намеренно, и
+  // оба по одной причине: после них страница уже приговорена к перезагрузке.
+  //
+  //   _buildMismatch      — после него _gateLogin выходит сразу, и НИ ОДИН
+  //                         последующий netConnect не логинится;
+  //   _netNoticeLatched   — после него _netNotice() выходит сразу, и никакой
+  //                         баннер об обрыве больше не появится.
+  //
+  // Оба — модульные `let` внутри одной области видимости сборки, снаружи их
+  // не достать и не сбросить: __rcReset чистит обработчики и DOM, но не их.
+  // Поэтому сценарий с ЧУЖОЙ сборкой идёт последним. В первом заходе он стоял
+  // третьим и утащил за собой четыре проверки ниже — они падали не потому, что
+  // код неправ, а потому, что до них клиент был уже мёртв.
+  head('выкат — вход ровно один раз, а не два');
+  inject(w, '__rcReset(); netConnect(function () { __rcNet.logins++; }); __rcFire("connect");');
+  ok(N().logins === 0, 'connect сам по себе НЕ логинит — ждёт serverBuild',
+     `логинов ${N().logins}: на переподключении это второй полный вход, ~15 запросов к базе`);
+  inject(w, '__rcFire("serverBuild", { build: "BUILD_AAA" });');
+  ok(N().logins === 1, 'своя сборка отпускает вход сразу и ровно один раз', `логинов ${N().logins}`);
+
+  // Потерянный serverBuild не должен запирать никого: калитка со сроком.
+  inject(w, '__rcReset(); netConnect(function () { __rcNet.logins++; }); __rcFire("connect");');
+  const gateBefore = N().logins;
+  await new Promise(r => setTimeout(r, 1400));
+  ok(gateBefore === 0 && N().logins === 1,
+     'потерянный serverBuild не запирает игрока — вход уходит по сроку',
+     `было ${gateBefore}, стало ${N().logins}`);
+
+  // Обратная сторона: «перезагрузка не помогла» обязана ОТПУСТИТЬ вход, иначе
+  // такой игрок заперт на сплэше навсегда — хуже, чем лишний вход.
+  inject(w, '__rcReset(); sessionStorage.setItem("__buildReload", "BUILD_BBB");'
+    + 'netConnect(function () { __rcNet.logins++; });'
+    + '__rcFire("connect"); __rcNoTimers(function () { __rcFire("serverBuild", { build: "BUILD_BBB" }); });');
+  ok(N().logins === 1 && N().swallowed === 0,
+     'после неудавшейся перезагрузки вход пропускается, и второй раз не перезагружаемся',
+     `логинов ${N().logins}, таймеров ${N().swallowed} — игрок заперт на сплэше`);
+
+  head('выкат — игроку говорят, что происходит');
+  // В игру: сплэш прячется через 420 мс после authOk, и ровно с этого момента
+  // #auth-error перестаёт быть местом, где текст кто-то увидит.
+  inject(w, '__rcReset(); netConnect(function () {}); __rcFire("connect");'
+    + '__rcFire("serverBuild", { build: "BUILD_AAA" });'
+    + 'document.getElementById("login-screen").style.display = "none";');
+
+  inject(w, '__rcFire("disconnect", "transport close");');
+  ok(notice() === null, 'мгновенная моргалка сети не показывает ничего');
+
+  // Ждём появления, но не дольше вычистки мира: сообщение обязано успеть
+  // ПЕРЕД тем, как с карты пропадут монстры и другие игроки.
+  let seenAt = -1;
+  for (let i = 0; i < 39; i++) {
+    await new Promise(r => setTimeout(r, 100));
+    if (notice()) { seenAt = (i + 1) * 100; break; }
+  }
+  ok(seenAt >= 0, `надпись об обрыве появилась через ${seenAt} мс`,
+     'не появилась вовсе — игрок стоит на пустой карте без единого слова');
+  ok(seenAt >= 0 && seenAt < 4000,
+     'и успела ДО того, как мир опустеет (_WORLD_WIPE_AFTER_MS = 4000)');
+  const n = notice();
+  if (n) {
+    ok(!n.inLogin, 'она НЕ внутри #login-screen — то есть видна играющему',
+       'написана в скрытый элемент: ровно то, что было');
+    ok(n.display !== 'none' && n.h > 0, `и действительно отрисована (${n.h}px)`);
+    ok(n.pe === 'none', 'pointer-events:none — застрявшая полоса не съест нажатие');
+    ok(/Нет соединения/.test(n.text), 'текст — строка noServerConn', n.text);
+  }
+
+  // Из i18n, а не зашитая строка: игра на шести языках.
+  inject(w, 'setLang("en"); var _d = document.getElementById("build-reload");'
+    + 'if (_d) _d.remove(); __rcFire("disconnect", "transport close");');
+  await new Promise(r => setTimeout(r, 2200));
+  const en = notice();
+  ok(en && /No connection/i.test(en.text), 'и она переведена, а не зашита по-русски',
+     en ? en.text : 'надписи нет');
+  inject(w, 'setLang("ru");');
+
+  inject(w, '__rcFire("connect");');
+  ok(notice() === null, 'переподключение убирает её — она не остаётся поверх игры навсегда');
+
+  // Выгнали с другого устройства — это другой разговор, и «нет соединения»
+  // поверх него было бы враньём.
+  inject(w, '__rcFire("kicked", { code: "another_device" }); __rcFire("disconnect", "io server disconnect");');
+  await new Promise(r => setTimeout(r, 1800));
+  ok(notice() === null, 'выгнанному не говорят «нет соединения» поверх «вы вошли с другого устройства»');
+
+  // ── ПОСЛЕДНИМ: защёлкивает и _buildMismatch, и _netNoticeLatched ─────────
+  head('выкат — чужая сборка не логинится, а перезагружается');
+  inject(w, '__rcReset(); netConnect(function () { __rcNet.logins++; }); __rcFire("connect");'
+    + '__rcNoTimers(function () { __rcFire("serverBuild", { build: "BUILD_BBB" }); });');
+  ok(N().logins === 0, 'чужая сборка не логинит вовсе — страницу всё равно выбросят',
+     `логинов ${N().logins} — это и есть второй вход на каждого игрока при выкате`);
+  ok(N().swallowed === 1, 'и перезагрузка при этом всё-таки назначена');
+  inject(w, '__rcNet.logins = 0; __rcFire("connect"); __rcFire("connect");');
+  ok(N().logins === 0, 'переподключения до перезагрузки тоже не логинят', `логинов ${N().logins}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

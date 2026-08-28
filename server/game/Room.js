@@ -14,8 +14,34 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
 // a retuned passive can't leave a stale number here (recompute(), js/player.js,
 // applies exactly these two factors and nothing else — items and buffs do not
 // touch speed).
-const _MOVE_SPEED_CAP = Math.max(...Object.values(CHAR_DEF).map(c => c.speed || 0)) *
+const _MOVE_SPEED_MAX = Math.max(...Object.values(CHAR_DEF).map(c => c.speed || 0)) *
   (1 + PASSIVE_MAX_LEVEL * ((PASSIVE_COMMON_DEF.find(p => p.stat === 'moveSpeedPct') || {}).perLevel || 0));
+// ...and the rate the bucket below actually refills at, which is deliberately
+// a little faster than that.
+//
+// The number above is a fact about the GAME. This is a fact about the
+// MEASUREMENT, and they are not the same number. The client moves for its own
+// elapsed frame time and sends at 30Hz; the server can only time packet
+// ARRIVALS. Any millisecond of one-way delay a packet saves relative to the
+// one before it is a millisecond of refill the bucket never gets, for travel
+// the client really did make. Over a long run that averages out — but the
+// bucket is clamped to zero on an overdraft, so whatever surplus had
+// accumulated is thrown away each time one lands, and a player at EXACTLY the
+// cap (Егерь at 175 with "Быстрые ноги" maxed) has no surplus to accumulate in
+// the first place. Charged against the bare cap, that player would overdraw on
+// roughly every packet that happened to arrive early once anything drained the
+// bucket — a teleport pad, a respawn, a floor change — which is five strikes
+// inside a second and, in enforce mode, a permanent rubber-band on somebody
+// playing the game correctly. That is the one false positive this design can
+// actually produce, and it comes from charging a measured quantity against an
+// exact one rather than from the rule being wrong.
+//
+// 20% is far below the smallest speedhack anyone bothers to write (the ones
+// that get reported are 2x and up, and they drain a full bucket in seconds at
+// either figure) and comfortably above the arrival jitter a mobile link
+// produces at 30Hz.
+const _MOVE_JITTER_TOLERANCE = 1.20;
+const _MOVE_SPEED_CAP = _MOVE_SPEED_MAX * _MOVE_JITTER_TOLERANCE;
 // How much unspent travel the bucket below may hold, in seconds of movement at
 // that cap. This is the whole tolerance budget: a teleport, a respawn, a floor
 // change or a lag spike that coalesces several seconds of running into one
@@ -26,21 +52,89 @@ const _MOVE_BUCKET_S = 6;
 // a teleport is that a teleport happens ONCE and then the bucket refills,
 // while sustained speeding overdraws on packet after packet. So nothing is
 // reported or refused until _MOVE_STRIKES overdrafts land inside
-// _MOVE_STRIKE_WINDOW_MS of each other. At 20 move packets a second a client
+// _MOVE_STRIKE_WINDOW_MS of each other. At 30 move packets a second a client
 // running at even 1.5x speed reaches that in well under a second; five
 // teleports inside three seconds is not something normal play produces (the
 // pads are far apart and trigger within 26px).
+// (This said "20 move packets a second". It was never 20: netSendMove's
+// _MOVE_SEND_MS is 25ms and its own comment records the measurement — "at 25ms
+// both 30fps and 60fps devices land on 30Hz". The conclusion is unchanged and
+// the margin is bigger than it claimed, but a stale number in a comment about
+// timing is exactly the kind that gets reasoned from later.)
 const _MOVE_STRIKES = 5;
 const _MOVE_STRIKE_WINDOW_MS = 3000;
 // off      — no accounting at all.
-// log      — accounts and reports, never refuses a move (default).
+// log      — accounts and reports, never refuses a move.
 // enforce  — also refuses moves once the bucket is empty, and corrects the
-//            client back to the last position the server accepted.
+//            client back to the last position the server accepted (default).
+//
+// The default was 'log', for a staged rollout — and staying in the first stage
+// is all it ever did. Nothing in this repository sets MOVE_GUARD and neither
+// does the droplet's /srv/liberty/env, so every deploy since has shipped a
+// guard that measures a teleport, writes one line every thirty seconds and
+// then applies the move anyway. Teleporting to anywhere on the current floor
+// — onto the guild-war tower, onto the world boss, out of the arena, past a
+// corridor gate — and sustained speedhacking both worked in production for the
+// whole of that rollout.
+//
+// Flipping the default is what the rollout was for. 'log' is still one
+// environment variable and a restart away, so a bad afternoon does not need a
+// deploy to undo. What makes it safe to flip is _MOVE_JITTER_TOLERANCE above:
+// the single false positive this design can produce was a maxed-speed Егерь
+// being charged a measured distance against an exact speed, and that is now
+// paid for explicitly rather than out of the player's bucket.
 const _MOVE_GUARD = ['off', 'log', 'enforce'].includes(process.env.MOVE_GUARD)
-  ? process.env.MOVE_GUARD : 'log';
+  ? process.env.MOVE_GUARD : 'enforce';
 // Per-player, so one player flooding the log can't hide everyone else.
 const _MOVE_LOG_EVERY_MS = 30000;
 const { encodeGameState, packGrid } = require('../../shared/netcodec');
+
+// ── CHAR_DEF, looked up by a string that came off the wire ──────────────────
+// Object.hasOwn, not `CHAR_DEF[type]`. This is the same class of mistake
+// PREF_FIELDS and UPG_COL already spell out (server/db/repos/players.js:513
+// and :617): CHAR_DEF is a plain object literal (shared/definitions.js), so it
+// inherits from Object.prototype, and 'constructor', '__proto__', 'toString',
+// 'valueOf' and 'hasOwnProperty' every one of them return something TRUTHY
+// that is not a class definition. `Object.hasOwn(CHAR_DEF, 'constructor')` is
+// false; `CHAR_DEF['constructor']` is the Object constructor. JSON.parse
+// produces '__proto__' as an own key, so a client can send exactly this.
+//
+// Where PREF_FIELDS crashed, this went quiet, which is worse. cd.baseHP on a
+// function is undefined, so maxHp/atk/def came out NaN — and NaN is
+// ABSORBING and never throws. Every damage path is `Math.max(0, hp - dmg)`,
+// which stays NaN, and `NaN <= 0` is FALSE, so the player simply never dies.
+// Their atk is NaN too, so the first enemy they hit gets `enemy.hp = NaN` and
+// becomes permanently unkillable by EVERYONE — one packet takes the world
+// boss, or the guild-war tower, out of the game for the entire server.
+function _charDef(type) {
+  return Object.hasOwn(CHAR_DEF, type) ? CHAR_DEF[type] : null;
+}
+
+// ── the last gate before computed stats enter a live player record ──────────
+// _charDef above closes the route that produced NaN. This refuses the RESULT,
+// because the property that made that bug so expensive is not specific to it:
+// a non-finite stat does not throw, does not log, and compares false against
+// everything it is ever tested against — including the `hp <= 0` that decides
+// whether a player is dead. So it is invisible until somebody reports being
+// unable to die, and by then it has spread to every enemy they touched.
+//
+// One finite check at the point stats are ASSIGNED makes the whole class of
+// bug unrepresentable, whatever future route produces it: a retired class left
+// in an old save, a nullable column a migration forgot, an arithmetic change
+// upstream. Refusing is logged rather than swallowed — a stat write that
+// silently does nothing is the same kind of invisible.
+const _STAT_KEYS = ['atk', 'def', 'maxHp', 'critChance', 'critPower'];
+function _statsFinite(s, who, where) {
+  for (const k of _STAT_KEYS) {
+    if (!Number.isFinite(s[k])) {
+      console.warn(`[stats] ${where}: refusing ${k}=${s[k]} for ${who} — a non-finite stat ` +
+        'is absorbing (NaN hp never satisfies hp<=0), so this would make the player ' +
+        'immortal and every enemy they hit unkillable');
+      return false;
+    }
+  }
+  return true;
+}
 
 // Replicates client recompute() formula — single source of truth for server
 // stats. Must stay step-for-step identical to recompute() (js/player.js) for
@@ -178,6 +272,16 @@ const SKILL_BURST_MS = 150;
 // Upper bound on how many enemies one crowd-control packet may name (see
 // applySkillEffectMany).
 const MAX_CC_TARGETS = 64;
+// How many enemies ONE primary swing's "Безумие" splash may reach (see
+// attackEnemy). The skill fires one splash packet per enemy standing within
+// 90px of the enemy the swing itself hit (the melee branch of js/player.js),
+// so the honest ceiling is "how many monster bodies fit inside a 90px circle"
+// — a handful, even in Элитная фарм-зона where they spawn in packs of four.
+// 16 is far above anything the radius can actually hold and still bounds what
+// a single swing is worth. It is a bound on DISTINCT enemies: attackEnemy also
+// refuses a second splash on an enemy this swing already splashed, so 16 can
+// never become 16 half-hits stacked on one monster.
+const MAX_SPLASH_PER_SWING = 16;
 // How far a crowd-control effect may reach. A little more generous than the
 // 350 a basic hit gets, because several skills are area effects centred away
 // from the caster — but bounded, which it was not at all.
@@ -2770,6 +2874,45 @@ class Room {
     return skillDamageMult(p.type || sd.type, key, adv, lvl, skillPct);
   }
 
+  // May this player's basic hits splash at all?
+  //
+  // "Безумие" is the ADVANCED variant of the deathknight's E slot — a class,
+  // a studied slot and a book, all three bought. Nothing asked for any of
+  // them: the 'attack' handler read `splash: true` off the wire and the only
+  // thing between a level-one mage and it was the 200ms window in
+  // attackEnemy. `socket.emit('attack', { enemyId, splash: true })` was a
+  // free half-damage hit for every class in the game, and — with no count
+  // bound either — as many of them per swing as the socket limiter allowed.
+  //
+  // This cannot go through _skillMultFor: E's row in SKILL_DMG_MULT is
+  // { base: null, adv: null } (both variants are ATK buffs, they deal no
+  // direct damage of their own), so that function correctly returns 0 for it
+  // and 0 means "refuse" everywhere else. The three sources are the same ones
+  // it reads, though — the levels and flags repos/stats.js pushed down through
+  // setPlayerStats, never anything the packet claims.
+  //
+  // What is deliberately NOT checked is whether the 5-second buff is actually
+  // RUNNING. madnessTimer lives only in the client (js/state.js) and no cast
+  // event for it reaches the server at all, so the server has no way to know.
+  // The residue is that a deathknight who has genuinely bought and switched on
+  // the skill can splash while it is off cooldown-but-not-active; that is one
+  // extra half-damage hit per swing for one class, a different order of thing
+  // from the ~22x multiplier any class could take before.
+  _canSplash(p) {
+    const sd = p._sd || {};
+    if ((p.type || sd.type) !== 'deathknight') return false;
+    // studySkill writes level 1, so zero means unstudied and nothing else —
+    // same reading as _skillMultFor above.
+    const levels = p._skillLevels || sd.skillLevels || {};
+    if ((Math.floor(Number(levels.E)) || 0) <= 0) return false;
+    // Learned is the one-time book spend, active is the free toggle on top of
+    // it — both, exactly like _advActive() in js/player.js, so a stale toggle
+    // on an unlearned slot can't stand in for the book.
+    const learned = p._advLearned || sd.advSkillLearned || {};
+    const active = p._advActive || sd.advSkillActive || {};
+    return !!(learned.E && active.E);
+  }
+
   pvpSkillAttack(attackerSocketId, targetSocketId, key) {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
@@ -2829,13 +2972,22 @@ class Room {
   setPlayerChar(socketId, type, savedStats = null) {
     const p = this.players.get(socketId);
     if (!p) return;
-    const cd = CHAR_DEF[type];
+    // See _charDef: `CHAR_DEF[type]` was truthy for 'constructor', '__proto__'
+    // and every other Object.prototype key, and the NaN stats that came back
+    // made the sender immortal and everything they hit unkillable.
+    const cd = _charDef(type);
     if (!cd) return;
+    // Computed BEFORE anything is written. computeStats reads baseAtk/baseDef/
+    // baseMaxHp, upgrades and equipment straight out of the save blob, so it
+    // has its own routes to a non-finite result that have nothing to do with
+    // the class lookup above — and a half-applied class (type switched, stats
+    // refused) would be a worse state to leave a player in than either.
+    const s = savedStats ? computeStats(savedStats, cd, type, p.clanAtkBonus) : null;
+    if (s && !_statsFinite(s, p.username || socketId, `setPlayerChar(${type})`)) return;
     p.type = type;
     p.pvpMode = false;
     p._profileRev++;
-    if (savedStats) {
-      const s = computeStats(savedStats, cd, type, p.clanAtkBonus);
+    if (s) {
       p.atk        = s.atk;
       p.def        = s.def;
       p.maxHp      = s.maxHp;
@@ -2847,7 +2999,14 @@ class Room {
       // tab getting suspended mid-session, a network blip) while dead, or
       // logged back in having quit during the death screen, resumed at full
       // HP with no death ever recorded.
-      p.hp    = (savedStats.hp != null) ? Math.max(0, Math.min(savedStats.hp, p.maxHp)) : p.maxHp;
+      //
+      // isFinite rather than `!= null` for the OTHER half of that: 0 still
+      // passes (it is a number, and the paragraph above is why that matters),
+      // but a NaN in the saved hp used to survive Math.min/Math.max untouched
+      // and land in the record as the player's current health — immortality by
+      // the same absorbing-NaN route _statsFinite exists to close, arriving
+      // through the save blob instead of through the class table.
+      p.hp    = Number.isFinite(savedStats.hp) ? Math.max(0, Math.min(savedStats.hp, p.maxHp)) : p.maxHp;
       p.lvl   = savedStats.lvl || 1;
       // Kept fresh via updatePlayerSavedData() (called on every saveProgress)
       // so statsUpdate can always re-derive a true base from up-to-date
@@ -3024,23 +3183,34 @@ class Room {
     p._mvStrikes = (now - (p._mvStrikeAt || 0) <= _MOVE_STRIKE_WINDOW_MS) ? (p._mvStrikes || 0) + 1 : 1;
     p._mvStrikeAt = now;
     if (p._mvStrikes < _MOVE_STRIKES) return true;   // a teleport, or a lag burst
+    const refusing = _MOVE_GUARD === 'enforce';
+    // Counted BEFORE the log throttle, so the one line that does get printed
+    // says how many refusals it stands for. Now that enforce is the default,
+    // a refusal is the server pulling a real player backwards, and the
+    // throttle means twenty-nine seconds out of every thirty of that leave no
+    // trace at all — which would make the only evidence of a false positive
+    // the player complaining about it. _wallRefusals, the other refusal on
+    // this path, is counted the same way.
+    if (refusing) p._mvRefused = (p._mvRefused || 0) + 1;
     if (now - (p._mvWarnAt || 0) >= _MOVE_LOG_EVERY_MS) {
       p._mvWarnAt = now;
       console.warn(`[move] ${p.username || socketId}: ${p._mvStrikes} overdrafts in ` +
         `${_MOVE_STRIKE_WINDOW_MS}ms, last ${Math.round(travelled)}px in ${Math.round(elapsed * 1000)}ms ` +
         `(cap ${Math.round(_MOVE_SPEED_CAP)}px/s) — ` +
-        `${_MOVE_GUARD === 'enforce' ? 'refusing' : 'allowed, MOVE_GUARD=log'}`);
+        `${refusing ? `refusing (${p._mvRefused} this session)` : 'allowed, MOVE_GUARD=log'}`);
     }
-    if (_MOVE_GUARD !== 'enforce') return true;
+    if (!refusing) return true;
     // Refusing alone would leave the client believing it is somewhere the
     // server will never agree with — it renders its own position locally and
     // gameState only carries OTHER players — so it has to be told where it
     // actually is, or a false positive strands it permanently.
     //
-    // Throttled: refusals arrive at the client's own send rate (20/s), and
-    // answering every one of them would put a steady 20 packets a second on
-    // the wire for as long as the player keeps trying. Four a second re-anchors
-    // them just as fast as they can act on it.
+    // Throttled: refusals arrive at the client's own send rate (30/s — this
+    // said 20/s, from the same stale figure corrected at _MOVE_STRIKES above;
+    // netSendMove's own measurement is 30Hz), and answering every one of them
+    // would put a steady 30 packets a second on the wire for as long as the
+    // player keeps trying. Four a second re-anchors them just as fast as they
+    // can act on it.
     if (now - (p._mvCorrectAt || 0) >= 250) {
       p._mvCorrectAt = now;
       this.io.to(socketId).emit('posCorrect', { x: p.x, y: p.y });
@@ -3405,6 +3575,18 @@ class Room {
   setPlayerStats(socketId, st) {
     const p = this.players.get(socketId);
     if (!p || !st) return;
+    // Nothing is clamped, but everything is required to be a NUMBER. This is
+    // the other door computed stats come through (setPlayerChar is the first),
+    // and both of its callers derive `st` from a class table looked up by a
+    // stored char_class — repos/stats.js's compute(), and Session.moveRoom
+    // copying a record that came from it. A row whose class does not resolve
+    // used to hand back NaN here, and a NaN atk/def is not a small stat: it
+    // makes the player unkillable and poisons the hp of every enemy they hit,
+    // for everyone, permanently. See _statsFinite. Refusing the whole block is
+    // right rather than fixing up fields: a partially-NaN stat set means the
+    // computation upstream is wrong, and the player's previous, known-good
+    // numbers are a better answer than half of a broken one.
+    if (!_statsFinite(st, p.username || socketId, 'setPlayerStats')) return;
     // The level rides along because the room is where anything synchronous
     // asks for it — the event modes gate entry on it, and reading it from the
     // database inside a "may I register" check would make the check async for
@@ -3488,7 +3670,15 @@ class Room {
   publicProfile(socketId) {
     const p = this.players.get(socketId);
     if (!p) return null;
-    const cd = CHAR_DEF[p.type] || {};
+    // _charDef, for the same reason setPlayerChar uses it. setPlayerChar is
+    // the only writer of p.type and now refuses anything that is not a real
+    // class, so this is defence in depth rather than a live hole — but the
+    // fallback here is `|| {}`, which is genuinely safe, and the direct lookup
+    // was not: `CHAR_DEF['constructor']` is the Object constructor, whose
+    // `.name` is the string 'Object', so a profile opened on such a player
+    // would have shown their class as "Object" instead of falling back to
+    // p.type. One lookup, one rule.
+    const cd = _charDef(p.type) || {};
     const sd = p._sd || {};
     const stats = computeStats(sd, cd, p.type, p.clanAtkBonus);
     const equipment = {};
@@ -3532,14 +3722,61 @@ class Room {
       // — bounded by how often those land (still floored at 150ms below),
       // not by its own independent clock a modified client could hammer on
       // its own to bypass that floor.
+      //
+      // The window is the whole of WHEN a splash hit may land, and it was
+      // also, wrongly, the whole of the check. Two things it never asked are
+      // asked now: WHO may splash (right below — the flag was open to every
+      // class at every level) and HOW MANY (past the enemy lookup — the
+      // window is not a count, and unbounded hits fit inside it).
       if (now - (attacker._lastAtk || 0) > 200) return null;
+      if (!this._canSplash(attacker)) return null;
     } else {
       // Rate-limit: max one server hit every 150ms
       if (now - (attacker._lastAtk || 0) < 150) return null;
       attacker._lastAtk = now;
+      // A real swing opens a fresh splash budget for the window it starts —
+      // see the block under the enemy lookup for what that budget is and why.
+      // The set is cleared rather than reallocated: this runs up to 6.7 times
+      // a second for every attacking player in the room.
+      if (attacker._splashHit) attacker._splashHit.clear();
+      else attacker._splashHit = new Set();
+      attacker._splashN = 0;
     }
     const enemy = this._enemyMap.get(enemyId); // O(1) Map lookup
     if (!enemy || enemy.hp <= 0) return null;
+    // ── how many splash hits one swing is worth ──────────────────────────────
+    // A splash hit never touched attacker._lastAtk, so nothing re-armed after
+    // one: EVERY splash packet sent inside the 200ms after a real swing was
+    // accepted, against the same monster, as fast as the socket would carry
+    // them. 'attack' sits in the FAST rate-limit bucket (1500 per 5s, see
+    // server/app.js), and a splash lands at 50% damage — ~150 full-hit-
+    // equivalents a second against one enemy where the 150ms floor above
+    // allows 6.7. Every kill pays through consumables.grantKillReward, so that
+    // was a ~22x multiplier on gold, xp, loot rolls, Liberty and GRAM drops,
+    // and it won every contested kill there is: the guild-war tower, the
+    // race10 boss, the world boss.
+    //
+    // The real skill's own shape is the bound. It deals ONE half-damage hit
+    // per NEARBY enemy per swing, and never to the enemy the swing itself hit
+    // — js/player.js skips `e.id === pa.id` — so the swing carries the set of
+    // enemies it has already paid out to, seeded with its own primary target.
+    // A splash naming an enemy already in that set is refused, and so is one
+    // arriving after MAX_SPLASH_PER_SWING distinct enemies have been reached.
+    // Single-target damage is therefore exactly one swing's worth again, and
+    // the legitimate case is untouched: the enemies in a real splash burst are
+    // distinct by construction, and there are never sixteen of them.
+    //
+    // Keyed on enemy.id, not on the raw packet field: _enemyMap answers only
+    // for its own exact key, so this is the id the room itself uses and a
+    // client cannot buy a second slot for the same monster by sending '5'
+    // where it already spent 5.
+    const swing = attacker._splashHit || (attacker._splashHit = new Set());
+    if (splash) {
+      if ((attacker._splashN || 0) >= MAX_SPLASH_PER_SWING) return null;
+      if (swing.has(enemy.id)) return null;
+      attacker._splashN = (attacker._splashN || 0) + 1;
+    }
+    swing.add(enemy.id);
     // Instance isolation, as a RULE rather than as a consequence of the map.
     // A corridor monster belongs to exactly one Tower lane (and a Fear
     // monster to one hall), and until now nothing said so on the damage path

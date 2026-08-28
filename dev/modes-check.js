@@ -321,6 +321,120 @@ async function main() {
   const farm = await once(a.sock, 'farm2State');
   ok(farm && Number.isFinite(farm.dailyMinutes), `Елітна ферма відповідає (${farm.dailyMinutes} хв на добу)`);
 
+  // ── Сотрудництво: денний ліміт не обходиться приєднанням ─────────────────
+  // coopGroupCreate has always read the allowance. coopGroupJoin never did,
+  // coopGroupStart never re-read it, and its two modes.takeAttempt calls threw
+  // their answers away — progression.takeAttempt is a conditional UPDATE that
+  // returns null at the cap and NOBODY LOOKED. The three together made the cap
+  // apply to leaders and to nobody else: burn both of your runs, then only ever
+  // JOIN groups other people broadcast, forever. Each Coop boss pays 100
+  // Liberty plus a bless_stone; a teleport stone costs 20.
+  //
+  // Driven through real sockets rather than by calling the repo, because the
+  // repo was never the broken part — takeAttempt has always refused correctly,
+  // as the "денні спроби" block above already proves. What was missing was
+  // anybody asking it, and asking is a handler's job.
+  console.log('  ── Сотрудництво: ліміт спроб ──');
+  {
+    const COOP_CAP = require('../server/modes').capOf('coop');
+    const TG_D = 900000004, TG_E = 900000005;
+    // Both have to come back on a SECOND connection to count as level 40: the
+    // gate reads the room's copy of the level, stamped at login. Same dance the
+    // Страх block above does, for the same reason.
+    const d0 = await connectAs(TG_D, `${TAG}_d`);
+    const e0 = await connectAs(TG_E, `${TAG}_e`);
+    await setLevel(d0.pid, 40);
+    await setLevel(e0.pid, 40);
+    d0.sock.disconnect(); e0.sock.disconnect();
+    await wait(300);
+    const d = await connectAs(TG_D, `${TAG}_d`);
+    const e = await connectAs(TG_E, `${TAG}_e`);
+    await pool().query('DELETE FROM player_daily WHERE player_id = ANY($1)', [[d.pid, e.pid]]);
+
+    // The joiner has spent every Coop run they get today. The leader has not.
+    for (let i = 0; i < COOP_CAP; i++) await tx(t => progression.takeAttempt(t, e.pid, 'coop', COOP_CAP));
+    eq(await progression.attemptsLeft(null, e.pid, 'coop', COOP_CAP), 0,
+      `у того, хто приєднується, спроб не лишилось (з ${COOP_CAP})`);
+
+    d.sock.emit('coopGroupCreate');
+    const grp = await maybe(d.sock, 'coopGroupState');
+    ok(!!(grp && grp.inGroup && grp.isLeader), 'лідер зі спробами створив групу');
+
+    // THE EXPLOIT, exactly as it was performed: join, don't create.
+    e.sock.emit('coopGroupJoin', { leaderId: d.sock.id });
+    const joinErr = await maybe(e.sock, 'coopError');
+    ok(!!joinErr, `приєднання без спроб відмовлено (${joinErr && joinErr.msg})`);
+    ok(!modesRt._coopGroupOf.has(e.sock.id),
+      'і в групу його НЕ записано — інакше ліміт обходиться приєднанням');
+
+    // ── і друга половина того самого ліміту: перевірка на СТАРТІ ───────────
+    // A member can join with runs left and be out of them by the time the
+    // leader presses Start — they can spend the last one elsewhere while they
+    // wait, or the day can roll over under them. The lobby entry says nothing
+    // about either, which is why farm2GroupStart re-reads its own daily minutes
+    // for every participant and why this now does the same.
+    await pool().query('DELETE FROM player_daily WHERE player_id = $1', [e.pid]);
+    e.sock.emit('coopGroupJoin', { leaderId: d.sock.id });
+    const joined = await maybe(e.sock, 'coopGroupState');
+    ok(!!(joined && joined.inGroup && !joined.isLeader), 'зі спробами приєднання проходить');
+
+    for (let i = 0; i < COOP_CAP; i++) await tx(t => progression.takeAttempt(t, e.pid, 'coop', COOP_CAP));
+    d.sock.emit('coopGroupStart');
+    const startErr = await maybe(d.sock, 'coopError');
+    ok(!!startErr, `старт із вичерпаним учасником відмовлено (${startErr && startErr.msg})`);
+    // The load-bearing pair. The refusal above could in principle come from
+    // somewhere else; these two cannot.
+    ok(!modesRt._coop.has(d.sock.id) && !modesRt._coop.has(e.sock.id),
+      'жоден із двох у забіг не потрапив');
+    eq(await progression.attemptsLeft(null, d.pid, 'coop', COOP_CAP), COOP_CAP,
+      'і з лідера не списано спробу за забіг, якого не було');
+
+    d.sock.disconnect(); e.sock.disconnect();
+    await wait(300);
+  }
+
+  // ── п'ять безкоштовних телепортів додому ─────────────────────────────────
+  // fearReturn, race10Return, arena3Return, coopReturn and farm2Return were
+  // three lines each with no check that the caller was ever in that mode: every
+  // one of them called _returnToHub and every one of them sat in the loose
+  // 1500-per-5s bucket. So any of the five, sent from any floor in the game, was
+  // the teleport home that useTeleportStone destroys a 20-Liberty item to
+  // perform — and which useTeleportStone refuses outright to a dead player.
+  // deathBattleReturn was the only one of the six that was gated, and its own
+  // line says why in as many words: "not a free teleport home".
+  //
+  // The legitimate half is asserted right after the exploit half, because the
+  // gate is worth nothing if it also breaks the button it is guarding: every
+  // mode's finish (_fearFinish, _coopFinish, _farm2Finish, _a3Eliminate,
+  // _a3Finish, _race10Eliminate, _race10Finish) calls _returnToHub BEFORE it
+  // emits the event the result modal is built from, so an honest client answers
+  // from the hub and must still get its coordinates back.
+  console.log('  ── повернення з режимів ──');
+  {
+    const RETURNS = ['fearReturn', 'race10Return', 'arena3Return', 'coopReturn', 'farm2Return'];
+    sess.forceFloor(7);                                  // farmZone — no mode's floor
+    await maybe(a.sock, 'gameStart', 3000);
+    eq(sess.floor, 7, 'гравець стоїть на фермі й у жодному режимі не бере участі');
+    for (const ev of RETURNS) {
+      a.sock.emit(ev);
+      const moved = await maybe(a.sock, 'deathBattleReturned', 700);
+      ok(!moved && sess.floor === 7, `${ev} поза режимом нікого не перемістив (поверх ${sess.floor})`);
+      // Put them back if one of them DID move them, so the remaining names in
+      // the list are still being asked the same question and not "does it move
+      // someone who is already in the hub".
+      if (sess.floor !== 7) { sess.forceFloor(7); await maybe(a.sock, 'gameStart', 3000); }
+    }
+
+    sess.forceFloor(1);
+    await maybe(a.sock, 'gameStart', 3000);
+    for (const ev of RETURNS) {
+      a.sock.emit(ev);
+      const spot = await maybe(a.sock, 'deathBattleReturned', 700);
+      ok(!!spot && Number.isFinite(spot.x) && sess.floor === 1,
+        `${ev} після закритого вікна результату відповідає координатами (${spot && Math.round(spot.x)}, ${spot && Math.round(spot.y)})`);
+    }
+  }
+
   // ── the visual relays carry no damage ────────────────────────────────────
   console.log('  ── візуальні ефекти ──');
   // A projectile is a drawing. The point of checking is that a nonsense one

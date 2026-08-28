@@ -32,8 +32,8 @@ const { query } = require('../index');
 // polynomial, same 48 characters — because what the player is shown is what
 // they paste back into the withdrawal form.
 const ton = require('../../ton');
-const { xpToNext, skillPointBudget, upgradeCost, CHAR_DEF, UPGRADE_KEYS, SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL } =
-  require('../../../shared/definitions');
+const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, UPGRADE_KEYS,
+  SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL } = require('../../../shared/definitions');
 
 // ── identity ────────────────────────────────────────────────────────────────
 
@@ -411,17 +411,28 @@ async function registerReferral(db, playerId, referrerTelegramId) {
 
 // ── progression reads ───────────────────────────────────────────────────────
 
+// Seven columns as the ONE map shape shared/definitions.js reads: the keys are
+// UPGRADE_KEYS, and spentSkillPoints/availableSkillPoints/skillPointCeiling are
+// all written against them. Named rather than inlined because spendUpgrade
+// below now feeds the same shape to the same shared function the client's panel
+// calls — two hand-rolled copies of this literal are two chances to leave a
+// column out of one of them, and a column left out of the SUM is a point the
+// server hands out for free.
+function _upgradesOf(r) {
+  return {
+    atk: r.upg_atk, def: r.upg_def, hp: r.upg_hp,
+    critChance: r.upg_crit_chance, critPower: r.upg_crit_power,
+    atkSpeed: r.upg_atk_speed, hpRegen: r.upg_hp_regen,
+  };
+}
+
 function _progress(r) {
   return {
     charClass: r.char_class,
     lvl: r.lvl, xp: Number(r.xp), xpNext: xpToNext(r.lvl),
     kills: Number(r.kills), hp: r.hp,
     bonusSP: r.bonus_sp, keptSP: r.kept_sp, empowers: r.empowers,
-    upgrades: {
-      atk: r.upg_atk, def: r.upg_def, hp: r.upg_hp,
-      critChance: r.upg_crit_chance, critPower: r.upg_crit_power,
-      atkSpeed: r.upg_atk_speed, hpRegen: r.upg_hp_regen,
-    },
+    upgrades: _upgradesOf(r),
     floor: r.floor, x: r.pos_x, y: r.pos_y,
     questIdx: r.quest_idx, questKills: r.quest_kills,
     buffs: r.buffs, potionBag: r.potion_bag, codex: r.codex,
@@ -603,9 +614,14 @@ async function grantXp(db, playerId, amount) {
 // statement under the row lock taken by the SELECT, so two clicks arriving
 // together cannot both pass a check against the same remaining point.
 //
-// skillPointBudget(lvl) + bonus_sp is the same function the client
-// uses to grey out the button, so the two can never disagree about how many
-// points exist.
+// The point count comes from availableSkillPoints (shared/definitions.js) —
+// THE function the client's own panel greys the button with. It used to be
+// `skillPointBudget(lvl) + bonus_sp` written out here, with a comment claiming
+// that was the same thing. It was not: the shared function also takes keptSP
+// off BOTH sides of the sum, and this copy ignored the field entirely. For a
+// legacy Перерождение record (kept_sp > 0) the panel therefore offered points
+// the server then refused with «Мало очков навыка!», and the player's only
+// evidence was a counter that said the points were there.
 const UPG_COL = {
   atk: 'upg_atk', def: 'upg_def', hp: 'upg_hp', atkSpeed: 'upg_atk_speed',
   critChance: 'upg_crit_chance', critPower: 'upg_crit_power', hpRegen: 'upg_hp_regen',
@@ -626,28 +642,63 @@ async function spendUpgrade(db, playerId, key) {
   // opens this way.
   await require('./items').lockPlayer(db, playerId);
 
+  // Every column the point count is derived from, plus upg_epoch, in ONE read
+  // under ONE lock. The seven upgrade columns used to be summed by the database
+  // and the stat's own level fetched by a second SELECT; both are here now
+  // because availableSkillPoints wants the map rather than the sum, and the
+  // second round trip was reading the same row inside the same transaction.
   const { rows } = await query(db, `
-    SELECT lvl, bonus_sp,
-           upg_atk + upg_def + upg_hp + upg_atk_speed
-         + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
+    SELECT lvl, bonus_sp, kept_sp, upg_epoch,
+           upg_atk, upg_def, upg_hp, upg_atk_speed,
+           upg_crit_chance, upg_crit_power, upg_hp_regen
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) return null;
   const r = rows[0];
-  const budget = skillPointBudget(r.lvl) + r.bonus_sp;
-  if (Number(r.spent) >= budget) return null;          // no points left
+  const avail = availableSkillPoints({
+    lvl: r.lvl, bonusSP: r.bonus_sp, keptSP: r.kept_sp, upgrades: _upgradesOf(r),
+  });
+  if (avail <= 0) return null;                         // no points left
 
   // The gold. money.spend fuses affordability and deduction into one
-  // statement, so an unaffordable upgrade cannot half-apply — and the idem key
-  // names the exact point being bought, so a retry inside txRetry pays once.
-  const { rows: cur } = await query(db,
-    `SELECT ${col} AS v FROM player_progress WHERE player_id = $1`, [playerId]);
-  const cost = upgradeCost(Number(cur[0].v) || 0);
+  // statement, so an unaffordable upgrade cannot half-apply.
+  //
+  // ── the idem key, and why it carries the epoch ───────────────────────────
+  // It used to be `upg:<pid>:<stat>:<current level>` and nothing else, which
+  // made it REPLAYABLE: resetUpgrades puts every upg_* column back to 0, the
+  // ledger is append-only, so buying atk after a reset produced `upg:<pid>:
+  // atk:0` — a key that was already there. money.spend then takes its `replay`
+  // branch and returns { balance, replayed: true }, which is TRUTHY, so the
+  // `if (!paid)` below waved it through and the point was granted for nothing.
+  // Measured on the live schema: 3 points cost 1800 gold, and 3 more after a
+  // reset cost 0. money.reconcile() cannot see it either — the replay branch
+  // writes NOTHING, so balance and ledger stay in perfect agreement.
+  //
+  // Two components, and both are needed:
+  //
+  //   e<upg_epoch>  which reset generation this is. Bumped by resetUpgrades in
+  //                 the same UPDATE that zeroes the columns, so a level of 0
+  //                 seen after a reset is never the same key as the 0 before
+  //                 it. resetUpgrades is the ONLY writer that lowers an upg_*
+  //                 column, which is what makes one counter enough.
+  //   <level>       which point WITHIN this generation. Without it the second
+  //                 purchase of the same stat in one generation would reuse
+  //                 the first one's key and be free — the same bug one step
+  //                 down.
+  //
+  // Both are read under the FOR UPDATE above, from the row this transaction
+  // holds. That is what makes the key deterministic across a txRetry attempt
+  // (the retry runs after a rollback, re-reads the same two values, composes
+  // the same string) while still differing between two real purchases. A
+  // random or time-based key would have the opposite pair of properties — see
+  // the "bad" example in repos/money.js.
+  const cur = Number(r[col]) || 0;
+  const cost = upgradeCost(cur);
   const money = require('./money');
   let goldLeft = null;
   if (cost > 0) {
     const paid = await money.spend(db, playerId, 'gold', cost, {
       reason: 'upgrade', refType: 'upgrade', refId: key,
-      idemKey: `upg:${playerId}:${key}:${Number(cur[0].v) || 0}`,
+      idemKey: `upg:${playerId}:${key}:e${r.upg_epoch}:${cur}`,
     });
     // spend() returns null when the balance could not cover it — that is the
     // whole affordability check, fused into the UPDATE so two purchases in the
@@ -664,7 +715,7 @@ async function spendUpgrade(db, playerId, key) {
   // rating the board has to see. Only on the success path: the three returns
   // above moved nothing.
   await require('./stats').refreshBm(db, playerId);
-  return { key, level: out[0].v, remaining: budget - Number(r.spent) - 1, cost, gold: goldLeft };
+  return { key, level: out[0].v, remaining: avail - 1, cost, gold: goldLeft };
 }
 
 // ── skills ──────────────────────────────────────────────────────────────────
@@ -776,7 +827,8 @@ async function resetUpgrades(db, playerId, cost) {
   await require('./items').lockPlayer(db, playerId);
 
   const { rows } = await query(db, `
-    SELECT upg_atk + upg_def + upg_hp + upg_atk_speed
+    SELECT lvl, bonus_sp, kept_sp, upg_epoch,
+           upg_atk + upg_def + upg_hp + upg_atk_speed
          + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) throw Object.assign(new Error('Игрок не найден'), { code: 'no_player' });
@@ -786,24 +838,68 @@ async function resetUpgrades(db, playerId, cost) {
 
   const paid = await money.spend(db, playerId, 'nexum', cost, {
     reason: 'upgrade_reset', refType: 'player', refId: String(playerId),
-    // Random per attempt: resetting twice on purpose is two legitimate resets.
-    idemKey: `upgrade_reset:${playerId}:${require('crypto').randomUUID()}`,
+    // The epoch BEFORE the bump below, and it replaced a randomUUID() whose
+    // comment read "Random per attempt: resetting twice on purpose is two
+    // legitimate resets". The goal was right and the means were exactly
+    // backwards: a key that differs per ATTEMPT is a key that a txRetry retry
+    // cannot recognise, which is the "bad" example in repos/money.js. What is
+    // wanted is a key that differs per ACTION — and the epoch is that, because
+    // the UPDATE below advances it, in this transaction, as part of the same
+    // statement that spends it. Two deliberate resets read two different
+    // epochs; two attempts at one reset read the same one, since the rollback
+    // that precedes a retry takes the bump with it.
+    idemKey: `upgrade_reset:${playerId}:e${rows[0].upg_epoch}`,
   });
   if (!paid) throw Object.assign(new Error('Недостаточно Liberty'), { code: 'no_nexum', userMessage: 'Недостаточно Liberty' });
 
-  // kept_sp goes with the map it was covering. It is the part of a previous
-  // Перерождение's spend that the reset PRESERVED — emptying the upgrades ends
-  // that commitment, so leaving it set means the server keeps charging the
-  // player for upgrades they no longer have. The client already zeroes its own
-  // copy from this reply, so the two would silently disagree about how many
-  // points are spendable, and the server's answer — 'Мало очков навыка!' on a
-  // panel showing points available — is the one that wins.
-  await query(db, `
+  // ── kept_sp: закрыть обязательство, но не сжечь ёмкость ────────────────────
+  // Прежний код ставил здесь kept_sp = 0 и объяснял это так: «kept_sp уходит
+  // вместе с картой, которую он покрывал». Для ПОТОЛКА анти-чита
+  // (skillPointCeiling) это верно и остаётся верным. Для того, сколько очков
+  // игрок вообще может потратить, — нет, и разница стоила игрокам очков.
+  //
+  // Ёмкость до сброса — bonusSP + max(budget, kept), где budget =
+  // skillPointBudget(lvl): kept вычитается из ОБЕИХ сторон суммы в
+  // availableSkillPoints, то есть перенесённая трата не считается против
+  // игрока, но и кривая уровня, которая её покрывает, тоже не считается за
+  // него. После голого kept_sp = 0 ёмкость становится bonusSP + budget. Пока
+  // kept ≤ budget это одно и то же число и терялось ровно ничего — но у
+  // легась-записи «Перерождения», которая ещё не перелевелилась обратно,
+  // kept > budget, и разница исчезала навсегда. Уровень 1, bonusSP 15,
+  // keptSP 30, потрачено 30: было 45 очков ёмкости, стало 18. Двадцать семь
+  // очков, за которые игрок заплатил 200 Liberty, чтобы их лишиться.
+  //
+  // Переносим НЕПОКРЫТЫЙ кривой остаток в bonus_sp. Это ровно та часть kept,
+  // которая ещё давала ёмкость, поэтому сумма до и после совпадает, а поле
+  // «Перерождения» на этом аккаунте закрывается навсегда — обязательства
+  // больше нет, есть выданные очки.
+  //
+  // НЕ `bonus_sp + kept_sp` целиком, хотя так короче. Кривая уровня уже
+  // оплатила min(budget, kept) из этой траты; выдав их ещё раз, сброс за
+  // 200 Liberty ПЕЧАТАЛ БЫ очки — у записи 100-го уровня с kept 150 это 150
+  // очков из воздуха. Это тот же класс ошибки, что и бесплатные улучшения
+  // выше, только в другую сторону, и ночная сверка его тоже не увидит:
+  // skill points в ledger не лежат.
+  //
+  // Кривая считается тем же skillPointBudget, что и у клиента, и в JS, а не в
+  // SQL, — по той же причине, что и в grantXp: две реализации одной кривой
+  // РАЗОЙДУТСЯ.
+  const carried = Math.max(0, Number(rows[0].kept_sp) - skillPointBudget(rows[0].lvl));
+
+  // Одним оператором: обнуление карты, перенос kept и шаг эпохи. Порознь они
+  // были бы состоянием «улучшения обнулены, а эпоха ещё старая» — то есть
+  // ровно тем окном, в котором ключ покупки повторяется, ради закрытия
+  // которого всё это и написано.
+  const { rows: out } = await query(db, `
     UPDATE player_progress
        SET upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
            upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
-           kept_sp = 0, updated_at = now()
-     WHERE player_id = $1`, [playerId]);
+           bonus_sp  = bonus_sp + $2,
+           kept_sp   = 0,
+           upg_epoch = upg_epoch + 1,
+           updated_at = now()
+     WHERE player_id = $1
+    RETURNING bonus_sp`, [playerId, carried]);
 
   // Seven columns just went to zero. The refund buys the points back, but the
   // rating that was standing on them is gone until they are re-spent.
@@ -813,9 +909,18 @@ async function resetUpgrades(db, playerId, cost) {
   // { pointsReturned, keptSP, newNexumBalance } — `refunded`/`nexumLeft`
   // arrived as three undefineds, which set the on-screen Liberty balance to
   // undefined every time somebody reset their upgrades.
+  //
+  // bonusSP rides along because this call can now MOVE points into it, and the
+  // caller is the only one who can see that it did. The client does not
+  // destructure it and does not need to — progressSync, which the handler
+  // pushes just before emitting this, already carries the new figure — but a
+  // field that reports what a reset DID is what lets the regression check in
+  // dev/consumables-check.js assert the carry directly instead of inferring it
+  // from a second read.
   return {
     pointsReturned: Number(rows[0].spent),
     keptSP: 0,
+    bonusSP: out[0].bonus_sp,
     newNexumBalance: paid.balance,
     refunded: Number(rows[0].spent),      // the old names, for the tests
     nexumLeft: paid.balance,
