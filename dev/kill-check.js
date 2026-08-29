@@ -171,10 +171,19 @@ async function main() {
   // impossible, and when it happened the assertion below read the final
   // non-paying kill and failed — reporting a broken reward path on a day when
   // nothing was wrong. So the two questions are separated: SHAPE is asked of
-  // the first kill, MONEY of the total across all of them. A sum over a dozen
-  // kills does not depend on any single roll.
+  // the first kill, MONEY of the total across all of them.
+  //
+  // Двенадцати оказалось мало. Стартовые монстры дают 0 или 1 золота — по
+  // трассировке платит примерно каждый третий убитый, — так что двенадцать
+  // нулей подряд выпадают не «раз в год», а несколько раз за день прогонов:
+  // проверка падала на «золото за вбивства доходить (разом 0)» и снова
+  // обвиняла игру в том, чего не было.
+  //
+  // Сорок. Цикл всё равно выходит на первом заплатившем (обычно второй-пятый),
+  // так что в обычном случае это ничего не стоит, а сорок нулей подряд — это
+  // уже не «бывает», а «не бывает».
   let paid = null, killedVictimId = null;
-  for (let i = 0; i < 12 && !paid; i++) {
+  for (let i = 0; i < 40 && !paid; i++) {
     victim = alive()[0];
     if (!victim) break;
     me.x = victim.x; me.y = victim.y;
@@ -500,7 +509,12 @@ async function main() {
     const _primed = once(b.sock, 'enemyHurt', 3000).catch(() => null);
     b.sock.emit('attack', { enemyId: spTarget.id });
     ok(!!await _primed, 'підготовчий замах прийнято — без нього вікна splash немає');
-    await wait(80);
+    // Без паузи. Вікно splash — 200 мс від ПРИЙНЯТОГО удару (Room.attackEnemy),
+    // і воно витрачається не тільки на очікування: тридцять пакетів мусять
+    // доїхати й обробитись. Вісімдесят мілісекунд "на всяк випадок" з'їдали
+    // майже половину бюджету, і під навантаженням проби не встигали — звідси
+    // "0 з 30" приблизно раз на чотири прогони. Підтвердження, що замах
+    // прийнято, ми вже маємо рядком вище: це і є весь потрібний синхронізм.
     const before = new Map(crowd.map(e => [e.id, e.hp]));
     for (const e of crowd) b.sock.emit('attack', { enemyId: e.id, splash: true });
     await wait(600);

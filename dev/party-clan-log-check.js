@@ -149,6 +149,65 @@ async function mk(nick) {
     eq(f2[0].n, 0, 'создавший клан тоже не остаётся в чужих очередях');
   }
 
+  // ═══ 2б. Порядок блокировок: строка игрока ПЕРВОЙ ══════════════════════
+  // «deadlock detected» в usePotion и killReward одновременно, у одного игрока,
+  // с точностью до секунды. detail из PostgreSQL назвал обе таблицы: players и
+  // player_progress берутся в РАЗНОМ порядке.
+  //
+  // Правило записано в items.js: lockPlayer — первый оператор транзакции,
+  // которая что-то меняет. Оно и есть весь порядок блокировок в проекте, и
+  // одного нарушителя достаточно, чтобы цикл стал возможен для всех.
+  console.log('\n  ── порядок блокировок ──');
+  {
+    const src = fs.readFileSync(path.join(ROOT, 'server/db/repos/consumables.js'), 'utf8');
+    // Каждая изменяющая функция этого файла — и ни одного исключения.
+    for (const fn of ['usePotion', 'useBuffPotion', 'buyTeleportStone',
+                      'useTeleportStone', 'pickupDrop', 'grantKillReward']) {
+      const at = src.indexOf(`async function ${fn}(`);
+      const body = src.slice(at, src.indexOf('\nasync function ', at + 10));
+      const lock = body.indexOf('items.lockPlayer(db, playerId)');
+      // Первая запись в функции — по первому же слову-глаголу SQL. Пробелы и
+      // переносы между `query(db,` и словом не считаются: запросы в этом файле
+      // пишутся и в строку, и с переноса.
+      const write = body.search(/await query\(db,[\s\S]{0,12}(UPDATE|INSERT|DELETE)/i);
+      ok(lock >= 0, `${fn} берёт строку игрока`);
+      ok(lock >= 0 && (write < 0 || lock < write),
+        `${fn} берёт её ДО первой записи`, `lock@${lock} write@${write}`);
+    }
+  }
+
+  // ═══ 2в. Очки сезона за заточку ════════════════════════════════════════
+  // Таблица есть, экспортируется и показывается игроку в панели сезона — а
+  // функция, которая по ней считает, не вызывалась НИГДЕ. Панель обещала
+  // «Редкий: +20 очков», заточка проходила, очки не начислялись никогда:
+  // «Сезон не работает, за заточку ниче не дают».
+  console.log('\n  ── очки сезона за заточку ──');
+  {
+    const D = require('../shared/definitions');
+    const eco = fs.readFileSync(path.join(ROOT, 'server/handlers2/economy.js'), 'utf8');
+    const h = eco.slice(eco.indexOf("safeOn('enhanceItem'"), eco.indexOf("safeOn('enhanceItem'") + 4000);
+    ok(/seasonEnhancePoints\(/.test(h), 'обработчик заточки считает очки');
+    ok(/addSeasonPoints\(t, pid, _pts\)/.test(h), 'и начисляет их');
+    // Слот и редкость — ИЗ КАТАЛОГА, а не из запроса: в запросе slot это
+    // подсказка, где искать вещь, и клиент вправе прислать любую.
+    ok(/_def\.slot, _def\.rarity/.test(h), 'слот и редкость берутся из каталога, а не из пакета');
+    ok(h.indexOf('seasonEnhancePoints(') > h.indexOf("res.outcome === 'success'"),
+      'очки только за УДАВШУЮСЯ заточку');
+
+    // И числа те же, что показаны игроку: панель отдаёт свои значения из тех же
+    // констант, что и начисление. Разойтись они могут только если кто-то
+    // поменяет одну сторону.
+    const shown = { special: D.SEASON_ENHANCE_SPECIAL_POINTS, gear: D.SEASON_ENHANCE_GEAR_POINTS };
+    eq(D.seasonEnhancePoints('pet', 'common', 'norm'), shown.special.common.norm, 'питомец обычный, обычный камень');
+    eq(D.seasonEnhancePoints('pet', 'common', 'bless'), shown.special.common.bless, 'питомец обычный, безопасный');
+    eq(D.seasonEnhancePoints('cloak', 'rare', 'norm'), shown.special.rare.norm, 'плащ редкий, обычный камень');
+    eq(D.seasonEnhancePoints('weapon', 'rare', 'norm'), shown.gear.rare, 'предмет редкий');
+    eq(D.seasonEnhancePoints('weapon', 'epic', 'norm'), shown.gear.epic, 'предмет эпический');
+    // Безопасный камень на обычной вещи очков не даёт — так в таблице.
+    eq(D.seasonEnhancePoints('weapon', 'epic', 'bless'), 0, 'предмет безопасным камнем — без очков');
+    eq(D.seasonEnhancePoints('weapon', 'common', 'norm'), 0, 'обычный предмет — без очков');
+  }
+
   // ═══ 3. Журнал ═════════════════════════════════════════════════════════
   console.log('\n  ── журнал ──');
   {
@@ -177,6 +236,14 @@ async function mk(nick) {
     const b1 = plog.stats().queued;
     for (let i = 0; i < 40; i++) plog.log(pid, 'usePotion', { зелье: 'pt1' });
     eq(plog.stats().queued - b1, 1, 'сорок зелий подряд дали одну строку');
+
+    // Покупки зелий — то же самое: 145 строк из 209 после первого сокращения.
+    // Но РАЗНЫЕ зелья не сворачиваются вместе, иначе строка «купил 40» не
+    // сказала бы, каких именно.
+    const b1b = plog.stats().queued;
+    for (let i = 0; i < 20; i++) plog.log(pid, 'buyPotion', { itemId: 'pt1', qty: 1 });
+    for (let i = 0; i < 20; i++) plog.log(pid, 'buyPotion', { itemId: 'pt2', qty: 1 });
+    eq(plog.stats().queued - b1b, 2, 'сорок покупок двух видов дали две строки');
 
     // А то, что двигает предмет или монету поштучно, не сворачивается НИКОГДА:
     // там вопрос всегда «какой именно и когда».

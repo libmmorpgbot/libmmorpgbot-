@@ -62,6 +62,14 @@ async function usePotion(db, playerId, potionId, liveHp = null) {
   const def = HP_POTIONS.get(potionId);
   if (!def) err('bad_potion', 'Неизвестное зелье');
 
+  // ПЕРВЫМ. Не ради самой блокировки — потион_баг и так меняется одним
+  // оператором, — а ради ПОРЯДКА. Всё остальное в проекте берёт строку игрока
+  // до player_progress; эта функция начиналась с UPDATE player_progress и
+  // потому шла навстречу killReward. PostgreSQL видел цикл и убивал одну из
+  // транзакций: «deadlock detected» в usePotion и в killReward одновременно,
+  // у одного и того же игрока, с точностью до секунды.
+  await items.lockPlayer(db, playerId);
+
   // The decrement and the "do you have one" check are the same statement, so
   // two heal keys pressed together cannot both spend the last potion.
   const { rows } = await query(db, `

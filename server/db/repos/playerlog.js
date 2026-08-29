@@ -74,11 +74,19 @@ const _refuseSeen = new Map();          // ключ -> { at, n }
 //
 // Ничего, что двигает предмет или монету поштучно, здесь быть не может: там
 // вопрос всегда «какой именно и когда».
-const COLLAPSE_OK = new Set(['usePotion']);
+// Значение — поле meta, по которому строки различаются внутри одного события.
+// Без него свернулись бы вместе покупки разных зелий, и строка «купил 40» не
+// сказала бы, каких именно.
+const COLLAPSE_OK = new Map([
+  ['usePotion', 'зелье'],
+  ['buyPotion', 'itemId'],
+]);
 
 function _refuseThrottle(pid, event, meta) {
-  if (!event.startsWith('refuse:') && !COLLAPSE_OK.has(event)) return null;
-  const key = pid + '|' + event + '|' + ((meta && meta.code) || (meta && meta.potionId) || '');
+  const isRefuse = event.startsWith('refuse:');
+  if (!isRefuse && !COLLAPSE_OK.has(event)) return null;
+  const field = isRefuse ? 'code' : COLLAPSE_OK.get(event);
+  const key = pid + '|' + event + '|' + ((meta && meta[field]) || '');
   const now = Date.now();
   const prev = _refuseSeen.get(key);
   if (prev && now - prev.at < REFUSE_WINDOW_MS) { prev.n++; return false; }
