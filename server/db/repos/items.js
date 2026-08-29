@@ -682,6 +682,81 @@ async function removeRow(db, rowId, playerId, { reason = 'destroy', refType = nu
 // before COMMIT, so nothing outside ever reads the intermediate, and two
 // statements on an action a player takes by hand is the cheaper half of the
 // trade.
+// ── одна купка — одна строка ───────────────────────────────────────────────
+// Стакающийся предмет обязан лежать в контейнере ОДНОЙ строкой. add() это
+// правило соблюдает — он сливает в существующую купку, — а два других пути
+// создания строк нет:
+//
+//   attachFromListing   лот, который выкупили или сняли, приезжал НОВОЙ
+//                       строкой рядом с уже лежащей;
+//   moveTo              перенос строки в контейнер, где такая купка уже есть,
+//                       клал вторую.
+//
+// Клиент показывает сумму строк, а действия работают со строкой, и расхождение
+// между этими двумя видами счёта — это ровно то, на что жаловались:
+//
+//   «кидає 11 штук айтема, а в хранилищі 126 відображається; забирає назад — в
+//    інвентарі 11»                     — переехала одна строка из двух;
+//   «296 штук виставляю — виставляється 46»  — клиент держал id первой строки;
+//   «предмети наче розділилися на дві частини, забираєш спочатку одну»
+//
+// Собирает ВСЕ строки, а не только вторую: у части аккаунтов их успело
+// накопиться больше двух, и починка при первом же касании лучше, чем починка
+// «по одной за раз».
+//
+// Количество не меняется — меняется только то, в скольких строках оно лежит, —
+// поэтому в ledger ничего не пишется: он считает штуки на игрока, а не строки.
+async function mergeStacks(db, playerId, container, itemId, enhance = 0) {
+  const { rows: cat } = await query(db,
+    'SELECT stackable FROM item_catalog WHERE item_id = $1', [itemId]);
+  if (!cat.length || !cat[0].stackable) return null;
+
+  // Строки, на которые ещё ссылается лот, не трогаем: они принадлежат лоту, а
+  // не игроку, и внешний ключ запрещает их удалять. То же условие, что в
+  // removeQty и в market._splitOffForListing.
+  const guard = await marketRefBlocksDelete(db);
+  const { rows } = await query(db, `
+    SELECT id, qty FROM player_items pi
+     WHERE player_id = $1 AND container = $2 AND item_id = $3 AND enhance = $4
+       AND ($5::bool = false OR NOT EXISTS (
+             SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
+     ORDER BY id
+     FOR UPDATE`, [playerId, container, itemId, enhance, guard]);
+  if (rows.length < 2) return rows.length ? Number(rows[0].id) : null;
+
+  const keep = Number(rows[0].id);
+  const total = rows.reduce((n, r) => n + Number(r.qty), 0);
+  const moved = total - Number(rows[0].qty);
+  const drop = rows.slice(1).map(r => Number(r.id));
+  await query(db, 'DELETE FROM player_items WHERE id = ANY($1)', [drop]);
+  await query(db, 'UPDATE player_items SET qty = $2 WHERE id = $1', [keep, total]);
+
+  // ── и это записывается ────────────────────────────────────────────────────
+  // У игрока не прибавилось и не убавилось ничего — поменялось только то, в
+  // скольких строках лежит одно и то же количество. Соблазн ничего не писать
+  // поэтому силён, и он неверен по двум причинам.
+  //
+  // Первая: правило этого файла — «каждая запись в player_items сопровождается
+  // записью в леджер», и держится оно ровно до первого исключения. Исключение,
+  // сделанное потому что «здесь и так сходится», — это то самое исключение,
+  // под которое в следующий раз спрячут настоящую пропажу.
+  //
+  // Вторая: historyOfRow отвечает на вопрос «откуда взялась эта строка», и без
+  // этих записей история поглощённой строки обрывается на полуслове, а у
+  // выжившей появляется количество ниоткуда.
+  //
+  // Сумма дельт — ноль, поэтому reconcile() остаётся сойтись обязан.
+  for (const r of rows.slice(1)) {
+    await ledger(db, playerId, itemId, -Number(r.qty),
+      { rowId: Number(r.id), reason: 'stack_merge', refType: 'row', refId: String(keep) });
+  }
+  if (moved > 0) {
+    await ledger(db, playerId, itemId, moved,
+      { rowId: keep, reason: 'stack_merge', refType: 'row', refId: String(keep) });
+  }
+  return keep;
+}
+
 async function moveTo(db, rowId, playerId, container, slot = null) {
   if (container === 'equipment' && !slot) throw new Error('items: equipment move needs a slot');
   if (container !== 'equipment' && slot) throw new Error('items: only equipment has a slot');
@@ -700,6 +775,15 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
     UPDATE player_items SET container = $3, slot = $4
      WHERE id = $1 AND player_id = $2`, [rowId, playerId, container, slot]);
   if (rowCount !== 1) return false;
+  // На новом месте купка обязана стать одной строкой — иначе склад показывает
+  // сумму, а «забрать» уносит одну строку из двух. См. mergeStacks выше.
+  // Снаряжение исключено: там строка — это конкретная надетая вещь, и слот у
+  // неё один.
+  if (container !== 'equipment') {
+    const { rows: what } = await query(db,
+      'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
+    if (what.length) await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0);
+  }
   if (container === 'equipment' || (from.length && from[0].container === 'equipment')) {
     await require('./stats').refreshBm(db, playerId);
   }
@@ -740,8 +824,16 @@ async function attachFromListing(db, rowId, playerId, { reason = 'market_buy', r
      WHERE id = $1 AND player_id IS NULL
     RETURNING item_id, qty`, [rowId, playerId]);
   if (rows.length !== 1) return false;
+  // ЛЕДЖЕР ПЕРВЫМ, слияние вторым: строка, в которую вольют, может исчезнуть, а
+  // запись о приходе должна остаться привязанной к той, что была в этот момент.
   await ledger(db, playerId, rows[0].item_id, Number(rows[0].qty),
     { rowId: Number(rowId), reason, refType, refId });
+  // Купленный или снятый лот приезжал ОТДЕЛЬНОЙ строкой рядом с уже лежащей —
+  // это и есть источник расколотых купок, из-за которых «296 штук виставляю,
+  // виставляється 46». См. mergeStacks выше.
+  const { rows: what } = await query(db,
+    'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
+  if (what.length) await mergeStacks(db, playerId, 'inventory', what[0].item_id, what[0].enhance || 0);
   return true;
 }
 
@@ -826,7 +918,7 @@ async function reconcile(db) {
 
 module.exports = {
   consumeMatching, countMatching, resolveRow,
-  syncCatalog, lockPlayer,
+  syncCatalog, lockPlayer, mergeStacks,
   inventoryOf, usedSlots, hasRoomFor,
   add, removeQty, removeRow, moveTo,
   assertDestroyable, marketRefBlocksDelete,

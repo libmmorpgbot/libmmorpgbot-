@@ -120,7 +120,12 @@ module.exports = function registerItems(s, safeOn) {
   // No `amount` parameter anywhere. That is the C2 fix stated as an API: the
   // client says WHICH potion, the catalog says what it does.
   safeOn('usePotion', ({ id } = {}) => s.act('usePotion', 'itemError', async (t, pid) => {
-    const res = await consumables.usePotion(t, pid, String(id || ''));
+    // HP берётся из комнаты — это живое число, которым считаются урон и смерть.
+    // player_progress.hp отстаёт до двадцати секунд, и лечение от него давало
+    // «то фулл, то ничего» (см. разбор над consumables.usePotion).
+    const me = s.room && s.room.players.get(s.socket.id);
+    const res = await consumables.usePotion(t, pid, String(id || ''),
+      me ? me.hp : null);
     // The bag count, not the inventory: healing potions are not rows. And the
     // room is told the new HP, because the room is what decides whether the
     // next hit kills.

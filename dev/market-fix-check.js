@@ -290,19 +290,48 @@ const listedQty = async listingId => Number((await pool().query(
   [listingId])).rows[0].qty);
 
 // Відтворює ту саму форму інвентаря, яку показала жива база: один предмет,
-// два рядки, і СТАРШИЙ рядок — менший. Так воно там і опинилось:
-// items.add() зливає стак у наявний рядок, а attachFromListing (доставка
-// купленого лоту) — ні, вона просто чіпляє відчеплений рядок до акаунта.
-// Клієнт малює обидва рядки однією купкою і бере rowId першого.
+// два рядки, і СТАРШИЙ рядок — менший. Клієнт малює обидва рядки однією
+// купкою і бере rowId першого — звідси «296 виставляю, виставляється 46».
+//
+// Рядки будуються ПРЯМИМ записом. Раніше вони будувались через
+// attachFromListing — доставку купленого лоту, — бо саме вона їх і плодила:
+// items.add() зливав стак у наявний рядок, а вона просто чіпляла відчеплений
+// рядок поруч. Тепер зливають обидві (див. items.mergeStacks), і побудова
+// через неї давала б ОДИН рядок — тобто перевірка мовчки перестала б
+// перевіряти те, заради чого написана.
+//
+// А розкол лишається вартим захисту: у живій базі таких купок 108 у 20
+// гравців, і виставлення мусить забирати всю купку, хай як вона лежить.
 async function splitStack(nick, small, big) {
   const seller = await mkPlayer(nick);
   const rowSmall = await add(seller, KEY, small);       // старший рядок — менший
-  const holder = await mkPlayer(nick + 'H');
-  const rowBig = await add(holder, KEY, big);
-  await tx(t => items.detachForListing(t, rowBig, holder));
-  await tx(t => items.attachFromListing(t, rowBig, seller,
-    { reason: 'market_buy', refType: 'listing', refId: TAG }));
+  const { rows } = await pool().query(
+    `INSERT INTO player_items (player_id, container, item_id, enhance, qty)
+     VALUES ($1, 'inventory', $2, 0, $3) RETURNING id`, [seller, KEY, big]);
+  const rowBig = Number(rows[0].id);
+  // Рядок вставлено повз items.add, тож і запис у реєстр треба зробити самому:
+  // без нього звірка «на руках проти реєстру» побачила б розбіжність, якої
+  // насправді немає, і звинуватила б у ній гру замість фікстури.
+  await tx(t => items.ledger(t, seller, KEY, big,
+    { rowId: rowBig, reason: 'test_seed', refType: 'row', refId: TAG }));
   return { seller, rowSmall, rowBig };
+}
+
+// І окремо — що шлях доставки лоту більше НЕ плодить другий рядок. Це причина,
+// з якої розколи взагалі з'являлись; полагоджено її, а не наслідок.
+async function deliveryMerges() {
+  head('доставка купленого лоту зливається в наявну купку');
+  const buyer = await mkPlayer('merge');
+  await add(buyer, KEY, 40);
+  const holder = await mkPlayer('mergeH');
+  const rowBig = await add(holder, KEY, 60);
+  await tx(t => items.detachForListing(t, rowBig, holder));
+  await tx(t => items.attachFromListing(t, rowBig, buyer,
+    { reason: 'market_buy', refType: 'listing', refId: TAG }));
+  const inv = await invOf(buyer);
+  const mine = inv.filter(r => r.id === KEY);
+  eq(mine.length, 1, 'купка лишилась ОДНИМ рядком, а не двома');
+  eq(mine.reduce((n, r) => n + Number(r.qty), 0), 100, 'і в ній усе, що було й приїхало');
 }
 
 async function dbChecks() {
@@ -311,6 +340,9 @@ async function dbChecks() {
   // ── 2. «296 виставляю — виставляється 46» ────────────────────────────────
   head('стак, розкладений на два рядки, виставляється весь');
 
+  await deliveryMerges();
+
+  head('стак, розкладений на два рядки, виставляється весь');
   const a = await splitStack('old', 46, 250);
   const invA = await invOf(a.seller);
   eq(invA.filter(r => r.id === KEY).length, 2, 'відтворено: предмет лежить двома рядками');

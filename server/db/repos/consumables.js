@@ -58,7 +58,7 @@ async function potionBagOf(db, playerId) {
   return rows.length ? (rows[0].potion_bag || {}) : {};
 }
 
-async function usePotion(db, playerId, potionId) {
+async function usePotion(db, playerId, potionId, liveHp = null) {
   const def = HP_POTIONS.get(potionId);
   if (!def) err('bad_potion', 'Неизвестное зелье');
 
@@ -76,10 +76,30 @@ async function usePotion(db, playerId, potionId) {
   const st = await stats.of(db, playerId);
   if (!st) err('no_player', 'Игрок не найден');
 
-  const healed = Math.min(st.maxHp, st.hp + (def.hp || 0));
+  // ── от чего лечим ────────────────────────────────────────────────────────
+  // От HP В КОМНАТЕ, а не из player_progress: эта колонка обновляется раз в
+  // двадцать секунд, и лечение от неё — это и есть «то сразу фулл хп делают,
+  // то не делают». Разбор целиком — в комментарии над функцией.
+  //
+  // Значение приходит от вызывающего и клиенту не принадлежит: обработчик
+  // читает его из s.room, то есть из собственной памяти сервера. Клиент
+  // по-прежнему сообщает только КАКОЕ зелье.
+  //
+  // Запасной путь — сохранённое hp — оставлен для вызова без комнаты (игрок
+  // между этажами, тест). Он не хуже прежнего поведения, но и не лучше, поэтому
+  // это именно запасной путь, а не равноправная ветка.
+  const base = Number.isFinite(liveHp)
+    ? Math.max(0, Math.min(st.maxHp, liveHp))
+    : st.hp;
+  // ЦЕЛОЕ. player_progress.hp — integer, а HP в комнате дробное: регенерация
+  // прибавляет hpRegen * dt сорок раз в секунду. Незакруглённое значение
+  // роняло запись на `invalid input syntax for type integer`, транзакция
+  // откатывалась целиком — и зелье не тратилось ВООБЩЕ, хотя игрок его выпил.
+  // players.setHp усекает у себя, а этот UPDATE идёт мимо неё.
+  const healed = Math.round(Math.min(st.maxHp, base + (def.hp || 0)));
   await query(db, 'UPDATE player_progress SET hp = $2 WHERE player_id = $1', [playerId, healed]);
   return {
-    potionId, healed: healed - st.hp, hp: healed, maxHp: st.maxHp,
+    potionId, healed: Math.round(healed - base), hp: healed, maxHp: st.maxHp,
     left: Number(rows[0].left),
   };
 }
