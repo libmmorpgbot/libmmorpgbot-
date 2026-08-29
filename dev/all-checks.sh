@@ -43,7 +43,7 @@ cd "$ROOT"
 PURE=(reachable bundle protocol request-shape bookpool prodfix heal)
 DB=(admin adminapi aggro alert api bonuses boot clans consumables craft drops
     enemysync enhance etl events exploit gram guildwar health item-ledger items
-    kill market market-fix modes money panel party players progression pvp-history quest relog-attack stacks party-clan-log
+    kill market market-fix modes money panel party players progression pvp-history quest relog-attack stacks party-clan-log season-enhance
     referral reply-shape skills sql stats tgadmin xss)
 SERVER=(play walk stream fanout snapshot)
 
