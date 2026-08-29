@@ -3863,11 +3863,23 @@ class Room {
     };
   }
 
+  // Отказ, который называет себя. Причина кладётся на игрока, а не
+  // возвращается наружу: attackEnemy отдаёт null в семи местах, и менять её
+  // форму ради диагностики значило бы трогать каждого вызывающего.
+  //
+  // Заведено потому, что счётчик отказов в handlers2/world.js показал 25% и не
+  // смог сказать, о чём это: «замах по мобу, которого добил сосед» и «клиент
+  // бьёт слишком часто» выглядели одинаково, а лечатся по-разному.
+  _refuse(attacker, why) {
+    if (attacker) attacker._refuseWhy = why;
+    return null;
+  }
+
   attackEnemy(socketId, enemyId, { splash = false } = {}) {
     const attacker = this.players.get(socketId);
     // Same reasoning as updatePlayerPos above — a dead attacker's client can
     // keep firing attack events; the server must independently refuse them.
-    if (!attacker || attacker.hp <= 0) return null;
+    if (!attacker || attacker.hp <= 0) return this._refuse(attacker, 'dead_self');
     const now = Date.now();
     if (splash) {
       // "Безумие" (advanced deathknight E) — every basic melee hit also
@@ -3890,8 +3902,8 @@ class Room {
       // asked now: WHO may splash (right below — the flag was open to every
       // class at every level) and HOW MANY (past the enemy lookup — the
       // window is not a count, and unbounded hits fit inside it).
-      if (now - (attacker._lastAtk || 0) > 200) return null;
-      if (!this._canSplash(attacker)) return null;
+      if (now - (attacker._lastAtk || 0) > 200) return this._refuse(attacker, 'splash_window');
+      if (!this._canSplash(attacker)) return this._refuse(attacker, 'splash_denied');
     } else {
       // ── сколько ждать между ударами ──────────────────────────────────────
       // Здесь стоял плоский порог: «не чаще одного удара в 150 мс», один и тот
@@ -3916,7 +3928,7 @@ class Room {
       // сервер (repos/stats.js) из класса, уровня, снаряжения и пассивок, так
       // что подделать её клиент не может. Быстрым это возвращает их скорость,
       // медленным — закрывает дыру.
-      if (now - (attacker._lastAtk || 0) < this._attackMinGapMs(attacker)) return null;
+      if (now - (attacker._lastAtk || 0) < this._attackMinGapMs(attacker)) return this._refuse(attacker, 'too_soon');
       attacker._lastAtk = now;
       // A real swing opens a fresh splash budget for the window it starts —
       // see the block under the enemy lookup for what that budget is and why.
@@ -3927,7 +3939,7 @@ class Room {
       attacker._splashN = 0;
     }
     const enemy = this._enemyMap.get(enemyId); // O(1) Map lookup
-    if (!enemy || enemy.hp <= 0) return null;
+    if (!enemy || enemy.hp <= 0) return this._refuse(attacker, 'target_gone');
     // ── how many splash hits one swing is worth ──────────────────────────────
     // A splash hit never touched attacker._lastAtk, so nothing re-armed after
     // one: EVERY splash packet sent inside the 200ms after a real swing was
@@ -3956,8 +3968,8 @@ class Room {
     // where it already spent 5.
     const swing = attacker._splashHit || (attacker._splashHit = new Set());
     if (splash) {
-      if ((attacker._splashN || 0) >= MAX_SPLASH_PER_SWING) return null;
-      if (swing.has(enemy.id)) return null;
+      if ((attacker._splashN || 0) >= MAX_SPLASH_PER_SWING) return this._refuse(attacker, 'splash_cap');
+      if (swing.has(enemy.id)) return this._refuse(attacker, 'splash_dup');
       attacker._splashN = (attacker._splashN || 0) + 1;
     }
     swing.add(enemy.id);
@@ -3972,15 +3984,15 @@ class Room {
     // sampling test over a wall. _raceVisible is the same predicate the
     // streaming and targeting sides already use, so this makes "you may only
     // touch your own instance" one rule with one implementation.
-    if (!this._raceVisible(attacker, enemy)) return null;
+    if (!this._raceVisible(attacker, enemy)) return this._refuse(attacker, 'not_visible');
     // Range check: must be within 350px of the enemy's BODY (generous for AoE
     // skills). enemy.size is added because this is measured to its centre —
     // without it a large enemy shrinks the usable window by its own radius,
     // which rejected hits on the size-165 event boss.
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     const _reach = 350 + (enemy.size || 0);
-    if (rdx * rdx + rdy * rdy > _reach * _reach) return null;
-    if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
+    if (rdx * rdx + rdy * rdy > _reach * _reach) return this._refuse(attacker, 'out_of_range');
+    if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return this._refuse(attacker, 'no_los');
     // Guild War tower: only a clanned attacker from a DIFFERENT clan than the
     // current owner may damage it — checked here, inside Room.js rather than
     // in the handler, since this needs to run before damage is computed.

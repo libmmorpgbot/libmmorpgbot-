@@ -638,16 +638,38 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // клиент бьёт чаще, чем сервер принимает. Поэтому считается доля, и строка
   // печатается не чаще раза в минуту на сокет — это путь с семью ударами в
   // секунду на игрока, и запись на пакет утопила бы журнал.
+  // ── и ПОЧЕМУ он отклонён ──────────────────────────────────────────────────
+  // Первая версия этого счётчика считала отказы одной кучей и подписывала их
+  // выводом: «клиент бьёт чаще, чем Room принимает». В проде она тут же выдала
+  // ровно 25% — и оказалась бесполезной, потому что attackEnemy возвращает null
+  // по семи разным поводам, и самый частый из них при включённом АВТО
+  // совершенно нормален: замах по мобу, которого добил сосед. «Слишком часто» и
+  // «цели уже нет» лечатся по-разному, а строка не различала их.
+  //
+  // Теперь причину называет сама комната (Room._refuse), а здесь она только
+  // складывается. Выборка обязана быть осмысленной: «1 из 2» — это не 50%
+  // отказов, это два удара.
+  const _ATK_MIN_SAMPLE = 40;
   let _atkTried = 0, _atkRefused = 0, _atkLogAt = 0;
+  const _atkWhy = new Map();
   function resolveHit(enemyId, res) {
     _atkTried++;
     if (!res) {
       _atkRefused++;
+      const me = s.room && s.room.players.get(s.socket.id);
+      const why = (me && me._refuseWhy) || 'unknown';
+      _atkWhy.set(why, (_atkWhy.get(why) || 0) + 1);
       const _now = Date.now();
-      if (_now - _atkLogAt > 60000 && _atkRefused * 4 > _atkTried) {
+      // Порог по ДОЛЕ, а не по числу: отдельные отказы штатны всегда. И только
+      // по тем причинам, которые означают поломку — «слишком часто» и «нет
+      // линии взгляда»; «цели уже нет» это обычная жизнь авто-боя.
+      const broken = (_atkWhy.get('too_soon') || 0) + (_atkWhy.get('no_los') || 0);
+      if (_atkTried >= _ATK_MIN_SAMPLE && _now - _atkLogAt > 60000 && broken * 5 > _atkTried) {
         _atkLogAt = _now;
+        const parts = [..._atkWhy.entries()].sort((x, y) => y[1] - x[1])
+          .map(([k, n]) => `${k}=${n}`).join(' ');
         console.warn(`[attack] ${s.username || s.playerId}: отклонено ` +
-          `${_atkRefused} из ${_atkTried} ударов — клиент бьёт чаще, чем Room принимает`);
+          `${_atkRefused} из ${_atkTried} ударов — ${parts}`);
       }
       return;
     }
