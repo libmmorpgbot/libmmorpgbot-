@@ -83,7 +83,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
   safeOn('clanApply', ({ clanId } = {}) => s.act('clanApply', 'clanError', async (t, pid) => {
     const c = id(clanId);
     if (!c) fail('Клан не найден', 'bad_clan');
-    await clans.apply(t, c, pid);
+    await clans.apply(t, pid, c);
     s.socket.emit('clanApplySent', { clanId: c });
   }));
 

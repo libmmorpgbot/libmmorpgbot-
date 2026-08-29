@@ -976,6 +976,39 @@ function netConnect(onReady) {
   // это сборка», а значит и единственное, которое снимает гейт логина
   // (_gateLogin). Каждый выход отсюда обязан либо отпустить логин, либо
   // осознанно его отменить — иначе игрок остаётся на сплеше до таймаута гейта.
+  // Сервер уходит на обновление и говорит об этом сам, не дожидаясь, пока мы
+  // заметим обрыв. Смысл тот же, что у 'serverBuild' ниже, но без круга
+  // «обрыв → переподключение → сверка хешей», который на телефоне в фоне
+  // занимает минуты, а на свёрнутой вкладке не случается совсем.
+  socket.on('forceReload', ({ after } = {}) => {
+    if (_buildMismatch) return;             // уже идём на перезагрузку
+    // Тот же флаг, что у сверки сборок: логиниться по дороге не нужно ни на
+    // этом соединении, ни на тех, которые socket.io успеет открыть, пока мы
+    // ждём сервер. Это ~15 запросов к базе на игрока в момент, когда она и так
+    // разгребает возвращение всех сразу.
+    _buildMismatch = true;
+    _pendingLogin = null;
+    if (_loginGateTimer) { clearTimeout(_loginGateTimer); _loginGateTimer = null; }
+    _showReloadNotice();
+
+    // Перезагружаться сразу нельзя: сервер в эту секунду закрывается, а
+    // index.html отдаётся с no-cache — значит браузер пойдёт за ним на порт,
+    // которого уже нет, и покажет ошибку вместо игры. Поэтому ждём, пока
+    // /health снова ответит.
+    //
+    // Разброс — чтобы все, кто был онлайн, не вернулись одной секундой.
+    const base = Number.isFinite(after) ? Math.min(15000, Math.max(0, after)) : 2500;
+    const giveUpAt = Date.now() + 120000;
+    const _reload = () => { try { location.reload(); } catch (e) { /* уже ничего */ } };
+    const _whenUp = () => {
+      if (Date.now() > giveUpAt) return _reload();   // дольше двух минут — не наш случай
+      fetch('/health', { cache: 'no-store' })
+        .then(r => (r.ok ? _reload() : setTimeout(_whenUp, 1000)))
+        .catch(() => setTimeout(_whenUp, 1000));
+    };
+    setTimeout(_whenUp, base + Math.random() * 2500);
+  });
+
   socket.on('serverBuild', ({ build } = {}) => {
     const mine = window.__BUILD__ || '';
     // Сборки совпали (или сервер/страница не назвали свою — тогда судить не о
@@ -1599,6 +1632,23 @@ function netConnect(onReady) {
     }
   });
 
+  // Регенерацию теперь считает сервер (Room._regenTick) и раз в секунду
+  // присылает своё число. Клиент предсказывает ту же кривую теми же
+  // коэффициентами, поэтому это поправка на дрейф, а не источник HP —
+  // и полоса не дёргается.
+  //
+  // Не playerHurt: тот ставит hurtTimer и красную вспышку, а это не удар.
+  // Тянет и ВНИЗ тоже: HP принадлежит серверу, и если его число меньше —
+  // право за ним. Именно это расхождение и убивало игроков «с полным HP».
+  socket.on('hpSync', ({ hp } = {}) => {
+    if (!player || state !== 'playing') return;
+    if (!Number.isFinite(hp)) return;
+    // Экран смерти снимает respawn, а не это. Регенерация мёртвым не идёт, так
+    // что сюда попасть можно только пакетом, разошедшимся с playerDie.
+    if (player.hp <= 0) return;
+    player.hp = Math.max(0, Math.min(player.maxHp, hp));
+  });
+
   socket.on('faithShieldBuff', ({ duration }) => {
     if (!player) return;
     faithShieldTimer = duration;
@@ -1650,8 +1700,8 @@ function netConnect(onReady) {
         spawnBurst(player.x, player.y, '#ff8', 6);
       } else if (type === 'slow') {
         player.slowTimer = Math.max(player.slowTimer || 0, duration);
-        dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('slowToast') : 'ЗАМЕДЛЕНИЕ!', '#4af');
-        spawnBurst(player.x, player.y, '#4af', 4);
+        dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('slowToast') : 'ЗАМЕДЛЕНИЕ!', '#ffcf6b');
+        spawnBurst(player.x, player.y, '#ffcf6b', 4);
       }
       return;
     }
@@ -1669,7 +1719,7 @@ function netConnect(onReady) {
       e.hurtTimer = 0.3;
       if (dmg) {
         _lastOwnDmg = dmg; // track for optimistic kill prediction
-        if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c00', 19);
+        if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ffffff', 19);
         else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
         if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
         // No Sound.hit() here: this broadcasts to everyone on the floor for
@@ -1688,13 +1738,13 @@ function netConnect(onReady) {
   // this same socket and already applied them to player.inventory.
   function _showStoneLoot(stoneId, qty, px, py) {
     const label = typeof t === 'function' ? (stoneId === 'bless_stone' ? t('safeStoneLbl') : t('enchantStoneLbl')) : (stoneId === 'bless_stone' ? 'Безоп. камень' : 'Камень заточки');
-    dmgNum(px, py - 52, `+${qty}× ${label}`, stoneId === 'bless_stone' ? '#88f' : '#fa8');
+    dmgNum(px, py - 52, `+${qty}× ${label}`, stoneId === 'bless_stone' ? '#ded0ff' : '#fa8');
   }
 
   function _showBoxLoot(boxId, qty, px, py) {
     const def = BOX_DEF.find(b => b.id === boxId);
     if (!def) return;
-    dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#5dade2' : '#98e456');
+    dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#cfe8ff' : '#98e456');
   }
 
   socket.on('enemyKilled', ({ id, xp, gold, goldTotal, level, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
@@ -1703,7 +1753,7 @@ function netConnect(onReady) {
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
     if (dmg) {
-      if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c00', 19); else dmgNum(px, py - 20, dmg, '#ff4');
+      if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ffffff', 19); else dmgNum(px, py - 20, dmg, '#ff4');
       if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
     }
     spawnBurst(px, py, color || '#f80', 8);
@@ -1758,7 +1808,7 @@ function netConnect(onReady) {
     if (nexum && player) {
       window._nexumBalance = (window._nexumBalance || 0) + nexum;
       player.nexumBalance = window._nexumBalance;
-      dmgNum(px, py - 52, '+' + nexum + ' Liberty', '#00e5ff');
+      dmgNum(px, py - 52, '+' + nexum + ' Liberty', '#ffe9a8');
     }
     if (gram && player) {
       window._gramBalance = (window._gramBalance || 0) + gram;

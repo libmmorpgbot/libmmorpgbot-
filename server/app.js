@@ -199,16 +199,73 @@ const _clientErrRate = new Map();       // ip -> { n, until }
 // 'canvas': это ровно те две ошибки, которые НЕВОЗМОЖНО получить при
 // ненулевом экране. Любая другая поломка рендера доложится как прежде —
 // канал чистят ради того, чтобы в нём снова было видно настоящее.
+// Правило: {where, re}. where === null — смотреть только на текст.
+//
+// Каждая строка ниже — это НЕ ошибка игры. Разбор по первым суткам продакшена:
 const _CLIENT_NOISE = [
-  /radius provided \(-[\d.]+\) is negative/i,
-  /canvas element with a width or height of 0/i,
-  /^zero-viewport/i,
+  // Геометрия канваса в момент, когда экрана ещё/уже нет.
+  { where: /^(frame|world-blank)$/, re: /radius provided \(-[\d.]+\) is negative/i },
+  { where: /^(frame|world-blank)$/, re: /canvas element with a width or height of 0/i },
+  { where: /^(frame|world-blank)$/, re: /^zero-viewport/i },
+
+  // «ResizeObserver loop completed with undelivered notifications» — это не
+  // ошибка, а СООБЩЕНИЕ спецификации о том, что перерасчёт размеров занял
+  // больше одного кадра. Спека прямо разрешает браузеру его отправить, ни один
+  // обработчик при этом не падал, ничего не сломалось. Chrome шлёт его в
+  // window.onerror, поэтому оно и приезжало алертом.
+  { where: null, re: /ResizeObserver loop/i },
+
+  // Обрыв связи у игрока. 'timeout' на подключении в Telegram-вебвью на
+  // мобильном интернете — это метро, лифт и свёрнутое приложение, а не сервер:
+  // socket.io переподключается сам, и в тех же логах видно, что игрок остаётся
+  // в игре. Сервер о своём здоровье докладывает отдельно и сам.
+  { where: /^connect$/, re: /^(timeout|xhr poll error|websocket error|transport (close|error)|server error|parse error)$/i },
+
+  // То же самое, но у админки: телефон админа потерял сеть между запросами
+  // /admin/stats. «Failed to fetch» — это и есть «сети не было».
+  { where: /^admin:api$/, re: /(failed to fetch|networkerror|load failed|network ?connection was lost|the internet connection appears)/i },
+
+  // Оборванная загрузка бандла. SyntaxError на «unexpected end of input» или на
+  // одинокой скобке означает, что файл доехал не целиком — соединение
+  // разорвалось на середине. Если бы бандл был сломан на самом деле, это
+  // приехало бы ОТ ВСЕХ сразу и одинаковым текстом, а не от двух человек с
+  // разными сообщениями. Лечится перезагрузкой на стороне игрока.
+  { where: /^js$/, re: /^(uncaught )?syntaxerror: unexpected (end of input|token)/i },
+
+  // Потерянный контекст WebGL. «контекст терял 1, вернул 0» — браузер отобрал
+  // GPU-контекст у фоновой вкладки; так делают все мобильные вебвью под
+  // нехваткой памяти. Клиент это переживает сам (см. попытки пересоздания в
+  // js/pixi-world.js), и отчёт приходит уже ПОСЛЕ возврата на экран.
+  { where: /^(world-blank|pixi-init)$/, re: /контекст терял [1-9]/ },
+
+  // И тот же случай с другой стороны: «кадр 8358мс назад» значит, что игровой
+  // цикл не крутился восемь секунд. Вкладку заморозили — «коли гравці просто
+  // згортають». Настоящий отказ отрисовки при живом цикле (кадр свежий) сюда
+  // не попадает и приедет алертом, как и раньше.
+  { where: /^(world-blank|pixi-init)$/, re: /кадр \d{4,}мс назад/ },
 ];
+
+// Считаем то, что промолчали. Иначе «мы это отключили» и «этого больше не
+// происходит» становятся неразличимы — а разница между ними и есть весь смысл
+// фильтра.
+const _noiseSeen = new Map();
+let _noiseLogAt = 0;
 function _isClientNoise(where, message) {
   const w = String(where || '');
-  if (w !== 'frame' && w !== 'world-blank') return false;
   const m = String(message || '');
-  return _CLIENT_NOISE.some(re => re.test(m));
+  const hit = _CLIENT_NOISE.some(r => (!r.where || r.where.test(w)) && r.re.test(m));
+  if (!hit) return false;
+  const key = w + ':' + m.replace(/\d+/g, '#').slice(0, 60);
+  _noiseSeen.set(key, (_noiseSeen.get(key) || 0) + 1);
+  const now = Date.now();
+  if (now - _noiseLogAt >= 600000) {
+    _noiseLogAt = now;
+    const top = [..._noiseSeen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    console.log('[client-noise] заглушено за окно: ' +
+      top.map(([k, n]) => `${k} ×${n}`).join(' · '));
+    _noiseSeen.clear();
+  }
+  return true;
 }
 
 app.post('/client-error', (req, res) => {
@@ -1258,13 +1315,17 @@ io.on('connection', (socket) => {
     const now = Date.now();
     if (now - _cerrAt > 60000) { _cerrAt = now; _cerrN = 0; }
     if (++_cerrN > 10) return;               // a looping client is one problem
-    if (_isClientNoise(where, message)) return;
     const w = String(where || 'client').slice(0, 60);
     const msg = String(message || '').slice(0, 400);
     if (!msg) return;
     const st = String(stack || '').split('\n').slice(0, 6).join('\n').slice(0, 900);
     const ua = String(socket.handshake.headers['user-agent'] || '').slice(0, 160);
+    // В журнал — ВСЁ, включая шум: он в базе, его читают запросом, и он никого
+    // не будит. В Telegram — только то, на что надо смотреть сейчас. Раньше
+    // одна проверка отменяла сразу обе записи, и заглушенное переставало
+    // существовать вовсе.
     plog.log(s.playerId, 'client:' + w, { msg, stack: st || undefined, ua });
+    if (_isClientNoise(where, message)) return;
     ops.alert(`client.${w}.${msg.replace(/\d+/g, '#').slice(0, 80)}`,
       `Ошибка у игрока (${w})`, st || msg, {
         сообщение: msg,
@@ -1560,6 +1621,24 @@ async function shutdown(signal, { exit = true } = {}) {
 
   workers.stop();
   world.stopAll();
+
+  // ── всех, кто сейчас играет, — на новую версию ────────────────────────────
+  // «під час кожної обнови користувачів має викидувати, щоб не грали на старій
+  // версії».
+  //
+  // Сверка сборок была и раньше, но срабатывала ТОЛЬКО на 'connect': клиент
+  // должен сначала заметить обрыв, переподключиться, дождаться 'serverBuild' и
+  // сравнить хеши. В Telegram-вебвью на телефоне это минуты — а свёрнутая
+  // вкладка не переподключается вовсе, пока её не откроют.
+  //
+  // Здесь сказано прямо, ДО server.close(), пока сокеты ещё живы. Когда именно
+  // перезагрузиться, решает клиент: он ждёт, пока /health снова начнёт
+  // отвечать, иначе полсотни человек перезагрузятся в мёртвый порт и получат
+  // пустую страницу вместо игры.
+  try { io.emit('forceReload', { after: 2500 }); } catch (err) {
+    console.error('[shutdown] forceReload:', err.message);
+  }
+
   // Stop taking new connections first, so the flush below is bounded by the
   // sessions that already exist rather than racing new ones.
   server.close();

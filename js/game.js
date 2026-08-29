@@ -260,6 +260,9 @@ function _applyPosCorrection(dt) {
 }
 
 function clampCamera() {
+  // Карты может не быть: между входом и первым gameStart, и после обрыва
+  // связи, когда мир стёрт. Оба вызывающих места к этому моменту уже живы.
+  if (!dungeon) return;
   const visW = W / ZOOM, visH = _visH();
   camera.x = clamp(camera.x, 0, Math.max(0, dungeon.w * TILE - visW));
   camera.y = clamp(camera.y, 0, Math.max(0, dungeon.h * TILE - visH));
@@ -1763,7 +1766,7 @@ function _teleportTo(tx, ty, label) {
   player.x = tx; player.y = ty;
   camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2; clampCamera();
   spawnBurst(player.x, player.y, '#7fd7ff', 20);
-  dmgNum(player.x, player.y - 30, `→ ${label}`, '#7fd7ff', 15);
+  dmgNum(player.x, player.y - 30, `→ ${label}`, '#ffd98a', 15);
 }
 
 // Real floor transition (hub <-> arm) — replaces _teleportTo for the pads
@@ -2108,7 +2111,7 @@ function _updateArmGates(dt) {
     } else if (!_enteredArms.has(g.dir)) {
       _enteredArms.add(g.dir);
       spawnBurst(g.x, g.y, '#7fd7ff', 16);
-      dmgNum(g.x, g.y - 30, '→ ' + (typeof tVars === 'function' ? tVars('enteredCorridorToast', { arm: _ARM_LABEL[g.dir] }) : `Вы вошли в ${_ARM_LABEL[g.dir]} коридор`), '#7fd7ff', 15);
+      dmgNum(g.x, g.y - 30, '→ ' + (typeof tVars === 'function' ? tVars('enteredCorridorToast', { arm: _ARM_LABEL[g.dir] }) : `Вы вошли в ${_ARM_LABEL[g.dir]} коридор`), '#ffd98a', 15);
     }
   }
 }

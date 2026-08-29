@@ -255,6 +255,12 @@ function _critDmg(base, critChance, critPower) {
 // faithShield/party heal, respawn) all go through their own dedicated,
 // server-applied paths and are never gated by this.
 const MAX_HP_REGEN_PER_SEC = 30;
+// Как часто комната поправляет собственное HP игрока у него на экране. Клиент
+// предсказывает ту же кривую теми же коэффициентами (js/player.js recompute →
+// js/game.js), так что это поправка на дрейф, а не источник HP: раз в секунду
+// хватает, чтобы расхождение не успевало вырасти до заметного, и это один
+// маленький пакет в секунду на игрока — и только пока он ранен.
+const HP_SYNC_EVERY_MS = 1000;
 // Server-side minimum gap between two skill CASTS from the same player. The
 // real cooldowns are seconds long and enforced by the client; this only has to
 // be tight enough that spamming the event isn't worth anything.
@@ -1749,6 +1755,7 @@ class Room {
     armPresent.clear();
     const gw = this._dungeon.guildWar;
     this.players.forEach(p => {
+      this._regenTick(p, dt, now);
       const nowIn = this._inSafeZone(p.x, p.y);
       if (nowIn && !p._wasInSafeZone) (entered || (entered = new Set())).add(p.socketId);
       p._wasInSafeZone = nowIn;
@@ -3216,6 +3223,52 @@ class Room {
       this.io.to(socketId).emit('posCorrect', { x: p.x, y: p.y });
     }
     return false;
+  }
+
+  // ── пассивная регенерация HP ───────────────────────────────────────────────
+  // Её не было. Совсем: hpRegen считался (compute() в repos/stats.js, строка
+  // выше в этом файле), клался в p.hpRegen — и не читался больше нигде. А
+  // клиент своё HP регенерировал каждый кадр (js/game.js: `player.hp +=
+  // player.hpRegen * dt`).
+  //
+  // Значит два числа расходились ровно на всё, что игрок за сессию залечил, и
+  // расходились БЕЗ ГРАНИЦЫ — час фарма 30-го уровня это несколько тысяч HP.
+  // Комната — власть над уроном и над смертью, поэтому убивало по ЕЁ числу,
+  // пока на экране стояло своё:
+  //
+  //   «многие с фулл хп падают, сервер и клиент будто неправильные цифры»
+  //   «бился с 28 лвл монстрами, в один момент тупо убивают, а у него ещё
+  //    оставалось 985 hp»
+  //
+  // Тем же самым объясняется и вторая жалоба: Session.savePosition пишет в базу
+  // hp ИЗ КОМНАТЫ, поэтому вылеченное значение туда не попадало никогда —
+  // «здоровье восстанавливается, затем перезаходишь и возвращается к
+  // первичному показателю».
+  //
+  // Считает СЕРВЕР, а не принимает от клиента. Принимать — это ровно то, для
+  // чего был написан syncPlayerHp ниже, и ровно поэтому у него так и не
+  // появилось вызова: клиент, который сообщает своё HP, это клиент, который
+  // может сообщать maxHp вечно. Формула здесь одна и та же с той, которой
+  // клиент предсказывает, так что предсказание и правда совпадают по
+  // построению, а sync ниже правит только дрейф.
+  _regenTick(p, dt, now) {
+    if (p.hp <= 0 || p.hp >= p.maxHp) return;
+    const rate = p.hpRegen;
+    // Проверяется, а не предполагается: p.hpRegen заполняет setPlayerStats, и
+    // между входом в комнату и первым его вызовом игрок уже здесь. `undefined
+    // * dt` даёт NaN, а NaN в hp поглощающий — все последующие `hp <= 0`
+    // ложны, и один такой тик сделал бы игрока не «нелечащимся», а бессмертным.
+    // То же правило, что healPlayer записал у себя ниже.
+    if (!Number.isFinite(rate) || rate <= 0) return;
+    const before = p.hp;
+    p.hp = Math.min(p.maxHp, p.hp + rate * dt);
+    // Раз в секунду — и ещё раз в тот момент, когда полоса заполнилась. Без
+    // второго условия стороны замирали бы в паре очков друг от друга навсегда:
+    // полное HP больше не порождает синхронизаций.
+    const filled = p.hp >= p.maxHp && before < p.maxHp;
+    if (!filled && now - (p._hpSyncAt || 0) < HP_SYNC_EVERY_MS) return;
+    p._hpSyncAt = now;
+    this.io.to(p.socketId).emit('hpSync', { hp: Math.floor(p.hp) });
   }
 
   syncPlayerHp(socketId, clientHp) {

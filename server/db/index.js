@@ -240,7 +240,7 @@ async function tx(fn) {
 // an error message, not a longer wait.
 const RETRYABLE = new Set(['40001', '40P01']);
 
-async function txRetry(fn, attempts = 3) {
+async function txRetry(fn, attempts = 5) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -248,9 +248,14 @@ async function txRetry(fn, attempts = 3) {
     } catch (err) {
       if (!RETRYABLE.has(err.code)) throw err;
       lastErr = err;
-      // 5ms, 10ms, 20ms — long enough to let the other transaction finish,
-      // short enough that the player does not feel it.
-      if (i < attempts - 1) await new Promise(r => setTimeout(r, 5 * (2 ** i)));
+      // 5ms, 10ms, 20ms, 40ms — с разбросом. Ровный backoff означает, что две
+      // проигравшие транзакции просыпаются вместе и сталкиваются снова тем же
+      // порядком: в проде это выглядело как пять deadlock'ов подряд у одного
+      // игрока за одну минуту, где три из них — повторы одной и той же пары.
+      // Верхняя граница по-прежнему мала: игрок ждёт ответа на нажатие.
+      if (i < attempts - 1) {
+        await new Promise(r => setTimeout(r, 5 * (2 ** i) * (1 + Math.random())));
+      }
     }
   }
   throw lastErr;

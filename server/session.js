@@ -580,6 +580,11 @@ class Session {
       plog.log(this.playerId, 'error', { action: name, msg: String(err && err.message || err).slice(0, 300) });
       ops.alertError(`act.${name}`, `Ошибка в обработчике ${name}`, err, {
         player: this.username, telegramId: this.telegramId,
+        // Для 40P01/40001 здесь лежит разбор цикла: оба процесса, обе
+        // блокировки и оба запроса. Без него «deadlock detected» — это
+        // сообщение, по которому нельзя ничего сделать.
+        detail: err && err.detail ? String(err.detail).slice(0, 500) : undefined,
+        код: err && err.code ? String(err.code) : undefined,
       });
       this._emitRaw(errEvent, { msg: 'Ошибка сервера — попробуйте ещё раз' });
       return null;

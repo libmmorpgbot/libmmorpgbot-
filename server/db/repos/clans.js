@@ -135,6 +135,12 @@ async function create(db, playerId, name, icon) {
 // ── membership ──────────────────────────────────────────────────────────────
 
 async function apply(db, playerId, clanId) {
+  // Первым делом — строка игрока. Порядок «игрок, потом клан» держится во всём
+  // файле (create, deposit, unlockStorage) и в killReward; INSERT ниже берёт
+  // FOR KEY SHARE и на players, и на clans, и без явного захвата очередь между
+  // ними решал планировщик — то есть иногда в обратную сторону. См. разбор
+  // цикла над этой функцией.
+  await items.lockPlayer(db, playerId);
   const { rows: m } = await query(db, 'SELECT clan_id FROM clan_members WHERE player_id = $1', [playerId]);
   if (m.length) err('in_clan', 'Ви вже в клані');
   await query(db, `
@@ -147,6 +153,11 @@ async function apply(db, playerId, clanId) {
 // the clan row — otherwise two officers accepting the 30th and 31st applicant
 // at once both see 29 members and the clan ends up over its cap.
 async function accept(db, leaderId, clanId, playerId) {
+  // ПЕРЕД захватом клана — см. разбор цикла над apply(). Здесь это особенно
+  // заметно: _requireLeader{lock} берёт clans FOR UPDATE, а INSERT
+  // clan_members двумя строками ниже берёт players FOR KEY SHARE, и ровно эта
+  // пара встречалась с killReward, идущим в обратном порядке.
+  await items.lockPlayer(db, playerId);
   await _requireLeader(db, leaderId, clanId, { lock: true });
 
   const { rows: n } = await query(db,

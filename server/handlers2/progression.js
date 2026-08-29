@@ -414,20 +414,60 @@ module.exports = function registerProgression(s, safeOn) {
   // ── ratings ──────────────────────────────────────────────────────────────
   // bm is a stored column, recomputed whenever stats change, so the board is
   // an index scan rather than thirty numbers derived per row.
-  safeOn('getRating', ({ tab } = {}) => s.act('getRating', 'ratingError', async (t) => {
+  // Контракт этих строк задаёт _renderRatingBody (js/ui.js), и порт разошёлся
+  // с ним по КАЖДОМУ полю, кроме имени:
+  //
+  //   игроки   отдавалось `lvl`, читается `r.level` — «Ур. ${r.level || 1}»,
+  //            то есть у всех в таблице стоял 1 уровень;
+  //   кланы    отдавалось `members` и `xp`, читается `r.memberCount` и
+  //            `r.totalBm` — «undefined участников» и 0 БМ у всех;
+  //   своя     строка игрока вне первой полусотни (rank/isSelf/gap) не
+  //   строка   отправлялась вовсе, хотя панель её рисует.
+  //
+  // Имена полей взяты из прежней сборки (server/handlers/questseason.js), а не
+  // придуманы заново: панель писалась под неё и не менялась.
+  safeOn('getRating', ({ tab } = {}) => s.act('getRating', 'ratingError', async (t, pid) => {
     const { query } = require('../db');
     if (tab === 'clans') {
+      // По СУММЕ БМ участников, как было раньше. Порт сортировал по clans.xp —
+      // счётчику убийств клана, который не говорит о его силе ничего.
+      //
+      // JOIN, а не LEFT JOIN: клан без участников в таблицу не попадал и в
+      // прежней сборке (`if (!clan.members?.length) continue`).
       const { rows } = await query(t, `
-        SELECT c.id, c.name, c.icon, c.level, c.xp,
-               (SELECT count(*)::int FROM clan_members m WHERE m.clan_id = c.id) AS members
-          FROM clans c ORDER BY c.xp DESC LIMIT 50`);
-      return s.socket.emit('ratingData', { tab: 'clans', rows });
+        SELECT c.name, c.icon,
+               count(m.player_id)::int        AS "memberCount",
+               COALESCE(sum(p.bm), 0)::bigint AS "totalBm"
+          FROM clans c
+          JOIN clan_members m ON m.clan_id = c.id
+          JOIN players p      ON p.id = m.player_id AND NOT p.banned
+         GROUP BY c.id, c.name, c.icon
+         ORDER BY "totalBm" DESC, c.id
+         LIMIT 50`);
+      // sum() по bigint приходит из pg СТРОКОЙ, а панель зовёт .toLocaleString()
+      // — на строке он вернёт её как есть, без разделителей разрядов.
+      return s.socket.emit('ratingData', {
+        tab: 'clans',
+        rows: rows.map(r => ({ ...r, totalBm: Number(r.totalBm) })),
+      });
     }
     const { rows } = await query(t, `
-      SELECT p.username, p.bm, pr.lvl
+      SELECT p.username, p.bm, pr.lvl AS level
         FROM players p JOIN player_progress pr ON pr.player_id = p.id
        WHERE NOT p.banned AND p.bm > 0
-       ORDER BY p.bm DESC LIMIT 50`);
+       ORDER BY p.bm DESC, p.id LIMIT 50`);
+    // Своя строка, если игрока нет в полусотне: место считается запросом, а не
+    // берётся из кэша таблицы — это единственное число в панели, за которым
+    // человек следит, и оно должно быть сегодняшним.
+    if (!rows.some(r => r.username === s.username)) {
+      const { rows: me } = await query(t, `
+        SELECT p.username, p.bm, pr.lvl AS level,
+               (SELECT count(*) FROM players q
+                 WHERE NOT q.banned AND q.bm > p.bm)::int + 1 AS rank
+          FROM players p JOIN player_progress pr ON pr.player_id = p.id
+         WHERE p.id = $1`, [pid]);
+      if (me.length) rows.push({ ...me[0], isSelf: true, gap: true });
+    }
     s.socket.emit('ratingData', { tab: 'players', rows });
   }));
 };
