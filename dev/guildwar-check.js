@@ -118,12 +118,17 @@ async function main() {
   const me = room.players.get('sock_a');
   me.x = tower.x + 40; me.y = tower.y;
 
-  // attackEnemy rate-limits one hit per attacker per 150ms. That rule has its
-  // own tests; here it would just make every assertion below read `null`, so
-  // the clock is cleared before each swing.
+  // attackEnemy обмежує потік ударів відром токенів, що наповнюється за
+  // швидкістю атаки гравця (Room._attackAllowed). У цієї перевірки інша тема —
+  // захоплення замку, — а порожнє відро зробило б кожне твердження нижче
+  // `null`. Тому перед кожним замахом відро скидається у повне: _atkBudgetAt
+  // === null означає «накопичувати не було де», і саме так починає гравець,
+  // який щойно увійшов у світ.
+  //
+  // _lastAtk скидається окремо: він більше не про темп, він про вікно splash.
   const swing = (sid) => {
     const p2 = room.players.get(sid);
-    if (p2) p2._lastAtk = 0;
+    if (p2) { p2._lastAtk = 0; p2._atkBudgetAt = null; p2._atkBudget = 0; }
     return room.attackEnemy(sid, tower.id);
   };
 

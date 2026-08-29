@@ -262,12 +262,16 @@ const MAX_HP_REGEN_PER_SEC = 30;
 // хватает, чтобы расхождение не успевало вырасти до заметного, и это один
 // маленький пакет в секунду на игрока — и только пока он ранен.
 const HP_SYNC_EVERY_MS = 1000;
-// См. Room._attackMinGapMs.
-const ATTACK_GAP_TOLERANCE = 0.85;
-const ATTACK_GAP_HARD_MIN_MS = 40;
-// Когда скорость атаки ещё не проставлена (игрок в комнате, но setPlayerStats
-// не отработал) — прежнее плоское значение: не строже, чем было.
-const ATTACK_GAP_FALLBACK_MS = 150;
+// См. Room._attackAllowed.
+//
+// Сколько ударов может накопиться за паузу. Это ЕДИНСТВЕННОЕ послабление, и
+// оно про доставку, а не про скорость: длинная пробежка или свёрнутая на
+// секунду вкладка не должны стоить игроку урона, а долгосрочный темп ведро
+// держит ровно на скорости атаки.
+const ATTACK_BURST_MAX = 3;
+// Пока setPlayerStats не отработал, скорость атаки неизвестна — берётся
+// медленнейший класс, чтобы окно не оказалось шире реального.
+const ATTACK_RATE_FALLBACK = 1.2;
 // Server-side minimum gap between two skill CASTS from the same player. The
 // real cooldowns are seconds long and enforced by the client; this only has to
 // be tight enough that spamming the event isn't worth anything.
@@ -3363,21 +3367,49 @@ class Room {
     return false;
   }
 
-  // Минимальный промежуток между принятыми ударами ЭТОГО игрока — см. разбор
-  // в attackEnemy.
-  //
-  // Допуск: клиент шлёт ровно 1/atkSpeed, и без запаса каждый пакет, пришедший
-  // на миллисекунду раньше из-за дрожания сети, терялся бы. 15% — это меньше
-  // одного кадра при 60 fps и заметно меньше разброса мобильной сети.
-  //
-  // Нижняя граница — не правило, а страховка от бессмысленного значения
-  // atkSpeed; настоящий предел даёт формула выше.
-  _attackMinGapMs(p) {
+  // Ударов в секунду, на которые этот игрок имеет право. Считает сервер, из
+  // класса, уровня, снаряжения и пассивок (repos/stats.js) — подделать клиент
+  // не может. Навычное ускорение — окно, открытое сервером после проверки
+  // навыка, а не число из пакета.
+  _attackRate(p) {
     let as = Number(p && p.atkSpeed);
-    if (!Number.isFinite(as) || as <= 0) return ATTACK_GAP_FALLBACK_MS;
-    // Навычное ускорение — окно, открытое сервером после проверки навыка.
+    if (!Number.isFinite(as) || as <= 0) as = ATTACK_RATE_FALLBACK;
     if (p._hasteUntil > Date.now() && p._hasteMult > 1) as *= p._hasteMult;
-    return Math.max(ATTACK_GAP_HARD_MIN_MS, (1000 / as) * ATTACK_GAP_TOLERANCE);
+    return as;
+  }
+
+  // ── ведро вместо порога ────────────────────────────────────────────────────
+  // Сначала здесь стоял простой порог: удар принимается, если с предыдущего
+  // прошло не меньше 1/atkSpeed (с допуском 15% на дрожание). В проде он тут же
+  // показал, чего не показывали замеры: 25% ударов отклонялось с причиной
+  // too_soon у КАЖДОГО активно бьющего игрока.
+  //
+  // Клиент при этом не бьёт быстрее, чем умеет — он планирует замах ровно на
+  // 1/atkSpeed и, из-за квантования по кадрам, скорее чуть медленнее. Раньше
+  // приходят ПАКЕТЫ: TCP склеивает два подряд после короткой заминки, и сервер
+  // видит их в одну миллисекунду. Порог по последнему принятому удару такой
+  // сдвоенности не переживает никак — второй пакет всегда «слишком рано», —
+  // и никакой допуск этого не чинит, потому что дело не в величине зазора, а
+  // в том, что зазор мерится не от того.
+  //
+  // Ведро мерит ПОТОК. За паузу накапливается право на удар, склеенная пара
+  // тратит накопленное и проходит целиком, а долгосрочный темп остаётся ровно
+  // равен скорости атаки — то есть потолок стал ТОЧНЫМ, допуск больше не нужен
+  // и не раздаёт лишних процентов.
+  //
+  // Пустое ведро — это уже не дрожание, а поток быстрее, чем персонаж умеет
+  // бить: ровно то, что и должно отклоняться.
+  _attackAllowed(attacker, now) {
+    const perMs = this._attackRate(attacker) / 1000;
+    const last = attacker._atkBudgetAt;
+    // Первый удар в сессии — с полным ведром: игрок, только вошедший в мир, не
+    // должен ждать, и накапливать ему было негде.
+    let budget = (last == null) ? ATTACK_BURST_MAX
+      : Math.min(ATTACK_BURST_MAX, (attacker._atkBudget || 0) + (now - last) * perMs);
+    attacker._atkBudgetAt = now;
+    if (budget < 1) { attacker._atkBudget = budget; return false; }
+    attacker._atkBudget = budget - 1;
+    return true;
   }
 
   syncPlayerHp(socketId, clientHp) {
@@ -3928,7 +3960,7 @@ class Room {
       // сервер (repos/stats.js) из класса, уровня, снаряжения и пассивок, так
       // что подделать её клиент не может. Быстрым это возвращает их скорость,
       // медленным — закрывает дыру.
-      if (now - (attacker._lastAtk || 0) < this._attackMinGapMs(attacker)) return this._refuse(attacker, 'too_soon');
+      if (!this._attackAllowed(attacker, now)) return this._refuse(attacker, 'too_soon');
       attacker._lastAtk = now;
       // A real swing opens a fresh splash budget for the window it starts —
       // see the block under the enemy lookup for what that budget is and why.
