@@ -70,13 +70,43 @@ const WRITE_ACTIONS = new Set([
   'clanStorageCancel', 'clanStorageUnlock',
   'registerCodexSetItem', 'selectChar', 'respawn',
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
-  // player-log row at all; killReward is the single most common way an item
-  // or a coin enters the world.
-  'killReward', 'killRewardShare', 'pickupWorldDrop',
+  // player-log row at all.
+  'pickupWorldDrop',
   'gramShopBuy', 'starterBonusClaim', 'buyTeleportStone', 'useTeleportStone',
   'seasonBurn', 'seasonBurnAll', 'seasonBurnBook',
-  'skillHeal', 'enterLocation',
+  'enterLocation',
 ]);
+
+// ── чего здесь БОЛЬШЕ НЕТ, и почему ─────────────────────────────────────────
+// killReward, killRewardShare и skillHeal стояли в этом списке и давали 93.6%
+// всех строк журнала: за два часа 236 189 записей, из них 225 223 — эти три.
+// Порядка 2.8 миллиона в сутки, 97 МБ за неполный месяц. Журнал,
+// в котором на одну осмысленную строку приходится пятнадцать «убил моба»,
+// нельзя ни прочитать глазами, ни удержать в базе — «логи вообще непонятные,
+// так и база задохнётся».
+//
+// И главное: они ничего не добавляли. Правило этого списка — «если игрок потом
+// спросит, куда это делось или откуда взялось, ответ должен существовать», — и
+// для убийства ответ уже существует, в ДВУХ местах:
+//
+//   ledger        каждая монета с reason='mob_kill' и своим idem_key;
+//   item_ledger   каждый предмет с reason='kill' и id строки, в которую он лёг.
+//
+// Оба — с суммами, оба сводятся звёркой (money.reconcile, items.reconcile), и
+// оба переживают удаление партиций журнала. Строка «killReward произошёл»
+// рядом с ними не отвечает ни на один вопрос.
+//
+// skillHeal не двигает вообще ничего: он лечит, а лечение — не ценность,
+// которую можно потерять. Он попал сюда механически, когда заменил собой
+// healParty.
+//
+// usePotion ОСТАЁТСЯ, хотя это ещё 2%: расход зелья не записан больше нигде —
+// сумка это счётчик в jsonb, а не строки с реестром, — и «куда делись мои
+// банки» спрашивают. Без трёх верхних он стоит 55 тысяч строк в сутки вместо
+// двух с половиной миллионов.
+//
+// ОТКАЗЫ по всем этим действиям пишутся по-прежнему: они редки, и именно их
+// спрашивают.
 
 // ── what a success row SAYS ─────────────────────────────────────────────────
 // A row carrying only the action's NAME answers "did it happen", and nobody has

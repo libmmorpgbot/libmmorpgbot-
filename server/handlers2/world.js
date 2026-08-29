@@ -390,8 +390,22 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // soloing is never worse than grouping by accident.
     const partyId = party.playerParty.get(s.socket.id);
     const members = partyId ? party.parties.get(partyId) : null;
+    // ── и только с теми, кто рядом ───────────────────────────────────────
+    // Условием было «в той же комнате» — а комната это ВЕСЬ этаж. Один стоял
+    // в городе, второй фармил в коридоре, и опыт с золотом шли обоим:
+    // «Опыт идет всем членам пати на всю локу», «один в городе стоит, другой
+    // в локе бьёт и опыт идёт».
+    //
+    // Правило близости у комнаты уже есть и уже работает — им пользуется хил
+    // группы (arePlayersNear: одна ветка карты и радиус PARTY_SHARE_R2).
+    // Награда за убийство обязана спрашивать то же самое, иначе «пати» — это
+    // способ получать опыт, не заходя в игру.
+    //
+    // Делитель считается ПОСЛЕ отбора, так что стоящий в городе не уменьшает
+    // долю тех, кто дерётся.
     const mates = members
-      ? [...members.keys()].filter(id => id !== s.socket.id && s.room && s.room.players.has(id))
+      ? [...members.keys()].filter(id => id !== s.socket.id && s.room && s.room.players.has(id)
+          && s.room.arePlayersNear(s.socket.id, id))
       : [];
     const share = mates.length + 1;
     const baseGold = Math.round((result.gold || 0) / share);

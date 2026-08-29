@@ -325,7 +325,12 @@ async function reconcileItems() {
 async function maintain() {
   try {
     await query(null, 'SELECT ensure_log_partitions(2)');
-    await query(null, 'SELECT drop_old_log_partitions(6)');
+    // Два месяца, а не шесть. Журнал отвечает на вопрос «что случилось с моим
+    // предметом на той неделе», и за пределами пары месяцев его никто не
+    // задаёт — а вот денежный и предметный реестры хранят движения ценностей
+    // без срока и звёркой сводятся. Шесть месяцев при прежнем объёме были бы
+    // несколькими гигабайтами строк «убил моба».
+    await query(null, 'SELECT drop_old_log_partitions(2)');
     await gram.expireStaleIntents(null);
   } catch (err) {
     console.error('[workers] maintain:', err);

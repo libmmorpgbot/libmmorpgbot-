@@ -52,9 +52,39 @@ function _clean(meta) {
   return Object.keys(out).length ? out : null;
 }
 
+// ── одинаковые отказы подряд сворачиваются ──────────────────────────────────
+// refuse:useTeleportStone дал 5007 строк за два часа — это один игрок, который
+// держит недоступную ему кнопку. Первый отказ важен: он объясняет, почему у
+// человека «не работает». Пять тысяч одинаковых — это уже не сведения, это
+// шум, в котором тонет всё остальное.
+//
+// Сворачивается по (игрок, событие, код) и только для отказов: успех — это
+// движение ценности, и каждое обязано остаться. Через окно пишется новая
+// строка с числом подавленных, так что «сколько раз» не теряется.
+const REFUSE_WINDOW_MS = 60000;
+const _refuseSeen = new Map();          // ключ -> { at, n }
+
+function _refuseThrottle(pid, event, meta) {
+  if (!event.startsWith('refuse:')) return null;
+  const key = pid + '|' + event + '|' + ((meta && meta.code) || '');
+  const now = Date.now();
+  const prev = _refuseSeen.get(key);
+  if (prev && now - prev.at < REFUSE_WINDOW_MS) { prev.n++; return false; }
+  const suppressed = prev ? prev.n : 0;
+  _refuseSeen.set(key, { at: now, n: 0 });
+  // Карта не растёт бесконечно: раз в окно из неё выметается всё протухшее.
+  if (_refuseSeen.size > 2000) {
+    for (const [k, v] of _refuseSeen) if (now - v.at >= REFUSE_WINDOW_MS) _refuseSeen.delete(k);
+  }
+  return suppressed;
+}
+
 function log(playerId, event, meta = null) {
   const pid = Number(playerId);
   if (!pid || !event) return;
+  const sup = _refuseThrottle(pid, String(event), meta);
+  if (sup === false) return;
+  if (sup > 0) meta = { ...(meta || {}), подавлено: sup };
   if (_queue.length >= MAX_QUEUE) {
     // Losing the OLDEST is the right end to lose: whatever is happening right
     // now is what someone is asking about.

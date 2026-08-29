@@ -112,8 +112,11 @@ async function create(db, playerId, name, icon) {
     throw e;
   }
   await query(db,
+    // Создатель тоже вступил — и его заявки в другие кланы снимаются ниже, по
+    // той же причине, что и в accept().
     `INSERT INTO clan_members (clan_id, player_id, role) VALUES ($1, $2, 'leader')`,
     [clanId, playerId]);
+  await query(db, 'DELETE FROM clan_applications WHERE player_id = $1', [playerId]);
 
   // Шаг эпохи — в ТОЙ ЖЕ транзакции, что и списание, и это единственное, что
   // здесь важно: откат забирает его назад вместе со списанием, поэтому повтор
@@ -174,6 +177,17 @@ async function accept(db, leaderId, clanId, playerId) {
     if (e.code === '23505') err('in_clan', 'Гравець уже в іншому клані');
     throw e;
   }
+  // ── и снимаем ВСЕ остальные его заявки ─────────────────────────────────
+  // Строкой выше удалялась заявка только в ЭТОТ клан. Игрок, подавший в
+  // двадцать, после вступления оставался в очереди у девятнадцати лидеров, и
+  // каждый из них получал «уже в іншому клані» — по одному отказу на нажатие,
+  // навсегда. В логе за полсуток: 5 успехов и 99 таких отказов.
+  //
+  // Одно членство на игрока — правило базы (clan_members_one_clan_key), так
+  // что заявка человека, который уже где-то состоит, не может быть исполнена
+  // НИКОГДА. Держать её в очереди — значит показывать лидеру кнопку, которая
+  // не может сработать.
+  await query(db, 'DELETE FROM clan_applications WHERE player_id = $1', [playerId]);
   return true;
 }
 
@@ -545,10 +559,17 @@ async function fullView(db, clanId) {
       SELECT m.player_id, m.role, m.joined_at, p.username, p.bm
         FROM clan_members m JOIN players p ON p.id = m.player_id
        WHERE m.clan_id = $1 ORDER BY (m.role = 'leader') DESC, p.bm DESC`, [clanId]);
+  // Заявки тех, кто УЖЕ где-то состоит, не показываются. Создать такую строку
+  // теперь нельзя (accept снимает все заявки вступившего), но правило стоит
+  // здесь тоже — и не ради страховки: база хранит записи, накопленные до
+  // этого исправления, а лидер не должен видеть кнопку, которая не может
+  // сработать. Одно членство на игрока — правило базы, а не пожелание.
   const apps = await query(db, `
       SELECT a.player_id, a.applied_at, p.username, p.bm
         FROM clan_applications a JOIN players p ON p.id = a.player_id
-       WHERE a.clan_id = $1 ORDER BY a.applied_at`, [clanId]);
+       WHERE a.clan_id = $1
+         AND NOT EXISTS (SELECT 1 FROM clan_members m WHERE m.player_id = a.player_id)
+       ORDER BY a.applied_at`, [clanId]);
   const storage = await query(db, `
       SELECT s.item_id, s.qty, c.name FROM clan_storage s
         JOIN item_catalog c ON c.item_id = s.item_id
