@@ -14,7 +14,7 @@ const { FLOOR_IDS } = require('../game/floors');
 module.exports = function createArena3(deps) {
   const {
     io, getRoom, logPlayer, _recordPvpHistory, _returnToHub, _findPlayerAnyFloor, _socketTid,
-    notifyEventSoon, notifyEventStarted, safeTimeout,
+    notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
     DAILY_DUNGEON_ATTEMPTS, _arena3AttemptsLeft, _lockArena3Daily,
   } = deps;
 
@@ -101,7 +101,12 @@ module.exports = function createArena3(deps) {
     _a3.phase = 'idle';
     const openAt = _a3NextOpenAt();
     _a3.openTimer = safeTimeout('a3Open', () => _a3OpenWindow(openAt), Math.max(0, openAt - Date.now()));
-    const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+    // Сдвиг на длительность самого прохода. Telegram принимает около тридцати
+    // сообщений в секунду, и четыре тысячи адресатов — это больше двух минут:
+    // предупреждение «за 30 минут», отправленное ровно за тридцать, доходило до
+    // конца очереди за двадцать восемь. Начинаем раньше на столько, сколько
+    // проход занимает, — и последний получает свои тридцать.
+    const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - broadcastLeadMs() - Date.now();
     if (warnIn > 0) _a3.notifyTimer = safeTimeout('a3Notify', () => notifyEventSoon('a3', openAt), warnIn);
   }
 

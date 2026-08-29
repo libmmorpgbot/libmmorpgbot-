@@ -15,7 +15,7 @@ const { FLOOR_IDS } = require('../game/floors');
 module.exports = function createDeathBattle(deps) {
   const {
     io, getRoom, playerFloorMap, _findPlayerAnyFloor, _recordPvpHistory, _socketTid,
-    notifyEventSoon, notifyEventStarted, safeTimeout,
+    notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
   } = deps;
 
   // ── Death Battle (Битва на смерть) ──────────────────────────────────────────
@@ -82,7 +82,12 @@ module.exports = function createDeathBattle(deps) {
     // too late to get anyone into the game in time. Skipped when that moment
     // has already passed, so a restart inside the window doesn't fire it late
     // (see the same guard in _wbSchedule).
-    const warnIn = startAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+    // Сдвиг на длительность самого прохода. Telegram принимает около тридцати
+    // сообщений в секунду, и четыре тысячи адресатов — это больше двух минут:
+    // предупреждение «за 30 минут», отправленное ровно за тридцать, доходило до
+    // конца очереди за двадцать восемь. Начинаем раньше на столько, сколько
+    // проход занимает, — и последний получает свои тридцать.
+    const warnIn = startAt - EVENT_NOTIFY_BEFORE_MS - broadcastLeadMs() - Date.now();
     if (warnIn > 0) _db.notifyTimer = safeTimeout('dbNotify', () => notifyEventSoon('battle', startAt), warnIn);
   }
 

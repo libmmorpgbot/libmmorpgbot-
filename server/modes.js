@@ -208,14 +208,45 @@ const _EVENT_TEXT = {
 // игрок или медленный ответ Telegram не должны задержать — и тем более
 // сорвать — само событие. Оно начнётся в срок независимо от того, узнал ли
 // о нём кто-нибудь.
+// Сколько примерно займёт полный проход при нынешнем размере базы. Нужно не
+// ради красоты: на это число сдвигается вперёд предупреждение «за 30 минут»,
+// иначе последний в очереди получает его за двадцать восемь.
+const BROADCAST_RATE_PER_SEC = 30;
+let _lastAudience = 0;
+function broadcastLeadMs() {
+  return Math.ceil(Math.max(0, _lastAudience) / BROADCAST_RATE_PER_SEC) * 1000;
+}
+
 async function tgBroadcastAll(text) {
   const tg = require('./tg-game');
   if (!tg.isLive()) return 0;
   const { pool } = require('./db');
-  const { rows } = await pool().query('SELECT telegram_id FROM players');
+  // ── кого зовём и в каком порядке ──────────────────────────────────────────
+  // НЕ всех подряд.
+  //
+  // banned — забаненные и тестовые аккаунты проверок (их обнуляют туда же, см.
+  //   dev/purge-test-accounts.js): тратить на них темп значит задерживать живых.
+  // telegram_id числом — тот же отбор с другой стороны: проверки пишут в это
+  //   поле свой тег, и такой «игрок» не получит сообщения никогда, а секунду
+  //   очереди займёт.
+  // без player_progress — аккаунт, который ни разу не вошёл в игру после
+  //   переноса. Их тысяча четыреста, то есть треть прохода.
+  //
+  // Порядок — по последней активности, свежие первыми. Ограничение Telegram
+  // снять нельзя, а вот решить, кто окажется в начале очереди, можно: те, кто
+  // играет сейчас, получают приглашение сразу, а не через две минуты.
+  const { rows } = await pool().query(`
+    SELECT p.telegram_id
+      FROM players p
+      JOIN player_progress pr ON pr.player_id = p.id
+     WHERE NOT p.banned AND p.telegram_id ~ '^[0-9]+$'
+     ORDER BY pr.updated_at DESC NULLS LAST`);
+  _lastAudience = rows.length;
   for (let i = 0; i < rows.length; i++) {
     tg.send(rows[i].telegram_id, text).catch(() => {});
-    if (i % 30 === 29) await new Promise(r => setTimeout(r, 1000));
+    if (i % BROADCAST_RATE_PER_SEC === BROADCAST_RATE_PER_SEC - 1) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
   }
   return rows.length;
 }
@@ -338,7 +369,7 @@ function init(io) {
     _returnToHub: returnToHub,
     _findPlayerAnyFloor: findPlayerAnyFloor,
     _socketTid: socketTid,
-    notifyEventSoon,
+    notifyEventSoon, broadcastLeadMs,
     notifyEventStarted,
     safeTimeout,
   };
@@ -544,7 +575,12 @@ function init(io) {
     // Only arm the warning if its moment is still ahead — otherwise a restart
     // inside the 30-minute window announces "coming soon" the instant the
     // process boots, so every redeploy would spam everyone.
-    const warnIn = at - EVENT_NOTIFY_BEFORE_MS - Date.now();
+    // Сдвиг на длительность самого прохода. Telegram принимает около тридцати
+    // сообщений в секунду, и четыре тысячи адресатов — это больше двух минут:
+    // предупреждение «за 30 минут», отправленное ровно за тридцать, доходило до
+    // конца очереди за двадцать восемь. Начинаем раньше на столько, сколько
+    // проход занимает, — и последний получает свои тридцать.
+    const warnIn = at - EVENT_NOTIFY_BEFORE_MS - broadcastLeadMs() - Date.now();
     if (warnIn > 0) wbNotifyTimer = safeTimeout('wbNotify', () => notifyEventSoon('boss', at), warnIn);
     wbSpawnTimer = safeTimeout('wbSpawn', () => {
       const r = modes.scheduleEventBoss();

@@ -192,7 +192,16 @@ async function main() {
 
   // ── every screen gets the fields it draws ────────────────────────────────
   console.log('\n  ── поля, які малює сторінка ──');
-  const { id: pid } = await tx(t => players.ensure(t, `${TAG}-tg`, `${TAG}_p`));
+  // ЧИСЛОВОЙ telegram_id. Список игроков в админке показывает только тех, у
+  // кого он число: настоящий вход всегда приносит число, а проверки писали
+  // туда свой тег — и три тысячи таких аккаунтов оказались «везде: и в админ
+  // панели, и в чатах, и в рейтинге». Раз проверка смотрит именно на этот
+  // список, аккаунт для неё должен выглядеть как настоящий.
+  //
+  // Диапазон 93xxxxxxx закреплён за проверками; dev/purge-test-accounts.js
+  // узнаёт их по нему вместе с формой имени и датой.
+  const _tg = String(931000000 + (process.pid % 900000));
+  const { id: pid } = await tx(t => players.ensure(t, _tg, `${TAG}_p`));
   made.push(pid);
   const { rows: tgRow } = await pool().query('SELECT telegram_id FROM players WHERE id = $1', [pid]);
   const TID = tgRow[0].telegram_id;

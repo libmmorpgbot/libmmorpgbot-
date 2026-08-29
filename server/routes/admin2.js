@@ -201,8 +201,23 @@ module.exports = function registerAdminRoutes(app, deps) {
           LEFT JOIN balances bn  ON bn.player_id  = p.id AND bn.currency  = 'nexum'
           LEFT JOIN balances bm2 ON bm2.player_id = p.id AND bm2.currency = 'gram'
          WHERE ($1 = '' OR p.username ILIKE '%' || $1 || '%')
+           -- ── и только настоящие входы ──────────────────────────────────
+           -- Проверки из dev/ ходят по боевой базе (отдельной у проекта нет) и
+           -- создают себе игроков, записывая в telegram_id свой тег целиком
+           -- («cchk-72449-lead»). Настоящий вход всегда приносит ЧИСЛО:
+           -- finishLogin берёт его из payload Telegram. Их накопилось три
+           -- тысячи, и они были «везде — и в админ панели, и в чатах, и в
+           -- рейтинге».
+           --
+           -- Аккаунты убраны отдельно (dev/purge-test-accounts.js), но тысяча
+           -- с лишним не удаляется: их держит ledger, а стирать его приложению
+           -- не положено. Здесь они просто не показываются.
+           --
+           -- ?all=1 показывает всех — оператор должен иметь возможность
+           -- увидеть и то, что скрыто.
+           AND ($4 = '1' OR p.telegram_id ~ '^[0-9]+$')
          ORDER BY p.bm DESC NULLS LAST
-         LIMIT $2 OFFSET $3`, [q, limit, (page - 1) * limit]);
+         LIMIT $2 OFFSET $3`, [q, limit, (page - 1) * limit, String(req.query.all || '')]);
 
       const online = onlineTids();
       res.json({
@@ -307,10 +322,27 @@ module.exports = function registerAdminRoutes(app, deps) {
       // ledger is where the money went, and it is the one the questions are
       // actually about: "куда делось золото" has an exact answer here.
       const logs = await plog.recent(null, id, 120);
+      // ── что сюда НЕ попадает ─────────────────────────────────────────────
+      // Награда за убийство и подобранная с моба валюта. У активного игрока это
+      // сотня строк в минуту, и восемьдесят последних записей ленты — это
+      // восемьдесят «+gold 38, mob_kill» подряд: «у меня 100 логов в админке
+      // последних, а там за минуту 100 убийств монстров».
+      //
+      // Из САМОГО реестра они никуда не делись — он остаётся полным и сходится
+      // звёркой. Здесь их нет, потому что лента отвечает на вопрос «что с этим
+      // игроком происходило важного», а не «сколько он убил»: рынок, депозит,
+      // вывод, реферальный бонус, крафт, заточка.
+      //
+      // Сколько скрыто — говорится ниже, отдельной строкой. Молча урезанная
+      // лента читается как «ничего не было».
+      const NOISE = ['mob_kill', 'mob_drop'];
       const { rows: ledger } = await query(null, `
         SELECT currency, delta, reason, ref_type, ref_id, created_at
-          FROM ledger WHERE player_id = $1
-         ORDER BY id DESC LIMIT 80`, [id]);
+          FROM ledger WHERE player_id = $1 AND NOT (reason = ANY($2))
+         ORDER BY id DESC LIMIT 80`, [id, NOISE]);
+      const { rows: hid } = await query(null, `
+        SELECT count(*)::int n, COALESCE(sum(delta), 0) AS s
+          FROM ledger WHERE player_id = $1 AND reason = ANY($2) AND currency = 'gold'`, [id, NOISE]);
       // Both lists in one stream, newest first, so a grant and the purchase it
       // paid for sit next to each other instead of in two panes.
       const merged = [
@@ -324,6 +356,9 @@ module.exports = function registerAdminRoutes(app, deps) {
           },
         })),
       ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 150);
+      // Одна строка вместо тысяч: сколько золота пришло с мобов за всё время.
+      // Не в ленту, а рядом с ней — это итог, а не событие.
+      const fromMobs = { count: Number(hid[0].n), gold: Number(hid[0].s) };
 
       // The season pane reads these two by name and neither was sent, so it
       // showed "0 очков" for a player who had thousands.
@@ -336,6 +371,7 @@ module.exports = function registerAdminRoutes(app, deps) {
         telegramId: p.telegram_id, username: p.username, bm: p.bm,
         banned: p.banned, referredBy: p.referred_by, createdAt: p.created_at,
         online: onlineTids().has(p.telegram_id),
+        fromMobs,
         progress: prog, skills, items: inv, balances: bal, vip, season,
         daily: Object.fromEntries(daily.map(d => [d.mode, { used: d.used, seconds: d.seconds }])),
         logs: merged,

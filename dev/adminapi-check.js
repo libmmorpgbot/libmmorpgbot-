@@ -87,7 +87,16 @@ async function main() {
   console.log('');
 
   // A player to act on.
-  const { id: pid } = await tx(t => players.ensure(t, `${TAG}-victim`, `${TAG}_victim`));
+  // ЧИСЛОВОЙ telegram_id. Список игроков в админке показывает только тех, у
+  // кого он число: настоящий вход всегда приносит число, а проверки писали
+  // туда свой тег — и три тысячи таких аккаунтов оказались «везде: и в админ
+  // панели, и в чатах, и в рейтинге». Раз проверка смотрит именно на этот
+  // список, аккаунт для неё должен выглядеть как настоящий.
+  //
+  // Диапазон 93xxxxxxx закреплён за проверками; dev/purge-test-accounts.js
+  // узнаёт их по нему вместе с формой имени и датой.
+  const _tg = String(930000000 + (process.pid % 900000));
+  const { id: pid } = await tx(t => players.ensure(t, _tg, `${TAG}_victim`));
   made.push(pid);
   await tx(t => players.setClass(t, pid, 'deathknight'));
   const { rows: tgRow } = await pool().query('SELECT telegram_id FROM players WHERE id = $1', [pid]);

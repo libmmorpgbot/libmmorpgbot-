@@ -17,7 +17,7 @@ const { FLOOR_IDS } = require('../game/floors');
 // and the persistence lives with the rest of the persistence.
 module.exports = function createGuildWar(deps) {
   const {
-    io, playerFloorMap, _socketForTelegramId, notifyEventSoon, notifyEventStarted, safeTimeout,
+    io, playerFloorMap, _socketForTelegramId, notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
     loadCastle, saveCastle, grantClanStorage, clanForStorage,
   } = deps;
 
@@ -57,7 +57,12 @@ module.exports = function createGuildWar(deps) {
     clearTimeout(_gw.notifyTimer);
     const openAt = _gwNextOpenAt();
     _gw.openTimer = safeTimeout('gwOpen', () => _gwOpenWindow(openAt), Math.max(0, openAt - Date.now()));
-    const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+    // Сдвиг на длительность самого прохода. Telegram принимает около тридцати
+    // сообщений в секунду, и четыре тысячи адресатов — это больше двух минут:
+    // предупреждение «за 30 минут», отправленное ровно за тридцать, доходило до
+    // конца очереди за двадцать восемь. Начинаем раньше на столько, сколько
+    // проход занимает, — и последний получает свои тридцать.
+    const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - broadcastLeadMs() - Date.now();
     if (warnIn > 0) _gw.notifyTimer = safeTimeout('gwNotify', () => notifyEventSoon('guildWar', openAt), warnIn);
   }
 

@@ -14,7 +14,7 @@ const { FLOOR_IDS } = require('../game/floors');
 module.exports = function createRace10(deps) {
   const {
     io, getRoom, logPlayer, _recordPvpHistory, _returnToHub, _findPlayerAnyFloor, _socketTid,
-    notifyEventSoon, notifyEventStarted, safeTimeout,
+    notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
     _race10AttemptsLeft, _lockRace10Daily,
   } = deps;
 
@@ -132,7 +132,12 @@ module.exports = function createRace10(deps) {
     _race10.phase = 'idle';
     const openAt = _race10NextOpenAt();
     _race10.openTimer = safeTimeout('race10Open', () => _race10OpenWindow(openAt), Math.max(0, openAt - Date.now()));
-    const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - Date.now();
+    // Сдвиг на длительность самого прохода. Telegram принимает около тридцати
+    // сообщений в секунду, и четыре тысячи адресатов — это больше двух минут:
+    // предупреждение «за 30 минут», отправленное ровно за тридцать, доходило до
+    // конца очереди за двадцать восемь. Начинаем раньше на столько, сколько
+    // проход занимает, — и последний получает свои тридцать.
+    const warnIn = openAt - EVENT_NOTIFY_BEFORE_MS - broadcastLeadMs() - Date.now();
     if (warnIn > 0) _race10.notifyTimer = safeTimeout('race10Notify', () => notifyEventSoon('race10', openAt), warnIn);
   }
 
