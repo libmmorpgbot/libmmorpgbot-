@@ -2391,6 +2391,22 @@ canvas { display:block; width:100%; height:100%; }
   .market-cat-tabs::-webkit-scrollbar-thumb:hover { background: rgba(209,204,197,.35); }
 }
 
+/* «Показано перші N лотів» — стоїть НАД пошуком, а не під списком, бо це
+   попередження про те, чому пошук і лічильники категорій нижче можуть
+   збрехати: вони рахуються по завантаженому шматку ринку. Приглушене й
+   некликабельне: це стан, а не дія. Показується тільки коли видача справді
+   уперлася в стелю (_renderMarketLots, js/ui.js). */
+.market-truncated {
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(235,170,73,.22);
+  border-radius: 8px;
+  background: rgba(235,170,73,.06);
+  color: #b2a288;
+  font-size: 11.5px;
+  text-align: center;
+}
+
 /* Search + rarity/sort selects above the category strip. The input takes a
    full row of its own: at 430px the three side by side left it too narrow to
    read a query in. */

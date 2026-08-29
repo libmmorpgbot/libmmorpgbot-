@@ -1618,9 +1618,21 @@ function netConnect(onReady) {
       // by one hit. Its verdict on DEATH is final though: the server won't
       // take our hp or position back once it has us at 0, so ignoring that
       // is what strands us as the frozen corpse above.
+      const _was = player.hp;
       player.hp = (hp != null && hp <= 0) ? 0
                 : (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
-      player.hurtTimer = 0.1;
+      // Вспышка — только когда HP УБАВИЛОСЬ. Этим же событием приходит всё
+      // серверное лечение (setPlayerHp шлёт hp без dmg), и мигать красным на
+      // выпитое зелье оно не должно.
+      if (player.hp < _was) player.hurtTimer = 0.1;
+      else if (player.hp > _was) {
+        // И цифра. Клиент больше не прибавляет HP сам — значит, показать, на
+        // сколько полечило, может только эта разность: она между двумя
+        // серверными числами, а не между серверным и своим выдуманным, и
+        // потому впервые настоящая.
+        const _got = Math.round(player.hp - _was);
+        if (_got > 0) dmgNum(player.x, player.y - 26, '+' + _got + '♥', '#8ef06a');
+      }
       if (player.hp <= 0) { player.hp = 0; playerDie(); }
     } else {
       const op = otherPlayers.get(id);
@@ -1646,7 +1658,42 @@ function netConnect(onReady) {
     // Экран смерти снимает respawn, а не это. Регенерация мёртвым не идёт, так
     // что сюда попасть можно только пакетом, разошедшимся с playerDie.
     if (player.hp <= 0) return;
-    player.hp = Math.max(0, Math.min(player.maxHp, hp));
+    const want = Math.max(0, Math.min(player.maxHp, hp));
+    // ── мёртвая зона ──────────────────────────────────────────────────────
+    // Клиент предсказывает ту же кривую теми же коэффициентами, но не теми же
+    // шагами: у него кадры, у сервера тик в 25 мс. Между двумя поправками
+    // накапливается доля единицы — невидимая на полосе и ничего не значащая.
+    //
+    // Присваивать её всё равно значит раз в секунду дёргать полосу назад: с
+    // 120.9 на 120.4 — на экране это «120 → 121 → 120», ровно то, на что
+    // жаловались в хабе. Настоящее расхождение (пропущенный удар, лечение,
+    // которого клиент не видел) больше единицы и проходит.
+    if (Math.abs(want - player.hp) < 1) return;
+    player.hp = want;
+  });
+
+  // ── лечащий навык ─────────────────────────────────────────────────────────
+  // Сумму считает сервер (skillSelfHealOf, shared/definitions.js) — клиент
+  // прислал одну букву. Само HP приезжает отдельно, через 'playerHurt' от
+  // setPlayerHp; здесь только цифра над головой.
+  socket.on('skillHealDone', ({ self, reached } = {}) => {
+    if (!player) return;
+    if (self > 0) {
+      dmgNum(player.x, player.y - 30, '+' + self + '♥', '#8ef06a');
+      spawnBurst(player.x, player.y, '#8ef06a', 8);
+    }
+    if (reached > 0 && typeof tVars === 'function') {
+      dmgNum(player.x, player.y - 46, tVars('partyCountToast', { n: reached }), '#8ef06a');
+    }
+  });
+
+  // Тики окон: «Бабочки» раз в секунду и вампиризм с каждого удара. Оба живут
+  // на сервере (Room._regenTick / Room._vampGain) — он один знает и настоящее
+  // HP, и настоящий нанесённый урон.
+  socket.on('skillHealTick', ({ amount, kind } = {}) => {
+    if (!player || !(amount > 0)) return;
+    dmgNum(player.x, player.y - 30, '+' + amount + '♥',
+      kind === 'vampirism' ? '#e0708a' : '#c9a0ff');
   });
 
   socket.on('faithShieldBuff', ({ duration }) => {
@@ -1665,7 +1712,7 @@ function netConnect(onReady) {
     const actual = Math.max(1, Math.floor(dmg || 0));
     player.hp = hp != null ? Math.max(0, hp) : Math.max(0, player.hp - actual);
     player.hurtTimer = 0.1;
-    dmgNum(player.x, player.y - 24, actual, '#f55');
+    dmgNum(player.x, player.y - 24, actual, '#ff5a5a');
     spawnBurst(player.x, player.y, '#f44', 5);
     if (player.hp <= 0 && state === 'playing') { player.hp = 0; playerDie(); }
   });
@@ -1719,8 +1766,8 @@ function netConnect(onReady) {
       e.hurtTimer = 0.3;
       if (dmg) {
         _lastOwnDmg = dmg; // track for optimistic kill prediction
-        if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ffffff', 19);
-        else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff4');
+        if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c8c', 19);
+        else dmgNum(e.x, e.y - e.size - 4, dmg, '#ff5a5a');
         if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
         // No Sound.hit() here: this broadcasts to everyone on the floor for
         // whoever's attack it was. The player's own hit sound instead fires
@@ -1744,7 +1791,7 @@ function netConnect(onReady) {
   function _showBoxLoot(boxId, qty, px, py) {
     const def = BOX_DEF.find(b => b.id === boxId);
     if (!def) return;
-    dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#cfe8ff' : '#98e456');
+    dmgNum(px, py - 52, `+${qty}× ${def.name}`, boxId === 'box_rare' ? '#ffe0a8' : '#98e456');
   }
 
   socket.on('enemyKilled', ({ id, xp, gold, goldTotal, level, dmg, isCrit, ex, ey, color, items, eid, rlvl, boxUncommon, boxRare, normStone, blessStone, nexum, gram }) => {
@@ -1753,7 +1800,7 @@ function netConnect(onReady) {
     const px = ex ?? (e ? e.x : player?.x ?? 0);
     const py = ey ?? (e ? e.y : player?.y ?? 0);
     if (dmg) {
-      if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ffffff', 19); else dmgNum(px, py - 20, dmg, '#ff4');
+      if (isCrit) dmgNum(px, py - 20, `⚡ ${dmg}`, '#ff8c8c', 19); else dmgNum(px, py - 20, dmg, '#ff5a5a');
       if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
     }
     spawnBurst(px, py, color || '#f80', 8);
@@ -1803,7 +1850,7 @@ function netConnect(onReady) {
     // client used to apply those multipliers itself and add the result to its
     // own total, which is exactly why the server could not know what anyone's
     // balance should be.
-    if (gold && player) dmgNum(px, py - 36, '+' + gold + 'g', '#ff0');
+    if (gold && player) dmgNum(px, py - 36, '+' + gold + 'g', '#ffd23f');
     if (player && Number.isFinite(goldTotal)) player.gold = goldTotal;
     if (nexum && player) {
       window._nexumBalance = (window._nexumBalance || 0) + nexum;
@@ -2148,7 +2195,7 @@ function netConnect(onReady) {
     if (!player) return;
     if (Number.isFinite(newGold)) player.gold = newGold;
     if (gold && typeof dmgNum === 'function') {
-      dmgNum(player.x, player.y - 36, '+' + gold + 'g', '#ff0');
+      dmgNum(player.x, player.y - 36, '+' + gold + 'g', '#ffd23f');
     }
     if (typeof updateInvUI === 'function') updateInvUI();
   });
@@ -2363,6 +2410,16 @@ function netConnect(onReady) {
   socket.on('seasonState', (st) => {
     if (!st) return;
     _seasonState = { ..._seasonState, ...st };
+    // Значок билета в ленте бафов требует ДВУХ величин: _seasonTicketActive
+    // (приезжал в authOk) и _seasonState.active (приезжал здесь). Пока они
+    // ехали разными событиями, потеря любого из них выглядела как «сезонний
+    // білет після перезаходу не відображається» — и лечилась открытием панели
+    // сезона, потому что та запрашивает оба заново.
+    //
+    // Присваивается ТОЛЬКО когда поле действительно булево: сервер прежней
+    // сборки его не шлёт, и undefined не должен гасить то, что уже сказал
+    // authOk.
+    if (typeof st.ticket === 'boolean') _seasonTicketActive = st.ticket;
     if (typeof onSeasonState === 'function') onSeasonState();
   });
 
@@ -3218,10 +3275,24 @@ function netSaveProgressNow() {
   _emitSaveProgress();
 }
 
-function netHealParty(amount) {
+// Клиент сообщает ТОЛЬКО клавишу. Сколько это лечит — считает сервер по общей
+// таблице (skillSelfHealOf, shared/definitions.js) из класса, изученного
+// уровня и признака продвинутой версии, то есть из того, что уже лежит в базе.
+//
+// Прежняя форма отправляла сумму. Сервер её, положим, не читал — но ровно так
+// же выглядел 'statsUpdate', который из этого протокола уже убирали.
+function netSkillHeal(key) {
   if (!socket?.connected) return;
-  const amt = Math.max(0, Math.min(amount, 9999));
-  socket.emit('healParty', { amount: amt });
+  socket.emit('skillHeal', { key: String(key || '') });
+}
+
+// То же и по той же причине: порог между принятыми ударами сервер считает от
+// скорости атаки игрока, а навычное ускорение до этого расчёта не доходило —
+// оно жило в кадре клиента. Без этой строки половина ударов под «Ускорением»
+// отклонялась бы молча, ровно как раньше отклонялись удары быстрых сборок.
+function netSkillHaste(key) {
+  if (!socket?.connected) return;
+  socket.emit('skillHaste', { key: String(key || '') });
 }
 // `key` is the skill slot that was cast (Q/W/E/R). The server derives the
 // damage multiplier from it — see skillDamageMult, shared/definitions.js — so
@@ -3782,8 +3853,8 @@ function netSendMove() {
 // up in the catalog itself now — see the usePotion handler); `amount` is kept
 // only so a server that hasn't been redeployed yet still heals the right
 // number. Callers must pass the potion they drank, not just its size.
-function netUsePotion(id, amount) {
-  if (socket?.connected) socket.emit('usePotion', { id, amount });
+function netUsePotion(id) {
+  if (socket?.connected) socket.emit('usePotion', { id });
 }
 
 // Kept as a no-op rather than deleted, because js/player.js calls it from

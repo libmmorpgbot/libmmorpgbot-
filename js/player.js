@@ -194,13 +194,14 @@ function _activeSkillDef(cls, idx) {
 // Вампиризм (deathknight Q) — heals a % of any damage the player deals
 // while vampirismTimer is active. Called from network.js wherever a hit/kill
 // event reports how much damage this player's own attack just dealt.
-function _applyVampirism(dmg) {
-  if (!player || !(vampirismTimer > 0) || !dmg) return;
-  const pct = (player.type === 'deathknight' && _advActive('Q')) ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT; // "Истощение" heals 15% instead of 10%
-  const heal = Math.max(1, Math.round(dmg * pct));
-  player.hp = Math.min(player.maxHp, player.hp + heal);
-  dmgNum(player.x, player.y - 30, '+' + heal + '♥', '#c23b5e');
-}
+// Возврат считает СЕРВЕР (Room._vampGain): урон применяет он, и другого
+// честного числа не существует. Оттуда же приходит 'skillHealTick', который и
+// рисует цифру, — поэтому здесь не осталось ничего, кроме таймера иконки.
+//
+// Функция сохранена: её зовут три места в js/network.js на каждое сообщение о
+// нанесённом уроне, и превращать три вызова в три проверки на undefined ради
+// пустого тела не стоит.
+function _applyVampirism(_dmg) { /* сервер, см. Room._vampGain */ }
 
 // AOE helper with optional damage multiplier (replaces _skillAOE for leveled skills)
 function _skillAOEMult(r, mult, key) {
@@ -383,8 +384,11 @@ function applyLevelState(st) {
   if (Number.isFinite(st.baseMaxHp)) player.baseMaxHp = st.baseMaxHp;
   recompute();
   if (player.lvl > before) {
-    // The heal itself was applied server-side; this is the part the player sees.
-    player.hp = Math.min(player.maxHp, player.hp + 35 * (player.lvl - before));
+    // Комментарий здесь уверял, что «the heal itself was applied server-side».
+    // Этого не делал никто: во всём server/ нет ни одного места, которое
+    // лечило бы на повышении уровня. Теперь делает — handlers2/world.js, там
+    // же, где начисляется опыт, — а строка прибавки отсюда убрана, чтобы
+    // лечение снова не оказалось двойным.
     dmgNum(player.x, player.y - 38, '↑ УРОВЕНЬ ' + player.lvl, '#ff0');
     dmgNum(player.x, player.y - 54, '+3 очка навыка', '#a0f0a0');
     spawnBurst(player.x, player.y, '#ff0', 14);
@@ -444,13 +448,17 @@ function usePotion() {
   if (player.hp >= player.maxHp) return;
   // Not decremented here: the server spends from its own bag and answers
   // with potionBag, which is what the HUD and the shop read.
-  const def = ITEM_DEF.find(i => i.id === type);
-  const heal = (def && def.hp) || 20;
-  player.hp = Math.min(player.maxHp, player.hp + heal);
+  // ── зелье лечит РОВНО ОДИН РАЗ ────────────────────────────────────────
+  // Здесь прибавлялось def.hp, а следом приходило число сервера (usePotion →
+  // setPlayerHp → 'playerHurt' с готовым hp) и ставилось поверх. Видимое
+  // лечение получалось не «плюс двадцать», а разностью двух чисел, которые
+  // успели разойтись: «малые хилки как будто по 140, а иногда по 20» и «то
+  // сразу фулл хп делают».
+  //
+  // Прибавка убрана. Цифру рисует ответ сервера — там она настоящая.
   player.potCd = 4;
-  dmgNum(player.x, player.y - 26, '+' + heal + '♥', '#4f4');
   spawnBurst(player.x, player.y, '#4f4', 5);
-  if (typeof netUsePotion === 'function') netUsePotion(type, heal);
+  if (typeof netUsePotion === 'function') netUsePotion(type);
   if (typeof updateInvUI === 'function') updateInvUI();
   netSaveProgress();
 }
@@ -653,14 +661,18 @@ function useSkill(idx) {
 
   if (player.type === 'deathknight') {
     if (sk.key === 'Q') {
+      // Таймер здесь остаётся только для иконки на панели навыков: лечит
+      // окно на СЕРВЕРЕ, и открывает его netSkillHeal, а не эта строка.
       if (_advActive('Q')) { // Истощение — 15% lifesteal + 20% ATK, 10s (+1s per level)
         vampirismTimer = 10 + _skillBuffSec('Q');
         advDkQAtkTimer = 10 + _skillBuffSec('Q');
         recompute();
+        if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         dmgNum(player.x, player.y - 40, '🩸 Истощение!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 12);
       } else { // Вампиризм — 10% lifesteal for 10s (+1s per level)
         vampirismTimer = 10 + _skillBuffSec('Q');
+        if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         dmgNum(player.x, player.y - 40, '🩸 Вампиризм!', '#a5f');
         spawnBurst(player.x, player.y, '#a5f', 10);
       }
@@ -792,9 +804,12 @@ function useSkill(idx) {
       // _advActive('R'), so this cast is identical either way.
       atkSpeedTimer = 5 + _skillBuffSec('R');
       recompute();
+      // Порог между принятыми ударами сервер считает от скорости атаки, а про
+      // этот баф он узнаёт только отсюда — см. Room._attackMinGapMs.
+      if (typeof netSkillHaste === 'function') netSkillHaste('R');
       const _advR2 = _advActive('R');
-      dmgNum(player.x, player.y - 40, _advR2 ? '⚡ Ускорение!' : '⚡ Скорость!', _advR2 ? '#f5c542' : '#7ef');
-      spawnBurst(player.x, player.y, _advR2 ? '#f5c542' : '#7ef', 8);
+      dmgNum(player.x, player.y - 40, _advR2 ? '⚡ Ускорение!' : '⚡ Скорость!', _advR2 ? '#f5c542' : '#ffd98a');
+      spawnBurst(player.x, player.y, _advR2 ? '#f5c542' : '#ffd98a', 8);
     }
   } else if (player.type === 'mage') {
     if (sk.key === 'Q') {
@@ -832,8 +847,8 @@ function useSkill(idx) {
       if (slowIds.length) netSkillSlow(slowIds, 3);
       _pvpSkillAOE(r, dmgMult, 'W');
       _pvpSkillSlow(r, 3);
-      dmgNum(player.x, player.y - 40, _advW ? '⚡ Разряд!' : '❄ Заморозка!', _advW ? '#f5c542' : '#8ef');
-      spawnBurst(player.x, player.y, _advW ? '#f5c542' : '#8ef', 12);
+      dmgNum(player.x, player.y - 40, _advW ? '⚡ Разряд!' : '❄ Заморозка!', _advW ? '#f5c542' : '#ffe0a8');
+      spawnBurst(player.x, player.y, _advW ? '#f5c542' : '#ffe0a8', 12);
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Вспышка — AOE ×2 damage, radius 220 + the same +80% DEF 3s (+1s per level)
         spawnAOE(player.x, player.y, 220, 'flash', '#c9a3ff');
@@ -860,23 +875,26 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, '#f4f', 6);
       _dashTo(tx, ty); // steps toward tx/ty, stopping at walls or locked gates
       spawnBurst(player.x, player.y, _advR3 ? '#f5c542' : '#f4f', 6);
+      // Лечение начисляет сервер и присылает 'skillHeal' с суммой — здесь
+      // остаётся только подпись, чтобы название навыка появилось сразу, а не
+      // через круг до сервера и обратно.
       if (_advR3) {
-        const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('R'));
-        player.hp = Math.min(player.maxHp, player.hp + heal);
-        dmgNum(player.x, player.y - 50, '+' + heal + '♥ Перенесение!', '#f5c542');
+        if (typeof netSkillHeal === 'function') netSkillHeal('R');
+        dmgNum(player.x, player.y - 50, 'Перенесение!', '#f5c542');
       }
     }
   } else if (player.type === 'warlock') {
     if (sk.key === 'Q') {
       if (_advActive('Q')) { // Бабочки — summon for 10s, healing 5% maxHP/sec (+1s per level)
+        // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
+        // им и место: раньше их отсчитывал кадр, и сервер о них не знал.
         butterfliesTimer = 10 + _skillBuffSec('Q');
         _butterfliesTickAcc = 0;
+        if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         dmgNum(player.x, player.y - 40, '🦋 Бабочки!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 14);
       } else { // Тёмное исцеление — +20% maxHP (+1% per level)
-        const heal = Math.round(player.maxHp * 0.2 * _skillHealMult('Q'));
-        player.hp = Math.min(player.maxHp, player.hp + heal);
-        dmgNum(player.x, player.y - 40, '+' + heal + '♥', '#a855e0');
+        if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         spawnBurst(player.x, player.y, '#a855e0', 8);
       }
     } else if (sk.key === 'W') { // Оковы тьмы / Колючие оковы — stun nearest/PvP target 3s
@@ -910,20 +928,22 @@ function useSkill(idx) {
       faithShieldTimer = 4 + _skillBuffSec('E');
       if (_advE3) atkSpeedTimer = 4 + _skillBuffSec('E');
       recompute();
+      // См. комментарий у «Ускорения» лучника выше.
+      if (_advE3 && typeof netSkillHaste === 'function') netSkillHaste('E');
       if (typeof netFaithShield === 'function') netFaithShield(faithShieldTimer);
       dmgNum(player.x, player.y - 40, _advE3 ? '⚡ Жажда!' : '🛡 Тёмный щит!', _advE3 ? '#f5c542' : '#a855e0');
       spawnBurst(player.x, player.y, _advE3 ? '#f5c542' : '#a855e0', 10);
     } else if (sk.key === 'R') { // Тёмная молитва / Исцеление — heals self + party for 10%
       // (or, advanced, 20%) of maxHP (+1% per level).
+      // Один вызов на всё: сервер лечит и заклинателя, и группу, одной и той
+      // же суммой. Прежний обработчик 'healParty' лечил ТОЛЬКО чужих и требовал
+      // группу — одиночный чернокнижник не получал ничего, а его собственное
+      // лечение целиком жило вот в этой строке и откатывалось на следующей
+      // поправке HP.
       const _advR4 = _advActive('R');
-      const pct = _advR4 ? 0.20 : 0.10;
-      const healSelf = Math.round(player.maxHp * pct * _skillHealMult('R'));
-      player.hp = Math.min(player.maxHp, player.hp + healSelf);
-      dmgNum(player.x, player.y - 50, '+' + healSelf + (_advR4 ? '♥ Исцеление!' : '♥ Молитва!'), _advR4 ? '#f5c542' : '#a855e0');
+      dmgNum(player.x, player.y - 50, _advR4 ? 'Исцеление!' : 'Молитва!', _advR4 ? '#f5c542' : '#a855e0');
       spawnBurst(player.x, player.y, _advR4 ? '#f5c542' : '#a855e0', 14);
-      if (typeof netHealParty === 'function') {
-        netHealParty(Math.round(player.maxHp * pct * _skillHealMult('R')));
-      }
+      if (typeof netSkillHeal === 'function') netSkillHeal('R');
     }
   } else if (player.type === 'lev') {
     if (sk.key === 'Q') { // Пинок / Молот гнева — single target, base ×2 + 3s
@@ -948,8 +968,8 @@ function useSkill(idx) {
           faceTowards(tgt.x, tgt.y);
         }
       }
-      spawnBurst(player.x, player.y, _advQ2 ? '#f5c542' : '#ccd', 8);
-      dmgNum(player.x, player.y - 40, _advQ2 ? '🔨 Молот гнева!' : '🥾 Пинок!', _advQ2 ? '#f5c542' : '#ccd');
+      spawnBurst(player.x, player.y, _advQ2 ? '#f5c542' : '#e8e0cc', 8);
+      dmgNum(player.x, player.y - 40, _advQ2 ? '🔨 Молот гнева!' : '🥾 Пинок!', _advQ2 ? '#f5c542' : '#e8e0cc');
     } else if (sk.key === 'W') { // Вихрь клинка / Вихрь — AOE, base radius 110,
       // advanced ×2 damage at radius 220.
       const _advW4 = _advActive('W');
@@ -963,8 +983,8 @@ function useSkill(idx) {
       guardTimer = 10 + _skillBuffSec('E');
       if (_advE4) levShieldAtkTimer = 10 + _skillBuffSec('E');
       recompute();
-      dmgNum(player.x, player.y - 40, _advE4 ? '🛡 Щит!' : '🛡 +80% DEF!', _advE4 ? '#f5c542' : '#ccd');
-      spawnBurst(player.x, player.y, _advE4 ? '#f5c542' : '#ccd', 10);
+      dmgNum(player.x, player.y - 40, _advE4 ? '🛡 Щит!' : '🛡 +80% DEF!', _advE4 ? '#f5c542' : '#e8e0cc');
+      spawnBurst(player.x, player.y, _advE4 ? '#f5c542' : '#e8e0cc', 10);
     } else if (sk.key === 'R') { // Кувырок / Рывок — dash 140px toward
       // target/enemy, ×1.5 on arrival; advanced additionally slows the (PvE)
       // target 30% for 10s.
@@ -994,7 +1014,7 @@ function useSkill(idx) {
         faceTowards(_chargeTarget.x, _chargeTarget.y);
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
       }
-      spawnBurst(player.x, player.y, _advR5 ? '#f5c542' : '#ccd', 8);
+      spawnBurst(player.x, player.y, _advR5 ? '#f5c542' : '#e8e0cc', 8);
     }
   }
 }

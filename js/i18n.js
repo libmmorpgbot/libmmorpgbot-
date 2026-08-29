@@ -850,7 +850,21 @@ Object.assign(I18N_UI, {
   listItemTitle: { ru: 'Выставить предмет', en: 'List Item', uk: 'Виставити предмет', es: 'Publicar Objeto', tr: 'Eşya İlanı Ver', pt: 'Anunciar Item' },
   selectFromInvHint: { ru: 'Выберите предмет из инвентаря', en: 'Select an item from your inventory', uk: 'Оберіть предмет з інвентаря', es: 'Selecciona un objeto de tu inventario', tr: 'Envanterinden bir eşya seç', pt: 'Selecione um item do seu inventário' },
   quantityLbl: { ru: 'Количество', en: 'Quantity', uk: 'Кількість', es: 'Cantidad', tr: 'Miktar', pt: 'Quantidade' },
-  priceForAllFmt: { ru: 'Цена за всё количество ({min}–{max} GRAM)', en: 'Price for the whole stack ({min}–{max} GRAM)', uk: 'Ціна за всю кількість ({min}–{max} GRAM)', es: 'Precio por todo el lote ({min}–{max} GRAM)', tr: 'Tüm miktar için fiyat ({min}–{max} GRAM)', pt: 'Preço pelo lote todo ({min}–{max} GRAM)' },
+  // Сколько штук вообще можно выставить — стоит в подписи к полю, а не
+  // где-то ниже: поле теперь по умолчанию стоит на 1, и без этого числа
+  // игрок не видит, до скольких его вообще можно поднять.
+  quantityMaxFmt: { ru: 'Количество (макс. {n})', en: 'Quantity (max {n})', uk: 'Кількість (макс. {n})', es: 'Cantidad (máx. {n})', tr: 'Miktar (en fazla {n})', pt: 'Quantidade (máx. {n})' },
+  // Цена всегда была за ВЕСЬ лот, а не за штуку, и раньше лот был равен
+  // всему стаку — отсюда прежняя формулировка «за всё количество».
+  // Теперь количество выбирает игрок, и подпись обязана назвать то
+  // число, за которое он назначает цену: иначе «1.8» за 296 ключей и
+  // «1.8» за один ключ выглядят одинаково.
+  priceForLotFmt: { ru: 'Цена за лот ×{n} ({min}–{max} GRAM)', en: 'Price for the lot ×{n} ({min}–{max} GRAM)', uk: 'Ціна за лот ×{n} ({min}–{max} GRAM)', es: 'Precio del lote ×{n} ({min}–{max} GRAM)', tr: 'Lot fiyatı ×{n} ({min}–{max} GRAM)', pt: 'Preço do lote ×{n} ({min}–{max} GRAM)' },
+  priceForOneFmt: { ru: 'Цена за 1 шт. ({min}–{max} GRAM)', en: 'Price for 1 pc. ({min}–{max} GRAM)', uk: 'Ціна за 1 шт. ({min}–{max} GRAM)', es: 'Precio por 1 ud. ({min}–{max} GRAM)', tr: '1 adet için fiyat ({min}–{max} GRAM)', pt: 'Preço por 1 un. ({min}–{max} GRAM)' },
+  // Показывается только тогда, когда рынок реально упёрся в потолок
+  // выдачи (MARKET_BROWSE_MAX). Молчаливое обрезание — это ровно та
+  // жалоба «на маркеті не все відображається»: список выглядел полным.
+  marketTruncatedFmt: { ru: 'Показаны первые {n} лотов — уточните поиск', en: 'Showing the first {n} listings — narrow your search', uk: 'Показано перші {n} лотів — уточніть пошук', es: 'Mostrando los primeros {n} anuncios — afina tu búsqueda', tr: 'İlk {n} ilan gösteriliyor — aramanı daralt', pt: 'Mostrando os primeiros {n} anúncios — refine a busca' },
   listForSaleBtn: { ru: 'Выставить на продажу', en: 'List for Sale', uk: 'Виставити на продаж', es: 'Publicar para la Venta', tr: 'Satışa Çıkar', pt: 'Anunciar para Venda' },
   youHaveFmt: { ru: 'У вас: ×{n}', en: 'You have: ×{n}', uk: 'У вас: ×{n}', es: 'Tienes: ×{n}', tr: 'Sende: ×{n}', pt: 'Você tem: ×{n}' },
   priceRangeFmt: { ru: 'Цена должна быть от {min} до {max} GRAM', en: 'Price must be between {min} and {max} GRAM', uk: 'Ціна має бути від {min} до {max} GRAM', es: 'El precio debe estar entre {min} y {max} GRAM', tr: 'Fiyat {min} ile {max} GRAM arasında olmalı', pt: 'O preço deve estar entre {min} e {max} GRAM' },

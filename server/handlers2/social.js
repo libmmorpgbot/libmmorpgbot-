@@ -18,6 +18,9 @@ const clans = require('../db/repos/clans');
 const progression = require('../db/repos/progression');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
+const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
+        SKILL_HASTE, skillHasteOf,
+        VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
 const party = require('../party');
 const players = require('../db/repos/players');
@@ -392,49 +395,109 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // floor is only reached by a socket being spammed — so the log's picture of
   // this skill was mostly casts that healed nobody, mixed in with the real ones
   // and indistinguishable from them.
-  safeOn('healParty', () => s.act('healParty', 'itemError', async (t, pid) => {
-    const partyId = party.playerParty.get(s.socket.id);
-    if (!partyId) fail('Вы не в группе', 'no_party');
+  // Ускоряющий навык. Отдельно от skillHeal, потому что это другое действие с
+  // другим правилом — и потому что «лечение» в имени обработчика, который
+  // ускоряет атаку, врёт читателю следующего года.
+  //
+  // Клиент, как и с лечением, сообщает ТОЛЬКО клавишу: во сколько раз и на
+  // сколько секунд — решает общая таблица (SKILL_HASTE) из класса и
+  // изученности, то есть из того, что уже лежит в базе.
+  safeOn('skillHaste', ({ key } = {}) => s.act('skillHaste', 'skillError', async (t, pid) => {
+    const k = String(key || '');
+    if (k !== 'Q' && k !== 'W' && k !== 'E' && k !== 'R') fail('Неизвестный навык', 'bad_skill');
     if (!s.room) fail('Вы не на карте — перезайдите', 'no_room');
-    const members = party.parties.get(partyId);
-    if (!members) fail('Группа распалась', 'no_party');
+    const st = await stats.of(t, pid);
+    if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
+    const sk = await players.skillsOf(t, pid);
+    const adv = !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
+    const mult = skillHasteOf(st.charClass, k, adv);
+    if (mult == null) fail('Этот навык не ускоряет атаку', 'not_haste');
+    const def = SKILL_HASTE[st.charClass][k];
+    const sec = def.sec + (sk.skillLevels[k] || 0);
+    s.room.setSkillWindow(s.socket.id, 'haste', sec * 1000, mult);
+    return { mult, sec };
+  }));
 
-    const now = Date.now();
-    if (now - lastHealAt < HEAL_PARTY_CD_MS) fail('Слишком часто', 'cooldown');
+  safeOn('skillHeal', ({ key } = {}) => s.act('skillHeal', 'itemError', async (t, pid) => {
+    const k = String(key || '');
+    if (k !== 'Q' && k !== 'W' && k !== 'E' && k !== 'R') fail('Неизвестный навык', 'bad_skill');
+    if (!s.room) fail('Вы не на карте — перезайдите', 'no_room');
 
     const healer = s.room.players.get(s.socket.id);
     if (!healer || healer.hp <= 0) fail('Сначала возродитесь', 'dead');   // the dead do not cast
 
+    const now = Date.now();
+    if (now - lastHealAt < HEAL_PARTY_CD_MS) fail('Слишком часто', 'cooldown');
+
     const st = await stats.of(t, pid);
-    // only the warlock has this
-    if (!st || st.charClass !== 'warlock') fail('Этот навык не для вашего класса', 'wrong_class');
+    if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
     const sk = await players.skillsOf(t, pid);
-    const adv = !!(sk.advSkillLearned.R && sk.advSkillActive.R);
-    const pct = adv ? 0.20 : 0.10;
-    const mult = (1 + (sk.skillLevels.R || 0) * 0.01) * (1 + (st.skillPct || 0));
-    const amount = Math.max(1, Math.round(st.maxHp * pct * mult));
+    const adv = !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
+    const lvl = sk.skillLevels[k] || 0;
+
+    // ── окна, а не разовое лечение ────────────────────────────────────────
+    // «Бабочки» и вампиризм лечат не в момент нажатия, а некоторое время
+    // после: первое — раз в секунду, второе — с каждого нанесённого удара.
+    // Комната их и тикает (_regenTick / _vampGain); здесь только проверка
+    // права и запись окна.
+    if (st.charClass === 'warlock' && k === 'Q' && adv) {
+      s.room.setSkillWindow(s.socket.id, 'butterflies', (BUTTERFLIES_SEC + lvl) * 1000);
+      lastHealAt = now;
+      return { window: 'butterflies', sec: BUTTERFLIES_SEC + lvl };
+    }
+    if (st.charClass === 'deathknight' && k === 'Q') {
+      const pct = adv ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT;
+      s.room.setSkillWindow(s.socket.id, 'vampirism', (VAMPIRISM_SEC + lvl) * 1000, pct);
+      lastHealAt = now;
+      return { window: 'vampirism', sec: VAMPIRISM_SEC + lvl, pct };
+    }
+
+    // ── разовое лечение ───────────────────────────────────────────────────
+    // Сколько именно — решает общая таблица, а не клиент: он прислал одну
+    // букву. Навык, который не лечит, получает отказ, а не молчаливый ноль:
+    // молчаливый ноль неотличим от «полечило на 0».
+    const amount = skillSelfHealOf(st.charClass, k, adv, lvl, st.skillPct || 0, st.maxHp);
+    if (amount == null) fail('Этот навык не лечит', 'not_heal');
     lastHealAt = now;
 
+    const beforeSelf = healer.hp;
+    s.room.setPlayerHp(s.socket.id, Math.min(healer.maxHp, healer.hp + amount));
+    const self = Math.round(healer.hp - beforeSelf);
+
+    // ── и группа, если навык её лечит ─────────────────────────────────────
+    // Раньше это был весь обработчик, и заклинатель в нём пропускался явно —
+    // отчего его собственное лечение целиком жило на клиенте и откатывалось.
+    // Теперь он лечится выше, а группа осталась ровно тем же правилом
+    // близости; одиночке она просто не нужна, и отсутствие группы больше не
+    // отказ.
     let reached = 0, total = 0;
-    for (const [sid] of members) {
-      if (sid === s.socket.id) continue;
-      const p = s.room.players.get(sid);
-      if (!p || p.hp <= 0) continue;                       // no resurrecting
-      // Only members actually standing with the healer, and only on this floor
-      // — the room's own proximity rule, unchanged.
-      if (typeof s.room.arePlayersNear === 'function'
-          && !s.room.arePlayersNear(s.socket.id, sid)) continue;
-      const before = p.hp;
-      s.room.setPlayerHp(sid, Math.min(p.maxHp, p.hp + amount));
-      const healed = Math.round(p.hp - before);
-      if (healed > 0) { reached++; total += healed; }
-      if (healed > 0) deps.io.to(sid).emit('healPartyMember', { amount: healed });
+    const heals = SKILL_SELF_HEAL[st.charClass];
+    const wantsParty = !!(heals && heals[k] && heals[k].party);
+    const partyId = wantsParty ? party.playerParty.get(s.socket.id) : null;
+    const members = partyId ? party.parties.get(partyId) : null;
+    if (members) {
+      for (const [sid] of members) {
+        if (sid === s.socket.id) continue;
+        const p = s.room.players.get(sid);
+        if (!p || p.hp <= 0) continue;                       // no resurrecting
+        // Only members actually standing with the healer, and only on this
+        // floor — the room's own proximity rule, unchanged.
+        if (typeof s.room.arePlayersNear === 'function'
+            && !s.room.arePlayersNear(s.socket.id, sid)) continue;
+        const before = p.hp;
+        s.room.setPlayerHp(sid, Math.min(p.maxHp, p.hp + amount));
+        const healed = Math.round(p.hp - before);
+        if (healed > 0) { reached++; total += healed; }
+        if (healed > 0) deps.io.to(sid).emit('healPartyMember', { amount: healed });
+      }
     }
-    // A cast that reached nobody — everyone at full health, everyone out of
-    // range — is not a refusal, but it is not the same event as a heal either,
-    // and the row said the same thing for both.
-    return { amount, reached, total };
-  }, r => r && { amount: r.amount, reached: r.reached, healed: r.total }));
+    // Цифру над головой рисует ЭТОТ ответ, а не клиент. HP до него доедет и
+    // само (setPlayerHp рассылает 'playerHurt'), но сумма нужна отдельно:
+    // разность двух чисел, которые могли разойтись, — это не то, на сколько
+    // полечило.
+    s.socket.emit('skillHealDone', { amount, self, reached, total });
+    return { amount, self, reached, total };
+  }, r => r && { amount: r.amount, self: r.self, reached: r.reached, healed: r.total }));
 
   // ── clan chat ────────────────────────────────────────────────────────────
   // The cooldown is SHARED with the global chat below, deliberately: it is one

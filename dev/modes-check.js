@@ -444,7 +444,9 @@ async function main() {
   a.sock.emit('spawnAoe', { x: NaN, y: 'нет', r: 1e9, style: 'вигаданий', color: '<script>' });
   a.sock.emit('skillEffect', { enemyIds: new Array(500).fill('x'), type: 'stun', duration: 1e9 });
   await wait(300);
-  eq(sess.room.players.get(a.sock.id).hp, hpBefore, 'жоден із трьох ефектів не завдав шкоди');
+  const hpAfter = sess.room.players.get(a.sock.id).hp;
+  ok(hpAfter >= hpBefore,
+    `жоден із трьох ефектів не завдав шкоди (${hpBefore.toFixed(2)} → ${hpAfter.toFixed(2)})`);
   ok(app.io.sockets.sockets.get(a.sock.id), 'сервер живий після сміттєвих ефектів');
 
   // ── the teleport stone ───────────────────────────────────────────────────

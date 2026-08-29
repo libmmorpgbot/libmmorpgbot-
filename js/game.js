@@ -337,6 +337,34 @@ function _getRoomAt(wx, wy) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  КАК ЧАСТО СЕРВЕР ВООБЩЕ ПРИНИМАЕТ УДАР
+// ─────────────────────────────────────────────────────────
+// Room.attackEnemy (server/game/Room.js) отбрасывает любой не-splash удар,
+// пришедший раньше чем через 150 мс после ПРИНЯТОГО предыдущего, и отбрасывает
+// молча: resolveHit (server/handlers2/world.js) на null не шлёт ни enemyHurt,
+// ни ошибки. Клиент об отказе не узнаёт никогда.
+//
+// Пока замах реже 150 мс, это никого не касается. Но player.atkSpeed ничем не
+// ограничен — 0.05 за очко «Скор. атаки» плюс уровень, шмот, пет, пассивки, —
+// и на живом сервере уже есть варлок 38 уровня со 120 очками в скорость:
+// 1.2·(1+37·0.015) + 120·0.05 = 7.87 удара в секунду, то есть замах каждые
+// 127 мс. Каждый второй замах сервер выбрасывает — и следующий отсчитывается
+// от ПРИНЯТОГО, а не от отправленного, поэтому реально доходит один удар в
+// 254 мс: 3.9 в секунду вместо 6.7. Замеряно на живом сервере (dev/
+// relog-attack-check.js): 150 мс → 5.6 попаданий/с, 140 мс → 3.2.
+//
+// Отсюда и «час від часу тупить»: атака за скорость (×1.5 у егеря, ×2 у
+// «Ускорения» и «Жажды») переносит через порог обычную сборку на время
+// действия бафа и возвращает обратно, когда он спадает. Урон в бою прыгает
+// вдвое туда-сюда, и ровно в тот момент, когда игрок ждёт обратного.
+//
+// Поэтому клиент не замахивается быстрее, чем сервер готов принять. Это не
+// потеря урона: удар сверх этого темпа не «слабее», его просто выбрасывают, и
+// выбрасывают ВМЕСТЕ с окном для следующего. Цифра — зеркало серверной, и
+// dev/relog-attack-check.js сторожит именно то, что она не меньше серверной.
+const ATTACK_MIN_INTERVAL = 0.04;
+
+// ─────────────────────────────────────────────────────────
 //  АВТО-НАВЫКИ (VIP 2)
 // ─────────────────────────────────────────────────────────
 // Rides the same АВТО toggle as auto-attack, and the same VIP requirement
@@ -741,7 +769,12 @@ function update(dt, realDt) {
         targetIsPlayer = closestIsPlayer;
       }
       const _as = player.atkSpeed || player.charDef.atkSpeed;
-      player.atkTimer = 1 / _as;
+      // Пол — зеркало серверного, и он намеренно КРОШЕЧНЫЙ. Настоящий предел
+      // сервер считает от скорости атаки этого же игрока (Room.
+      // _attackMinGapMs), то есть ровно от той величины, из которой получен
+      // 1/_as строкой ниже, — зеркалить тут нечего. Осталась только страховка
+      // от бессмысленного значения atkSpeed, та же самая, что и на сервере.
+      player.atkTimer = Math.max(1 / _as, ATTACK_MIN_INTERVAL);
       faceTowards(closest.x, closest.y);
       swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
       const _animDur = Math.min(0.825, 1 / _as) / ATTACK_ANIM_SPEEDUP;
@@ -931,15 +964,16 @@ function update(dt, realDt) {
   if (levShieldAtkTimer > 0) { levShieldAtkTimer -= realDt; if (levShieldAtkTimer <= 0) { levShieldAtkTimer = 0; recompute(); } }
   // Бабочки (adv warlock Q) — periodic 1s self-heal tick while active, not
   // just a flat stat multiplier, so it's driven here instead of recompute().
+  // Таймер — только для иконки на панели навыков. Лечение тикает на СЕРВЕРЕ
+  // (Room._regenTick), он же присылает 'skillHealTick' с настоящей суммой и
+  // рисует цифру. Здесь оно тикало раньше — и сервер о нём не знал, поэтому
+  // накопленное лечение снималось первой же поправкой HP.
+  //
+  // Оставить оба тика было бы хуже, чем ни одного: лечило бы вдвое, и
+  // расхождение, ради устранения которого всё это делалось, просто сменило бы
+  // знак.
   if (butterfliesTimer > 0) {
     butterfliesTimer -= realDt;
-    _butterfliesTickAcc += realDt;
-    while (_butterfliesTickAcc >= 1 && player) {
-      _butterfliesTickAcc -= 1;
-      const heal = Math.round(player.maxHp * 0.05);
-      player.hp = Math.min(player.maxHp, player.hp + heal);
-      dmgNum(player.x, player.y - 30, '+' + heal + '♥', '#a855e0');
-    }
     if (butterfliesTimer <= 0) { butterfliesTimer = 0; _butterfliesTickAcc = 0; }
   }
   if (invisTimer > 0) { invisTimer -= realDt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }

@@ -75,7 +75,7 @@ const WRITE_ACTIONS = new Set([
   'killReward', 'killRewardShare', 'pickupWorldDrop',
   'gramShopBuy', 'starterBonusClaim', 'buyTeleportStone', 'useTeleportStone',
   'seasonBurn', 'seasonBurnAll', 'seasonBurnBook',
-  'healParty', 'enterLocation',
+  'skillHeal', 'enterLocation',
 ]);
 
 // ── what a success row SAYS ─────────────────────────────────────────────────

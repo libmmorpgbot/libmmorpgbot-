@@ -152,7 +152,7 @@ async function main() {
   await wait(400);
   // 'healPartyMember' — the name the shipped client listens on (js/network.js).
   const healed = once(b.sock, 'healPartyMember', 6000).catch(() => null);
-  a.sock.emit('healParty');
+  a.sock.emit('skillHeal', { key: 'R' });
   const heal = await healed;
   ok(!!heal && heal.amount > 0,
     `варлок лікує групу — напарник отримав +${heal && heal.amount}`);
@@ -176,7 +176,7 @@ async function main() {
     `варлок теж поранений (${aBack && aBack.progress && aBack.progress.hp}) — інакше нульове лікування не відрізнити від жодного`);
 
   const notHealed = once(a.sock, 'healPartyMember', 2500).catch(() => null);
-  b.sock.emit('healParty');
+  b.sock.emit('skillHeal', { key: 'R' });
   ok(!await notHealed, 'рейнджер груп не лікує — це вміння варлока');
 
   // ── leaving on purpose ───────────────────────────────────────────────────

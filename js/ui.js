@@ -5243,6 +5243,13 @@ function _vipItemDesc(lvl) {
 const MARKET_MIN_PRICE = 0.1;
 const MARKET_MAX_PRICE = 1000;
 const MARKET_FEE_PCT   = 0.10; // burned — mirrors server; display only, not authoritative
+// Стеля видачі browse() (MARKET_BROWSE_MAX, server/db/repos/market.js) —
+// дзеркало, як і три константи вище: сервер лишається джерелом правди, тут це
+// число потрібне рівно для одного — щоб СКАЗАТИ гравцеві, що список обрізаний.
+// Мовчазне обрізання і є скарга «на маркеті не все відображається»: список
+// виглядав повним, просто без 82% ринку. Поки лотів менше за стелю (зараз їх
+// ~573 при стелі 1000), підказка не показується взагалі.
+const MARKET_BROWSE_MAX = 1000;
 // Per-category floors — mirrors _marketMinPrice (server/index.js) exactly;
 // display/pre-check only, the server is the real authority. Keys/recipes/
 // stones are per unit (scaled by however many are in this listing), rare
@@ -6643,7 +6650,14 @@ function _renderMarketFiltered(lots, mode) {
 function _renderMarketLots(el) {
   if (!_marketLoaded.lots) { el.innerHTML = `<div class="rating-loading">${t('questLoading')}</div>`; return; }
   if (!_marketLots.length) { el.innerHTML = `<div class="rating-empty">${t('nobodySellingHint')}</div>`; return; }
-  el.innerHTML = _renderMarketFiltered(_marketLots, 'buy');
+  // Рівно стільки, скільки віддає сервер за один запит, означає «швидше за
+  // все, там є ще». Пошук і лічильники категорій рахуються по завантаженому
+  // масиву, тож у цьому випадку вони описують не весь ринок — і гравець має
+  // це бачити, а не гадати, чому знайомий лот «зник».
+  const cut = _marketLots.length >= MARKET_BROWSE_MAX
+    ? `<div class="market-truncated">${tVars('marketTruncatedFmt', { n: MARKET_BROWSE_MAX })}</div>`
+    : '';
+  el.innerHTML = cut + _renderMarketFiltered(_marketLots, 'buy');
 }
 
 function _renderMarketMine(el) {
@@ -6941,11 +6955,11 @@ function openMarketSellPicker() {
       <div id="market-sell-confirm" style="display:none;margin-top:6px">
         <div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(209,204,197,.04);border-radius:10px;margin-bottom:12px" id="market-sell-selected"></div>
         <div id="market-qty-row" style="display:none;margin-bottom:10px">
-          <div style="font-size:11px;color:#a3957c;margin-bottom:5px">${t('quantityLbl')}</div>
+          <div style="font-size:11px;color:#a3957c;margin-bottom:5px" id="market-qty-label">${t('quantityLbl')}</div>
           <input type="number" id="market-qty-input" min="1" step="1" value="1"
             style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
         </div>
-        <div style="font-size:11px;color:#a3957c;margin-bottom:5px" id="market-price-hint">${tVars('priceForAllFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE })}</div>
+        <div style="font-size:11px;color:#a3957c;margin-bottom:5px" id="market-price-hint">${tVars('priceForOneFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE })}</div>
         <input type="number" id="market-price-input" min="${MARKET_MIN_PRICE}" max="${MARKET_MAX_PRICE}" step="0.1" value="1"
           style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;margin-bottom:6px;box-sizing:border-box" oninput="_updateMarketFeePreview()">
         <div id="market-fee-preview" style="font-size:11px;color:#a3957c;margin-bottom:14px"></div>
@@ -6976,6 +6990,18 @@ function _renderMarketPickGrid() {
   }).join('');
 }
 
+// Скільки одиниць охоплює лот, який зараз збирається — значення поля
+// кількості, коли воно показане, і 1 в усіх інших випадках. Витягнуто в
+// окрему функцію, бо це число потрібне вже трьом місцям (підлога ціни, текст
+// підказки і сам запит), а рахувалося воно з DOM у кожному окремо.
+function _currentMarketQty() {
+  const qtyInput = document.getElementById('market-qty-input');
+  const qtyRow   = document.getElementById('market-qty-row');
+  if (!qtyRow || qtyRow.style.display === 'none' || !qtyInput) return 1;
+  const n = Math.floor(Number(qtyInput.value));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
 // Current pick's item + however many units this listing covers right now
 // (the qty input when it's showing, otherwise 1) — the one place both the
 // hint and the validation read the live minimum from.
@@ -6983,21 +7009,26 @@ function _currentMarketMinPrice() {
   const idx = _marketSellPick;
   const it  = idx !== null && player ? player.inventory[idx] : null;
   if (!it) return MARKET_MIN_PRICE;
-  const qtyInput = document.getElementById('market-qty-input');
-  const qtyRow   = document.getElementById('market-qty-row');
-  const qty = (qtyRow && qtyRow.style.display !== 'none' && qtyInput) ? (Number(qtyInput.value) || 1) : 1;
-  return _marketMinPriceFor(it, qty);
+  return _marketMinPriceFor(it, _currentMarketQty());
 }
 
 // Refreshes the price input's floor (both the hint text and its `min`
 // attribute) for whatever's picked right now — called on pick and on every
 // qty change, since keys/recipes/stones price per unit.
+//
+// Текст підказки називає кількість. Ціна тут завжди була за ВЕСЬ лот, і поки
+// лот дорівнював усьому стаку, «за всё количество» це й означало. Тепер
+// кількість обирає гравець, і без числа в підказці «1.8» за 296 ключів та
+// «1.8» за один ключ виглядають однаково.
 function _updateMarketPriceHint() {
   const hint  = document.getElementById('market-price-hint');
   const input = document.getElementById('market-price-input');
   if (!hint || !input) return;
   const min = _currentMarketMinPrice();
-  hint.textContent = tVars('priceForAllFmt', { min, max: MARKET_MAX_PRICE });
+  const n   = _currentMarketQty();
+  hint.textContent = n > 1
+    ? tVars('priceForLotFmt', { n, min, max: MARKET_MAX_PRICE })
+    : tVars('priceForOneFmt', { min, max: MARKET_MAX_PRICE });
   input.min = min;
 }
 
@@ -7020,7 +7051,18 @@ function _pickMarketSellItem(idx) {
     qtyRow.style.display = stackable ? 'block' : 'none';
     if (stackable) {
       const qtyInput = document.getElementById('market-qty-input');
-      if (qtyInput) { qtyInput.max = have; qtyInput.value = have; } // default: list the whole stack
+      // ── типове значення — ОДНА штука ────────────────────────────────────
+      // Стояв увесь стак, і це було не «зручно за замовчуванням», а пастка:
+      // єдиний спосіб продати 10 ключів із 300 — помітити крихітне поле й
+      // переписати в ньому число, а промах коштував усього стака. Просили
+      // рівно це: «треба щоб можна було вибрати скільки штук предмета ти
+      // продаєш, по дефолту 1».
+      //
+      // Максимум лишається підказкою в підписі: поле на 1 без «макс. 296»
+      // не каже, до скільки його взагалі можна підняти.
+      if (qtyInput) { qtyInput.max = have; qtyInput.value = 1; }
+      const qtyLabel = document.getElementById('market-qty-label');
+      if (qtyLabel) qtyLabel.textContent = tVars('quantityMaxFmt', { n: have });
     }
   }
   _updateMarketPriceHint();
@@ -7095,14 +7137,15 @@ function _confirmMarketList() {
   // The save flush is gone with it: it existed to push a client-side inventory
   // to the server before the ownership check, and the server has not read the
   // client's inventory for some time.
+  // Кількість береться тією ж функцією, що й підлога ціни, — інакше вони
+  // розходяться, і гравець платить за перевірку однією кількістю, а надсилає
+  // іншу. Обрізання по `have` лишається: сервер усе одно перерахує, скільки
+  // штук у гравця насправді (market.list), але надсилати завідомо неможливе
+  // число означає віддати гравцеві помилку замість лота.
   const have = it.qty || 1;
   let itemSnapshot = it;
   if (_isStackable(it) && have > 1) {
-    const qtyInput = document.getElementById('market-qty-input');
-    let qty = Math.floor(Number(qtyInput?.value));
-    if (!Number.isFinite(qty) || qty < 1) qty = 1;
-    if (qty > have) qty = have;
-    itemSnapshot = { ...it, qty };
+    itemSnapshot = { ...it, qty: Math.min(_currentMarketQty(), have) };
   }
   _pendingSellItem = { item: itemSnapshot };
   _setSellPickerBusy(true);
@@ -7145,7 +7188,17 @@ function onMarketHistoryData(entries) {
 function onMarketListed(listing) {
   _pendingSellItem = null;
   closeMarketSellPicker();
-  _marketMine.unshift(listing);
+  // ── ЧЕРЕЗ _marketEnrich, як і всі інші три списки ────────────────────────
+  // Сервер надсилає лише тотожність предмета (id/enhance/qty/name/rarity/slot)
+  // — картинки в ній немає й ніколи не було, її дістає з каталогу вже клієнт.
+  // Три списки, що приходять із сервера, проходять через _marketEnrich; цей
+  // один рядок — ні, і тому щойно виставлений лот малювався запасним значком
+  // _itemIcon: `iconHTML('weapon')`, тобто діагональна стрілка вправо-вгору.
+  // Рівно те, що й побачив гравець: «вони без нормальної аватарки, а стрілка
+  // якась замість неї». Варто було перемкнутися на іншу вкладку й назад —
+  // список перечитувався через mine() і картинка з'являлася, що й ховало
+  // причину: сервер надсилає те саме в обох випадках, різниця тільки тут.
+  _marketMine.unshift(_marketEnrich([listing])[0]);
   if (_marketTab === 'mine') _renderMarketBody();
   netSaveProgressNow();
   _marketToast(tVars('listedForFmt', { name: listing.item?.name || '', price: listing.price }), 'ok');

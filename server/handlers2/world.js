@@ -38,7 +38,7 @@ const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
   NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
-  GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel, clanBonusOf,
+  GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel, clanBonusOf, LEVEL_UP_HEAL,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -539,6 +539,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // everything below describes committed state.
     if (reward.xp && reward.xp.levelsGained > 0) {
       await s.pushStats(); await s.pushProgress();
+      // pushStats уже пересчитал maxHp по новому уровню, поэтому прибавка
+      // ложится на актуальный потолок, а не на прежний.
+      const me = s.room && s.room.players.get(s.socket.id);
+      if (me && me.hp > 0) {
+        s.room.setPlayerHp(s.socket.id,
+          Math.min(me.maxHp, me.hp + LEVEL_UP_HEAL * reward.xp.levelsGained));
+      }
     }
     await s.pushBalances();
     if (reward.items.length) await s.pushItems();
@@ -619,8 +626,31 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
   // Both attack paths do the same four things in the same order, and the old
   // build's two copies drifted apart twice. One function, called twice.
+  // ── отказ, которого никто никогда не видел ───────────────────────────────
+  // null здесь — это «Room отказал»: слишком рано после предыдущего ПРИНЯТОГО
+  // удара, труп, чужой инстанс, нет линии взгляда. Ни enemyHurt, ни ошибки
+  // клиенту, ни строки в логе — поэтому «авто бой с мобами останавливается»
+  // нельзя было ни увидеть, ни измерить, и найден он был только замерами на
+  // живом сервере.
+  //
+  // Отдельный отказ штатен: замах по мобу, которого только что добил сосед, —
+  // обычное дело. А вот ДОЛЯ отказов в десятки процентов означает ровно одно:
+  // клиент бьёт чаще, чем сервер принимает. Поэтому считается доля, и строка
+  // печатается не чаще раза в минуту на сокет — это путь с семью ударами в
+  // секунду на игрока, и запись на пакет утопила бы журнал.
+  let _atkTried = 0, _atkRefused = 0, _atkLogAt = 0;
   function resolveHit(enemyId, res) {
-    if (!res) return;
+    _atkTried++;
+    if (!res) {
+      _atkRefused++;
+      const _now = Date.now();
+      if (_now - _atkLogAt > 60000 && _atkRefused * 4 > _atkTried) {
+        _atkLogAt = _now;
+        console.warn(`[attack] ${s.username || s.playerId}: отклонено ` +
+          `${_atkRefused} из ${_atkTried} ударов — клиент бьёт чаще, чем Room принимает`);
+      }
+      return;
+    }
     if (res.immune) { s.socket.emit('guildWarError', { msg: immuneMsg(res) }); return; }
     // Every mode's stake in this hit — wave counters, the race tally, co-op
     // stages, the floor boss's respawn clock. Only the race boss's death

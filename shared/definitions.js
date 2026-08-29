@@ -2341,6 +2341,85 @@ function clanBonusOf(level) {
 // it last.
 function clanAtkBonusPct(level) { return clanBonusOf(level).atk; }
 
+// ── самолечение: одна таблица для клиента и сервера ────────────────────────
+// Ключ — класс, потом клавиша навыка. pct считается от maxHp; advPct — то же
+// у продвинутой версии навыка. advOnly значит, что базовая версия не лечит
+// вовсе, advKind — что продвинутая лечит ИНАЧЕ (у чернокнижника Q это
+// «Бабочки»: не разовое лечение, а 5% в секунду на десять секунд).
+//
+// party: навык лечит ещё и группу. Раньше серверный healParty лечил ТОЛЬКО
+// группу и явно пропускал самого заклинателя (`if (sid === s.socket.id)
+// continue`), а одиночный чернокнижник не получал вообще ничего — его
+// лечение целиком жило на клиенте.
+// Навыки, ускоряющие атаку. sec — длительность, плюс секунда за уровень
+// навыка (ровно как у клиента: _skillBuffSec(key) === уровень слота).
+const SKILL_HASTE = {
+  ranger:  { R: { mult: 1.5, advMult: 2, sec: 5 } },   // «Скорость» / «Ускорение»
+  warlock: { E: { mult: 2, advOnly: true, sec: 4 } },  // «Жажда» — только продвинутая
+};
+
+// Во сколько раз этот навык ускоряет атаку, или null, если не ускоряет.
+function skillHasteOf(charClass, key, adv) {
+  const byClass = Object.hasOwn(SKILL_HASTE, charClass) ? SKILL_HASTE[charClass] : null;
+  if (!byClass) return null;
+  const def = Object.hasOwn(byClass, key) ? byClass[key] : null;
+  if (!def) return null;
+  if (def.advOnly && !adv) return null;
+  return (adv && def.advMult) ? def.advMult : def.mult;
+}
+
+const SKILL_SELF_HEAL = {
+  mage:    { R: { pct: 0.20, advOnly: true } },          // «Перенесение» — только продвинутый
+  warlock: {
+    Q: { pct: 0.20, advKind: 'butterflies' },            // «Тёмное исцеление» / «Бабочки»
+    R: { pct: 0.10, advPct: 0.20, party: true },         // «Тёмная молитва» / «Исцеление»
+  },
+};
+
+// «Бабочки» (продвинутый Q чернокнижника): 5% maxHp в секунду, десять секунд
+// плюс секунда за уровень навыка.
+const BUTTERFLIES_SEC = 10;
+const BUTTERFLIES_TICK_PCT = 0.05;
+
+// Вампиризм (Q Рыцаря Смерти): доля НАНЕСЁННОГО урона, возвращаемая здоровьем.
+// Переехали сюда из js/state.js — сервер применяет урон и, значит, он же
+// единственный, кто может честно посчитать возврат. Объявить их в обоих файлах
+// нельзя: оба лежат в одном бандле, и второй `const` с тем же именем — это
+// SyntaxError на весь клиент.
+const VAMPIRISM_SEC = 10;
+const VAMPIRISM_PCT = 0.10;
+const ADV_VAMPIRISM_PCT = 0.15;   // «Истощение» — продвинутый Q
+
+// Безопасная зона: +1 HP в секунду сверх пассивной регенерации. Считал только
+// клиент (js/game.js), поэтому в хабе полоса дёргалась 120 → 121 → 120:
+// клиент прибавлял, сервер не знал, поправка возвращала обратно.
+const SAFE_ZONE_REGEN_PER_SEC = 1;
+
+// Повышение уровня: +35 HP за уровень. Комментарий в js/player.js уверял, что
+// «the heal itself was applied server-side» — этого не делал никто.
+const LEVEL_UP_HEAL = 35;
+
+// Множитель силы лечения: +1% за уровень навыка, и сверху «Сила навыков» с
+// предметов. Ровно то, что клиент зовёт _skillHealMult, а серверный healParty
+// считал у себя выражением-двойником.
+function skillHealMult(skillLvl, skillPct) {
+  return (1 + (skillLvl || 0) * 0.01) * (1 + (skillPct || 0));
+}
+
+// Сколько это лечит — единственный ответ на вопрос, и его дают обе стороны.
+// Возвращает null, если навык не лечит: для продвинутых «Бабочек» разовым
+// лечением тоже null, у них свой тик.
+function skillSelfHealOf(charClass, key, adv, skillLvl, skillPct, maxHp) {
+  const byClass = Object.hasOwn(SKILL_SELF_HEAL, charClass) ? SKILL_SELF_HEAL[charClass] : null;
+  if (!byClass) return null;
+  const def = Object.hasOwn(byClass, key) ? byClass[key] : null;
+  if (!def) return null;
+  if (def.advOnly && !adv) return null;
+  if (def.advKind && adv) return null;                   // у продвинутой версии свой механизм
+  const pct = (adv && def.advPct) ? def.advPct : def.pct;
+  return Math.max(1, Math.round(maxHp * pct * skillHealMult(skillLvl, skillPct)));
+}
+
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
@@ -2413,4 +2492,9 @@ if (typeof module !== 'undefined') module.exports = {
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
   GUILD_WAR_TOWER_HP, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
+  SKILL_SELF_HEAL, SKILL_HASTE, skillHasteOf,
+  BUTTERFLIES_SEC, BUTTERFLIES_TICK_PCT,
+  VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
+  SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,
+  skillHealMult, skillSelfHealOf,
 };

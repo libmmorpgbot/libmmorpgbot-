@@ -6,7 +6,8 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
-        skillDamageMult, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL } = require('../../shared/definitions');
+        skillDamageMult, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
+        SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
@@ -261,6 +262,12 @@ const MAX_HP_REGEN_PER_SEC = 30;
 // хватает, чтобы расхождение не успевало вырасти до заметного, и это один
 // маленький пакет в секунду на игрока — и только пока он ранен.
 const HP_SYNC_EVERY_MS = 1000;
+// См. Room._attackMinGapMs.
+const ATTACK_GAP_TOLERANCE = 0.85;
+const ATTACK_GAP_HARD_MIN_MS = 40;
+// Когда скорость атаки ещё не проставлена (игрок в комнате, но setPlayerStats
+// не отработал) — прежнее плоское значение: не строже, чем было.
+const ATTACK_GAP_FALLBACK_MS = 150;
 // Server-side minimum gap between two skill CASTS from the same player. The
 // real cooldowns are seconds long and enforced by the client; this only has to
 // be tight enough that spamming the event isn't worth anything.
@@ -2846,6 +2853,7 @@ class Room {
     // (pvpDamageTaken), which a modified client could always report as 0 to
     // become unkillable in PvP while still dealing full damage to others.
     target.hp = Math.max(0, target.hp - dmg);
+    this._vampGain(attacker, dmg);
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
@@ -2950,6 +2958,7 @@ class Room {
     const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     target.hp = Math.max(0, target.hp - dmg);
+    this._vampGain(attacker, dmg);
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
@@ -3251,24 +3260,124 @@ class Room {
   // может сообщать maxHp вечно. Формула здесь одна и та же с той, которой
   // клиент предсказывает, так что предсказание и правда совпадают по
   // построению, а sync ниже правит только дрейф.
+  //
+  // ── что сюда добавилось после первых суток ────────────────────────────────
+  // Пассивной регенерацией дело не ограничилось. Клиент лечил себя ещё тремя
+  // способами, о которых сервер не знал:
+  //
+  //   безопасная зона  +1 HP/сек в хабе (js/game.js). Полоса дёргалась
+  //                    120 → 121 → 120: клиент прибавлял, сервер не знал,
+  //                    поправка возвращала обратно. Позицию сервер видит —
+  //                    значит, и правило его;
+  //   «Бабочки»        5% maxHp в секунду десять секунд (продвинутый Q
+  //                    чернокнижника) — таймер жил только в кадре клиента;
+  //   вампиризм        доля нанесённого урона (Q Рыцаря Смерти). Урон
+  //                    применяет сервер, так что считать возврат может только
+  //                    он — см. _vampGain ниже.
+  //
+  // Все они теперь здесь. Клиент предсказывает ровно две непрерывные —
+  // пассивную и зону, — потому что только у них есть общая формула на каждый
+  // кадр. Разовых лечений он больше не выдумывает вовсе.
   _regenTick(p, dt, now) {
     if (p.hp <= 0 || p.hp >= p.maxHp) return;
-    const rate = p.hpRegen;
+    let rate = p.hpRegen;
     // Проверяется, а не предполагается: p.hpRegen заполняет setPlayerStats, и
     // между входом в комнату и первым его вызовом игрок уже здесь. `undefined
     // * dt` даёт NaN, а NaN в hp поглощающий — все последующие `hp <= 0`
     // ложны, и один такой тик сделал бы игрока не «нелечащимся», а бессмертным.
     // То же правило, что healPlayer записал у себя ниже.
-    if (!Number.isFinite(rate) || rate <= 0) return;
+    if (!Number.isFinite(rate) || rate < 0) rate = 0;
+
+    // Безопасная зона. Прибавка непрерывная, как и пассивная, поэтому клиент
+    // может предсказывать её тем же выражением — и предсказывает.
+    if (this._inSafeZone(p.x, p.y)) rate += SAFE_ZONE_REGEN_PER_SEC;
+
     const before = p.hp;
-    p.hp = Math.min(p.maxHp, p.hp + rate * dt);
+    if (rate > 0) p.hp = Math.min(p.maxHp, p.hp + rate * dt);
+
+    // «Бабочки» — не ставка в секунду, а тик РАЗ в секунду, и накопитель нужен
+    // именно поэтому: комната тикает сорок раз в секунду, и размазать 5% по
+    // сорока тикам значило бы лечить не то, что обещает описание навыка.
+    // Граница ВКЛЮЧИТЕЛЬНАЯ. Окно ставится как cast + 10000, а тики идут на
+    // +1000, +2000 ... +10000 — и последний приходится ровно на конец окна.
+    // Со строгим `>` он не наступал никогда: навык, обещающий десять тиков,
+    // давал девять.
+    if (p._butterfliesUntil >= now) {
+      // Отсчёт по ЧАСАМ, а не накоплением dt. Сорок раз в секунду прибавлять
+      // 0.025 — это сорок операций с плавающей точкой, и сумма выходит
+      // 0.9999999999999999: условие `>= 1` не срабатывает, и за каждые десять
+      // секунд навык терял по тику. Ровно это и показала проверка — три
+      // ожидаемых тика превратились в два.
+      if (!p._butterAt) p._butterAt = now;
+      while (now - p._butterAt >= 1000 && p.hp < p.maxHp) {
+        p._butterAt += 1000;
+        const tick = Math.max(1, Math.round(p.maxHp * BUTTERFLIES_TICK_PCT));
+        p.hp = Math.min(p.maxHp, p.hp + tick);
+        this.io.to(p.socketId).emit('skillHealTick', { amount: tick, kind: 'butterflies' });
+      }
+    } else if (p._butterAt) {
+      p._butterAt = 0;
+    }
+
+    if (p.hp === before) return;
     // Раз в секунду — и ещё раз в тот момент, когда полоса заполнилась. Без
     // второго условия стороны замирали бы в паре очков друг от друга навсегда:
     // полное HP больше не порождает синхронизаций.
     const filled = p.hp >= p.maxHp && before < p.maxHp;
     if (!filled && now - (p._hpSyncAt || 0) < HP_SYNC_EVERY_MS) return;
     p._hpSyncAt = now;
-    this.io.to(p.socketId).emit('hpSync', { hp: Math.floor(p.hp) });
+    // ТОЧНОЕ значение, а не Math.floor. Пол здесь и был причиной дёрганья
+    // 120 → 121 → 120: клиент держал 120.9, сервер присылал 120, клиент
+    // прыгал вниз, за секунду дорастал до 121.4 — и обратно. Дробная часть на
+    // полосе не видна, но именно она отличает поправку от рывка.
+    this.io.to(p.socketId).emit('hpSync', { hp: Math.round(p.hp * 100) / 100 });
+  }
+
+  // ── вампиризм ──────────────────────────────────────────────────────────────
+  // Возврат здоровья долей НАНЕСЁННОГО урона. Клиент считал его сам
+  // (_applyVampirism, js/player.js) — при том, что урон применяет комната, то
+  // есть единственный, кто знает настоящее число, лечения не делал.
+  //
+  // Окно ставит обработчик навыка (skillHeal), а не клиент: тот сообщает
+  // только КАКОЙ навык нажат, и только после проверки класса и изученности.
+  _vampGain(attacker, dmg) {
+    if (!attacker || attacker.hp <= 0 || !(dmg > 0)) return;
+    if (!(attacker._vampUntil > Date.now())) return;
+    const heal = Math.max(1, Math.round(dmg * (attacker._vampPct || 0)));
+    const before = attacker.hp;
+    attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
+    const got = Math.round(attacker.hp - before);
+    if (got > 0) this.io.to(attacker.socketId).emit('skillHealTick', { amount: got, kind: 'vampirism' });
+  }
+
+  // Окно вампиризма, «Бабочек» и ускорения. Ставится из обработчика навыка
+  // ПОСЛЕ того, как сервер проверил класс, изученность и уровень — здесь
+  // только запись.
+  setSkillWindow(socketId, kind, ms, pct) {
+    const p = this.players.get(socketId);
+    if (!p) return false;
+    const until = Date.now() + Math.max(0, ms);
+    if (kind === 'vampirism') { p._vampUntil = until; p._vampPct = pct; return true; }
+    if (kind === 'butterflies') { p._butterfliesUntil = until; p._butterAt = Date.now(); return true; }
+    if (kind === 'haste') { p._hasteUntil = until; p._hasteMult = pct; return true; }
+    return false;
+  }
+
+  // Минимальный промежуток между принятыми ударами ЭТОГО игрока — см. разбор
+  // в attackEnemy.
+  //
+  // Допуск: клиент шлёт ровно 1/atkSpeed, и без запаса каждый пакет, пришедший
+  // на миллисекунду раньше из-за дрожания сети, терялся бы. 15% — это меньше
+  // одного кадра при 60 fps и заметно меньше разброса мобильной сети.
+  //
+  // Нижняя граница — не правило, а страховка от бессмысленного значения
+  // atkSpeed; настоящий предел даёт формула выше.
+  _attackMinGapMs(p) {
+    let as = Number(p && p.atkSpeed);
+    if (!Number.isFinite(as) || as <= 0) return ATTACK_GAP_FALLBACK_MS;
+    // Навычное ускорение — окно, открытое сервером после проверки навыка.
+    if (p._hasteUntil > Date.now() && p._hasteMult > 1) as *= p._hasteMult;
+    return Math.max(ATTACK_GAP_HARD_MIN_MS, (1000 / as) * ATTACK_GAP_TOLERANCE);
   }
 
   syncPlayerHp(socketId, clientHp) {
@@ -3784,8 +3893,30 @@ class Room {
       if (now - (attacker._lastAtk || 0) > 200) return null;
       if (!this._canSplash(attacker)) return null;
     } else {
-      // Rate-limit: max one server hit every 150ms
-      if (now - (attacker._lastAtk || 0) < 150) return null;
+      // ── сколько ждать между ударами ──────────────────────────────────────
+      // Здесь стоял плоский порог: «не чаще одного удара в 150 мс», один и тот
+      // же для всех. Он был неверен в ОБЕ стороны сразу.
+      //
+      // Снизу: 150 мс — это 6.67 удара в секунду, а прокачанный персонаж
+      // законно бьёт быстрее. В живой базе есть чернокнижник 38-го уровня со
+      // 120 очками в скорость атаки — 7.87 удара в секунду, то есть 127 мс.
+      // Сервер отклонял каждый такой удар, МОЛЧА (см. resolveHit,
+      // handlers2/world.js), и отклонённый удар не сдвигал окно — поэтому чем
+      // быстрее человек бил, тем меньше попадал: замеры на живом сервере дали
+      // 5.87 попадания в секунду на 150 мс против 3.15 на 140 мс. Это и есть
+      // «авто бой с мобами останавливается»: любой баф скорости перетаскивал
+      // обычную сборку за край, и урон проваливался вдвое на время бафа.
+      //
+      // Сверху: тот же порог РАЗРЕШАЛ 6.67 удара в секунду и персонажу с
+      // базовой скоростью 1.2 — то есть модифицированному клиенту он дарил
+      // пятикратный урон. Плоское число не может быть одновременно потолком
+      // для быстрых и потолком для медленных.
+      //
+      // Теперь порог считается от скорости атаки САМОГО игрока — а её считает
+      // сервер (repos/stats.js) из класса, уровня, снаряжения и пассивок, так
+      // что подделать её клиент не может. Быстрым это возвращает их скорость,
+      // медленным — закрывает дыру.
+      if (now - (attacker._lastAtk || 0) < this._attackMinGapMs(attacker)) return null;
       attacker._lastAtk = now;
       // A real swing opens a fresh splash budget for the window it starts —
       // see the block under the enemy lookup for what that budget is and why.
@@ -3878,6 +4009,9 @@ class Room {
     const dmg = splash ? Math.max(1, Math.round(_rawDmg * 0.5)) : _rawDmg;
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
+    // Здесь, а не у клиента: dmg — уже посчитанное сервером число, с критом и
+    // защитой цели, и никакого другого честного не существует.
+    this._vampGain(attacker, dmg);
     enemy.aggro = true;
     this._wakePack(enemy);
     if (enemy.hp <= 0) {
@@ -3981,6 +4115,9 @@ class Room {
     // and matches what pvpSkillAttack already does for the exact same case.
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     enemy.hp = Math.max(0, enemy.hp - dmg);
+    // Здесь, а не у клиента: dmg — уже посчитанное сервером число, с критом и
+    // защитой цели, и никакого другого честного не существует.
+    this._vampGain(attacker, dmg);
     enemy.aggro = true;
     this._wakePack(enemy);
     if (enemy.hp <= 0) {

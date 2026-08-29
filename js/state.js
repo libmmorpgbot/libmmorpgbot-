@@ -82,8 +82,10 @@ let faithShieldTimer = 0;
 let invisTimer = 0;
 let guardTimer = 0;      // Танк (lev) E — +80% DEF buff
 let vampirismTimer = 0;  // Рыцарь Смерти (deathknight) Q — % lifesteal buff
-const VAMPIRISM_PCT = 0.10;
-const ADV_VAMPIRISM_PCT = 0.15; // DK Q advanced ("Истощение") — see _applyVampirism, js/player.js
+// VAMPIRISM_PCT и ADV_VAMPIRISM_PCT переехали в shared/definitions.js: возврат
+// здоровья считается от НАНЕСЁННОГО урона, а урон применяет сервер, и держать
+// проценты там, куда сервер не смотрит, — это ровно то, из-за чего лечение
+// откатывалось. Файл идёт в бандле раньше этого, так что имена здесь видны.
 
 // ── Advanced skills ("вторая профессия") ────────────────────────────────
 // Extra buff timers not covered by the base-skill ones above — several

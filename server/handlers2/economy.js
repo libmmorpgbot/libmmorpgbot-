@@ -270,12 +270,26 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // object the server pushed, so it carries rowId, id and enhance. Only the
   // identity is used; every number in it (price floor, rarity, stats) is
   // re-read from the database.
+  //
+  // ── `qty` — єдине число з цього об'єкта, яке сюди доїжджає ────────────────
+  // І воно НЕ приймається на віру: market.list() перераховує, скільки штук
+  // гравець реально тримає, і відмовляє, якщо просять більше. Тут воно просто
+  // передається далі — рішення приймає репозиторій, бо саме він тримає
+  // блокування гравця і бачить усі рядки предмета.
+  //
+  // Раніше його не передавали взагалі, і лот завжди дорівнював одному рядку
+  // player_items. Через це гравець, у якого стак розкладений на два рядки
+  // (46 + 250, клієнт малює 296), виставляв «296» і отримував лот на 46 —
+  // список свідків цієї поломки закінчувався тим, що вибрати кількість було
+  // просто нічим.
   safeOn('marketList', ({ item, price } = {}) => s.act('marketList', 'marketListError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, item || {}, 'inventory');
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
     const vip = await progression.vipOf(t, pid);
-    const res = await market.list(t, pid, row, price, { vipLevel: vip.level });
+    const res = await market.list(t, pid, row, price, {
+      vipLevel: vip.level, qty: item ? item.qty : null,
+    });
     await pushAll(t);
     s.socket.emit('marketListed', { listing: res.listing || res });
     return res;

@@ -41,7 +41,32 @@ const err = (code, msg) => { throw new MarketError(code, msg); };
 // Puts one item up for sale. The item LEAVES the seller's inventory in the
 // same transaction that creates the listing, so "listed but still held" is not
 // a state that can exist between two writes — there is only one write.
-async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
+//
+// ── скільки штук, і чому це рахується тут, а не в рядку ────────────────────
+// `qty` — скільки одиниць стака гравець хоче виставити. Опущений означає
+// «увесь рядок»: так поводилась ця функція завжди, і так її досі кличуть
+// dev/market-check.js, dev/enhance-check.js та dev/exploit-check.js.
+//
+// До появи цього параметра лот завжди дорівнював ОДНОМУ РЯДКУ player_items, і
+// саме на цьому гравці зловили дві різні поломки:
+//
+//   1. Стакові предмети живуть не в одному рядку. items.add() зливає стак у
+//      наявний рядок, а от attachFromListing (купівля та скасування лоту) —
+//      ні: вона просто повертає відчеплений рядок власнику. Тому в акаунта
+//      з'являється key_rare двома рядками — 46 і 250. Клієнт малює їх однією
+//      купкою на 296 (_migrateInventory, js/player.js) і бере rowId ПЕРШОГО
+//      рядка, тож «виставляю 296 за 1.8» знімало з полиці рівно 46. Це не
+//      здогад: у живій базі це рядки 68394 (46 шт.) і 80117 (250 шт.) одного
+//      гравця, тобто рівно ті числа, які він і назвав.
+//
+//   2. Вибрати кількість було нічим. Лот забирав увесь стак, тож продати 10
+//      ключів із 300 було неможливо в принципі.
+//
+// Тому кількість тепер задається явно, а рахується ПО ВСІХ рядках предмета в
+// інвентарі — рядок, на який показав клієнт, лише називає предмет. Клієнту не
+// вірять: скільки він реально має, знає тільки база, і `have` нижче — це вона
+// і є.
+async function list(db, playerId, rowId, price, { vipLevel = 0, qty = null } = {}) {
   await items.lockPlayer(db, playerId);
 
   const p = Number(price);
@@ -52,12 +77,39 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
   // not already listed. The WHERE clause is the check — a separate "does he
   // own it" read would be a fact that can change before the update lands.
   const { rows: own } = await query(db, `
-    SELECT i.id, i.item_id, i.enhance, i.qty, c.rarity
+    SELECT i.id, i.item_id, i.enhance, i.qty, c.rarity, c.stackable
       FROM player_items i JOIN item_catalog c ON c.item_id = i.item_id
      WHERE i.id = $1 AND i.player_id = $2 AND i.container = 'inventory'
      FOR UPDATE OF i`, [rowId, playerId]);
   if (!own.length) err('not_owned', 'Предмет не знайдено в інвентарі');
   const it = own[0];
+  const rowQty = Number(it.qty) || 1;
+
+  // ── скільки саме виставляємо ──────────────────────────────────────────────
+  // Опущене/сміттєве значення — увесь рядок, як було до появи параметра.
+  const asked = Math.floor(Number(qty));
+  const want = Number.isSafeInteger(asked) && asked > 0 ? asked : rowQty;
+
+  // Нестаковий предмет — це один рядок на одну копію, і рядок з qty > 1 гра
+  // ніколи не створює (items.add() ставить qty лише стаковим). Якби клієнт
+  // попросив 5 однакових мечів, тут би народився рядок «5 мечів в одному
+  // слоті» — форма, якої в грі немає і яку покупець отримав би однією
+  // коміркою. Тому це відмова, а не мовчазне обрізання до 1.
+  if (!it.stackable && want !== 1) {
+    err('bad_qty', 'Цей предмет не стакається — за раз продається лише 1 шт.');
+  }
+
+  // Скільки одиниць цього предмета гравець ТРИМАЄ насправді — сумою по всіх
+  // рядках інвентаря з тим самим id та тією ж заточкою, бо саме так їх бачить
+  // і рахує сам гравець. Це та перевірка, якої не було: раніше «власність»
+  // означала «рядок належить тобі», а скільки в ньому лежить — не питали.
+  const { rows: pool } = await query(db, `
+    SELECT COALESCE(sum(qty), 0)::int AS have
+      FROM player_items
+     WHERE player_id = $1 AND container = 'inventory'
+       AND item_id = $2 AND enhance = $3`, [playerId, it.item_id, it.enhance || 0]);
+  const have = Number(pool[0].have);
+  if (want > have) err('bad_qty', `У вас лише ${have} шт., а виставляєте ${want}`);
 
   // qty is the point. _marketMinPrice multiplies its floors by item.qty
   // because they are PER UNIT and a listing's price covers the whole stack
@@ -68,8 +120,8 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
   // and nearly 15k GRAM of goods crosses accounts for a 0.15 fee instead of
   // ~1500 — the market fee is the only tax on muling, and this divided it by
   // the size of the stack.
-  if (it.qty > MARKET_MAX_QTY) err('bad_qty', `За раз можна виставити не більше ${MARKET_MAX_QTY} шт.`);
-  const min = _marketMinPrice({ ...(_catalogBase(it.item_id) || {}), rarity: it.rarity, qty: it.qty });
+  if (want > MARKET_MAX_QTY) err('bad_qty', `За раз можна виставити не більше ${MARKET_MAX_QTY} шт.`);
+  const min = _marketMinPrice({ ...(_catalogBase(it.item_id) || {}), rarity: it.rarity, qty: want });
   if (min > MARKET_MAX_PRICE) {
     // A stack whose honest floor exceeds the ceiling cannot be listed at any
     // legal price. Saying so is better than the alternative the bug produced,
@@ -94,8 +146,24 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
     err('cooldown', 'Занадто часто — зачекайте пару секунд');
   }
 
-  if (!await items.detachForListing(db, rowId, playerId)) {
-    err('not_owned', 'Предмет перемістився — спробуйте ще раз');
+  // ── предмет іде з інвентаря ───────────────────────────────────────────────
+  // Увесь рядок — старим шляхом: рядок просто відчіплюється від власника і
+  // зберігає свою тотожність. Це важливо не для стаків, а для унікальних
+  // речей: id рядка — це ключ, за яким items.historyOfRow відповідає «звідки
+  // взявся цей меч», і створювати замість нього новий рядок означало б
+  // обірвати цю історію на кожному продажу.
+  //
+  // Частина стака — розщепленням: спершу народжується відчеплений рядок рівно
+  // на `want` штук, потім рівно стільки ж списується з інвентаря — по всіх
+  // рядках предмета, чим і закривається випадок «46 + 250».
+  let listedRowId;
+  if (want === rowQty) {
+    if (!await items.detachForListing(db, rowId, playerId)) {
+      err('not_owned', 'Предмет перемістився — спробуйте ще раз');
+    }
+    listedRowId = rowId;
+  } else {
+    listedRowId = await _splitOffForListing(db, playerId, it, want);
   }
 
   // What is being sold is written INTO the listing, not only referenced from
@@ -111,11 +179,11 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
     ? await query(db, `
         INSERT INTO market_listings (seller_id, item_id, price, snap_item_id, snap_enhance, snap_qty)
         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
-        [playerId, rowId, round2(p), it.item_id, it.enhance || 0, it.qty || 1])
+        [playerId, listedRowId, round2(p), it.item_id, it.enhance || 0, want])
     : await query(db, `
         INSERT INTO market_listings (seller_id, item_id, price)
         VALUES ($1, $2, $3) RETURNING id, created_at`,
-        [playerId, rowId, round2(p)]);
+        [playerId, listedRowId, round2(p)]);
 
   // Read back through the SAME shape browse() and mine() use. This used to
   // return `{ listingId, price, item: { id, enhance, qty } }` — no `id`, no
@@ -138,7 +206,92 @@ async function list(db, playerId, rowId, price, { vipLevel = 0 } = {}) {
   // to rename a field would be a change with no benefit to anyone.
   return lot
     ? { ...lot, listingId: id }
-    : { id, listingId: id, price: round2(p), item: { id: it.item_id, enhance: it.enhance, qty: it.qty } };
+    : { id, listingId: id, price: round2(p), item: { id: it.item_id, enhance: it.enhance, qty: want } };
+}
+
+// Відрізає `want` штук від того, що гравець тримає, і віддає id відчепленого
+// рядка, який тепер належить лоту.
+//
+// Спершу INSERT, потім списання — і це не стиль, а необхідність: списання
+// бере штуки з УСІХ рядків предмета і вихідний рядок може видалити цілком,
+// а INSERT ... SELECT читає з нього провенанс. Новий рядок у списання не
+// потрапляє: він одразу нічий (player_id/container NULL), а пул нижче
+// відбирається по `player_id = $1 AND container = 'inventory'`.
+//
+// Нічийним він народжується тією самою формою, яку дає detachForListing, і
+// саме її вимагає обмеження player_items_owned_ck. Проміжного стану «належить
+// і продавцю, і лоту» не існує; будь-яка помилка нижче забирає цей INSERT із
+// собою разом із транзакцією.
+//
+// Провенанс (source/source_ref) копіюється з вихідного рядка, коли міграція
+// 011 вже пройшла: відрізаний шматок стака прийшов звідти ж, звідки й стак, і
+// вигадувати йому нове походження означало б збрехати в єдиній колонці, яка
+// відповідає на питання «звідки це взялося».
+//
+// ── чому списання зроблене тут, а не через items.removeQty ─────────────────
+// removeQty теж уміє забрати `want` по кількох рядках і теж пише в реєстр —
+// але БЕЗ row_id, бо для неї це рух по кількох рядках одразу і жодного
+// «того самого» рядка немає. Тут він є: усі ці штуки поїхали в один рядок
+// лоту, і саме його id робить items.historyOfRow() здатною відповісти
+// покупцю «звідки це взялося». Через removeQty новий рядок з'являвся б у
+// player_items узагалі без згадки в реєстрі — дірку рівно такої форми і
+// ловить dev/item-ledger-check.js.
+//
+// Запис у реєстрі рівно один, на -want, як і в detachForListing: сума дельт
+// гравця має й далі дорівнювати тому, що в нього на руках (items.reconcile).
+async function _splitOffForListing(db, playerId, it, want) {
+  const hasSrc = await hasColumn('player_items', 'source');
+  const { rows } = hasSrc
+    ? await query(db, `
+        INSERT INTO player_items (player_id, container, slot, item_id, enhance, qty, source, source_ref)
+        SELECT NULL, NULL, NULL, item_id, enhance, $2::int, source, source_ref
+          FROM player_items WHERE id = $1
+        RETURNING id`, [it.id, want])
+    : await query(db, `
+        INSERT INTO player_items (player_id, container, slot, item_id, enhance, qty)
+        SELECT NULL, NULL, NULL, item_id, enhance, $2::int
+          FROM player_items WHERE id = $1
+        RETURNING id`, [it.id, want]);
+  if (!rows.length) err('not_owned', 'Предмет перемістився — спробуйте ще раз');
+  const listedRowId = Number(rows[0].id);
+
+  // Рядок, на який показав клієнт, іде першим — інакше гравець, що обрав
+  // купку з двох рядків, побачив би списання «звідкись іще». Далі за id, як і
+  // всюди в цьому проєкті, де рядки рівноцінні.
+  //
+  // Рядки, на які ще посилається якийсь лот, виключаються, поки зовнішній
+  // ключ забороняє їх видаляти (до міграції 010). Спроба видалити такий
+  // рядок підняла б 23503 і відкотила б усю транзакцію — те саме міркування
+  // й та сама умова, що в items.removeQty.
+  const guard = await items.marketRefBlocksDelete(db);
+  const { rows: pool } = await query(db, `
+    SELECT id, qty FROM player_items pi
+     WHERE player_id = $1 AND container = 'inventory'
+       AND item_id = $2 AND enhance = $3
+       AND ($5::bool = false OR NOT EXISTS (
+             SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
+     ORDER BY (id = $4) DESC, id
+     FOR UPDATE`, [playerId, it.item_id, it.enhance || 0, it.id, guard]);
+
+  // Спершу порахувати, і лише потім писати: часткове списання — не успіх, а
+  // саме та поломка, через яку крафт з'їдав три матеріали з двох.
+  let left = want;
+  const plan = [];
+  for (const r of pool) {
+    if (left <= 0) break;
+    const take = Math.min(Number(r.qty), left);
+    plan.push({ id: Number(r.id), take, whole: take === Number(r.qty) });
+    left -= take;
+  }
+  if (left > 0) err('bad_qty', `Не вистачає предметів — доступно ${want - left}`);
+
+  for (const step of plan) {
+    if (step.whole) await query(db, 'DELETE FROM player_items WHERE id = $1', [step.id]);
+    else await query(db, 'UPDATE player_items SET qty = qty - $2 WHERE id = $1', [step.id, step.take]);
+  }
+  await items.ledger(db, playerId, it.item_id, -want,
+    { rowId: listedRowId, reason: 'market_list', refType: 'listing' });
+  return listedRowId;
 }
 
 // One listing, in the shape every other read answers with.
@@ -334,9 +487,38 @@ function _lot(r) {
   };
 }
 
+// ── скільки лотів віддається за один перегляд ───────────────────────────────
+// Стеля була 100 — і це та сама «на маркеті максимум 100 штук». На живій базі
+// зараз 573 активні лоти, тобто гравцям не показували 82% ринку, мовчки: у
+// відповіді немає нічого, що сказало б «є ще».
+//
+// Обрізання тут особливо шкідливе через те, як влаштований клієнт: пошук,
+// фільтр за рідкістю, категорії з лічильниками й сортування він рахує САМ, по
+// тому масиву, який отримав. Віддати сторінку означає не «показати менше», а
+// збрехати: вкладка «Зброя 3» при трьох сотнях мечів на ринку, і «нічого не
+// знайдено» на предмет, який там є.
+//
+// Тому стеля піднята до цілого ринку, але лишається СТЕЛЕЮ, а не зникає:
+// LIMIT нікуди не дівається, і caller не може попросити більше — Math.min
+// нижче зрізає будь-яке число до MARKET_BROWSE_MAX. Це безпечно саме тут, бо
+// кількість активних лотів обмежена структурно: 5 на продавця, 10 з VIP 3+
+// (_marketMaxActive), тож ринок не може розрости в мільйон рядків, скільки б
+// не було гравців.
+//
+// Заміряно на живій базі, а не припущено: EXPLAIN ANALYZE цього запиту з
+// LIMIT 1000 — 573 рядки за 2.3 мс (планувальник бере market_listings
+// послідовно: у таблиці 696 рядків на 10 сторінках, і індекс market_browse_idx
+// йому просто не потрібен на такому обсязі). Відповідь важить ~137 КБ.
+//
+// `offset` лишається в протоколі й далі працює: коли ринок доросте до стелі,
+// клієнт зможе довантажувати сторінками, не змінюючи серверу нічого.
+const MARKET_BROWSE_MAX = 1000;
+
 // One join instead of the old "fetch listings, then look each seller up" — the
 // N+1 that made browsing the market a per-row round trip.
-async function browse(db, { limit = 100, offset = 0, slot = null } = {}) {
+async function browse(db, { limit = MARKET_BROWSE_MAX, offset = 0, slot = null } = {}) {
+  const n = Math.floor(Number(limit));
+  const take = Number.isSafeInteger(n) && n > 0 ? Math.min(n, MARKET_BROWSE_MAX) : MARKET_BROWSE_MAX;
   const { rows } = await query(db, `
     SELECT ${await listingCols()}
       FROM market_listings l
@@ -345,7 +527,7 @@ async function browse(db, { limit = 100, offset = 0, slot = null } = {}) {
       JOIN item_catalog c ON c.item_id = i.item_id
      WHERE l.status = 'active' AND ($3::text IS NULL OR c.slot = $3)
      ORDER BY l.created_at DESC
-     LIMIT $1 OFFSET $2`, [Math.min(limit, 200), offset, slot]);
+     LIMIT $1 OFFSET $2`, [take, offset, slot]);
   return rows.map(_lot);
 }
 
@@ -379,4 +561,4 @@ async function history(db, playerId, limit = 30) {
   return rows.map(r => ({ ..._lot(r), buyerId: r.buyer_id ? Number(r.buyer_id) : null, buyerUsername: r.buyer_username, closedAt: r.closed_at }));
 }
 
-module.exports = { list, cancel, buy, browse, mine, history, byId, MarketError };
+module.exports = { list, cancel, buy, browse, mine, history, byId, MarketError, MARKET_BROWSE_MAX };

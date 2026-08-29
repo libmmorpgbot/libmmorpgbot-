@@ -302,12 +302,27 @@ async function vipOf(db, playerId) {
   };
 }
 
-// Once per account, and `AND NOT season_ticket` is what makes it so: two
+// Once per account, and the conditional write is what makes it so: two
 // purchases sent together cannot both spend, because the second matches no row.
+//
+// INSERT ... ON CONFLICT, а не голый UPDATE. Голый UPDATE не находит строки,
+// если её нет, — и тогда билет за 15 GRAM просто не записывается: buyPackage
+// (server/db/repos/shop.js) возврат не проверяет, gramShopResult всё равно
+// говорит seasonTicket:true, клиент зажигает значок до конца сессии, а после
+// перезахода vipOf читает пустоту и билета нет. Ровно «сезонний білет після
+// перезаходу не відображається», только уже навсегда.
+//
+// Строку создаёт players.ensure на каждом входе, так что сегодня попасть сюда
+// без неё нельзя, — но это гарантия ЧУЖОГО файла, а здесь речь о настоящих
+// деньгах. Условие once-only переехало в WHERE ветки DO UPDATE и работает
+// точно так же: строка есть и билет уже стоит — ноль строк, второй платёж
+// отбивается.
 async function grantSeasonTicket(db, playerId) {
   const { rowCount } = await query(db, `
-    UPDATE player_vip SET season_ticket = true, updated_at = now()
-     WHERE player_id = $1 AND NOT season_ticket`, [playerId]);
+    INSERT INTO player_vip (player_id, season_ticket) VALUES ($1, true)
+    ON CONFLICT (player_id) DO UPDATE
+       SET season_ticket = true, updated_at = now()
+     WHERE NOT player_vip.season_ticket`, [playerId]);
   return rowCount === 1;
 }
 
@@ -541,9 +556,26 @@ async function burnBooks(db, playerId, itemId, qty) {
 // the whole "what is worth how much" table from them.
 async function seasonState(db, playerId) {
   const mine = await seasonOf(db, playerId);
+  const vip = await vipOf(db, playerId);
   return {
     endAt: SEASON_END_AT,
     active: seasonActive(),
+    // ── билет едет вместе с сезоном, а не отдельным пакетом ────────────────
+    // Значок билета в ленте бафов (drawBuffStrip, js/ui.js) рисуется только
+    // когда сошлись ДВЕ величины: `_seasonTicketActive` — из authOk, и
+    // `_seasonState.active` — отсюда. Вторая половина доезжала только когда
+    // игрок сам откроет панель «Сезон», и именно это описывает жалоба
+    // «сезонний білет після перезаходу не відображається, потрібно в сезон
+    // зайти». Логин теперь шлёт и её (server/app.js), но двумя разными
+    // пакетами: authOk — обязательный, seasonState — отдельный emit за своим
+    // catch, который на сбое чтения молча пропускается, и билет снова
+    // невидим до открытия панели.
+    //
+    // Половинки, которые обязаны сойтись, не должны ехать порознь. Флаг
+    // билета читается из той же строки player_vip, что и authOk, и кладётся
+    // в ЭТОТ payload — тот единственный, который и логин, и панель «Сезон»
+    // отдают одинаково. Расходиться теперь нечему.
+    ticket: !!vip.seasonTicket,
     points: mine.points,
     place: mine.place,
     minRatingPoints: SEASON_RATING_MIN_POINTS,
