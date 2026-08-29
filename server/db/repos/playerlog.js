@@ -64,12 +64,27 @@ function _clean(meta) {
 const REFUSE_WINDOW_MS = 60000;
 const _refuseSeen = new Map();          // ключ -> { at, n }
 
+// Успехи, которые сворачиваются так же, как отказы. Список короткий и должен
+// таким остаться: сюда попадает действие, которое игрок делает ДЕСЯТКАМИ раз
+// подряд и о котором его вопрос звучит как «сколько», а не «когда именно».
+//
+// usePotion — ровно такой: 155 строк из 171 за две минуты. Ответ «выпил 43
+// зелья за минуту» ничем не хуже сорока трёх строк, а прочитать журнал после
+// этого можно.
+//
+// Ничего, что двигает предмет или монету поштучно, здесь быть не может: там
+// вопрос всегда «какой именно и когда».
+const COLLAPSE_OK = new Set(['usePotion']);
+
 function _refuseThrottle(pid, event, meta) {
-  if (!event.startsWith('refuse:')) return null;
-  const key = pid + '|' + event + '|' + ((meta && meta.code) || '');
+  if (!event.startsWith('refuse:') && !COLLAPSE_OK.has(event)) return null;
+  const key = pid + '|' + event + '|' + ((meta && meta.code) || (meta && meta.potionId) || '');
   const now = Date.now();
   const prev = _refuseSeen.get(key);
   if (prev && now - prev.at < REFUSE_WINDOW_MS) { prev.n++; return false; }
+  // Сколько таких же было подавлено, пока окно было открыто. Пишется в
+  // СЛЕДУЮЩУЮ строку — то есть счёт не теряется, он просто приезжает с
+  // задержкой в окно.
   const suppressed = prev ? prev.n : 0;
   _refuseSeen.set(key, { at: now, n: 0 });
   // Карта не растёт бесконечно: раз в окно из неё выметается всё протухшее.

@@ -171,11 +171,28 @@ async function mk(nick) {
     const after = plog.stats().queued - before;
     // Первый проходит, остальные сворачиваются в окно.
     ok(after === 1, 'пятьдесят одинаковых отказов дали одну строку', after);
-    // А успех не сворачивается никогда: каждое движение ценности обязано
-    // остаться.
+    // Зелья сворачиваются тоже: удалить их нельзя (расход не записан больше
+    // нигде), но 155 строк из 171 читать невозможно. Ответ «выпил 43 за
+    // минуту» отвечает на тот же вопрос одной строкой.
+    const b1 = plog.stats().queued;
+    for (let i = 0; i < 40; i++) plog.log(pid, 'usePotion', { зелье: 'pt1' });
+    eq(plog.stats().queued - b1, 1, 'сорок зелий подряд дали одну строку');
+
+    // А то, что двигает предмет или монету поштучно, не сворачивается НИКОГДА:
+    // там вопрос всегда «какой именно и когда».
     const b2 = plog.stats().queued;
     for (let i = 0; i < 5; i++) plog.log(pid, 'marketBuy', { lot: i });
-    eq(plog.stats().queued - b2, 5, 'успехи не сворачиваются');
+    eq(plog.stats().queued - b2, 5, 'покупки на рынке не сворачиваются');
+    const b3 = plog.stats().queued;
+    for (let i = 0; i < 5; i++) plog.log(pid, 'pickupWorldDrop', { n: i });
+    eq(plog.stats().queued - b3, 5, 'подобранные предметы не сворачиваются');
+
+    // И строка про зелье теперь что-то говорит — раньше в журнале стояло голое
+    // «usePotion» без единой подробности.
+    const it = fs.readFileSync(path.join(ROOT, 'server/handlers2/items.js'), 'utf8');
+    const h = it.slice(it.indexOf("safeOn('usePotion'"), it.indexOf("safeOn('usePotion'") + 1400);
+    ok(/зелье: r\.potionId/.test(h) && /вылечено: r\.healed/.test(h),
+      'в журнал пишется какое зелье и на сколько вылечило');
 
     const wrk = fs.readFileSync(path.join(ROOT, 'server/workers.js'), 'utf8');
     ok(/drop_old_log_partitions\(2\)/.test(wrk), 'хранится два месяца, а не шесть');

@@ -131,7 +131,8 @@ module.exports = function registerItems(s, safeOn) {
     // next hit kills.
     s.socket.emit('potionBag', { potionBag: await consumables.potionBagOf(t, pid) });
     if (s.room) s.room.setPlayerHp(s.socket.id, res.hp);
-  }));
+    return res;
+  }, r => r && { зелье: r.potionId, вылечено: r.healed, стало: r.hp, осталось: r.left }));
 
   safeOn('useBuffPotion', ({ id } = {}) => s.act('useBuffPotion', 'itemError', async (t, pid) => {
     const res = await consumables.useBuffPotion(t, pid, String(id || ''));
