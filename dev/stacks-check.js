@@ -140,6 +140,50 @@ const sum = rs => rs.reduce((n, r) => n + r.qty, 0);
       `${NOSTACK} не стакается — две вещи остались двумя`);
   }
 
+  // ── 2б. снятие лота, когда такая купка уже лежит ─────────────────────────
+  // Первая версия слияния роняла ровно это. market.cancel возвращает предмет
+  // через attachFromListing, а лот помечает отменённым СТРОКОЙ НИЖЕ — значит
+  // в момент слияния лот ещё active и ссылается на только что прицепленную
+  // строку. Слияние удаляло её как младшую, внешний ключ (ON DELETE SET NULL)
+  // обнулял ссылку живого лота, и market_active_has_item_ck валил транзакцию:
+  // игрок не мог снять лот совсем.
+  console.log('\n  ── снятие лота поверх своей же купки ──');
+  {
+    const market = require('../server/db/repos/market');
+    const POT = 'bp_exp';
+    await pool().query('DELETE FROM player_items WHERE player_id = $1', [pid]);
+    await pool().query('DELETE FROM market_listings WHERE seller_id = $1', [pid]);
+    const rowId = await tx(async (t) => {
+      await items.lockPlayer(t, pid);
+      return items.add(t, pid, POT, { qty: 40, source: 'test' });
+    });
+    const lot = await tx(t => market.list(t, pid, rowId, 0.18, { qty: 1 }));
+    ok(!!lot && lot.id > 0, 'лот выставлен');
+    const held = await rowsOf(null, 'inventory', POT);
+    eq(sum(held), 39, 'у продавца осталось 39');
+
+    let res = null, boom = null;
+    try { res = await tx(t => market.cancel(t, pid, lot.id)); } catch (e) { boom = e; }
+    ok(!boom, 'снятие лота не падает', boom && boom.message);
+    ok(res && res.delivered === true, 'и говорит, что предмет вернулся');
+    const back = await rowsOf(null, 'inventory', POT);
+    eq(back.length, 1, 'вернувшийся предмет слился в ОДНУ строку');
+    eq(sum(back), 40, 'и всё количество на месте');
+    const { rows: st4 } = await pool().query(
+      'SELECT status, item_id FROM market_listings WHERE id = $1', [lot.id]);
+    eq(st4[0].status, 'cancelled', 'лот отмечен снятым');
+    // Сначала ОТЦЕПЛЕННЫЕ строки, потом лоты. У выставленной строки player_id
+    // равен NULL, поэтому `DELETE ... WHERE player_id = $1` её не достаёт, а
+    // удаление лота убирает последнюю ссылку — и строка остаётся висеть ничьей.
+    // Ровно такой мусор нашла dev/health-check.js после первых прогонов этой
+    // проверки: «жоден предмет не завис поза ринком і поза інвентарем».
+    await pool().query(
+      `DELETE FROM player_items WHERE id IN (
+         SELECT item_id FROM market_listings WHERE seller_id = $1 AND item_id IS NOT NULL)`, [pid]);
+    await pool().query('DELETE FROM market_listings WHERE seller_id = $1', [pid]);
+    await pool().query('DELETE FROM player_items WHERE player_id = $1', [pid]);
+  }
+
   // ── 3. зелье лечит от ЖИВОГО HP ──────────────────────────────────────────
   console.log('\n  ── банки ──');
   const small = ITEM_DEF.find(d => d.id === 'pt1');

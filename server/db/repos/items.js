@@ -706,7 +706,7 @@ async function removeRow(db, rowId, playerId, { reason = 'destroy', refType = nu
 //
 // Количество не меняется — меняется только то, в скольких строках оно лежит, —
 // поэтому в ledger ничего не пишется: он считает штуки на игрока, а не строки.
-async function mergeStacks(db, playerId, container, itemId, enhance = 0) {
+async function mergeStacks(db, playerId, container, itemId, enhance = 0, { keep = null } = {}) {
   const { rows: cat } = await query(db,
     'SELECT stackable FROM item_catalog WHERE item_id = $1', [itemId]);
   if (!cat.length || !cat[0].stackable) return null;
@@ -724,12 +724,46 @@ async function mergeStacks(db, playerId, container, itemId, enhance = 0) {
      FOR UPDATE`, [playerId, container, itemId, enhance, guard]);
   if (rows.length < 2) return rows.length ? Number(rows[0].id) : null;
 
-  const keep = Number(rows[0].id);
+  // ── какая строка выживает ────────────────────────────────────────────────
+  // По умолчанию младшая, но вызывающий вправе назвать свою — и это не
+  // удобство, а необходимость.
+  //
+  // market.cancel возвращает предмет через attachFromListing, а лот помечает
+  // отменённым СТРОКОЙ НИЖЕ. То есть в момент слияния лот ещё `active` и
+  // ссылается на только что прицепленную строку. Внешний ключ на неё —
+  // ON DELETE SET NULL, а market_active_has_item_ck требует, чтобы у активного
+  // лота предмет был. Удалив её, слияние обнуляло ссылку живого лота и
+  // валило всю транзакцию:
+  //
+  //   new row for relation "market_listings" violates check constraint
+  //   "market_active_has_item_ck"
+  //
+  // — и игрок не мог снять лот вообще. Плюс cancel читает эту же строку
+  // обратно, чтобы сказать клиенту, что именно вернулось; удалённая строка
+  // давала `delivered: false` на успешной отмене.
+  const want = keep == null ? null : Number(keep);
+  const survivor = (want != null && rows.some(r => Number(r.id) === want))
+    ? want : Number(rows[0].id);
   const total = rows.reduce((n, r) => n + Number(r.qty), 0);
-  const moved = total - Number(rows[0].qty);
-  const drop = rows.slice(1).map(r => Number(r.id));
+  const moved = total - Number(rows.find(r => Number(r.id) === survivor).qty);
+  const drop = rows.filter(r => Number(r.id) !== survivor).map(r => Number(r.id));
+
+  // ── и правило, а не только предпочтение ──────────────────────────────────
+  // Строку, на которую ссылается ЖИВОЙ лот, удалять нельзя никогда — какой бы
+  // ни была причина слияния. Предпочтение выше закрывает известный путь, эта
+  // проверка закрывает все остальные, включая те, которых ещё нет.
+  //
+  // Если такая строка попала под удаление, слияние не делается вовсе: лучше
+  // оставить купку разложенной (это неудобство, и оно чинится следующим
+  // касанием), чем обнулить ссылку живого лота (это поломка, и она не чинится
+  // ничем).
+  const { rows: held } = await query(db, `
+    SELECT 1 FROM market_listings
+     WHERE status = 'active' AND item_id = ANY($1) LIMIT 1`, [drop]);
+  if (held.length) return survivor;
+
   await query(db, 'DELETE FROM player_items WHERE id = ANY($1)', [drop]);
-  await query(db, 'UPDATE player_items SET qty = $2 WHERE id = $1', [keep, total]);
+  await query(db, 'UPDATE player_items SET qty = $2 WHERE id = $1', [survivor, total]);
 
   // ── и это записывается ────────────────────────────────────────────────────
   // У игрока не прибавилось и не убавилось ничего — поменялось только то, в
@@ -746,15 +780,16 @@ async function mergeStacks(db, playerId, container, itemId, enhance = 0) {
   // выжившей появляется количество ниоткуда.
   //
   // Сумма дельт — ноль, поэтому reconcile() остаётся сойтись обязан.
-  for (const r of rows.slice(1)) {
+  for (const r of rows) {
+    if (Number(r.id) === survivor) continue;
     await ledger(db, playerId, itemId, -Number(r.qty),
-      { rowId: Number(r.id), reason: 'stack_merge', refType: 'row', refId: String(keep) });
+      { rowId: Number(r.id), reason: 'stack_merge', refType: 'row', refId: String(survivor) });
   }
   if (moved > 0) {
     await ledger(db, playerId, itemId, moved,
-      { rowId: keep, reason: 'stack_merge', refType: 'row', refId: String(keep) });
+      { rowId: survivor, reason: 'stack_merge', refType: 'row', refId: String(survivor) });
   }
-  return keep;
+  return survivor;
 }
 
 async function moveTo(db, rowId, playerId, container, slot = null) {
@@ -782,7 +817,11 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   if (container !== 'equipment') {
     const { rows: what } = await query(db,
       'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
-    if (what.length) await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0);
+    // keep: перенесённая строка. Вызывающий держит её id и читает по нему
+    // результат — исчезнуть под ним она не должна.
+    if (what.length) {
+      await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0, { keep: rowId });
+    }
   }
   if (container === 'equipment' || (from.length && from[0].container === 'equipment')) {
     await require('./stats').refreshBm(db, playerId);
@@ -833,7 +872,12 @@ async function attachFromListing(db, rowId, playerId, { reason = 'market_buy', r
   // виставляється 46». См. mergeStacks выше.
   const { rows: what } = await query(db,
     'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
-  if (what.length) await mergeStacks(db, playerId, 'inventory', what[0].item_id, what[0].enhance || 0);
+  // keep: именно эта строка. На неё ещё ссылается лот — он станет отменённым
+  // или проданным СТРОКОЙ НИЖЕ у вызывающего, — и удалить её значит обнулить
+  // ссылку живого лота. Разбор целиком в mergeStacks.
+  if (what.length) {
+    await mergeStacks(db, playerId, 'inventory', what[0].item_id, what[0].enhance || 0, { keep: rowId });
+  }
   return true;
 }
 
