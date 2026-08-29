@@ -249,7 +249,36 @@ function step4() {
       'в журнал пишется даже то, что не пошло в Telegram', `plog@${plogAt} noise@${noiseAt}`);
   }
 
-  // ── 9. Обновление выбрасывает на новую версию ────────────────────────────
+  // ── 9. Запись позиции и HP не теряется молча ─────────────────────────────
+  // Шесть «savePosition: deadlock detected» за сутки в журнале сервиса и ноль
+  // в Telegram: этот путь не идёт через act(), ловит ошибку сам и возвращается.
+  // Позиция и HP не сохранялись, и никто не узнавал. С серверной регенерацией
+  // это ровно та запись, которая переносит вылеченное HP в базу.
+  console.log('\n  ── запись позиции ──');
+  {
+    const fs = require('fs');
+    const ses = fs.readFileSync(path.join(ROOT, 'server/session.js'), 'utf8');
+    const fn = ses.slice(ses.indexOf('async _savePositionNow()'), ses.indexOf('async _savePositionNow()') + 6000);
+    ok(/await txRetry\(async \(t\)/.test(fn), 'запись повторяется после отката базы');
+    ok(!/await tx\(async \(t\)/.test(fn), 'старый tx() без повтора убран');
+    // wrote обязан сбрасываться на каждой попытке: txRetry перезапускает тело,
+    // и попытка, которую база откатила, не имеет права оставить «записано».
+    const body = fn.slice(fn.indexOf('txRetry'), fn.indexOf('txRetry') + 700);
+    ok(body.indexOf('wrote = false') < body.indexOf('wrote = true'),
+      'откатанная попытка не оставляет после себя «записано»');
+    ok(/err\.detail/.test(fn), 'в журнал идёт detail — разбор цикла, а не голое «deadlock detected»');
+    ok(/posFailed/.test(fn) && /posFailed: 0/.test(ses), 'отказ считается и виден в /health');
+
+    // Наслоение записей: тик пропускается, выход — нет.
+    const wrap = ses.slice(ses.indexOf('async savePosition('), ses.indexOf('async savePosition(') + 1400);
+    ok(/if \(!force\) \{ sessionClaims\.posSkipped\+\+; return; \}/.test(wrap),
+      'обычный тик поверх идущей записи пропускается');
+    ok(/await this\._savingPos/.test(wrap), 'выход из игры дожидается идущей записи, а не пропускает её');
+    ok(/await this\.savePosition\(\{ force: true \}\)/.test(ses),
+      'close() пользуется этим правом', 'close() не форсирует');
+  }
+
+  // ── 10. Обновление выбрасывает на новую версию ───────────────────────────
   console.log('\n  ── принудительная перезагрузка при обновлении ──');
   {
     const fs = require('fs');

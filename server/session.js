@@ -136,6 +136,11 @@ const sessionClaims = {
   // timer, and a row per tick would drown the player_logs the log exists for.
   posSkipped: 0,       // the slot was gone before the write — nothing written
   posRewritten: 0,     // the floor moved while the write was in flight
+  // Объявлен здесь, а не создан по факту первой ошибки: он уходит в /health
+  // (spread в app.js), и «posFailed: 0» — это ответ на вопрос, а отсутствие
+  // поля — это отсутствие вопроса. За сутки продакшена таких было шесть, и все
+  // шесть — deadlock, который никуда не сообщался.
+  posFailed: 0,        // база отказала — позиция и HP не записаны
 };
 
 // ── the tag that tells a second device from a reconnect ─────────────────────
@@ -1077,8 +1082,27 @@ class Session {
   // Written on a timer and on disconnect. Every step would be 40 writes a
   // second per player for a value whose worst-case loss is a few metres of
   // walking.
-  async savePosition() {
+  async savePosition({ force = false } = {}) {
     if (!this.authed || !this.room) return;
+    if (this._savingPos) {
+      // Обычный тик — пропустить. Следующий через двадцать секунд напишет
+      // координаты СВЕЖЕЕ тех, что стояли бы в очереди.
+      if (!force) { sessionClaims.posSkipped++; return; }
+      // Выход из игры — дождаться. Другой записи не будет, и пропуск здесь
+      // это ровно тот игрок, который вернулся не туда и не с тем HP.
+      // Ошибка идущей записи уже записана ею самой, здесь она не нужна.
+      try { await this._savingPos; } catch (err) { /* уже в журнале */ }
+    }
+    const run = this._savePositionNow();
+    this._savingPos = run;
+    try {
+      return await run;
+    } finally {
+      if (this._savingPos === run) this._savingPos = null;
+    }
+  }
+
+  async _savePositionNow() {
     // The ONE write in this build that comes out of memory rather than out of
     // a server-owned rule — which makes it the one place the old build's
     // rollback bug could still take root, in a smaller form.
@@ -1131,14 +1155,26 @@ class Session {
       const floor = this.floor, x = p.x, y = p.y, hp = p.hp;
       let wrote = false;
       try {
-        await tx(async (t) => {
+        await txRetry(async (t) => {
+          // wrote сбрасывается на КАЖДОЙ попытке: txRetry перезапускает тело
+          // после отката, и попытка, которую база откатила, не имеет права
+          // оставить после себя «записано» от предыдущей.
+          wrote = false;
           if (!owns() || this.floor !== floor) { sessionClaims.posSkipped++; return; }
           await players.savePosition(t, this.playerId, floor, x, y);
           if (hp > 0) await players.setHp(t, this.playerId, hp);
           wrote = true;
         });
       } catch (err) {
-        console.error('[session] savePosition:', err.message);
+        // Раньше здесь было только err.message, и в журнале стояло голое
+        // «deadlock detected» — сообщение, по которому нельзя ничего сделать.
+        // У ошибки PostgreSQL есть detail, и для 40P01 в нём лежит разбор
+        // цикла: оба процесса, обе блокировки и оба запроса.
+        sessionClaims.posFailed = (sessionClaims.posFailed || 0) + 1;
+        console.error(`[session] savePosition: ${err.message}` +
+          (err.code ? ` [${err.code}]` : '') +
+          (err.detail ? ` — ${String(err.detail).replace(/\s+/g, ' ').slice(0, 400)}` : '') +
+          ` — player=${this.playerId}, позиция и HP не записаны`);
         return;
       }
       if (!wrote) return;                     // superseded before it went out
@@ -1164,7 +1200,8 @@ class Session {
   // position: there is no unwritten state to race against.
   async close(reason) {
     if (this.authed) {
-      await this.savePosition();
+      // force: это последняя запись этой сессии. См. savePosition выше.
+      await this.savePosition({ force: true });
       if (activeSessions.get(this.telegramId) === this.socket.id) {
         activeSessions.delete(this.telegramId);
       }
