@@ -693,6 +693,46 @@ async function main() {
     'SELECT floor, pos_x, pos_y, hp FROM player_progress WHERE player_id = $1', [madeId]);
   eq(Number(after[0].floor), 1, 'у базі теж записаний хаб, а не поверх смерті');
   ok(Number(after[0].hp) > 0, `здоровʼя відновлено (${after[0].hp})`);
+
+  // ── ціна смерті, як її обіцяє екран ──────────────────────────────────────
+  // «Возродиться (10% HP)» і «−50% опыта на 5 минут» стояли в грі з самого
+  // початку й не означали нічого: воскресіння лікувало ПОВНІСТЮ, а штрафу не
+  // існувало ніде. Власник вирішив, що обіцянка має стати правдою.
+  //
+  // Перевіряється на живому боці: HP у базі й строк штрафу — після
+  // справжнього 'respawn' через сокет, а не з прочитаного вихідника.
+  {
+    const D = require('../shared/definitions');
+    const playersRepo = require('../server/db/repos/players');
+    const { rows: st } = await pool().query(
+      'SELECT hp, buffs FROM player_progress WHERE player_id = $1', [madeId]);
+    // maxHp береться тим самим репозиторієм, яким його бере обробник
+    // 'respawn' — інакше перевірка порівнювала б із власною арифметикою.
+    const statsRepo = require('../server/db/repos/stats');
+    const stx = await statsRepo.of(null, madeId);
+    const maxHp = (stx && stx.maxHp) || 0;
+    const wantHp = Math.max(1, Math.floor(maxHp * D.RESPAWN_HP_PCT / 100));
+    ok(maxHp > 0, `сервер знає maxHp (${maxHp})`);
+    eq(Number(st[0].hp), wantHp,
+      `воскресіння дало ${D.RESPAWN_HP_PCT}% здоровʼя, а не повне`);
+
+    const until = Number((st[0].buffs || {})[D.DEATH_XP_PENALTY_KEY] || 0);
+    const leftSec = Math.round((until - Date.now()) / 1000);
+    ok(leftSec > D.DEATH_XP_PENALTY_SEC - 30 && leftSec <= D.DEATH_XP_PENALTY_SEC,
+      `штраф поставлено на ${D.DEATH_XP_PENALTY_SEC} с (лишилось ${leftSec})`);
+
+    // І сам штраф — справжньою функцією, справжнім записом у базу.
+    const under = await playersRepo.grantXp(null, madeId, 100);
+    eq(under && under.granted, 50, 'під штрафом зі 100 досвіду дійшло 50');
+    ok(under && under.penalty === true, 'і це позначено як штраф');
+
+    await pool().query(
+      `UPDATE player_progress SET buffs = buffs - $2 WHERE player_id = $1`,
+      [madeId, D.DEATH_XP_PENALTY_KEY]);
+    const clean = await playersRepo.grantXp(null, madeId, 100);
+    eq(clean && clean.granted, 100, 'без штрафу доходить усі 100');
+    ok(clean && clean.penalty === false, 'і штрафом це не позначено');
+  }
   // The stored position must be the one the player is standing on. Writing the
   // new floor beside the old coordinates is exactly what put people back on
   // their corpse on the next login.

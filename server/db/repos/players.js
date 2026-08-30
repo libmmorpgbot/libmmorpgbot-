@@ -33,7 +33,8 @@ const { query } = require('../index');
 // they paste back into the withdrawal form.
 const ton = require('../../ton');
 const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, UPGRADE_KEYS,
-  SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL } = require('../../../shared/definitions');
+  SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL,
+  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty } = require('../../../shared/definitions');
 
 // ── identity ────────────────────────────────────────────────────────────────
 
@@ -700,11 +701,25 @@ async function grantXp(db, playerId, amount) {
   // implementations of a level curve WILL drift, and the client already uses
   // this one.
   const { rows: cur } = await query(db,
-    'SELECT lvl, xp FROM player_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
+    'SELECT lvl, xp, buffs FROM player_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
   if (!cur.length) return null;
 
+  // ── штраф за смерть ─────────────────────────────────────────────────────
+  // «−50% опыта на 5 минут» — надпись на экране смерти, которая до сих пор не
+  // значила ничего. Теперь значит. Срок лежит в player_progress.buffs, рядом
+  // со сроками зелий, потому что вопрос к нему тот же: «до какой миллисекунды»
+  // — и он так же обязан пережить перезаход.
+  //
+  // Считается ЗДЕСЬ, а не у четырёх вызывающих (убийство, доля группы, квест,
+  // особый квест): четыре места — это четыре способа забыть. Возвращается и
+  // то, сколько дошло на самом деле, иначе игроку в пакете уехало бы число до
+  // штрафа — то есть ровно та ложь, которую здесь и убирают.
+  const _until = Number((cur[0].buffs || {})[DEATH_XP_PENALTY_KEY] || 0);
+  const granted = xpAfterDeathPenalty(amt, _until, Date.now());
+  const penalty = granted < amt;
+
   let lvl = cur[0].lvl;
-  let xp = Number(cur[0].xp) + amt;
+  let xp = Number(cur[0].xp) + granted;
   let gained = 0;
   // Bounded: the lvl column's CHECK stops at 1000, and a reward large enough
   // to cross a thousand levels is a bug worth capping rather than honouring.
@@ -725,7 +740,8 @@ async function grantXp(db, playerId, amount) {
   // ordinary xp changes nothing battlePower() reads.
   if (gained > 0) await require('./stats').refreshBm(db, playerId);
 
-  return { lvl, xp, xpNext: xpToNext(lvl), levelsGained: gained };
+  return { lvl, xp, xpNext: xpToNext(lvl), levelsGained: gained,
+           granted, penalty, penaltyUntil: penalty ? _until : 0 };
 }
 
 // ── spendUpgrade ────────────────────────────────────────────────────────────

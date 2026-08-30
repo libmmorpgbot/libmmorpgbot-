@@ -2441,6 +2441,31 @@ const SAFE_ZONE_REGEN_PER_SEC = 1;
 
 // Повышение уровня: +35 HP за уровень. Комментарий в js/player.js уверял, что
 // «the heal itself was applied server-side» — этого не делал никто.
+// ── чем платят за смерть ────────────────────────────────────────────────────
+// Ровно то, что написано на кнопке и на экране смерти. Числа лежат здесь, а
+// не в обработчике, потому что разошлись они именно так: текст жил в i18n,
+// поведение — в другом файле, и сверить их было нечем.
+//
+// Проценты, а не множители: так они читаются теми же словами, что и надпись.
+const RESPAWN_HP_PCT = 10;           // «Возродиться (10% HP)»
+const DEATH_XP_PENALTY_PCT = 50;     // «−50% опыта…»
+const DEATH_XP_PENALTY_SEC = 300;    // «…на 5 минут»
+
+// Сколько опыта реально дойдёт до игрока. Одна функция на оба конца: сервер
+// начисляет по ней, клиент по ней же объясняет, почему число меньше.
+function xpAfterDeathPenalty(amount, penaltyUntilMs, nowMs) {
+  const amt = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!amt) return 0;
+  const until = Number(penaltyUntilMs) || 0;
+  if (!(until > (Number(nowMs) || 0))) return amt;
+  return Math.floor(amt * (100 - DEATH_XP_PENALTY_PCT) / 100);
+}
+
+// Ключ в player_progress.buffs. Там уже лежат сроки окончания зелий в
+// миллисекундах, и читаются они поимённо (repos/stats.js), так что лишний
+// ключ ничему не мешает — а колонка переживает перезаход, чего штрафу и надо.
+const DEATH_XP_PENALTY_KEY = 'xpPenalty';
+
 const LEVEL_UP_HEAL = 35;
 
 // Множитель силы лечения: +1% за уровень навыка, и сверху «Сила навыков» с
@@ -2520,6 +2545,8 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_UNIQUE_WEAPON_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   craftResultEnhance,
+  RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
+  xpAfterDeathPenalty,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   dropLevelGapDivisor,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,

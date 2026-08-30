@@ -2385,6 +2385,17 @@ function netConnect(onReady) {
     }
   });
 
+  // ── штраф за смерть: срок называет сервер ────────────────────────────────
+  // Клиент ставит себе пять минут в момент смерти, чтобы значок появился без
+  // задержки. Это оценка; настоящий срок пишет обработчик respawn, и он же
+  // присылает его сюда. Разойтись они могут на дорогу пакета — но правым
+  // должен быть тот, кто на самом деле уменьшает опыт.
+  socket.on('deathPenalty', ({ until } = {}) => {
+    if (!player) return;
+    const left = Math.ceil((Number(until) - Date.now()) / 1000);
+    (player.buffs || (player.buffs = {})).deathPenalty = left > 0 ? left : 0;
+  });
+
   // The authoritative buff timers. The client keeps counting them down for its
   // own HUD; this is what starts one, and what a reconnect resumes from.
   socket.on('buffSync', ({ buffs } = {}) => {
@@ -2397,7 +2408,13 @@ function netConnect(onReady) {
     // a server-side buff still wins over a stale client copy of itself.
     const _penalty = (player.buffs || {}).deathPenalty;
     player.buffs = { ...buffs };
-    if (_penalty > 0 && buffs.deathPenalty === undefined) player.buffs.deathPenalty = _penalty;
+    // Штраф за смерть у сервера называется xpPenalty, у значка на экране —
+    // deathPenalty. Переименование здесь же, где и при входе (js/player.js):
+    // иначе выпитое зелье стирало бы значок, хотя штраф продолжает считаться.
+    const _xpLeft = Number(buffs.xpPenalty || 0);
+    delete player.buffs.xpPenalty;
+    if (_xpLeft > 0) player.buffs.deathPenalty = _xpLeft;
+    else if (_penalty > 0 && buffs.xpPenalty === undefined) player.buffs.deathPenalty = _penalty;
     // Whatever the answer was, the question is no longer outstanding.
     if (typeof _buffClearPending === 'function') _buffClearPending();
     if (typeof recompute === 'function') recompute();

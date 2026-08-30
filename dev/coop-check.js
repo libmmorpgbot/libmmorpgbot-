@@ -54,6 +54,17 @@ const once = (sock, ev, ms = 9000) => new Promise((res, rej) => {
   sock.once(ev, d => { clearTimeout(to); res(d); });
 });
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// Ждать условия, а не секунд. Фиксированная пауза — это ставка на то, что
+// машина не занята; в наборе из шестидесяти проверок рядом с живой игрой эта
+// ставка проигрывает, и проверка краснеет на исправном коде.
+async function until(cond, ms = 20000, step = 250) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (cond()) return true;
+    await wait(step);
+  }
+  return cond();
+}
 
 // ── что видит игрок ─────────────────────────────────────────────────────────
 // Только из пакетов, как и сам клиент: список живых врагов собирается из
@@ -138,8 +149,10 @@ const usedOf = async (pid) => {
 
   // Первая волна приходит через COOP_START_DELAY_MS (5с) после развёртывания.
   // gameStart нового этажа приезжает тоже асинхронно — forceFloor дочитывает
-  // состояние из базы и лишь потом отправляет пакет.
-  await wait(7500);
+  // состояние из базы и лишь потом отправляет пакет. Ждём оба события, а не
+  // «семь с половиной секунд, должно хватить».
+  await until(() => lead.scr.enemies.size > 0 && mate.scr.enemies.size > 0
+                    && lead.scr.floors.includes(12) && mate.scr.floors.includes(12));
   console.log('      события лидера: ' + [...lead.scr.events].map(([k, n]) => k + '×' + n).join(', '));
   ok(lead.scr.floors.includes(12), `лидер побывал на этаже Сотрудничества (${lead.scr.floors})`);
   ok(mate.scr.floors.includes(12), `напарник тоже (${mate.scr.floors})`);
@@ -196,7 +209,10 @@ const usedOf = async (pid) => {
     mate2.sock.close();
     await wait(400);
     mate2 = await connect(TG2, `${TAG}_mate`);
-    await wait(8000);
+    // Возврата ждём по факту: этаж и число монстров перестают меняться, когда
+    // сервер закончил разбираться с оборвавшимся забегом.
+    await until(() => mate2.scr.floor != null && mate2.scr.floors.length > 0, 12000);
+    await wait(2000);
 
     const spent2 = await usedOf(mate2.id) - before2;
     const seen2 = mate2.scr.enemies.size;
@@ -269,9 +285,9 @@ const usedOf = async (pid) => {
     ok(st3 === 'ok', 'забег для медленного телефона запущен', st3);
 
     if (st3 === 'ok') {
-      // Ждём ДОЛЬШЕ пятисекундного отсчёта: монстры первой волны приезжают
-      // потоком, пока «карта ещё грузится».
-      await wait(8000);
+      // Ждём, пока первая волна доедет потоком, — это и есть «карта ещё
+      // грузится» с точки зрения клиента.
+      await until(() => seen.size > 0, 20000);
       const before = seen.size;
       ok(before > 0, `монстры приехали, пока карта грузилась (${before})`);
       const snapN = (held && held.enemies || []).length;
@@ -283,7 +299,9 @@ const usedOf = async (pid) => {
       for (const e of (held && held.enemies) || []) seen.set(e.id, e);
       resetNetCodecMaps();
       sock.emit('enemyResyncAll');         // ровно то, что теперь шлёт клиент
-      await wait(3500);
+      // Пересылка ограничена тремя секундами на сервере, поэтому ждём до пяти
+      // — но выходим, как только монстры вернулись.
+      await until(() => seen.size > 0, 5000);
       console.log(`      до пересборки ${before} · снимок нёс ${snapN} · через 3.5с видно ${seen.size}`);
       ok(snapN === 0, 'снимок был снят ДО первой волны и пуст — это и есть ловушка', String(snapN));
       ok(seen.size > 0, 'после пересборки мира комната НЕ пуста', `видно ${seen.size}`);

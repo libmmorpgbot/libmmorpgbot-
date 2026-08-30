@@ -39,6 +39,7 @@ const {
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
   NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel, clanBonusOf, LEVEL_UP_HEAL,
+  RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -567,7 +568,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
     s.socket.emit('enemyKilled', {
       id: result.enemyUid, at: result.at,
       gold: done.paidGold, goldTotal: reward.gold,
-      xp: done.paidXp, level: reward.xp || null,
+      // Сколько ДОШЛО, а не сколько причиталось: под штрафом за смерть
+      // grantXp начисляет половину, и цифра над трупом обязана это показать.
+      xp: (reward.xp && Number.isFinite(reward.xp.granted)) ? reward.xp.granted : done.paidXp,
+      level: reward.xp || null,
       dmg: result.dmg, isCrit: result.isCrit,
       ex: result.ex, ey: result.ey, color: result.color,
       eid: result.eid, rlvl: result.rlvl,
@@ -621,7 +625,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
         mate.socket.emit('enemyKilled', {
           id: result.enemyUid, gold: mGold, goldTotal: r.gold,
-          xp: mXp, level: r.xp || null,
+          xp: (r.xp && Number.isFinite(r.xp.granted)) ? r.xp.granted : mXp,
+          level: r.xp || null,
           ex: result.ex, ey: result.ey, color: result.color,
           eid: result.eid, rlvl: result.rlvl,
         });
@@ -798,15 +803,42 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // death screen stayed up in front of them — the one moment a player is
     // certain to report, answered by a row saying it worked.
     if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
-    await players.setHp(t, pid, st.maxHp);
+    // ── цена смерти ────────────────────────────────────────────────────────
+    // Кнопка обещает «Возродиться (10% HP)», экран смерти — «−50% опыта на 5
+    // минут». Обещание стояло в игре с самого начала и не значило ничего:
+    // здесь лечили ПОЛНОСТЬЮ, а штрафа не существовало нигде.
+    //
+    // Клиент, что характерно, всё это время делал свою половину честно:
+    // respawnPlayer (js/game.js) ставит себе те же 10%. Расходились они ровно
+    // на следующей же поправке от сервера — и правым был сервер, потому что
+    // здоровье принадлежит ему.
+    //
+    // Минимум единица: у персонажа с 9 HP десять процентов — это ноль, то
+    // есть воскрешение прямо в мёртвого.
+    const hp = Math.max(1, Math.floor(st.maxHp * RESPAWN_HP_PCT / 100));
+    await players.setHp(t, pid, hp);
+    // Срок штрафа ложится рядом со сроками зелий: тот же вопрос «до какой
+    // миллисекунды», та же колонка, и он так же переживает перезаход. Читает
+    // его players.grantXp — единственное место, через которое опыт вообще
+    // попадает игроку.
+    const until = Date.now() + DEATH_XP_PENALTY_SEC * 1000;
+    await query(t, `
+      UPDATE player_progress
+         SET buffs = jsonb_set(COALESCE(buffs, '{}'::jsonb), ARRAY[$2],
+                               to_jsonb($3::bigint), true),
+             updated_at = now()
+       WHERE player_id = $1`, [pid, DEATH_XP_PENALTY_KEY, until]);
     // HP only. Room has no `spawnPoint()` — the guard around the call meant it
     // never ran, so the line read as "move them off the corpse" while doing
     // nothing. Where a respawn lands is decided one line down: sendGameStart
     // sends them to floor 1, and enterFloor only restores a stored position
     // when the stored FLOOR matches, so a death on any other floor already
     // arrives at the hub's own spawn.
-    if (s.room) s.room.setPlayerHp(s.socket.id, st.maxHp);
+    if (s.room) s.room.setPlayerHp(s.socket.id, hp);
     const floor = await sendGameStart(t, 1);
+    // Клиенту — до какой миллисекунды штраф, чтобы экран показывал остаток, а
+    // не строку, которая всегда висит одинаково.
+    s.socket.emit('deathPenalty', { until, pct: DEATH_XP_PENALTY_PCT });
     // Written NOW, not on the twenty-second timer. A disconnect in the seconds
     // after a death would otherwise leave the hall in the database and the
     // corpse's coordinates beside it — which is a player who logs back in

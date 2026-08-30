@@ -2664,14 +2664,12 @@ function respawnPlayer() {
   }
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
-  // Строка про «−50% XP на 5 минут» отсюда убрана: такого штрафа нет НИГДЕ.
-  // Не в этой сборке и не в прежней — ни в одном обработчике, ни в одной
-  // формуле опыта. Игрок это заметил («опыт при смерти не уменьшался»), и он
-  // прав: уменьшать было нечему.
-  //
-  // Убрана надпись, а не добавлен штраф, потому что это разные решения.
-  // Надпись врала — это ошибка. Ввести настоящий штраф за смерть — изменение
-  // баланса живой игры для всех сразу, и принимать его не мне.
+  // Строка возвращена вместе со штрафом, который она называет. Пять минут
+  // отсчитываются на СЕРВЕРЕ (обработчик respawn пишет срок в player_progress
+  // и присылает его событием deathPenalty) — здесь только показ. Клиентский
+  // таймер пережил бы перезаход, а штраф — нет, и это была бы третья версия
+  // той же лжи.
+  dmgNum(player.x, player.y - 30, typeof t === 'function' ? t('deathXpPenalty') : '−50% XP (5 мин)', '#c4838a');
   // 'respawn' first, and no playerMove alongside it: the server's own
   // respawnPlayer() puts us back at the same spawn point this function just
   // moved to, so the move was always redundant — and sending it while the

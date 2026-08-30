@@ -1111,6 +1111,16 @@ function restoreFromSave(data) {
   }
   player.hudPotion  = data.hudPotion  || 'pt1';
   player.buffs      = data.buffs      || {};
+  // Штраф за смерть переживает перезаход. Значок «−XP N мин» жил только в
+  // памяти вкладки: клиент ставил себе пять минут на смерти, и обновление
+  // страницы их стирало — пока сервер продолжал считать штраф. То есть опыта
+  // приходило меньше, а почему, на экране не было написано нигде.
+  //
+  // Сервер отдаёт остаток в СЕКУНДАХ (buffsRemaining), как и все прочие
+  // бафы. Переименование нужно потому, что имя у значка своё и историческое.
+  const _xpLeft = Number((data.buffs || {}).xpPenalty || 0);
+  delete player.buffs.xpPenalty;
+  if (_xpLeft > 0) player.buffs.deathPenalty = _xpLeft;
   player.potCd      = 0;
   player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0;
   player.autoBuffTypes = data.autoBuffTypes || {};
