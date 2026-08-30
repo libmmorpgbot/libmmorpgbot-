@@ -3910,6 +3910,14 @@ function netPvpSkillCC(targetId, type, duration) {
   socket.emit('pvpSkillCC', { targetId, type, duration });
 }
 
+// Кадры этого клиента — раз в минуту, одним числом. Сервер держит из них
+// гистограмму: без неё «лагает» невозможно ни подтвердить, ни опровергнуть, а
+// серверный тик и поток к игроку уже померены и оба с запасом.
+function netPerfReport(fps, worstMs, tier) {
+  if (!socket?.connected) return;
+  socket.emit('perfReport', { fps, worstMs, tier });
+}
+
 function netSetPvpMode(mode) {
   if (socket?.connected) socket.emit('setPvpMode', { pvpMode: mode });
 }

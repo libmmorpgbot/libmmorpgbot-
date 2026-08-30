@@ -58,6 +58,7 @@ function _perfToggleTap(cx, cy) {
   if (++_perfTapCount >= 3) { _perfShow = !_perfShow; _perfTapCount = 0; }
 }
 
+let _perfSentAt = 0;
 function _drawPerf(frameMs) {
   _netStarvedTick();
   // Store frame time
@@ -72,6 +73,16 @@ function _drawPerf(frameMs) {
   }
   const avgMs = sum / samples;
   const fps = avgMs > 0 ? Math.round(1000 / avgMs) : 0;
+  // Раз в минуту — одно число серверу. Он держит гистограмму (см. /health) и
+  // ничего не пишет в журнал: цель не «событие», а «сколько нас на скольких
+  // кадрах». Отправка стоит одного сравнения на кадр.
+  if (_ftFull && typeof netPerfReport === 'function') {
+    const _pnow = performance.now();
+    if (_pnow - _perfSentAt > 60000) {
+      _perfSentAt = _pnow;
+      netPerfReport(fps, Math.round(maxFt), _qualityTier);
+    }
+  }
   // Adaptive quality: drop to tier 1 when FPS stays < 20 for ~3s; recover when FPS >= 25.
   if (fps < 20) { if (++_lowFpsFrames > 90) _qualityTier = 1; }
   else if (fps >= 25) { _lowFpsFrames = Math.max(0, _lowFpsFrames - 1); if (_lowFpsFrames === 0) _qualityTier = 0; }

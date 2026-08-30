@@ -745,6 +745,26 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       s.socket.emit('deathBattleState', { ..._dbPublicState(), registered: _db.reg.has(s.socket.id) });
     });
 
+    // ── как играется у людей на самом деле ────────────────────────────────
+    // Клиент раз в минуту присылает свой средний FPS. Здесь он складывается в
+    // гистограмму и НИЧЕГО не пишет в журнал: одна строка на игрока в минуту —
+    // это те же сто тысяч строк в сутки, от которых journal только что чистили.
+    //
+    // Числа клиентские и потому не доказательство, а указание: если половина
+    // сидит ниже двадцати кадров, дальше искать надо там, а не в тике сервера
+    // (3.2мс из 25) и не в потоке (3-5 КБ/с).
+    safeOn('perfReport', ({ fps, worstMs, tier } = {}) => {
+      const f = Number(fps);
+      if (!Number.isFinite(f) || f < 0 || f > 240) return;
+      const b = f < 15 ? 'lt15' : f < 25 ? 'lt25' : f < 40 ? 'lt40' : 'ok';
+      deps.perf.buckets[b]++;
+      deps.perf.n++;
+      deps.perf.sum += f;
+      if (Number(tier) > 0) deps.perf.lowQuality++;
+      const w = Number(worstMs);
+      if (Number.isFinite(w) && w > deps.perf.worstMs) deps.perf.worstMs = Math.round(w);
+    });
+
     safeOn('setPvpMode', ({ pvpMode } = {}) => {
       if (s.room) s.room.setPlayerPvpMode(s.socket.id, pvpMode);
     });

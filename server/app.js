@@ -94,6 +94,17 @@ app.use(express.json({ limit: '256kb' }));
 // must be able to read the first without credentials, and an attacker learns
 // nothing useful from "ok" — but tick timings and pool saturation say precisely
 // when the server is already struggling.
+// ── как играется у людей ────────────────────────────────────────────────────
+// Клиенты раз в минуту присылают свой средний FPS (perfReport). Здесь только
+// счётчики: ни строки в журнал, ни события — одна строка на игрока в минуту это
+// те же сто тысяч в сутки, от которых журнал только что чистили.
+//
+// Заведено потому, что «оптимизируй, чтобы не лагало» нечем было проверить:
+// серверный тик 3.2мс из 25, поток к игроку 3-5 КБ/с — оба с запасом, и ни один
+// не объясняет жалобу. Клиентские кадры были последней неизмеренной величиной.
+const clientPerf = { n: 0, sum: 0, worstMs: 0, lowQuality: 0,
+  buckets: { lt15: 0, lt25: 0, lt40: 0, ok: 0 } };
+
 app.get('/health', async (req, res) => {
   let dbOk = false;
   try { await db.query(null, 'SELECT 1'); dbOk = true; } catch { /* reported below */ }
@@ -119,6 +130,12 @@ app.get('/health', async (req, res) => {
     // throwing people out for a blip, and this is the only place that would
     // say so before the reports arrive.
     sessionClaims: { ...sessionClaims },
+    // Средний FPS у игроков и сколько их в каждой корзине. lowQuality — те, у
+    // кого клиент уже сам снизил качество (ниже 20 кадров три секунды подряд).
+    clientPerf: {
+      ...clientPerf,
+      avgFps: clientPerf.n ? Math.round(clientPerf.sum / clientPerf.n) : null,
+    },
     workers: workers.status(),
     ops: ops.status(),
     // The player log: how many rows are queued, written, and lost. An empty
@@ -1257,6 +1274,7 @@ io.on('connection', (socket) => {
   // ── the ported handlers ───────────────────────────────────────────────────
   const deps = {
     io,
+    perf: clientPerf,
     floorRooms: world.floorRooms,
     enterFloor: world.enterFloor,
     floorIdOf: world.floorIdOf,
