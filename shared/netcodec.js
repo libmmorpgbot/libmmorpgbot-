@@ -111,6 +111,22 @@ function _ncEnsure(o, extra) {
 // each at most a u8-length-prefixed string, i.e. 256 bytes; several of them
 // plus the fixed numeric fields comfortably fit in 1200 bytes) — checked
 // once before each entry instead of before every individual field write.
+// ── размеры записей, ОДНИМ местом ─────────────────────────────────────────
+// Раньше они стояли числами прямо в четырёх местах: два в оценке буфера при
+// записи и два в условии цикла при чтении. Когда позиция уехала с четырёх байт
+// на два, записи стали короче — а условие чтения осталось прежним и требовало
+// лишних четырёх байт. Последняя запись в пакете просто не проходила: снаряды
+// доезжали 10 из 10, кольца 9 из 10, стабильно, каждый раз.
+//
+// Числа теперь считаются из полей, а проверка (dev/netsize-check.js) сверяет
+// их с настоящим кодированием — так что следующее изменение формата не сможет
+// разъехаться молча.
+const NC_POS_B = 2;                                  // x или y, половины пикселя
+// x, y, vx, vy, size, life, r, g, b, arrow, age
+const NC_PROJ_B = NC_POS_B * 2 + 2 + 2 + 1 + 1 + 3 + 1 + 1;
+// x, y, r, style, цвет, цвет2
+const NC_AOE_B  = NC_POS_B * 2 + 2 + 1 + 3 + 3;
+
 const _NC_ENTRY_HEADROOM = 1200;
 
 // Decoder handle→id maps. Reset on floor change / game start — handles are
@@ -154,7 +170,19 @@ function _ncWStr(o, s) {
 
 // 0.5px quantization for a coordinate, clamped to what a u32 field can hold —
 // see the file header for why this needs the full 32 bits, not 16.
-function _ncQPos(v) { return Math.max(0, Math.min(4294967295, Math.round(v * 2))); }
+// ── позиция в двух байтах, а не в четырёх ──────────────────────────────────
+// Точность та же — половина пикселя, — а места вдвое меньше.
+//
+// u32 брали, потому что «координата может быть большой». Может, но не такой:
+// самая большая карта в игре — Кровавая Башня, 173×270 тайлов, это 10800
+// пикселей, то есть 21600 в половинках. Потолок u16 — 65535, запас втрое.
+// Проверка стережёт это отдельно (dev/netsize-check.js): если карта когда-то
+// вырастет за предел, она покраснеет раньше, чем координаты начнут заворачивать.
+//
+// Экономия — 4 байта на каждую сущность в каждом пакете: запись игрока с 18
+// байт до 14, моба с 17 до 13. На людном этаже это пятая часть потока.
+const NC_POS_MAX = 65535;
+function _ncQPos(v) { return Math.max(0, Math.min(NC_POS_MAX, Math.round(v * 2))); }
 
 // Caches the encoded ENEMIES segment across calls within the same tick —
 // Room.js broadcasts the identical nearEnemies snapshot to every connected
@@ -213,8 +241,8 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
       // to flip the run/idle animation key on a dropped or late packet.
       _ncDV.setUint8(o, (full ? 1 : 0) | (p.moving ? 2 : 0)); o += 1;
       _ncDV.setUint16(o, p.seq & 0xffff, true); o += 2;
-      _ncDV.setUint32(o, _ncQPos(p.x), true); o += 4;
-      _ncDV.setUint32(o, _ncQPos(p.y), true); o += 4;
+      _ncDV.setUint16(o, _ncQPos(p.x), true); o += 2;
+      _ncDV.setUint16(o, _ncQPos(p.y), true); o += 2;
       _ncDV.setUint8(o, Math.max(0, NC_FACING.indexOf(p.facing))); o += 1;
       _ncDV.setInt32(o, p.hp | 0, true); o += 4;
       _ncDV.setUint16(o, (p.atkSeq || 0) & 0xffff, true); o += 2;
@@ -248,8 +276,8 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
       const full = e.eid !== undefined;
       _ncDV.setUint8(o, full ? 1 : 0); o += 1;
       _ncDV.setUint16(o, e.idx & 0xffff, true); o += 2;
-      _ncDV.setUint32(o, _ncQPos(e.x), true); o += 4;
-      _ncDV.setUint32(o, _ncQPos(e.y), true); o += 4;
+      _ncDV.setUint16(o, _ncQPos(e.x), true); o += 2;
+      _ncDV.setUint16(o, _ncQPos(e.y), true); o += 2;
       _ncDV.setInt32(o, e.hp | 0, true); o += 4;
       _ncDV.setUint8(o, e.aggro ? 1 : 0); o += 1;
       _ncDV.setUint8(o, Math.max(0, Math.min(255, Math.round((e.atkAnimTimer || 0) * 100)))); o += 1;
@@ -276,12 +304,12 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
   // outside its byte cache) because they are per-recipient: two players in the
   // same fight see different arrows depending on who is within range of whom.
   const np = projs ? Math.min(projs.length, 65535) : 0;
-  _ncEnsure(o, 2 + np * 19);
+  _ncEnsure(o, 2 + np * NC_PROJ_B);
   _ncDV.setUint16(o, np, true); o += 2;
   for (let i = 0; i < np; i++) {
     const p = projs[i];
-    _ncDV.setUint32(o, _ncQPos(p.x), true); o += 4;
-    _ncDV.setUint32(o, _ncQPos(p.y), true); o += 4;
+    _ncDV.setUint16(o, _ncQPos(p.x), true); o += 2;
+    _ncDV.setUint16(o, _ncQPos(p.y), true); o += 2;
     _ncDV.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(p.vx))), true); o += 2;
     _ncDV.setInt16(o, Math.max(-32768, Math.min(32767, Math.round(p.vy))), true); o += 2;
     _ncU8[o++] = Math.max(0, Math.min(255, Math.round(p.size)));
@@ -298,12 +326,12 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
   }
 
   const na = aoes ? Math.min(aoes.length, 255) : 0;
-  _ncEnsure(o, 1 + na * 17);
+  _ncEnsure(o, 1 + na * NC_AOE_B);
   _ncU8[o++] = na;
   for (let i = 0; i < na; i++) {
     const a = aoes[i];
-    _ncDV.setUint32(o, _ncQPos(a.x), true); o += 4;
-    _ncDV.setUint32(o, _ncQPos(a.y), true); o += 4;
+    _ncDV.setUint16(o, _ncQPos(a.x), true); o += 2;
+    _ncDV.setUint16(o, _ncQPos(a.y), true); o += 2;
     _ncDV.setUint16(o, Math.max(0, Math.min(65535, Math.round(a.r))), true); o += 2;
     const styleIdx = Math.max(0, NC_AOE_STYLES.indexOf(a.style));
     _ncU8[o++] = styleIdx;
@@ -369,8 +397,8 @@ function decodeGameState(data) {
       const f = dv.getUint8(o); o += 1;
       const moving = !!(f & 2);
       const seq = dv.getUint16(o, true); o += 2;
-      const x = dv.getUint32(o, true) / 2; o += 4;
-      const y = dv.getUint32(o, true) / 2; o += 4;
+      const x = dv.getUint16(o, true) / 2; o += 2;
+      const y = dv.getUint16(o, true) / 2; o += 2;
       const facing = NC_FACING[dv.getUint8(o)] || 'front'; o += 1;
       const hp = dv.getInt32(o, true); o += 4;
       const atkSeq = dv.getUint16(o, true); o += 2;
@@ -400,8 +428,8 @@ function decodeGameState(data) {
   for (let i = 0; i < en; i++) {
     const f = dv.getUint8(o); o += 1;
     const idx = dv.getUint16(o, true); o += 2;
-    const x = dv.getUint32(o, true) / 2; o += 4;
-    const y = dv.getUint32(o, true) / 2; o += 4;
+    const x = dv.getUint16(o, true) / 2; o += 2;
+    const y = dv.getUint16(o, true) / 2; o += 2;
     const hp = dv.getInt32(o, true); o += 4;
     const aggro = !!dv.getUint8(o); o += 1;
     const atkAnimTimer = dv.getUint8(o) / 100; o += 1;
@@ -432,9 +460,9 @@ function decodeGameState(data) {
   const aoes = [];
   if (o + 2 <= dv.byteLength) {
     const pn = dv.getUint16(o, true); o += 2;
-    for (let i = 0; i < pn && o + 19 <= dv.byteLength; i++) {
-      const x = dv.getUint32(o, true) / 2; o += 4;
-      const y = dv.getUint32(o, true) / 2; o += 4;
+    for (let i = 0; i < pn && o + NC_PROJ_B <= dv.byteLength; i++) {
+      const x = dv.getUint16(o, true) / 2; o += 2;
+      const y = dv.getUint16(o, true) / 2; o += 2;
       const vx = dv.getInt16(o, true); o += 2;
       const vy = dv.getInt16(o, true); o += 2;
       const size = u8[o++];
@@ -453,9 +481,9 @@ function decodeGameState(data) {
     }
     if (o < dv.byteLength) {
       const an = u8[o++];
-      for (let i = 0; i < an && o + 17 <= dv.byteLength; i++) {
-        const x = dv.getUint32(o, true) / 2; o += 4;
-        const y = dv.getUint32(o, true) / 2; o += 4;
+      for (let i = 0; i < an && o + NC_AOE_B <= dv.byteLength; i++) {
+        const x = dv.getUint16(o, true) / 2; o += 2;
+        const y = dv.getUint16(o, true) / 2; o += 2;
         const r = dv.getUint16(o, true); o += 2;
         const style = NC_AOE_STYLES[u8[o++]] || 'classic';
         const cr = u8[o++], cg = u8[o++], cb = u8[o++];

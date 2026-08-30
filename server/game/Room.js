@@ -642,6 +642,10 @@ class Room {
     this._tickMsSum = 0;
     this._tickSamples = 0;
     this._tickOverruns = 0;
+    // Исходящий поток gameState — см. комментарий у emit ниже.
+    this._txBytes = 0;
+    this._txPackets = 0;
+    this._txSince = Date.now();
     this.enemies.forEach((e, i) => { e._idx = i; });
     // ── Enemy network handles (_idx) ────────────────────────────────────────
     // _idx is NOT an array position — it is the u16 handle the wire protocol
@@ -1447,6 +1451,12 @@ class Room {
       tickMsAvg: this._tickSamples ? +(this._tickMsSum / this._tickSamples).toFixed(2) : 0,
       tickMsMax: this._tickMsMax,
       tickOverruns: this._tickOverruns,
+      // Поток к игрокам. txKbsTotal — весь исходящий этой комнаты, txKbsEach —
+      // сколько приходится на одного: именно это число чувствует телефон.
+      txKbsTotal: +(this._txBytes / 1024 / Math.max(1, (Date.now() - this._txSince) / 1000)).toFixed(1),
+      txKbsEach: +(this._txBytes / 1024 / Math.max(1, (Date.now() - this._txSince) / 1000)
+        / Math.max(1, this.players.size)).toFixed(2),
+      txPackets: this._txPackets,
       tickSamples: this._tickSamples,
       tickBudgetMs: TICK_MS,
       // Crowd-control the room refused: out of range, no line of sight, wrong
@@ -2314,8 +2324,20 @@ class Room {
       // shared object rather than a copy per player.
       for (let i = 0; i < projQ.length; i++) projQ[i].ageMs = now - projQ[i].at;
       const sock = this._socketFor(p);
-      if (sock) sock.volatile.emit('gameState',
-        encodeGameState(playersOut, nearEnemies, now, undefined, projQ, aoeQ));
+      if (sock) {
+        const _b = encodeGameState(playersOut, nearEnemies, now, undefined, projQ, aoeQ);
+        // ── сколько байт реально уезжает ──────────────────────────────────
+        // Меряется здесь, а не оценивается снаружи: «оптимизируй, чтобы не
+        // лагало» без числа — это спор об ощущениях. Серверный тик мы померили
+        // и он оказался ни при чём (3.2мс из 25 при 68 онлайн); поток к игроку
+        // не мерил никто.
+        //
+        // Два счётчика на комнату, отдаются в /health как КБ/с. Стоят
+        // сложение и присваивание на пакет.
+        this._txBytes += _b.byteLength;
+        this._txPackets++;
+        sock.volatile.emit('gameState', _b);
+      }
       projQ.length = 0;
       aoeQ.length = 0;
     });
