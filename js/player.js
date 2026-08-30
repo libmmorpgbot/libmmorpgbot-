@@ -659,13 +659,22 @@ function useSkill(idx) {
   skillFlash = { key: sk.key, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
+  // ── таймеры здесь только для панели ───────────────────────────────────
+  // Ниже у каждого бафа остаётся свой таймер: он рисует иконку и её обратный
+  // отсчёт. На БОЙ он больше не влияет — множители применяет сервер, в окне,
+  // которое открывает netSkillBuff (Room._atkOf/_defOf/_critChanceOf).
+  //
+  // Так было не всегда, и это была вся суть жалоб: recompute() пересобирала
+  // player.atk и player.def, панель показывала «574 защиты», а урон считал
+  // сервер по своим 319 — и моб бил ровно как раньше.
   if (player.type === 'deathknight') {
     if (sk.key === 'Q') {
       // Таймер здесь остаётся только для иконки на панели навыков: лечит
       // окно на СЕРВЕРЕ, и открывает его netSkillHeal, а не эта строка.
       if (_advActive('Q')) { // Истощение — 15% lifesteal + 20% ATK, 10s (+1s per level)
         vampirismTimer = 10 + _skillBuffSec('Q');
-        advDkQAtkTimer = 10 + _skillBuffSec('Q');
+        advDkQAtkTimer = 10 + _skillBuffSec('Q');
+      if (typeof netSkillBuff === 'function') netSkillBuff('Q');
         recompute();
         if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         dmgNum(player.x, player.y - 40, '🩸 Истощение!', '#f5c542');
@@ -678,7 +687,8 @@ function useSkill(idx) {
       }
     } else if (sk.key === 'W') {
       if (_advActive('W')) { // Жадность — +5% crit damage, 20 min (+1s per level)
-        critDmgBuffTimer = 1200 + _skillBuffSec('W');
+        critDmgBuffTimer = 1200 + _skillBuffSec('W');
+      if (typeof netSkillBuff === 'function') netSkillBuff('W');
         recompute();
         dmgNum(player.x, player.y - 40, '💰 Жадность!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 10);
@@ -689,12 +699,14 @@ function useSkill(idx) {
       }
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Безумие — +25% ATK + basic attacks splash AOE, 5s (+1s per level)
-        madnessTimer = 5 + _skillBuffSec('E');
+        madnessTimer = 5 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '💢 Безумие!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 12);
       } else { // Гнев мертвеца — +20% ATK 5s (+1s per level)
-        battleCryTimer = 5 + _skillBuffSec('E');
+        battleCryTimer = 5 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute(); // applies the buff off the timer above and pushes the new stats to the server
         dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
         spawnBurst(player.x, player.y, '#a5f', 10);
@@ -788,7 +800,8 @@ function useSkill(idx) {
       }
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Баф Крит — +5% crit chance, 20 min (+1s per level)
-        critChanceBuffTimer = 1200 + _skillBuffSec('E');
+        critChanceBuffTimer = 1200 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '🎯 Баф Крит!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 10);
@@ -854,12 +867,14 @@ function useSkill(idx) {
         spawnAOE(player.x, player.y, 220, 'flash', '#c9a3ff');
         _skillAOEMult(220, _skillMult('E'), 'E'); netSpawnAoe(player.x, player.y, 220, 'flash', '#c9a3ff');
         _pvpSkillAOE(220, _skillMult('E'), 'E');
-        barrierTimer = 3 + _skillBuffSec('E');
+        barrierTimer = 3 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '✨ Вспышка!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 14);
       } else { // Barrier — +50% DEF for 3s (+1s per level)
-        barrierTimer = 3 + _skillBuffSec('E');
+        barrierTimer = 3 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
         spawnBurst(player.x, player.y, '#e8e', 8);
@@ -925,7 +940,8 @@ function useSkill(idx) {
     } else if (sk.key === 'E') { // Тёмный щит / Жажда — +50% DEF self + party 4s (+1s per
       // level); advanced additionally grants ×2 attack speed for the same duration.
       const _advE3 = _advActive('E');
-      faithShieldTimer = 4 + _skillBuffSec('E');
+      faithShieldTimer = 4 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
       if (_advE3) atkSpeedTimer = 4 + _skillBuffSec('E');
       recompute();
       // См. комментарий у «Ускорения» лучника выше.
@@ -980,7 +996,8 @@ function useSkill(idx) {
     } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
       // level) either way; advanced additionally gives +10% ATK for the same duration.
       const _advE4 = _advActive('E');
-      guardTimer = 10 + _skillBuffSec('E');
+      guardTimer = 10 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
       if (_advE4) levShieldAtkTimer = 10 + _skillBuffSec('E');
       recompute();
       dmgNum(player.x, player.y - 40, _advE4 ? '🛡 Щит!' : '🛡 +80% DEF!', _advE4 ? '#f5c542' : '#e8e0cc');

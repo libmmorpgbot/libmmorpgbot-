@@ -19,7 +19,7 @@ const progression = require('../db/repos/progression');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
-        SKILL_HASTE, skillHasteOf,
+        SKILL_HASTE, skillHasteOf, skillBuffOf,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
 const party = require('../party');
@@ -395,6 +395,30 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // floor is only reached by a socket being spammed — so the log's picture of
   // this skill was mostly casts that healed nobody, mixed in with the real ones
   // and indistinguishable from them.
+  // Боевой баф: атака, защита, крит. Клиент присылает только клавишу — во
+  // сколько раз и на сколько секунд решает общая таблица (SKILL_BUFFS) из
+  // класса и изученности, то есть из того, что уже лежит в базе.
+  //
+  // Без этого обработчика бафы существовали только в панели: урон считает
+  // сервер, а множители были в js/player.js. «Скилл на +20% к атаке не
+  // работает», «защита 319 → 574 под бафом, моб как бил 62, так и бьёт».
+  safeOn('skillBuff', ({ key } = {}) => s.act('skillBuff', 'skillError', async (t, pid) => {
+    const k = String(key || '');
+    if (k !== 'Q' && k !== 'W' && k !== 'E' && k !== 'R') fail('Неизвестный навык', 'bad_skill');
+    if (!s.room) fail('Вы не на карте — перезайдите', 'no_room');
+    const st = await stats.of(t, pid);
+    if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
+    const sk = await players.skillsOf(t, pid);
+    const adv = !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
+    const b = skillBuffOf(st.charClass, k, adv);
+    if (!b) fail('Этот навык не даёт бафа', 'not_buff');
+    const sec = b.sec + (sk.skillLevels[k] || 0);
+    s.room.setSkillWindow(s.socket.id, 'buff', sec * 1000, {
+      atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower,
+    });
+    return { sec, atk: b.atk || 1, def: b.def || 1 };
+  }));
+
   // Ускоряющий навык. Отдельно от skillHeal, потому что это другое действие с
   // другим правилом — и потому что «лечение» в имени обработчика, который
   // ускоряет атаку, врёт читателю следующего года.

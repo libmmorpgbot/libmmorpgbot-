@@ -306,9 +306,21 @@ const CC_REACH = 460;
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
-// Players render on a ~700px-wide viewport — 600px AOI covers everything visible
-// with margin, at 2.25× less area than the 900px enemy AOI.
-const PLAYER_AOI_R2 = 600 * 600;
+// Насколько далеко видно других игроков.
+//
+// Здесь стояло 600 с комментарием «экран примерно 700px шириной, 600 покрывает
+// с запасом». Это верно для узкого телефона и неверно для всего остального:
+// ZOOM = 0.75 (js/constants.js), значит в кадр помещается W/0.75 пикселей мира
+// — на широком экране в 900 точек это 1200px, то есть ±600 по горизонтали от
+// центра. Игрок у края экрана оказывался ровно НА границе радиуса и мигал,
+// появляясь и пропадая от каждого шага: «герои то пропадали, то появлялись».
+//
+// 900 — столько же, сколько у мобов (ENEMY_AOI_R), и это покрывает половину
+// диагонали самого широкого разумного кадра с запасом. Площадь растёт в 2.25
+// раза, но считать больше не стало: PLAYER_CAP (100) ограничивает, сколько
+// уедет в пакете, дельта-кодирование делает неподвижного дальнего игрока
+// почти бесплатным, а у тика пятикратный запас (4.3мс из 25 при 70 онлайн).
+const PLAYER_AOI_R2 = 900 * 900;
 // Party rewards (shared XP/gold, the healer's party heal) only reach members
 // who are actually there for the fight. Set a little wider than PLAYER_AOI_R2
 // so someone right at the edge of the screen — visible, but whose exact
@@ -354,6 +366,8 @@ const PARTY_SHARE_R2 = PARTY_SHARE_R * PARTY_SHARE_R;
 // hub does turn out to sustain crowds this size, 40-60 is where the curve is
 // still cheap — the numbers above are the whole basis for that call.
 const PLAYER_CAP = 100;
+// Радиус видимости игроков на этаже гильдийской войны — см. _playerAoiR2.
+const GW_PLAYER_AOI_R2 = 1400 * 1400;
 // Every N casts a PLAYER entry goes out full even if the recipient "knows"
 // it — self-heals any client/server known-state divergence within ~2s.
 // Players are AOI-limited and capped at PLAYER_CAP, so this stays cheap.
@@ -1791,7 +1805,17 @@ class Room {
       if (gw) {
         const nowInGw = p.x >= gw.bounds.x0 * TILE && p.x < gw.bounds.x1 * TILE
                       && p.y >= gw.bounds.y0 * TILE && p.y < gw.bounds.y1 * TILE;
-        if (nowInGw !== !!p._guildWarZone) {
+        // Сравнение по ДВУМ величинам, а не по одной. Раньше здесь стояло
+        // только `nowInGw !== p._guildWarZone`, то есть флаг чинился ровно на
+        // переходе через границу — а внутри зоны его мог сбросить кто угодно:
+        // ручной переключатель ПК, автоматическое выключение в безопасной зоне
+        // на другом этаже, старый пакет setPvpMode. После этого игрок стоял в
+        // замке без ПК до тех пор, пока не выйдет и не зайдёт снова: «ПК то
+        // врубалось, то вырубалось».
+        //
+        // Внутри зоны PvP — правило места, а не выбор игрока, поэтому оно
+        // подтверждается каждый тик, пока не совпадёт.
+        if (nowInGw !== !!p._guildWarZone || p.pvpMode !== nowInGw) {
           p._guildWarZone = nowInGw;
           p.pvpMode = nowInGw;
           p._profileRev++;
@@ -2002,7 +2026,10 @@ class Room {
           e.atkTimer = 1.4 + Math.random() * 0.6;
           e.atkAnimTimer = 0.9;
           e._atkPulse = true;
-          const dmg = Math.max(1, e.atk - (closest.def || 0));
+          // Через _defOf, а не напрямую: щиты и барьеры существуют только в
+          // окне на сервере, и это единственное место, где они могут
+          // подействовать на входящий урон.
+          const dmg = Math.max(1, e.atk - this._defOf(closest));
           closest.hp = Math.max(0, closest.hp - dmg);
           // Straight down the victim's own socket, not io.to(id): the room
           // form builds a BroadcastOperator plus a rooms Set on every call,
@@ -2179,7 +2206,7 @@ class Room {
             if (!(pIsRacer && op._raceLane != null) && this._playerLaneKey(op) !== pLane) continue;
             const dx = op.x - p.x, dy = op.y - p.y;
             const d2 = dx * dx + dy * dy;
-            if (d2 > PLAYER_AOI_R2) continue;
+            if (d2 > this._playerAoiR2()) continue;
             // Full, and no closer than the furthest one we're keeping — the
             // branch that takes almost every candidate in a busy hub.
             if (nCand === PLAYER_CAP && d2 >= cand[PLAYER_CAP - 1].d2) continue;
@@ -2319,7 +2346,12 @@ class Room {
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.hp <= 0) continue;
-      if (e.isBoss) { this._bossBuf.push(e); continue; }
+      // Замок гильдий — сюда же, хотя он и не isBoss. _bossBuf это «то, что
+      // видно на всём этаже независимо от расстояния», а замок именно такой:
+      // он один, он в центре, он размером 60, и вся битва идёт вокруг него.
+      // Как обычный монстр он резался по ENEMY_AOI_R2 — и «моргал», появляясь
+      // и пропадая, стоило отойти к краю круга.
+      if (e.isBoss || e.guildWar) { this._bossBuf.push(e); continue; }
       // Same empty-arm skip as the AI loop above: nobody in that arm could
       // possibly have it inside their AOI query, so indexing it here would
       // be pure waste.
@@ -2561,6 +2593,19 @@ class Room {
   // that's been streaming to someone standing next to it is brand new to
   // someone who just walked into range, and must be sent in full or their
   // client has no id/name/sprite to attach the delta to.
+  // ── насколько далеко видно других игроков ─────────────────────────────────
+  // Обычно 600px: в открытом мире это ровно столько, сколько нужно, и дальше
+  // передавать чужие координаты незачем.
+  //
+  // На этаже гильдийской войны — иначе. Это одна арена, все сходятся к одному
+  // замку, и круг в 600px режет ровно тех, с кем идёт бой: «при приближении к
+  // замку герои то пропадали, то появлялись». Расширено до 1400 — это покрывает
+  // площадку целиком; PLAYER_CAP (100) по-прежнему ограничивает, сколько их
+  // уедет в пакете, так что размер кадра этим не взрывается.
+  _playerAoiR2() {
+    return this._dungeon.guildWar ? GW_PLAYER_AOI_R2 : PLAYER_AOI_R2;
+  }
+
   _collectEnemiesFor(p, out, castId) {
     out.length = 0;
     const known = p._eKnown;
@@ -2786,7 +2831,7 @@ class Room {
       if (staleSocketId) this.removePlayer(staleSocketId);
     }
     const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
-    const spawn = this._dungeon.spawn;
+    const spawn = this.spawnPointFor();
     const carry = fearCarry;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
@@ -2835,7 +2880,12 @@ class Room {
 
   setPlayerPvpMode(socketId, mode) {
     const p = this.players.get(socketId);
-    if (p && p.pvpMode !== !!mode) { p.pvpMode = !!mode; p._profileRev++; }
+    if (!p) return;
+    // В зоне гильдийской войны выключить ПК нельзя: это правило места. Раньше
+    // клиент мог его снять — и снимал, — а тик возвращал обратно только при
+    // следующем пересечении границы, которого внутри зоны не случается.
+    if (!mode && p._guildWarZone) return;
+    if (p.pvpMode !== !!mode) { p.pvpMode = !!mode; p._profileRev++; }
   }
 
   pvpAttack(attackerSocketId, targetSocketId) {
@@ -2849,8 +2899,8 @@ class Room {
     if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 500 * 500) return null;
-    const base = Math.max(1, attacker.atk - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
-    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    const base = Math.max(1, this._atkOf(attacker) - this._defOf(target) + Math.floor(Math.random() * 7) - 3);
+    const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     // Apply the damage to the authoritative server-side HP right here — the
     // target's client used to self-report "actual damage taken" afterwards
@@ -2958,8 +3008,8 @@ class Room {
     // refused outright rather than falling back to a default.
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
-    const base = Math.max(1, Math.round(attacker.atk * mult) - (target.def || 0) + Math.floor(Math.random() * 7) - 3);
-    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    const base = Math.max(1, Math.round(this._atkOf(attacker) * mult) - this._defOf(target) + Math.floor(Math.random() * 7) - 3);
+    const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     target.hp = Math.max(0, target.hp - dmg);
     this._vampGain(attacker, dmg);
@@ -3364,7 +3414,47 @@ class Room {
     if (kind === 'vampirism') { p._vampUntil = until; p._vampPct = pct; return true; }
     if (kind === 'butterflies') { p._butterfliesUntil = until; p._butterAt = Date.now(); return true; }
     if (kind === 'haste') { p._hasteUntil = until; p._hasteMult = pct; return true; }
+    // Боевой баф: множители атаки и защиты плюс прибавки к криту. Приходит
+    // объектом, потому что один навык может давать несколько сразу (у Танка
+    // продвинутый E — и защита, и атака).
+    if (kind === 'buff') {
+      p._buffUntil = until;
+      p._buffAtk = Number(pct && pct.atk) || 1;
+      p._buffDef = Number(pct && pct.def) || 1;
+      p._buffCritChance = Number(pct && pct.critChance) || 0;
+      p._buffCritPower = Number(pct && pct.critPower) || 0;
+      return true;
+    }
     return false;
+  }
+
+  // ── атака и защита С УЧЁТОМ бафов ─────────────────────────────────────────
+  // p.atk и p.def приходят из repos/stats.js: класс, уровень, снаряжение,
+  // пассивки, зелья. Всё это постоянное. А боевые бафы навыков — «+80% DEF»,
+  // «+20% ATK», «Безумие» — жили ТОЛЬКО в js/player.js, в функции, которая
+  // пересобирает эти числа для ОТРИСОВКИ.
+  //
+  // Урон же считает сервер, всеми пятью формулами ниже. Поэтому баф менял
+  // цифру в панели и не менял ничего больше. Игрок измерил это точнее любого
+  // лога: защита 319, моб с атакой 381 бьёт по 62; включает «+80% DEF», в
+  // панели 574 — моб бьёт те же 62.
+  //
+  // Окно ставит обработчик навыка ПОСЛЕ проверки класса и изученности; клиент
+  // присылает только клавишу. Множители — из общей таблицы (SKILL_BUFFS), той
+  // же, по которой рисует клиент, так что разойтись им негде.
+  _buffOn(p) { return !!(p && p._buffUntil > Date.now()); }
+  _atkOf(p) { return this._buffOn(p) ? (p.atk || 0) * p._buffAtk : (p.atk || 0); }
+  _defOf(p) { return this._buffOn(p) ? (p.def || 0) * p._buffDef : (p.def || 0); }
+  _critChanceOf(p) {
+    const c = (p && p.critChance) || 0;
+    // Тот же потолок 0.80, что и в repos/stats.js: иначе баф крита в связке с
+    // экипировкой делает критом каждый удар, и характеристика перестаёт что-то
+    // значить.
+    return Math.min(0.80, this._buffOn(p) ? c + p._buffCritChance : c);
+  }
+  _critPowerOf(p) {
+    const c = (p && p.critPower) || 1.5;
+    return this._buffOn(p) ? c + p._buffCritPower : c;
   }
 
   // Ударов в секунду, на которые этот игрок имеет право. Считает сервер, из
@@ -4046,8 +4136,8 @@ class Room {
     // "Охота" (advanced deathknight R) — 20% off this enemy's def while
     // defDownTimer is running (see applySkillEffect's 'defDown' branch).
     const _effDef = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
-    const base = Math.max(1, attacker.atk - _effDef + Math.floor(Math.random() * 7) - 3);
-    const { dmg: _rawDmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    const base = Math.max(1, this._atkOf(attacker) - _effDef + Math.floor(Math.random() * 7) - 3);
+    const { dmg: _rawDmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     // Splash always lands at exactly 50% of what the same hit would have
     // dealt directly — flat, not reduced further by anything above.
     const dmg = splash ? Math.max(1, Math.round(_rawDmg * 0.5)) : _rawDmg;
@@ -4148,8 +4238,8 @@ class Room {
     if (!(mult > 0)) return null;
     // Same defDown discount as attackEnemy above.
     const _effDef2 = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
-    const base = Math.max(1, Math.floor((attacker.atk - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
-    const { dmg, isCrit } = _critDmg(base, attacker.critChance, attacker.critPower);
+    const base = Math.max(1, Math.floor((this._atkOf(attacker) - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
+    const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     // Missing here (unlike attackEnemy/pvpAttack/pvpSkillAttack, which all
     // bump this) meant every skill cast against a monster that doesn't also
     // fire its own netSpawnProj/netSpawnAoe — Пинок, Кувырок, Оковы тьмы —
@@ -4280,6 +4370,25 @@ class Room {
   // otherwise fully isolated — lanes could still "share" kills through the
   // wall. _playerLaneKey is the same identity _raceVisible/nearbyPlayerIds
   // already gate visibility on; requiring it to match here closes that gap.
+  // ── куда встаёт игрок, попавший на этаж ──────────────────────────────────
+  // Обычно — в точку входа карты. На этаже гильдийской войны точек ЦЕЛОЕ
+  // КОЛЬЦО (dungeon.js: guildWar.spawns), и заходить всем в одну из них
+  // неправильно: «при входе в замок персонаж появляется в одной спавн точке, а
+  // должно в рандомном месте». Возрождение внутри зоны уже так и делает
+  // (guildWarRespawn) — вход просто не делал.
+  //
+  // Читается ОДИН раз и возвращает один объект. Соблазн сделать это геттером
+  // на самой карте был и оказался ошибкой: вызывающие берут .x и .y двумя
+  // обращениями, и каждое выбрало бы свою точку — игрок попал бы по иксу от
+  // одной, по игреку от другой, в том числе в стену.
+  spawnPointFor() {
+    const gw = this._dungeon.guildWar;
+    if (gw && gw.spawns && gw.spawns.length) {
+      return gw.spawns[Math.floor(Math.random() * gw.spawns.length)];
+    }
+    return this._dungeon.spawn;
+  }
+
   arePlayersNear(socketIdA, socketIdB) {
     const a = this.players.get(socketIdA);
     const b = this.players.get(socketIdB);

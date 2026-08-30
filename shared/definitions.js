@@ -2351,6 +2351,50 @@ function clanAtkBonusPct(level) { return clanBonusOf(level).atk; }
 // группу и явно пропускал самого заклинателя (`if (sid === s.socket.id)
 // continue`), а одиночный чернокнижник не получал вообще ничего — его
 // лечение целиком жило на клиенте.
+// ── боевые бафы навыков ────────────────────────────────────────────────────
+// Множители жили ТОЛЬКО в js/player.js — в recompute(), которая пересобирает
+// player.atk и player.def для ОТРИСОВКИ. Сервер о них не знал ничего, а урон
+// считает он:
+//
+//   моб по игроку   dmg = e.atk - p.def        (Room.js, тик)
+//   игрок по мобу   dmg = attacker.atk - ...   (attackEnemy / skillAttackEnemy)
+//   PvP             и то и другое разом
+//
+// Поэтому баф менял ЦИФРУ В ПАНЕЛИ и не менял ничего больше. Игрок измерил это
+// точнее любого лога: защита 319, моб с атакой 381 бьёт по 62; включает
+// «+80% DEF», в панели 574 — моб бьёт те же 62. И «скилл на +20% к атаке не
+// работает» — та же причина с другой стороны.
+//
+// Значения ниже сняты один в один с веток useSkill (js/player.js), а не
+// придуманы: sec — базовая длительность, к ней прибавляется уровень навыка,
+// ровно как _skillBuffSec.
+const SKILL_BUFFS = {
+  deathknight: {
+    Q: { adv:  { atk: 1.20, sec: 10 } },                        // Истощение
+    W: { adv:  { critPower: 0.05, sec: 1200 } },                // Жадность
+    E: { base: { atk: 1.20, sec: 5 },                           // Боевой клич
+         adv:  { atk: 1.25, sec: 5 } },                         // Безумие
+  },
+  ranger:  { E: { adv:  { critChance: 0.05, sec: 1200 } } },    // Баф Крит
+  mage:    { E: { base: { def: 1.50, sec: 3 },                  // Барьер
+                  adv:  { def: 1.80, sec: 3 } } },              // Вспышка
+  warlock: { E: { base: { def: 1.50, sec: 4 },                  // Тёмный щит
+                  adv:  { def: 1.50, sec: 4 } } },              // Жажда
+  lev:     { E: { base: { def: 1.80, sec: 10 },                 // Гнев мертвеца
+                  adv:  { def: 1.80, atk: 1.10, sec: 10 } } },  // Щит
+};
+
+// Что даёт этот навык, или null, если он не бафает. Object.hasOwn по той же
+// причине, что и везде в этом файле: 'constructor' у обычного объекта ИСТИНЕН.
+function skillBuffOf(charClass, key, adv) {
+  const byClass = Object.hasOwn(SKILL_BUFFS, charClass) ? SKILL_BUFFS[charClass] : null;
+  if (!byClass) return null;
+  const slot = Object.hasOwn(byClass, key) ? byClass[key] : null;
+  if (!slot) return null;
+  const def = adv ? (slot.adv || slot.base) : slot.base;
+  return def || null;
+}
+
 // Навыки, ускоряющие атаку. sec — длительность, плюс секунда за уровень
 // навыка (ровно как у клиента: _skillBuffSec(key) === уровень слота).
 const SKILL_HASTE = {
@@ -2493,6 +2537,7 @@ if (typeof module !== 'undefined') module.exports = {
   GUILD_WAR_TOWER_HP, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
   SKILL_SELF_HEAL, SKILL_HASTE, skillHasteOf,
+  SKILL_BUFFS, skillBuffOf,
   BUTTERFLIES_SEC, BUTTERFLIES_TICK_PCT,
   VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
   SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,

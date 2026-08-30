@@ -3294,6 +3294,15 @@ function netSkillHaste(key) {
   if (!socket?.connected) return;
   socket.emit('skillHaste', { key: String(key || '') });
 }
+
+// Боевой баф — атака, защита, крит. Причина та же, что у лечения и ускорения:
+// урон считает сервер, а множители жили только в recompute() на клиенте, то
+// есть меняли цифру в панели и больше ничего. Клиент присылает клавишу;
+// сколько это даёт — решает общая таблица.
+function netSkillBuff(key) {
+  if (!socket?.connected) return;
+  socket.emit('skillBuff', { key: String(key || '') });
+}
 // `key` is the skill slot that was cast (Q/W/E/R). The server derives the
 // damage multiplier from it — see skillDamageMult, shared/definitions.js — so
 // this no longer sends a number for the server to trust. `multiplier` is still
