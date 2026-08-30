@@ -154,19 +154,27 @@ module.exports = function registerAdminRoutes(app, deps) {
           FROM gram_tx WHERE type = 'deposit' AND status = 'confirmed'`);
 
       const top = async (sql, params = []) => (await query(null, sql, params)).rows;
+      // ── кого НЕ показывать в пятёрках лидеров ────────────────────────────
+      // То же правило, что у списка игроков ниже, и по той же причине: топ по
+      // уровню состоял из восьми adm-*_victim 77-го уровня — фикстур проверок,
+      // которых нельзя удалить (их держит ledger) и которые поэтому забанены и
+      // обнулены. Бан из рейтинга игроков их убирает, а отсюда не убирал ничто.
+      const REAL = players.realPlayerSql('p');
       const tops = {
-        bm: await top(`SELECT username, bm AS val FROM players ORDER BY bm DESC NULLS LAST LIMIT 5`),
+        bm: await top(`SELECT p.username, p.bm AS val FROM players p
+                        WHERE ${REAL} ORDER BY p.bm DESC NULLS LAST LIMIT 5`),
         lvl: await top(`
           SELECT p.username, pr.lvl AS val FROM player_progress pr
-            JOIN players p ON p.id = pr.player_id ORDER BY pr.lvl DESC LIMIT 5`),
+            JOIN players p ON p.id = pr.player_id
+           WHERE ${REAL} ORDER BY pr.lvl DESC LIMIT 5`),
         gold: await top(`
           SELECT p.username, b.amount AS val FROM balances b
             JOIN players p ON p.id = b.player_id
-           WHERE b.currency = 'gold' ORDER BY b.amount DESC LIMIT 5`),
+           WHERE b.currency = 'gold' AND ${REAL} ORDER BY b.amount DESC LIMIT 5`),
         nexum: await top(`
           SELECT p.username, b.amount AS val FROM balances b
             JOIN players p ON p.id = b.player_id
-           WHERE b.currency = 'nexum' ORDER BY b.amount DESC LIMIT 5`),
+           WHERE b.currency = 'nexum' AND ${REAL} ORDER BY b.amount DESC LIMIT 5`),
       };
 
       res.json({

@@ -15,6 +15,7 @@
 // client that connects between two broadcasts still knows.
 
 const { query } = require('./db');
+const playersRepo = require('./db/repos/players');
 
 // The threshold at which a VIP glows. Two, as in the old build.
 const VIP_AURA_MIN_LEVEL = 2;
@@ -35,7 +36,12 @@ const _auraUsers = new Set();
 async function refreshTopPlayer() {
   try {
     const { rows } = await query(null,
-      'SELECT username FROM players ORDER BY bm DESC NULLS LAST LIMIT 1');
+      // Только живой аккаунт: это имя уходит КАЖДОМУ клиенту как лидер
+      // рейтинга, и фильтра у запроса не было вообще. Правило — общее, из
+      // repos/players.js, чтобы аура, рейтинг и админка не разъезжались.
+      `SELECT username FROM players p
+        WHERE ${playersRepo.realPlayerSql('p')}
+        ORDER BY p.bm DESC NULLS LAST LIMIT 1`);
     const name = (rows[0] && rows[0].username) || null;
     if (name === _topPlayer) return;
     _topPlayer = name;

@@ -63,7 +63,7 @@ const I18N_UI = {
   chatTranslateUnavailable: { ru: 'Перевод временно недоступен, попробуйте позже', en: 'Translation is unavailable right now, try again later', uk: 'Переклад тимчасово недоступний, спробуйте пізніше', es: 'La traducción no está disponible ahora, inténtalo más tarde', tr: 'Çeviri şu anda kullanılamıyor, daha sonra deneyin', pt: 'A tradução está indisponível agora, tente mais tarde' },
 
   deathTitle:   { ru: 'ВЫ ПАЛИ', en: 'YOU DIED', uk: 'ВИ ЗАГИНУЛИ', es: 'HAS MUERTO', tr: 'ÖLDÜN', pt: 'VOCÊ MORREU' },
-  deathRespawn: { ru: 'Возродиться (10% HP)', en: 'Respawn (10% HP)', uk: 'Відродитися (10% HP)', es: 'Reaparecer (10% HP)', tr: 'Yeniden Doğ (%10 HP)', pt: 'Reviver (10% HP)' },
+  deathRespawn: { ru: 'Возродиться (полное HP)', en: 'Respawn (full HP)', uk: 'Відродитися (повне HP)', es: 'Reaparecer (HP completo)', tr: 'Yeniden Doğ (tam HP)', pt: 'Reviver (HP cheio)' },
 
   profileTabWallet:  { ru: 'Кошелёк', en: 'Wallet', uk: 'Гаманець', es: 'Billetera', tr: 'Cüzdan', pt: 'Carteira' },
   profileTabFriends: { ru: 'Друзья',  en: 'Friends', uk: 'Друзі',    es: 'Amigos',    tr: 'Arkadaşlar', pt: 'Amigos' },

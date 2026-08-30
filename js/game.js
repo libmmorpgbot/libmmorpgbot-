@@ -610,7 +610,14 @@ function update(dt, realDt) {
   // Advance sprite animation frame
   if (SPRITE_DEF[player.type]) {
     const ak = getSpriteAnimKey(player);
-    if (ak !== player._lastAnimKey) { player._lastAnimKey = ak; player.animFrame = 0; player.animTimer = 0; }
+    // Только действие, без направления: 'frontright-attack' → 'attack'.
+    // У 'die' дефиса нет, indexOf вернёт -1, slice(0) отдаст 'die' целиком —
+    // то есть смерть по-прежнему считается отдельным действием.
+    const _act = ak.slice(ak.indexOf('-') + 1);
+    const _prevAct = player._lastAnimKey
+      ? player._lastAnimKey.slice(player._lastAnimKey.indexOf('-') + 1) : null;
+    if (_act !== _prevAct) { player.animFrame = 0; player.animTimer = 0; }
+    player._lastAnimKey = ak;
     const ad = SPRITE_DEF[player.type].anims[ak];
     if (ad) {
       player.animTimer += dt;
@@ -1121,7 +1128,13 @@ function update(dt, realDt) {
     if (op.type && SPRITE_DEF[op.type]) {
       if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
       const ak = getOtherPlayerAnimKey(op);
-      if (ak !== op._prevAnimKey) { op.animFrame = 0; op.animTimer = 0; op._prevAnimKey = ak; }
+      // То же правило, что и у своего персонажа выше: сброс на смене действия,
+      // а не направления. Здесь это только вид — чужой замах перезапускался с
+      // нулевого кадра каждый раз, когда тот поворачивался.
+      const _oAct = ak.slice(ak.indexOf('-') + 1);
+      const _oPrev = op._prevAnimKey ? op._prevAnimKey.slice(op._prevAnimKey.indexOf('-') + 1) : null;
+      if (_oAct !== _oPrev) { op.animFrame = 0; op.animTimer = 0; }
+      op._prevAnimKey = ak;
       const ad = SPRITE_DEF[op.type].anims[ak];
       if (ad) {
         op.animTimer = (op.animTimer || 0) + dt;
@@ -2651,7 +2664,14 @@ function respawnPlayer() {
   }
   state = 'playing';
   document.getElementById('death-modal').style.display = 'none';
-  dmgNum(player.x, player.y - 30, typeof t === 'function' ? t('deathXpPenalty') : '−50% XP (5 мин)', '#c4838a');
+  // Строка про «−50% XP на 5 минут» отсюда убрана: такого штрафа нет НИГДЕ.
+  // Не в этой сборке и не в прежней — ни в одном обработчике, ни в одной
+  // формуле опыта. Игрок это заметил («опыт при смерти не уменьшался»), и он
+  // прав: уменьшать было нечему.
+  //
+  // Убрана надпись, а не добавлен штраф, потому что это разные решения.
+  // Надпись врала — это ошибка. Ввести настоящий штраф за смерть — изменение
+  // баланса живой игры для всех сразу, и принимать его не мне.
   // 'respawn' first, and no playerMove alongside it: the server's own
   // respawnPlayer() puts us back at the same spawn point this function just
   // moved to, so the move was always redundant — and sending it while the

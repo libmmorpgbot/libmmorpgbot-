@@ -440,7 +440,7 @@ module.exports = function registerProgression(s, safeOn) {
                COALESCE(sum(p.bm), 0)::bigint AS "totalBm"
           FROM clans c
           JOIN clan_members m ON m.clan_id = c.id
-          JOIN players p      ON p.id = m.player_id AND NOT p.banned
+          JOIN players p      ON p.id = m.player_id AND ${players.realPlayerSql('p')}
          GROUP BY c.id, c.name, c.icon
          ORDER BY "totalBm" DESC, c.id
          LIMIT 50`);
@@ -454,7 +454,7 @@ module.exports = function registerProgression(s, safeOn) {
     const { rows } = await query(t, `
       SELECT p.username, p.bm, pr.lvl AS level
         FROM players p JOIN player_progress pr ON pr.player_id = p.id
-       WHERE NOT p.banned AND p.bm > 0
+       WHERE ${players.realPlayerSql('p')} AND p.bm > 0
        ORDER BY p.bm DESC, p.id LIMIT 50`);
     // Своя строка, если игрока нет в полусотне: место считается запросом, а не
     // берётся из кэша таблицы — это единственное число в панели, за которым
@@ -463,7 +463,7 @@ module.exports = function registerProgression(s, safeOn) {
       const { rows: me } = await query(t, `
         SELECT p.username, p.bm, pr.lvl AS level,
                (SELECT count(*) FROM players q
-                 WHERE NOT q.banned AND q.bm > p.bm)::int + 1 AS rank
+                 WHERE ${players.realPlayerSql('q')} AND q.bm > p.bm)::int + 1 AS rank
           FROM players p JOIN player_progress pr ON pr.player_id = p.id
          WHERE p.id = $1`, [pid]);
       if (me.length) rows.push({ ...me[0], isSelf: true, gap: true });
