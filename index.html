@@ -954,8 +954,33 @@ window.__reportClientError = function (where, message, stack) {
     }).catch(function () {});
   } catch (e) { /* reporting must never become the failure */ }
 };
+// ── бандл доехал не целиком ────────────────────────────────────────────────
+// «Захожу, грузит, и потом всё чёрное. Просто кнопка портала в зал стоит и всё.»
+//
+// SyntaxError вида «Unexpected end of input» или на одинокой скобке означает
+// ровно одно: скрипт оборвался на середине. Дальше не выполняется НИЧЕГО — ни
+// игра, ни вход, ни сторож пустого мира, — и человек смотрит в чёрный экран.
+// Сам он про перезагрузку не догадается: в Телеграме кнопки обновления нет.
+//
+// Одна перезагрузка, ровно одна. Флаг лежит в sessionStorage, то есть живёт
+// пока открыта вкладка: если и вторая попытка оборвалась, значит дело не в
+// сети, и крутить цикл перезагрузок хуже, чем показать чёрный экран, о
+// котором хотя бы уехал отчёт.
+var _RELOAD_KEY = 'liberty_bundle_reload';
+function _looksTruncated(msg) {
+  return /SyntaxError/i.test(msg)
+    && /(unexpected end of (input|script)|unexpected token)/i.test(msg);
+}
 window.addEventListener('error', function (e) {
-  window.__reportClientError('js', e && e.message, e && e.error && e.error.stack);
+  var msg = String((e && e.message) || '');
+  window.__reportClientError('js', msg, e && e.error && e.error.stack);
+  if (!_looksTruncated(msg)) return;
+  var tried = '0';
+  try { tried = sessionStorage.getItem(_RELOAD_KEY) || '0'; } catch (err) { tried = '1'; }
+  if (tried !== '0') return;
+  try { sessionStorage.setItem(_RELOAD_KEY, '1'); } catch (err) { return; }
+  // Запрос идёт мимо кэша: оборванный ответ мог в него и попасть.
+  location.replace(location.pathname + '?r=' + Date.now());
 });
 window.addEventListener('unhandledrejection', function (e) {
   const r = e && e.reason;
@@ -1161,6 +1186,11 @@ document.addEventListener('keydown', e => {
 <!-- All game scripts in one bundle — ETag cache-busts on server restart -->
 <script src="/bundle.js"></script>
 <script>
+// Этот тег выполняется только если bundle.js выше разобрался целиком — значит
+// «одна перезагрузка на вкладку» израсходована не была, и следующий обрыв
+// (метро через полчаса) снова получит свою попытку. Без этой строки право на
+// починку тратилось однажды и навсегда.
+try { sessionStorage.removeItem('liberty_bundle_reload'); } catch (e) {}
 (function() {
   document.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
   document.addEventListener('selectstart', e => e.preventDefault(), { passive: false });

@@ -299,6 +299,22 @@ async function main() {
   eq(await caught(() => tx(t => clans.apply(t, inClan, c2.clanId))), 'in_clan',
     'подати заявку в другий клан, будучи в клані, неможливо');
 
+  // ── заявка в клан, которого больше нет ────────────────────────────────────
+  //   [act:clanApply] insert or update on table "clan_applications" violates
+  //   foreign key constraint "clan_applications_clan_id_fkey"
+  //
+  // Семь раз за неделю в боевом журнале. Список кланов в панели — снимок,
+  // снятый когда игрок её открыл; клан за это время распустили. Вместо «этого
+  // клана больше нет» игрок получал «Ошибка сервера», а операторы — алерт.
+  {
+    const ghostOwner = await mk('ghost', 500);
+    const ghost = await tx(t => clans.create(t, ghostOwner, `${TAG.slice(-4)}G`, 3));
+    await tx(t => clans.disband(t, ghostOwner, ghost.clanId));
+    const applicant = await mk('late', 500);
+    eq(await caught(() => tx(t => clans.apply(t, applicant, ghost.clanId))), 'no_clan',
+      'заявка в розпущений клан — відмова з причиною, а не падіння');
+  }
+
   // And the schema refuses it even bypassing the application entirely — the
   // guard above is convenience, this is the guarantee.
   // By SQLSTATE, with the same caught() this file already uses four lines up.

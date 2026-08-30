@@ -146,6 +146,21 @@ async function apply(db, playerId, clanId) {
   await items.lockPlayer(db, playerId);
   const { rows: m } = await query(db, 'SELECT clan_id FROM clan_members WHERE player_id = $1', [playerId]);
   if (m.length) err('in_clan', 'Ви вже в клані');
+  // ── клан, которого уже нет ───────────────────────────────────────────────
+  //   [act:clanApply] insert or update on table "clan_applications" violates
+  //   foreign key constraint "clan_applications_clan_id_fkey"
+  //
+  // Список кланов у игрока в панели — снимок, снятый когда он её открыл. Клан
+  // за это время распустили, игрок жмёт «подать заявку» — и вместо «этого
+  // клана больше нет» получает «Ошибка сервера», а операторы получают алерт
+  // про нарушение внешнего ключа. Семь раз за неделю.
+  //
+  // FOR KEY SHARE, а не голый SELECT: без него строку клана можно удалить
+  // между этой проверкой и INSERT ниже, и всё вернётся ровно туда, откуда
+  // ушли. Порядок «игрок, потом клан» при этом соблюдён — см. выше.
+  const { rows: c } = await query(db,
+    'SELECT 1 FROM clans WHERE id = $1 FOR KEY SHARE', [clanId]);
+  if (!c.length) err('no_clan', 'Цього клану більше немає');
   await query(db, `
     INSERT INTO clan_applications (clan_id, player_id) VALUES ($1, $2)
     ON CONFLICT DO NOTHING`, [clanId, playerId]);

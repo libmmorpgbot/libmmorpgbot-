@@ -115,9 +115,14 @@ const _isDupUsername = (err) => err && err.code === '23505'
 // сохранения откатывает ровно один запрос.
 //
 // db === null — это отдельное соединение вне транзакции (query сам его
-// возьмёт), там откатывать нечего.
+// возьмёт), там откатывать нечего: одиночный запрос сам себе транзакция.
+// Ошибку ловим и там — иначе защита работала бы только внутри tx(), то есть
+// не там, где её однажды позовут.
 async function _try(db, sql, params) {
-  if (!db) return { ok: true, res: await query(db, sql, params) };
+  if (!db) {
+    try { return { ok: true, res: await query(db, sql, params) }; }
+    catch (err) { if (!_isDupUsername(err)) throw err; return { ok: false, err }; }
+  }
   const sp = 'sp_username';
   await query(db, `SAVEPOINT ${sp}`);
   try {
@@ -538,7 +543,25 @@ function _progress(r) {
 
 async function progressOf(db, playerId) {
   const { rows } = await query(db, 'SELECT * FROM player_progress WHERE player_id = $1', [playerId]);
-  return rows.length ? _progress(rows[0]) : null;
+  if (rows.length) return _progress(rows[0]);
+  // ── строки нет, а игрок есть ─────────────────────────────────────────────
+  //   [act:killReward] TypeError: Cannot read properties of null (reading 'lvl')
+  //
+  // Убитый монстр, «Ошибка сервера» игроку, алерт операторам — и ни слова о
+  // том, ЧЕЙ аккаунт сломан. Возвращать null было честно ровно для тех
+  // вызывающих, кто это проверяет; из шестнадцати проверяют не все, и каждый
+  // непроверивший падает вот так.
+  //
+  // Аккаунт без player_progress — это поломка, а не состояние: строку заводит
+  // ensure на первом же входе. Она восстанавливается тем же способом и по той
+  // же причине, по которой ensure зовёт свои INSERT ... ON CONFLICT DO NOTHING
+  // на каждом входе, — и об этом остаётся след с номером игрока, потому что
+  // тихое восстановление скрыло бы того, кто её удалил.
+  console.error(`[players] нет player_progress у игрока ${playerId} — восстанавливаю`);
+  await query(db, 'INSERT INTO player_progress (player_id) VALUES ($1) ON CONFLICT DO NOTHING',
+    [playerId]);
+  const again = await query(db, 'SELECT * FROM player_progress WHERE player_id = $1', [playerId]);
+  return again.rows.length ? _progress(again.rows[0]) : null;
 }
 
 async function prefsOf(db, playerId) {

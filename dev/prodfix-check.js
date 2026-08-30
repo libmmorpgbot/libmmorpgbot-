@@ -110,6 +110,11 @@ console.log('\n  ── вступление в клан ──');
     query: async (sql, args) => {
       seen.push({ sql, args });
       if (/FROM players WHERE id = \$1 FOR UPDATE/i.test(sql)) return { rows: [{ id: args[0] }], rowCount: 1 };
+      // Клан существует. Раньше подставной db отвечал пустотой на ВСЁ, и
+      // проверка существования клана (её добавили после семи падений
+      // clan_applications_clan_id_fkey за неделю) честно отказывала — то есть
+      // фикстура описывала клан, которого нет, а называлась «заявка».
+      if (/FROM clans WHERE id = \$1 FOR KEY SHARE/i.test(sql)) return { rows: [{ ok: 1 }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
   };
@@ -125,6 +130,12 @@ console.log('\n  ── вступление в клан ──');
     // тот цикл, который PostgreSQL убивал как «deadlock detected» в killReward.
     const lockAt = seen.findIndex(q => /FROM players WHERE id = \$1 FOR UPDATE/i.test(q.sql));
     ok(lockAt === 0, 'строка игрока блокируется первой', lockAt);
+    // И существование клана проверяется ДО вставки: иначе внешний ключ падает
+    // сам, а игрок получает «Ошибка сервера» вместо «этого клана больше нет».
+    const clanAt = seen.findIndex(q => /FROM clans WHERE id = \$1 FOR KEY SHARE/i.test(q.sql));
+    const insAt = seen.findIndex(q => /INSERT INTO clan_applications/i.test(q.sql));
+    ok(clanAt > lockAt && clanAt < insAt,
+      'клан проверяется после игрока и до вставки', `игрок ${lockAt}, клан ${clanAt}, вставка ${insAt}`);
     step4();
   }).catch(e => { ok(false, 'apply не упал', e.message); step4(); });
 }

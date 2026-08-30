@@ -120,6 +120,28 @@ const made = [];
     ok(li.rows.length === 1, 'индекс по lower(username) на месте — поиск ЛС не читает таблицу целиком');
   }
 
+  // ── аккаунт без строки прогресса ─────────────────────────────────────────
+  //   [act:killReward] TypeError: Cannot read properties of null (reading 'lvl')
+  // Убитый монстр, «Ошибка сервера» игроку, алерт операторам. progressOf
+  // отвечал null, а из шестнадцати вызывающих проверяют его не все.
+  console.log('  ── пропавшая строка прогресса ──');
+  {
+    const TG_E = `${TAG}-e`;
+    const e = await tx(t => players.ensure(t, TG_E, `${TAG}_Безпрогресса`));
+    made.push(e.id);
+    await query(null, 'DELETE FROM player_progress WHERE player_id = $1', [e.id]);
+    const gone = await query(null, 'SELECT 1 FROM player_progress WHERE player_id = $1', [e.id]);
+    eq(gone.rows.length, 0, 'строка прогресса действительно удалена');
+
+    let prog = null, progErr = null;
+    try { prog = await players.progressOf(null, e.id); } catch (err) { progErr = err; }
+    ok(!progErr && prog && typeof prog.lvl === 'number',
+      'progressOf возвращает годную строку, а не null',
+      progErr ? progErr.message : JSON.stringify(prog));
+    const back = await query(null, 'SELECT 1 FROM player_progress WHERE player_id = $1', [e.id]);
+    eq(back.rows.length, 1, 'и строка восстановлена в базе');
+  }
+
   console.log('');
   console.log(fail === 0
     ? `  \x1b[32m${pass} пройшло, 0 впало\x1b[0m\n`

@@ -95,6 +95,41 @@ console.log('\n  ── слова, по которым это узнаётся 
     'отчёт по-прежнему начинается с причины');
 }
 
+// ── оборванный бандл чинит сам себя ────────────────────────────────────────
+// В канал он по-прежнему не идёт: это сеть игрока, а не поломка сборки. Но
+// человек при этом смотрит в чёрный экран и про перезагрузку не догадается —
+// в Телеграме кнопки обновления нет. Одна перезагрузка, ровно одна.
+console.log('\n  ── оборванный бандл ──');
+{
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const at = (re) => { const m = html.match(re); return m ? m.index : -1; };
+  const iHandler = at(/window\.addEventListener\('error'/);
+  const iBundle = at(/<script src="\/bundle\.js">/);
+  ok(iHandler > 0 && iBundle > 0 && iHandler < iBundle,
+    'обработчик ошибок объявлен ДО бандла — иначе он и не узнает об обрыве',
+    `обработчик ${iHandler}, бандл ${iBundle}`);
+
+  // Правило распознавания — на настоящих строках из журнала.
+  const looks = (msg) => /SyntaxError/i.test(msg)
+    && /(unexpected end of (input|script)|unexpected token)/i.test(msg);
+  ok(looks('Uncaught SyntaxError: Unexpected end of input'), 'обрыв опознаётся');
+  ok(looks("SyntaxError: Unexpected token '}'"), 'и одинокая скобка тоже');
+  ok(!looks('TypeError: undefined is not a function'), 'а обычная ошибка — нет');
+  ok(!looks('SyntaxError: Invalid regular expression'), 'и не всякий SyntaxError');
+
+  ok(/location\.replace\(location\.pathname \+ '\?r=' \+ Date\.now\(\)\)/.test(html),
+    'перезагрузка идёт мимо кэша — оборванный ответ мог попасть и в него');
+  ok(/sessionStorage\.setItem\(_RELOAD_KEY, '1'\)/.test(html),
+    'попытка отмечается до перезагрузки, а не после — иначе цикл');
+  const iSet = at(/sessionStorage\.setItem\(_RELOAD_KEY/);
+  const iGo = at(/location\.replace\(location\.pathname \+ '\?r='/);
+  ok(iSet > 0 && iGo > 0 && iSet < iGo, 'и именно в таком порядке');
+  const iClear = at(/sessionStorage\.removeItem\('liberty_bundle_reload'\)/);
+  ok(iClear > iBundle,
+    'право на перезагрузку возвращается только после удачной загрузки бандла',
+    `сброс ${iClear}, бандл ${iBundle}`);
+}
+
 console.log('');
 console.log(fail === 0
   ? `  \x1b[32m${pass} пройшло, 0 впало\x1b[0m\n`
