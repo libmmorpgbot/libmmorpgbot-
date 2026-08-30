@@ -102,12 +102,58 @@ async function byTelegramId(db, telegramId) {
 // from the same account arriving together (a refresh, a double-tap on the
 // launch button) both find nothing and both insert, and the second one gets a
 // duplicate-key error instead of a session.
+// 23505 — нарушение уникальности. Разбирается по ИМЕНИ ограничения, а не по
+// тексту: сообщение локализуется настройками базы, имя — нет.
+const _isDupUsername = (err) => err && err.code === '23505'
+  && String(err.constraint || '').includes('username');
+
+// Выполнить запрос так, чтобы его провал не убил всю транзакцию.
+//
+// Без этого «поймал 23505 и попробовал иначе» не работает вовсе: Postgres
+// после любой ошибки отвечает 25P02 на всё до самого отката, так что повтор
+// падал бы уже по другой причине, а вход всё равно не состоялся бы. Точка
+// сохранения откатывает ровно один запрос.
+//
+// db === null — это отдельное соединение вне транзакции (query сам его
+// возьмёт), там откатывать нечего.
+async function _try(db, sql, params) {
+  if (!db) return { ok: true, res: await query(db, sql, params) };
+  const sp = 'sp_username';
+  await query(db, `SAVEPOINT ${sp}`);
+  try {
+    const res = await query(db, sql, params);
+    await query(db, `RELEASE SAVEPOINT ${sp}`);
+    return { ok: true, res };
+  } catch (err) {
+    await query(db, `ROLLBACK TO SAVEPOINT ${sp}`);
+    if (!_isDupUsername(err)) throw err;
+    return { ok: false, err };
+  }
+}
+
 async function ensure(db, telegramId, username) {
   const tg = String(telegramId);
-  const { rows } = await query(db, `
-    INSERT INTO players (telegram_id, username) VALUES ($1, $2)
-    ON CONFLICT (telegram_id) DO NOTHING
-    RETURNING id`, [tg, username]);
+  // ── имя не может помешать завести аккаунт ────────────────────────────────
+  // ON CONFLICT здесь про telegram_id, а падало другое ограничение —
+  // players_username_key. Двое «Максим» в Телеграме: второй получал 23505 на
+  // КАЖДОМ входе, транзакция входа откатывалась целиком, и человек видел
+  // чёрный экран без единой подсказки. Пять раз за неделю в журнале.
+  //
+  // Миграция 018 уникальность снимает, и тогда эта ветка не нужна. Но сервер
+  // выкатывается раньше миграции, а до неё тёзки всё ещё не входят — поэтому
+  // повтор с различителем. Различитель — хвост telegram_id: он у каждого свой
+  // и не меняется, так что имя стабильно от входа к входу, а не «Максим_2»,
+  // «Максим_3» при каждой попытке.
+  const INS = `INSERT INTO players (telegram_id, username) VALUES ($1, $2)
+               ON CONFLICT (telegram_id) DO NOTHING
+               RETURNING id`;
+  let first = await _try(db, INS, [tg, username]);
+  if (!first.ok) {
+    const alt = String(username).slice(0, 26) + '#' + tg.slice(-4);
+    console.warn(`[players] имя «${username}» занято — завожу как «${alt}» (tg ${tg})`);
+    first = { ok: true, res: await query(db, INS, [tg, alt]) };
+  }
+  const { rows } = first.res;
 
   const isNew = rows.length > 0;
   const id = isNew ? Number(rows[0].id)
@@ -125,8 +171,15 @@ async function ensure(db, telegramId, username) {
 // Display name comes from Telegram and can change between logins. Sanitising
 // is the caller's job (security.js _safeUsername) — this only stores it.
 async function setUsername(db, playerId, username) {
-  await query(db, 'UPDATE players SET username = $2, updated_at = now() WHERE id = $1',
+  // Переименование — украшение. Игрок, сменивший имя в Телеграме на уже
+  // занятое, получал 23505 ЗДЕСЬ, и падала вся транзакция входа: аккаунт есть,
+  // войти нельзя. Имя того не стоит — остаётся прежнее, и об этом остаётся
+  // след, а человек играет.
+  const r = await _try(db, 'UPDATE players SET username = $2, updated_at = now() WHERE id = $1',
     [playerId, username]);
+  if (!r.ok) {
+    console.warn(`[players] имя «${username}» занято — оставляю прежнее (игрок ${playerId})`);
+  }
 }
 
 // ── may the bot write to this player ────────────────────────────────────────

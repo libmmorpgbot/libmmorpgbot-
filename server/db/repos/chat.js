@@ -36,8 +36,11 @@ async function clanHistory(db, clanId, limit = 50) {
 async function playerByUsername(db, username) {
   const u = String(username || '').replace(/^@/, '').trim();
   if (!u) return null;
-  const { rows } = await query(db,
-    'SELECT id, username, telegram_id FROM players WHERE lower(username) = lower($1)', [u]);
+  const { rows } = await query(db, `
+    SELECT id, username, telegram_id FROM players
+     WHERE lower(username) = lower($1)
+     ORDER BY (username = $1) DESC, id
+     LIMIT 1`, [u]);
   return rows.length ? { id: Number(rows[0].id), username: rows[0].username, telegramId: rows[0].telegram_id } : null;
 }
 

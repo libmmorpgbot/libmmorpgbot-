@@ -544,6 +544,14 @@ class Session {
   // `meta` is what the row it writes should SAY — see _resultMeta above.
   async act(name, errEvent, fn, meta = null) {
     if (!this.authed) return null;
+    // ── чей это ход, решается ЗДЕСЬ ────────────────────────────────────────
+    // Ниже стоит txRetry, а его обратный вызов запускается после ожидания
+    // (соединение из пула). Раньше playerId читался внутри него — и разрыв
+    // связи, случившийся в этом промежутке, подставлял туда null: close()
+    // обнуляет playerId, обработчик доходил до items.lockPlayer и падал с
+    // «items: no player null». Игрок видел «Ошибка сервера», операторы —
+    // алерт, а причиной был всего лишь ушедший в этот миг сокет.
+    const pid = this.playerId;
     // ── a session that no longer owns the account ────────────────────────
     // savePosition has refused for a superseded session since it was written,
     // and it was the ONLY thing that did — every craft, sale, purchase and
@@ -576,7 +584,7 @@ class Session {
       const out = await txRetry((t) => {
         if (box) box.open = false;
         box = { sends: [], open: true };
-        return _outbox.run(box, () => fn(t, this.playerId));
+        return _outbox.run(box, () => fn(t, pid));
       });
       // COMMITTED. Everything the handler said is now true of the database, so
       // all of it goes — including the pushes that read through this very
@@ -584,7 +592,7 @@ class Session {
       _flushOutbox(box, 'all');
       // Only the actions that CHANGE something. Logging a read would bury the
       // rows that matter under vipSync and getRating — see WRITE_ACTIONS.
-      if (WRITE_ACTIONS.has(name)) plog.log(this.playerId, name, _resultMeta(name, meta, out));
+      if (WRITE_ACTIONS.has(name)) plog.log(pid, name, _resultMeta(name, meta, out));
       return out;
     } catch (err) {
       // A domain error carries a message written for the player. Anything else
@@ -603,7 +611,7 @@ class Session {
         // the player was told no, and nobody else was told anything, so "не мог
         // купить лот, и никаких ошибок наш лог не выбил" was literally true.
         // One line per refusal, with the reason the player saw.
-        plog.log(this.playerId, `refuse:${name}`, { code: err.code, msg: err.userMessage });
+        plog.log(pid, `refuse:${name}`, { code: err.code, msg: err.userMessage });
         this._emitRaw(errEvent, { msg: err.userMessage, code: err.code });
         return null;
       }
@@ -612,7 +620,7 @@ class Session {
       // dropped connection). Nothing was written, so nothing is said about it.
       _flushOutbox(box, 'drop');
       console.error(`[act:${name}]`, err);
-      plog.log(this.playerId, 'error', { action: name, msg: String(err && err.message || err).slice(0, 300) });
+      plog.log(pid, 'error', { action: name, msg: String(err && err.message || err).slice(0, 300) });
       ops.alertError(`act.${name}`, `Ошибка в обработчике ${name}`, err, {
         player: this.username, telegramId: this.telegramId,
         // Для 40P01/40001 здесь лежит разбор цикла: оба процесса, обе

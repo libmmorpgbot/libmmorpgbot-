@@ -1582,6 +1582,18 @@ class Room {
   // the first time it sees that, and a delta from then on.
   enemySnapshot(socketId) {
     const p = socketId != null ? this.players.get(socketId) : null;
+    // Клиент при gameStart сбрасывает таблицу дескрипторов целиком
+    // (resetNetCodecMaps, js/network.js), поэтому всё, чего нет в снимке
+    // ниже, он забудет. Раньше здесь только ДОБАВЛЯЛИ, и записи про врагов,
+    // не попавших в снимок, оставались с full: true — сервер продолжал слать
+    // по ним дельты с дескрипторами, которых у клиента уже нет, а декодер их
+    // молча пропускает.
+    //
+    // Молча — потому что дельта неизвестного дескриптора отбрасывается, и
+    // клиентская починка (_repairLostHandles) заводится именно от неё. Монстр,
+    // который стоит на месте и никем не тронут, дельт не порождает — и не
+    // чинится никогда.
+    if (p) p._eKnown.clear();
     const out = [];
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];

@@ -1108,6 +1108,16 @@ function netConnect(onReady) {
     otherPlayers = new Map();
     bossStatus = bs || {};
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
+    // ── и сервер должен узнать, что мы всё забыли ─────────────────────────
+    // Карта нового этажа едет по сети, и эта пересборка происходит через
+    // СЕКУНДЫ после того, как сервер отправил gameStart. Всё, что он дослал
+    // за это время, только что затёрлось строкой выше — а он считает, что мы
+    // это знаем, и дальше пришлёт только дельты по дескрипторам, которых у
+    // нас уже нет. Декодер такие дельты молча пропускает, и комната остаётся
+    // пустой: «моя комната первая была пуста».
+    //
+    // Один пакет на смену этажа. На сервере он ограничен тремя секундами.
+    if (socket?.connected) socket.emit('enemyResyncAll');
     // The tile raster is a pure function of the grid, so it only needs
     // rebuilding when the grid did (see _resumeSameFloor above).
     if (!_resumeSameFloor) buildTileCanvas();
