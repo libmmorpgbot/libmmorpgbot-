@@ -49,7 +49,25 @@ async function main() {
 
   // ── catalog ──────────────────────────────────────────────────────────────
   const synced = await tx(t => items.syncCatalog(t));
-  ok(synced.synced === 184, `каталог синхронізовано (${synced.synced} предметів, ${synced.retired} виведено)`);
+  // ── правило, а не число ────────────────────────────────────────────────
+  // Тут стояло `=== 184`. Числа в каталоге меняются с каждым новым
+  // предметом, и такая проверка краснеет не на поломке, а на пополнении:
+  // ровно это и случилось, когда добавили крылья, редкие плащи и
+  // эпических питомцев. Утверждение теперь про СОВПАДЕНИЕ каталога базы с
+  // каталогом кода — это и есть то, ради чего синхронизация существует.
+  // Ровно те три списка, из которых синхронизация и собирает каталог
+  // (см. syncCatalog): предметы, материалы и сундуки.
+  const _D = require('../shared/definitions');
+  const _CAT = [..._D.ITEM_DEF, ..._D.CRAFT_MATS, ..._D.BOX_DEF];
+  ok(synced.synced === _CAT.length,
+    `каталог синхронізовано (${synced.synced} предметів, ${synced.retired} виведено)`,
+    `у коді ${_CAT.length}: ${_D.ITEM_DEF.length} предметів, ${_D.CRAFT_MATS.length} матеріалів, ${_D.BOX_DEF.length} боксів`);
+  // И ни одна строка базы не осталась без своего описания в коде.
+  const { rows: _noDesc } = await pool().query(
+    'SELECT item_id FROM item_catalog WHERE item_id <> ALL($1::text[]) LIMIT 5',
+    [_CAT.map(d => d.id)]);
+  ok(_noDesc.length === 0, 'у кожного рядка каталогу є опис у коді',
+    _noDesc.map(r => r.item_id).join(', '));
 
   const { rows: matRow } = await pool().query(
     'SELECT item_id, stackable FROM item_catalog WHERE stackable AND slot=$1 LIMIT 1', ['material']);
