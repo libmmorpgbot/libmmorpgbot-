@@ -40,7 +40,7 @@ cd "$ROOT"
 #
 # render-check и remote-motion в этот список не входят: им нужен браузер, а на
 # дроплете его нет. Они запускаются с машины разработчика — см. хвост вывода.
-PURE=(reachable bundle protocol request-shape bookpool prodfix heal skillbuff netsize death-drop)
+PURE=(reachable bundle protocol request-shape bookpool prodfix heal skillbuff netsize death-drop spawn)
 DB=(admin adminapi aggro alert api bonuses boot clans consumables craft drops
     enemysync enhance etl events exploit gram guildwar health item-ledger items
     kill market market-fix modes money panel party players progression pvp-history quest relog-attack stacks party-clan-log season-enhance

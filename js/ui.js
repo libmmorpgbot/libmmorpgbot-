@@ -74,7 +74,11 @@ function updateInvUI() {
       ${enhBadge}
     </div>`;
   };
-  const _eqHalf = EQ_SLOTS.length / 2;
+  // Слотов стало одиннадцать (добавились крылья), и половина перестала быть
+  // целой. Округление вверх — решение, а не побочный эффект: слева шесть,
+  // справа пять. Без него slice(0, 5.5) молча отдавал то же самое, но по
+  // случайности, а не по правилу.
+  const _eqHalf = Math.ceil(EQ_SLOTS.length / 2);
   document.getElementById('eq-col-left').innerHTML  = EQ_SLOTS.slice(0, _eqHalf).map(_eqCellHtml).join('');
   document.getElementById('eq-col-right').innerHTML = EQ_SLOTS.slice(_eqHalf).map(_eqCellHtml).join('');
   _startInvPortraitAnim();
@@ -618,6 +622,75 @@ function openUpgradeResetModal() {
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
+}
+
+// ─────────────────────────────────────────────────────────
+//  СМЕНА КЛАССА  (Профиль → Сменить класс, стоит Liberty)
+// ─────────────────────────────────────────────────────────
+// Окно устроено как сброс улучшений выше — та же цена в Liberty, то же
+// подтверждение, — но говорит вслух ДВЕ вещи, которых там нет: снаряжение
+// чужого класса снимется в инвентарь, а изученные навыки сбросятся. Человек
+// должен знать это до нажатия, а не после.
+function openClassChangeModal() {
+  if (!player) return;
+  const cost = (typeof CLASS_CHANGE_COST !== 'undefined') ? CLASS_CHANGE_COST : 15000;
+  const bal = window._nexumBalance || 0;
+  const cur = player.type;
+
+  // Сколько вещей снимется — считаем заранее и по каждому классу отдельно:
+  // «снимется 3 вещи» и «снимется 1» это разные решения.
+  const wornOff = (cls) => Object.values(player.equipment || {})
+    .filter(it => it && Array.isArray(it.forClass) && !it.forClass.includes(cls)).length;
+
+  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur).map(c => {
+    const off = wornOff(c);
+    const d = CHAR_DEF[c];
+    return `<button onclick="_confirmClassChange('${c}')" style="
+      display:flex;align-items:center;gap:10px;width:100%;margin-bottom:8px;padding:10px 12px;
+      border:1px solid rgba(209,204,197,.14);border-radius:10px;background:rgba(209,204,197,.04);
+      color:#d9cfbe;font-size:14px;font-weight:600;cursor:pointer;text-align:left">
+      <span style="flex:1">${d.name}</span>
+      <span style="font-size:11px;color:${off ? '#e0a24a' : '#7d7466'}">${off ? ('снимется вещей: ' + off) : 'снаряжение подходит'}</span>
+    </button>`;
+  }).join('');
+
+  const ov = document.createElement('div');
+  ov.id = 'class-change-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:360px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">Смена класса</div>
+    <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:14px">
+      Стоит <b style="color:#e5aa52">${cost}</b> Liberty (у вас ${bal}).<br>
+      Снаряжение чужого класса снимется в инвентарь — не пропадёт.<br>
+      Изученные навыки сбросятся, очки вернутся.<br>
+      Уровень, опыт, вещи, валюта и клан остаются.
+    </div>
+    ${bal < cost ? '<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Недостаточно Liberty</div>' : classes}
+    <button onclick="document.getElementById('class-change-ov').remove()" style="
+      width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+      color:#968a7a;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px">${t('cancelBtn')}</button>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _confirmClassChange(type) {
+  const ov = document.getElementById('class-change-ov');
+  if (ov) ov.remove();
+  if (typeof netChangeClass === 'function') netChangeClass(type);
+}
+
+function onClassChanged(from, to, unequipped) {
+  if (typeof updateProfileUI === 'function') updateProfileUI();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (typeof updateSkillsUI === 'function') updateSkillsUI();
+  if (player) {
+    dmgNum(player.x, player.y - 30,
+      'Класс: ' + ((CHAR_DEF[to] && CHAR_DEF[to].name) || to), '#98e456');
+    if (unequipped) {
+      dmgNum(player.x, player.y - 50, 'Снято в инвентарь: ' + unequipped, '#e0a24a');
+    }
+  }
 }
 
 function _confirmUpgradeReset() {
@@ -5254,7 +5327,13 @@ const MARKET_BROWSE_MAX = 1000;
 // display/pre-check only, the server is the real authority. Keys/recipes/
 // stones are per unit (scaled by however many are in this listing), rare
 // gear is a flat per-listing floor.
+// Зеркало серверной _marketMinPrice — и округляет теми же тремя знаками.
+// Разойтись им нельзя: подсказка под полем и проверка сервера должны называть
+// ОДНО число, иначе игрок снова вводит объявленное и получает отказ.
 function _marketMinPriceFor(it, qty) {
+  return Math.round(_marketMinPriceForRaw(it, qty) * 1000) / 1000;
+}
+function _marketMinPriceForRaw(it, qty) {
   if (!it) return MARKET_MIN_PRICE;
   const n = qty || it.qty || 1;
   if (it.id === 'norm_stone') return 0.40 * n;
@@ -6383,6 +6462,22 @@ function closeMarketPanel() {
 }
 
 function switchMarketTab(tab) {
+  // ── фильтр принадлежит вкладке, а не панели ──────────────────────────────
+  // Поиск, категория и редкость, выставленные на «Лотах», продолжали резать
+  // «Мои лоты» и «Историю»: у игрока семь активных лотов, а вкладка
+  // показывала «ничего не найдено». Именно это прочиталось как «пропали 2
+  // зелёных плаща и 1 серый» — вещи всё это время лежали на рынке.
+  //
+  // Сбрасывается при СМЕНЕ вкладки, а не при каждом заходе: повторное нажатие
+  // на уже открытую вкладку не должно стирать то, что человек только что
+  // набрал.
+  if (tab !== _marketTab) {
+    _marketCategoryFilter = 'all';
+    _marketFilters.q = '';
+    _marketFilters.rarity = 'all';
+    const _q = document.getElementById('market-search-input');
+    if (_q) _q.value = '';
+  }
   _marketTab = tab;
   document.querySelectorAll('#market-panel .rating-tab').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById('mtab-' + tab);

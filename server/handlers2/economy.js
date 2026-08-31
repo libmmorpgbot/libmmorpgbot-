@@ -16,10 +16,12 @@ const market = require('../db/repos/market');
 const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
 const progression = require('../db/repos/progression');
+const players = require('../db/repos/players');
+const crypto = require('crypto');
 const consumables = require('../db/repos/consumables');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, seasonEnhancePoints,
+  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, seasonEnhancePoints, CLASS_CHANGE_COST,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
 
@@ -111,6 +113,50 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       });
       return res;
     }, craftMeta));
+
+  // ── смена класса ─────────────────────────────────────────────────────────
+  // Платная и необратимая в одну сторону: снаряжение чужого класса снимается в
+  // инвентарь, изученные навыки сбрасываются, очки возвращаются. Всё
+  // остальное — уровень, опыт, вещи, валюта, клан, сезон — не трогается.
+  //
+  // Порядок здесь тот же, что у крафта, и по той же причине: сперва отказы,
+  // которые ничего не стоят, потом деньги, потом сама смена. Отказ, за который
+  // уже заплачено, — худший вид отказа, и changeClass поэтому проверяет место
+  // в инвентаре ДО того, как сюда вернётся.
+  safeOn('changeClass', ({ type } = {}) =>
+    s.act('changeClass', 'classChangeError', async (t, pid) => {
+      if (typeof type !== 'string' || !type) fail('Не выбран класс', 'bad_class');
+
+      // Сухой прогон: он ничего не меняет, кроме случая успеха, — поэтому
+      // деньги списываются ПОСЛЕ него. Транзакция общая, так что откат при
+      // любом отказе ниже вернёт и то, и другое.
+      const probe = await players.changeClass(t, pid, type);
+      if (!probe.ok) {
+        if (probe.code === 'same_class') fail('Это и есть ваш класс', 'same_class');
+        if (probe.code === 'no_class') fail('Сначала выберите класс', 'no_class');
+        if (probe.code === 'no_room') {
+          fail(`Освободите ${probe.need} мест в инвентаре — туда снимется снаряжение`, 'no_room');
+        }
+        fail('Неизвестный класс', 'bad_class');
+      }
+
+      const paid = await money.spend(t, pid, 'nexum', CLASS_CHANGE_COST, {
+        reason: 'class_change', refType: 'class', refId: `${probe.from}->${probe.to}`,
+        idemKey: `class:${pid}:${probe.to}:${crypto.randomUUID()}`,
+      });
+      if (!paid) fail(`Смена класса стоит ${CLASS_CHANGE_COST} Liberty`, 'no_nexum');
+
+      await pushAll(t);
+      // Комната держит свою копию характеристик и класса — без этого игрок до
+      // перезахода бил бы старым классом по новым книгам.
+      await s.pushStats(t);
+      await s.pushProgress(t);
+      s.socket.emit('classChanged', {
+        from: probe.from, to: probe.to, unequipped: probe.unequipped,
+        newNexumBalance: await nexumOf(t, pid),
+      });
+      return probe;
+    }, r => r && { from: r.from, to: r.to, unequipped: r.unequipped }));
 
   safeOn('craftMatUpgrade', ({ from } = {}) =>
     s.act('craftMatUpgrade', 'craftMatUpgradeError', async (t, pid) => {

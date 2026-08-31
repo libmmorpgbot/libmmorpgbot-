@@ -187,6 +187,12 @@ const PET_SPRITE_DEF = {
   pet_bonessa: { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
   pet_cyclops: { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
   pet_yeti:    { frameW:320, frameH:274, dispScale:1, anchorY:0.66 },
+  // Присланная анимация квадратная (кадр 480x480 до пережатия), поэтому
+  // кадр 320x320 — как у Медузы, Костяка и Бонессы. Растянуть её под
+  // 320x274 значило бы сплющить питомца.
+  pet_groot:   { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
+  pet_nerb:    { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
+  pet_vilord:  { frameW:320, frameH:320, dispScale:1, anchorY:0.80 },
 };
 Object.keys(PET_SPRITE_DEF).forEach(id => {
   PET_SPRITE_DEF[id].anims = {

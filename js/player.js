@@ -1181,5 +1181,18 @@ function statStr(it) {
   if (it.atkSpeed)   p.push('Скор+' + (it.atkSpeed   * 100).toFixed(0) + '%');
   if (it.hpPct)      p.push('HP+' +  (it.hpPct       * 100).toFixed(0) + '%макс');
   if (it.skillPct)   p.push('Навыки+' + (it.skillPct * 100).toFixed(0) + '%');
+  // ── новые бонусы ────────────────────────────────────────────────────────
+  // Без этих строк крылья показывали бы «ATK+100 DEF+100 HP+1000» и молчали о
+  // главном — о скорости бега, ради которой их и надевают. Плащи и артефакты
+  // редкого яруса точно так же молчали бы о своих процентах.
+  //
+  // toFixed(0), как и у соседей: 0.7 × 100 в двоичной дроби даёт
+  // 70.00000000000001, и без него в тултипе был бы тот же хвост, который
+  // только что убрали из урона.
+  if (it.speedPct)   p.push('Бег+'   + (it.speedPct * 100).toFixed(0) + '%');
+  if (it.atkPct)     p.push('ATK+'   + (it.atkPct   * 100).toFixed(0) + '%');
+  if (it.critPower)  p.push('СилКрит+' + (it.critPower * 100).toFixed(0) + '%');
+  if (it.xpPct)      p.push('Опыт+'  + (it.xpPct    * 100).toFixed(0) + '%');
+  if (it.dropPct)    p.push('Дроп+'  + (it.dropPct  * 100).toFixed(0) + '%');
   return p.join('  ');
 }

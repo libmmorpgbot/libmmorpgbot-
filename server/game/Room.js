@@ -214,7 +214,19 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
 
 function _critDmg(base, critChance, critPower) {
   const isCrit = Math.random() < (critChance || 0);
-  return { dmg: isCrit ? Math.floor(base * (critPower || 1.5)) : base, isCrit };
+  // ── единственная воронка урона, и единственное место, где его округляют ──
+  // Критическая ветка округляла и раньше, обычная возвращала base как есть — а
+  // base ДРОБНЫЙ: _atkOf/_defOf множат целые atk/def на дробные множители
+  // бафов. Отсюда «401.5999999999997» над мобом.
+  //
+  // Здесь, а не у клиента: это же число вычитается из hp моба, кормит
+  // вампиризм и копится в тотале Кровавой Башни. Округлить на показе значило
+  // бы оставить дробным всё остальное.
+  //
+  // Не меньше единицы: полностью поглощённый бронёй удар — это «промах без
+  // промаха», которого в игре нет.
+  const dmg = isCrit ? Math.floor(base * (critPower || 1.5)) : Math.floor(base);
+  return { dmg: Math.max(1, dmg), isCrit };
 }
 
 // How far above the server's own computed "true" stats (from validated
@@ -466,6 +478,26 @@ const COOP_MOBS_PER_STAGE = 40;
 // enemies within; the grid cell is sized to match it so the per-player query
 // only ever touches a 2x2..3x3 block of cells.
 const ENEMY_AOI_R2 = ENEMY_AOI_R * ENEMY_AOI_R;
+// Насколько далеко клиент ЕЩЁ держит моба у себя (см. прополку в
+// js/network.js: ENEMY_AOI_R + 600). Всё, что внутри этого круга, обязано
+// узнать о смерти — сколько бы сервер ни успел «забыть».
+const CORPSE_FANOUT_R2 = (ENEMY_AOI_R + 600) * (ENEMY_AOI_R + 600);
+
+// ── насколько «не у замка» и «не в лицо» ───────────────────────────────────
+// Случайная точка входа в замок гильдий держится подальше от трёх вещей:
+// самого замка (иначе смысл случайности теряется), уже стоящего игрока
+// («один тіп крисить і вбиває» — вот про это) и пада возврата, который
+// срабатывает вблизи и утащил бы вошедшего обратно в хаб.
+const GW_SPAWN_CASTLE_CLEAR = 8 * TILE;   // 320px
+const GW_SPAWN_PLAYER_CLEAR = 600;
+const RETURN_PAD_CLEAR      = 4 * TILE;   // 160px
+
+// Сколько держится предохранитель входа и насколько далеко от точки
+// постановки клиенту позволено объявиться, пока он держится. Полкилометра
+// — это заведомо больше любого честного шага и заведомо меньше расстояния
+// до чужой комнаты.
+const ENTRY_GUARD_MS = 8000;
+const ENTRY_DRIFT_R2 = 500 * 500;
 const ENEMY_GRID_CELL = ENEMY_AOI_R;
 // Players get the same treatment as enemies, and for two callers: the AOI
 // candidate scan (which was a nested players.forEach, O(N²) per cast) and the
@@ -629,6 +661,9 @@ class Room {
     // Reusable buffer for "who can currently see this enemy" fan-outs
     // (enemyHurt/enemyKilled) — see viewersOfEnemy.
     this._viewerBuf = [];
+    // Свой буфер: viewersOfEnemy и nearbyPlayerIds делили один, а теперь
+    // отвечают на разные вопросы и ходят по разным радиусам.
+    this._corpseBuf = [];
     // Second buffer plus a rotating offset, for the capped visual fan-out —
     // see nearbyPlayerIds.
     this._fanoutWin = [];
@@ -1052,15 +1087,22 @@ class Room {
   // once per participant, by server/index.js's coopGroupStart once both
   // halves of the pair are ready. Stage 1 is spawned separately (coopStartFirstStage)
   // after the same kind of pre-fight grace window Fear uses.
-  coopDeploy(socketId) {
+  // `wantLane` — полоса, которую вызывающий уже назвал при входе на этаж.
+  // Без неё «первая свободная» и «та, в которую вошёл» могут разойтись, и
+  // тогда пакет входа и пакет старта забега говорят разное.
+  coopDeploy(socketId, wantLane = null) {
     const p = this.players.get(socketId);
     if (!p) return null;
     const lanes = this._dungeon.coop.lanes;
     const occupied = new Set(this._coopOwner.keys());
     this.players.forEach(op => { if (op._coopLane != null) occupied.add(op._coopLane); });
     let lane = -1;
-    for (let i = 0; i < lanes.length; i++) if (!occupied.has(i)) { lane = i; break; }
+    if (wantLane != null && lanes[wantLane] && !occupied.has(wantLane)) lane = wantLane;
+    else for (let i = 0; i < lanes.length; i++) if (!occupied.has(i)) { lane = i; break; }
     if (lane === -1) return null;
+    if (wantLane != null && lane !== wantLane) {
+      console.warn(`[Room ${this.floor}] полоса ${wantLane} занята — выдана ${lane}`);
+    }
     const spot = lanes[lane];
     p.x = spot.entryX; p.y = spot.entryY;
     p.hp = p.maxHp;
@@ -1069,6 +1111,7 @@ class Room {
     p._fearLane = null;
     p._profileRev++;
     this._coopOwner.set(lane, socketId);
+    this._markPlaced(p);
     return { x: p.x, y: p.y, lane };
   }
 
@@ -2051,7 +2094,10 @@ class Room {
           // Через _defOf, а не напрямую: щиты и барьеры существуют только в
           // окне на сервере, и это единственное место, где они могут
           // подействовать на входящий урон.
-          const dmg = Math.max(1, e.atk - this._defOf(closest));
+          // Округляется по той же причине, что и урон игрока: _defOf множит
+          // целую защиту на дробный множитель бафа, и без этого дробным
+          // становилось здоровье игрока — а оно уезжает в базу в целую колонку.
+          const dmg = Math.max(1, Math.round(e.atk - this._defOf(closest)));
           closest.hp = Math.max(0, closest.hp - dmg);
           // Straight down the victim's own socket, not io.to(id): the room
           // form builds a BroadcastOperator plus a rooms Set on every call,
@@ -2605,12 +2651,32 @@ class Room {
   // players online — hundreds of packets describing an enemy almost none of
   // the recipients had ever been told about. The result buffer is reused, so
   // callers must consume it before the next call.
+  // ── кому обязаны сказать, что тело упало ───────────────────────────────
+  // Это НЕ тот же вопрос, что «кому можно слать дельту» — см. «_eKnown значит
+  // ДВЕ разные вещи» выше. Цена ошибки разная: потерянная дельта стоит одной
+  // лишней полной записи на следующем такте, потерянная смерть — трупа
+  // навсегда. Мёртвый моб не попадает ни в поток, ни в снимок, ни в ответ на
+  // пересылку, и чинить будет нечем.
+  //
+  // Память сервера о том, что он рассказывал, живёт ~150 мс после выхода моба
+  // из радиуса видимости, а клиент выбрасывает моба только за 2000 px. В
+  // полосе между этими двумя числами клиент моба ДЕРЖИТ, а сервер уже считает,
+  // что не рассказывал, — и смерть до него не доезжает.
+  //
+  // Поэтому к «сервер помнит» добавлено «моб всё ещё внутри того круга, из
+  // которого клиент сам его не выбрасывает». Правило изоляции забегов — то же,
+  // что и везде.
   viewersOfEnemy(enemyId, exceptSocketId) {
-    const out = this._viewerBuf;
+    const out = this._corpseBuf;
     out.length = 0;
+    const e = this._enemyMap.get(enemyId);
     this.players.forEach(p => {
       if (p.socketId === exceptSocketId) return;
-      if (!p._eKnown.has(enemyId)) return;
+      if (!p._eKnown.has(enemyId)) {
+        if (!e || !this._raceVisible(p, e)) return;
+        const dx = e.x - p.x, dy = e.y - p.y;
+        if (dx * dx + dy * dy > CORPSE_FANOUT_R2) return;
+      }
       out.push(p.socketId);
     });
     return out;
@@ -3167,6 +3233,28 @@ class Room {
   updatePlayerPos(socketId, x, y, facing, moving) {
     const p = this.players.get(socketId);
     if (!p) return;
+    // ── первый пакет после того, как игрока поставил СЕРВЕР ────────────────
+    // На новом этаже клиент несколько секунд живёт на СТАРОЙ карте — она едет
+    // по сети — и всё это время шлёт прежнюю позицию раз в секунду. Если она
+    // случайно попадает на пол новой карты, прежняя проверка («стена или
+    // нет») её принимала и уже никогда не исправляла.
+    //
+    // Замерено: координаты спавна хаба — это пол и в Сотрудничестве (чужая
+    // полоса, комната следующего этапа), и в Элитной зоне (внутри комнаты, в
+    // сотне пикселей от пачки). Отсюда «спавнишся не в тій кімнаті» и «кидало
+    // не с места, где портал».
+    //
+    // Окно короткое и отсчитывается от НОВОЙ серверной точки, поэтому
+    // телепорты им не ломаются: они двигают игрока на сервере.
+    if (p._entryGuardUntil && Date.now() < p._entryGuardUntil) {
+      const gdx = x - p._entryX, gdy = y - p._entryY;
+      if (gdx * gdx + gdy * gdy > ENTRY_DRIFT_R2) {
+        p._entryDrops = (p._entryDrops || 0) + 1;
+        console.warn(`[Room ${this.floor}] вход: пакет в ${Math.round(Math.hypot(gdx, gdy))}px `
+          + `от точки постановки — отказ (${p.username || socketId}, всего ${p._entryDrops})`);
+        return { refused: 'entry', x: p.x, y: p.y };
+      }
+    }
     // A dead player's own client can keep sending playerMove (e.g. its "you
     // died" flow never ran because the tab was backgrounded for the fatal
     // hit) — without this, the server kept applying it, so the player could
@@ -4415,12 +4503,83 @@ class Room {
   // на самой карте был и оказался ошибкой: вызывающие берут .x и .y двумя
   // обращениями, и каждое выбрало бы свою точку — игрок попал бы по иксу от
   // одной, по игреку от другой, в том числе в стену.
+  // Точка входа. Читается ОДИН раз и отдаётся целиком — геттер на карте
+  // когда-то отдавал x одной точки и y другой.
+  //
+  // В замке гильдий это случайная проходимая плитка ПО ВСЕЙ КАРТЕ, а не одна
+  // из восьми точек кольца: восемь точек — это 0.22% этажа, их запоминают и у
+  // них стоят. Кольцо осталось запасным вариантом, если выборка не нашла
+  // места.
   spawnPointFor() {
     const gw = this._dungeon.guildWar;
-    if (gw && gw.spawns && gw.spawns.length) {
-      return gw.spawns[Math.floor(Math.random() * gw.spawns.length)];
+    if (!gw) return this._dungeon.spawn;
+    return this.randomStandPoint({
+      avoid: [{ x: gw.cx, y: gw.cy, r: GW_SPAWN_CASTLE_CLEAR }],
+      awayFromPlayers: GW_SPAWN_PLAYER_CLEAR,
+      fallback: (gw.spawns && gw.spawns.length)
+        ? gw.spawns[Math.floor(Math.random() * gw.spawns.length)] : this._dungeon.spawn,
+    });
+  }
+
+  // Этаж сам решает, куда встаёт вошедший, — значит хранёную позицию
+  // восстанавливать нельзя. Иначе «вышел у замка → зашёл у замка» обходит всю
+  // случайность одним движением.
+  get randomEntry() { return !!this._dungeon.guildWar; }
+
+  // Случайная точка, на которой МОЖНО стоять, по всей сетке этажа.
+  // canStandAt — та же проверка геометрии, которой судится обычное движение,
+  // так что в стену попасть нельзя по построению. Исчерпание попыток пишется
+  // в журнал, а не проглатывается: молчаливый откат к одной точке — это ровно
+  // та поломка, которую здесь чинят.
+  randomStandPoint({ avoid = [], awayFromPlayers = 0, tries = 80, fallback = null } = {}) {
+    const d = this._dungeon;
+    const zones = avoid.slice();
+    // Пад возврата — тоже запретная зона: клиент срабатывает на нём с
+    // расстояния в несколько десятков пикселей, и появиться рядом значит
+    // мгновенно уехать в хаб.
+    if (d.returnPad) zones.push({ x: d.returnPad.x, y: d.returnPad.y, r: RETURN_PAD_CLEAR });
+    for (let i = 0; i < tries; i++) {
+      const x = Math.floor(Math.random() * d.w) * TILE + TILE / 2;
+      const y = Math.floor(Math.random() * d.h) * TILE + TILE / 2;
+      if (!this.canStandAt(x, y)) continue;
+      if (zones.some(z => (x - z.x) ** 2 + (y - z.y) ** 2 < z.r * z.r)) continue;
+      if (awayFromPlayers > 0) {
+        let near = false;
+        this.players.forEach(op => {
+          if (op.hp > 0 && (x - op.x) ** 2 + (y - op.y) ** 2 < awayFromPlayers * awayFromPlayers) near = true;
+        });
+        if (near) continue;
+      }
+      return { x, y };
     }
-    return this._dungeon.spawn;
+    console.warn(`[Room ${this.floor}] случайная точка: ${tries} попыток без результата, `
+      + `игроков ${this.players.size} — отдаю запасную`);
+    return fallback || d.spawn;
+  }
+
+  // Отметить, откуда игрока поставил СЕРВЕР. Окно ровно на загрузку карты
+  // этажа; после него движение судится обычными правилами.
+  _markPlaced(p, ms = ENTRY_GUARD_MS) {
+    if (!p) return;
+    p._entryX = p.x; p._entryY = p.y; p._entryGuardUntil = Date.now() + ms;
+  }
+
+  // ── точки входа режимов ──────────────────────────────────────────────────
+  // Нужны ВЫЗЫВАЮЩЕМУ до развёртывания: игрок должен входить на этаж сразу
+  // туда, где он будет стоять. Иначе он сперва встаёт на статический спавн
+  // этажа — а это вход чужой полосы, — и всё, что успевает прочитать позицию
+  // в этом промежутке, называет чужую комнату.
+  coopLaneEntry(lane) {
+    const l = this._dungeon.coop && this._dungeon.coop.lanes[lane];
+    return l ? { x: l.entryX, y: l.entryY } : null;
+  }
+  fearLaneEntry(lane) {
+    const l = this._dungeon.fear && this._dungeon.fear.lanes[lane];
+    return l ? { x: l.entryX, y: l.entryY } : null;
+  }
+  farm2Entry() {
+    const sp = this._dungeon.spawn;
+    return sp ? { x: sp.x, y: sp.y } : null;
   }
 
   arePlayersNear(socketIdA, socketIdB) {

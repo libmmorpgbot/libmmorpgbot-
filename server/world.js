@@ -168,15 +168,25 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
   // put the player straight back into the bug the guard was added to fix.
   const p = room.players.get(session.socket.id);
   if (p) {
+    // ── куда встаёт вошедший, решает ЭТАЖ ────────────────────────────────
+    // Здесь стоял _dungeon.spawn напрямую, и он затирал то, что addPlayer
+    // выбрал десятью строками выше: в замке гильдий это одна и та же плитка на
+    // каждый вход — одна из трёх с половиной тысяч проходимых. Случайность
+    // существовала и умирала, не дожив до игрока.
+    const entry = room.spawnPointFor();
     const wantX = progress && progress.x, wantY = progress && progress.y;
-    const useStored = target === (progress && progress.floor) &&
+    // На этаже со случайным входом хранёная позиция не восстанавливается:
+    // «вышел у замка → зашёл у замка» обошло бы всю случайность одним
+    // движением.
+    const useStored = !room.randomEntry &&
+      target === (progress && progress.floor) &&
       Number.isFinite(wantX) && Number.isFinite(wantY);
-    const at = useStored
-      ? room._nearestWalkable(wantX, wantY)
-      : null;
-    const spawn = at || room._nearestWalkable(room._dungeon.spawn.x, room._dungeon.spawn.y)
-      || room._dungeon.spawn;
+    const at = useStored ? room._nearestWalkable(wantX, wantY) : null;
+    const spawn = at || room._nearestWalkable(entry.x, entry.y) || entry;
     p.x = spawn.x; p.y = spawn.y;
+    // Отсюда и отсчитывается предохранитель: всё, что клиент пришлёт в
+    // ближайшие секунды далеко от этой точки, — это его прежний этаж.
+    if (typeof room._markPlaced === 'function') room._markPlaced(p);
   }
   return target;
 }

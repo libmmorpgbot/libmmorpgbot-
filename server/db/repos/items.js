@@ -817,10 +817,23 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   if (container !== 'equipment') {
     const { rows: what } = await query(db,
       'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
-    // keep: перенесённая строка. Вызывающий держит её id и читает по нему
-    // результат — исчезнуть под ним она не должна.
+    // ── БЕЗ keep: выживает СТАРШАЯ строка ────────────────────────────────
+    // «Раньше вещи оставались в том порядке, в котором отправлял, а теперь всё
+    // вразброску.»
+    //
+    // keep:rowId заставлял выжить ТОЛЬКО ЧТО положенную строку. Идентификатор
+    // у неё больше всех, а список сортируется по нему (inventoryOf) — и купка,
+    // лежавшая в начале хранилища, прыгала в конец при каждом довложении. В
+    // боевой базе 867 слияний из 1265 переставили купку именно так.
+    //
+    // Без keep выживает самая старая строка (mergeStacks сортирует по id), и
+    // купка остаётся там, где лежала.
+    //
+    // Вызывающий её по id не перечитывает: moveTo возвращает булево, а
+    // обработчики после него читают инвентарь целиком. keep нужен ровно одному
+    // месту — attachFromListing, где на строку ещё смотрит живой лот.
     if (what.length) {
-      await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0, { keep: rowId });
+      await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0);
     }
   }
   if (container === 'equipment' || (from.length && from[0].container === 'equipment')) {

@@ -161,6 +161,15 @@ async function apply(db, playerId, clanId) {
   const { rows: c } = await query(db,
     'SELECT 1 FROM clans WHERE id = $1 FOR KEY SHARE', [clanId]);
   if (!c.length) err('no_clan', 'Цього клану більше немає');
+  // Заявка в полный клан исполниться НЕ МОЖЕТ: accept ниже отказывает по
+  // CLAN_MAX_MEMBERS. Принять её и оставить в очереди — значит показать лидеру
+  // кнопку, которая не сработает; ровно на этом три лидера кланов 30/30
+  // нажимали «Принять» по девять раз подряд.
+  const { rows: cnt } = await query(db,
+    'SELECT count(*)::int c FROM clan_members WHERE clan_id = $1', [clanId]);
+  if (cnt[0].c >= CLAN_MAX_MEMBERS) {
+    err('full', `У клані вже ${CLAN_MAX_MEMBERS} учасників — місць немає`);
+  }
   await query(db, `
     INSERT INTO clan_applications (clan_id, player_id) VALUES ($1, $2)
     ON CONFLICT DO NOTHING`, [clanId, playerId]);

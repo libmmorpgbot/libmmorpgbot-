@@ -173,6 +173,15 @@ function compute(row) {
   a += cx.atk || 0; d += cx.def || 0; h += cx.hp || 0;
 
   let extraCrit = 0, extraAS = 0, hpPct = 0, skillPct = 0;
+  // ── три поля, которых раньше не было ──────────────────────────────────────
+  // atkPct множит атаку (эпический питомец Вилорд: «Атака 30%»), speedPct —
+  // скорость бега (крылья), critPowerAdd — силу крита (Грут). Складываются
+  // как проценты и применяются ПОСЛЕ всех плоских прибавок, иначе порядок
+  // слагаемых решал бы, сколько получится.
+  let atkPct = 0, speedPct = 0, critPowerAdd = 0;
+  // Не сила, а добыча: в атаку и защиту не идут, но считаются здесь — иначе
+  // путь награды лез бы в инвентарь заново на каждое убийство.
+  let xpPct = 0, dropPct = 0;
   for (const it of (row.equipped || [])) {
     const base = _byId.get(it.id);
     if (!base) continue;                        // retired id — contributes nothing
@@ -184,7 +193,14 @@ function compute(row) {
     if (base.atkSpeed)   extraAS   += base.atkSpeed;
     if (base.hpPct)      hpPct     += base.hpPct;
     if (base.skillPct)   skillPct  += base.skillPct;
+    if (base.atkPct)     atkPct    += base.atkPct;
+    if (base.speedPct)   speedPct  += base.speedPct;
+    if (base.critPower)  critPowerAdd += base.critPower;
+    if (base.xpPct)      xpPct     += base.xpPct;
+    if (base.dropPct)    dropPct   += base.dropPct;
   }
+  // Проценты — после всех плоских прибавок и после кодекса.
+  if (atkPct) a = Math.floor(a * (1 + atkPct));
 
   // The RESOLVED class, not the raw column — see the note at the top of this
   // function. passivesForClass spreads `PASSIVE_CLASS_DEF[cls] || []`, and a
@@ -230,11 +246,18 @@ function compute(row) {
     // Capped at 0.80 like recompute(): without it, enough crit gear makes every
     // hit a crit and the stat stops meaning anything.
     critChance: Math.min(0.80, 0.05 + lvl * 0.004 + row.upg_crit_chance * 0.01 + extraCrit),
-    critPower:  1.5 + lvl * 0.015 + row.upg_crit_power * 0.03 + pt.critPowerFlat,
+    critPower:  1.5 + lvl * 0.015 + row.upg_crit_power * 0.03 + pt.critPowerFlat + critPowerAdd,
     atkSpeed:   (cd.atkSpeed || 0) * (1 + lvl * 0.015) + row.upg_atk_speed * 0.05 + extraAS,
     hpRegen:    lvl * 0.02 + row.upg_hp_regen * 0.1 + pt.hpRegenFlat + regenBuff,
-    moveSpeed:  (cd.speed || 0) * (1 + pt.moveSpeedPct),
+    // Крылья — единственный слот, который двигает скорость бега. Считается
+    // здесь, потому что от неё зависит, догонит ли игрока моб: это знание
+    // комнаты, а не украшение в панели.
+    moveSpeed:  (cd.speed || 0) * (1 + pt.moveSpeedPct + speedPct),
     skillPct,
+    // Проценты добычи — в процентах, как VIP и клан рядом с ними в пути
+    // награды: 0.20 здесь становится 20 там, и складывается с прочими.
+    gearXpPct:   Math.round(xpPct * 100),
+    gearDropPct: Math.round(dropPct * 100),
     // Not stats — but they ride with them, because everything that refreshes a
     // player's numbers is also the moment their skills should reach the Room.
     skillLevels: row.skill_levels || {},

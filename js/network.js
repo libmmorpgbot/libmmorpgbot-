@@ -1862,15 +1862,17 @@ function netConnect(onReady) {
     // balance should be.
     if (gold && player) dmgNum(px, py - 36, '+' + gold + 'g', '#ffd23f');
     if (player && Number.isFinite(goldTotal)) player.gold = goldTotal;
-    if (nexum && player) {
-      window._nexumBalance = (window._nexumBalance || 0) + nexum;
-      player.nexumBalance = window._nexumBalance;
-      dmgNum(px, py - 52, '+' + nexum + ' Liberty', '#ffe9a8');
-    }
-    if (gram && player) {
-      window._gramBalance = (window._gramBalance || 0) + gram;
-      dmgNum(px, py - 68, '+' + gram.toFixed(7) + ' GRAM', '#4fd67a');
-    }
+    // ── ТОЛЬКО надпись над трупом, без арифметики ────────────────────────
+    // Баланс уже пришёл ЦЕЛИКОМ: pushBalances шлёт 'nexumBalanceUpdate' и
+    // 'gramBalanceUpdate' с числом из базы прямо перед этим пакетом, и оба
+    // обработчика кладут его как есть. Прибавляя здесь ещё раз, экран
+    // показывал +2 за одну выпавшую Liberty, а следующее убийство «отнимало»
+    // лишнюю единицу: «падает 2 и при следующем убийстве отнимает 1».
+    //
+    // Ту же поломку в этом файле уже убрали дважды — из arena3Result и
+    // race10Result. Здесь она дожила до сих пор.
+    if (nexum && player) dmgNum(px, py - 52, '+' + nexum + ' Liberty', '#ffe9a8');
+    if (gram && player) dmgNum(px, py - 68, '+' + gram.toFixed(7) + ' GRAM', '#4fd67a');
   });
 
   // Enemies that left the room without dying on screen — currently only
@@ -4100,6 +4102,12 @@ function netCraftClassGear(slot, rarity) {
   if (socket?.connected) socket.emit('craftClassGear', { slot, rarity });
 }
 
+// Смена класса. Платная, поэтому целиком серверная: клиент только просит, а
+// что стало с классом, снаряжением и балансом — узнаёт из ответа.
+function netChangeClass(type) {
+  if (socket?.connected) socket.emit('changeClass', { type });
+}
+
 // Charged in Liberty, so the server does the whole thing and answers with
 // 'upgradesReset' — see the handler above.
 function netResetUpgrades() {
@@ -5145,6 +5153,23 @@ function _initPetCraftHandlers(s) {
   // petCrafted above: inventorySync (mats removed + item added) normally
   // lands before this event on the same socket, so `delivered` is mostly a
   // defensive fallback for the rare case the grant itself couldn't land.
+  s.on('classChanged', ({ from, to, unequipped, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (player) {
+      player.nexumBalance = newNexumBalance;
+      player.type = to;
+      // Навыки сброшены сервером — клиентская копия обязана исчезнуть вместе с
+      // ними, иначе панель до перезахода показывает умения чужого класса.
+      player.skillLevels = {};
+      player.advSkillLearned = {};
+      player.advSkillActive = {};
+    }
+    if (typeof onClassChanged === 'function') onClassChanged(from, to, unequipped);
+  });
+  s.on('classChangeError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || 'Не удалось сменить класс', 'err');
+  });
+
   s.on('classGearCrafted', ({ item, newNexumBalance, delivered }) => {
     window._nexumBalance = newNexumBalance;
     if (player) player.nexumBalance = newNexumBalance;

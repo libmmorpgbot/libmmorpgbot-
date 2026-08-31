@@ -470,6 +470,29 @@ function _craftsmanMatsTab() {
     html += '</div>';
   }
 
+  // ── Крылья ──────────────────────────────────────────────────────────────
+  // Единственная вещь в игре, у которой все пять редкостей — одна и та же
+  // вещь, а не пять разных по классам. Поэтому и раздел свой: в «Плащи и
+  // артефакты классов» она не поместилась бы ни по смыслу, ни по форме.
+  if (typeof WINGS_CRAFT_RECIPES !== 'undefined' && WINGS_CRAFT_RECIPES.length) {
+    const nexumBal = window._nexumBalance || 0;
+    html += `<div class="craft-group-hdr" style="color:#7fb0d8">${typeof t === 'function' ? t('craftWingsHdr') : 'Крылья'}</div><div class="craft-items-grid">`;
+    WINGS_CRAFT_RECIPES.forEach((rec) => {
+      const def = ITEM_DEF.find(d => d.id === rec.itemId);
+      if (!def) return;
+      const rc = RARITY_COLOR[def.rarity] || '#aea599';
+      const need = rec.mats[0];
+      const canCraft = invHasSpace()
+        && _wingsMatCount(need.rarity) >= need.n
+        && nexumBal >= (rec.nexumCost || 0);
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openWingsCraftModal('${rec.itemId}')" style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[def.rarity] || def.rarity}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
   if (typeof CLASS_GEAR_SALVAGE_RECIPES !== 'undefined' && CLASS_GEAR_SALVAGE_RECIPES.length) {
     const nexumBal = window._nexumBalance || 0;
     html += `<div class="craft-group-hdr" style="color:#c98a4b">${typeof t === 'function' ? t('craftClassGearHdr') : 'Плащи и артефакты классов'}</div><div class="craft-items-grid">`;
@@ -477,7 +500,12 @@ function _craftsmanMatsTab() {
       const pool = _classGearOfRarity(rec.resultSlot, rec.resultRarity);
       if (!pool.length) return;
       const rc = RARITY_COLOR[rec.resultRarity] || '#aea599';
-      const canCraft = _salvageMatCount(rec.costRarity) >= rec.costCount && nexumBal >= (rec.nexumCost || 0);
+      // Оба яруса, а не первый: у редких рецептов есть `extra` («ещё 5
+      // редких»), и без него ячейка светилась бы «можно ковать», пока сервер
+      // отказывает. Обещать кнопкой то, чего не будет, — худший вид отказа.
+      const canCraft = _salvageMatCount(rec.costRarity) >= rec.costCount
+        && (!rec.extra || _salvageMatCount(rec.extra.rarity) >= rec.extra.count)
+        && nexumBal >= (rec.nexumCost || 0);
       const label = (rec.resultSlot === 'cloak' ? (_SLOT_NAMES.cloak || 'Плащ') : (_SLOT_NAMES.artifact || 'Артефакт'))
         + ' · ' + (_RARITY_NAMES[rec.resultRarity] || rec.resultRarity);
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openClassGearCraftModal(${idx})" style="border-color:${rc}66">
@@ -505,7 +533,82 @@ function _salvageMatCount(rarity) {
   return player.inventory.filter(it => !_isStackable(it) && it.rarity === rarity).length;
 }
 
+// ── и то же самое, но по правилам крыльев ──────────────────────────────────
+// Крылья считают ТОЛЬКО снаряжение из семи слотов, которое падает с мобов:
+// плащ, артефакт, питомец и другие крылья в цену не входят и не тратятся (см.
+// CRAFT_ANY_GEAR_SLOTS и _takeAnyRarity в server/db/repos/craft.js).
+//
+// Считать здесь по-другому значило бы светить кнопку «можно ковать» там, где
+// сервер откажет: у человека двадцать пять редких вещей, из них три плаща —
+// на экране хватает, на деле нет.
+function _wingsMatCount(rarity) {
+  const slots = (typeof CRAFT_ANY_GEAR_SLOTS !== 'undefined')
+    ? CRAFT_ANY_GEAR_SLOTS : ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+  return player.inventory.filter(it => it.rarity === rarity && slots.includes(it.slot)).length;
+}
+
 let _pendingClassGearCraftIdx = null; // recipe idx awaiting a server response
+
+// ── Крылья: своя модалка ────────────────────────────────────────────────────
+// Отличие от классовых вещей в одном, но важном: там из пяти классовых вещей
+// приходит СЛУЧАЙНАЯ, а здесь предмет ровно один и известен до нажатия.
+// Показывать «один случайный из 5» там, где случайности нет, значило бы
+// пугать игрока на ровном месте.
+function openWingsCraftModal(itemId) {
+  const rec = (typeof WINGS_CRAFT_RECIPES !== 'undefined')
+    ? WINGS_CRAFT_RECIPES.find(r => r.itemId === itemId) : null;
+  const def = rec && ITEM_DEF.find(d => d.id === rec.itemId);
+  if (!rec || !def || !player) return;
+
+  const rc = RARITY_COLOR[def.rarity] || '#aea599';
+  const need = rec.mats[0];
+  const have = _wingsMatCount(need.rarity);
+  const okMats = have >= need.n;
+  const nexumBal = window._nexumBalance || 0;
+  const okNexum = nexumBal >= (rec.nexumCost || 0);
+  const okRoom = invHasSpace();
+  const can = okMats && okNexum && okRoom;
+
+  const costRow = `<div class="craft-req-row">
+    <span class="craft-req-icon">${iconHTML('inventory', 20, RARITY_COLOR[need.rarity] || rc)}</span>
+    <span class="craft-req-name">${(_RARITY_NAMES[need.rarity] || need.rarity)} предмет</span>
+    <span class="craft-req-count" style="color:${okMats ? '#98e456' : '#eb4e61'}">${have}/${need.n}</span>
+  </div>
+  <div class="craft-req-row">
+    <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
+    <span class="craft-req-name">Liberty</span>
+    <span class="craft-req-count" style="color:${okNexum ? '#98e456' : '#eb4e61'}">${nexumBal}/${rec.nexumCost}</span>
+  </div>`;
+
+  const canCraft = can && _pendingWingsCraft !== rec.itemId;
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-icon">${_itemIcon(def, 56)}</div>
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${def.name} · ${_RARITY_NAMES[def.rarity] || def.rarity}</div>
+        <div class="craft-detail-stats">${statStr(def)}</div>
+      </div>
+    </div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
+    <div class="craft-reqs-list">${costRow}</div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftWings('${rec.itemId}')">${_pendingWingsCraft === rec.itemId ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
+  `;
+}
+
+// Ждём ответа сервера — точно так же, как соседний крафт.
+let _pendingWingsCraft = null;
+function craftWings(itemId) {
+  const rec = WINGS_CRAFT_RECIPES.find(r => r.itemId === itemId);
+  if (!rec || !player || _pendingWingsCraft) return;
+  if (!netIsLive()) { _shopMsg(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером'); return; }
+  const need = rec.mats[0];
+  if (_wingsMatCount(need.rarity) < need.n) { _shopMsg('Недостаточно предметов!'); return; }
+  if ((window._nexumBalance || 0) < (rec.nexumCost || 0)) { _shopMsg('Недостаточно Liberty!'); return; }
+  _pendingWingsCraft = itemId;
+  openWingsCraftModal(itemId);
+  netCraftGear(itemId);
+}
 
 function openClassGearCraftModal(idx) {
   const rec = CLASS_GEAR_SALVAGE_RECIPES[idx];
@@ -527,21 +630,33 @@ function openClassGearCraftModal(idx) {
 
   const previewHtml = `<div class="pet-preview-hint">${typeof t === 'function' ? t('craftPetTapHint') : 'Нажмите на предмет — характеристики'}</div>`;
 
-  const matLabel = rec.costRarity === 'uncommon'
-    ? (typeof t === 'function' ? t('craftUncommonItemLbl') : 'Необычный предмет')
-    : (typeof t === 'function' ? t('craftCommonItemLbl') : 'Обычный предмет');
+  // Имя яруса — из общей таблицы редкостей, а не из двух заранее известных
+  // вариантов: с появлением редкого рецепта их стало три, и `? :` на два
+  // случая молча подписал бы «Обычный предмет» под редким.
+  const _matLabel = (r) => (_RARITY_NAMES[r] || r) + ' предмет';
+  const matLabel = _matLabel(rec.costRarity);
+  // Второй ярус цены — только у редких рецептов. Считается и показывается
+  // отдельной строкой: «нужно ещё 5 редких» игрок должен видеть ДО нажатия.
+  const haveExtra = rec.extra ? _salvageMatCount(rec.extra.rarity) : 0;
+  const okExtra = !rec.extra || haveExtra >= rec.extra.count;
+  const extraRow = rec.extra ? `<div class="craft-req-row">
+    <span class="craft-req-icon">${iconHTML('inventory', 20, RARITY_COLOR[rec.extra.rarity] || rc)}</span>
+    <span class="craft-req-name">${_matLabel(rec.extra.rarity)}</span>
+    <span class="craft-req-count" style="color:${okExtra ? '#98e456' : '#eb4e61'}">${haveExtra}/${rec.extra.count}</span>
+  </div>` : '';
   const costRow = `<div class="craft-req-row">
     <span class="craft-req-icon">${iconHTML('inventory', 20, rc)}</span>
     <span class="craft-req-name">${matLabel}</span>
     <span class="craft-req-count" style="color:${okMats ? '#98e456' : '#eb4e61'}">${have}/${rec.costCount}</span>
   </div>
+  ${extraRow}
   <div class="craft-req-row">
     <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
     <span class="craft-req-name">Liberty</span>
     <span class="craft-req-count" style="color:${okNexum ? '#98e456' : '#eb4e61'}">${nexumBal}/${rec.nexumCost}</span>
   </div>`;
 
-  const canCraft = !pending && okMats && okNexum;
+  const canCraft = !pending && okMats && okExtra && okNexum;
   const pickOneOfN = typeof tVars === 'function' ? tVars('craftPickOneOfN', { n: pool.length }) : `Один случайный из ${pool.length}`;
 
   document.getElementById('npc-body').innerHTML = `
@@ -640,6 +755,9 @@ let _pendingGearCraftIdx = null;
 function onGearCrafted(itemId, success) {
   const idx = _pendingGearCraftIdx;
   _pendingGearCraftIdx = null;
+  // Крылья идут этим же событием (netCraftGear), значит и ожидание снимается
+  // здесь — иначе кнопка осталась бы серой до перезахода.
+  if (_pendingWingsCraft === itemId) { _pendingWingsCraft = null; openWingsCraftModal(itemId); }
   const item = ITEM_DEF.find(i => i.id === itemId);
   if (typeof updateInvUI === 'function') updateInvUI();
   _shopMsg(success

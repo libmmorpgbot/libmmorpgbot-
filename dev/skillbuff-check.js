@@ -169,27 +169,16 @@ console.log('\n  ── замок гильдий ──');
   ok(src.includes('nowInGw !== !!p._guildWarZone || p.pvpMode !== nowInGw'),
     'и он подтверждается каждый тик, а не только на границе');
 
-  // Вход — в случайную точку кольца. Спрашивается через Room.spawnPointFor,
-  // потому что случайность живёт там: на самой карте это был бы геттер, а
-  // геттер вызывающие читают дважды (.x и .y) и получают координаты от РАЗНЫХ
-  // точек. Первый заход именно так и сделал — проверка поймала: 23 разных
-  // пары из восьми точек.
-  const dg = require(path.join(ROOT, 'server/game/dungeon.js'));
-  const map = dg.generateGuildWar();
-  const gwRoom = { _dungeon: map, spawnPointFor: R.spawnPointFor };
-  const seen = new Set();
-  for (let i = 0; i < 200; i++) {
-    const sp = gwRoom.spawnPointFor();
-    seen.add(Math.round(sp.x) + ',' + Math.round(sp.y));
-  }
-  ok(seen.size === map.guildWar.spawns.length,
-    `вход в замок — во все точки кольца (${seen.size} из ${map.guildWar.spawns.length})`);
-  // И каждая пара — НАСТОЯЩАЯ точка кольца, а не смесь двух.
-  const real = new Set(map.guildWar.spawns.map(p2 => Math.round(p2.x) + ',' + Math.round(p2.y)));
-  ok([...seen].every(k => real.has(k)), 'и каждая — целая точка, а не x от одной и y от другой');
-  // Обычный этаж случайности не получает: там точка входа одна и она у двери.
-  const hub = { _dungeon: dg.generateHub(), spawnPointFor: R.spawnPointFor };
-  ok(hub.spawnPointFor() === hub._dungeon.spawn, 'на обычном этаже вход прежний');
+  // ── точка входа в замок переехала в dev/spawn-check.js ─────────────────
+  // Здесь стояло утверждение «вход — во все восемь точек кольца». Оно было
+  // верным и стало неверным: восемь точек это 0.22% этажа, их выучили и у них
+  // встали («один тіп крисить і вбиває»). Теперь вход — любая проходимая
+  // плитка карты, и проверяется это там, где можно построить настоящую
+  // комнату, а не заглушку из двух полей.
+  //
+  // Строка остаётся, чтобы следующий читатель не искал пропавшую проверку.
+  ok(typeof R.randomStandPoint === 'function',
+    'случайная точка входа живёт в комнате (подробности — dev/spawn-check.js)');
 }
 
 console.log('');

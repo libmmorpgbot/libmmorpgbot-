@@ -1153,13 +1153,25 @@ function onClanError(msg) {
   }
   const errEl = document.getElementById('clan-create-err');
   if (errEl) { errEl.textContent = msg; return; }
+  // ── отказ должен попасться на глаза ──────────────────────────────────────
+  // Заявки рисуются ПОСЛЕ списка участников, поэтому у полного клана (30
+  // строк) лидер, нажимая «Принять», прокручен вниз. Сообщение вставлялось на
+  // самый верх — за пределами экрана — и стиралось через три секунды. Отказ
+  // был, следа для человека не было: девять нажатий подряд в журнале.
+  //
+  // Сначала общий тост, если он есть: он всплывает поверх экрана и не зависит
+  // от того, куда прокручена панель.
+  if (typeof _marketToast === 'function') { _marketToast(msg, 'err'); return; }
   const body = document.getElementById('clan-body');
   if (body) {
     const d = document.createElement('div');
     d.className = 'clan-err';
     d.textContent = msg;
     body.prepend(d);
-    setTimeout(() => d.remove(), 3000);
+    // И если тоста нет — хотя бы подвести к нему экран, а не оставлять
+    // сообщение там, куда человек не смотрит.
+    if (d.scrollIntoView) d.scrollIntoView({ block: 'nearest' });
+    setTimeout(() => d.remove(), 5000);
   }
 }
 

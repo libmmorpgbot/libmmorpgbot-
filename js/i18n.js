@@ -492,6 +492,7 @@ const I18N_UI = {
   craftAdvBooksHdr: { ru: 'Книги 2 профессии', en: 'Advanced skill books', uk: 'Книги 2 професії', es: 'Libros de 2ª profesión', tr: '2. Meslek Kitapları', pt: 'Livros da 2ª profissão' },
   craftAdvBookRandom: { ru: 'Случайная книга', en: 'Random book', uk: 'Випадкова книга', es: 'Libro aleatorio', tr: 'Rastgele kitap', pt: 'Livro aleatório' },
   craftAnySkillBook: { ru: 'Любые книги навыков', en: 'Any skill books', uk: 'Будь-які книги навичок', es: 'Cualquier libro de habilidad', tr: 'Herhangi bir yetenek kitabı', pt: 'Quaisquer livros de habilidade' },
+  craftWingsHdr:    { ru: 'Крылья', en: 'Wings', uk: 'Крила', es: 'Alas', tr: 'Kanatlar', pt: 'Asas' },
   craftPetsHdr:     { ru: 'Питомцы', en: 'Pets', uk: 'Улюбленці', es: 'Mascotas', tr: 'Evcil Hayvanlar', pt: 'Mascotes' },
   craftClassGearHdr: { ru: 'Плащи и артефакты классов', en: 'Class Cloaks & Artifacts', uk: 'Плащі та артефакти класів', es: 'Capas y Artefactos de Clase', tr: 'Sınıf Pelerinleri ve Eserleri', pt: 'Capas e Artefatos de Classe' },
   craftPetPickOneOf: { ru: 'Один случайный из 3', en: 'One random of 3', uk: 'Один випадковий з 3', es: 'Uno al azar de 3', tr: '3 üzerinden rastgele biri', pt: 'Um aleatório entre 3' },

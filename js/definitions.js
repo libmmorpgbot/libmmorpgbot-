@@ -68,6 +68,7 @@ const EQ_SLOTS = [
   { slot:'belt',     label:'Пояс',    emptyIcon:'belt'     },
   { slot:'pet',      label:'Питомец', emptyIcon:'pet'      },
   { slot:'artifact', label:'Артефакт',emptyIcon:'artifact' },
+  { slot:'wings',    label:'Крылья',  emptyIcon:'wings'    },
 ];
 
 // icon = SVG fallback (js/icons.js); img = the real skill artwork from

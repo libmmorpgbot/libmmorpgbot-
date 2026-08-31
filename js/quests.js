@@ -262,7 +262,10 @@ function onSpecialQuestDone(questId, reward, alreadyDone) {
   if (!alreadyDone) {
     // The balance arrives as a total via goldSync; this is display only.
     // Level state arrives via xpSync.
-    if (reward.nexum) window._nexumBalance = (window._nexumBalance || 0) + reward.nexum;
+    // Баланс приходит от сервера отдельным пакетом (pushBalances идёт прямо
+    // перед этим событием и уезжает одним flush'ем). Прибавлять здесь — тот же
+    // двойной счёт, что убран из пакета убийства: экран уходил вперёд, а
+    // следующая синхронизация возвращала правду и выглядела как отъём.
   }
   if (_activeQuestTab === 'special') updateSpecialQuestUI();
   if (!alreadyDone) {

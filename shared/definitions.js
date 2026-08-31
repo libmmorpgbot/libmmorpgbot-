@@ -1055,6 +1055,16 @@ const ITEM_DEF = [
   { id:'cloak_u_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, forClass:['ranger'],      img:'/images/cloak/ranger_u.png',      hp:150, atk:13, def:20, rarity:'uncommon' },
   { id:'cloak_u_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, forClass:['mage'],        img:'/images/cloak/mage_u.png',        hp:150, atk:13, def:20, rarity:'uncommon' },
   { id:'cloak_u_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, forClass:['warlock'],     img:'/images/cloak/warlock_u.png',     hp:150, atk:13, def:20, rarity:'uncommon' },
+  // ── редкие плащи ────────────────────────────────────────────────────────
+  // Втрое больше статов, чем у необычного, плюс два процентных бонуса,
+  // которых нет ни у одного другого слота: опыт и шанс выпадения предметов.
+  // Оба считаются там же, где VIP-бонусы — в пути награды за убийство, а не в
+  // характеристиках персонажа: это не сила, это добыча.
+  { id:'cloak_r_lev',         name:'Плащ танка',          slot:'cloak', classItem:true, forClass:['lev'],         img:'/images/cloak/lev_r.png',         hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'cloak_r_deathknight', name:'Плащ рыцаря смерти',  slot:'cloak', classItem:true, forClass:['deathknight'], img:'/images/cloak/deathknight_r.png', hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'cloak_r_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, forClass:['ranger'],      img:'/images/cloak/ranger_r.png',      hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'cloak_r_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, forClass:['mage'],        img:'/images/cloak/mage_r.png',        hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'cloak_r_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, forClass:['warlock'],     img:'/images/cloak/warlock_r.png',     hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   { id:'artifact_c_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, forClass:['lev'],         img:'/images/artifact/lev.png',         hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_c_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, forClass:['deathknight'], img:'/images/artifact/deathknight.png', hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_c_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger.png',      hp:75,  atk:10, def:5,  rarity:'common'   },
@@ -1065,6 +1075,15 @@ const ITEM_DEF = [
   { id:'artifact_u_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger.png',      hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage.png',        hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock.png',     hp:150, atk:23, def:10, rarity:'uncommon' },
+  // ── редкие артефакты ────────────────────────────────────────────────────
+  // Втрое больше статов, чем у необычного, и та же пара процентных бонусов,
+  // что у редкого плаща. Надеть можно и то и другое: тогда бонусы
+  // складываются в +40% к опыту и +40% к шансу выпадения — так и задумано.
+  { id:'artifact_r_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, forClass:['lev'],         img:'/images/artifact/lev_r.png',         hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, forClass:['deathknight'], img:'/images/artifact/deathknight_r.png', hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger_r.png',      hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage_r.png',        hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock_r.png',     hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   // ── Pets ─────────────────────────────────────────────────
   // Own equip slot (EQ_SLOTS 'pet', js/definitions.js), crafted at the forge
   // for Liberty/Nexum (PET_CRAFT_RECIPES below) — not a mob/box drop. Base
@@ -1080,6 +1099,27 @@ const ITEM_DEF = [
   { id:'pet_bonessa', name:'Бонесса',  slot:'pet', img:'/images/pet/pet_bonessa/icon.png', hp:550, atk:45, def:35, critChance:0.25, rarity:'rare'     },
   { id:'pet_cyclops', name:'Циклоп',   slot:'pet', img:'/images/pet/pet_cyclops/icon.png', hp:550, atk:45, def:35, hpPct:0.40,      rarity:'rare'     },
   { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:550, atk:45, def:35, atkSpeed:0.25,   rarity:'rare'     },
+  // ── эпические ───────────────────────────────────────────────────────────
+  // Одинаковая основа (100/100/1200 и +10% опыта) и по одному собственному
+  // бонусу на каждого — тот же принцип, что у трёх предыдущих ярусов, только
+  // бонус крупнее. atkPct у Вилорда МНОЖИТ атаку, а не прибавляет к ней:
+  // «Атака 30%» из задания.
+  { id:'pet_groot',   name:'Грут',     slot:'pet', img:'/images/pet/pet_groot/icon.png',   hp:1200, atk:100, def:100, xpPct:0.10, critPower:0.30, rarity:'epic' },
+  { id:'pet_nerb',    name:'Нёрб',     slot:'pet', img:'/images/pet/pet_nerb/icon.png',    hp:1200, atk:100, def:100, xpPct:0.10, atkSpeed:0.30,  rarity:'epic' },
+  { id:'pet_vilord',  name:'Вилорд',   slot:'pet', img:'/images/pet/pet_vilord/icon.png',  hp:1200, atk:100, def:100, xpPct:0.10, atkPct:0.30,    rarity:'epic' },
+
+  // ── Крылья ──────────────────────────────────────────────────────────────
+  // Новый слот, одиннадцатый. Единственный, где растёт СКОРОСТЬ БЕГА, и
+  // единственный, где вещь одна на все классы, а не пять разных.
+  //
+  // Скорость — не косметика: её знает комната (Room), потому что от неё
+  // зависит, догонит ли игрока моб. Поэтому speedPct считается на сервере
+  // вместе с остальными характеристиками, а не рисуется клиентом.
+  { id:'wing_c', name:'Крылья',           slot:'wings', img:'/images/wings/common.png',    atk:5,   def:5,   speedPct:0.10, rarity:'common'    },
+  { id:'wing_u', name:'Крылья',           slot:'wings', img:'/images/wings/uncommon.png',  atk:10,  def:10,  speedPct:0.20, rarity:'uncommon'  },
+  { id:'wing_r', name:'Крылья',           slot:'wings', img:'/images/wings/rare.png',      atk:20,  def:20,  speedPct:0.40, rarity:'rare'      },
+  { id:'wing_e', name:'Крылья',           slot:'wings', img:'/images/wings/epic.png',      atk:40,  def:40,  hp:500,  speedPct:0.50, xpPct:0.10, rarity:'epic' },
+  { id:'wing_l', name:'Крылья',           slot:'wings', img:'/images/wings/legendary.png', atk:100, def:100, hp:1000, speedPct:0.70, xpPct:0.20, dropPct:0.20, rarity:'legendary' },
   // ── HP Potions ────────────────────────────────────────────
   { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
   { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:500, rarity:'uncommon' },
@@ -1176,6 +1216,12 @@ const FARM_SHARD_CHANCE = 0.001;
 // its own reference list of what's actually in the zone (see
 // _liveFarmEnemy/_farmZoneMonsterListHtml, js/ui.js) the same way
 // ARM_OFFSETS/FLOOR_ENEMIES already serve the regular bestiary.
+// Liberty из обычной Фарм-зоны. Её не было ни здесь, ни в пути награды: там
+// стоял жёсткий ноль, и зона на 21-30 уровнях платила Liberty меньше, чем
+// коридор тех же уровней (NEXUM_DROP_CHANCE[2] = 1%). Ровно столько же,
+// сколько коридор: зона даёт больше опыта и материалов, и переплачивать ей
+// ещё и валютой незачем.
+const FARM_LIBERTY_CHANCE = 1 / 100;
 const FARM_LVL_MIN = 21;
 const FARM_LVL_MAX = 30;
 const FARM_MOBS_PER_ROOM = 20;
@@ -1316,7 +1362,11 @@ const FARM2_SPECIES = FARM_SPECIES;
 // FARM_EPIC_RECIPE_CHANCE above. Liberty is not part of this table — it is
 // currency (nexum), rolled and granted the same way COOP_LIBERTY_CHANCE is
 // (see the attack/skillAttack handlers, server/index.js).
-const FARM2_LIBERTY_CHANCE          = 0.1 / 100;
+// 3% за убийство. Было 0.1% — вдесятеро МЕНЬШЕ открытого коридора тех же
+// уровней (NEXUM_DROP_CHANCE[3] = 2%), при том что зона сложнее, ограничена
+// двумя часами в сутки и требует группу. Панель дропа печатает именно это
+// число, так что на экране и в броске оно теперь одно и то же.
+const FARM2_LIBERTY_CHANCE          = 3 / 100;
 const FARM2_BOX_RARE_CHANCE         = 0.0001 / 100;
 const FARM2_BOX_UNCOMMON_CHANCE     = 0.001 / 100;
 const FARM2_NORM_STONE_CHANCE       = 0.03 / 100;
@@ -1471,10 +1521,42 @@ const MAT_UPGRADE_RECIPES = [
 // index.js, which rolls this itself the same way craftMatUpgrade does.
 const ADV_SKILL_BOOK_CRAFT = { count: 10, chance: 0.30 };
 
+// ── Рецепты нового снаряжения ───────────────────────────────────────────────
+// Здесь появляется ингредиент, которого у проекта раньше не было: «любые N
+// предметов такой-то редкости» вместо конкретного id. Задание требует именно
+// его — «50 необычных предметов, 5 рар предметов», — и без него пришлось бы
+// перечислять пятьдесят рецептов на каждую комбинацию.
+//
+// Что считается «предметом»: только СНАРЯЖЕНИЕ из семи слотов, которое падает
+// с мобов. Плащи, артефакты, питомцы и крылья не считаются и не тратятся —
+// иначе крылья можно было бы собрать, скормив им редкий плащ, и игрок узнал
+// бы об этом уже после нажатия. Материалы, зелья и книги тоже не в счёт.
+//
+// Порядок расхода задан жёстко (см. server/db/repos/craft.js): сперва самые
+// незаточенные, потом самые старые. Съесть чей-то +9 меч ради плаща — это то,
+// за что не прощают, и правило существует ровно поэтому.
+const CRAFT_ANY_GEAR_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+
+// Плащи и артефакты редкого яруса СВОЕЙ семьи не имеют: они идут теми же двумя
+// строками CLASS_GEAR_SALVAGE_RECIPES выше, что и common с uncommon. Заводить
+// им отдельный путь значило бы иметь две реализации одного и того же — с
+// отдельной панелью, отдельной проверкой класса и отдельным способом разойтись.
+
+// Крылья: пять ярусов, цена растёт вместе с бонусом. Только редкие предметы —
+// на этом ярусе они уже валюта, а не находка.
+const WINGS_CRAFT_RECIPES = [
+  { itemId: 'wing_c', mats: [{ rarity: 'rare', n: 5  }], chance: 1.0, nexumCost: 2000   },
+  { itemId: 'wing_u', mats: [{ rarity: 'rare', n: 15 }], chance: 1.0, nexumCost: 5000   },
+  { itemId: 'wing_r', mats: [{ rarity: 'rare', n: 25 }], chance: 1.0, nexumCost: 15000  },
+  { itemId: 'wing_e', mats: [{ rarity: 'rare', n: 35 }], chance: 1.0, nexumCost: 50000  },
+  { itemId: 'wing_l', mats: [{ rarity: 'rare', n: 50 }], chance: 1.0, nexumCost: 100000 },
+];
+
 const PET_CRAFT_RECIPES = [
   { rarity:'common',   nexumCost:500,  chance:1.0 },
   { rarity:'uncommon', nexumCost:2000, chance:1.0 },
   { rarity:'rare',     nexumCost:5000, chance:1.0 },
+  { rarity:'epic',     nexumCost:30000, chance:1.0 },
 ];
 
 // Class cloaks & artifacts: salvage junk gear of a rarity into one random
@@ -1484,16 +1566,34 @@ const PET_CRAFT_RECIPES = [
 // gold/mats recipe — the whole exchange (material count check + Liberty
 // charge + item grant) has to happen server-side; the client only shows this
 // table and waits for the result.
+// `extra` — второй ярус цены, которого у прежних рецептов не было. Редкий
+// плащ стоит «50 необычных И 5 редких», и одного costRarity для этого мало.
+// Поле необязательное: четыре первых рецепта его не имеют и работают как прежде.
 const CLASS_GEAR_SALVAGE_RECIPES = [
   { resultSlot:'cloak',    resultRarity:'common',   costRarity:'common',   costCount:30, nexumCost:300  },
   { resultSlot:'cloak',    resultRarity:'uncommon', costRarity:'uncommon', costCount:20, nexumCost:1500 },
   { resultSlot:'artifact', resultRarity:'common',   costRarity:'common',   costCount:30, nexumCost:300  },
   { resultSlot:'artifact', resultRarity:'uncommon', costRarity:'uncommon', costCount:20, nexumCost:1500 },
+  { resultSlot:'cloak',    resultRarity:'rare',     costRarity:'uncommon', costCount:50, nexumCost:7000,
+    extra: { rarity:'rare', count:5 } },
+  { resultSlot:'artifact', resultRarity:'rare',     costRarity:'uncommon', costCount:50, nexumCost:7000,
+    extra: { rarity:'rare', count:5 } },
 ];
 
 // Clan membership cap. Enforced server-side in clanApprove; the client
 // renders it next to the member count so a leader can see how full the
 // clan is before approving an application.
+// ── смена класса ────────────────────────────────────────────────────────────
+// Цена в Liberty. Числа в задании не было — взято между питомцем редкого яруса
+// (5 000) и эпического (30 000): смена класса дороже разовой покупки, но не
+// заперта за неделей фарма. Меняется одной строкой.
+//
+// Что происходит при смене — целиком в players.changeClass:
+//   снаряжение чужого класса снимается в инвентарь (не пропадает);
+//   изученные навыки сбрасываются, очки возвращаются (они считаются от уровня);
+//   уровень, опыт, вещи, валюта, клан и сезон не трогаются.
+const CLASS_CHANGE_COST = 15000;
+
 const CLAN_MAX_MEMBERS = 30;
 
 // Clan description cap. Enforced server-side in clanSetDescription; the
@@ -1722,6 +1822,11 @@ function codexTotalBonus(progress) {
     total.def += set.bonus.def || 0;
     total.hp  += set.bonus.hp  || 0;
   });
+  // Тот же один знак, которым выше уже чистится бонус ОДНОГО набора.
+  // Слагаемые дробные, и сумма трёх наборов приезжала в панель как
+  // «+0.6000000000000001 АТК».
+  total.atk = Math.round(total.atk * 10) / 10;
+  total.def = Math.round(total.def * 10) / 10;
   return total;
 }
 
@@ -2539,13 +2644,14 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
   FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
-  FARM2_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
+  FARM2_LIBERTY_CHANCE, FARM_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
+  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, CLASS_CHANGE_COST,
   craftResultEnhance,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
+  CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES,
   xpAfterDeathPenalty,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
   dropLevelGapDivisor,

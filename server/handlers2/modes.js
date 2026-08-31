@@ -569,7 +569,9 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
         // (nonexistent) reachability gate, not bypassing anything that still
         // needs checking.
         const fearRoom = _createFearRoom();
-        if (!_doEnterLocation('fear', { force: true, room: fearRoom })) {
+        // Сразу в зал, а не «на статический спавн, а fearDeploy потом
+        // поправит»: то же правило, что у Кровавой Башни и арены 3х3.
+        if (!_doEnterLocation('fear', { force: true, room: fearRoom, pos: fearRoom.fearLaneEntry(0) })) {
           return s.socket.emit('fearError', { msg: 'Не удалось войти — попробуйте ещё раз' });
         }
         // Always succeeds: fearRoom was just created for this connection alone,

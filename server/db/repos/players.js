@@ -32,7 +32,8 @@ const { query } = require('../index');
 // polynomial, same 48 characters — because what the player is shown is what
 // they paste back into the withdrawal form.
 const ton = require('../../ton');
-const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, UPGRADE_KEYS,
+const { SERVER_INV_MAX } = require('../../anticheat');
+const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, ITEM_DEF, UPGRADE_KEYS,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL,
   DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty } = require('../../../shared/definitions');
 
@@ -683,6 +684,74 @@ async function setClass(db, playerId, charClass) {
      WHERE player_id = $1 AND char_class IS NULL`, [playerId, charClass]);
 }
 
+// ── смена класса ────────────────────────────────────────────────────────────
+// Всё, что зависит от класса, должно перестать зависеть от старого — и ничего
+// сверх этого.
+//
+// Три вещи, и порядок между ними важен:
+//
+//   1. СНАРЯЖЕНИЕ ЧУЖОГО КЛАССА снимается в инвентарь. Не удаляется: человек
+//      его добыл, и смена класса — не повод отнимать. Если места в инвентаре
+//      нет, отказ приходит ДО списания денег: снять вещь некуда, а оставить
+//      её надетой значит дать чужому классу чужие статы.
+//   2. ИЗУЧЕННЫЕ НАВЫКИ стираются. Очки при этом возвращаются сами: их число
+//      считается от уровня (availableSkillPoints), а не хранится колонкой.
+//   3. КЛАСС меняется, и пересчитывается боевая мощь — она сортирует рейтинг.
+//
+// Не трогается ничего больше: уровень, опыт, вещи, валюта, клан, сезон,
+// улучшения характеристик. Класс — это набор умений и то, чем можно
+// пользоваться, а не прожитая жизнь.
+async function changeClass(db, playerId, newClass) {
+  // По месту, как и у соседей в этом файле: items требует players обратно, и
+  // верхний require замкнул бы круг.
+  await require('./items').lockPlayer(db, playerId);
+  if (!Object.hasOwn(CHAR_DEF, newClass)) return { ok: false, code: 'bad_class' };
+
+  const { rows: cur } = await query(db,
+    'SELECT char_class FROM player_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
+  if (!cur.length || !cur[0].char_class) return { ok: false, code: 'no_class' };
+  if (cur[0].char_class === newClass) return { ok: false, code: 'same_class' };
+
+  // ── что придётся снять ──────────────────────────────────────────────────
+  // Классовая вещь узнаётся по forClass в каталоге, а не по слоту: оружие
+  // классовое, а сапоги нет, и оба лежат в одном контейнере.
+  const { rows: worn } = await query(db, `
+    SELECT id, item_id, slot FROM player_items
+     WHERE player_id = $1 AND container = 'equipment'`, [playerId]);
+  const toRemove = worn.filter(r => {
+    const d = ITEM_DEF.find(x => x.id === r.item_id);
+    return d && Array.isArray(d.forClass) && !d.forClass.includes(newClass);
+  });
+
+  // Место проверяется ДО всего остального. Отказ, за который уже заплачено, —
+  // худший вид отказа.
+  if (toRemove.length) {
+    const { rows: free } = await query(db, `
+      SELECT $2::int - count(*)::int AS n FROM player_items
+       WHERE player_id = $1 AND container = 'inventory'`, [playerId, SERVER_INV_MAX]);
+    if (Number(free[0].n) < toRemove.length) {
+      return { ok: false, code: 'no_room', need: toRemove.length };
+    }
+  }
+
+  for (const r of toRemove) {
+    await query(db, `
+      UPDATE player_items SET container = 'inventory', slot = NULL
+       WHERE id = $1 AND player_id = $2`, [r.id, playerId]);
+  }
+
+  // Навыки старого класса. Кроме книг: книга — предмет, она лежит в инвентаре
+  // и переживает смену, как и всё прочее имущество.
+  await query(db, 'DELETE FROM player_skills WHERE player_id = $1', [playerId]);
+
+  await query(db, `
+    UPDATE player_progress SET char_class = $2, updated_at = now()
+     WHERE player_id = $1`, [playerId, newClass]);
+
+  await require('./stats').refreshBm(db, playerId);
+  return { ok: true, from: cur[0].char_class, to: newClass, unequipped: toRemove.length };
+}
+
 // ── grantXp ─────────────────────────────────────────────────────────────────
 // The server applies XP and runs the level curve. The client is told the
 // result; it never proposes one.
@@ -1094,7 +1163,7 @@ async function idByTelegram(db, telegramId) {
 module.exports = {
   realPlayerSql,
   idByTelegram,
-  byTelegramId, ensure, setUsername, registerReferral,
+  byTelegramId, ensure, setUsername, registerReferral, changeClass,
   canMessage, setWriteAccess,
   tonAddressOf, setTonAddress, clearTonAddress,
   progressOf, prefsOf, skillsOf,

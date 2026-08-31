@@ -37,6 +37,7 @@ const {
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
   ADV_SKILL_BOOK_CRAFT, craftResultEnhance,
+  CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES,
 } = require('../../../shared/definitions');
 
 class CraftError extends Error {
@@ -157,7 +158,74 @@ const FAMILIES = {
   matUpgrade: MAT_UPGRADE_RECIPES,
   classGear:  CLASS_GEAR_SALVAGE_RECIPES,
   unique:     UNIQUE_CRAFT_RECIPES,
+  wings:      WINGS_CRAFT_RECIPES,
 };
+
+// ── ингредиент «любые N предметов такой-то редкости» ────────────────────────
+// У всех прежних рецептов материал — конкретный id. Плащи, артефакты и крылья
+// просят другое: «50 необычных предметов, 5 рар». Перечислять это списком id
+// нельзя — их сотня, и каждый новый предмет пришлось бы дописывать в каждый
+// рецепт.
+//
+// Что берётся и в каком порядке — не мелочь, а главное здесь:
+//
+//   ТОЛЬКО инвентарь         надетое не трогаем никогда;
+//   ТОЛЬКО семь слотов       из тех, что падают с мобов (CRAFT_ANY_GEAR_SLOTS).
+//                            Плащ, артефакт, питомец и крылья не считаются и
+//                            не тратятся: иначе крылья собирались бы из
+//                            редкого плаща, и человек узнал бы об этом после
+//                            нажатия;
+//   ПОРЯДОК                  сперва самые незаточенные, потом самые старые.
+//                            Съесть чей-то +9 меч ради плаща — это то, за что
+//                            не прощают.
+const _ANY_SET = CRAFT_ANY_GEAR_SLOTS;
+const _ANY_IDS_BY_RARITY = new Map();
+for (const d of ITEM_DEF) {
+  if (!_ANY_SET.includes(d.slot)) continue;
+  if (!_ANY_IDS_BY_RARITY.has(d.rarity)) _ANY_IDS_BY_RARITY.set(d.rarity, []);
+  _ANY_IDS_BY_RARITY.get(d.rarity).push(d.id);
+}
+const _isAnyMat = (m) => !!(m && m.rarity && !m.id);
+
+// Сколько таких предметов лежит в инвентаре. Считает ШТУКИ (qty), а не строки:
+// одинаковые предметы лежат стопками.
+async function _anyRarityCount(db, playerId, rarity) {
+  const ids = _ANY_IDS_BY_RARITY.get(rarity) || [];
+  if (!ids.length) return 0;
+  const { rows } = await query(db, `
+    SELECT COALESCE(sum(qty), 0)::int n FROM player_items
+     WHERE player_id = $1 AND container = 'inventory' AND item_id = ANY($2)`,
+    [playerId, ids]);
+  return rows[0].n;
+}
+
+// Снимает ровно `need` штук, в описанном выше порядке. Возвращает список того,
+// что съедено, — он уходит в ответ игроку: «потрачено» без перечисления это
+// как раз тот случай, когда человек не может проверить, что у него взяли.
+async function _takeAnyRarity(db, playerId, rarity, need) {
+  const ids = _ANY_IDS_BY_RARITY.get(rarity) || [];
+  const { rows } = await query(db, `
+    SELECT id, item_id, qty, enhance FROM player_items
+     WHERE player_id = $1 AND container = 'inventory' AND item_id = ANY($2)
+     ORDER BY enhance ASC, id ASC`, [playerId, ids]);
+  const eaten = [];
+  let left = need;
+  for (const r of rows) {
+    if (left <= 0) break;
+    const take = Math.min(left, Number(r.qty));
+    // removeQty, а не удаление строки: предметы лежат стопками, и снять надо
+    // ровно `take` штук. Он и сам режет пул в том же порядке (ORDER BY
+    // enhance, id), так что порядок соблюдён с обоих концов.
+    if (!await items.removeQty(db, playerId, r.item_id, take,
+        { enhance: r.enhance || 0, reason: 'craft' })) {
+      err('no_mats', `Не хватает предметов редкости ${rarity}`);
+    }
+    eaten.push({ id: r.item_id, qty: take, enhance: r.enhance || 0 });
+    left -= take;
+  }
+  if (left > 0) err('no_mats', `Не хватает предметов редкости ${rarity}`);
+  return eaten;
+}
 
 function recipeOf(family, index) {
   const list = FAMILIES[family];
@@ -173,6 +241,10 @@ function recipeOf(family, index) {
 // answer to the player than a rolled-back mystery.
 async function _haveMats(db, playerId, mats) {
   for (const m of mats || []) {
+    if (_isAnyMat(m)) {
+      if (await _anyRarityCount(db, playerId, m.rarity) < (m.n || 1)) return m;
+      continue;
+    }
     const { rows } = await query(db, `
       SELECT COALESCE(sum(qty), 0)::int n FROM player_items
        WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
@@ -188,6 +260,12 @@ async function craft(db, playerId, family, index) {
 
   const missing = await _haveMats(db, playerId, rec.mats);
   if (missing) {
+    // Отказ называет ровно то, чего не хватает. Для ингредиента по редкости
+    // это «50 необычных», а не id, которого у него и нет.
+    if (_isAnyMat(missing)) {
+      const have = await _anyRarityCount(db, playerId, missing.rarity);
+      err('no_mats', `Нужно ${missing.n} предметов редкости «${missing.rarity}» (есть ${have})`);
+    }
     err('no_mats', `Не хватает материалов: ${missing.id}${missing.minEnhance ? ` +${missing.minEnhance}` : ''}`);
   }
   // Room BEFORE anything is consumed. A craft that produces an item with
@@ -208,7 +286,12 @@ async function craft(db, playerId, family, index) {
     if (!paid) err('no_nexum', 'Недостаточно Liberty');
   }
 
+  const eatenAny = [];
   for (const m of rec.mats || []) {
+    if (_isAnyMat(m)) {
+      eatenAny.push(...await _takeAnyRarity(db, playerId, m.rarity, m.n || 1));
+      continue;
+    }
     // minEnhance, not enhance. _haveMats counts copies at OR ABOVE the required
     // enhancement, so the take has to mean the same thing — the earlier version
     // passed no filter at all, which let a player pass the check on two +8 and
@@ -232,7 +315,10 @@ async function craft(db, playerId, family, index) {
   const rowId = await items.add(db, playerId, rec.itemId,
     { qty: rec.qty || 1, enhance: craftResultEnhance(rec), source: 'craft', sourceRef: String(rec.itemId) });
   if (rowId === null) err('no_room', 'Инвентарь полон');
-  return { outcome: 'success', family, index, chance, itemId: rec.itemId, rowId };
+  // `eaten` уходит игроку списком: крафт по редкости съедает предметы, которые
+  // человек сам не выбирал, и он имеет право видеть, какие именно.
+  return { outcome: 'success', family, index, chance, itemId: rec.itemId, rowId,
+           eaten: eatenAny.length ? eatenAny : undefined };
 }
 
 // The advanced-book recycle: ten regular skill books of ANY class and slot,
@@ -358,10 +444,17 @@ async function craftClassGear(db, playerId, slot, rarity) {
     d.classItem && d.slot === rec.resultSlot && d.rarity === rec.resultRarity);
   if (!candidates.length) err('bad_recipe', 'Предметы этой редкости не найдены');
 
-  const filter = { rarity: rec.costRarity, stackable: false };
-  const have = await items.countMatching(db, playerId, filter);
-  if (have < rec.costCount) {
-    err('no_mats', `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}» (есть ${have})`);
+  // ── цена, посчитанная ДО того, как что-то потрачено ──────────────────────
+  // Оба яруса проверяются здесь и только потом снимаются. Иначе редкий плащ
+  // съел бы пятьдесят необычных и лишь после этого сказал бы, что редких не
+  // хватает, — а вернуть их было бы уже нечем.
+  const costs = [{ rarity: rec.costRarity, count: rec.costCount }];
+  if (rec.extra) costs.push({ rarity: rec.extra.rarity, count: rec.extra.count });
+  for (const c of costs) {
+    const have = await items.countMatching(db, playerId, { rarity: c.rarity, stackable: false });
+    if (have < c.count) {
+      err('no_mats', `Нужно ${c.count} предметов редкости «${c.rarity}» (есть ${have})`);
+    }
   }
 
   const out = pickOne(candidates);
@@ -379,8 +472,11 @@ async function craftClassGear(db, playerId, slot, rarity) {
   // no longer decides anything, which is the point. The old handler re-counted
   // the materials after its await and refunded by hand when the count had
   // moved; here a shortfall throws and the charge is not there to refund.
-  const { ok } = await items.consumeMatching(db, playerId, rec.costCount, filter);
-  if (!ok) err('no_mats', `Нужно ${rec.costCount} предметов редкости «${rec.costRarity}»`);
+  for (const c of costs) {
+    const { ok } = await items.consumeMatching(db, playerId, c.count,
+      { rarity: c.rarity, stackable: false });
+    if (!ok) err('no_mats', `Нужно ${c.count} предметов редкости «${c.rarity}»`);
+  }
 
   const rowId = await items.add(db, playerId, out.id, { source: 'craft', sourceRef: 'class:' + out.id });
   if (rowId === null) err('no_room', 'Инвентарь полон');
@@ -394,7 +490,7 @@ async function craftClassGear(db, playerId, slot, rarity) {
 // used so a duplicated id resolves the same way it always has.
 function gearRecipeByItemId(itemId) {
   const lists = [['gear', GEAR_CRAFT_RECIPES], ['gearTier', GEAR_TIER_CRAFT_RECIPES],
-                 ['unique', UNIQUE_CRAFT_RECIPES]];
+                 ['unique', UNIQUE_CRAFT_RECIPES], ['wings', WINGS_CRAFT_RECIPES]];
   for (const [family, list] of lists) {
     const index = list.findIndex(r => r.itemId === itemId);
     if (index >= 0) return { family, index };

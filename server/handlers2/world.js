@@ -39,6 +39,7 @@ const {
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
   NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel, clanBonusOf, LEVEL_UP_HEAL,
+  FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
 } = require('../../shared/definitions');
 
@@ -302,7 +303,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
     // VIP and the season ticket buy a second roll, not a better one — the same
     // table, one more chance at it.
-    const bonus = (VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {}).drop || 0;
+    // Плюс проценты с надетого: редкий плащ и редкий артефакт дают по +20%,
+    // легендарные крылья ещё 20. Это второй бросок по той же таблице, а не
+    // лучшая таблица — ровно как VIP и билет рядом.
+    const bonus = ((VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {}).drop || 0)
+      + ((s._roomStats && s._roomStats.gearDropPct) || 0);
     const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
     const extra = bonus + ticket;
     if (!result.farmZone && !result.farmZone2 && extra > 0 && rand() * 100 < extra) {
@@ -428,7 +433,16 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // prints — "+15% золото", "+10% опыт" — were decoration. Additive with VIP
     // and the ticket, like everything else here.
     const clanB = clanBonusOf(s.clan && s.clan.level);
-    const xpPct = (vipB.xp || 0) + (ticketOn ? (SEASON_TICKET_XP_PCT || 0) : 0) + clanB.xp;
+    // Проценты с надетых вещей — редкие плащи и артефакты дают по +20% к
+    // опыту и к шансу выпадения, эпические питомцы и старшие крылья по +10-20%
+    // к опыту. Складываются с VIP, билетом и кланом, как и всё здесь.
+    //
+    // Берутся из уже прочитанного блока характеристик, а не отдельным запросом:
+    // на каждое убийство лишний поход в базу за инвентарём — это самый частый
+    // запрос в игре.
+    const gearB = (s._roomStats || {});
+    const xpPct = (vipB.xp || 0) + (ticketOn ? (SEASON_TICKET_XP_PCT || 0) : 0) + clanB.xp
+      + (gearB.gearXpPct || 0);
     const goldPct = (vipB.gold || 0) + clanB.gold;
     const myGold = Math.round(baseGold * (1 + goldPct / 100));
     const myXp = Math.round(baseXp * (1 + xpPct / 100));
@@ -457,7 +471,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const arm = armIndexForLevel(result.rlvl || 1);
     const libertyChance = result.arm === 'coop' ? (COOP_LIBERTY_CHANCE || 0)
       : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0)
-      : result.farmZone ? 0
+      // Было жёстким нулём: обычная Фарм-зона не платила Liberty вообще,
+      // хотя коридор тех же 21-30 уровней платит 1%. «В фарм и элит фарме
+      // не дропаются Либерти» — здесь это было буквально так.
+      : result.farmZone ? (FARM_LIBERTY_CHANCE || 0)
       : (NEXUM_DROP_CHANCE[arm] || 0) * (ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1);
     const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
 
@@ -539,7 +556,27 @@ module.exports = function registerWorld(s, safeOn, deps) {
       }
       return { reward, drops, refBonus, paidGold, paidXp };
     });
-    if (!done) return;                      // act reported it; nothing happened
+    if (!done) {
+      // ── награда не прошла, но моб МЁРТВ ─────────────────────────────────
+      // Рассылка «всем, кто видит тело» идёт выше и явно ИСКЛЮЧАЕТ убийцу —
+      // его собственный пакет уезжает ниже, уже после транзакции. Значит при
+      // любом её срыве (замена сессии, доменный отказ, deadlock, провал
+      // COMMIT) труп оставался ровно у того, кто его и сделал. Навсегда: про
+      // мёртвого моба сервер больше ничего не пришлёт.
+      //
+      // Тело убирается всегда. Награда и смерть — разные факты, и второй
+      // не должен зависеть от первого.
+      s.socket.emit('enemyKilled', {
+        id: result.enemyUid, at: result.at,
+        dmg: result.dmg, isCrit: result.isCrit,
+        ex: result.ex, ey: result.ey, color: result.color,
+      });
+      // act записал саму ошибку. Эта строка — про то, что увидел ИГРОК:
+      // убийство без выплаты это не то же самое, что убийство.
+      console.warn(`[kill] ${s.username || s.playerId}: награда не прошла, `
+        + `труп ${result.enemyUid} убран без выплаты`);
+      return;
+    }
 
     const { reward, drops, refBonus } = done;
     // The referrer is a different session and may be offline entirely. The

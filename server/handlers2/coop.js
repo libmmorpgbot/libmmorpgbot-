@@ -408,8 +408,19 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         // nothing to eject (_coopEjectOnDisconnect returns on `!run`) and
         // nothing to release, with the attempts already spent.
         const coopRoom = _createCoopRoom();
-        const ok1 = partnerSocket.data._forceEnterLocation?.('coop', { room: coopRoom });
-        const ok2 = s.socket.data._forceEnterLocation?.('coop', { room: coopRoom });
+        // ── каждый входит СРАЗУ в свою полосу ────────────────────────────
+        // Статический спавн этажа Сотрудничества — это вход полосы 0. Тот,
+        // кому достаётся полоса 1, иначе оказывается на 880 пикселей не там,
+        // где его монстры, а изоляция полос не даёт ему увидеть НИ ОДНОГО
+        // монстра той комнаты, в которой он стоит: «там мобів нема, а в
+        // інакшій кімнаті є».
+        //
+        // То же правило уже соблюдают Кровавая Башня и арена 3х3.
+        const LANE_MEMBER = 0, LANE_LEADER = 1;
+        const ok1 = partnerSocket.data._forceEnterLocation?.('coop',
+          { room: coopRoom, pos: coopRoom.coopLaneEntry(LANE_MEMBER) });
+        const ok2 = s.socket.data._forceEnterLocation?.('coop',
+          { room: coopRoom, pos: coopRoom.coopLaneEntry(LANE_LEADER) });
         if (!ok1 || !ok2) {
           // Something about one of the two connections refused the move (no
           // character selected any more, already elsewhere) — don't strand
@@ -423,8 +434,8 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           partnerSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
           return;
         }
-        const spot1 = coopRoom.coopDeploy(partnerSid);
-        const spot2 = coopRoom.coopDeploy(s.socket.id);
+        const spot1 = coopRoom.coopDeploy(partnerSid, LANE_MEMBER);
+        const spot2 = coopRoom.coopDeploy(s.socket.id, LANE_LEADER);
         if (!spot1 || !spot2) {
           partnerSocket.data._forceEnterLocation?.('hub');
           s.socket.data._forceEnterLocation?.('hub');
@@ -683,7 +694,16 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         // sockets that aren't its own).
         const allSockets = [s.socket, ...memberSockets];
         const farm2Room = _createFarm2Room();
-        const entered = allSockets.map(s => s.data._forceEnterLocation?.('farmZone2', { room: farm2Room }));
+        // Вход сразу в точку входа зоны. Пока клиент грузит карту нового
+        // этажа, он продолжает слать СВОЮ ПРЕЖНЮЮ позицию — а координаты хаба
+        // на сетке элитной зоны попадают в пол внутри комнаты, в сотне
+        // пикселей от элитной пачки и почти в километре от портала. Сервер
+        // такую точку принимал (она не стена) и больше не исправлял: «в элит
+        // часто кидало не с места, где портал».
+        //
+        // `sk`, а не `s`: внешний `s` — это сессия.
+        const entered = allSockets.map(sk => sk.data._forceEnterLocation?.('farmZone2',
+          { room: farm2Room, pos: farm2Room.farm2Entry() }));
         if (entered.some(ok => !ok)) {
           // Something about one of the connections refused the move (no
           // character selected any more, already elsewhere) — don't strand

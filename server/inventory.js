@@ -81,7 +81,14 @@ function _canonicalMarketItem(rawItem) {
 // categories above applies (scaled by qty for the stackable ones), the
 // generic MARKET_MIN_PRICE otherwise. Takes the already-canonicalized item
 // (see _canonicalMarketItem) so id/slot/rarity/qty are all trustworthy.
-function _marketMinPrice(item) {
+// Три знака, а не два: подлога ключа — 0.003, и округление до сотых обнулило
+// бы её. Больше трёх не нужно ни одной подлоге в каталоге.
+function _round3(n) { return Math.round(n * 1000) / 1000; }
+
+// Округление снаружи, чтобы тело осталось таблицей подлог, а не смесью
+// таблицы с арифметикой.
+function _marketMinPrice(item) { return _round3(_marketMinPriceRaw(item)); }
+function _marketMinPriceRaw(item) {
   const qty = item.qty || 1;
   if (item.id === 'norm_stone') return MARKET_MIN_PRICE_STONE * qty;
   if (item.id === 'bless_stone') return MARKET_MIN_PRICE_BLESS_STONE * qty;

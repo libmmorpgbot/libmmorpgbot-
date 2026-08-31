@@ -115,6 +115,11 @@ console.log('\n  ── вступление в клан ──');
       // clan_applications_clan_id_fkey за неделю) честно отказывала — то есть
       // фикстура описывала клан, которого нет, а называлась «заявка».
       if (/FROM clans WHERE id = \$1 FOR KEY SHARE/i.test(sql)) return { rows: [{ ok: 1 }], rowCount: 1 };
+      // И в клане есть место. Заявка в полный клан теперь отклоняется
+      // (три лидера 30/30 нажимали «Принять» по девять раз), так что
+      // фикстура обязана сказать, СКОЛЬКО там людей, — иначе она
+      // описывает клан без ответа на этот вопрос.
+      if (/count\(\*\)::int c FROM clan_members WHERE clan_id/i.test(sql)) return { rows: [{ c: 5 }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     },
   };
