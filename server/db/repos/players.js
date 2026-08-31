@@ -35,7 +35,7 @@ const ton = require('../../ton');
 const { SERVER_INV_MAX } = require('../../anticheat');
 const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, ITEM_DEF, UPGRADE_KEYS,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL,
-  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty } = require('../../../shared/definitions');
+  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty, PASSIVE_CLASS_DEF } = require('../../../shared/definitions');
 
 // ── identity ────────────────────────────────────────────────────────────────
 
@@ -731,9 +731,41 @@ async function changeClass(db, playerId, newClass) {
   // возвращались — теперь не трогается ничего: изученные навыки, их уровни,
   // продвинутые книги и все семь колонок улучшений переезжают как есть.
   //
-  // Что это значит на практике: навыки в игре ключуются по классу, поэтому
-  // после смены человек видит умения нового класса с теми уровнями, которые
-  // накопил. Это и есть «переносят».
+  // ── и ПАССИВКИ тоже, а они переносятся не сами ──────────────────────────
+  // «Пассивки не переносятся при смене.»
+  //
+  // Уровни оставались в базе — но переставали что-либо значить. У каждого
+  // класса своя ЭКСКЛЮЗИВНАЯ пара пассивок со своими именами: у танка
+  // 'tankatk'/'deftank', у рыцаря смерти 'dkatk'/'dkdef' и так далее.
+  // Подсчёт бонусов перебирает пассивки НОВОГО класса и старых имён там не
+  // находит: вложенные уровни лежат мёртвым грузом.
+  //
+  // Пары устроены одинаково у всех пяти классов — первая это +3% атаки за
+  // уровень, вторая +3% защиты, — поэтому перенос честный: та же позиция, тот
+  // же уровень, тот же эффект. Меняется только имя.
+  //
+  // Общие пассивки ('all*') ни к какому классу не привязаны и переносятся
+  // сами; их эта правка не касается.
+  {
+    const from = PASSIVE_CLASS_DEF[cur[0].char_class] || [];
+    const to = PASSIVE_CLASS_DEF[newClass] || [];
+    for (let i = 0; i < Math.min(from.length, to.length); i++) {
+      if (from[i].id === to[i].id) continue;
+      // ON CONFLICT: у игрока может уже лежать строка пассивки нового класса —
+      // например, он когда-то этим классом играл. Берётся БОЛЬШИЙ уровень:
+      // отобрать вложенное у человека при переносе нельзя.
+      await query(db, `
+        INSERT INTO player_skills (player_id, kind, key, level)
+        SELECT player_id, 'passive', $3, level FROM player_skills
+         WHERE player_id = $1 AND kind = 'passive' AND key = $2
+        ON CONFLICT (player_id, kind, key)
+        DO UPDATE SET level = GREATEST(player_skills.level, EXCLUDED.level)`,
+        [playerId, from[i].id, to[i].id]);
+      await query(db, `
+        DELETE FROM player_skills
+         WHERE player_id = $1 AND kind = 'passive' AND key = $2`, [playerId, from[i].id]);
+    }
+  }
   await query(db, `
     UPDATE player_progress SET char_class = $2, updated_at = now()
      WHERE player_id = $1`, [playerId, newClass]);
