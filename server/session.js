@@ -33,7 +33,7 @@
 // simulation loop never touches this file.
 
 const { AsyncLocalStorage } = require('async_hooks');
-const { tx, txRetry } = require('./db');
+const { tx, txRetry, query } = require('./db');
 const players = require('./db/repos/players');
 const stats = require('./db/repos/stats');
 const items = require('./db/repos/items');
@@ -853,6 +853,13 @@ class Session {
       upgrades: p.upgrades || {},
       bonusSP: p.bonusSP, keptSP: p.keptSP, empowers: p.empowers,
       starterBonus: !!p.starterBonusClaimed,
+      // Сколько раз этот аккаунт менял класс. Нужно КЛИЕНТУ: за Liberty
+      // меняют только первый раз, и предлагать её на второй значит обещать то,
+      // в чём сервер откажет. Считается по журналу движения денег — он
+      // append-only и уже хранит ровно этот факт.
+      classChanges: Number((await query(db, `
+        SELECT count(*)::int n FROM ledger
+         WHERE player_id = $1 AND reason = 'class_change'`, [this.playerId])).rows[0].n),
       questIdx: p.questIdx, questKills: p.questKills || {},
       // Read by the special-quests panel (js/quests.js) to grey out what is
       // already claimed. The repo function for it has existed since the port

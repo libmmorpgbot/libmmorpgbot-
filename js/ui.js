@@ -638,10 +638,11 @@ function openClassChangeModal() {
   const bal = window._nexumBalance || 0;
   const gbal = window._gramBalance || 0;
   const cur = player.type;
-  // Первая смена или нет — знает сервер (считает по журналу движения денег).
-  // Клиент показывает обе цены и не решает: он спрашивает, а отказывает или
-  // соглашается сервер.
-  const firstFree = !player.classChanged;
+  // Первая смена или нет. Число приходит от сервера (он считает его по журналу
+  // движения денег), клиент только показывает то, что действительно можно.
+  // Показывать Liberty на второй смене значит обещать то, в чём сервер
+  // откажет — «после первой смены не пропадает возможность менять за Либерти».
+  const isFirst = Number(player.classChanges || 0) === 0;
 
   // Смена требует, чтобы всё было снято. Считаем здесь, чтобы сказать это ДО
   // нажатия, а не отказом после.
@@ -667,13 +668,15 @@ function openClassChangeModal() {
       <b style="color:#e0a24a">Снимите всю экипировку</b> — иначе смена не пройдёт.<br>
       Навыки и улучшения переносятся полностью.<br>
       Уровень, опыт, вещи, валюта и клан остаются.<br>
-      Первая смена — <b style="color:#e5aa52">${costLib}</b> Liberty (у вас ${bal})
-      или <b style="color:#4fd67a">${costGram}</b> GRAM.<br>
-      Каждая следующая — <b style="color:#4fd67a">${costGram}</b> GRAM.
+      ${isFirst
+        ? `Первая смена — <b style="color:#e5aa52">${costLib}</b> Liberty (у вас ${bal})
+           или <b style="color:#4fd67a">${costGram}</b> GRAM.`
+        : `Стоит <b style="color:#4fd67a">${costGram}</b> GRAM (у вас ${gbal.toFixed(2)}).
+           Бесплатная за Liberty была только первой.`}
     </div>
     ${wornNow > 0
       ? `<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Надето вещей: ${wornNow}. Снимите всё и вернитесь.</div>`
-      : `<div style="display:flex;gap:8px;margin-bottom:10px">
+      : `${isFirst ? `<div style="display:flex;gap:8px;margin-bottom:10px">
           <button onclick="_setClassPay('nexum')" id="cc-pay-nexum" style="
             flex:1;padding:9px;border-radius:9px;border:1px solid rgba(229,170,82,.5);
             background:rgba(229,170,82,.12);color:#e5aa52;font-size:13px;font-weight:700;cursor:pointer">
@@ -683,7 +686,7 @@ function openClassChangeModal() {
             background:rgba(209,204,197,.05);color:#4fd67a;font-size:13px;font-weight:700;cursor:pointer">
             ${costGram} GRAM</button>
          </div>
-         <div style="font-size:11px;color:#7d7466;margin-bottom:10px">Выберите, чем платить, затем класс</div>
+         <div style="font-size:11px;color:#7d7466;margin-bottom:10px">Выберите, чем платить, затем класс</div>` : ''}
          ${classes}`}
     <button onclick="document.getElementById('class-change-ov').remove()" style="
       width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
@@ -704,19 +707,31 @@ function _setClassPay(kind) {
 }
 
 function _confirmClassChange(type) {
+  // На второй и дальше платить можно только GRAM — выбора нет, и клиент его
+  // не предлагает. Отправляем то же, что решит сервер, чтобы отказ не пришёл
+  // из-за расхождения.
+  if (Number((player && player.classChanges) || 0) > 0) _classPay = 'gram';
   const ov = document.getElementById('class-change-ov');
   if (ov) ov.remove();
   if (typeof netChangeClass === 'function') netChangeClass(type, _classPay);
 }
 
 function onClassChanged(from, to) {
-  if (typeof updateProfileUI === 'function') updateProfileUI();
-  if (typeof updateInvUI === 'function') updateInvUI();
-  if (typeof updateSkillsUI === 'function') updateSkillsUI();
-  if (player) {
-    dmgNum(player.x, player.y - 30,
-      'Класс: ' + ((CHAR_DEF[to] && CHAR_DEF[to].name) || to), '#98e456');
+  // ── игра перезагружается ────────────────────────────────────────────────
+  // Смена класса меняет слишком многое, чтобы дособирать это по частям:
+  // спрайты персонажа, набор умений, панель профессии, то, что можно надеть.
+  // Прежняя версия обновляла три панели и оставляла остальное как было —
+  // «немного неточности, нужно обновить вручную».
+  //
+  // Перезагрузка честнее любой досборки: клиент возвращается с полным
+  // состоянием от сервера. Секунда задержки — чтобы человек успел прочитать,
+  // что смена прошла.
+  const name = (CHAR_DEF[to] && CHAR_DEF[to].name) || to;
+  if (player) dmgNum(player.x, player.y - 30, 'Класс: ' + name, '#98e456');
+  if (typeof _marketToast === 'function') {
+    _marketToast('Класс изменён: ' + name + ' — перезагружаю', 'ok');
   }
+  setTimeout(() => { location.reload(); }, 1200);
 }
 
 function _confirmUpgradeReset() {
@@ -1231,17 +1246,9 @@ function renderProfessionPanel() {
     </div>
     <div class="profp-cards">${cards}</div>
     <div class="profp-hint">${t('profpFarmHint')}</div>
-    ${/* Смена класса живёт ЗДЕСЬ, под «Проф», а не в отдельном углу: панель
-         профессии — единственное место в игре, которое целиком про класс
-         персонажа и его умения. Прежде окно существовало, а нажать его было
-         неоткуда — я написал модалку и не повесил кнопку. */ ''}
-    <div class="profp-hint" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(209,204,197,.10)">
-      Не подходит класс? Его можно сменить — навыки и улучшения переносятся.
-    </div>
-    <button onclick="openClassChangeModal()" style="
-      width:100%;margin-top:8px;padding:12px;border:1px solid rgba(205,184,236,.35);
-      border-radius:11px;background:rgba(205,184,236,.08);color:#cdb8ec;
-      font-size:14px;font-weight:700;cursor:pointer">Сменить класс</button>
+    ${/* Кнопки смены класса здесь БОЛЬШЕ НЕТ: она переехала на экран, под
+         «Проф» (drawClassChangeButton). Внутри панели это было два нажатия и
+         место, где её никто не искал. */ ''}
   `;
 }
 
@@ -3832,6 +3839,32 @@ function drawProfessionButton() {
   ctx.fillStyle = profColor;
   ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
 
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  КЛАСС BUTTON — прямо под Профессией, открывает окно смены класса.
+//  Первый заход спрятал смену ВНУТРЬ панели профессии, внизу: за два нажатия
+//  и там, где её никто не искал. Просили кнопку на экране — вот она.
+// ─────────────────────────────────────────────────────────
+function drawClassChangeButton() {
+  if (!player || !player.type) return;
+  const cb = getClassChangeBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+  if (!hudPill(cb, { dim: true })) {
+    ctx.fillStyle = _uiBtnGrads.pfg0;
+    roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(194,154,86,0.4)';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
+  }
+  const col = 'rgba(224,188,127,0.9)';
+  drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - 14, cb.y + cb.h / 2, 12, col);
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = col;
+  ctx.fillText(t('classChangeBtnLbl'), cb.x + cb.w / 2 - 5, cb.y + cb.h / 2);
   ctx.restore();
 }
 

@@ -129,17 +129,28 @@ function getProfessionBtnPos() {
   return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 
-// Directly below Профессия, same column — opens the free "Набор новичка" kit
-// (openStarterBonusPanel, js/ui.js). Only drawn while the account still has
-// it to claim, but the position is unconditional: the party list below is
+// Прямо под Профессией, та же колонка — окно смены класса.
+//
+// Владелец: «треба було як кнопку ПРОФ зробити і під неї добавити». Первый
+// заход положил её ВНУТРЬ панели профессии, внизу, — то есть за два нажатия и
+// там, где её никто не искал. Кнопка на экране и кнопка в панели — разные
+// вещи, и просили первую.
+function getClassChangeBtnPos() {
+  const prof = getProfessionBtnPos();
+  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
+}
+
+// Directly below Смена класса, same column — opens the free "Набор новичка"
+// kit (openStarterBonusPanel, js/ui.js). Only drawn while the account still
+// has it to claim, but the position is unconditional: the party list below is
 // laid out from it either way (see _partyHudStartY).
 //
 // Раньше между ним и Профессией стояла кнопка "+Pack". Её убрали целиком —
 // вместе с товаром, — и Бонус поднялся в освободившийся слот, а не остался
 // висеть с дыркой над собой.
 function getStarterBonusBtnPos() {
-  const prof = getProfessionBtnPos();
-  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
+  const cc = getClassChangeBtnPos();
+  return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
 }
 
 function getPartyLeaveBtnPos() {
@@ -476,6 +487,15 @@ function _checkProfessionBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkClassChangeBtnTouch(cx, cy) {
+  const cb = getClassChangeBtnPos();
+  if (cx >= cb.x && cx <= cb.x + cb.w && cy >= cb.y && cy <= cb.y + cb.h) {
+    if (typeof openClassChangeModal === 'function') openClassChangeModal();
+    return true;
+  }
+  return false;
+}
+
 
 // Same gate the drawing uses (_starterBonusAvailable, js/ui.js): once the kit
 // is claimed the button is gone, and its slot must stop swallowing taps meant
@@ -647,6 +667,7 @@ function onTS(e) {
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
+    if (_checkClassChangeBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
@@ -724,6 +745,7 @@ function onMD(e) {
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
+  if (_checkClassChangeBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
