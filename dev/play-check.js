@@ -632,9 +632,20 @@ async function main() {
     'живому не прийшов gameStart — інакше це безкоштовний телепорт у Зал');
   // Відмова не лікує. Це та половина, що важить більше за телепорт: повне
   // здоров'я на вимогу вирішує будь-який бій.
+  //
+  // Перевіряється в ХАБІ, а не на руці. Бот стоїть серед монстрів, і між
+  // відмовою та зчитуванням його встигали добити — тоді воскресіння вже
+  // законне, і перевірка червоніла на СПРАВНОМУ коді. Один раз із трьох
+  // прогонів; тепер жодного разу, бо в хабі нема кому бити.
+  a.sock.emit('enterLocation', { target: 'hub' });
+  await once(a.sock, 'gameStart', 12000).catch(() => null);
+  await wait(300);
   await pool().query('UPDATE player_progress SET hp = 5 WHERE player_id = $1', [madeId]);
+  const refused = once(a.sock, 'itemError', 4000).catch(() => null);
   a.sock.emit('respawn');
-  await wait(400);
+  const rf = await refused;
+  ok(rf && rf.code === 'not_dead',
+    'живому знову відмовлено — саме та гілка, що не лікує', rf && rf.code);
   eq(Number((await pool().query('SELECT hp FROM player_progress WHERE player_id = $1',
     [madeId])).rows[0].hp), 5, 'відмова нічого не вилікувала');
 
