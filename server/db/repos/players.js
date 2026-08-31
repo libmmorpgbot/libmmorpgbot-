@@ -712,44 +712,34 @@ async function changeClass(db, playerId, newClass) {
   if (!cur.length || !cur[0].char_class) return { ok: false, code: 'no_class' };
   if (cur[0].char_class === newClass) return { ok: false, code: 'same_class' };
 
-  // ── что придётся снять ──────────────────────────────────────────────────
-  // Классовая вещь узнаётся по forClass в каталоге, а не по слоту: оружие
-  // классовое, а сапоги нет, и оба лежат в одном контейнере.
-  const { rows: worn } = await query(db, `
-    SELECT id, item_id, slot FROM player_items
-     WHERE player_id = $1 AND container = 'equipment'`, [playerId]);
-  const toRemove = worn.filter(r => {
-    const d = ITEM_DEF.find(x => x.id === r.item_id);
-    return d && Array.isArray(d.forClass) && !d.forClass.includes(newClass);
-  });
+  // ── снаряжение снимает ИГРОК, а не сервер ────────────────────────────────
+  // Требование владельца, и оно правильнее прежнего поведения. Снимая вещи за
+  // человека, сервер решал за него, что переживёт смену, — молча и в одной
+  // транзакции с оплатой. Теперь выбор делается до того, как деньги ушли, и
+  // делает его тот, чьи это вещи.
+  //
+  // Проверяется ВСЁ надетое, а не только классовое: правило «снимите всю
+  // экипировку» должно читаться буквально, иначе кто-то останется с надетым
+  // кольцом и не поймёт, почему ему отказывают.
+  const { rows: worn } = await query(db,
+    `SELECT count(*)::int n FROM player_items
+      WHERE player_id = $1 AND container = 'equipment'`, [playerId]);
+  if (worn[0].n > 0) return { ok: false, code: 'has_equipment', worn: worn[0].n };
 
-  // Место проверяется ДО всего остального. Отказ, за который уже заплачено, —
-  // худший вид отказа.
-  if (toRemove.length) {
-    const { rows: free } = await query(db, `
-      SELECT $2::int - count(*)::int AS n FROM player_items
-       WHERE player_id = $1 AND container = 'inventory'`, [playerId, SERVER_INV_MAX]);
-    if (Number(free[0].n) < toRemove.length) {
-      return { ok: false, code: 'no_room', need: toRemove.length };
-    }
-  }
-
-  for (const r of toRemove) {
-    await query(db, `
-      UPDATE player_items SET container = 'inventory', slot = NULL
-       WHERE id = $1 AND player_id = $2`, [r.id, playerId]);
-  }
-
-  // Навыки старого класса. Кроме книг: книга — предмет, она лежит в инвентаре
-  // и переживает смену, как и всё прочее имущество.
-  await query(db, 'DELETE FROM player_skills WHERE player_id = $1', [playerId]);
-
+  // ── навыки и улучшения ПЕРЕНОСЯТСЯ ───────────────────────────────────────
+  // Тоже требование владельца. Прежняя версия стирала player_skills, и очки
+  // возвращались — теперь не трогается ничего: изученные навыки, их уровни,
+  // продвинутые книги и все семь колонок улучшений переезжают как есть.
+  //
+  // Что это значит на практике: навыки в игре ключуются по классу, поэтому
+  // после смены человек видит умения нового класса с теми уровнями, которые
+  // накопил. Это и есть «переносят».
   await query(db, `
     UPDATE player_progress SET char_class = $2, updated_at = now()
      WHERE player_id = $1`, [playerId, newClass]);
 
   await require('./stats').refreshBm(db, playerId);
-  return { ok: true, from: cur[0].char_class, to: newClass, unequipped: toRemove.length };
+  return { ok: true, from: cur[0].char_class, to: newClass, unequipped: 0 };
 }
 
 // ── grantXp ─────────────────────────────────────────────────────────────────

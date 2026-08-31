@@ -23,7 +23,20 @@ const { CODEX_SETS, ITEM_DEF } = require('../../shared/definitions');
 // The equipment slots that exist. A slot name arrives from the client, and it
 // reaches a UNIQUE INDEX — an unknown one would be stored happily and then
 // occupy a slot nothing can ever unequip.
-const EQ_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet', 'cloak', 'artifact']);
+// ── что вообще можно надеть ──────────────────────────────────────────────
+// Выводится из каталога, а не выписывается руками. Руками здесь стоял список
+// из десяти слотов, и крылья в него просто не попали: предмет есть, слот есть,
+// панель его рисует — а сервер отвечает «этот предмет нельзя надеть».
+//
+// Два перечня одного и того же обязаны разойтись, вопрос только когда.
+// Каталог — единственное место, где слот предмета объявлен, поэтому и ответ
+// на «надевается ли» берётся оттуда.
+//
+// 'use', 'recipe', 'box' и прочее сюда не попадают по построению: у них слот
+// свой и в снаряжение он не входит (см. NOT_EQUIPPABLE).
+const NOT_EQUIPPABLE = new Set(['use', 'buff_potion', 'recipe', 'box', 'mat', 'book', 'shard']);
+const EQ_SLOTS = new Set(
+  ITEM_DEF.map(d => d.slot).filter(sl => sl && !NOT_EQUIPPABLE.has(sl)));
 
 // ── why a refusal throws instead of returning ───────────────────────────────
 // act() decides what to write from whether the handler THREW. A bare `return;`

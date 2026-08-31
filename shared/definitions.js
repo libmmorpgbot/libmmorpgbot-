@@ -1076,14 +1076,18 @@ const ITEM_DEF = [
   { id:'artifact_u_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage.png',        hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock.png',     hp:150, atk:23, def:10, rarity:'uncommon' },
   // ── редкие артефакты ────────────────────────────────────────────────────
-  // Втрое больше статов, чем у необычного, и та же пара процентных бонусов,
-  // что у редкого плаща. Надеть можно и то и другое: тогда бонусы
-  // складываются в +40% к опыту и +40% к шансу выпадения — так и задумано.
-  { id:'artifact_r_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, forClass:['lev'],         img:'/images/artifact/lev_r.png',         hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
-  { id:'artifact_r_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, forClass:['deathknight'], img:'/images/artifact/deathknight_r.png', hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
-  { id:'artifact_r_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger_r.png',      hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
-  { id:'artifact_r_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage_r.png',        hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
-  { id:'artifact_r_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock_r.png',     hp:450, atk:69, def:30, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  // Втрое больше, чем у необычного ПЛАЩА (150/13/20 × 3 = 450/39/60) — так
+  // написано в задании про оба слота, дословно. Первый заход прочитал это как
+  // «втрое от своего же необычного артефакта» и дал 450/69/30; владелец
+  // поправил.
+  //
+  // Плюс та же пара процентных бонусов, что у редкого плаща. Надеть можно и
+  // то и другое: тогда складывается в +40% к опыту и +40% к выпадению.
+  { id:'artifact_r_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, forClass:['lev'],         img:'/images/artifact/lev_r.png',         hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, forClass:['deathknight'], img:'/images/artifact/deathknight_r.png', hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger_r.png',      hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage_r.png',        hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock_r.png',     hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   // ── Pets ─────────────────────────────────────────────────
   // Own equip slot (EQ_SLOTS 'pet', js/definitions.js), crafted at the forge
   // for Liberty/Nexum (PET_CRAFT_RECIPES below) — not a mob/box drop. Base
@@ -1216,12 +1220,11 @@ const FARM_SHARD_CHANCE = 0.001;
 // its own reference list of what's actually in the zone (see
 // _liveFarmEnemy/_farmZoneMonsterListHtml, js/ui.js) the same way
 // ARM_OFFSETS/FLOOR_ENEMIES already serve the regular bestiary.
-// Liberty из обычной Фарм-зоны. Её не было ни здесь, ни в пути награды: там
-// стоял жёсткий ноль, и зона на 21-30 уровнях платила Liberty меньше, чем
-// коридор тех же уровней (NEXUM_DROP_CHANCE[2] = 1%). Ровно столько же,
-// сколько коридор: зона даёт больше опыта и материалов, и переплачивать ей
-// ещё и валютой незачем.
-const FARM_LIBERTY_CHANCE = 1 / 100;
+// Liberty из обычной Фарм-зоны: ноль, как и было до моей правки. Владелец
+// вернул прежние числа. Константа оставлена (а не удалена вместе с чтением),
+// чтобы «сколько платит эта зона» отвечалось одним местом, а не жёстким нулём
+// посреди пути награды.
+const FARM_LIBERTY_CHANCE = 0;
 const FARM_LVL_MIN = 21;
 const FARM_LVL_MAX = 30;
 const FARM_MOBS_PER_ROOM = 20;
@@ -1362,11 +1365,11 @@ const FARM2_SPECIES = FARM_SPECIES;
 // FARM_EPIC_RECIPE_CHANCE above. Liberty is not part of this table — it is
 // currency (nexum), rolled and granted the same way COOP_LIBERTY_CHANCE is
 // (see the attack/skillAttack handlers, server/index.js).
-// 3% за убийство. Было 0.1% — вдесятеро МЕНЬШЕ открытого коридора тех же
-// уровней (NEXUM_DROP_CHANCE[3] = 2%), при том что зона сложнее, ограничена
-// двумя часами в сутки и требует группу. Панель дропа печатает именно это
-// число, так что на экране и в броске оно теперь одно и то же.
-const FARM2_LIBERTY_CHANCE          = 3 / 100;
+// 0.1% за убийство — как и было. Я поднимал это до 3%, потому что коридор тех
+// же уровней платит 2%, а зона сложнее и ограничена по времени; владелец
+// вернул прежнее число. Замечание остаётся здесь как замечание, а не как
+// правка: баланс — его решение.
+const FARM2_LIBERTY_CHANCE          = 0.1 / 100;
 const FARM2_BOX_RARE_CHANCE         = 0.0001 / 100;
 const FARM2_BOX_UNCOMMON_CHANCE     = 0.001 / 100;
 const FARM2_NORM_STONE_CHANCE       = 0.03 / 100;

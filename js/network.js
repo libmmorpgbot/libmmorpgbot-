@@ -5158,13 +5158,11 @@ function _initPetCraftHandlers(s) {
     if (player) {
       player.nexumBalance = newNexumBalance;
       player.type = to;
-      // Навыки сброшены сервером — клиентская копия обязана исчезнуть вместе с
-      // ними, иначе панель до перезахода показывает умения чужого класса.
-      player.skillLevels = {};
-      player.advSkillLearned = {};
-      player.advSkillActive = {};
+      // Навыки и улучшения ПЕРЕНОСЯТСЯ — сервер их не трогает, и клиент тоже
+      // не должен. Прежняя версия их здесь обнуляла, потому что сервер их
+      // стирал; оба поведения отменены по требованию владельца.
     }
-    if (typeof onClassChanged === 'function') onClassChanged(from, to, unequipped);
+    if (typeof onClassChanged === 'function') onClassChanged(from, to);
   });
   s.on('classChangeError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || 'Не удалось сменить класс', 'err');

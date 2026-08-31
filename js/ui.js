@@ -637,20 +637,17 @@ function openClassChangeModal() {
   const bal = window._nexumBalance || 0;
   const cur = player.type;
 
-  // Сколько вещей снимется — считаем заранее и по каждому классу отдельно:
-  // «снимется 3 вещи» и «снимется 1» это разные решения.
-  const wornOff = (cls) => Object.values(player.equipment || {})
-    .filter(it => it && Array.isArray(it.forClass) && !it.forClass.includes(cls)).length;
+  // Смена требует, чтобы всё было снято. Считаем здесь, чтобы сказать это ДО
+  // нажатия, а не отказом после.
+  const wornNow = Object.values(player.equipment || {}).filter(Boolean).length;
 
   const classes = Object.keys(CHAR_DEF).filter(c => c !== cur).map(c => {
-    const off = wornOff(c);
     const d = CHAR_DEF[c];
     return `<button onclick="_confirmClassChange('${c}')" style="
       display:flex;align-items:center;gap:10px;width:100%;margin-bottom:8px;padding:10px 12px;
       border:1px solid rgba(209,204,197,.14);border-radius:10px;background:rgba(209,204,197,.04);
       color:#d9cfbe;font-size:14px;font-weight:600;cursor:pointer;text-align:left">
       <span style="flex:1">${d.name}</span>
-      <span style="font-size:11px;color:${off ? '#e0a24a' : '#7d7466'}">${off ? ('снимется вещей: ' + off) : 'снаряжение подходит'}</span>
     </button>`;
   }).join('');
 
@@ -662,11 +659,15 @@ function openClassChangeModal() {
     <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">Смена класса</div>
     <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:14px">
       Стоит <b style="color:#e5aa52">${cost}</b> Liberty (у вас ${bal}).<br>
-      Снаряжение чужого класса снимется в инвентарь — не пропадёт.<br>
-      Изученные навыки сбросятся, очки вернутся.<br>
+      <b style="color:#e0a24a">Снимите всю экипировку</b> — иначе смена не пройдёт.<br>
+      Навыки и улучшения переносятся полностью.<br>
       Уровень, опыт, вещи, валюта и клан остаются.
     </div>
-    ${bal < cost ? '<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Недостаточно Liberty</div>' : classes}
+    ${wornNow > 0
+      ? `<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Надето вещей: ${wornNow}. Снимите всё и вернитесь.</div>`
+      : (bal < cost
+        ? '<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Недостаточно Liberty</div>'
+        : classes)}
     <button onclick="document.getElementById('class-change-ov').remove()" style="
       width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
       color:#968a7a;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px">${t('cancelBtn')}</button>
@@ -680,16 +681,13 @@ function _confirmClassChange(type) {
   if (typeof netChangeClass === 'function') netChangeClass(type);
 }
 
-function onClassChanged(from, to, unequipped) {
+function onClassChanged(from, to) {
   if (typeof updateProfileUI === 'function') updateProfileUI();
   if (typeof updateInvUI === 'function') updateInvUI();
   if (typeof updateSkillsUI === 'function') updateSkillsUI();
   if (player) {
     dmgNum(player.x, player.y - 30,
       'Класс: ' + ((CHAR_DEF[to] && CHAR_DEF[to].name) || to), '#98e456');
-    if (unequipped) {
-      dmgNum(player.x, player.y - 50, 'Снято в инвентарь: ' + unequipped, '#e0a24a');
-    }
   }
 }
 

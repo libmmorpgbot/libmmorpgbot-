@@ -134,8 +134,8 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       if (!probe.ok) {
         if (probe.code === 'same_class') fail('Это и есть ваш класс', 'same_class');
         if (probe.code === 'no_class') fail('Сначала выберите класс', 'no_class');
-        if (probe.code === 'no_room') {
-          fail(`Освободите ${probe.need} мест в инвентаре — туда снимется снаряжение`, 'no_room');
+        if (probe.code === 'has_equipment') {
+          fail(`Снимите всю экипировку — надето ${probe.worn}`, 'has_equipment');
         }
         fail('Неизвестный класс', 'bad_class');
       }
@@ -151,6 +151,8 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       // перезахода бил бы старым классом по новым книгам.
       await s.pushStats(t);
       await s.pushProgress(t);
+      // Навыки едут вместе с характеристиками: pushStats отправляет и
+      // skillLevels — комната читает их оттуда же.
       s.socket.emit('classChanged', {
         from: probe.from, to: probe.to, unequipped: probe.unequipped,
         newNexumBalance: await nexumOf(t, pid),
