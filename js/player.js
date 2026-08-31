@@ -238,6 +238,9 @@ function recompute() {
   const cx = player.codexBonus || null;
   if (cx) { a += cx.atk || 0; d += cx.def || 0; h += cx.hp || 0; }
   let extraCrit = 0, extraAS = 0, hpPct = 0, skillPct = 0;
+  // Проценты с предметов. Считаются так же, как на сервере, и применяются
+  // после всех плоских прибавок — иначе порядок слагаемых решал бы результат.
+  let speedPct = 0, atkPct = 0, critPowerAdd = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
     const eb = _enhBonus(it);
@@ -250,6 +253,13 @@ function recompute() {
     // Сила навыков — only the unique weapons carry it today, but it is summed
     // over every slot like any other stat so a future item can grant it too.
     if (it.skillPct)   skillPct  += it.skillPct;
+    // ── и то, чего здесь не было ──────────────────────────────────────────
+    // Ровно те же поля, что читает сервер (server/db/repos/stats.js). Пока их
+    // тут не было, крылья не ускоряли бег НИ НА СКОЛЬКО: скорость собирается
+    // ниже, из базовой и пассивок, и бегает по ней именно клиент.
+    if (it.speedPct)   speedPct  += it.speedPct;
+    if (it.atkPct)     atkPct    += it.atkPct;
+    if (it.critPower)  critPowerAdd += it.critPower;
   });
   // Read by _skillDmgMult/_skillHealMult below. Stored on the player rather
   // than recomputed at cast time so it follows the same rebuild-from-scratch
@@ -269,6 +279,8 @@ function recompute() {
   if (buffs.atk       > 0) a = Math.floor(a * 1.20);
   if (buffs.atkspeed  > 0) extraAS += (player.charDef.atkSpeed || 0) * 0.20;
 
+  // Процент атаки с предмета (Вилорд) — вместе с пассивным, одним множителем.
+  if (atkPct) a = Math.floor(a * (1 + atkPct));
   if (pt) {
     a = Math.floor(a * (1 + pt.atkPct));
     d = Math.floor(d * (1 + pt.defPct));
@@ -323,11 +335,14 @@ function recompute() {
   const _critChanceBuff = (typeof critChanceBuffTimer !== 'undefined' && critChanceBuffTimer > 0) ? 0.05 : 0; // "Баф Крит" (adv ranger E)
   const _critDmgBuff    = (typeof critDmgBuffTimer    !== 'undefined' && critDmgBuffTimer    > 0) ? 0.05 : 0; // "Жадность" (adv DK W)
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff;
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
   player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;
-  player.speed      = player.baseSpeed * (1 + (pt ? pt.moveSpeedPct : 0));
+  // Крылья — единственный предмет, который двигает скорость бега. Строка
+  // собирала её из базовой и пассивок, и бонус предмета сюда не попадал:
+  // на сервере он считался, на экране не значил ничего.
+  player.speed      = player.baseSpeed * (1 + (pt ? pt.moveSpeedPct : 0) + speedPct);
 }
 
 // The panel's figure and the server's are the same function now

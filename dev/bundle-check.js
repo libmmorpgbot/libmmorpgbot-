@@ -347,6 +347,55 @@ function main() {
       'не показываются: ' + missing.join(', '));
   }
 
+  // ── клиент считает по тем же полям, что и сервер ─────────────────────────
+  // Один и тот же неполный список из семи полей жил в ТРЁХ местах: в цикле
+  // характеристик сервера, в цикле клиента и в карточке предмета. Крылья
+  // считались на сервере и не значили на экране ничего — а бегает клиент,
+  // поэтому скорость не менялась вовсе: «так же бегает, не работают эти %».
+  //
+  // Правило: каждое числовое поле каталога, которое читает серверный цикл,
+  // обязан читать и клиентский.
+  {
+    const fs3 = require('fs');
+    const srv = fs3.readFileSync(path.join(ROOT, 'server', 'db', 'repos', 'stats.js'), 'utf8');
+    const cli = fs3.readFileSync(path.join(ROOT, 'js', 'player.js'), 'utf8');
+    const cut = (src, from, len) => { const at = src.indexOf(from); return at < 0 ? '' : src.slice(at, at + len); };
+    const srvLoop = cut(srv, 'for (const it of (row.equipped', 1400);
+    const cliLoop = cut(cli, 'Object.values(player.equipment).forEach', 1400);
+    ok(srvLoop.length > 100 && cliLoop.length > 100, 'оба цикла по надетому найдены');
+    // Два поля клиенту не нужны, и это РЕШЕНИЕ, а не дыра: опыт и шанс дропа
+    // — не характеристики персонажа, а добыча. Их применяет путь награды за
+    // убийство на сервере, рядом с бонусами VIP и клана; клиент добычу не
+    // считает вовсе и посчитать не должен.
+    //
+    // Список назван здесь поимённо, чтобы следующее новое поле пришлось либо
+    // прочитать на клиенте, либо осознанно внести сюда.
+    const SERVER_ONLY = new Set(['xpPct', 'dropPct']);
+    const fields = [...srvLoop.matchAll(/base\.(\w+)/g)].map(m => m[1]);
+    const uniq = [...new Set(fields)].filter(f => !SERVER_ONLY.has(f));
+    const missing = uniq.filter(f => !cliLoop.includes('it.' + f));
+    ok(missing.length === 0,
+      `клиент читает все ${uniq.length} боевых полей, что и сервер`,
+      'клиент не читает: ' + missing.join(', '));
+  }
+
+  // ── и потолок скорости знает про предметы ────────────────────────────────
+  // Он выводился как «самый быстрый класс × максимальная пассивка», с прямой
+  // оговоркой «предметы скорость не трогают». Крылья сделали её неправдой:
+  // игрок в легендарных бежал бы выше потолка, и защита от читеров нашла бы
+  // ЕГО.
+  {
+    const D2 = require(path.join(ROOT, 'shared', 'definitions'));
+    const fs4 = require('fs');
+    const room = fs4.readFileSync(path.join(ROOT, 'server', 'game', 'Room.js'), 'utf8');
+    const itemMax = Math.max(0, ...D2.ITEM_DEF.map(d => d.speedPct || 0));
+    ok(itemMax > 0, `в каталоге есть предмет со скоростью бега (+${itemMax * 100}%)`);
+    ok(room.includes('_MOVE_SPEED_ITEM_MAX'),
+      'потолок скорости учитывает самый быстрый предмет');
+    ok(!/applies exactly these two factors and nothing else/.test(room),
+      'и больше не утверждает, что предметы скорость не трогают');
+  }
+
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);
   process.exitCode = fail ? 1 : 0;

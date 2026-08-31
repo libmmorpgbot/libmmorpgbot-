@@ -5,18 +5,26 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
-        GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF,
+        GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
-// move-speed passive maxed. Derived rather than written down so a new class or
-// a retuned passive can't leave a stale number here (recompute(), js/player.js,
-// applies exactly these two factors and nothing else — items and buffs do not
-// touch speed).
+// move-speed passive maxed — И САМЫЙ БЫСТРЫЙ ПРЕДМЕТ.
+//
+// Третий множитель появился вместе с крыльями. Прежний комментарий прямо
+// говорил «предметы и бафы скорость не трогают», и это было правдой ровно до
+// того дня: легендарные крылья дают +70%, то есть игрок в них бежит намного
+// выше старого потолка — и мера, которая ищет читера, нашла бы ЕГО.
+//
+// Выводится из каталога, а не вписывается числом: следующие крылья или пояс
+// со скоростью поднимут потолок сами. Ровно та же причина, по которой список
+// надеваемых слотов и строки карточки предмета тоже выводятся, а не пишутся.
+const _MOVE_SPEED_ITEM_MAX = Math.max(0, ...ITEM_DEF.map(d => d.speedPct || 0));
 const _MOVE_SPEED_MAX = Math.max(...Object.values(CHAR_DEF).map(c => c.speed || 0)) *
-  (1 + PASSIVE_MAX_LEVEL * ((PASSIVE_COMMON_DEF.find(p => p.stat === 'moveSpeedPct') || {}).perLevel || 0));
+  (1 + PASSIVE_MAX_LEVEL * ((PASSIVE_COMMON_DEF.find(p => p.stat === 'moveSpeedPct') || {}).perLevel || 0)
+     + _MOVE_SPEED_ITEM_MAX);
 // ...and the rate the bucket below actually refills at, which is deliberately
 // a little faster than that.
 //
