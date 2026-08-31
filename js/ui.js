@@ -633,9 +633,15 @@ function openUpgradeResetModal() {
 // должен знать это до нажатия, а не после.
 function openClassChangeModal() {
   if (!player) return;
-  const cost = (typeof CLASS_CHANGE_COST !== 'undefined') ? CLASS_CHANGE_COST : 15000;
+  const costLib = (typeof CLASS_CHANGE_FIRST_NEXUM !== 'undefined') ? CLASS_CHANGE_FIRST_NEXUM : 2000;
+  const costGram = (typeof CLASS_CHANGE_GRAM !== 'undefined') ? CLASS_CHANGE_GRAM : 3;
   const bal = window._nexumBalance || 0;
+  const gbal = window._gramBalance || 0;
   const cur = player.type;
+  // Первая смена или нет — знает сервер (считает по журналу движения денег).
+  // Клиент показывает обе цены и не решает: он спрашивает, а отказывает или
+  // соглашается сервер.
+  const firstFree = !player.classChanged;
 
   // Смена требует, чтобы всё было снято. Считаем здесь, чтобы сказать это ДО
   // нажатия, а не отказом после.
@@ -658,16 +664,27 @@ function openClassChangeModal() {
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:360px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">Смена класса</div>
     <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:14px">
-      Стоит <b style="color:#e5aa52">${cost}</b> Liberty (у вас ${bal}).<br>
       <b style="color:#e0a24a">Снимите всю экипировку</b> — иначе смена не пройдёт.<br>
       Навыки и улучшения переносятся полностью.<br>
-      Уровень, опыт, вещи, валюта и клан остаются.
+      Уровень, опыт, вещи, валюта и клан остаются.<br>
+      Первая смена — <b style="color:#e5aa52">${costLib}</b> Liberty (у вас ${bal})
+      или <b style="color:#4fd67a">${costGram}</b> GRAM.<br>
+      Каждая следующая — <b style="color:#4fd67a">${costGram}</b> GRAM.
     </div>
     ${wornNow > 0
       ? `<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Надето вещей: ${wornNow}. Снимите всё и вернитесь.</div>`
-      : (bal < cost
-        ? '<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Недостаточно Liberty</div>'
-        : classes)}
+      : `<div style="display:flex;gap:8px;margin-bottom:10px">
+          <button onclick="_setClassPay('nexum')" id="cc-pay-nexum" style="
+            flex:1;padding:9px;border-radius:9px;border:1px solid rgba(229,170,82,.5);
+            background:rgba(229,170,82,.12);color:#e5aa52;font-size:13px;font-weight:700;cursor:pointer">
+            ${costLib} Liberty</button>
+          <button onclick="_setClassPay('gram')" id="cc-pay-gram" style="
+            flex:1;padding:9px;border-radius:9px;border:1px solid rgba(79,214,122,.35);
+            background:rgba(209,204,197,.05);color:#4fd67a;font-size:13px;font-weight:700;cursor:pointer">
+            ${costGram} GRAM</button>
+         </div>
+         <div style="font-size:11px;color:#7d7466;margin-bottom:10px">Выберите, чем платить, затем класс</div>
+         ${classes}`}
     <button onclick="document.getElementById('class-change-ov').remove()" style="
       width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
       color:#968a7a;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px">${t('cancelBtn')}</button>
@@ -675,10 +692,21 @@ function openClassChangeModal() {
   document.getElementById('app').appendChild(ov);
 }
 
+// Чем платить. Первая смена может пройти за Liberty; на всех следующих сервер
+// возьмёт GRAM независимо от выбора — и скажет об этом, если GRAM не хватает.
+let _classPay = 'nexum';
+function _setClassPay(kind) {
+  _classPay = kind;
+  const a = document.getElementById('cc-pay-nexum');
+  const b = document.getElementById('cc-pay-gram');
+  if (a) a.style.background = kind === 'nexum' ? 'rgba(229,170,82,.12)' : 'rgba(209,204,197,.05)';
+  if (b) b.style.background = kind === 'gram' ? 'rgba(79,214,122,.12)' : 'rgba(209,204,197,.05)';
+}
+
 function _confirmClassChange(type) {
   const ov = document.getElementById('class-change-ov');
   if (ov) ov.remove();
-  if (typeof netChangeClass === 'function') netChangeClass(type);
+  if (typeof netChangeClass === 'function') netChangeClass(type, _classPay);
 }
 
 function onClassChanged(from, to) {
@@ -1972,6 +2000,13 @@ function _farmDropBodyHtml(e) {
   return `
     ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
     ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
+    ${/* Liberty. Строки не было вовсе — «в фарм зоне в дропе не указан
+         LIBERTY», — и это было честно ровно до сегодня: зона платила ноль.
+         Теперь платит, и панель обязана называть то же число, по которому
+         идёт бросок. */ ''}
+    ${(typeof FARM_LIBERTY_CHANCE !== 'undefined' && FARM_LIBERTY_CHANCE > 0)
+      ? _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM_LIBERTY_CHANCE * 100), '#e8c15a')
+      : ''}
     ${_farmSpeciesShardRows(e.eid)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}

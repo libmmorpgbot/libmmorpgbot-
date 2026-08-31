@@ -4104,8 +4104,8 @@ function netCraftClassGear(slot, rarity) {
 
 // Смена класса. Платная, поэтому целиком серверная: клиент только просит, а
 // что стало с классом, снаряжением и балансом — узнаёт из ответа.
-function netChangeClass(type) {
-  if (socket?.connected) socket.emit('changeClass', { type });
+function netChangeClass(type, pay) {
+  if (socket?.connected) socket.emit('changeClass', { type, pay });
 }
 
 // Charged in Liberty, so the server does the whole thing and answers with

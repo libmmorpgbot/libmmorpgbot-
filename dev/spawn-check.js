@@ -164,6 +164,27 @@ console.log('\n  ── прежние координаты не принима�
   // А честный шаг проходит.
   const step = room.updatePlayerPos('S', spot.x + 40, spot.y, 'right', true);
   ok(!step || step.refused !== 'entry', 'обычный шаг не отклоняется', JSON.stringify(step));
+
+  // ── и БЕГ ПО ПРЯМОЙ внутри окна тоже ────────────────────────────────────
+  // Первый заход мерил расстояние от точки постановки, и на своих же ногах
+  // пятьсот пикселей набегаются за три секунды при окне в восемь. Человек
+  // входил на этаж, бежал прямо — и его дёргало назад: «при бігу ривки».
+  //
+  // Сто шагов по десять пикселей: тысяча пикселей от входа, но каждый шаг
+  // честный. Ни один не должен быть отклонён.
+  let refusedRun = 0;
+  let rx = room.players.get('S').x;
+  for (let i = 0; i < 100; i++) {
+    rx += 10;
+    const r = room.updatePlayerPos('S', rx, spot.y, 'right', true);
+    if (r && r.refused === 'entry') refusedRun++;
+  }
+  const ranTo = room.players.get('S');
+  ok(refusedRun === 0,
+    `бег по прямой внутри окна не отклоняется ни разу (${Math.round(rx - spot.x)}px от входа)`,
+    `отклонено пакетов: ${refusedRun}`);
+  ok(Math.abs(ranTo.x - rx) < 1, 'и игрок действительно там, куда добежал',
+    `${ranTo.x} против ${rx}`);
   if (room._stopLoop) room._stopLoop();
 }
 

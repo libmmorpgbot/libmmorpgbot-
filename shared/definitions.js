@@ -1584,15 +1584,23 @@ const CLASS_GEAR_SALVAGE_RECIPES = [
 // renders it next to the member count so a leader can see how full the
 // clan is before approving an application.
 // ── смена класса ────────────────────────────────────────────────────────────
-// Цена в Liberty. Числа в задании не было — взято между питомцем редкого яруса
-// (5 000) и эпического (30 000): смена класса дороже разовой покупки, но не
-// заперта за неделей фарма. Меняется одной строкой.
+// Цены владельца: «первая 2000 LIBERTY или 3 gram, последующие 3 Грам».
+//
+// Первая смена дешёвая и её можно оплатить игровой валютой — попробовать
+// другой класс должно быть доступно. Дальше только за реальные деньги: это уже
+// не проба, а перебор классов, и он не должен ничего не стоить.
+//
+// Сколько смен было — считается по журналу движения денег (reason
+// 'class_change'), а не отдельной колонкой: журнал append-only, стирать его
+// приложению не положено, и он уже хранит ровно этот факт. Колонка была бы
+// вторым источником правды о том же самом.
+const CLASS_CHANGE_FIRST_NEXUM = 2000;   // Liberty за первую смену
+const CLASS_CHANGE_GRAM = 3;             // GRAM за первую (по желанию) и за все следующие
 //
 // Что происходит при смене — целиком в players.changeClass:
-//   снаряжение чужого класса снимается в инвентарь (не пропадает);
-//   изученные навыки сбрасываются, очки возвращаются (они считаются от уровня);
+//   всё снаряжение должно быть снято ИГРОКОМ, иначе отказ;
+//   навыки и улучшения переносятся, ничего не стирается;
 //   уровень, опыт, вещи, валюта, клан и сезон не трогаются.
-const CLASS_CHANGE_COST = 15000;
 
 const CLAN_MAX_MEMBERS = 30;
 
@@ -2648,7 +2656,8 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS, CLASS_CHANGE_COST,
+  CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
+  CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
   CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES,

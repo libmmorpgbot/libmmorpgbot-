@@ -17,11 +17,13 @@ const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
 const progression = require('../db/repos/progression');
 const players = require('../db/repos/players');
+const { query } = require('../db');
 const crypto = require('crypto');
 const consumables = require('../db/repos/consumables');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, seasonEnhancePoints, CLASS_CHANGE_COST,
+  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, seasonEnhancePoints,
+  CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
 
@@ -123,7 +125,17 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // которые ничего не стоят, потом деньги, потом сама смена. Отказ, за который
   // уже заплачено, — худший вид отказа, и changeClass поэтому проверяет место
   // в инвентаре ДО того, как сюда вернётся.
-  safeOn('changeClass', ({ type } = {}) =>
+  // Сколько раз этот игрок уже менял класс. Считается по журналу движения
+  // денег: он append-only, стирать его приложению не положено, и он уже хранит
+  // ровно этот факт. Отдельная колонка была бы вторым источником правды.
+  const classChangesOf = async (t, pid) => {
+    const { rows } = await query(t,
+      `SELECT count(*)::int n FROM ledger WHERE player_id = $1 AND reason = 'class_change'`,
+      [pid]);
+    return rows[0].n;
+  };
+
+  safeOn('changeClass', ({ type, pay } = {}) =>
     s.act('changeClass', 'classChangeError', async (t, pid) => {
       if (typeof type !== 'string' || !type) fail('Не выбран класс', 'bad_class');
 
@@ -140,11 +152,24 @@ module.exports = function registerEconomy(s, safeOn, deps) {
         fail('Неизвестный класс', 'bad_class');
       }
 
-      const paid = await money.spend(t, pid, 'nexum', CLASS_CHANGE_COST, {
+      // ── чем платить ───────────────────────────────────────────────────
+      // Первая смена — на выбор: Liberty или GRAM. Все следующие — только
+      // GRAM. Выбор клиента проверяется, а не принимается: «плачу Liberty» на
+      // третьей смене должно быть отказом, а не бесплатной сменой.
+      const done = await classChangesOf(t, pid);
+      const wantsGram = pay === 'gram' || done > 0;
+      const currency = wantsGram ? 'gram' : 'nexum';
+      const amount = wantsGram ? CLASS_CHANGE_GRAM : CLASS_CHANGE_FIRST_NEXUM;
+      const paid = await money.spend(t, pid, currency, amount, {
         reason: 'class_change', refType: 'class', refId: `${probe.from}->${probe.to}`,
         idemKey: `class:${pid}:${probe.to}:${crypto.randomUUID()}`,
       });
-      if (!paid) fail(`Смена класса стоит ${CLASS_CHANGE_COST} Liberty`, 'no_nexum');
+      if (!paid) {
+        fail(wantsGram
+          ? `Смена класса стоит ${CLASS_CHANGE_GRAM} GRAM`
+          : `Первая смена класса стоит ${CLASS_CHANGE_FIRST_NEXUM} Liberty`,
+        wantsGram ? 'no_gram' : 'no_nexum');
+      }
 
       await pushAll(t);
       // Комната держит свою копию характеристик и класса — без этого игрок до
@@ -154,11 +179,12 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       // Навыки едут вместе с характеристиками: pushStats отправляет и
       // skillLevels — комната читает их оттуда же.
       s.socket.emit('classChanged', {
-        from: probe.from, to: probe.to, unequipped: probe.unequipped,
+        from: probe.from, to: probe.to,
+        paidCurrency: currency, paidAmount: amount,
         newNexumBalance: await nexumOf(t, pid),
       });
-      return probe;
-    }, r => r && { from: r.from, to: r.to, unequipped: r.unequipped }));
+      return { ...probe, currency, amount, nth: done + 1 };
+    }, r => r && { from: r.from, to: r.to, currency: r.currency, amount: r.amount, nth: r.nth }));
 
   safeOn('craftMatUpgrade', ({ from } = {}) =>
     s.act('craftMatUpgrade', 'craftMatUpgradeError', async (t, pid) => {
