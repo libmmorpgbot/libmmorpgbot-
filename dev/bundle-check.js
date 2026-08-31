@@ -315,6 +315,38 @@ function main() {
   screenDims(fs, path.join(ROOT, 'js', 'state.js'));
   hudArt(fs, path.join(ROOT, 'js', 'hudart.js'), ROOT);
 
+  // ── карточка предмета показывает КАЖДЫЙ бонус из каталога ────────────────
+  // Список характеристик в карточке собирался руками и знал семь полей из
+  // двенадцати. Скорость бега у крыльев, бонус к опыту, бонус к выпадению,
+  // сила крита и процент атаки у эпических питомцев не показывались НИГДЕ:
+  // предмет их давал (они считаются на сервере), а в карточке их не было —
+  // «статов не хватает».
+  //
+  // Правило: любое числовое поле, встречающееся в каталоге, обязано иметь
+  // строку в карточке. Тогда следующий новый бонус вспомнит проверка.
+  {
+    const fs2 = require('fs');
+    const { ITEM_DEF } = require(path.join(ROOT, 'shared', 'definitions'));
+    const ui = fs2.readFileSync(path.join(ROOT, 'js', 'ui.js'), 'utf8');
+    const at = ui.indexOf('function _itemStatRows');
+    const card = at >= 0 ? ui.slice(at, at + 2200) : '';
+    ok(card.length > 100, 'функция строк характеристик найдена');
+    const notBonus = new Set(['id', 'name', 'slot', 'img', 'rarity', 'classItem', 'forClass',
+      'stackable', 'noDrop', 'qty', 'enhance', 'buffType', 'buffDur', 'buffDesc',
+      'price', 'sell', 'desc', 'eid', 'shardOf', 'setId']);
+    const seen = new Set();
+    for (const d of ITEM_DEF) {
+      for (const [k, v] of Object.entries(d)) {
+        if (notBonus.has(k) || typeof v !== 'number' || !v) continue;
+        seen.add(k);
+      }
+    }
+    const missing = [...seen].filter(k => !card.includes('it.' + k));
+    ok(missing.length === 0,
+      `карточка показывает все ${seen.size} видов бонусов из каталога`,
+      'не показываются: ' + missing.join(', '));
+  }
+
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);
   process.exitCode = fail ? 1 : 0;

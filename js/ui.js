@@ -4332,7 +4332,42 @@ function _enhStonesBlock(actionFn, param) {
   <div class="imod-enh-warn">${t('enhBurnWarn')}</div>`;
 }
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
-const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
+// ── все бонусы предмета, одной функцией ─────────────────────────────────────
+// Карточка предмета собирала этот список ДВАЖДЫ — для инвентаря и для
+// надетого, — и оба знали только про атаку, защиту, здоровье, крит, скорость
+// атаки, HP% и силу навыков. Скорость бега, бонус к опыту, бонус к выпадению,
+// сила крита и процент атаки не показывались НИГДЕ: предмет их давал (они
+// считаются на сервере), а в карточке их не было. Выглядело как «статов не
+// хватает».
+//
+// Одна функция на оба места, чтобы следующий новый бонус не пришлось
+// вспоминать дважды.
+function _itemStatRows(it, eb) {
+  eb = eb || {};
+  const rows = [];
+  const withEnh = (label, base, add) => {
+    const total = (base || 0) + (add || 0);
+    if (!total) return;
+    rows.push(`${label} <b>+${total}</b>${add ? ` <span style="color:#e69419">(+${add})</span>` : ''}`);
+  };
+  withEnh('ATK', it.atk, eb.atk);
+  withEnh('DEF', it.def, eb.def);
+  withEnh('HP', it.hp, eb.hp);
+  const pct = (v) => (v * 100).toFixed(0);
+  if (it.critChance) rows.push(`${t('statCritInline')} <b>${pct(it.critChance)}%</b>`);
+  if (it.atkSpeed)   rows.push(`${t('statSpeedInline')} <b>${pct(it.atkSpeed)}%</b>`);
+  if (it.hpPct)      rows.push(`HP% <b>+${pct(it.hpPct)}%</b>`);
+  if (it.skillPct)   rows.push(`${t('statSkillPowerInline')} <b>+${pct(it.skillPct)}%</b>`);
+  // Ниже — то, чего в карточке не было вовсе.
+  if (it.speedPct)   rows.push(`Скорость бега <b>+${pct(it.speedPct)}%</b>`);
+  if (it.atkPct)     rows.push(`ATK <b>+${pct(it.atkPct)}%</b>`);
+  if (it.critPower)  rows.push(`Сила крита <b>+${pct(it.critPower)}%</b>`);
+  if (it.xpPct)      rows.push(`Опыт <b>+${pct(it.xpPct)}%</b>`);
+  if (it.dropPct)    rows.push(`Шанс дропа <b>+${pct(it.dropPct)}%</b>`);
+  return rows;
+}
+
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', wings:'Крылья', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
 
 function openInvItemModal(idx) {
   if (!player) return;
@@ -4390,24 +4425,7 @@ function openInvItemModal(idx) {
   const next1 = _enhBonusAt(it, 1);
 
   // Stats display with enhance bonus highlighted
-  const statRows = [];
-  if (it.atk || eb.atk) {
-    const base = it.atk || 0;
-    const total = base + (eb.atk || 0);
-    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#e69419">(+${eb.atk})</span>` : ''}`);
-  }
-  if (it.def || eb.def) {
-    const total = (it.def || 0) + (eb.def || 0);
-    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#e69419">(+${eb.def})</span>` : ''}`);
-  }
-  if (it.hp || eb.hp) {
-    const total = (it.hp || 0) + (eb.hp || 0);
-    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#e69419">(+${eb.hp})</span>` : ''}`);
-  }
-  if (it.critChance) statRows.push(`${t('statCritInline')} <b>${(it.critChance*100).toFixed(0)}%</b>`);
-  if (it.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
-  if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
-  if (it.skillPct)   statRows.push(`${t('statSkillPowerInline')} <b>+${(it.skillPct*100).toFixed(0)}%</b>`);
+  const statRows = _itemStatRows(it, eb);
 
   // Next enhance preview
   const canEnh = enh < _ENH_MAX;
@@ -4603,23 +4621,7 @@ function openEqItemModal(slot) {
   const eb   = _enhBonus(it);
   const next1 = _enhBonusAt(it, 1);
 
-  const statRows = [];
-  if (it.atk || eb.atk) {
-    const total = (it.atk || 0) + (eb.atk || 0);
-    statRows.push(`ATK <b>+${total}</b>${eb.atk ? ` <span style="color:#e69419">(+${eb.atk})</span>` : ''}`);
-  }
-  if (it.def || eb.def) {
-    const total = (it.def || 0) + (eb.def || 0);
-    statRows.push(`DEF <b>+${total}</b>${eb.def ? ` <span style="color:#e69419">(+${eb.def})</span>` : ''}`);
-  }
-  if (it.hp || eb.hp) {
-    const total = (it.hp || 0) + (eb.hp || 0);
-    statRows.push(`HP <b>+${total}</b>${eb.hp ? ` <span style="color:#e69419">(+${eb.hp})</span>` : ''}`);
-  }
-  if (it.critChance) statRows.push(`${t('statCritInline')} <b>${(it.critChance*100).toFixed(0)}%</b>`);
-  if (it.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(it.atkSpeed*100).toFixed(0)}%</b>`);
-  if (it.hpPct)      statRows.push(`HP% <b>+${(it.hpPct*100).toFixed(0)}%</b>`);
-  if (it.skillPct)   statRows.push(`${t('statSkillPowerInline')} <b>+${(it.skillPct*100).toFixed(0)}%</b>`);
+  const statRows = _itemStatRows(it, eb);
 
   const canEnh = enh < _ENH_MAX;
   const nextParts = [];

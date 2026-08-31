@@ -1220,11 +1220,10 @@ const FARM_SHARD_CHANCE = 0.001;
 // its own reference list of what's actually in the zone (see
 // _liveFarmEnemy/_farmZoneMonsterListHtml, js/ui.js) the same way
 // ARM_OFFSETS/FLOOR_ENEMIES already serve the regular bestiary.
-// Liberty из обычной Фарм-зоны: ноль, как и было до моей правки. Владелец
-// вернул прежние числа. Константа оставлена (а не удалена вместе с чтением),
-// чтобы «сколько платит эта зона» отвечалось одним местом, а не жёстким нулём
-// посреди пути награды.
-const FARM_LIBERTY_CHANCE = 0;
+// Liberty из обычной Фарм-зоны — 0.1% за убийство, число владельца. Раньше
+// здесь стоял жёсткий ноль посреди пути награды; теперь «сколько платит эта
+// зона» отвечается одним местом.
+const FARM_LIBERTY_CHANCE = 0.1 / 100;
 const FARM_LVL_MIN = 21;
 const FARM_LVL_MAX = 30;
 const FARM_MOBS_PER_ROOM = 20;
@@ -1365,11 +1364,9 @@ const FARM2_SPECIES = FARM_SPECIES;
 // FARM_EPIC_RECIPE_CHANCE above. Liberty is not part of this table — it is
 // currency (nexum), rolled and granted the same way COOP_LIBERTY_CHANCE is
 // (see the attack/skillAttack handlers, server/index.js).
-// 0.1% за убийство — как и было. Я поднимал это до 3%, потому что коридор тех
-// же уровней платит 2%, а зона сложнее и ограничена по времени; владелец
-// вернул прежнее число. Замечание остаётся здесь как замечание, а не как
-// правка: баланс — его решение.
-const FARM2_LIBERTY_CHANCE          = 0.1 / 100;
+// 0.3% за убийство — число владельца: «в фарм зоне 0.1 должен быть, а в
+// Элитной 0.3».
+const FARM2_LIBERTY_CHANCE          = 0.3 / 100;
 const FARM2_BOX_RARE_CHANCE         = 0.0001 / 100;
 const FARM2_BOX_UNCOMMON_CHANCE     = 0.001 / 100;
 const FARM2_NORM_STONE_CHANCE       = 0.03 / 100;
