@@ -285,9 +285,13 @@ module.exports = function createArena3(deps) {
       // players actually deployed are charged, so a cancelled launch costs
       // nobody anything.
       _lockArena3Daily(socketId);
-      // Same moment the attempt is charged: they are in the match, so the
-      // season task for taking part is earned.
-      io.sockets.sockets.get(socketId)?.data?._seasonAwardEvent?.('arena3');
+      // ── очков сезона арена 3х3 НЕ даёт ────────────────────────────────────
+      // Решение владельца. Здесь начислялись очки «за участие», ниже — «за
+      // победу»; оба вызова сняты. Сезон считает вещи, а не бои: заточку,
+      // сжигание, книги. Три на три от них не зависит и в зачёт не идёт.
+      //
+      // Строки оставлены пустыми намеренно — чтобы следующий читатель видел,
+      // что начисление отсюда УБРАЛИ, а не забыли добавить.
     });
     // Rosters are only known once everyone is placed, so this is a second pass.
     const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
@@ -371,7 +375,7 @@ module.exports = function createArena3(deps) {
       }
       // Every player on the winning side gets the full amount — it is a team
       // result, not a pot split three ways.
-      if (won) s?.data?._seasonAwardWin?.('arena3');
+      // Очков за победу тоже нет — см. выше.
       io.to(sid).emit('arena3Result', { won, winner, wedged: !!wedged, reward, team });
       logPlayer(_socketTid(sid), names.get(sid), 'arena3_end',
         { team, result: winner ? (won ? 'win' : 'lose') : (wedged ? 'wedged' : 'draw'), reward });

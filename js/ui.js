@@ -1231,6 +1231,17 @@ function renderProfessionPanel() {
     </div>
     <div class="profp-cards">${cards}</div>
     <div class="profp-hint">${t('profpFarmHint')}</div>
+    ${/* Смена класса живёт ЗДЕСЬ, под «Проф», а не в отдельном углу: панель
+         профессии — единственное место в игре, которое целиком про класс
+         персонажа и его умения. Прежде окно существовало, а нажать его было
+         неоткуда — я написал модалку и не повесил кнопку. */ ''}
+    <div class="profp-hint" style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(209,204,197,.10)">
+      Не подходит класс? Его можно сменить — навыки и улучшения переносятся.
+    </div>
+    <button onclick="openClassChangeModal()" style="
+      width:100%;margin-top:8px;padding:12px;border:1px solid rgba(205,184,236,.35);
+      border-radius:11px;background:rgba(205,184,236,.08);color:#cdb8ec;
+      font-size:14px;font-weight:700;cursor:pointer">Сменить класс</button>
   `;
 }
 

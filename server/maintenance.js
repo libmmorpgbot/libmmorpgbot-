@@ -28,6 +28,14 @@ const FLAG_PATH = process.env.MAINTENANCE_FLAG
 const FLAG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function _readFlag() {
+  // ── проверки не игра ────────────────────────────────────────────────────
+  // Флаг лежит файлом на МАШИНЕ, поэтому его подхватывает и тестовый сервер,
+  // который поднимает любая живая проверка из dev/. Такой сервер отказывал во
+  // входе всем — и проверки падали по таймауту ожидания входа, ничего при этом
+  // не сломав в игре.
+  //
+  // Режим обслуживания — свойство БОЕВОГО сервера. Тестовый под ним не ходит.
+  if (process.env.NODE_ENV === 'test') return false;
   try {
     const raw = fs.readFileSync(FLAG_PATH, 'utf8');
     const at = Number(String(raw).trim()) || 0;
@@ -42,6 +50,9 @@ function _readFlag() {
 }
 
 function _writeFlag(on) {
+  // По той же причине: проверка, включившая режим у себя, не должна закрывать
+  // боевую игру файлом на общей машине.
+  if (process.env.NODE_ENV === 'test') return;
   try {
     if (on) fs.writeFileSync(FLAG_PATH, String(Date.now()));
     else fs.unlinkSync(FLAG_PATH);
