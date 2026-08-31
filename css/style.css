@@ -791,7 +791,11 @@ canvas { display:block; width:100%; height:100%; }
 .eq-diamond {
   display:grid;
   grid-template-columns: 12% calc((100% - 20px) / 5) 1fr calc((100% - 20px) / 5) 12%;
-  grid-template-rows: repeat(5, 1fr);
+  /* Шесть рядов, а не пять: слотов стало одиннадцать (добавились крылья),
+     и шестая ячейка левой колонки не имела правила — уезжала в левый
+     верхний угол поверх всего. «Сапоги десь літають зліва зверху» — это
+     было ровно оно. */
+  grid-template-rows: repeat(6, 1fr);
   align-items:center;
   gap:5px;
   padding:4px 0 8px;
@@ -808,11 +812,13 @@ canvas { display:block; width:100%; height:100%; }
 #eq-col-left  .eq-cell:nth-child(3) { grid-column:2; grid-row:3; }
 #eq-col-left  .eq-cell:nth-child(4) { grid-column:2; grid-row:4; }
 #eq-col-left  .eq-cell:nth-child(5) { grid-column:2; grid-row:5; }
+#eq-col-left  .eq-cell:nth-child(6) { grid-column:2; grid-row:6; }
 #eq-col-right .eq-cell:nth-child(1) { grid-column:4; grid-row:1; }
 #eq-col-right .eq-cell:nth-child(2) { grid-column:4; grid-row:2; }
 #eq-col-right .eq-cell:nth-child(3) { grid-column:4; grid-row:3; }
 #eq-col-right .eq-cell:nth-child(4) { grid-column:4; grid-row:4; }
 #eq-col-right .eq-cell:nth-child(5) { grid-column:4; grid-row:5; }
+#eq-col-right .eq-cell:nth-child(6) { grid-column:4; grid-row:6; }
 .eq-center {
   grid-column:3;
   grid-row:1 / -1;

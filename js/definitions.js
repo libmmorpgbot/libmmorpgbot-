@@ -63,12 +63,12 @@ const EQ_SLOTS = [
   { slot:'body',     label:'Тело',    emptyIcon:'body'     },
   { slot:'gloves',   label:'Перчи',   emptyIcon:'gloves'   },
   { slot:'cloak',    label:'Плащ',    emptyIcon:'cloak'    },
+  { slot:'wings',    label:'Крылья',  emptyIcon:'wings'    },
   { slot:'boots',    label:'Боты',    emptyIcon:'boots'    },
   { slot:'ring',     label:'Кольцо',  emptyIcon:'ring'     },
   { slot:'belt',     label:'Пояс',    emptyIcon:'belt'     },
   { slot:'pet',      label:'Питомец', emptyIcon:'pet'      },
   { slot:'artifact', label:'Артефакт',emptyIcon:'artifact' },
-  { slot:'wings',    label:'Крылья',  emptyIcon:'wings'    },
 ];
 
 // icon = SVG fallback (js/icons.js); img = the real skill artwork from
