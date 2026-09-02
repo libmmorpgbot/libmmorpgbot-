@@ -19,21 +19,18 @@ function _marketMaxActive(vipLevel) {
 // mechanic gramShopBuy's own pkg.gram uses — see marketBuy below.
 const MARKET_VIP_PCT = 0.10;
 
-function _marketListingData(l) {
-  return {
-    id: l._id.toString(), sellerId: l.sellerId, sellerUsername: l.sellerUsername,
-    item: l.item, price: l.price, createdAt: l.createdAt,
-  };
-}
-function _marketHistoryData(l, myId) {
-  const asSeller = l.sellerId === myId;
-  return {
-    id: l._id.toString(),
-    item: l.item, price: l.price, status: l.status,
-    role: asSeller ? 'sell' : 'buy',
-    counterpart: asSeller ? (l.buyerUsername || null) : l.sellerUsername,
-    createdAt: l.createdAt, soldAt: l.soldAt,
-  };
-}
+// ── тут стояли _marketListingData / _marketHistoryData ─────────────────────
+// Два мапери епохи Mongo (`l._id.toString()`), які пережили переїзд на
+// Postgres і не пережили підключення: жоден із них ніхто не викликав.
+//
+// Ціна цього була не «зайвий код». _marketHistoryData — це ЄДИНЕ місце, де
+// колись з'являлися role / counterpart / soldAt, а клієнт читає саме їх
+// (_renderMarketHistoryTab, js/ui.js). Мапер лишився осторонь — і вся історія
+// ринку малювалася як чужі покупки: «Куплено» з мінусом і без ніка другої
+// сторони, на власних же продажах.
+//
+// Тепер розвертання угоди на того, хто питає, робить market.history()
+// (server/db/repos/market.js) — один шлях, який справді викликається, і поруч
+// із запитом, що єдиний знає обидві сторони. Копію тут не відновлювати.
 
-module.exports = { _marketMaxActive, MARKET_VIP_PCT, _marketListingData, _marketHistoryData };
+module.exports = { _marketMaxActive, MARKET_VIP_PCT };

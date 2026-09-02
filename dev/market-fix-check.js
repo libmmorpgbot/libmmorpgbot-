@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// ── Чотири скарги з ринку, і чому кожна з них більше не відтворюється ───────
+// ── Скарги з ринку, і чому кожна з них більше не відтворюється ──────────────
 //
 //   DATABASE_URL=... PG_CA_FILE=... node dev/market-fix-check.js
 //
-// Скарги, дослівно:
+// Перша партія, дослівно:
 //
 //   1. «коли виставляєш на маркет айтеми то вони без нормальної аватарки, а
 //      стрілка якась замість неї стоїть вправо вверх направлена»
@@ -13,6 +13,18 @@
 //   3. «на маркеті не все відображається, максимум 100 штук»
 //   4. «треба щоб можна було вибрати скільки штук предмета ти продаєш, по
 //      дефолту 1»
+//
+// Друга — про те, що ринок РОЗПОВІДАЄ про вже закриту угоду:
+//
+//   5. «при продажі пише куплено, хоча продано»
+//   6. «і пише -(вартість товару) замість +»
+//   7. «показує не куплену кількість, а загальну в інвентарі»
+//   8. «ім'я користувача, у якого куплено, не показує»
+//
+// Перші дві й остання — одна причина: сервер ніколи не надсилав role /
+// counterpart / soldAt, хоч клієнт читає саме їх. Третя — інша: рядок
+// проданого лоту зливається зі стаком покупця, тож після доставки він тримає
+// вже весь стак. Перевіряються нижче окремими блоками, бо й ламались окремо.
 //
 // Перевіряється ПОВЕДІНКА, а не текст виправлення. Це принципово: перевірка,
 // яка стежить за формулюванням рядка, зеленіє від будь-якого рефакторингу і
@@ -484,6 +496,102 @@ async function dbChecks() {
   eq(huge.length, Math.min(N, CAP), 'клієнт не може підняти стелю власним limit — запит лишається обмеженим');
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  ЗАКРИТА УГОДА: свій бік, свій знак, своя кількість, своє ім'я
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Тут разом обидві половини — база й клієнт, — бо скарга саме про стик: одна
+// угода, два боки, і рядок історії має виглядати по-різному в кожного.
+async function historyChecks() {
+  head('закрита угода: кількість — куплена, а не вся в інвентарі');
+
+  const seller = await mkPlayer('hsell');
+  const buyer  = await mkPlayer('hbuy', 100);
+  // Покупець УЖЕ тримає 50 таких самих ключів. Саме цей стак і підмінював
+  // число в обох тостах: доставлений рядок вливається в нього, і читання
+  // «що ж приїхало» після доставки бачило 53 замість 3.
+  await add(buyer, KEY, 50);
+  const sellerRow = await add(seller, KEY, 30);
+  const lot = await tx(t => market.list(t, seller, sellerRow, 10, { qty: 3 }));
+  const sold = await tx(t => market.buy(t, buyer, lot.id));
+
+  eq(sold.item && sold.item.qty, 3, 'buy() каже, що продано 3 — саме стільки, скільки в лоті');
+  eq(await heldOf(buyer, KEY), 53, 'контроль: у покупця на руках справді 53 — число, яке бралося раніше');
+  eq(await heldOf(seller, KEY), 27, 'а у продавця лишилось 27 із 30');
+
+  // ── і те саме в історії ──────────────────────────────────────────────────
+  head('закрита угода читається з обох боків');
+
+  const sellerHist = (await market.history(null, seller)).filter(h => h.id === lot.id);
+  const buyerHist  = (await market.history(null, buyer)).filter(h => h.id === lot.id);
+  eq(sellerHist.length, 1, 'продавець бачить угоду в історії');
+  eq(buyerHist.length, 1, 'і покупець теж');
+
+  const sh = sellerHist[0] || {}, bh = buyerHist[0] || {};
+  eq(sh.role, 'sell', 'у продавця це ПРОДАЖ, а не покупка');
+  eq(bh.role, 'buy', 'а в покупця — покупка');
+  eq(sh.counterpart, `${TAG}_hbuy`, "продавцю названо, ХТО купив");
+  eq(bh.counterpart, `${TAG}_hsell`, 'а покупцю — у кого куплено');
+  eq(sh.item && sh.item.qty, 3, 'в історії продавця кількість — продані 3');
+  eq(bh.item && bh.item.qty, 3, 'і в історії покупця теж 3, а не 53 з його інвентаря');
+  ok(sh.soldAt != null, 'угода має час закриття, а не лише час виставлення');
+  ok(sh.price === 10 && bh.price === 10, 'і ціну, однакову з обох боків');
+
+  // Знімок лоту не змінюється від того, що покупець зробить із річчю далі:
+  // саме тому історія бере його, а не живий рядок.
+  await tx(t => items.add(t, buyer, KEY, { qty: 200, source: 'admin', sourceRef: TAG }));
+  const afterMore = (await market.history(null, seller)).filter(h => h.id === lot.id)[0] || {};
+  eq(afterMore.item && afterMore.item.qty, 3,
+    'покупець доклав ще 200 — в історії продажу все одно 3');
+
+  // ── і як це малюється ────────────────────────────────────────────────────
+  // Тими самими рядками, які щойно віддала база, через справжній рендерер
+  // вкладки «Історія». Перевіряється те, що видно на екрані.
+  head('рядок історії малює «Продано», плюс, кількість і ніка');
+
+  const { ctx, els, evalIn } = loadClient(null);
+  els['market-body'] = stubEl('market-body');
+  const draw = rows => {
+    evalIn('_marketLoaded.history = true;');
+    ctx.onMarketHistoryData(rows);
+    const el = stubEl('hist');
+    ctx._renderMarketHistoryTab(el);
+    return el.innerHTML;
+  };
+
+  const sellHtml = draw([sh]);
+  ok(sellHtml.includes(ctx.t('soldLbl')), 'продавець бачить «Продано»', sellHtml.slice(0, 200));
+  ok(!sellHtml.includes(ctx.t('boughtLbl')), 'і ніде не «Куплено»');
+  ok(sellHtml.includes('>+9.00'), 'сума зі знаком ПЛЮС і за вирахуванням комісії', sellHtml.slice(-200));
+  ok(sellHtml.includes(`@${TAG}_hbuy`), 'і ніка покупця в рядку', sellHtml.slice(0, 300));
+  ok(sellHtml.includes('\u00d73'), 'і кількість — 3', sellHtml.slice(0, 300));
+
+  const buyHtml = draw([bh]);
+  ok(buyHtml.includes(ctx.t('boughtLbl')), 'покупець бачить «Куплено»');
+  ok(buyHtml.includes('>-10.00'), 'і мінус повну ціну — він же платив', buyHtml.slice(-200));
+  ok(buyHtml.includes(`@${TAG}_hsell`), 'і ніка продавця');
+
+  // КОНТРОЛЬ: рівно та відповідь, на яку скаржились. Стара форма — це запис
+  // БЕЗ role і counterpart, тобто те, що сервер надсилав насправді.
+  const legacyRow = { ...sh };
+  delete legacyRow.role; delete legacyRow.counterpart; delete legacyRow.soldAt;
+  const legacyHtml = draw([legacyRow]);
+  ok(legacyHtml.includes(ctx.t('boughtLbl')) && legacyHtml.includes('>-10.00')
+     && !legacyHtml.includes('@'),
+    'контроль: без цих полів власний ПРОДАЖ і справді малювався «Куплено» з мінусом і без ніка',
+    legacyHtml.slice(0, 200));
+
+  // ── зняття лоту повертає те, що в ньому лежало ───────────────────────────
+  head('знятий лот повертає свою кількість, а не весь стак');
+  const back = await mkPlayer('hcancel');
+  await add(back, BLESS, 40);
+  const backRow = (await invOf(back)).find(r => r.id === BLESS).rowId;
+  const backLot = await tx(t => market.list(t, back, backRow, 10, { qty: 5 }));
+  const cancelled = await tx(t => market.cancel(t, back, backLot.id));
+  eq(cancelled.item && cancelled.item.qty, 5, 'повернулось саме 5 — рівно те, що було в лоті');
+  eq(await heldOf(back, BLESS), 40, 'і на руках знову всі 40');
+}
+
 async function cleanup() {
   if (!made.length) return;
   const q = (s, p) => pool().query(s, p).catch(() => {});
@@ -523,6 +631,7 @@ async function cleanup() {
   console.log(`\nmarket-fix-check  (${TAG})`);
   clientChecks();
   await dbChecks();
+  await historyChecks();
 })()
   .catch(err => { fail++; failures.push('НЕОБРОБЛЕНА ПОМИЛКА'); console.error('\n', err); })
   .finally(async () => {

@@ -306,6 +306,30 @@ async function byId(db, listingId) {
   return rows.length ? _lot(rows[0]) : null;
 }
 
+// ── ЩО САМЕ лежить у лоті ───────────────────────────────────────────────────
+// Читається ДО того, як рядок віддадуть гравцеві, і це не оптимізація, а
+// єдиний момент, коли відповідь ще правдива.
+//
+// items.attachFromListing() чіпляє рядок лоту до гравця й одразу зливає його
+// зі стаком, який у того вже лежить (mergeStacks з `keep: rowId`) — вижити має
+// саме цей рядок, бо на нього ще посилається лот. Тобто після виклику той
+// самий id тримає вже ВЕСЬ стак покупця, а не куплену кількість.
+//
+// Через це обидва тости називали не те число: «Куплено: Камень заточки ×296»
+// на купівлю трьох штук — 296 це те, скільки в покупця стало всього. Той самий
+// рядок їхав продавцю в marketSold, тож і його «Продано» брехало так само, і
+// повернення лоту в marketCancel теж.
+//
+// Рядок лоту нічий (player_id IS NULL) і тримає рівно кількість лоту, поки не
+// віддали, — саме її тут і читаємо.
+async function _lotItemRow(db, itemRowId) {
+  const { rows } = await query(db,
+    'SELECT id, item_id, enhance, qty FROM player_items WHERE id = $1', [itemRowId]);
+  return rows.length
+    ? { rowId: Number(rows[0].id), id: rows[0].item_id, enhance: rows[0].enhance || 0, qty: rows[0].qty || 1 }
+    : null;
+}
+
 // ── cancel ──────────────────────────────────────────────────────────────────
 // The item comes back in the same transaction that closes the listing. The old
 // version cancelled first and discovered afterwards whether there was room —
@@ -320,6 +344,11 @@ async function cancel(db, playerId, listingId) {
      FOR UPDATE`, [listingId, playerId]);
   if (!rows.length) err('not_found', 'Лот не знайдено');
 
+  // WHAT the lot holds, read BEFORE it goes back in the bag. See _lotItemRow:
+  // attachFromListing merges the returning row into the stack the player
+  // already has, so reading it afterwards reports the whole stack.
+  const back = await _lotItemRow(db, rows[0].item_row_id);
+
   // The reason is spelled out because attachFromListing serves both a
   // cancellation and a sale, and its default names the sale. A cancelled lot
   // recorded as a purchase would read, months later, as a trade that never
@@ -332,15 +361,11 @@ async function cancel(db, playerId, listingId) {
     UPDATE market_listings SET status = 'cancelled', closed_at = now()
      WHERE id = $1`, [listingId]);
 
-  const { rows: back } = await query(db,
-    'SELECT id, item_id, enhance, qty FROM player_items WHERE id = $1', [rows[0].item_row_id]);
   return {
     listingId: Number(listingId), itemRowId: Number(rows[0].item_row_id),
     // Named as the client reads them: it prints which item came back.
-    item: back.length
-      ? { rowId: Number(back[0].id), id: back[0].item_id, enhance: back[0].enhance || 0, qty: back[0].qty || 1 }
-      : null,
-    delivered: back.length > 0,
+    item: back,
+    delivered: back != null,
   };
 }
 
@@ -404,6 +429,9 @@ async function buy(db, buyerId, listingId) {
     reason: 'market_sale', refType: 'market_listing', refId: String(listingId), idemKey: `${idem}:payout`,
   });
 
+  // WHAT is being handed over, read BEFORE the handover. See _lotItemRow.
+  const soldItem = await _lotItemRow(db, lot.item_row_id);
+
   // lot.item_row_id is a player_items.id, NOT a catalog item id. The column is
   // named item_id in the table and that has already misled once — every
   // variable on this side spells out which of the two it holds.
@@ -426,21 +454,16 @@ async function buy(db, buyerId, listingId) {
   // farmable by two accounts selling to each other.
   await progression.addVipSpend(db, buyerId, price * MARKET_VIP_PCT);
 
-  // What the buyer actually received, read back from the row that just moved.
-  // The client shows it — "you bought X" — and without it the confirmation
-  // names nothing.
-  const { rows: got } = await query(db,
-    'SELECT id, item_id, enhance, qty FROM player_items WHERE id = $1', [lot.item_row_id]);
-  const item = got.length
-    ? { rowId: Number(got[0].id), id: got[0].item_id, enhance: got[0].enhance || 0, qty: got[0].qty || 1 }
-    : null;
-
   return {
     listingId: Number(listingId), sellerId, price, fee, payout,
     buyerBalance: paid.balance, itemRowId: Number(lot.item_row_id),
     // The names the client destructures. `buyerBalance` reached it as
     // `newBalance: undefined`, which is what the GRAM counter was then set to.
-    item,
+    //
+    // `item` is what the LOT held — read above, before delivery. Both toasts
+    // are built from it: the buyer's "Куплено: X ×n" and, through the
+    // marketSold push, the seller's "Продано: X ×n".
+    item: soldItem,
     newBalance: paid.balance,
     delivered: true,          // it is in the inventory or this threw
   };
@@ -468,11 +491,40 @@ const COLS_PLAIN = `
   s.username AS seller_username, l.seller_id,
   i.item_id, i.enhance, i.qty,
   c.name AS item_name, c.rarity, c.slot`;
+// ── і та сама пара, але для ІСТОРІЇ: знімок ПЕРШИЙ ─────────────────────────
+// COLS_SNAP вище бере живий рядок і падає на знімок — правильно для активного
+// лоту, де рядок нічий і тримає рівно те, що виставили.
+//
+// Для закритого лоту це рівно навпаки. Проданий рядок їде до покупця й одразу
+// зливається з його стаком (items.attachFromListing → mergeStacks), тож `i.qty`
+// у нього — це вже все, що покупець тримає: «показує не куплену кількість, а
+// загальну в інвентарі». Покупець його ще й заточує, і тоді `i.enhance` — теж
+// не те, що продали.
+//
+// Знімок робиться в момент виставлення (list() вище) і після цього не
+// змінюється ніколи. Запис про угоду має казати, ЩО ПРОДАЛИ, а не що з тією
+// річчю сталося потім.
+//
+// На старій схемі (міграція 010 ще не пройшла) знімка просто немає — там і
+// далі живий рядок, бо іншого джерела не існує.
+const COLS_HIST = `
+  l.id, l.price, l.created_at, l.status,
+  s.username AS seller_username, l.seller_id,
+  COALESCE(l.snap_item_id, i.item_id)      AS item_id,
+  COALESCE(l.snap_enhance, i.enhance, 0)   AS enhance,
+  COALESCE(l.snap_qty,     i.qty, 1)       AS qty,
+  c.name AS item_name, c.rarity, c.slot`;
 const listingCols = async () =>
   (await hasColumn('market_listings', 'snap_item_id')) ? COLS_SNAP : COLS_PLAIN;
+const historyCols = async () =>
+  (await hasColumn('market_listings', 'snap_item_id')) ? COLS_HIST : COLS_PLAIN;
 const catalogJoin = async () =>
   (await hasColumn('market_listings', 'snap_item_id'))
     ? 'COALESCE(i.item_id, l.snap_item_id)'
+    : 'i.item_id';
+const historyCatalogJoin = async () =>
+  (await hasColumn('market_listings', 'snap_item_id'))
+    ? 'COALESCE(l.snap_item_id, i.item_id)'
     : 'i.item_id';
 
 function _lot(r) {
@@ -546,19 +598,49 @@ async function mine(db, playerId) {
 // Closed lots this account was on either side of. The item row may since have
 // moved on (or been consumed by a craft), so this LEFT JOINs it — history must
 // survive the thing it describes.
+//
+// ── одна й та сама угода читається з ДВОХ боків ────────────────────────────
+// Той самий рядок бачить і продавець, і покупець, і виглядати він має
+// по-різному. Тому запис віддається вже РОЗВЕРНУТИМ на того, хто питає:
+//
+//   role        'sell' | 'buy' — своя сторона угоди;
+//   counterpart нік другої сторони;
+//   soldAt      коли угода закрилась (для знятого лоту — коли зняли).
+//
+// Ці три поля клієнт читає давно (_renderMarketHistoryTab, js/ui.js) — і не
+// отримував жодного з них. Наслідок був рівно такий: `h.role` undefined, тобто
+// не 'sell', тобто КОЖЕН рядок історії підписувався «Куплено» і показував суму
+// зі знаком мінус — включно з власними продажами; а `h.counterpart` undefined
+// прибирав нік другої сторони взагалі.
+//
+// Розвертання робиться тут, а не в обробнику, бо playerId — це і є те, що
+// відрізняє один бік угоди від іншого, і запит уже приймає його параметром.
 async function history(db, playerId, limit = 30) {
+  const me = Number(playerId);
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}, l.buyer_id, l.closed_at,
+    SELECT ${await historyCols()}, l.buyer_id, l.closed_at,
            b.username AS buyer_username
       FROM market_listings l
       JOIN players       s ON s.id = l.seller_id
  LEFT JOIN players       b ON b.id = l.buyer_id
  LEFT JOIN player_items  i ON i.id = l.item_id
- LEFT JOIN item_catalog  c ON c.item_id = ${await catalogJoin()}
+ LEFT JOIN item_catalog  c ON c.item_id = ${await historyCatalogJoin()}
      WHERE (l.seller_id = $1 OR l.buyer_id = $1) AND l.status <> 'active'
      ORDER BY l.closed_at DESC NULLS LAST
      LIMIT $2`, [playerId, Math.min(limit, 100)]);
-  return rows.map(r => ({ ..._lot(r), buyerId: r.buyer_id ? Number(r.buyer_id) : null, buyerUsername: r.buyer_username, closedAt: r.closed_at }));
+  return rows.map(r => {
+    const lot = _lot(r);
+    const asSeller = lot.sellerId === me;
+    return {
+      ...lot,
+      buyerId: r.buyer_id ? Number(r.buyer_id) : null,
+      buyerUsername: r.buyer_username || null,
+      closedAt: r.closed_at,
+      role: asSeller ? 'sell' : 'buy',
+      counterpart: asSeller ? (r.buyer_username || null) : (r.seller_username || null),
+      soldAt: r.closed_at,
+    };
+  });
 }
 
 module.exports = { list, cancel, buy, browse, mine, history, byId, MarketError, MARKET_BROWSE_MAX };
