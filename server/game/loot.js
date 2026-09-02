@@ -17,7 +17,10 @@ const {
   FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
-  FARM2_UNIQUE_WEAPON_CHANCE,
+  FARM2_UNIQUE_WEAPON_CHANCE, FARM2_GEAR_CHANCE,
+  FARM2_SKILL_BOOK_CHANCE, FARM2_PASSIVE_BOOK_CHANCE,
+  FARM2_SPECIES_GEAR_SLOTS, FARM2_SPECIES_SKILL_BOOKS, FARM2_SPECIES_ADV_BOOKS,
+  FARM2_SPECIES_PASSIVE_BOOKS,
 } = require('../../shared/definitions');
 const { _invAdd } = require('../inventory');
 
@@ -180,15 +183,23 @@ function _rollFarmZoneLoot(inv, eid) {
 }
 
 // ── Элитная фарм-зона kill loot ──────────────────────────────────────────
-// Same shape as _rollFarmZoneLoot above (independent flat rolls, no
-// equipment/key/regular-skill-book drops), but no per-species split: this
-// zone only runs FARM2_SPECIES' own two archetypes, so there is no reason to
-// carve the box/stone/recipe/book pool up further the way FARM_SPECIES_
-// SHARDS/FARM_SPECIES_BOOKS do — one random book from the FULL 20-book pool
-// on the one book roll that lands. Liberty is NOT rolled here — it's
-// currency (nexum), rolled and granted by the attack/skillAttack handlers
-// the same way COOP_LIBERTY_CHANCE is (see FARM2_LIBERTY_CHANCE there).
-function _rollFarm2Loot(inv) {
+// Независимые плоские броски, по одному на вид добычи, как и в обычной
+// Фарм-зоне выше. Отличий два.
+//
+// ПЕРВОЕ — зона роняет снаряжение, и роняет его иначе, чем коридоры. Там
+// один бросок и ОДНА редкость, назначенная уровнем монстра
+// (itemRarityForLevel); здесь четыре отдельных броска, common → epic, и с
+// одного и того же монстра может выпасть что угодно из этого ряда.
+//
+// ВТОРОЕ — «раскидано по разным монстрам»: снаряжение, книги первой и второй
+// профессии и книги пассивок берутся не из общего каталога, а из
+// подмножества УБИТОГО ВИДА (FARM2_SPECIES_* в shared/definitions.js).
+// Ставки при этом общие для зоны — вид решает, ЧТО выпадет, а не как часто.
+//
+// Liberty здесь не бросается — это валюта (nexum), её бросают и начисляют
+// обработчики attack/skillAttack (server/handlers2/world.js) по
+// FARM2_LIBERTY_CHANCE.
+function _rollFarm2Loot(inv, eid) {
   const granted = [];
   function addMat(id, qty) {
     const mat = CRAFT_MATS.find(m => m.id === id);
@@ -198,16 +209,48 @@ function _rollFarm2Loot(inv) {
     const box = BOX_DEF.find(b => b.id === id);
     if (box && _invAdd(inv, { ...box, qty })) granted.push({ id: box.id, name: box.name, rarity: box.rarity, qty });
   }
+  // Один бросок по своему пулу вида. Пустой пул — не «молча ничего»: он
+  // означает, что таблица деления не знает этого eid, и тогда бросок идёт по
+  // полному набору, как до деления. Для настоящего убийства в зоне такого не
+  // бывает (FARM2_SPECIES и таблицы строятся из одного списка), но молчаливая
+  // потеря дропа — худшее, чем можно ответить на рассинхрон.
+  function rollFrom(chance, speciesPool, fullPool) {
+    if (Math.random() >= chance) return;
+    const pool = (speciesPool && speciesPool.length) ? speciesPool : fullPool;
+    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
+  }
+
+  // ── снаряжение: свой бросок на каждую редкость ──────────────────────────
+  // Слоты — свои у каждого вида, редкости — общие. `!d.noDrop` исключает
+  // уникальное оружие: у него собственный бросок ниже, и попасть в обычный
+  // пул оно не должно.
+  const gearSlots = FARM2_SPECIES_GEAR_SLOTS[eid]
+    || ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+  for (const rarity of Object.keys(FARM2_GEAR_CHANCE)) {
+    if (Math.random() >= FARM2_GEAR_CHANCE[rarity]) continue;
+    const pool = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && gearSlots.includes(d.slot));
+    if (!pool.length) continue;
+    const it = pool[Math.floor(Math.random() * pool.length)];
+    if (_invAdd(inv, { ...it })) granted.push({ id: it.id, name: it.name, rarity: it.rarity, qty: 1 });
+  }
+
+  // ── книги: первая профессия, вторая профессия, пассивки ─────────────────
+  rollFrom(FARM2_SKILL_BOOK_CHANCE, FARM2_SPECIES_SKILL_BOOKS[eid],
+    CRAFT_MATS.filter(m => m.skillKey).map(m => m.id));
+  rollFrom(FARM2_ADV_SKILL_BOOK_CHANCE, FARM2_SPECIES_ADV_BOOKS[eid],
+    CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id));
+  rollFrom(FARM2_PASSIVE_BOOK_CHANCE, FARM2_SPECIES_PASSIVE_BOOKS[eid],
+    CRAFT_MATS.filter(m => m.passiveId).map(m => m.id));
+
+  // ── общее для всей зоны, без деления по видам ───────────────────────────
+  // Рецепт не привязан ни к классу, ни к слоту, а камень заточки и ящик — по
+  // одной штуке на вид добычи: делить тут нечего.
   if (Math.random() < FARM2_BOX_RARE_CHANCE) addBox('box_rare', 1);
   if (Math.random() < FARM2_BOX_UNCOMMON_CHANCE) addBox('box_uncommon', 1);
   if (Math.random() < FARM2_NORM_STONE_CHANCE) addMat('norm_stone', 1);
   if (Math.random() < FARM2_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
   if (Math.random() < FARM2_EPIC_RECIPE_CHANCE) addMat('rece', 1);
   if (Math.random() < FARM2_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
-  if (Math.random() < FARM2_ADV_SKILL_BOOK_CHANCE) {
-    const pool = CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id);
-    if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
-  }
   // One random EPIC-tier unique weapon — see FARM2_UNIQUE_WEAPON_CHANCE's
   // own comment on why this is the one deliberate exception to `noDrop`.
   if (Math.random() < FARM2_UNIQUE_WEAPON_CHANCE) {

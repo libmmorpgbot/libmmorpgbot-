@@ -632,7 +632,23 @@ function generateFarmZone2() {
   }
   const rooms = [buildRoom(-1), buildRoom(1)];
 
-  const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19) — same species/level band
+  // ── ранг и цвет считаются по полосе САМОЙ ЗОНЫ ────────────────────────────
+  // «Слабый» … «Запредельный» — это положение монстра на шкале, и раньше
+  // шкалой был рукав: localLvl = lvl - ARM_OFFSETS[1], потолок roomsInArm(2).
+  // Пока зона стояла на 30-40, она целиком лежала внутри рукава 2 и это
+  // работало.
+  //
+  // Полоса 40-53 пересекает границу рукавов 2 и 3. По рукавной шкале уровень
+  // 40 — это местный 20 при потолке 19, то есть «Запредельный», а следующий
+  // за ним 41 — местный 1, то есть «Слабый». Ранг падал бы до дна ровно
+  // посреди зоны, и цвет вместе с ним: два соседних монстра в одной пачке
+  // выглядели бы как из разных мест.
+  //
+  // Шкала зоны такой границы не знает: 40 — низ, 53 — верх, между ними
+  // ровный подъём. Ранг здесь и должен означать «насколько он силён ДЛЯ ЭТОЙ
+  // ЗОНЫ», а не «сколько комнат он прошёл бы в коридоре, которого зона не
+  // касается».
+  const maxLocalLvl = FARM2_LVL_MAX - FARM2_LVL_MIN + 1;
   const enemyList = [];
   let eid = 0;
   // Pack cluster centers sit on an evenly-spaced GRID_N×GRID_N grid instead
@@ -676,7 +692,7 @@ function generateFarmZone2() {
           const gx = ccx + Math.floor(rng() * 3) - 1, gy = ccy + Math.floor(rng() * 3) - 1;
           if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
         }
-        const localLvl = lvl - ARM_OFFSETS[1];
+        const localLvl = lvl - FARM2_LVL_MIN + 1;
         const hp = Math.max(1, Math.round(stats.hp * FARM2_STAT_MULT));
         const atk = Math.max(1, Math.round(stats.atk * FARM2_STAT_MULT));
         const enemy = {

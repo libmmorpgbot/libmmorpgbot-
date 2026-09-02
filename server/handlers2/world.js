@@ -298,7 +298,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (result.arm === 'coop') return out;
 
     if (result.farmZone) out.items = loot._rollFarmZoneLoot(scratch, result.eid) || [];
-    else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
+    else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch, result.eid) || [];
     else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl, playerLevel) || [];
 
     // VIP and the season ticket buy a second roll, not a better one — the same
