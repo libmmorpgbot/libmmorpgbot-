@@ -37,8 +37,8 @@ const { query } = require('../db');
 const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
-  NEXUM_DROP_CHANCE, FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
-  GRAM_DROP_CHANCE, GRAM_PER_LEVEL, armIndexForLevel, clanBonusOf, LEVEL_UP_HEAL,
+  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
+  GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
 } = require('../../shared/definitions');
@@ -448,34 +448,26 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const myXp = Math.round(baseXp * (1 + xpPct / 100));
 
     // ── Liberty from the kill ───────────────────────────────────────────────
-    // `result.nexum` is read three lines below, passed to grantKillReward and
-    // emitted to the client — and nothing has ever assigned it. The chance
-    // table was a local const in the retired handler file and did not come
-    // across, so Liberty has never dropped from a monster in this build.
+    // Only the farm zones pay it. An ordinary corridor kill — on any floor, at
+    // any level, boss included — pays none: the per-arm corridor table
+    // (NEXUM_DROP_CHANCE, 0.5%-5% by arm) is gone, and with it the reason to
+    // grind the open world for currency instead of playing the zones built
+    // for it. Сотрудничество (Coop) keeps its own flat rate: it is a timed
+    // mode with a fixed reward, not a floor, and that roll plus the boss
+    // payout is the entire reward of a co-op kill (no gold, no GRAM — see
+    // calcGoldDrop and myGram below).
     //
-    // The season card's third promise is here: +10% RELATIVE to the chance,
-    // which is what SEASON_TICKET_LIBERTY_PCT is for and where it was never
-    // read.
-    // Every zone with a table of its own is tested BEFORE the corridor table,
-    // and co-op is first because it is the one that reads as working without
-    // its branch: a co-op monster still has an rlvl, so armIndexForLevel gives
-    // a perfectly ordinary corridor number and NEXUM_DROP_CHANCE[arm] pays
-    // out at 0.5%-5% by stage instead of the flat COOP_LIBERTY_CHANCE. That
-    // is the whole reward of a co-op kill (no gold, no GRAM — see calcGoldDrop
-    // and myGram below), paying a twentieth of what it says on stage one, with
-    // the constant that says so sitting unread in server/game/coop.js.
-    //
-    // The season ticket's +10% stays on the corridor branch alone: it buys a
-    // better chance at the open world's Liberty, not at a fixed per-zone rate
-    // the mode's own balance is built on.
-    const arm = armIndexForLevel(result.rlvl || 1);
+    // The season card's third promise — +10% RELATIVE to the chance, which is
+    // what SEASON_TICKET_LIBERTY_PCT is for — used to ride on the corridor
+    // branch alone. That branch now pays zero, so it rides on the farm zones
+    // instead: the card would otherwise advertise a bonus to a chance that no
+    // longer exists anywhere a player can buy into. Coop is still left out of
+    // it, being a fixed per-mode rate its own balance is built on.
+    const ticketLibertyMult = ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1;
     const libertyChance = result.arm === 'coop' ? (COOP_LIBERTY_CHANCE || 0)
-      : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0)
-      // Было жёстким нулём: обычная Фарм-зона не платила Liberty вообще,
-      // хотя коридор тех же 21-30 уровней платит 1%. «В фарм и элит фарме
-      // не дропаются Либерти» — здесь это было буквально так.
-      : result.farmZone ? (FARM_LIBERTY_CHANCE || 0)
-      : (NEXUM_DROP_CHANCE[arm] || 0) * (ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1);
+      : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0) * ticketLibertyMult
+      : result.farmZone ? (FARM_LIBERTY_CHANCE || 0) * ticketLibertyMult
+      : 0;
     const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
 
     // GRAM, the real-money currency. Not from the farm zones and not from the

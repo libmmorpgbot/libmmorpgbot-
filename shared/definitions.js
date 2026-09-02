@@ -452,6 +452,33 @@ function calcGoldDrop(enemy) {
   return Math.random() > 0.30 ? 0 : g;
 }
 
+// ── Where a floor's drop chances stop growing ───────────────────────────────
+// Every drop chance in the corridors climbs with the room's LOCAL level (the
+// 1..roomsInArm position inside its own arm — armLocalLevel below): gear,
+// keys, enchant stones and the recipe multiplier all compound per level. Past
+// this local level they stop: the 13th room of a floor and every room after
+// it on that same floor roll one and the same chance.
+//
+// Local, not global, so the cap lands in the same place on every floor —
+// global levels 13 (arm 1), 33 (arm 2), 53 (arm 3) and 73 (arm 4), each of
+// them ARM_OFFSETS[arm - 1] + 13. The last rooms of a floor are still the
+// better place to farm than the first ones (the arm multiplier and the rarity
+// tier are unchanged), they just no longer keep pulling ahead of room 13.
+const DROP_GROWTH_MAX_ROOM_LEVEL = 13;
+// Local room level as the drop formulas below see it: real position, capped.
+function dropGrowthRoomLevel(localLvl) {
+  return Math.min(DROP_GROWTH_MAX_ROOM_LEVEL, Math.max(1, localLvl || 1));
+}
+// Same cap expressed as a GLOBAL monster level, for the one drop curve that
+// is written against global levels rather than local ones
+// (itemDropChanceAtLevel). Rarity is still picked from the monster's REAL
+// level — only the growth inside the tier freezes — so the 14th-20th rooms of
+// a floor keep dropping their own tier, at room 13's chance.
+function dropGrowthLevel(lvl) {
+  lvl = Math.max(1, lvl || 1);
+  return Math.min(lvl, ARM_OFFSETS[armIndexForLevel(lvl) - 1] + DROP_GROWTH_MAX_ROOM_LEVEL);
+}
+
 // Equipment (gear) drop: which RARITY drops is decided by the level — 1-10
 // is common-only (a gearless-start on-ramp), then arm ranges the same as
 // before (each arm from 11 onward = one rarity tier).
@@ -513,7 +540,15 @@ function itemDropChanceAtLevel(lvl) {
   const startPct = _itemTierStartChancePct(rarity);
   const endPct = startPct + ITEM_DROP_GROWTH_PCT * (tierMax - tierMin);
   const span = Math.max(1, tierMax - tierMin);
-  const frac = Math.min(1, (lvl - tierMin) / span);
+  // The curve is walked with the CAPPED level (dropGrowthLevel above): the
+  // rarity, the tier and its endpoints all come from the monster's real
+  // level, only how far along its tier the chance has climbed stops at the
+  // 13th room of the floor. `frac` is clamped at 0 as well because a level
+  // past the cap of a tier that starts later — legendary starts at 61 while
+  // arm 4's cap is 73, so this never fires today, but a re-tuned ARM_OFFSETS
+  // must not silently produce a negative fraction and a chance BELOW the
+  // tier's own starting value.
+  const frac = Math.min(1, Math.max(0, (dropGrowthLevel(lvl) - tierMin) / span));
   const pct = startPct * Math.pow(endPct / startPct, frac);
   return Math.min(100, pct * (_ITEM_TIER_EXTRA_MULT[rarity] || 1));
 }
@@ -1858,15 +1893,22 @@ const ROOM_KEY_BASE = { uncommon: 0.004, rare: 0.0008 }; // room level 1 base ch
 const ROOM_ENCHANT_STONE_BASE   = 0.0001; // room level 1 base chance (Камень обычной заточки) — ×100 lower than the original
 const ROOM_ENCHANT_STONE_GROWTH = 0.01; // +1% per room level
 
+// All three take the LOCAL room level and run it through
+// dropGrowthRoomLevel() first: growth stops at DROP_GROWTH_MAX_ROOM_LEVEL
+// (see its comment up in the gear-drop section), so every room from the 13th
+// of a floor onwards — its boss room included — rolls exactly the chance room
+// 13 rolls. Capped here rather than at the call sites so the server's roll
+// (server/game/loot.js) and the bestiary panel that advertises it
+// (js/ui.js) cannot drift apart.
 function roomDropMult(lvl) {
-  return Math.pow(1 + ROOM_DROP_GROWTH, Math.max(1, lvl || 1) - 1);
+  return Math.pow(1 + ROOM_DROP_GROWTH, dropGrowthRoomLevel(lvl) - 1);
 }
 function roomKeyChance(lvl, tier) {
   const base = ROOM_KEY_BASE[tier] || 0;
-  return base * Math.pow(1 + ROOM_KEY_GROWTH, Math.max(1, lvl || 1) - 1);
+  return base * Math.pow(1 + ROOM_KEY_GROWTH, dropGrowthRoomLevel(lvl) - 1);
 }
 function roomEnchantStoneChance(lvl) {
-  return ROOM_ENCHANT_STONE_BASE * Math.pow(1 + ROOM_ENCHANT_STONE_GROWTH, Math.max(1, lvl || 1) - 1);
+  return ROOM_ENCHANT_STONE_BASE * Math.pow(1 + ROOM_ENCHANT_STONE_GROWTH, dropGrowthRoomLevel(lvl) - 1);
 }
 
 // ── Event boss (summoned from the admin panel) ──────────────────────────────
@@ -2370,29 +2412,35 @@ const VIP_BONUSES = [
 // of a season stops paying the moment it does. Stacks additively on top of
 // VIP's own xp/drop bonuses (server/index.js's _vipBon), same percentage
 // units; the Liberty (Nexum) drop chance has no VIP bonus of its own to
-// stack with, so this is applied as a straight relative multiplier there.
-// ── Liberty from an ordinary kill ───────────────────────────────────────────
-// By corridor: the deeper the arm, the better the chance. These lived as local
-// consts inside the OLD handler file (server/handlers/world.js) and were never
-// moved when the handlers were rewritten — so `result.nexum` is read and
-// emitted by the new kill path, and nothing has ever set it. Liberty simply
-// did not drop from monsters at all.
+// stack with, so this is applied as a straight relative multiplier there —
+// on the farm-zone rates, the only per-kill Liberty a player can buy into.
+
+// ── Liberty from a corridor kill: none ──────────────────────────────────────
+// There is no corridor table any more. A per-arm one used to live here
+// (0.5%-5% by arm, index = armIndexForLevel) and it made the open world the
+// cheapest place to mine currency: floors are unlimited, always open and
+// safe to grind, so the two farm zones — daily-capped and built around their
+// own Liberty rates (FARM_LIBERTY_CHANCE / FARM2_LIBERTY_CHANCE above) — were
+// competing with a source that never runs out. Liberty is now theirs alone,
+// plus the fixed per-mode rates of Сотрудничество and Гонка (COOP_LIBERTY_
+// CHANCE below, RACE10_LIBERTY further down).
 //
-// Index is the corridor number (armIndexForLevel), 1..5; index 0 is the hub.
-const NEXUM_DROP_CHANCE = [0, 0.005, 0.01, 0.02, 0.03, 0.05];
+// Deleted rather than zeroed: a table of zeroes is an invitation to "restore"
+// numbers that were removed on purpose, and server/handlers2/world.js now
+// says the same thing in one literal 0 branch.
 
 // ── Liberty from a Сотрудничество (Coop) kill ───────────────────────────────
-// One flat chance for the whole run, not the corridor table above: a co-op
-// stage escalates through COOP_STAGE_LEVELS, so the corridor its monsters
-// happen to fall in is an artefact of the stage number, not something the
-// player chose to farm.
+// One flat chance for the whole run: a co-op stage escalates through
+// COOP_STAGE_LEVELS, so the corridor its monsters happen to fall in is an
+// artefact of the stage number, not something the player chose to farm — the
+// reason this rate is per-mode and survives the corridors losing theirs.
 //
 // It lived as a local const inside server/game/coop.js and was returned by
 // that factory to nobody — the kill-reward path never had a `coop` branch, so
-// a co-op kill silently rolled NEXUM_DROP_CHANCE[arm] instead: 0.5% on stage
-// one against the 10% this says, and no reader anywhere to notice. Moved here
-// beside FARM2_LIBERTY_CHANCE, which is the same kind of per-zone override and
-// whose own comment has pointed at this constant all along.
+// a co-op kill silently rolled the old per-arm corridor table instead: 0.5%
+// on stage one against the 10% this says, and no reader anywhere to notice.
+// Moved here beside FARM2_LIBERTY_CHANCE, which is the same kind of per-zone
+// override and whose own comment has pointed at this constant all along.
 const COOP_LIBERTY_CHANCE = 0.1;
 
 // ── GRAM from an ordinary kill ──────────────────────────────────────────────
@@ -2402,9 +2450,9 @@ const COOP_LIBERTY_CHANCE = 0.1;
 // fractions survive. Rounding a GRAM balance to 2 decimals destroys a whole
 // session of farming, which is why _round7 exists in server/inventory.js.
 //
-// Same story as NEXUM_DROP_CHANCE: local consts in the retired handler file
-// that never came across, so `result.gram` was read and emitted by the new
-// kill path with nothing ever setting it.
+// Same story the Liberty constants above tell: local consts in the retired
+// handler file that never came across, so `result.gram` was read and emitted
+// by the new kill path with nothing ever setting it.
 const GRAM_DROP_CHANCE = 0.075;
 const GRAM_PER_LEVEL = 0.0000001;
 
@@ -2635,7 +2683,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_BONUSES,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
-  NEXUM_DROP_CHANCE, COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
+  COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,
@@ -2667,6 +2715,7 @@ if (typeof module !== 'undefined') module.exports = {
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
+  DROP_GROWTH_MAX_ROOM_LEVEL, dropGrowthRoomLevel, dropGrowthLevel,
   EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
   DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H,
   DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,

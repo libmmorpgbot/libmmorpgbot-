@@ -18,9 +18,12 @@
 //   Six buff potions write a buff into player_progress.buffs. Three of them —
 //   exp, gold, regen — were read by nothing. Bought, dropped, drunk, no effect.
 //
-//   And NEXUM_DROP_CHANCE never came across from the retired handler file at
-//   all, so `result.nexum` was read, passed on and emitted while nothing ever
-//   set it: Liberty did not drop from monsters.
+//   And the corridor Liberty table never came across from the retired handler
+//   file at all, so `result.nexum` was read, passed on and emitted while
+//   nothing ever set it: Liberty did not drop from monsters. It drops from
+//   the farm zones now and ONLY from them — the corridor table is gone on
+//   purpose, so what is checked below is that the floors pay zero and the
+//   zones do not.
 //
 // A test for this class cannot be "does it error" — none of them did. It has to
 // read the number that comes out and compare it against the number the item's
@@ -35,10 +38,15 @@ const stats = require('../server/db/repos/stats');
 const consumables = require('../server/db/repos/consumables');
 const items = require('../server/db/repos/items');
 const { wipeItemsAll } = require('./fixtures');
+// Whole-module handle as well as the named ones: the corridor Liberty table
+// was DELETED, and the only honest way to assert that is to look for a key
+// that must not be there.
+const defs = require('../shared/definitions');
 const {
   VIP_BONUSES, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT,
-  SEASON_TICKET_DROP_PCT, NEXUM_DROP_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL, ITEM_DEF,
-} = require('../shared/definitions');
+  SEASON_TICKET_DROP_PCT, GRAM_DROP_CHANCE, GRAM_PER_LEVEL, ITEM_DEF,
+  FARM_LIBERTY_CHANCE, FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
+} = defs;
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -75,8 +83,10 @@ async function main() {
   eq(SEASON_TICKET_XP_PCT, 100, 'сезонна картка обіцяє x2 досвіду');
   ok(SEASON_TICKET_DROP_PCT > 0 && SEASON_TICKET_LIBERTY_PCT > 0,
     `і +${SEASON_TICKET_DROP_PCT} до лута та +${SEASON_TICKET_LIBERTY_PCT}% до шансу Liberty`);
-  ok(Array.isArray(NEXUM_DROP_CHANCE) && NEXUM_DROP_CHANCE.some(c => c > 0),
-    'Liberty має падати з мобів — таблиця шансів на місці');
+  ok(FARM_LIBERTY_CHANCE > 0 && FARM2_LIBERTY_CHANCE > 0 && COOP_LIBERTY_CHANCE > 0,
+    'Liberty падає у фарм-зонах і в кооперативі — ставки на місці');
+  ok(typeof defs.NEXUM_DROP_CHANCE === 'undefined',
+    'а з коридорів не падає — таблиці шансів по рукавах більше немає');
   ok(GRAM_DROP_CHANCE > 0 && GRAM_PER_LEVEL > 0,
     `і GRAM теж — ${GRAM_DROP_CHANCE * 100}% шанс, ${GRAM_PER_LEVEL} за рівень`);
 
@@ -151,11 +161,15 @@ async function main() {
   // clan panel printed both, and nothing on the server read either. Twice —
   // once for the killer, once for each party member on their own clan.
   for (const name of ['VIP_BONUSES', 'SEASON_TICKET_XP_PCT', 'SEASON_TICKET_LIBERTY_PCT',
-                      'SEASON_TICKET_DROP_PCT', 'NEXUM_DROP_CHANCE', 'GRAM_DROP_CHANCE',
-                      'GRAM_PER_LEVEL', 'clanBonusOf']) {
+                      'SEASON_TICKET_DROP_PCT', 'FARM_LIBERTY_CHANCE', 'FARM2_LIBERTY_CHANCE',
+                      'GRAM_DROP_CHANCE', 'GRAM_PER_LEVEL', 'clanBonusOf']) {
     ok(reads(name) >= 2, `${name} читається у виплаті за вбивство (${reads(name)} згадок)`,
       'імпортовано і не використано — саме так картка й не подвоювала нічого');
   }
+  // Ліберті з коридорів прибрано: у виплаті не має лишитися жодної згадки
+  // старої таблиці по рукавах.
+  ok(reads('NEXUM_DROP_CHANCE') === 0,
+    'коридорна таблиця Liberty у виплаті не читається — етажі не платять Liberty');
   ok(/buffOn\s*\(\s*'exp'\s*\)/.test(worldSrc), "зілля досвіду читається при виплаті");
   ok(/buffOn\s*\(\s*'gold'\s*\)/.test(worldSrc), "зілля золота читається при виплаті");
   // And the party share pays the MEMBER's own bonuses, not the killer's — its

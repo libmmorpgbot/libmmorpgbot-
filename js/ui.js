@@ -2095,14 +2095,20 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   const atk = e.atk;
 
   // dropMult matches _dropMult in combat.js exactly: arm index × room-level
-  // growth (roomDropMult), used for recipes below.
+  // growth (roomDropMult), used for recipes below. The room level goes in
+  // uncapped — roomDropMult/roomKeyChance/roomEnchantStoneChance apply
+  // DROP_GROWTH_MAX_ROOM_LEVEL themselves (shared/definitions.js), which is
+  // why rooms 13-20 of a floor all print the same numbers here: past that
+  // room the chances stop growing, and this panel says so.
+  //
+  // There is no Liberty row: an ordinary corridor kill pays none any more
+  // (see the Liberty branch in server/handlers2/world.js). It still drops in
+  // the two farm zones, and those panels have their own row for it.
   const localLvl = typeof armLocalLevel === 'function' ? armLocalLevel(lvl) : (floor >= 1 ? 1 : 1);
   const dropMult = floor * (typeof roomDropMult === 'function' ? roomDropMult(localLvl) : 1);
   // Mirrors _zoneMult in _rollMobLoot (server/index.js) exactly: arms 1-2
   // (levels 1-40) get every drop chance below cut to a third.
   const zoneMult = (typeof EARLY_ZONE_ARMS !== 'undefined' && EARLY_ZONE_ARMS.has(floor)) ? EARLY_ZONE_DROP_MULT : 1;
-  const NEXUM_CHANCES = [0, 0.1, 0.2, 0.5, 1, 2];
-  const nexumChancePct = NEXUM_CHANCES[floor] || 0;
   function _pctText(v) {
     if (v <= 0) return '0%';
     if (v >= 1)   return v.toFixed(1).replace(/\.0$/, '') + '%';
@@ -2268,11 +2274,6 @@ function _monsterDropBodyHtml(e, floor, lvl) {
       <div class="fi-drop">
         <span class="fi-drop-lbl">${t('npcGoldLbl')}</span>
         <span class="fi-drop-val">${goldText}</span>
-      </div>
-      <div class="fi-drop">
-        <span class="fi-drop-icon"><img src="/images/nexum-coin_v2.png" width="16" height="16" style="vertical-align:middle;border-radius:50%"></span>
-        <span class="fi-drop-lbl" style="color:#b2864d">Liberty</span>
-        <span class="fi-drop-val" style="color:#b2864d">&times;1 · <b style="color:#b2864d">${nexumChancePct}%</b></span>
       </div>
       ${stoneRow}
     </div>

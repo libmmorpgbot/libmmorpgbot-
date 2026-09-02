@@ -328,17 +328,27 @@ console.log('  ── власна проводка сервера ──');
   // that factory, and read by nobody in the live build. That is NOT the same
   // as "the drop never happens", which is the easy conclusion and the wrong
   // one: the kill-reward ladder simply had no co-op branch, so a co-op kill
-  // fell through to the corridor table and paid NEXUM_DROP_CHANCE[arm] —
-  // 0.5% on stage one against the 10% the constant states. Twenty times too
-  // little, off a number nothing was reading, in the mode's ONLY per-kill
+  // fell through to the per-arm corridor table that used to sit at the end of
+  // it — 0.5% on stage one against the 10% the constant states. Twenty times
+  // too little, off a number nothing was reading, in the mode's ONLY per-kill
   // reward (no gold, no GRAM — see calcGoldDrop's `arm === 'coop'` branch).
+  //
+  // The corridor table is gone entirely now (the floors pay no Liberty at
+  // all), which makes every remaining branch a named per-zone rate and this
+  // check the thing that keeps them from collapsing back into one fallback.
   const worldSrc = read('server/handlers2/world.js');
   const ladder = (worldSrc.match(/const libertyChance = [\s\S]*?;\n/) || [])[0] || '';
   ok(ladder.length > 0, 'є що перевіряти — знайдено драбину шансу Liberty',
     'сканування нічого не знайшло — зламана сама перевірка');
-  ok(/coop/.test(ladder) && /COOP_LIBERTY_CHANCE/.test(ladder),
-    'кожна зона з власним шансом Liberty має власну гілку (coop, farm2, коридори)',
-    `кооператив падає в коридорну таблицю: ${ladder.replace(/\s+/g, ' ').slice(0, 170)}`);
+  ok(/coop/.test(ladder) && /COOP_LIBERTY_CHANCE/.test(ladder)
+     && /FARM_LIBERTY_CHANCE/.test(ladder) && /FARM2_LIBERTY_CHANCE/.test(ladder),
+    'кожна зона з власним шансом Liberty має власну гілку (coop, farm, farm2)',
+    `гілка загубилася: ${ladder.replace(/\s+/g, ' ').slice(0, 170)}`);
+  // І коридори у цій драбині — нуль, а не таблиця: Liberty падає тільки у
+  // фарм-зонах (і в кооперативі за його власною ставкою).
+  ok(/:\s*0;/.test(ladder),
+    'а звичайне вбивство в коридорі не платить Liberty взагалі',
+    `коридорна гілка не нульова: ${ladder.replace(/\s+/g, ' ').slice(0, 170)}`);
   // And exactly one definition of it, in the catalog both halves already read.
   // A per-run factory is not somewhere a kill-reward handler can look.
   const coopDefs = ['server/game/coop.js', 'shared/definitions.js']

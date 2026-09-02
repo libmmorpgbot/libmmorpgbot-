@@ -41,6 +41,11 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   }
 
   // Same drop multiplier as the client used: corridor arm × room-level growth.
+  // The room level is passed in as-is: roomDropMult/roomKeyChance/
+  // roomEnchantStoneChance stop growing at DROP_GROWTH_MAX_ROOM_LEVEL
+  // themselves (shared/definitions.js), as does itemDropChanceAtLevel below,
+  // so from the 13th room of a floor onward — that floor's boss room included
+  // — every room here rolls one and the same chance.
   const _armIdx = armIndexForLevel(rlvl);
   const _localLvl = armLocalLevel(rlvl);
   const _dropMult = _armIdx * roomDropMult(_localLvl);
