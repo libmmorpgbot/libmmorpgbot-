@@ -385,8 +385,22 @@ module.exports = function registerSocial(s, safeOn, deps) {
   //
   // The 2-second floor between casts stays. It is not the real cooldown (25s
   // on the client); it is what makes spamming the socket pointless.
+  //
+  // ── но НА КАЖДЫЙ НАВЫК свой, а не один на игрока ─────────────────────────
+  // Здесь стояло одно число на всю сессию, и у чернокнижника это отбирало
+  // навык. У него ДВА лечащих: Q («Бабочки», перезарядка 8 с) и R (лечение
+  // группы, 25 с). Нажать Q и следом R — обычное начало боя, и второе
+  // нажатие приходило в пределах двух секунд после первого, то есть
+  // отказывалось: «Слишком часто».
+  //
+  // Хуже, чем просто отказ: клиент ставит перезарядку ДО ответа сервера
+  // (js/player.js), так что групповое лечение уходило на свои двадцать пять
+  // секунд, не полечив никого.
+  //
+  // Порог существует против спама ОДНИМ навыком — по клавише он делает ровно
+  // ту же работу и не задевает соседний.
   const HEAL_PARTY_CD_MS = 2000;
-  let lastHealAt = 0;
+  const lastHealAt = new Map();   // key -> ms
 
   // ── five refusals that were logged as a heal ─────────────────────────────
   // healParty is a WRITE_ACTION, so each of these bare returns wrote a row
@@ -451,7 +465,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (!healer || healer.hp <= 0) fail('Сначала возродитесь', 'dead');   // the dead do not cast
 
     const now = Date.now();
-    if (now - lastHealAt < HEAL_PARTY_CD_MS) fail('Слишком часто', 'cooldown');
+    if (now - (lastHealAt.get(k) || 0) < HEAL_PARTY_CD_MS) fail('Слишком часто', 'cooldown');
 
     const st = await stats.of(t, pid);
     if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
@@ -466,13 +480,13 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // права и запись окна.
     if (st.charClass === 'warlock' && k === 'Q' && adv) {
       s.room.setSkillWindow(s.socket.id, 'butterflies', (BUTTERFLIES_SEC + lvl) * 1000);
-      lastHealAt = now;
+      lastHealAt.set(k, now);
       return { window: 'butterflies', sec: BUTTERFLIES_SEC + lvl };
     }
     if (st.charClass === 'deathknight' && k === 'Q') {
       const pct = adv ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT;
       s.room.setSkillWindow(s.socket.id, 'vampirism', (VAMPIRISM_SEC + lvl) * 1000, pct);
-      lastHealAt = now;
+      lastHealAt.set(k, now);
       return { window: 'vampirism', sec: VAMPIRISM_SEC + lvl, pct };
     }
 
@@ -482,7 +496,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // молчаливый ноль неотличим от «полечило на 0».
     const amount = skillSelfHealOf(st.charClass, k, adv, lvl, st.skillPct || 0, st.maxHp);
     if (amount == null) fail('Этот навык не лечит', 'not_heal');
-    lastHealAt = now;
+    lastHealAt.set(k, now);
 
     const beforeSelf = healer.hp;
     s.room.setPlayerHp(s.socket.id, Math.min(healer.maxHp, healer.hp + amount));

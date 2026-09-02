@@ -133,6 +133,196 @@ console.log('\n  ── вампиризм ──');
   ok(hits === 4, 'зовётся во всех четырёх местах, где сервер применяет урон', hits);
 }
 
+// ── 4б. «Бабочки» не копят пропущенные тики ────────────────────────────────
+// _regenTick выходил сразу при полном здоровье, а часы тика (_butterAt) стоят
+// на месте, пока функция до них не дошла. Цикл ниже отматывает ВСЕ пропущенные
+// секунды — то есть полное здоровье десять секунд, потом удар, и следующий же
+// тик выдавал десять лечений подряд вместо одного.
+console.log('\n  ── Бабочки при полном здоровье ──');
+{
+  const room = mkRoom(false);
+  const p = { socketId: 's', hp: 1000, maxHp: 1000, hpRegen: 0 };
+  room.players.set('s', p);
+  setWin.call(room, 's', 'butterflies', 10000);
+  let now = p._butterAt;
+  // Пять секунд на полном здоровье — лечить нечего.
+  for (let i = 0; i < 200; i++) { now += 25; regen.call(room, p, 0.025, now); }
+  ok(p.hp === 1000, 'на полном здоровье не лечит', p.hp);
+  // Удар. Дальше ОДИН тик за одну секунду, а не пять разом.
+  p.hp = 500;
+  now += 25; regen.call(room, p, 0.025, now);
+  ok(p.hp === 500, 'сразу после удара — ни одного отложенного тика', p.hp);
+  for (let i = 0; i < 40; i++) { now += 25; regen.call(room, p, 0.025, now); }
+  ok(p.hp === 550, 'за следующую секунду ровно один тик (5% от 1000)', p.hp);
+}
+
+// ── 4в. вампиризм доезжает до полосы ───────────────────────────────────────
+// _vampGain шлёт 'skillHealTick' — это цифра над головой, player.hp она не
+// трогает. Само здоровье доезжало попутной поправкой из _regenTick, а та при
+// полном здоровье не отправлялась вовсе: дохилившись вампиризмом до потолка,
+// игрок переставал получать поправки, и полоса застревала.
+console.log('\n  ── вампиризм доходит до клиента ──');
+{
+  const room = mkRoom(false);
+  const p = { socketId: 's', hp: 900, maxHp: 1000, hpRegen: 0 };
+  room.players.set('s', p);
+  p._vampUntil = Date.now() + 5000;
+  p._vampPct = D.VAMPIRISM_PCT;
+  let now = 10000;
+  p._hpSyncAt = now;
+  vamp.call(room, p, 2000);          // +200 → потолок
+  ok(p.hp === 1000, 'вампиризм долечил до максимума', p.hp);
+  ok(p._hpDirty === true, 'и пометил здоровье к отправке');
+  // Секунда тиков на ПОЛНОМ здоровье: раньше отсюда не уходило ничего.
+  for (let i = 0; i < 41; i++) { now += 25; regen.call(room, p, 0.025, now); }
+  const sync = room.sent.filter(x => x.ev === 'hpSync');
+  ok(sync.length === 1, 'поправка ушла, хотя здоровье полное', sync.length);
+  ok(sync.length === 1 && sync[0].p.hp === 1000, 'и несёт настоящее число', sync.length && sync[0].p.hp);
+  ok(p._hpDirty === false, 'пометка снята — второй раз то же самое не шлётся');
+}
+
+// ── 4г. healPlayer прибавляет и рассылает ──────────────────────────────────
+// Зелье считалось от здоровья, снятого ПЕРЕД походом в базу, и ставилось
+// поверх готовым числом: удар, пришедший за круговой путь, отменялся.
+console.log('\n  ── зелье прибавляет, а не назначает ──');
+{
+  const room = mkRoom(false);
+  room._emitRoom = RoomClass.prototype._emitRoom;
+  room._socketFor = (pp) => ({ emit: (ev, pl) => room.sent.push({ sid: pp.socketId, ev, p: pl }) });
+  const heal = RoomClass.prototype.healPlayer;
+  const p = { socketId: 's', hp: 500, maxHp: 1000 };
+  room.players.set('s', p);
+  ok(heal.call(room, 's', 200) === 200, 'вернул, на сколько полечил');
+  ok(p.hp === 700, 'прибавка к ЖИВОМУ числу', p.hp);
+  // Удар за круговой путь: назначение стёрло бы его, прибавка — нет.
+  p.hp -= 300;
+  heal.call(room, 's', 200);
+  ok(p.hp === 600, 'удар, пришедший во время лечения, остаётся', p.hp);
+  ok(heal.call(room, 's', 5000) === 400 && p.hp === 1000, 'выше maxHp не уходит', p.hp);
+  ok(heal.call(room, 's', 100) === 0, 'на полном здоровье лечит на ноль');
+  ok(heal.call(room, 's', NaN) === 0, 'NaN отвергается — иначе игрок неубиваем');
+  p.hp = 0;
+  ok(heal.call(room, 's', 100) === 0 && p.hp === 0, 'мёртвого не лечит');
+  const out = room.sent.filter(x => x.ev === 'playerHurt');
+  ok(out.length === 3, 'на каждое реальное лечение — одно сообщение', out.length);
+  // И зелье действительно ходит через него, а не назначает готовое число.
+  const items = fs.readFileSync(path.join(ROOT, 'server/handlers2/items.js'), 'utf8');
+  ok(/s\.room\.healPlayer\(s\.socket\.id, res\.healed\)/.test(items),
+    'обработчик зелья прибавляет res.healed');
+  ok(!/setPlayerHp\(s\.socket\.id, res\.hp\)/.test(items),
+    'и больше не ставит готовое res.hp поверх');
+}
+
+// ── 4д. здоровье доходит и в ИНСТАНСАХ ─────────────────────────────────────
+// Страх, кооператив и Элитная фарм-зона: у каждого запуска своя Room, но floor
+// общий, и участники намеренно не входят в группу `floor_N` — иначе один
+// запуск получал бы события другого. А рассылка шла именно по группе, то есть
+// в этих трёх режимах КАЖДОЕ серверное лечение уходило в никуда.
+console.log('\n  ── рассылка здоровья в инстансе ──');
+{
+  const room = mkRoom(false);
+  room.floor = 13;                       // farmZone2 — инстансный этаж
+  room._emitRoom = RoomClass.prototype._emitRoom;
+  const seen = [];
+  room._socketFor = (pp) => ({ emit: (ev, pl) => seen.push({ to: pp.socketId, ev, pl }) });
+  // io.to(`floor_13`) не должен использоваться вовсе: в инстансе там пусто.
+  // Считается, а не бросается: упавший файл — это не «красная строка», это
+  // проверка, которая не досказала, что ещё сломано.
+  const viaGroup = [];
+  room.io = { to: (name) => { viaGroup.push(name); return { emit: () => {} }; } };
+  const a = { socketId: 'a', hp: 500, maxHp: 1000 };
+  const b = { socketId: 'b', hp: 700, maxHp: 1000 };
+  room.players.set('a', a); room.players.set('b', b);
+  RoomClass.prototype.healPlayer.call(room, 'a', 200);
+  ok(seen.length === 2, 'сообщение дошло до обоих участников запуска', seen.length);
+  ok(seen.every(x => x.ev === 'playerHurt' && x.pl.id === 'a' && x.pl.hp === 700),
+    'и это здоровье того, кого лечили');
+  RoomClass.prototype.setPlayerHp.call(room, 'b', 300);
+  ok(seen.length === 4 && seen[3].pl.id === 'b', 'setPlayerHp — тем же путём', seen.length);
+  ok(viaGroup.length === 0,
+    'и ни одно из них не ушло в группу floor_N, где в инстансе никого нет',
+    viaGroup.join(','));
+  const src = fs.readFileSync(path.join(ROOT, 'server/game/Room.js'), 'utf8');
+  ok(!/io\.to\(`floor_\$\{this\.floor\}`\)\.emit\('playerHurt'/.test(src),
+    'в Room.js не осталось рассылки здоровья по группе этажа');
+}
+
+// ── 4е. окна навыков переживают смену этажа ────────────────────────────────
+// Каждый этаж — своя Room со своим списком игроков, переход это removePlayer +
+// addPlayer. Все четыре окна жили в записи и пропадали на пороге: включил
+// вампиризм, прошёл в дверь — и он больше не лечит, а таймер в HUD идёт.
+console.log('\n  ── окна навыков на пороге ──');
+{
+  const from = mkRoom(false), to = mkRoom(false);
+  const winOf = RoomClass.prototype.skillWindowsOf;
+  const winSet = RoomClass.prototype.restoreSkillWindows;
+  const p = { socketId: 's', hp: 500, maxHp: 1000 };
+  from.players.set('s', p);
+  setWin.call(from, 's', 'vampirism', 9000, D.ADV_VAMPIRISM_PCT);
+  setWin.call(from, 's', 'haste', 9000, 1.5);
+  setWin.call(from, 's', 'buff', 9000, { atk: 1.2, def: 1.8, critChance: 5, critPower: 10 });
+  setWin.call(from, 's', 'butterflies', 9000);
+  const carried = winOf.call(from, 's');
+  ok(carried != null, 'окна снимаются со старой записи');
+
+  const fresh = { socketId: 's', hp: 500, maxHp: 1000 };   // как addPlayer: поля чистые
+  to.players.set('s', fresh);
+  ok(!(fresh._vampUntil > Date.now()), 'контроль: новая запись действительно пустая');
+  winSet.call(to, 's', carried);
+  ok(fresh._vampUntil === p._vampUntil && fresh._vampPct === D.ADV_VAMPIRISM_PCT,
+    'вампиризм переехал вместе со сроком и процентом');
+  ok(fresh._hasteUntil === p._hasteUntil && fresh._hasteMult === 1.5, 'ускорение тоже');
+  ok(fresh._buffUntil === p._buffUntil && fresh._buffDef === 1.8, 'боевой баф тоже');
+  ok(fresh._butterfliesUntil === p._butterfliesUntil && fresh._butterAt === p._butterAt,
+    '«Бабочки» вместе со своими часами тика');
+  // Сроки АБСОЛЮТНЫЕ: дорога через дверь не продлевает баф.
+  ok(carried.vampUntil === p._vampUntil, 'переносится момент конца, а не остаток');
+
+  // Истёкшее не переносится вовсе.
+  const stale = mkRoom(false);
+  const q = { socketId: 'q', hp: 1, maxHp: 1 };
+  stale.players.set('q', q);
+  q._vampUntil = Date.now() - 1000; q._vampPct = 0.1;
+  ok(winOf.call(stale, 'q') === null, 'истёкшее окно не переносится');
+
+  // И оба маршрута смены этажа действительно это делают.
+  const w = fs.readFileSync(path.join(ROOT, 'server/world.js'), 'utf8');
+  const ss = fs.readFileSync(path.join(ROOT, 'server/session.js'), 'utf8');
+  ok(/skillWindowsOf/.test(w) && /restoreSkillWindows/.test(w), 'enterFloor переносит окна');
+  ok(/skillWindowsOf/.test(ss) && /restoreSkillWindows/.test(ss), 'forceFloor переносит окна');
+}
+
+// ── 4ж. здоровье на смене этажа — живое, а не из базы ──────────────────────
+// player_progress.hp пишет таймер раз в двадцать секунд, а sendGameStart сажал
+// входящего именно по нему: подрался — вышел в дверь — снова полный.
+console.log('\n  ── здоровье на смене этажа ──');
+{
+  const w = fs.readFileSync(path.join(ROOT, 'server/handlers2/world.js'), 'utf8');
+  const fn = w.slice(w.indexOf('async function sendGameStart'), w.indexOf('// ── movement'));
+  ok(/const wasHere = s\.room && s\.room\.players\.get\(s\.socket\.id\);/.test(fn),
+    'живое число снимается с комнаты');
+  ok(fn.indexOf('const liveHp') < fn.indexOf('enterFloor(s, want'),
+    'и снимается ДО переезда — после него спрашивать уже некого');
+  ok(/liveHp != null \? Math\.min\(liveHp, state\.stats\.maxHp\) : state\.stats\.hp/.test(fn),
+    'сохранённое остаётся запасным путём — для входа в игру и возрождения');
+}
+
+// ── 4з. порог между лечениями — на КАЖДЫЙ навык ────────────────────────────
+// Одно число на сессию отбирало у чернокнижника групповое лечение: Q
+// («Бабочки», 8 с) и R (лечение группы, 25 с) — обычная связка, и второе
+// нажатие приходило в пределах двухсекундного порога первого.
+console.log('\n  ── порог между лечениями ──');
+{
+  const soc = fs.readFileSync(path.join(ROOT, 'server/handlers2/social.js'), 'utf8');
+  ok(/const lastHealAt = new Map\(\);/.test(soc), 'порог хранится по клавише');
+  ok(!/lastHealAt = now/.test(soc), 'общего на всю сессию числа не осталось');
+  ok(/lastHealAt\.get\(k\)/.test(soc) && /lastHealAt\.set\(k, now\)/.test(soc),
+    'читается и пишется по той же клавише, что прислал клиент');
+  // И у чернокнижника действительно два лечащих навыка — иначе чинить нечего.
+  const heals = Object.keys(D.SKILL_SELF_HEAL.warlock || {});
+  ok(heals.length >= 2, `у чернокнижника ${heals.length} лечащих навыка (${heals.join('/')})`);
+}
+
 // ── 5. таблица самолечения — одна на клиент и сервер ───────────────────────
 console.log('\n  ── сколько лечит навык ──');
 {
@@ -195,18 +385,76 @@ console.log('\n  ── мёртвая зона на клиенте ──');
 // Всё серверное лечение приезжает тем же 'playerHurt', что и удар (setPlayerHp
 // шлёт hp без dmg). Обработчик мигал красным на каждое лечение и не рисовал
 // сумму вовсе — а клиент её больше не прибавляет, значит показать было некому.
+//
+// Кусок берётся ДО СЛЕДУЮЩЕГО обработчика, а не «плюс три тысячи символов»:
+// фиксированное окно обрезалось на очередном добавленном комментарии, и
+// проверки краснели на правках, которых не касались.
+function clientHandler(file, name) {
+  const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+  const from = src.indexOf(`socket.on('${name}'`);
+  if (from < 0) return '';
+  const next = src.indexOf('socket.on(', from + 12);
+  return src.slice(from, next < 0 ? src.length : next);
+}
 console.log('\n  ── лечение против удара ──');
 {
-  const net = fs.readFileSync(path.join(ROOT, 'js/network.js'), 'utf8');
-  const h = net.slice(net.indexOf("socket.on('playerHurt'"), net.indexOf("socket.on('playerHurt'") + 3000);
+  const h = clientHandler('js/network.js', 'playerHurt');
+  ok(h.length > 0, 'обработчик playerHurt найден');
   ok(/if \(player\.hp < _was\) player\.hurtTimer = 0\.1;/.test(h),
     'вспышка только когда HP убавилось');
   ok(!/^\s*player\.hurtTimer = 0\.1;\s*$/m.test(h), 'безусловной вспышки не осталось');
   ok(/player\.hp > _was/.test(h) && /'\+' \+ _got \+ '♥'/.test(h),
     'на лечении рисуется сумма');
   // Порядок: снимок ДО присваивания, иначе разность всегда ноль.
-  ok(h.indexOf('const _was = player.hp;') < h.indexOf('player.hp = (hp != null'),
+  ok(h.indexOf('const _was = player.hp;') < h.indexOf('player.hp = hp != null'),
     'снимок берётся до присваивания');
+}
+
+// ── 7в. клиент больше НЕ вычитает урон из своего числа ─────────────────────
+// Здесь стояло `player.hp - dmg`, и число сервера бралось только когда оно
+// ноль. Своё число не сходится обратно: разойдясь однажды, клиент так и
+// вычитает урон из заниженного, пока не покажет экран смерти живому игроку —
+// и возрождение ему откажут, потому что сервер держит его на половине HP.
+//
+// Обработчик выполняется по-настоящему, с минимальным окружением: текстовая
+// проверка тут ничего не стоит, а поведение стоит всего.
+console.log('\n  ── чьё число здоровья главнее ──');
+{
+  const h = clientHandler('js/network.js', 'playerHurt');
+  // Тело стрелочной функции: от `=> {` до закрывающей `});`. Первая же `{`
+  // — это скобка деструктуризации аргумента, а не начало тела.
+  const body = h.slice(h.indexOf('=> {') + 4, h.lastIndexOf('});'));
+  const calls = [];
+  const mkEnv = (hp) => ({
+    player: { hp, maxHp: 1000, x: 0, y: 0, hurtTimer: 0 },
+    socket: { id: 'me' },
+    otherPlayers: new Map(),
+    serverEnemiesMap: new Map(),
+    netClockNow: () => 0,
+    _queueEnemyResync: () => {},
+    dmgNum: (...a) => calls.push(a),
+    playerDie: () => calls.push(['die']),
+    targetId: null, targetIsPlayer: false, _chaseArmed: false,
+  });
+  const run = new Function('env', 'arg', `with (env) { (function ({ id, hp, dmg, atkId }) {${body}})(arg); return env.player.hp; }`);
+
+  // Клиент отстал: у него 300, сервер бьёт на 100 и говорит «стало 800».
+  const drifted = mkEnv(300);
+  ok(run(drifted, { id: 'me', hp: 800, dmg: 100 }) === 800,
+    'клиент принимает число сервера, а не вычитает урон из своего', drifted.player.hp);
+  // И расхождение действительно СХОДИТСЯ, а не копится: без этого 300-100=200.
+  ok(drifted.player.hp > 300, 'заниженное здоровье поднимается обратно', drifted.player.hp);
+
+  // Смерть по-прежнему окончательна.
+  const dying = mkEnv(50);
+  run(dying, { id: 'me', hp: 0, dmg: 50 });
+  ok(dying.player.hp === 0 && calls.some(c => c[0] === 'die'),
+    'ноль от сервера — это смерть');
+
+  // А без hp (старые/иные отправители) урон всё ещё вычитается — запасной путь.
+  const noHp = mkEnv(500);
+  ok(run(noHp, { id: 'me', dmg: 120 }) === 380,
+    'без числа сервера остаётся вычитание урона', noHp.player.hp);
 }
 
 // ── 8. повышение уровня лечит на сервере ───────────────────────────────────

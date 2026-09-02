@@ -1026,6 +1026,15 @@ class Session {
     // world.enterFloor, and both have to apply it.
     this._leaveInstance(this.floor);
 
+    // Окна навыков — вампиризм, «Бабочки», ускорение, боевой баф. Живут в
+    // записи игрока, а она у каждого этажа своя: addPlayer ниже создаёт новую,
+    // с чистыми полями. Снимаются здесь, до removePlayer, и надеваются после
+    // него — иначе включённый перед входом в режим баф пропадал на пороге, и
+    // молча: таймер в HUD клиента идёт своим ходом и об этом не знает.
+    // То же самое делает world.enterFloor для обычных переходов.
+    const carryWindows = typeof this.room.skillWindowsOf === 'function'
+      ? this.room.skillWindowsOf(this.socket.id) : null;
+
     this.room.removePlayer(this.socket.id);
     this.socket.to(`floor_${this.floor}`).emit('playerLeft', { id: this.socket.id });
     if (!INSTANCED_FLOORS.has(this.floor)) this.socket.leave(`floor_${this.floor}`);
@@ -1072,6 +1081,9 @@ class Session {
     // maxHp is still the class baseline would silently cut the player's HP down
     // to it and never raise it back — setPlayerStats never raises current HP.
     dest.setPlayerHp(this.socket.id, was.hp);
+    if (carryWindows && typeof dest.restoreSkillWindows === 'function') {
+      dest.restoreSkillWindows(this.socket.id, carryWindows);
+    }
 
     this.floor = target;
     this.room = dest;

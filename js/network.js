@@ -1622,15 +1622,27 @@ function netConnect(onReady) {
       // copy hits 0 it stops accepting our movement and hp entirely, so
       // everyone else sees a frozen corpse while we walk around.
       //
-      // Damage itself still applies to our own hp rather than to whatever
-      // the server reports, so a heal it hasn't caught up on yet (level-up,
-      // a self-heal skill — syncPlayerHp rate-limits increases) isn't undone
-      // by one hit. Its verdict on DEATH is final though: the server won't
-      // take our hp or position back once it has us at 0, so ignoring that
-      // is what strands us as the frozen corpse above.
+      // ── ЧИСЛО СЕРВЕРА, а не своё минус урон ────────────────────────────
+      // Здесь стояло `player.hp - dmg`: урон вычитался из СВОЕГО здоровья, а
+      // присланное сервером использовалось только когда оно ноль. Смысл был в
+      // том, чтобы лечение, о котором сервер ещё не сказал, не откатывалось
+      // одним ударом — но лечений, которые клиент придумывает сам, больше не
+      // существует: зелье, навык, вампиризм, «Бабочки», уровень — всё это
+      // считает сервер и присылает готовым.
+      //
+      // А цена осталась. Своё число НЕ СХОДИТСЯ обратно: разойдясь однажды —
+      // пропущенным пакетом лечения, вампиризмом при полном здоровье, — оно
+      // так и вычитает урон из заниженного, пока не дойдёт до нуля. Клиент
+      // показывает экран смерти, сервер держит игрока живым на половине
+      // здоровья, возрождение отказывают («вы живы»), и это ровно тот цикл,
+      // который описан в handlers2/world.js над отказом respawn — там лечили
+      // симптом, здесь причина.
+      //
+      // Урон по-прежнему приезжает и по-прежнему нужен: по нему рисуется
+      // цифра и вспышка. Здоровьем он больше не распоряжается.
       const _was = player.hp;
-      player.hp = (hp != null && hp <= 0) ? 0
-                : (dmg != null) ? Math.max(0, player.hp - dmg) : hp;
+      player.hp = hp != null ? Math.max(0, hp)
+                : (dmg != null) ? Math.max(0, player.hp - dmg) : player.hp;
       // Вспышка — только когда HP УБАВИЛОСЬ. Этим же событием приходит всё
       // серверное лечение (setPlayerHp шлёт hp без dmg), и мигать красным на
       // выпитое зелье оно не должно.
@@ -1647,8 +1659,12 @@ function netConnect(onReady) {
     } else {
       const op = otherPlayers.get(id);
       if (op) {
-        op.hp = hp;
-        op.hurtTimer = 0.1;
+        // Вспышка — только на убавление. Этим же событием приходит чужое
+        // ЛЕЧЕНИЕ (healPlayer/setPlayerHp шлют его всем в комнате), и мигать
+        // красным на выпитое соседом зелье оно не должно — то же правило, что
+        // выше для собственного здоровья.
+        if (hp != null && hp < op.hp) op.hurtTimer = 0.1;
+        if (hp != null) op.hp = hp;
         if (hp <= 0 && id === targetId && targetIsPlayer) { targetId = null; targetIsPlayer = false; _chaseArmed = false; }
       }
     }

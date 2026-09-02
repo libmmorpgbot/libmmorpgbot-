@@ -143,7 +143,17 @@ module.exports = function registerItems(s, safeOn) {
     // room is told the new HP, because the room is what decides whether the
     // next hit kills.
     s.socket.emit('potionBag', { potionBag: await consumables.potionBagOf(t, pid) });
-    if (s.room) s.room.setPlayerHp(s.socket.id, res.hp);
+    // ── ПРИБАВКА, а не готовое «стало столько-то» ──────────────────────────
+    // res.hp посчитан от здоровья, снятого ПЕРЕД походом в базу. Ставить его
+    // поверх значит стереть всё, что случилось за круговой путь: удар,
+    // пришедший в эти десятки миллисекунд, зелье отменяло — возвращало
+    // здоровье, каким оно было до удара, и добавляло своё. В обратную сторону
+    // так же — натикавшая регенерация пропадала.
+    //
+    // res.healed — это то, на сколько зелье лечит на самом деле (каталог,
+    // обрезанный по maxHp), и прибавлять его к живому числу правильно в обоих
+    // направлениях. healPlayer сам разошлёт новое HP.
+    if (s.room) s.room.healPlayer(s.socket.id, res.healed);
     return res;
   }, r => r && { зелье: r.potionId, вылечено: r.healed, стало: r.hp, осталось: r.left }));
 

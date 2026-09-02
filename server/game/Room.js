@@ -271,11 +271,10 @@ function _critDmg(base, critChance, critPower) {
 // of this file as text — so it went on passing while the protection it
 // described did nothing at all. If a client-authored stat ever returns, the
 // margins were about 5% over the real buff maxima listed above.
-// Passive-regen ceiling used to bound how fast a playerMove-reported HP
-// increase is allowed to land (see syncPlayerHp) — real heals (potions,
-// faithShield/party heal, respawn) all go through their own dedicated,
-// server-applied paths and are never gated by this.
-const MAX_HP_REGEN_PER_SEC = 30;
+// Здесь стоял MAX_HP_REGEN_PER_SEC — потолок, с которым syncPlayerHp принимал
+// прибавку здоровья ОТ КЛИЕНТА. Ни функции, ни её вызова больше нет: здоровье
+// считает сервер целиком (_regenTick, _vampGain, healPlayer, setPlayerHp), и
+// принимать чужое число, пусть и с ограничением скорости, ему незачем.
 // Как часто комната поправляет собственное HP игрока у него на экране. Клиент
 // предсказывает ту же кривую теми же коэффициентами (js/player.js recompute →
 // js/game.js), так что это поправка на дрейф, а не источник HP: раз в секунду
@@ -2567,6 +2566,31 @@ class Room {
     return fresh;
   }
 
+  // ── «всем в ЭТОЙ комнате» ────────────────────────────────────────────────
+  // Не io.to(`floor_N`), и это не оптимизация, а единственный работающий
+  // способ на половине этажей.
+  //
+  // Страх, кооператив и Элитная фарм-зона — ИНСТАНСЫ: у каждого запуска своя
+  // Room, но floor у них общий (11, 12, 13), и именно поэтому их участники
+  // намеренно НЕ входят в группу `floor_N` (см. INSTANCED_FLOORS,
+  // server/session.js) — иначе один запуск получал бы события другого.
+  //
+  // А рассылка по группе осталась. То есть в этих трёх режимах `io.to(
+  // 'floor_13')` уходит В НИКУДА: подписчиков нет ни одного. Через неё идёт
+  // setPlayerHp — то есть КАЖДОЕ серверное изменение здоровья, кроме урона от
+  // монстра (у того свой прямой сокет): зелье, лечащий навык, лечение за
+  // уровень. Сервер лечил, клиент об этом не узнавал, полоса оставалась там,
+  // где была, и дальше расходилась только вниз.
+  //
+  // Перебор по своим игрокам верен и на обычном этаже, и в инстансе, и заодно
+  // не может задеть чужой запуск.
+  _emitRoom(event, payload) {
+    this.players.forEach(p => {
+      const sock = this._socketFor(p);
+      if (sock) sock.emit(event, payload);
+    });
+  }
+
   // socketIds of everyone close enough to (x, y) to actually see something
   // happen there, minus `exceptSocketId`. For visual-only combat fan-out:
   // projectiles, AOE rings and the crowd-control flash used to go to the whole
@@ -3488,12 +3512,12 @@ class Room {
   // «здоровье восстанавливается, затем перезаходишь и возвращается к
   // первичному показателю».
   //
-  // Считает СЕРВЕР, а не принимает от клиента. Принимать — это ровно то, для
-  // чего был написан syncPlayerHp ниже, и ровно поэтому у него так и не
-  // появилось вызова: клиент, который сообщает своё HP, это клиент, который
-  // может сообщать maxHp вечно. Формула здесь одна и та же с той, которой
-  // клиент предсказывает, так что предсказание и правда совпадают по
-  // построению, а sync ниже правит только дрейф.
+  // Считает СЕРВЕР, а не принимает от клиента. Ровно для приёма был когда-то
+  // написан syncPlayerHp — и удалён, не получив за всё время ни одного
+  // вызова: клиент, который сообщает своё HP, это клиент, который может
+  // сообщать maxHp вечно. Формула здесь одна и та же с той, которой клиент
+  // предсказывает, так что предсказание и правда совпадают по построению, а
+  // синхронизация ниже правит только дрейф.
   //
   // ── что сюда добавилось после первых суток ────────────────────────────────
   // Пассивной регенерацией дело не ограничилось. Клиент лечил себя ещё тремя
@@ -3513,7 +3537,28 @@ class Room {
   // пассивную и зону, — потому что только у них есть общая формула на каждый
   // кадр. Разовых лечений он больше не выдумывает вовсе.
   _regenTick(p, dt, now) {
-    if (p.hp <= 0 || p.hp >= p.maxHp) return;
+    // ── мёртвый не лечится и не копит тики ────────────────────────────────
+    if (p.hp <= 0) { p._butterAt = 0; return; }
+
+    // ── а вот ПОЛНОЕ здоровье больше не выходит отсюда сразу ──────────────
+    // Раньше выходило — и это стоило двух разных поломок.
+    //
+    // Первая: часы «Бабочек». Накопитель _butterAt стоит на месте, пока эта
+    // функция до него не доходит, а цикл ниже отматывает ВСЕ пропущенные
+    // секунды разом. Полное здоровье десять секунд, потом удар — и следующий
+    // же тик выдавал десять тиков лечения подряд. Навык обещает один в
+    // секунду.
+    //
+    // Вторая: вампиризм. Он лечит не здесь, а в _vampGain, с каждого
+    // нанесённого удара, и своего пакета у него нет — HP до полосы доезжает
+    // ровно этой синхронизацией. Дохилившись вампиризмом до потолка, игрок
+    // переставал её получать вовсе: сервер знает полное здоровье, а на экране
+    // остаётся то, каким оно было до боя. Дальше хуже — клиент вычитает урон
+    // из СВОЕГО числа, так что расхождение уже не сходится само.
+    //
+    // Поэтому дальше идёт весь тик, а от лечения при полном здоровье
+    // защищают Math.min и условия внутри.
+    const full = p.hp >= p.maxHp;
     let rate = p.hpRegen;
     // Проверяется, а не предполагается: p.hpRegen заполняет setPlayerStats, и
     // между входом в комнату и первым его вызовом игрок уже здесь. `undefined
@@ -3527,7 +3572,7 @@ class Room {
     if (this._inSafeZone(p.x, p.y)) rate += SAFE_ZONE_REGEN_PER_SEC;
 
     const before = p.hp;
-    if (rate > 0) p.hp = Math.min(p.maxHp, p.hp + rate * dt);
+    if (rate > 0 && !full) p.hp = Math.min(p.maxHp, p.hp + rate * dt);
 
     // «Бабочки» — не ставка в секунду, а тик РАЗ в секунду, и накопитель нужен
     // именно поэтому: комната тикает сорок раз в секунду, и размазать 5% по
@@ -3543,8 +3588,12 @@ class Room {
       // секунд навык терял по тику. Ровно это и показала проверка — три
       // ожидаемых тика превратились в два.
       if (!p._butterAt) p._butterAt = now;
-      while (now - p._butterAt >= 1000 && p.hp < p.maxHp) {
+      // Условие полноты проверяется ВНУТРИ цикла, а не сторожит его снаружи:
+      // час отматывается в любом случае, а лечит тик только когда есть что
+      // лечить. Это и есть разница между «пропустил тик» и «отложил десять».
+      while (now - p._butterAt >= 1000) {
         p._butterAt += 1000;
+        if (p.hp >= p.maxHp) continue;
         const tick = Math.max(1, Math.round(p.maxHp * BUTTERFLIES_TICK_PCT));
         p.hp = Math.min(p.maxHp, p.hp + tick);
         this.io.to(p.socketId).emit('skillHealTick', { amount: tick, kind: 'butterflies' });
@@ -3553,13 +3602,20 @@ class Room {
       p._butterAt = 0;
     }
 
-    if (p.hp === before) return;
+    // ── что вообще требует синхронизации ──────────────────────────────────
+    // Изменение здесь — или отметка _hpDirty, которую ставит лечение, идущее
+    // МИМО этой функции (_vampGain). Без второго условия вампиризм не имел
+    // способа доехать до полосы: при полном здоровье p.hp тут не меняется, и
+    // синхронизация не отправлялась никогда.
+    const dirty = !!p._hpDirty;
+    if (p.hp === before && !dirty) return;
     // Раз в секунду — и ещё раз в тот момент, когда полоса заполнилась. Без
     // второго условия стороны замирали бы в паре очков друг от друга навсегда:
     // полное HP больше не порождает синхронизаций.
     const filled = p.hp >= p.maxHp && before < p.maxHp;
     if (!filled && now - (p._hpSyncAt || 0) < HP_SYNC_EVERY_MS) return;
     p._hpSyncAt = now;
+    p._hpDirty = false;
     // ТОЧНОЕ значение, а не Math.floor. Пол здесь и был причиной дёрганья
     // 120 → 121 → 120: клиент держал 120.9, сервер присылал 120, клиент
     // прыгал вниз, за секунду дорастал до 121.4 — и обратно. Дробная часть на
@@ -3581,7 +3637,19 @@ class Room {
     const before = attacker.hp;
     attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
     const got = Math.round(attacker.hp - before);
-    if (got > 0) this.io.to(attacker.socketId).emit('skillHealTick', { amount: got, kind: 'vampirism' });
+    if (got <= 0) return;
+    this.io.to(attacker.socketId).emit('skillHealTick', { amount: got, kind: 'vampirism' });
+    // ── и САМО здоровье, а не только цифра над головой ────────────────────
+    // 'skillHealTick' рисует «+37♥» и не трогает player.hp у клиента — это
+    // одна анимация. Здоровье вампиризма доезжало только попутной
+    // синхронизацией из _regenTick, то есть в лучшем случае через секунду, а
+    // при полном здоровье не доезжало вообще (см. разбор там же).
+    //
+    // Своего пакета на удар здесь нет намеренно: вампиризм срабатывает на
+    // КАЖДОМ попадании, а веерный навык — на каждой цели сразу, и пакет на
+    // попадание был бы худшим обменом, чем задержка, которую он лечит.
+    // Отметка попадает в тот же поток раз в секунду, что и регенерация.
+    attacker._hpDirty = true;
   }
 
   // Окно вампиризма, «Бабочек» и ускорения. Ставится из обработчика навыка
@@ -3606,6 +3674,56 @@ class Room {
       return true;
     }
     return false;
+  }
+
+  // ── окна навыков переживают смену этажа ───────────────────────────────────
+  // Каждый этаж — своя Room со своим списком игроков, и переход это
+  // removePlayer + addPlayer: запись создаётся ЗАНОВО, с чистыми полями. Все
+  // четыре окна — вампиризм, «Бабочки», ускорение и боевой баф — жили только
+  // в этой записи и молча пропадали на пороге.
+  //
+  // Видно это было ровно как «иногда не работает»: включил вампиризм, прошёл
+  // в дверь — и он больше не лечит, хотя в HUD клиента таймер идёт своим
+  // ходом (js/state.js крутит его у себя). Ни отказа, ни сообщения — просто
+  // навык, который перестал делать то, что делал секунду назад.
+  //
+  // Переносятся АБСОЛЮТНЫЕ сроки, а не остатки: окно кончается в тот же
+  // момент времени, в который кончилось бы без перехода. Дорога через дверь
+  // не продлевает баф и не съедает его.
+  skillWindowsOf(socketId) {
+    const p = this.players.get(socketId);
+    if (!p) return null;
+    const now = Date.now();
+    // Истёкшие не переносятся вовсе: перенести их значило бы записать в новую
+    // комнату прошлое, которое ей всё равно нечего делать.
+    const live = (until) => (until > now ? until : 0);
+    const w = {
+      vampUntil: live(p._vampUntil || 0), vampPct: p._vampPct || 0,
+      butterfliesUntil: live(p._butterfliesUntil || 0), butterAt: p._butterAt || 0,
+      hasteUntil: live(p._hasteUntil || 0), hasteMult: p._hasteMult || 1,
+      buffUntil: live(p._buffUntil || 0),
+      buffAtk: p._buffAtk || 1, buffDef: p._buffDef || 1,
+      buffCritChance: p._buffCritChance || 0, buffCritPower: p._buffCritPower || 0,
+    };
+    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.buffUntil) ? w : null;
+  }
+
+  restoreSkillWindows(socketId, w) {
+    const p = this.players.get(socketId);
+    if (!p || !w) return;
+    if (w.vampUntil) { p._vampUntil = w.vampUntil; p._vampPct = w.vampPct; }
+    if (w.butterfliesUntil) {
+      p._butterfliesUntil = w.butterfliesUntil;
+      // Часы тика переносятся вместе с окном, иначе первый же тик на новом
+      // этаже пришёл бы не по расписанию — см. _regenTick.
+      p._butterAt = w.butterAt || Date.now();
+    }
+    if (w.hasteUntil) { p._hasteUntil = w.hasteUntil; p._hasteMult = w.hasteMult; }
+    if (w.buffUntil) {
+      p._buffUntil = w.buffUntil;
+      p._buffAtk = w.buffAtk; p._buffDef = w.buffDef;
+      p._buffCritChance = w.buffCritChance; p._buffCritPower = w.buffCritPower;
+    }
   }
 
   // ── атака и защита С УЧЁТОМ бафов ─────────────────────────────────────────
@@ -3682,37 +3800,45 @@ class Room {
     return true;
   }
 
-  syncPlayerHp(socketId, clientHp) {
-    const p = this.players.get(socketId);
-    if (!p || p.hp <= 0) return;
-    if (!Number.isFinite(clientHp)) return;
-    const requested = Math.min(p.maxHp, Math.max(0, clientHp));
-    // Decreases are always trusted immediately — they can never help a
-    // cheater. Increases (passive HP regen ticking up between potions/heals)
-    // are rate-limited to MAX_HP_REGEN_PER_SEC instead of being applied
-    // outright — otherwise a modified client could report hp:maxHp on every
-    // movement packet and become unkillable (this is also what would have
-    // silently undone the server-applied PvP damage in pvpAttack/
-    // pvpSkillAttack below). Real heals (potions, faithShield/party heal,
-    // respawn) all go through their own dedicated methods and aren't gated
-    // by this at all.
-    if (requested <= p.hp) { p.hp = requested; p._lastHpSyncAt = Date.now(); return; }
-    const now = Date.now();
-    const elapsed = Math.max(0, (now - (p._lastHpSyncAt || now)) / 1000);
-    p._lastHpSyncAt = now;
-    p.hp = Math.min(requested, p.hp + elapsed * MAX_HP_REGEN_PER_SEC, p.maxHp);
-  }
+  // ── здесь стоял syncPlayerHp ──────────────────────────────────────────────
+  // Он принимал HP ОТ КЛИЕНТА и пропускал прибавки со скоростью
+  // MAX_HP_REGEN_PER_SEC. Вызова у него не было ни одного: здоровье в этой
+  // сборке считает только сервер, и принимать его число обратно означало бы
+  // открыть ровно ту дверь, которую всё остальное здесь закрывает.
+  //
+  // Удалён, а не оставлен «на всякий случай»: мёртвая функция с таким именем —
+  // это приглашение позвать её, а комментарии выше по файлу ссылались на неё
+  // как на работающую защиту, которой она никогда не была.
 
-  // Every heal path funnels through here and healPartyMember below, so this is
-  // the one place that has to refuse a non-finite amount: NaN written to hp is
-  // absorbing (all later comparisons, including the `hp <= 0` death check,
-  // return false) and would leave the player alive but unkillable. Callers
-  // validate too — this is the backstop so a future one can't reintroduce it.
+  // ── ПРИБАВИТЬ здоровье, а не назначить его ────────────────────────────────
+  // Разница не косметическая, и зелье — тот случай, где она видна.
+  //
+  // Обработчик зелья читал HP из комнаты, уходил в базу и возвращался с
+  // ГОТОВЫМ числом «стало столько-то», которое ставилось поверх. Всё, что
+  // случилось за круговой путь, стиралось: удар, пришедший в эти
+  // десятки миллисекунд, отменялся зельем — оно возвращало здоровье, каким
+  // оно было ДО удара, плюс своё. В обратную сторону так же: натикавшая
+  // регенерация пропадала.
+  //
+  // Прибавка такой дыры не имеет: сколько зелье лечит — решает каталог,
+  // а от чего — живое число комнаты в момент применения.
+  //
+  // NaN отвергается здесь, потому что записанный в hp он поглощающий: все
+  // последующие сравнения, включая проверку смерти `hp <= 0`, становятся
+  // ложными, и игрок остаётся живым и неубиваемым навсегда.
   healPlayer(socketId, amount) {
     const p = this.players.get(socketId);
-    if (!p || p.hp <= 0) return;
-    if (!Number.isFinite(amount)) return;
-    p.hp = Math.min(p.maxHp, p.hp + Math.max(0, amount));
+    if (!p || p.hp <= 0) return 0;
+    if (!Number.isFinite(amount) || amount <= 0) return 0;
+    const before = p.hp;
+    p.hp = Math.min(p.maxHp, p.hp + amount);
+    const got = Math.round(p.hp - before);
+    if (got <= 0) return 0;
+    // Тем же событием, что и всякое другое серверное изменение здоровья:
+    // клиент рисует по нему и полосу, и зелёную цифру (см. 'playerHurt',
+    // js/network.js). Без него лечение оставалось бы на сервере.
+    this._emitRoom('playerHurt', { id: socketId, hp: p.hp });
+    return got;
   }
 
   respawnPlayer(socketId) {
@@ -4097,7 +4223,7 @@ class Room {
     if (v <= 0 && p.hp > 0) p._diedAt = Date.now();
     else if (v > 0) p._diedAt = 0;
     p.hp = v;
-    this.io.to(`floor_${this.floor}`).emit('playerHurt', { id: socketId, hp: v });
+    this._emitRoom('playerHurt', { id: socketId, hp: v });
   }
 
   // ── claimDrop / returnDrop ────────────────────────────────────────────────
@@ -4531,14 +4657,6 @@ class Room {
       if (this.applySkillEffect(socketId, enemyIds[i], type, duration)) hit.push(enemyIds[i]);
     }
     return hit;
-  }
-
-  healPartyMember(socketId, amount) {
-    const p = this.players.get(socketId);
-    if (!p || p.hp <= 0) return false;
-    if (!Number.isFinite(amount)) return false;   // see healPlayer above
-    p.hp = Math.min(p.maxHp, p.hp + Math.max(0, amount));
-    return true;
   }
 
   // Are these two players close enough to share party rewards/heals? Both

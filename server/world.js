@@ -122,7 +122,19 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
   const room = floorRooms.get(target);
   if (!room) return session.floor;
 
+  // ── что игрок уносит с собой через дверь ─────────────────────────────────
+  // Окна навыков — вампиризм, «Бабочки», ускорение, боевой баф. Они живут в
+  // ЗАПИСИ ИГРОКА, а запись у каждого этажа своя, и переход это removePlayer +
+  // addPlayer: новая запись создаётся с чистыми полями. Снимаются со старой до
+  // того, как её выбросят, и надеваются на новую ниже.
+  //
+  // (Здоровье переносит вызывающий — sendGameStart, handlers2/world.js: там
+  // оно ставится ПОСЛЕ статов, а здесь maxHp ещё классовый базовый.)
+  let carryWindows = null;
   if (session.room && session.room !== room) {
+    if (typeof session.room.skillWindowsOf === 'function') {
+      carryWindows = session.room.skillWindowsOf(session.socket.id);
+    }
     // Same rule as forceFloor's: walking off an instanced floor ends the run
     // that was happening on it. Without this a player who left Страх by any
     // route other than dying kept a run record that silently refused every
@@ -160,6 +172,9 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
     session.socket.join(`floor_${target}`);
     session.room = room;
     session.floor = target;
+    // Окна навыков — сразу, вместе с классом: до первого тика новой комнаты,
+    // чтобы вампиризм не потерял ни одного удара на пороге.
+    if (carryWindows) room.restoreSkillWindows(session.socket.id, carryWindows);
   }
 
   // Where to stand. A stored position is used when it is on this floor AND

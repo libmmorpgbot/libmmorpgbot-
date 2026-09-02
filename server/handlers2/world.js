@@ -181,6 +181,20 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // moved on while the player was away — they may have rebirthed below an
     // arm's level requirement, or a timed zone may have closed.
     const want = wanted == null ? state.progress.floor : wanted;
+    // ── ЖИВОЕ здоровье, снятое до переезда ────────────────────────────────
+    // state.stats.hp — это player_progress.hp, а его пишет таймер раз в
+    // двадцать секунд (savePosition, server/session.js). Сажать по нему
+    // любого входящего значило возвращать здоровье двадцатисекундной
+    // давности каждому, кто прошёл в дверь: подрался — вышел — снова полный;
+    // или вылечился — вышел — и лечения нет. То же несоответствие «живое
+    // против сохранённого» уже чинили для зелий (consumables.usePotion),
+    // здесь оно осталось.
+    //
+    // Снимается ДО enterFloor: он выбрасывает запись старого этажа, и после
+    // него спрашивать уже некого. Ноль и меньше не переносится — мёртвым
+    // сюда приходит возрождение, и правда у него своя, в базе.
+    const wasHere = s.room && s.room.players.get(s.socket.id);
+    const liveHp = wasHere && wasHere.hp > 0 ? wasHere.hp : null;
     const floor = enterFloor(s, want, state.progress);
     // The room's copy of the numbers, immediately after the join. enterFloor
     // sets the class from the catalog's base figures; these are the ones that
@@ -188,7 +202,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // their class's level-1 baseline until the next equip.
     if (s.room && state.stats) {
       s.room.setPlayerStats(s.socket.id, state.stats);
-      s.room.setPlayerHp(s.socket.id, state.stats.hp);
+      // Вход в игру приходит сюда без прежней комнаты, возрождение — с
+      // нулевым здоровьем: для обоих сохранённое число и есть единственная
+      // правда (возрождение записывает своё прямо перед этим вызовом, в той
+      // же транзакции). Ставится ПОСЛЕ статов, потому что setPlayerHp
+      // обрезает по maxHp, а до setPlayerStats он ещё классовый базовый.
+      s.room.setPlayerHp(s.socket.id,
+        liveHp != null ? Math.min(liveHp, state.stats.maxHp) : state.stats.hp);
     }
     s.socket.emit('gameStart', { ...state, ...s.worldPayload(floor) });
     // The pets already out on this floor, and then ours to everyone else.

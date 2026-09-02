@@ -152,7 +152,9 @@ async function main() {
 
   // ── logging in ───────────────────────────────────────────────────────────
   console.log('  ── вхід ──');
-  const a = await connect(`${TAG}_player`);
+  // `let`, а не `const`: смерть нижче доводиться перезаходом, и он возвращает
+  // новую пару сокет/экран под тем же именем.
+  let a = await connect(`${TAG}_player`);
   const { rows } = await pool().query('SELECT id FROM players WHERE telegram_id = $1', [String(TG)]);
   ok(rows.length > 0, 'акаунт створено в базі');
   madeId = Number(rows[0].id);
@@ -655,20 +657,51 @@ async function main() {
   // справедливо відповів би «ви живі», і всі перевірки нижче впали б на
   // СПРАВНОМУ коді.
   //
-  // Кімната бере здоров'я з рядка при вході на поверх (sendGameStart →
-  // setPlayerHp, server/handlers2/world.js), тому смерть доводиться саме так.
-  // Через сокет, а не прямим викликом: під PLAY_AGAINST сервер в іншому
-  // процесі, і кімнати тут нема.
-  await pool().query('UPDATE player_progress SET hp = 0 WHERE player_id = $1', [madeId]);
+  // ── і чому перехід поверхом більше не вбиває ─────────────────────────────
+  // Раніше вистачало UPDATE + enterLocation: кімната сідала на здоров'я З
+  // РЯДКА при кожному вході на поверх. Так більше не робиться, і навмисно:
+  // рядок пише таймер раз на двадцять секунд, і живий гравець, що проходив у
+  // двері, отримував здоров'я двадцятисекундної давності — подрався, вийшов,
+  // знову повний. Тепер живе число кімнати переїжджає разом з гравцем
+  // (sendGameStart, server/handlers2/world.js).
+  //
+  // Тож смерть доводиться так, як вона й буває насправді: гравець виходить,
+  // рядок каже «нуль», гравець заходить. Вхід у гру — єдиний момент, коли
+  // кімнати ще нема й рядок і є вся правда.
+  //
+  // Порядок важливий: UPDATE ПІСЛЯ відключення. Відключення дописує позицію й
+  // здоров'я з кімнати (savePosition({force:true}), server/session.js) і
+  // затерло б нуль живим числом.
+  // Заразом — те саме правило з іншого боку. У рядок кладеться число, якого в
+  // кімнаті НЕМА, і гравець проходить у двері. Якщо кімната сяде на рядок,
+  // живий гравець вийде з дверей з сімома очками здоров'я — а рядок відстає до
+  // двадцяти секунд, тож у грі це «подрався, вийшов, знову повний» (або
+  // навпаки). Перевіряється тим, що записує сама гра: відключення дописує в
+  // рядок здоров'я З КІМНАТИ, і по ньому видно, з чим вона лишилась.
+  await pool().query('UPDATE player_progress SET hp = 7 WHERE player_id = $1', [madeId]);
   a.sock.emit('enterLocation', { target: 'left' });
   await once(a.sock, 'gameStart', 12000).catch(() => null);
   await wait(300);
-
-  // Читається ПІСЛЯ пересадки: вхід на поверх ставить гравця туди, де він
-  // збережений, і саме ця точка — місце смерті, з якою порівнюється
-  // воскресіння.
+  // Читається ПЕРЕД виходом: це та точка, де гравець «помер», і саме з нею
+  // порівнюється місце воскресіння.
   const deathFloor = a.scr.floor;
   const diedAt = { x: a.scr.x, y: a.scr.y };
+  a.sock.disconnect();
+  await wait(700);
+  const { rows: carried } = await pool().query(
+    'SELECT hp FROM player_progress WHERE player_id = $1', [madeId]);
+  ok(Number(carried[0].hp) > 7,
+    `здоров'я переїхало поверхом живим числом, а не застарілим рядком (${carried[0].hp})`);
+
+  await pool().query('UPDATE player_progress SET hp = 0 WHERE player_id = $1', [madeId]);
+  a = await connect(`${TAG}_player`);
+  // Вхід у світ — окрема подія, як і при першому вході: connect() чекає лише
+  // authOk, а кімнату створює selectChar (він і кличе sendGameStart).
+  const reborn = once(a.sock, 'gameStart', 12000).catch(() => null);
+  a.sock.emit('selectChar', { type: 'deathknight' });
+  await reborn;
+  await wait(300);
+  eq(a.scr.floor, deathFloor, 'зайшов назад туди ж, де вийшов — на поверх смерті');
   const gs = once(a.sock, 'gameStart', 12000).catch(() => null);
   a.sock.emit('respawn');
   const revived = await gs;
