@@ -27,7 +27,6 @@
 //    секунд. Бой идёт в комнате, значит в колонке лежит HP, которое было
 //    когда-то. Прибавь двадцать к устаревшим 2900 при живых 100 — получишь
 //    «фулл»; к устаревшим 100 при живых 2900 — «не работает».
-const path = require('path');
 const { pool, close, tx } = require('../server/db');
 const items = require('../server/db/repos/items');
 const consumables = require('../server/db/repos/consumables');
@@ -239,7 +238,7 @@ const sum = rs => rs.reduce((n, r) => n + r.qty, 0);
   process.exit(fail === 0 ? 0 : 1);
 })().catch(async (e) => {
   console.error('  ОШИБКА: ' + e.message + '\n' + (e.stack || ''));
-  try { if (pid) { await pool().query('DELETE FROM player_items WHERE player_id = $1', [pid]); } } catch (x) { /* ignore */ }
+  try { if (pid) { await pool().query('DELETE FROM player_items WHERE player_id = $1', [pid]); } } catch (_x) { /* ignore */ }
   await close().catch(() => {});
   process.exit(1);
 });

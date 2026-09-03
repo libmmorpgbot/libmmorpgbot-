@@ -197,7 +197,7 @@ console.log('\n  ── прежние координаты не принима�
   {
     const r2 = mkRoom(FLOOR_IDS.coop);
     r2.addPlayer('Z', 'Упрямый', null, 0, 0, '9', null);
-    const sp2 = r2.coopDeploy('Z', 1);
+    r2.coopDeploy('Z', 1);
     // Клиент, который НЕ подчиняется: шлёт прежние координаты и уходит дальше.
     let bad = 0, gx = hub.x;
     for (let i = 0; i < 40; i++) {

@@ -32,8 +32,7 @@ const { query } = require('../index');
 // polynomial, same 48 characters — because what the player is shown is what
 // they paste back into the withdrawal form.
 const ton = require('../../ton');
-const { SERVER_INV_MAX } = require('../../anticheat');
-const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, ITEM_DEF, UPGRADE_KEYS,
+const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, UPGRADE_KEYS,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL,
   DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty, PASSIVE_CLASS_DEF } = require('../../../shared/definitions');
 

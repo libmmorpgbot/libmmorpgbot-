@@ -1,49 +1,75 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Проверки на настоящей базе — во временной, а не в боевой
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# ── почему этот файл до сих пор не работал ─────────────────────────────────
+# Он лежал в коде и описывал ровно то, что нужно, но запустить его было негде:
+# репозитория не было. Как только он впервые запустился, выяснилось, что он
+# падает на первом же шаге и падал бы всегда:
+#
+#   npm ci      package-lock.json остался от версии на MongoDB — в нём не было
+#               даже pg, драйвера самой базы. npm ci отказывается ставить, если
+#               замок расходится с package.json. Замок обновлён.
+#   ADMIN_URL   на него ссылались, но нигде не задавали, и базы для проверок
+#               не поднималось. Теперь поднимается — здесь, ниже.
+#
+# ── зачем временная база, а не боевая ──────────────────────────────────────
+# Отдельной тестовой базы у проекта нет: dev/all-checks.sh ходит по БОЕВОЙ и
+# убирает за собой в конце. Пока работал один человек, с этим можно было жить.
+# Вдвоём — уже нет: один прерванный на середине прогон оставляет мусорные
+# аккаунты в рейтинге живой игры.
+#
+# Здесь база поднимается на время прогона и умирает вместе с ним. Испортить
+# ею нечего.
+#
+# Роль liberty_app создаётся НАМЕРЕННО без прав суперпользователя: REVOKE в
+# конце migrate.sh — это то, что делает журнал движения денег неудаляемым, а
+# суперпользователь их проигнорирует. CI тогда проходил бы то, чего не
+# выдерживает прод.
 name: ci
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  What this actually tests, and why it changed
-# ═══════════════════════════════════════════════════════════════════════════
-#
-# It used to run `npm run lint` and `node dev/harness.js`, and nothing else.
-# The harness booted `server/index.js` — the RETIRED MongoDB build. The live
-# server is `server/app.js` + `server/handlers2/*` + `server/db/repos/*`
-# (package.json main/start and the systemd unit both name it). So CI was green
-# while exercising a build that had not run in production for weeks, and ZERO
-# of the ~50 PostgreSQL detectors in dev/ ran anywhere except by hand.
-#
-# That is the worst shape a test suite can take: it reads as proof and proves
-# nothing about the thing that ships.
-#
-# Now CI stands up a throwaway PostgreSQL, applies the real migrations with the
-# real migrate.sh, and runs the detectors that guard the live build's
-# invariants — item conservation, the double-entry ledger, market half-trades,
-# the exploit fixes, enemy streaming.
-#
-# The Mongo harness step is gone because its subject is: server/index.js,
-# server/handlers/, server/models/ and the five dev/ scripts that drove them
-# were deleted whole. The test outlived the build by exactly one commit, which
-# is the right order — deleting a test before deleting its subject is how a
-# "temporary" build survives forever.
-#
-# lint: eslint against the real config (eslint.config.js) — no-undef /
-# no-unused-vars are what caught the class of bug that shipped twice in one day
-# (an unimported constant, a dead conditional branch).
 
 on:
   push:
-    # postgres-migration is where the live build is developed and where the
-    # Mongo build was deleted; main still carries that build until this branch
-    # is merged. Leaving postgres-migration off the list would mean CI never
-    # ran on the branch that ships.
     branches: [main, postgres-migration]
   pull_request:
   workflow_dispatch:
 
 jobs:
-  # ── everything that needs neither a database nor a browser ────────────────
+  # ── всё, чему нужна база ─────────────────────────────────────────────────
   static:
+    name: база и деньги
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # ТА ЖЕ мажорная версия, что в бою (проверено: SHOW server_version
+        # на боевой отдаёт 18.6). Первый заход поднял здесь 16-ю, и sql-check
+        # объявил сломанным законный запрос: RETURNING old.pending — синтаксис
+        # PostgreSQL 18. Проверка на чужой версии ловит несуществующее и
+        # пропускает настоящее.
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: liberty
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      ADMIN_URL: postgres://postgres:ci@127.0.0.1:5432/liberty
+      DATABASE_URL: postgres://liberty_app:ci@127.0.0.1:5432/liberty
+      # Боевая база требует TLS и свой корневой сертификат, и модуль базы
+      # отказывается подключаться к деньгам без него. Здесь база на этой же
+      # машине и шифровать нечего — для этого случая в server/db/index.js
+      # заведена именно эта лазейка, и работает она только для адреса на
+      # самой машине.
+      PG_ALLOW_PLAINTEXT: '1'
+      NODE_ENV: test
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,83 +77,81 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+
+      # no-undef и no-unused-vars — то, что ловит класс ошибок, дважды за день
+      # уехавший в прод: неимпортированная константа и мёртвая ветка условия.
       - run: npm run lint
 
-      # The client is 24 files concatenated into ONE script scope. A duplicate
-      # top-level `let` between two of them is an early error that rejects the
-      # whole script — blank page, no HUD, no login — and it has shipped. This
-      # hands both the readable and the minified bundle to a real parser.
-      - name: bundle parses (readable and minified)
+      - name: клиент собирается (и обычный, и сжатый)
         run: node dev/bundle-check.js
 
-      # A dropped world packet must not cost a monster. No database, no sockets.
-      - name: enemy streaming survives packet loss
+      - name: потеря пакета не стоит монстра
         run: node dev/enemysync-check.js
 
-      # Настоящая страница и настоящий бандл в настоящем браузере. Два дефекта,
-      # которые владелец нашёл сам за полчаса — 404 на ассете и адрес кошелька
-      # в сырой форме — жили в коде, который эта проверка покрывает; её просто
-      # никто не запускал, потому что до сих пор она требовала человека с
-      # браузером. Выход 2 означает «прогнать не удалось», а не «прошло».
-      - name: страница рисуется (настоящий браузер)
-        run: node dev/render-check.js --run
-
-      - name: install psql client
+      - name: ставлю psql
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      # migrate.sh grants to this role on every run, so it has to exist first.
-      # Deliberately NOT a superuser: the REVOKEs at the end of migrate.sh are
-      # what make the ledger append-only, and a superuser would ignore them —
-      # CI would then pass a test production cannot.
-      - name: create the application role
+      # migrate.sh раздаёт права этой роли на каждом прогоне, поэтому она
+      # должна существовать до него.
+      - name: создаю роль приложения
         run: psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c "CREATE ROLE liberty_app LOGIN PASSWORD 'ci'"
 
-      - name: apply migrations
+      - name: накатываю миграции
         run: bash server/db/migrate.sh
 
-      # Every SQL literal in the server, PREPAREd against the schema that was
-      # just built. Catches a query naming a column no migration creates —
-      # including one added in the same commit and forgotten.
-      - name: every query matches the schema
+      # Каждый SQL из сервера — PREPARE против только что построенной схемы.
+      # Ловит запрос к колонке, которую не создаёт ни одна миграция, включая
+      # добавленную тем же коммитом и забытую.
+      - name: все запросы сходятся со схемой
         run: node dev/sql-check.js
 
-      - name: currency ledger is atomic and append-only
+      - name: журнал денег неделим и неудаляем
         run: node dev/money-check.js
 
-      # The same proof for items. Half of it is static — it fails when a ledger
-      # write is deleted from ANY path that changes an inventory, including one
-      # no test thinks to call — and half is the invariant itself against the
-      # database built above.
-      - name: item ledger accounts for every item
+      - name: у каждого предмета есть запись в журнале
         run: node dev/item-ledger-check.js
 
-      - name: items are conserved
+      - name: предметы не появляются и не исчезают
         run: node dev/items-check.js
 
-      - name: a trade cannot half-happen
+      - name: сделка не может состояться наполовину
         run: node dev/market-check.js
 
-      - name: enhancement cannot be got for free
+      - name: заточку нельзя получить даром
         run: node dev/enhance-check.js
 
-      - name: clan storage is conserved
+      - name: склад клана сходится
         run: node dev/clans-check.js
 
-      - name: stats cannot be forged
+      - name: характеристики нельзя подделать
         run: node dev/stats-check.js
 
-      - name: the exploits stay closed
+      - name: дыры остаются закрытыми
         run: node dev/exploit-check.js
 
-      - name: the server boots and answers
+      - name: сервер поднимается и отвечает
         run: node dev/boot-check.js
 
-      # players.referred_by had no writer anywhere in this build, so the 5%
-      # deposit commission, the season payout at level 20 and the invited-
-      # friends list were three finished features that could not fire — and
-      # nothing failed, because an empty column is a query returning no rows.
-      # This one signs a real start_param and logs in with it: the bug was the
-      # login throwing that field away, so a repo-only test would have been
-      # green on the broken build.
-      - name: an invited player gets a referrer
+      - name: приглашённый игрок получает пригласившего
         run: node dev/referral-check.js
+
+  # ── и то, для чего нужен настоящий браузер ───────────────────────────────
+  # Отдельной задачей: браузер ставится минуту, и его поломка не должна
+  # закрывать собой проверки денег. Остальные детекторы читают код или
+  # спрашивают базу — ни один не видит, нарисовалось ли хоть что-то на экране.
+  # Единственный раз, когда это сломалось, страница была пустой у всех, а
+  # бандл при этом прекрасно разбирался: его просто никто не запускал.
+  render:
+    name: страница рисуется
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: настоящая страница в настоящем браузере
+        run: node dev/render-check.js --run

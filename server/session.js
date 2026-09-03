@@ -1148,7 +1148,7 @@ class Session {
       // Выход из игры — дождаться. Другой записи не будет, и пропуск здесь
       // это ровно тот игрок, который вернулся не туда и не с тем HP.
       // Ошибка идущей записи уже записана ею самой, здесь она не нужна.
-      try { await this._savingPos; } catch (err) { /* уже в журнале */ }
+      try { await this._savingPos; } catch (_err) { /* уже в журнале */ }
     }
     const run = this._savePositionNow();
     this._savingPos = run;
