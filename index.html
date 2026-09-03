@@ -595,6 +595,14 @@
 </div><!-- #app -->
 
 <style>
+/* Золотые глифы комплекта (пузырь чата, иконки навыков в выборе персонажа)
+   поворачиваются в сталь тем же токеном, что и вся остальная рама HUD —
+   один селектор по префиксу пути вместо перечисления каждого <img> отдельно.
+   Сигнальных ассетов (алый/бирюзовый/уведомления) среди <img src> в этом
+   файле нет — они все идут фоном через background:url() у своих кнопок и
+   этого правила не касаются. */
+img[src^="/images/hud/"] { filter: var(--hud-tint); }
+
 /* Обод B5 из комплекта поверх тёмного диска. Диск свой, а не в картинке:
    ободу нужен фон, иначе сквозь кнопку виден мир и символ теряется. */
 /* Кнопка целиком из комплекта — со своей заливкой, без своего диска под
@@ -608,6 +616,11 @@
   pointer-events:all; touch-action:manipulation;
   width:44px; height:44px; border-radius:50%;
   background:url('/images/hud/E5_round_button.webp') center / 100% 100% no-repeat;
+  /* Обычный золотой обод из комплекта — крутится в сталь тем же токеном,
+     что и вся остальная рама HUD (см. --hud-tint, css/style.css). Соседняя
+     #teleport-btn ниже нарочно этого не делает: её бирюза — сигнальный
+     цвет, а не золото под перекраску. */
+  filter: var(--hud-tint);
   border:none;
   color:#eac47e; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
@@ -693,6 +706,7 @@
   aspect-ratio:714 / 200;
   pointer-events:all; touch-action:manipulation; cursor:pointer;
   background:url('/images/hud/A8_chat_bar.webp') center / 100% 100% no-repeat;
+  filter: var(--hud-tint);
   display:none;
   /* Полупрозрачный: он висит поверх игрового поля, и сквозь него должно
      быть видно, что там происходит. Прозрачность на ВЕСЬ элемент, а не
