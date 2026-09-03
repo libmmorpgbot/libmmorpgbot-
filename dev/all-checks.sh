@@ -44,7 +44,8 @@ PURE=(reachable bundle protocol request-shape bookpool prodfix heal skillbuff ne
 DB=(admin adminapi aggro alert api bonuses boot clans consumables craft drops
     enemysync enhance etl events exploit gram guildwar health item-ledger items
     kill market market-fix modes money panel party players progression pvp-history quest relog-attack stacks party-clan-log season-enhance
-    referral reply-shape skills sql stats tgadmin visibility blackscreen dupname classchange mail xss)
+    referral reply-shape skills sql stats tgadmin visibility blackscreen dupname classchange mail
+    login-perf xss)
 SERVER=(play coop walk stream fanout snapshot)
 
 PORT="${ALLCHECK_PORT:-3178}"
