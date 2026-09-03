@@ -2055,6 +2055,13 @@ function netConnect(onReady) {
     _setDmConvoHistory(withUsername, messages);
     if (typeof _setActiveDmUser === 'function') _setActiveDmUser(withUsername);
   });
+  // Отказ по умению — сервер его шлёт (server/handlers2/social.js: skillBuff,
+  // skillHaste), а слушать было некому: игрок жал кнопку, ничего не
+  // происходило и никто не говорил почему. Отказ, которого не видно, — это
+  // то же самое, что поломка.
+  socket.on('skillError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || 'Умение недоступно', 'err');
+  });
   socket.on('privMsgError', ({ msg }) => _chatChannelError(msg));
   socket.on('chatError', ({ msg }) => _chatChannelError(msg));
 
@@ -5167,7 +5174,10 @@ function _initPetCraftHandlers(s) {
   // petCrafted above: inventorySync (mats removed + item added) normally
   // lands before this event on the same socket, so `delivered` is mostly a
   // defensive fallback for the rare case the grant itself couldn't land.
-  s.on('classChanged', ({ from, to, unequipped, newNexumBalance }) => {
+  // `unequipped` здесь больше нет: поле осталось от версии, где экипировку
+  // снимал сервер. Теперь снимает игрок сам — сервер отказывает, пока надето
+  // хоть что-то, — и поле не отправляется. Клиент читал вечный undefined.
+  s.on('classChanged', ({ from, to, newNexumBalance }) => {
     window._nexumBalance = newNexumBalance;
     if (player) {
       player.nexumBalance = newNexumBalance;
