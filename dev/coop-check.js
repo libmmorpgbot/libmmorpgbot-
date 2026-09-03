@@ -255,7 +255,7 @@ const usedOf = async (pid) => {
     // ровно так ведёт себя клиент, пока по сети едет карта нового этажа.
     const sock = io(BASE, { transports: ['websocket'], forceNew: true });
     await once(sock, 'connect');
-    let held = null, applied = false;
+    let held, applied = false;
     const seen = new Map();
     sock.on('gameStart', g => { if (!applied) held = g; });
     sock.on('gameState', buf => {
@@ -320,7 +320,7 @@ const usedOf = async (pid) => {
     const fakeIo = { to: () => ({ emit: () => {} }), emit: () => {}, sockets: { sockets: new Map() } };
     const room = new Room(FLOOR_IDS.coop, fakeIo, {}, null);
     room.addPlayer('S', 'Проверка', null, 0, 0, '1', null);
-    const dep = room.coopDeploy('S');
+    room.coopDeploy('S');
     room.coopStartFirstStage();
     const me = room.players.get('S');
     // Сервер «уже отправил» чужого монстра: запись есть, полная.
