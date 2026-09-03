@@ -608,6 +608,7 @@
   pointer-events:all; touch-action:manipulation;
   width:44px; height:44px; border-radius:50%;
   background:url('/images/hud/E5_round_button.webp') center / 100% 100% no-repeat;
+  filter:var(--hud-tint);
   border:none;
   color:#eac47e; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
@@ -701,7 +702,7 @@
      0.78, а не меньше: под ним бывает светлая лава, и на 0.5 текст
      переставал читаться именно там, где чаще всего стоит игрок. */
   opacity:.78;
-  filter:drop-shadow(0 2px 10px rgba(0,0,0,0.5));
+  filter:var(--hud-tint) drop-shadow(0 2px 10px rgba(0,0,0,0.5));
 }
 /* Окно рамы — ОТДЕЛЬНЫМ слоем, абсолютным, а не padding'ом на самой раме.
    Два разных промаха, оба уже случились на первом заходе:

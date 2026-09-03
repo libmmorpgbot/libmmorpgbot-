@@ -2398,17 +2398,10 @@ function setTab(n) {
 // ─────────────────────────────────────────────────────────
 //  UNIFIED HEADER  (player info + minimap)
 // ─────────────────────────────────────────────────────────
-let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
-let _hpGradGreen = null, _hpGradOrange = null, _hpGradRed = null;
-let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null;
 // Avatar bg gradient (re-created only when character color changes)
 let _avBgGrad = null, _avBgColor = '';
 // All button + target-frame gradients — rebuilt when null (set null on resize)
 let _uiBtnGrads = null;
-// Cached character name text width (measureText is expensive; name never changes mid-session)
-let _hdrNameW = 0, _hdrNameStr = '';
-let _nexumIconImg = null;
-let _gramIconImg = null;
 
 // Minimap floor-tile buffer — see the cache block inside drawHeader() below.
 // Only rebuilt when the player crosses into a new tile (or theme/scale
@@ -2450,212 +2443,125 @@ function setTelegramAvatar(url) {
   load(true);
 }
 
+// ── ОБОЛОЧКА ПАНЕЛЕЙ HUD (arcane steel) ─────────────────────────────────────
+// Общий вид любой плавающей плашки HUD — обе плашки шапки, рамка цели:
+// стеклянное тело, подсвеченная рамка, блик по верхнему краю и четыре
+// уголка. Один рецепт на все — поменять вид можно в одном месте.
+const HUD_FRAME     = 'rgba(104,178,240,0.55)';
+const HUD_FRAME_DIM = 'rgba(104,178,240,0.26)';
+const HUD_GLOW      = 'rgba(86,170,255,0.16)';
+const HUD_TEXT      = '#dbe9f8';
+
+// Обе плашки шапки — этой высоты, чтобы читаться одной строкой.
+const HUD_PLATE_H = 96;
+
+function _hudCorners(x, y, w, h, len, color) {
+  ctx.strokeStyle = color || 'rgba(150,215,255,0.7)';
+  ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  const corners = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
+  for (const [cx, cy, sx, sy] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(cx + sx * 3, cy + sy * len);
+    ctx.lineTo(cx + sx * 3, cy + sy * 3);
+    ctx.lineTo(cx + sx * len, cy + sy * 3);
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+
+function _hudPanel(x, y, w, h, r, frame) {
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, 'rgba(22,42,67,0.93)');
+  g.addColorStop(1, 'rgba(8,15,26,0.95)');
+  ctx.fillStyle = g;
+  roundRect(ctx, x, y, w, h, r); ctx.fill();
+
+  ctx.strokeStyle = HUD_GLOW; ctx.lineWidth = 3;
+  roundRect(ctx, x - 1, y - 1, w + 2, h + 2, r + 1); ctx.stroke();
+  ctx.strokeStyle = frame || HUD_FRAME; ctx.lineWidth = 1.2;
+  roundRect(ctx, x, y, w, h, r); ctx.stroke();
+  ctx.strokeStyle = 'rgba(150,210,255,0.13)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + r, y + 1.5); ctx.lineTo(x + w - r, y + 1.5); ctx.stroke();
+
+  _hudCorners(x, y, w, h, 10);
+}
+
+// Полоса значения (HP, XP) в стиле HUD: утопленный жёлоб, градиентная
+// заливка, блик по верхнему краю заливки.
+function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor) {
+  ctx.fillStyle = 'rgba(4,9,16,0.85)';
+  roundRect(ctx, x, y, w, h, h / 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
+  roundRect(ctx, x, y, w, h, h / 2); ctx.stroke();
+  const fw = Math.max(0, Math.min(1, pct)) * (w - 2);
+  if (fw > 1) {
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, c0); g.addColorStop(1, c1);
+    ctx.fillStyle = g;
+    roundRect(ctx, x + 1, y + 1, fw, h - 2, (h - 2) / 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    roundRect(ctx, x + 1, y + 1, fw, (h - 2) / 2, (h - 2) / 2); ctx.fill();
+  }
+  if (label) {
+    ctx.font = `bold ${Math.round(h * 0.62)}px system-ui, -apple-system, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(label, x + w / 2, y + h / 2 + 1.2);
+    ctx.fillStyle = labelColor || 'rgba(233,244,255,0.92)';
+    ctx.fillText(label, x + w / 2, y + h / 2);
+  }
+}
+
 // ── раскладка шапки ───────────────────────────────────────────────────────
-// Три блока, как на макете: панель статов слева, столбец валют посередине,
-// рамка карты справа. Считается в одном месте, потому что ширины связаны:
-// столбец валют — это то, что осталось между панелью и картой, и подгонять
-// его отдельно значит однажды получить наложение на узком экране.
-// ── гнёзда одной панели ───────────────────────────────────────────────────
-// Восемь отверстий G2 приходят из таблицы отсортированными по площади. Здесь
-// они раскладываются по назначению — раз и навсегда, а не по месту вызова:
-// карта, портрет, две полосы, четыре валюты. Классификация по ФОРМЕ, а не по
-// порядку: порядок зависит от того, какой пиксель конвейер счёл на единицу
-// больше, а форма — от того, что нарисовано.
-let _hdrSlotsCache = null, _hdrSlotsFor = null;
-function hdrSlots() {
-  const a = (typeof HUD_ART !== 'undefined') && HUD_ART.G2_wide_header_with_map;
-  if (!a || !a.slots || a.slots.length < 8) return null;
-  if (_hdrSlotsCache && _hdrSlotsFor === a) return _hdrSlotsCache;
-  // Соотношение сторон отверстия в реальных пикселях, а не в долях: доли
-  // сжаты пропорцией панели и «круглое» в них выглядит вытянутым.
-  const k = a.out[0] / a.out[1];
-  const shape = s => (s[2] * k) / s[3];
-  const rest = a.slots.slice();
-  const bars = rest.filter(s => shape(s) > 4).sort((p, q) => p[1] - q[1]);
-  const round = rest.filter(s => shape(s) <= 4);
-  // Карта — самое большое из круглых-и-квадратных, портрет — следующее,
-  // остальные четыре это валюты, слева направо.
-  round.sort((p, q) => (q[2] * q[3]) - (p[2] * p[3]));
-  const map = round[0], portrait = round[1];
-  const cur = round.slice(2).sort((p, q) => p[0] - q[0]);
-  if (!map || !portrait || bars.length < 2 || cur.length < 4) return null;
-  _hdrSlotsFor = a;
-  _hdrSlotsCache = { map, portrait, hp: bars[0], xp: bars[1], cur };
-  return _hdrSlotsCache;
+// Плашка карты — своя, справа, и свисает под шапку поверх мира; правая
+// колонка кнопок HUD-меню начинается под ней же (_positionHudMenuBtn).
+function hudMiniMapRect() {
+  const w = Math.round(Math.min(96, W * 0.26));
+  return { x: W - w - 8, y: 4, w, h: HUD_PLATE_H };
 }
 
-function hdrLayout() {
-  const pad = HDR_PAD;
-  const panel = { x: pad, y: pad, w: W - pad * 2, h: HEADER_H - pad * 2 };
-  // Прямоугольник гнезда в экранных координатах.
-  const at = (s) => ({
-    x: panel.x + (s[0] - s[2] / 2) * panel.w,
-    y: panel.y + (s[1] - s[3] / 2) * panel.h,
-    w: s[2] * panel.w,
-    h: s[3] * panel.h,
-    cx: panel.x + s[0] * panel.w,
-    cy: panel.y + s[1] * panel.h,
-  });
-  const sl = hdrSlots();
-  if (!sl) {
-    // Панель не доехала — прежняя раскладка из трёх блоков.
-    const h = HEADER_H - pad * 2;
-    const mapW = Math.round(h * 0.92);
-    const panelW = Math.min(Math.round(W * 0.50), Math.round(h * 1.86));
-    return { pad, one: false,
-      panel: { x: pad, y: pad, w: panelW, h },
-      map: { x: W - pad - mapW, y: pad, w: mapW, h },
-      cur: { x: pad + panelW + 4, y: pad, h, w: W - pad - mapW - (pad + panelW) - 8 } };
-  }
-  return {
-    pad, one: true, panel,
-    map: at(sl.map), portrait: at(sl.portrait),
-    hp: at(sl.hp), xp: at(sl.xp),
-    cur: sl.cur.map(at),
-  };
-}
-
-function drawHeader() {
-  if (!player || !dungeon) return;
+function drawMiniMapPanel() {
   const p = player;
-  const F = 'system-ui, -apple-system, sans-serif';
-  const LAY = hdrLayout();
-  const hasArt = (typeof hudImg === 'function') && !!hudImg('A1_stat_panel');
-  // Тело панели НЕПРОЗРАЧНОЕ, сквозные в ней только гнёзда. Значит слоёв
-  // два, и перепутать их нельзя:
-  //   в гнездо (портрет, заливка полос, карта, иконки валют) — ДО панели,
-  //     чтобы золотая кромка отверстия осталась сверху;
-  //   на поверхность (имя, класс, числа на полосах, числа балансов,
-  //     уровень) — ПОСЛЕ, иначе текст уедет под металл и исчезнет совсем.
-  // Первый заход рисовал всё до панели, и на снимке пропали ник и все четыре
-  // баланса: гнёзда были заполнены верно, а поверхность пуста.
-  // over() копит замыкания и проигрывается одним куском после панели. Каждое
-  // само задаёт себе шрифт и цвет: к моменту вызова состояние ctx уже чужое.
-  const _over = [];
-  const over = fn => _over.push(fn);
-
-  ctx.save();
-
-  // ── Background (cached gradient — same every frame) ───────
-  if (!_hdrBgGrad || _hdrGradW !== W) {
-    _hdrGradW = W;
-    _hpGradGreen = null; // invalidate dependent bar gradients
-    _avBgGrad = null;    // also invalidate avatar bg on resize
-    _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
-    _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
-    _hdrBgGrad.addColorStop(0, 'rgba(24,18,9,0.98)');
-    _hdrBgGrad.addColorStop(1, 'rgba(13,10,4,0.99)');
-    _hdrSepGrad = ctx.createLinearGradient(0, 0, W, 0);
-    _hdrSepGrad.addColorStop(0,   'rgba(119,92,46,0)');
-    _hdrSepGrad.addColorStop(0.15,'rgba(170,133,70,0.75)');
-    _hdrSepGrad.addColorStop(0.85,'rgba(170,133,70,0.75)');
-    _hdrSepGrad.addColorStop(1,   'rgba(119,92,46,0)');
-  }
-  // Сплошная плашка во всю ширину — только в запасном виде. С ассетами шапка
-  // это ТРИ отдельные панели, и между ними должен быть виден мир: заливка
-  // поперёк экрана съедает полосу игрового поля ни за чем и выдаёт то, что
-  // панели просто положены на прямоугольник.
-  if (!hasArt) {
-    ctx.fillStyle = _hdrBgGrad;
-    ctx.fillRect(0, 0, W, HEADER_H);
-    ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
-  }
-
-  // Панель статов и рамка карты — до всего, что в них ложится.
-  // Одна панель на всю шапку. Рисуется ПОСЛЕ содержимого — ниже, у самого
-  // конца drawHeader, — потому что у неё сквозные гнёзда: портрет, полосы,
-  // валюты и карта ложатся ПОД неё, и золотая окантовка каждого отверстия
-  // остаётся сверху. Здесь только запасной путь на случай, если G2 не
-  // доехал: три отдельных блока, как было.
-  if (hasArt && !LAY.one) {
-    if (!hudDraw(ctx, 'F1_character_stat_panel_opaque', LAY.panel.x + LAY.panel.w / 2,
-        LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h)) {
-      hudDraw(ctx, 'A1_stat_panel', LAY.panel.x + LAY.panel.w / 2,
-        LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h);
-    }
-    if (!hudDraw(ctx, 'F2_map_panel_opaque', LAY.map.x + LAY.map.w / 2,
-        LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h)) {
-      hudDraw(ctx, 'A2_map_panel', LAY.map.x + LAY.map.w / 2,
-        LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h);
-    }
-  } else if (hasArt) {
-    // Фон под гнёздами: они сквозные, а мир за ними просвечивать не должен.
-    ctx.fillStyle = 'rgba(11,9,14,0.97)';
-    roundRect(ctx, LAY.panel.x, LAY.panel.y, LAY.panel.w, LAY.panel.h, 10);
-    ctx.fill();
-  }
-
-  // ── Minimap (right side) ──────────────────────────────────
-  // Local window only — shows just the area around the player instead of
-  // the whole (huge) world. The window follows the player continuously
-  // (float-precision top-left, not tile-snapped) and is small enough
-  // (~60×60 tiles) to redraw from scratch every frame with no cache needed.
-  const _MM_RADIUS = 30; // tiles each direction from the player
-  // Карта садится в ОКНО рамки A2 — измеренное отверстие, а не выдуманный
-  // отступ: 0.8773 × 0.8027 её размера, центр на 0.4996 × 0.5268.
-  const mmPad = 6;
-  let mmH, mmW, mmX, mmY;
-  if (LAY.one) {
-    // По БОЛЬШЕЙ стороне отверстия, а не по меньшей. Гнездо у G2 не круглое,
-    // 100 × 108: круг по меньшей стороне не доставал до верхней и нижней
-    // кромки, и в эти четыре пикселя было видно подземелье за панелью.
-    // Лишнее обрежет сама панель — она рисуется сверху, ради этого и
-    // разделены слои.
-    mmW = mmH = Math.round(Math.max(LAY.map.w, LAY.map.h) + 4);
-    mmX = Math.round(LAY.map.cx - mmW / 2);
-    mmY = Math.round(LAY.map.cy - mmH / 2);
-  } else if (hasArt) {
-    const win = Math.min(LAY.map.w * 0.86, LAY.map.h * 0.78);
-    mmW = mmH = Math.round(win);
-    mmX = Math.round(LAY.map.x + LAY.map.w * 0.4996 - mmW / 2);
-    mmY = Math.round(LAY.map.y + LAY.map.h * 0.5268 - mmH / 2);
-  } else {
-    mmH = HEADER_H - mmPad * 2;
-    mmW = mmH;
-    mmX = W - mmW - mmPad - 4;
-    mmY = mmPad;
-  }
+  const mp = hudMiniMapRect();
+  const _MM_RADIUS = 30; // тайлов в каждую сторону от игрока
+  const mmX = mp.x + 3, mmY = mp.y + 3, mmW = mp.w - 6, mmH = mp.h - 6;
   const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
-  const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
+  // Окно квадратно ровно настолько, насколько квадратна сама плашка: игрок
+  // всё равно в центре, вертикальный охват меряется по mmH, а не считается
+  // равным горизонтальному.
+  const winTilesX = mmW / mmSc, winTilesY = mmH / mmSc;
+  const winTx = p.x / TILE - winTilesX / 2, winTy = p.y / TILE - winTilesY / 2;
 
-  // Map panel border (circular)
-  const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
-  const mpX = mmX - 4; // left-edge reference used by the header divider/info-area layout below
-  ctx.fillStyle = 'rgba(15,11,4,0.92)';
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.stroke();
+  _hudPanel(mp.x, mp.y, mp.w, mp.h, 11);
 
-  // Clip, draw tiles and blips
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = '#070604'; ctx.fillRect(mmX, mmY, mmW, mmH);
+  roundRect(ctx, mmX, mmY, mmW, mmH, 8); ctx.clip();
+  ctx.fillStyle = '#060b12'; ctx.fillRect(mmX, mmY, mmW, mmH);
 
-  // The floor pattern only actually changes when the player crosses into a
-  // new tile — this window's origin is float-precision but the underlying
-  // grid isn't — so rebuilding a ~3700-rect path and filling it EVERY frame
-  // (profiled at ~1.1ms, the single biggest chunk of drawHeader's cost) was
-  // redoing the same work up to a dozen-plus times between actual changes.
-  // Redraw the static pattern into an offscreen buffer only on a tile
-  // crossing (or scale/theme change); every other frame just blits it,
-  // repositioned for the current sub-tile offset.
+  // Тайловый узор меняется только когда игрок переходит в новый тайл — окно
+  // float-precision, а сетка под ним нет, — так что перестраивать сотни
+  // прямоугольников и заливать их КАЖДЫЙ кадр значило переделывать одно и то
+  // же до десятка с лишним раз между реальными изменениями. Статичный узор
+  // перерисовывается в закадровый буфер только при переходе тайла (или
+  // смене масштаба/темы); каждый другой кадр просто копирует его со сдвигом
+  // на подтайловое смещение.
   const _mmTileFx = Math.floor(winTx), _mmTileFy = Math.floor(winTy);
   if (!_mmTileCv || _mmTileCvTx !== _mmTileFx || _mmTileCvTy !== _mmTileFy || _mmTileCvSc !== mmSc || _mmTileCvTheme !== th.mmFloor) {
     _mmTileCvTx = _mmTileFx; _mmTileCvTy = _mmTileFy; _mmTileCvSc = mmSc; _mmTileCvTheme = th.mmFloor;
-    const bufTiles = _MM_RADIUS * 2 + _MM_MARGIN * 2 + 2;
-    const bufPx = Math.ceil(bufTiles * mmSc);
+    const bufTilesX = Math.ceil(winTilesX) + _MM_MARGIN * 2 + 2;
+    const bufTilesY = Math.ceil(winTilesY) + _MM_MARGIN * 2 + 2;
+    const bufPxX = Math.ceil(bufTilesX * mmSc), bufPxY = Math.ceil(bufTilesY * mmSc);
     if (!_mmTileCv) _mmTileCv = document.createElement('canvas');
-    if (_mmTileCv.width !== bufPx || _mmTileCv.height !== bufPx) { _mmTileCv.width = bufPx; _mmTileCv.height = bufPx; }
+    if (_mmTileCv.width !== bufPxX || _mmTileCv.height !== bufPxY) { _mmTileCv.width = bufPxX; _mmTileCv.height = bufPxY; }
     const mctx = _mmTileCv.getContext('2d');
-    mctx.clearRect(0, 0, bufPx, bufPx);
+    mctx.clearRect(0, 0, bufPxX, bufPxY);
     mctx.fillStyle = th.mmFloor;
     mctx.beginPath();
     const bufTx0 = _mmTileFx - _MM_MARGIN, bufTy0 = _mmTileFy - _MM_MARGIN;
-    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTiles - 1);
-    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTiles - 1);
+    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTilesX - 1);
+    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTilesY - 1);
     for (let ty = ty0; ty <= ty1; ty++) {
       const row = dungeon.grid[ty];
       for (let tx = tx0; tx <= tx1; tx++) {
@@ -2667,9 +2573,13 @@ function drawHeader() {
   }
   const _mmBlitX = mmX - (winTx - (_mmTileCvTx - _MM_MARGIN)) * mmSc;
   const _mmBlitY = mmY - (winTy - (_mmTileCvTy - _MM_MARGIN)) * mmSc;
+  // В полсилы: свой цвет пола у каждого места всё ещё говорит, где ты, но на
+  // полной непрозрачности он перекрикивает точки-блипы, а в них весь смысл.
+  ctx.globalAlpha = 0.42;
   ctx.drawImage(_mmTileCv, _mmBlitX, _mmBlitY);
+  ctx.globalAlpha = 1;
 
-  const mmEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
+  const mmEnemies = serverEnemies; // единственный источник врагов — офлайн-режима нет
   const _mmR = Math.max(1, mmSc * 0.8);
   ctx.fillStyle = 'rgba(233,55,76,0.9)';
   ctx.beginPath();
@@ -2679,7 +2589,7 @@ function drawHeader() {
     ctx.moveTo(ex + _mmR, ey); ctx.arc(ex, ey, _mmR, 0, Math.PI * 2);
   });
   ctx.fill();
-  // Boss skull icon on minimap
+  // Иконка черепа для боссов на миникарте
   const _bossIconSz = Math.max(8, Math.round(mmSc * 4));
   ctx.font = `${_bossIconSz}px serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2707,53 +2617,38 @@ function drawHeader() {
     });
     ctx.fill();
   }
-  // Player is always at the window's center
+  // Игрок всегда в центре окна
   const pdx = mmX + mmW / 2, pdy = mmY + mmH / 2;
-  ctx.fillStyle = 'rgba(121,220,35,0.25)';
+  ctx.fillStyle = 'rgba(121,220,35,0.28)';
   ctx.beginPath(); ctx.arc(pdx, pdy, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#79dc23';
+  ctx.fillStyle = '#8dee46';
   ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
-  // Current room-level label (global monster level 1-80, or "Зал" in the hub)
-  const _hudRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(p.x, p.y) : null;
-  const _hudLbl = _hudRoom?.monsterLvl ? (t('levelAbbrev') + _hudRoom.monsterLvl) : t('hallShort');
-  // Подпись этажа держится за ГНЕЗДО, а не за окно карты: окно теперь шире
-  // отверстия и уходит под панель, и подпись ушла бы вместе с ним.
-  const _lblX = LAY.one ? LAY.map.cx : mmX + mmW / 2;
-  const _lblY = LAY.one ? (LAY.map.y + LAY.map.h - 8) : mmY + mmH - 3;
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillText(_hudLbl, _lblX + 1, _lblY + 1);
-  ctx.fillStyle = 'rgba(239,199,131,0.95)';
-  ctx.fillText(_hudLbl, _lblX, _lblY);
+  ctx.strokeStyle = HUD_FRAME_DIM; ctx.lineWidth = 1;
+  roundRect(ctx, mmX, mmY, mmW, mmH, 8); ctx.stroke();
+}
 
-  // Vertical divider — только в старой раскладке: у G2 разделитель перед
-  // картой отчеканен в самой панели, а этот проходил бы по другому месту.
-  if (!LAY.one) {
-    ctx.strokeStyle = 'rgba(120,96,55,0.3)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
-  }
+function drawHeader() {
+  if (!player || !dungeon) return;
+  const p = player;
+  const F = 'system-ui, -apple-system, sans-serif';
 
-  // ── Avatar ────────────────────────────────────────────────
-  // Внутри панели A1, а не в углу экрана: измеренное окно панели —
-  // 0.8883 × 0.7982 её размера, и портрет садится к его левому краю.
-  // Портрет целиком внутри экрана: при выносе за левый край панели за ним
-  // уезжало и кольцо уровня, а оно снизу-слева и вылезало за нулевую
-  // координату — половина цифры просто не рисовалась.
-  // Кольцо ШИРЕ портрета: его окно — 0.7762 собственного размера, значит
-  // внешний радиус равен 1.29 радиуса портрета. Отступ считается от кольца,
-  // а не от портрета, иначе золото уезжает за нулевую координату — что и
-  // было видно как срезанный слева обод.
-  const avR = LAY.one ? Math.round(Math.min(LAY.portrait.w, LAY.portrait.h) / 2)
-    : (hasArt ? Math.round(LAY.panel.h * 0.24) : 18);
-  const avX = LAY.one ? Math.round(LAY.portrait.cx)
-    : (hasArt ? Math.round(LAY.panel.x + avR * 1.29 + 3) : 30);
-  const avY = LAY.one ? Math.round(LAY.portrait.cy)
-    : (hasArt ? Math.round(LAY.panel.y + LAY.panel.h * 0.46) : HEADER_H / 2);
+  ctx.save();
+
+  drawMiniMapPanel();
+
+  // ── Плашка игрока ────────────────────────────────────────────
+  const mp = hudMiniMapRect();
+  const px = 6, py = 4, pw = mp.x - px - 4, ph = HUD_PLATE_H;
+  const pRight = px + pw - 11;
+  _hudPanel(px, py, pw, ph, 12);
+
+  // ── Портрет + бейдж уровня ──────────────────────────────────
+  const avR = 25, avX = px + 30, avY = py + 32;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
   if (hasTgAvatar) {
     ctx.save();
     ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.clip();
@@ -2761,405 +2656,103 @@ function drawHeader() {
     ctx.restore();
   } else {
     if (!_avBgGrad || _avBgColor !== p.charDef.color) {
-      _avBgGrad = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
-      _avBgGrad.addColorStop(0, p.charDef.color + '40');
-      _avBgGrad.addColorStop(1, 'rgba(0,0,0,0.6)');
+      _avBgGrad = ctx.createRadialGradient(avX - 6, avY - 6, 2, avX, avY, avR);
+      _avBgGrad.addColorStop(0, p.charDef.color + '55');
+      _avBgGrad.addColorStop(1, 'rgba(4,9,17,0.85)');
       _avBgColor = p.charDef.color;
     }
     ctx.fillStyle = _avBgGrad;
     ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
+    drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 26, p.charDef.color);
   }
-  // Обод по самому краю отверстия — только в старой раскладке. В гнезде
-  // единой панели он ложился вплотную под золотой рим и читался светлой
-  // каймой изнутри золота, будто оправа сделана из двух разных металлов.
-  if (!LAY.one) {
-    ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
-  }
-  ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
-  // У гнезда единой панели свой золотой рим, и цветной обод класса впритык
-  // к нему читался вторым кольцом — светлой каймой поверх золота. Внутри
-  // отверстия он не нужен: рамку рисует сама панель.
-  if (!LAY.one) { ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke(); }
-  // Глиф по размеру гнезда, а не фиксированные 20 px: в отверстии на 70 px
-  // он занимал меньше трети и висел в пустоте.
-  if (!hasTgAvatar) {
-    drawIconCtx(ctx, p.charDef.icon, avX, avY + 1,
-      LAY.one ? Math.round(avR * 1.1) : 20, p.charDef.color);
-  }
-  if (hasArt) {
-    // Кольцо B1 — только в раскладке из трёх блоков. У единой панели гнездо
-    // портрета уже обрамлено ею самой, и второй обод внутри первого читался
-    // бы как недорисованная рамка.
-    if (!LAY.one) hudDraw(ctx, 'B1_portrait_ring', avX, avY, avR * 2.62, avR * 2.62);
-    // Уровень — в своё кольцо, снизу слева от портрета, как на макете.
-    // Кольцо садится НА край гнезда, то есть наполовину на металл панели,
-    // и потому рисуется после неё: под панелью от него оставалась одна
-    // обрезанная дуга внутри отверстия.
-    const lvR = Math.round(avR * (LAY.one ? 0.52 : 0.62));
-    const lvX = avX - avR * 0.72, lvY = avY + avR * 0.82;
-    const lvTxt = String(p.lvl);
-    const drawLv = () => {
-      ctx.fillStyle = 'rgba(12,9,16,0.94)';
-      ctx.beginPath(); ctx.arc(lvX, lvY, lvR * 0.9, 0, Math.PI * 2); ctx.fill();
-      hudDraw(ctx, 'B2_level_badge_ring', lvX, lvY, lvR * 2.3, lvR * 2.3);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      // Кегль сжимается под длину числа: на 1000 уровне четыре знака при
-      // прежнем размере вылезали за кольцо в обе стороны.
-      const lvFit = lvR * 1.5 / Math.max(1.6, lvTxt.length * 0.62);
-      ctx.font = `bold ${Math.max(7, Math.round(Math.min(lvR * 0.9, lvFit)))}px ${F}`;
-      ctx.fillStyle = '#f4d8a7';
-      ctx.fillText(lvTxt, lvX, lvY);
-      ctx.textBaseline = 'alphabetic';
-    };
-    if (LAY.one) over(drawLv); else drawLv();
-  }
+  ctx.strokeStyle = 'rgba(122,196,255,0.85)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = p.charDef.color + '55'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
 
-  // ── Info area ─────────────────────────────────────────────
-  // Сдвиг вниз, а не переписывание всех координат строк: их тут полтора
-  // десятка, и каждая правка на глаз — шанс промахнуться на пиксель в
-  // одной из них. Блок целиком уезжает внутрь панели одним translate.
-  // Полоса под имя и полосы HP/XP лежат в одном столбце: их левый край —
-  // левый край гнезда HP, правый — его правый край. Раньше это считалось от
-  // портрета и от края панели, то есть от двух разных вещей, и имя стояло
-  // не над полосами, а рядом.
-  const infoX = LAY.one ? Math.round(LAY.hp.x)
-    : (hasArt ? avX + avR + 12 : avX + avR + 9);
-  const infoRight = LAY.one ? Math.round(LAY.hp.x + LAY.hp.w)
-    : (hasArt ? (LAY.panel.x + LAY.panel.w - 14) : (mpX - 10));
-  const infoW = infoRight - infoX;
-  const _infoDY = LAY.one ? 0 : (hasArt ? Math.round(LAY.panel.y + LAY.panel.h * 0.14) : 0);
-  ctx.save();
-  if (_infoDY) ctx.translate(0, _infoDY);
+  const lbR = 11, lbX = avX - 14, lbY = avY + avR - 2;
+  ctx.fillStyle = 'rgba(9,18,31,0.96)';
+  ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(240,196,110,0.9)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f4d9a4';
+  ctx.fillText(p.lvl, lbX, lbY + 0.5);
 
-  // Row 1: Name + Level
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
-  if (LAY.one) {
-    // Имя занимает верхнюю полосу панели и НЕ выходит за неё: обрезается по
-    // ИЗМЕРЕННОЙ ширине, а не по числу знаков. Число знаков врёт — «ЩЩЩЩЩ»
-    // и «iiiii» занимают разное место, и на длинном нике буквы вылезали за
-    // золотую кромку.
-    // Полоса под имя у G2 — не отверстие, а утопленная площадка на самой
-    // панели: конвейер её и не нашёл, он искал сквозное. Значит имя ложится
-    // ПОВЕРХ панели, иначе его закрывает металл.
-    const nameY = LAY.panel.y + LAY.panel.h * 0.192;
-    over(() => {
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.font = `bold 13px ${F}`;
-      let nm = String(netUsername || p.charDef.name);
-      // Обрезка по ИЗМЕРЕННОЙ ширине, а не по числу знаков: «ЩЩЩЩЩ» и
-      // «iiiii» занимают разное место, и на длинном нике буквы вылезали за
-      // золотую кромку площадки. Место под класс вычитается заранее — он
-      // печатается справа в той же полосе и переменной длины.
-      ctx.save();
-      ctx.font = `10px ${F}`;
-      const clsW = 4 + ctx.measureText(_ellipsis(p.charDef.name, 12)).width;
-      ctx.restore();
-      ctx.font = `bold 13px ${F}`;
-      const maxW = infoW - 16 - clsW;
-      if (ctx.measureText(nm).width > maxW) {
-        while (nm.length > 1 && ctx.measureText(nm + '…').width > maxW) nm = nm.slice(0, -1);
-        nm += '…';
-      }
-      // Что вышло на экран, а не что задумывалось. Проверка читает эту
-      // запись и сравнивает с полосой; пересчитывать те же формулы у себя
-      // она не может — это подтвердило бы её собственную память, а не
-      // картинку. Отсюда же видно в консоли, чем кончилась обрезка, если
-      // ник однажды всё-таки вылезет.
-      // limit берётся из ГЕОМЕТРИИ полосы — её правого края и места под
-      // класс, — а не из maxW. Через maxW он был бы выведен из той самой
-      // величины, которую проверка и проверяет: сняв обрезку, я получил
-      // зелёную галочку на нике, вылезшем за панель на всю длину.
-      _hdrDrawnName = {
-        text: nm, w: ctx.measureText(nm).width,
-        x: infoX + 8, limit: infoRight - 8 - clsW,
-      };
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(nm, infoX + 9, nameY + 1);
-      ctx.fillStyle = '#f4d8a7';
-      ctx.fillText(nm, infoX + 8, nameY);
-      // Класс — справа в той же полосе: место есть, а отдельной строки под
-      // него в панели нет.
-      ctx.font = `10px ${F}`;
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(_ellipsis(p.charDef.name, 12), infoRight - 7, nameY + 1);
-      ctx.fillStyle = p.charDef.color + 'ee';
-      ctx.fillText(_ellipsis(p.charDef.name, 12), infoRight - 8, nameY);
-    });
-  } else {
-  ctx.fillText(_ellipsis(netUsername || p.charDef.name, 13), infoX, 15);
-  }
-  if (!hasArt) {
-    ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
-    ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
-  }
+  // ── Имя + класс ──────────────────────────────────────────────
+  const infoX = avX + avR + 12;
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  ctx.font = `bold 14px ${F}`; ctx.fillStyle = HUD_TEXT;
+  ctx.fillText(_ellipsis(netUsername || p.charDef.name, 14), infoX, py + 20);
+  ctx.font = `11px ${F}`; ctx.fillStyle = p.charDef.color + 'e0';
+  ctx.fillText(p.charDef.name, infoX, py + 35);
+  // БМ (боевая мощь) читается частью строки класса — тёплым золотом, как
+  // валюты и лут: единственное число в шапке, что растёт от силы персонажа,
+  // а не от цвета металла.
+  const bmX = infoX + ctx.measureText(p.charDef.name).width + 8;
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(240,196,110,0.8)';
+  ctx.fillText(t('bmAbbrev'), bmX, py + 35);
+  const bmLblW = ctx.measureText(t('bmAbbrev')).width;
+  ctx.font = `bold 11px ${F}`; ctx.fillStyle = '#f0c46e';
+  ctx.fillText(_fmtCur(typeof calcBM === 'function' ? calcBM(p) : 0), bmX + bmLblW + 4, py + 35);
 
-  // Row 2: Class name + inline stats (gold / atk / def)
-  ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
-  if (!LAY.one) ctx.fillText(p.charDef.name, infoX, 27);
-  if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
-    _hdrNameStr = p.charDef.name;
-    _hdrNameW = ctx.measureText(p.charDef.name).width;
-  }
-  ctx.textBaseline = 'middle';
-  // БМ уехал в столбец плашек четвёртой строкой. Здесь он печатался справа
-  // от названия класса, то есть от строки ПЕРЕМЕННОЙ длины: у «Целителя»
-  // он влезал, у класса подлиннее — вылезал за панель. Место, которое
-  // зависит от чужого текста, рано или поздно кончается.
-  if (!hasArt) {
-    const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-    const stxH = infoX + _hdrNameW + 10;
-    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
-    ctx.fillText(t('bmAbbrev'), stxH, 24);
-    const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
-    ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
-    ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
-  }
-  ctx.textBaseline = 'alphabetic';
-
-  // Separator — прежняя шапка чертила его на 32-м пикселе. У единой панели
-  // на этой высоте проходит гнездо полосы HP, и линия ложилась прямо на неё.
-  if (!LAY.one) {
-    ctx.strokeStyle = 'rgba(109,88,51,0.4)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
-  }
-
-  // ── HP bar ────────────────────────────────────────────────
-  // 7, а не 9: жёлоб E10 рисуется поверх заливки и добавляет к ней свою
-  // кромку, так что видимая толщина полосы — это hbH плюс оправа. На
-  // девяти она выходила толще, чем имя над ней.
-  // Внутрь измеренного гнезда, с запасом в пиксель по краям: заливка
-  // ложится ПОД панель, и вылезти за кромку она не может, но и упираться
-  // в неё изнутри незачем.
-  const hpY = LAY.one ? Math.round(LAY.hp.cy) : 42;
-  const hbH = LAY.one ? Math.max(4, Math.round(LAY.hp.h - 4)) : 7;
-  const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
-  if (!LAY.one) ctx.fillText('HP', infoX, hpY);
-
-  // Внутрь измеренного гнезда, с запасом в два пикселя: заливка ложится ПОД
-  // панель, вылезти за кромку она не может, но и упираться в неё изнутри
-  // незачем. Подпись «HP» при единой панели не рисуется — на неё в гнезде
-  // места нет, а цвет полосы и так говорит, какая из двух какая.
-  const hbX = LAY.one ? Math.round(LAY.hp.x + 2) : infoX + 22;
-  const hbW = LAY.one ? Math.round(LAY.hp.w - 4) : infoW - 22;
-  ctx.fillStyle = 'rgba(33,12,14,0.92)';
-  roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
-  if (hpPct > 0) {
-    // Cache horizontal HP gradients — only depend on bar X/W, not HP amount
-    if (!_hpGradGreen || _hdrGradW !== W) {
-      _hpGradGreen  = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradGreen.addColorStop(0, '#335118'); _hpGradGreen.addColorStop(1, '#79b644');
-      _hpGradOrange = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradOrange.addColorStop(0, '#6e470c'); _hpGradOrange.addColorStop(1, '#e59620');
-      _hpGradRed    = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradRed.addColorStop(0, '#64161f'); _hpGradRed.addColorStop(1, '#da4658');
-      _hpShineGrad  = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
-      _hpShineGrad.addColorStop(0, 'rgba(209,204,197,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
-    }
-    ctx.fillStyle = hpPct > 0.5 ? _hpGradGreen : hpPct > 0.25 ? _hpGradOrange : _hpGradRed;
-    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
-    ctx.fillStyle = _hpShineGrad;
-    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
-    if (hpPct < 0.3) {
-      ctx.strokeStyle = 'rgba(218,70,88,0.6)'; ctx.lineWidth = 1.5;
-      roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
-    }
-  }
-  // Жёлоб ПОВЕРХ заливки — порядок слоёв из гайда ко второй партии: у E10
-  // сквозной центр, и цветная полоса ложится под него. Наоборот оправа
-  // просто скроется под заливкой и её не будет видно вовсе.
-  // Жёлоб E10 — только в старой раскладке: у гнезда единой панели своя
-  // оправа, и второй жёлоб внутри неё читается как двойная рамка.
-  if (hasArt && !LAY.one) hudDrawW(ctx, 'E10_bar_track_hollow', hbX + hbW / 2, hpY, hbW + 5);
-  // Сокращённые числа: 12973/22052 ещё влезает, а 2.6e+142 у опыта — нет,
-  // и раньше оно наезжало на собственную подпись «XP».
-  const _hpTxt = _fmtCur(Math.ceil(p.hp)) + '/' + _fmtCur(p.maxHp);
-  if (LAY.one) {
-    over(() => {
-      ctx.font = `bold ${Math.max(8, Math.round(hbH * 0.86))}px ${F}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillText(_hpTxt, hbX + hbW / 2 + 1, hpY + 1);
-      ctx.fillStyle = 'rgba(233,228,220,0.96)';
-      ctx.fillText(_hpTxt, hbX + hbW / 2, hpY);
-    });
-  } else {
-    ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
-    ctx.fillText(_hpTxt, hbX + hbW / 2, hpY);
-  }
-
-  // ── XP bar ────────────────────────────────────────────────
-  // Прежние 55 и 5 остались от старой шапки: при единой панели заливка
-  // уезжала на поверхность выше собственного гнезда, и нижняя капсула
-  // стояла пустой.
-  const xpY = LAY.one ? Math.round(LAY.xp.cy) : 55;
-  const xbH = LAY.one ? Math.max(3, Math.round(LAY.xp.h - 4)) : 5;
-  const xpPct = Math.min(1, p.xp / p.xpNext);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(237,190,110,0.9)';
-  if (!LAY.one) ctx.fillText('XP', infoX, xpY);
-
-  const xbX = LAY.one ? Math.round(LAY.xp.x + 2) : infoX + 22;
-  const xbW = LAY.one ? Math.round(LAY.xp.w - 4) : infoW - 22;
-  ctx.fillStyle = 'rgba(23,17,8,0.9)';
-  roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
-  if (xpPct > 0) {
-    if (!_xpGrad || _hdrGradW !== W) {
-      _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-      _xpGrad.addColorStop(0, '#523c17'); _xpGrad.addColorStop(1, '#eab457');
-      _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
-      _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
-    }
-    ctx.fillStyle = _xpGrad;
-    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
-    ctx.fillStyle = _xpShineGrad;
-    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
-  }
-  if (hasArt && !LAY.one) hudDrawW(ctx, 'E10_bar_track_hollow', xbX + xbW / 2, xpY, xbW + 5);
+  // ── HP / XP ───────────────────────────────────────────────────
+  const barX = infoX, barW = pRight - infoX;
+  _hudBar(barX, py + 42, barW, 12,
+    p.maxHp ? p.hp / p.maxHp : 0,
+    '#2f7a2a', '#5fd45a',
+    Math.ceil(p.hp) + ' / ' + p.maxHp);
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
-  // that into "858.9999999999418" on the bar. The stored value keeps its
-  // precision — only the display is whole.
-  const _xpTxt = _fmtCur(Math.floor(p.xp)) + '/' + _fmtCur(p.xpNext);
-  if (LAY.one) {
-    over(() => {
-      ctx.font = `bold ${Math.max(8, Math.round(xbH * 0.9))}px ${F}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillText(_xpTxt, xbX + xbW / 2 + 1, xpY + 1);
-      ctx.fillStyle = 'rgba(244,214,155,0.95)';
-      ctx.fillText(_xpTxt, xbX + xbW / 2, xpY);
-    });
-  } else {
-    ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(241,204,141,0.7)';
-    ctx.fillText(_xpTxt, xbX + xbW / 2, xpY);
-  }
+  // that into "858.9999999999418" on the bar.
+  _hudBar(barX, py + 58, barW, 10,
+    p.xpNext ? p.xp / p.xpNext : 0,
+    '#8a5a12', '#f0a63c',
+    _fmtCur(Math.floor(p.xp)) + ' / ' + _fmtCur(p.xpNext));
 
-  // Конец сдвинутого блока: дальше снова экранные координаты.
-  ctx.restore();
-
-  // ── валютные плашки ─────────────────────────────────────────────────────
-  // Три штуки столбиком между панелью и картой — как на макете. Раньше это
-  // была строка текста внутри панели статов, и на длинных числах она
-  // упиралась в миникарту: GRAM печатается с семью знаками после точки.
-  if (LAY.one) {
-    // Четыре гнезда единой панели. Иконка садится В гнездо, число — на
-    // чистую поверхность справа от него, до следующего гнезда. Никаких
-    // плашек: оправа у каждого гнезда своя, в самой панели.
-    const rows = _hdrCurrencies(p);
-    for (let i = 0; i < rows.length && i < LAY.cur.length; i++) {
-      const sl = LAY.cur[i];
-      const d = Math.min(sl.w, sl.h);
-      // Крупнее отверстия: рим гнезда обрежет лишнее, и иконка заполнит его
-      // целиком вместо того чтобы болтаться внутри с полем по кругу. Для
-      // невписывающихся в круг иконок ряд задаёт свой fit.
-      const fit = rows[i].fit || 1.5;
-      if (rows[i].img) {
-        // Обычный файл из /images, с небольшим запасом. Обе монеты —
-        // подробные рисунки 250-320 px с тёмной каймой по краю, и в гнезде на
-        // 21 px кайма съедала половину диаметра: Liberty читалась тёмным
-        // пятном. 1.18 отдаёт кайму под золотой рим гнезда, который и так
-        // обрежет лишнее, и оставляет на виду сам знак.
-        const im = _getPotImg(rows[i].img);
-        if (im && im.complete && im.naturalWidth > 0) {
-          const g = d * 1.18;
-          const k = Math.min(g / im.naturalWidth, g / im.naturalHeight);
-          const w = im.naturalWidth * k, h = im.naturalHeight * k;
-          ctx.drawImage(im, sl.cx - w / 2, sl.cy - h / 2, w, h);
-        }
-      } else {
-        hudDraw(ctx, rows[i].icon, sl.cx, sl.cy, d * fit, d * fit);
+  // ── Валютные плашки ────────────────────────────────────────────
+  // Три штуки в ряд по низу плашки игрока. БМ уже показан строкой выше.
+  const chipY = py + 74, chipH = 18, chipGap = 5, chipX0 = px + 10;
+  const chips = _hdrCurrencies(p).slice(0, 3);
+  const chipW = (pRight + 1 - chipX0 - chipGap * (chips.length - 1)) / chips.length;
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < chips.length; i++) {
+    const row = chips[i];
+    const cx0 = chipX0 + i * (chipW + chipGap);
+    const iconD = chipH;
+    const iconCx = cx0 + iconD / 2, iconCy = chipY + chipH / 2;
+    if (row.img) {
+      const im = _getPotImg(row.img);
+      if (im && im.complete && im.naturalWidth > 0) {
+        const g = iconD * 1.05;
+        const k = Math.min(g / im.naturalWidth, g / im.naturalHeight);
+        const w = im.naturalWidth * k, h = im.naturalHeight * k;
+        ctx.drawImage(im, iconCx - w / 2, iconCy - h / 2, w, h);
       }
-      // Поле числа — от края гнезда до следующего гнезда, а на последнем до
-      // вертикального разделителя перед картой.
-      // Число ложится на чистую ПОВЕРХНОСТЬ справа от гнезда, а не в него,
-      // значит рисуется после панели.
-      const next = LAY.cur[i + 1];
-      const right = next ? next.x - 5 : LAY.map.x - 14;
-      const tx = sl.x + sl.w + 5;
-      const val = rows[i].val, col = rows[i].color, cy = sl.cy;
-      over(() => {
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = `bold ${Math.max(9, Math.round(d * 0.66))}px ${F}`;
-        let v = val;
-        const room = right - tx;
-        // Обрезка не «в никуда»: если число не влезло, вместо последнего
-        // знака ставится многоточие. Иначе 12345 превращается в 1234 и
-        // читается как настоящий баланс.
-        if (ctx.measureText(v).width > room) {
-          while (v.length > 1 && ctx.measureText(v + '…').width > room) v = v.slice(0, -1);
-          v += '…';
-        }
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        ctx.fillText(v, tx + 1, cy + 1);
-        ctx.fillStyle = col;
-        ctx.fillText(v, tx, cy);
-      });
+    } else {
+      hudDraw(ctx, row.icon, iconCx, iconCy, iconD, iconD);
     }
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  } else if (hasArt) {
-    // Сеткой 2×2 — раскладка из трёх блоков.
-    const CUR_COLS = 2, CUR_GAP = 4;
-    const cw = Math.floor((LAY.cur.w - CUR_GAP) / CUR_COLS);
-    const chh = hudHeightAt('B3_currency_plate', cw);
-    const rows = _hdrCurrencies(p);
-    const CUR_ROWS = Math.ceil(rows.length / CUR_COLS);
-    const gap = Math.max(2, Math.round((LAY.cur.h - chh * CUR_ROWS) / (CUR_ROWS + 1)));
-    for (let i = 0; i < rows.length; i++) {
-      const col = i % CUR_COLS, row = Math.floor(i / CUR_COLS);
-      const cy = LAY.cur.y + gap + chh / 2 + row * (chh + gap);
-      const cx = LAY.cur.x + cw / 2 + col * (cw + CUR_GAP);
-      if (!hudDrawW(ctx, 'F3_currency_plate_opaque', cx, cy, cw)) {
-        hudDrawW(ctx, 'B3_currency_plate', cx, cy, cw);
-      }
-      // Гнездо иконки и поле числа — измеренные отверстия плашки:
-      // 0.1631 и 0.6322 её ширины.
-      // 0.86 вместо 0.62: гнездо под иконку в плашке — 0.19 её ширины, и
-      // иконка в 0.62 высоты болталась в нём с полем со всех сторон.
-      const plateL = cx - cw / 2;
-      hudDraw(ctx, rows[i].icon, plateL + cw * 0.1631, cy, chh * 0.86, chh * 0.86);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `bold ${Math.max(8, Math.round(chh * 0.42))}px ${F}`;
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(rows[i].val, plateL + cw * 0.6322, cy + 1);
-      ctx.fillStyle = rows[i].color;
-      ctx.fillText(rows[i].val, plateL + cw * 0.6322, cy);
+    ctx.textAlign = 'left';
+    ctx.font = `bold ${Math.max(9, Math.round(chipH * 0.6))}px ${F}`;
+    let v = row.val;
+    const tx = cx0 + iconD + 4;
+    const room = cx0 + chipW - tx;
+    if (ctx.measureText(v).width > room) {
+      while (v.length > 1 && ctx.measureText(v + '…').width > room) v = v.slice(0, -1);
+      v += '…';
     }
-    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillText(v, tx + 1, iconCy + 1);
+    ctx.fillStyle = row.color;
+    ctx.fillText(v, tx, iconCy);
   }
-
-  // ── панель ПОВЕРХ всего, что в неё легло ────────────────────────────────
-  // У G2 сквозные гнёзда: портрет, две полосы, четыре кружка валют и окно
-  // карты. Всё это нарисовано выше, панель ложится сверху, и золотая
-  // окантовка каждого отверстия остаётся над содержимым — ровно так гнездо
-  // и читается вырезанным в металле, а не заклеенным.
-  if (LAY.one) {
-    hudDraw(ctx, 'G2_wide_header_with_map',
-      LAY.panel.x + LAY.panel.w / 2, LAY.panel.y + LAY.panel.h / 2,
-      LAY.panel.w, LAY.panel.h);
-  }
-
-  // ── всё, что лежит НА панели, а не в её гнёздах ─────────────────────────
-  for (let i = 0; i < _over.length; i++) {
-    ctx.save();
-    _over[i]();
-    ctx.restore();
-  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 
   ctx.restore();
 }
 
 // Числа валют в шапке. Без сокращения GRAM печатался как 914.3503811 и
-// вылезал за плашку — а плашка узкая, потому что их три и между двумя
-// панелями.
+// вылезал за свою плашку — а плашек три в ряд по низу панели игрока.
 // Обрезка с многоточием. Просто slice даёт «AnonimMrBea» — строку, которая
 // выглядит настоящим именем и ничем не сообщает, что она укорочена.
 function _ellipsis(s, max) {
@@ -3175,9 +2768,6 @@ function _ellipsis(s, max) {
 // БМ — не валюта, но ведёт себя как она: одно число, которое растёт и на
 // которое смотрят. В строке класса оно упиралось в край панели, потому что
 // стояло справа от текста ПЕРЕМЕННОЙ длины.
-// Последний нарисованный ник: текст после обрезки и его измеренная ширина.
-// Пишется в drawHeader, читается render-check'ом.
-let _hdrDrawnName = null;
 
 function _hdrCurrencies(p) {
   return [
@@ -3247,55 +2837,68 @@ function setJoyAlpha(v) {
   try { localStorage.setItem('liberty.joyAlpha', String(n)); } catch (e) { /* приватный режим */ }
 }
 
-// Пропорции сняты с присланного комплекта, а не подобраны: ручка A7 имеет
-// alpha bounds 603×610 в холсте 1254, база A6 — 1184×1189 там же, и гайд
-// прямо задаёт «вписати максимум у 430×430» для ручки на том же холсте.
-// 430/1184 и есть это число.
-const JOY_BASE_D = JOY_R * 2.12;
-const JOY_KNOB_D = JOY_BASE_D * 0.363;
-// Насколько ручка уезжает от центра. Меньше радиуса базы за вычетом
-// половины ручки — гайд: «зсув має залишати її в межах внутрішнього кола».
-const JOY_TRAVEL  = JOY_BASE_D * 0.29;
-
 let _joyKnobGrad = null, _joyKnobGradKx = null, _joyKnobGradKy = null;
+// Кольцо, четыре стрелки по сторонам света и камни-ромбы на диагоналях —
+// вместо запечённой картинки джойстика: тот же стеклянный язык, что у шапки
+// и рамки цели.
 function drawJoystick() {
   const jc = joyCenter();
+  const a = joyAlpha();
 
-  // ── версия на ассетах ───────────────────────────────────────────────────
-  if (typeof hudDraw === 'function' && hudImg('A6_joystick_base')) {
-    const a = joyAlpha();
-    hudDraw(ctx, 'A6_joystick_base', jc.x, jc.y, JOY_BASE_D, JOY_BASE_D, a);
-    const kx = jc.x + joy.dx * JOY_TRAVEL, ky = jc.y + joy.dy * JOY_TRAVEL;
-    // Ручка плотнее базы и не опускается ниже половины: база может быть
-    // почти прозрачной, но то, ЧЕМ игрок целится, должно оставаться видимым.
-    hudDraw(ctx, 'A7_joystick_knob', kx, ky, JOY_KNOB_D, JOY_KNOB_D,
-      Math.min(1, Math.max(0.5, a + 0.25)));
-    return;
+  ctx.save();
+  ctx.globalAlpha = a;
+
+  const ring = ctx.createRadialGradient(jc.x, jc.y, JOY_R * 0.55, jc.x, jc.y, JOY_R);
+  ring.addColorStop(0, 'rgba(10,20,34,0.10)');
+  ring.addColorStop(1, 'rgba(12,26,45,0.55)');
+  ctx.fillStyle = ring;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(104,178,240,0.60)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = HUD_GLOW; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R + 3, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(104,178,240,0.18)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R * 0.62, 0, Math.PI * 2); ctx.stroke();
+
+  // Стрелки по сторонам света и камни-ромбы на диагоналях
+  const ar = JOY_R - 11;
+  ctx.fillStyle = 'rgba(140,206,255,0.72)';
+  for (let i = 0; i < 4; i++) {
+    const ang = i * Math.PI / 2 - Math.PI / 2;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const tx = jc.x + ca * ar, ty = jc.y + sa * ar;
+    ctx.beginPath();
+    ctx.moveTo(tx + ca * 5, ty + sa * 5);
+    ctx.lineTo(tx - ca * 3 - sa * 5, ty - sa * 3 + ca * 5);
+    ctx.lineTo(tx - ca * 3 + sa * 5, ty - sa * 3 - ca * 5);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(122,196,255,0.85)';
+  for (let i = 0; i < 4; i++) {
+    const ang = i * Math.PI / 2 - Math.PI / 4;
+    const sx = jc.x + Math.cos(ang) * JOY_R, sy = jc.y + Math.sin(ang) * JOY_R;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 4); ctx.lineTo(sx + 4, sy); ctx.lineTo(sx, sy + 4); ctx.lineTo(sx - 4, sy);
+    ctx.closePath(); ctx.fill();
   }
 
-  // ── запасной вид ────────────────────────────────────────────────────────
-  // Остаётся не для красоты: ассет — это сетевой запрос, и первые кадры
-  // после входа он ещё не пришёл. Джойстик, которого нет полсекунды, — это
-  // управление, которого нет полсекунды.
-  ctx.globalAlpha = joyAlpha();
-  ctx.strokeStyle = 'rgba(209,204,197,.6)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(209,204,197,.07)';
-  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = 'rgba(209,204,197,.18)'; ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(jc.x - JOY_R, jc.y); ctx.lineTo(jc.x + JOY_R, jc.y);
-  ctx.moveTo(jc.x, jc.y - JOY_R); ctx.lineTo(jc.x, jc.y + JOY_R);
-  ctx.stroke();
+  // Ручка
   const kx = jc.x + joy.dx * JOY_R, ky = jc.y + joy.dy * JOY_R;
-  // Recreate gradient only when knob position actually changes
   if (_joyKnobGrad === null || kx !== _joyKnobGradKx || ky !== _joyKnobGradKy) {
-    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .3, ky - JOY_KNOB * .3, 0, kx, ky, JOY_KNOB);
-    _joyKnobGrad.addColorStop(0, 'rgba(245,219,173,.95)'); _joyKnobGrad.addColorStop(1, 'rgba(169,140,91,.7)');
+    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .35, ky - JOY_KNOB * .35, 0, kx, ky, JOY_KNOB);
+    _joyKnobGrad.addColorStop(0, 'rgba(150,205,255,0.95)');
+    _joyKnobGrad.addColorStop(1, 'rgba(30,66,110,0.92)');
     _joyKnobGradKx = kx; _joyKnobGradKy = ky;
   }
-  ctx.fillStyle = _joyKnobGrad; ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(209,204,197,.7)'; ctx.lineWidth = 2;
+  ctx.fillStyle = HUD_GLOW;
+  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB + 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = _joyKnobGrad;
+  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(178,224,255,0.85)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 1;
+
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3411,27 +3014,27 @@ function _buildUiBtnGrads() {
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
   const pty = getPartyBtnPos();
-  const tfW = 160, tfH = 42;
+  const tfW = 160;
   const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
   const hbX = tfX + 8, hbW = tfW - 16, hbY = tfY + 20;
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg0.addColorStop(0,'rgba(30,24,14,0.98)'); pg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pg0.addColorStop(0,'rgba(19,33,51,0.98)'); pg0.addColorStop(1,'rgba(9,15,23,0.99)');
   const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
   pg1.addColorStop(0,'rgba(44,63,27,0.98)'); pg1.addColorStop(1,'rgba(18,27,11,0.99)');
 
   const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg0.addColorStop(0,'rgba(30,24,14,0.98)'); tg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  tg0.addColorStop(0,'rgba(19,33,51,0.98)'); tg0.addColorStop(1,'rgba(9,15,23,0.99)');
   const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
   tg1.addColorStop(0,'rgba(52,13,18,0.98)'); tg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg0.addColorStop(0,'rgba(30,24,14,0.97)'); pvg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pvg0.addColorStop(0,'rgba(19,33,51,0.97)'); pvg0.addColorStop(1,'rgba(9,15,23,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
   pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
 
   const pfg0 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
-  pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pfg0.addColorStop(0,'rgba(19,33,51,0.97)'); pfg0.addColorStop(1,'rgba(9,15,23,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
@@ -3453,8 +3056,6 @@ function _buildUiBtnGrads() {
   const aag1 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
   aag1.addColorStop(0,'rgba(22,32,13,0.95)'); aag1.addColorStop(1,'rgba(11,16,7,0.97)');
 
-  const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
-  tfBg.addColorStop(0,'rgba(26,20,11,0.97)'); tfBg.addColorStop(1,'rgba(15,12,6,0.99)');
   const hpHi = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
   hpHi.addColorStop(0,'#314f17'); hpHi.addColorStop(1,'#6fb136');
   const hpMid = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
@@ -3466,7 +3067,7 @@ function _buildUiBtnGrads() {
 
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
-                  tfBg, hpHi, hpMid, hpLo, tfShine,
+                  hpHi, hpMid, hpLo, tfShine,
                   potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
 }
 
@@ -3764,10 +3365,17 @@ function drawBuffStrip() {
 //
 // Возвращает false, если ассет не доехал — вызывающий тогда рисует
 // прежним способом, и кнопка не пропадает.
+//
+// Базовая пилюля (Мир/ПК, Проф, Класс — обычное состояние кнопки, то есть
+// хром) синей темой картинкой из комплекта больше не красится — то же
+// место, что у шапки, джойстика и рамки цели, вызывающий рисует процедурно.
+// Акцентная пилюля (+Pack/Бонус) — тёплый сигнал подарка, а не хром, и
+// остаётся картинкой как была.
 function hudPill(b, opts) {
   const o = opts || {};
-  if (!hudImg(o.accent ? 'E2_small_pill_button_accent' : 'E1_small_pill_button')) return false;
-  hudDrawW(ctx, o.accent ? 'E2_small_pill_button_accent' : 'E1_small_pill_button',
+  if (!o.accent) return false;
+  if (!hudImg('E2_small_pill_button_accent')) return false;
+  hudDrawW(ctx, 'E2_small_pill_button_accent',
     b.x + b.w / 2, b.y + b.h / 2, b.w + 6, o.dim ? 0.72 : 1);
   if (o.hot) {
     // Включённый режим ПК: красная кайма поверх, потому что своей «горячей»
@@ -3789,7 +3397,7 @@ function drawPvpButton() {
   if (!hudPill(pb, { hot: pvpMode })) {
     ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
     roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-    ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(194,154,86,0.55)';
+    ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(104,178,240,0.45)';
     ctx.lineWidth = 1.5;
     roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
     if (pvpMode) {
@@ -3799,7 +3407,7 @@ function drawPvpButton() {
   }
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
-  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(224,188,127,0.9)';
+  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(169,218,255,0.9)';
   drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
@@ -3823,7 +3431,7 @@ function drawProfessionButton() {
   if (!hudPill(pb, { dim: !ready })) {
     ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
     roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-    ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(194,154,86,0.4)';
+    ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(104,178,240,0.32)';
     ctx.lineWidth = 1.5;
     roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
   }
@@ -3834,7 +3442,7 @@ function drawProfessionButton() {
     roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
   }
 
-  const profColor = ready ? '#cdb8ec' : 'rgba(224,188,127,0.9)';
+  const profColor = ready ? '#cdb8ec' : 'rgba(169,218,255,0.9)';
   drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, profColor);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
@@ -3857,11 +3465,11 @@ function drawClassChangeButton() {
   if (!hudPill(cb, { dim: true })) {
     ctx.fillStyle = _uiBtnGrads.pfg0;
     roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(194,154,86,0.4)';
+    ctx.strokeStyle = 'rgba(104,178,240,0.32)';
     ctx.lineWidth = 1.5;
     roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
   }
-  const col = 'rgba(224,188,127,0.9)';
+  const col = 'rgba(169,218,255,0.9)';
   drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - 14, cb.y + cb.h / 2, 12, col);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = col;
@@ -4035,7 +3643,6 @@ function drawTargetFrame() {
   // Мир/Проф/+Pack/Бонус и лента бафов под ней, и панель на 160 по центру
   // ложилась на них краем. Ширина ограничена ещё и экраном — на узком
   // телефоне середины между колонкой и кнопкой меню почти нет.
-  const _hostile = hudImg('F4_enemy_target_panel_hostile');
   // Правая граница считается от кнопки «Меню», а не от края экрана: кнопка
   // шириной около 104 и стоит в правом верхнем углу, и панель на прежнем
   // пределе заходила под неё краем.
@@ -4046,7 +3653,7 @@ function drawTargetFrame() {
   const _menuLeft = W - Math.floor(Math.min((HEADER_H - 12) * 1.3, W * 0.22)) - 18;
   const _leftCol = 96;
   const bw = Math.max(104, Math.min(144, (Math.min(_menuLeft, W - _leftCol) - _leftCol) - 8));
-  const bh = _hostile ? Math.round(hudHeightAt('F4_enemy_target_panel_hostile', bw)) : 42;
+  const bh = 42;
   const bx = Math.round(W / 2 - bw / 2);
   const by = HEADER_H + 6;
   const F = 'system-ui, -apple-system, Arial';
@@ -4055,19 +3662,10 @@ function drawTargetFrame() {
   if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
 
-  // Враждебная рамка из комплекта: багряная кайма, кровавые самоцветы и
-  // предупреждающая полоса слева уже нарисованы в ней. Свои рамки при этом
-  // не рисуются вовсе — иначе получаются две окантовки одна в другой.
-  if (_hostile) {
-    hudDrawW(ctx, 'F4_enemy_target_panel_hostile', bx + bw / 2, by + bh / 2, bw);
-  } else {
-    ctx.fillStyle = _uiBtnGrads.tfBg;
-    roundRect(ctx, bx, by, bw, bh, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(191,64,79,0.6)'; ctx.lineWidth = 1.5;
-    roundRect(ctx, bx, by, bw, bh, 9); ctx.stroke();
-    ctx.strokeStyle = 'rgba(209,86,101,0.1)'; ctx.lineWidth = 1;
-    roundRect(ctx, bx + 1.5, by + 1.5, bw - 3, bh - 3, 8); ctx.stroke();
-  }
+  // Та же стеклянная плашка, что у шапки, только в цвете цели: игрок в
+  // рамке всё равно читается иначе, чем монстр, — по крамому кадру самой
+  // плашки, не по отдельной картинке из комплекта.
+  _hudPanel(bx, by, bw, bh, 9, 'rgba(226,96,112,0.55)');
 
   // Имя — в спокойной верхней половине, как требует гайд к панели.
   ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -4077,27 +3675,16 @@ function drawTargetFrame() {
   ctx.fillText(name.slice(0, 16), bx + 14, by + bh * 0.31);
   ctx.textBaseline = 'alphabetic';
 
-  // Полоса ограничена ВНУТРЕННЕЙ областью жёлоба, а не всей панелью: жёлоб
-  // у F4 непрозрачный и нарисован в самой картинке, и залить под ним всю
-  // ширину значило бы вылезти за его кромку.
-  // Жёлоб у F4 занимает нижнюю треть панели и его центр — на 0.70 её
-  // высоты. Полоса встаёт ВНУТРЬ него и с запасом по толщине: на 0.26
-  // высоты она была толще самого жёлоба и накрывала его кромку.
-  const hbh = _hostile ? Math.max(5, Math.round(bh * 0.17)) : 10;
-  const hbx = bx + (_hostile ? bw * 0.085 : 8);
-  const hbw = bw - (_hostile ? bw * 0.17 : 16);
-  const hby = _hostile ? Math.round(by + bh * 0.70 - hbh / 2) : by + 20;
-  if (!_hostile) {
-    ctx.fillStyle = 'rgba(38,12,15,0.9)';
-    roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
-  }
+  const hbh = 10, hbx = bx + 8, hbw = bw - 16, hby = by + 20;
+  ctx.fillStyle = 'rgba(38,12,15,0.9)';
+  roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
   if (pct > 0) {
     ctx.fillStyle = pct > 0.5 ? _uiBtnGrads.hpHi : (pct > 0.25 ? _uiBtnGrads.hpMid : _uiBtnGrads.hpLo);
     roundRect(ctx, hbx, hby, hbw * pct, hbh, 4); ctx.fill();
     ctx.fillStyle = _uiBtnGrads.tfShine;
     roundRect(ctx, hbx, hby, hbw * pct, hbh * 0.45, 4); ctx.fill();
   }
-  ctx.font = `bold ${_hostile ? 6.5 : 7.5}px ${F}`;
+  ctx.font = `bold 7.5px ${F}`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(0,0,0,0.8)';
   ctx.fillText(_fmtCur(Math.ceil(hp)) + ' / ' + _fmtCur(maxHp), hbx + hbw / 2, hby + hbh / 2 + 0.7);
