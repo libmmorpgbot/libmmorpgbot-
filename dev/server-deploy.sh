@@ -144,8 +144,13 @@ fi
 MIGRATE=1
 [ "$DRY" = 1 ] && MIGRATE=0
 if [ "$MIGRATE" = 1 ] && [ -x "$T/server/db/migrate.sh" ]; then
+  # Сначала то, что передали этому запуску, потом env. Порядок такой, потому
+  # что пароль doadmin у нас намеренно нигде не лежит: разовая выкладка с
+  # миграцией делается как `ADMIN_URL='...' bash deploy.sh`, и ничего на диске
+  # после неё не остаётся.
+  #
   # Значение из env бывает в кавычках (см. dev/env-quote.js) — снимаем.
-  M_ADMIN=$(sed -n 's/^ADMIN_URL=//p' /srv/liberty/env | tail -1 | sed 's/^["'"'"']//;s/["'"'"']$//')
+  M_ADMIN="${ADMIN_URL:-$(sed -n 's/^ADMIN_URL=//p' /srv/liberty/env | tail -1 | sed 's/^["'"'"']//;s/["'"'"']$//')}"
   if [ -z "$M_ADMIN" ]; then
     # Молча выложить код, которому нужна схема, нельзя. Но и падать на каждой
     # выкладке, если миграций в ней нет, тоже незачем: сравниваем файлы нового
@@ -153,15 +158,36 @@ if [ "$MIGRATE" = 1 ] && [ -x "$T/server/db/migrate.sh" ]; then
     PENDING=$(cd "$T/server/db/migrations" 2>/dev/null && for f in *.sql; do
                 [ -e "$NEXT/server/db/migrations/$f" ] || echo "$f"; done)
     if [ -n "$PENDING" ]; then
-      echo "  ✗ в выкладке есть новые миграции, а ADMIN_URL в /srv/liberty/env нет:" >&2
-      echo "$PENDING" | sed 's/^/      /' >&2
-      echo "    Выложить код, которому не хватает колонок, значит показать" >&2
-      echo "    игрокам «Ошибка сервера» вместо новой возможности." >&2
-      say "🚨 <b>Выкладка отменена</b>%0AЕсть новые миграции, а ADMIN_URL не задан в /srv/liberty/env."
-      rm -f "$NOTIFY_FILE"
-      exit 1
+      # Файл «новый» относительно работающего дерева — но это ещё не значит,
+      # что он не накатан: у нас миграции катаются руками (dev/migrate-now.sh),
+      # и после этого файл всё равно новый. Спрашиваем БАЗУ, а не файлы.
+      # Читать schema_migrations приложению разрешено миграцией 021.
+      M_APP=$(sed -n 's/^DATABASE_URL=//p' /srv/liberty/env | tail -1 | sed 's/^["'"'"']//;s/["'"'"']$//')
+      APPLIED=""
+      if [ -n "$M_APP" ]; then
+        APPLIED=$(PGCONNECT_TIMEOUT=10 psql "$M_APP" -tAc \
+                    'SELECT version FROM schema_migrations' 2>/dev/null || true)
+      fi
+      MISSING=""
+      for f in $PENDING; do
+        grep -qxF "$f" <<<"$APPLIED" || MISSING="$MISSING $f"
+      done
+      if [ -n "$APPLIED" ] && [ -z "$MISSING" ]; then
+        echo "  ✓ новые файлы миграций уже накатаны (спросил базу), выкладываюсь"
+      else
+        echo "  ✗ в выкладке есть НЕнакатанные миграции, а накатить нечем:" >&2
+        printf '      %s\n' ${MISSING:-$PENDING} >&2
+        echo "    Выложить код, которому не хватает колонок, значит показать" >&2
+        echo "    игрокам «Ошибка сервера» вместо новой возможности." >&2
+        echo "    Накатите их — bash dev/migrate-now.sh — и повторите," >&2
+        echo "    либо запустите выкладку как ADMIN_URL='...' bash deploy.sh" >&2
+        say "🚨 <b>Выкладка отменена</b>%0AЕсть ненакатанные миграции. Запустите dev/migrate-now.sh и повторите."
+        rm -f "$NOTIFY_FILE"
+        exit 1
+      fi
+    else
+      echo "  ⚠ ADMIN_URL не задан — миграции не проверял (новых в этой выкладке нет)" >&2
     fi
-    echo "  ⚠ ADMIN_URL не задан — миграции не проверял (новых в этой выкладке нет)" >&2
   else
     echo "  накатываю миграции ..."
     if ! ADMIN_URL="$M_ADMIN" bash "$T/server/db/migrate.sh" >/tmp/deploy-migrate.log 2>&1; then
