@@ -540,6 +540,7 @@ function _progress(r) {
     questIdx: r.quest_idx, questKills: r.quest_kills,
     buffs: r.buffs, potionBag: r.potion_bag, codex: r.codex,
     starterBonusClaimed: r.starter_bonus_claimed,
+    mailBonusClaimed: r.mail_bonus_claimed,
   };
 }
 

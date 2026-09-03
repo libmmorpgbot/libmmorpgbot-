@@ -2393,6 +2393,37 @@ const STARTER_BONUS = {
   hpPotions: 300,
 };
 
+// ── Письмо (mail bonus) ────────────────────────────────────────────────────
+// Второй бесплатный набор, за кнопкой «Письмо» в колонке HUD под «Класс»
+// (drawMailBonusButton, js/ui.js). От «Набора новичка» он отличается одним:
+// наград ДВЕ, и какая из них твоя, решает не выбор игрока, а сезонный билет.
+//
+//   без билета  free   — то, что получают все;
+//   с билетом   ticket — то же, но щедрее, и с сундуками.
+//
+// Взаимоисключающие: владелец билета не может забрать `free`, а тот, у кого
+// билета нет, не может забрать `ticket`. Проверяет это СЕРВЕР, по своей копии
+// player_vip.season_ticket (claimMailBonus, server/db/repos/shop.js) — клиент
+// рисует ту же развилку только для того, чтобы игрок видел, что ему положено.
+//
+// Забрать можно один раз на аккаунт: флаг player_progress.mail_bonus_claimed,
+// ставится тем же условным UPDATE, что и у набора новичка, и вычищается из
+// каждого клиентского сохранения (_sanitizeSavedStats, server/anticheat.js).
+// Отсюда следствие, которое стоит знать заранее: кто забрал `free` без билета,
+// а билет купил после — второй раз кнопку не увидит. Один аккаунт, одна
+// награда.
+//
+// Состав лежит здесь, а не в обработчике, по той же причине, что и у набора
+// новичка: панель, которая его перечисляет (openMailBonusPanel, js/ui.js),
+// обязана обещать ровно то, что выдаёт сервер.
+const MAIL_BONUS = {
+  // По СТОЛЬКО каждого баф-зелья — их шесть видов (_VIP_BP, server/shop.js),
+  // то есть «десять банок бафов всех видов» это 10 × 6. Та же мера, что и
+  // STARTER_BONUS.buffPotions.
+  free:   { buffPotions: 10, mats: { norm_stone: 3 } },
+  ticket: { buffPotions: 30, mats: { bless_stone: 3 }, boxes: { box_uncommon: 2, box_rare: 2 } },
+};
+
 // ── Cost of learning and upgrading ──────────────────────────────────────────
 // Books to unlock a locked (level 0) skill or passive, books per upgrade
 // attempt once studied, and the chance an attempt succeeds. These lived in
@@ -2755,7 +2786,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
-  UPGRADE_RESET_COST, STARTER_BONUS,
+  UPGRADE_RESET_COST, STARTER_BONUS, MAIL_BONUS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,

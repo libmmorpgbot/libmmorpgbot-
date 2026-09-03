@@ -104,6 +104,12 @@ jobs:
       - name: items are conserved
         run: node dev/items-check.js
 
+      # Письмо: две награды, одна на аккаунт. Развилку между ними решает
+      # сервер по сезонному билету, и ошибка здесь беззвучна — выдача
+      # работает, просто не та. Проверяется, ЧТО легло в инвентарь.
+      - name: письмо выдаёт одну награду из двух, и один раз
+        run: node dev/mail-check.js
+
       - name: a trade cannot half-happen
         run: node dev/market-check.js
 

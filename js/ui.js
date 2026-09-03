@@ -751,6 +751,20 @@ function onUpgradesResetError(msg) {
   if (player) dmgNum(player.x, player.y - 30, msg || t('genericErrorLbl'), '#f88');
 }
 
+// ── определение предмета по id, из ЛЮБОГО каталога ────────────────────────
+// Каталогов три и они не пересекаются: ITEM_DEF — снаряжение и зелья,
+// CRAFT_MATS — материалы, книги и камни заточки, BOX_DEF — сундуки. Искать в
+// одном ITEM_DEF значит молча не найти половину: список награды «Письма»
+// на первом заходе показал шесть зелий и ни одной заточки и ни одного
+// сундука — ровно потому, что они лежат в двух других.
+function _anyItemDef(id) {
+  return (typeof ITEM_DEF !== 'undefined' && ITEM_DEF.find(d => d.id === id))
+      || (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(d => d.id === id))
+      || (typeof BOX_DEF !== 'undefined' && BOX_DEF.find(d => d.id === id))
+      || null;
+}
+
+// ─────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────
 //  EMPOWER  (Персонаж → Усиление)
 //  EMPOWER_LEVEL/EMPOWER_BONUS_SP/EMPOWER_COST/EMPOWER_TIERS live in
@@ -759,11 +773,7 @@ function onUpgradesResetError(msg) {
 //  requirement, the price and the cap shown here can never drift from what
 //  actually gets charged and granted.
 // ─────────────────────────────────────────────────────────
-function _empowerCostDef(id) {
-  return (typeof BOX_DEF !== 'undefined' && BOX_DEF.find(d => d.id === id))
-      || (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(d => d.id === id))
-      || null;
-}
+function _empowerCostDef(id) { return _anyItemDef(id); }
 // dungeonLvl === 1 is the hub — server/game/floors.js's FLOOR_IDS.hub, which
 // the client never imports (it's server-only), so this mirrors that literal
 // the same way _resumeSameFloor (js/network.js) already compares dungeonLvl
@@ -3426,8 +3436,158 @@ function drawClassChangeButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  БОНУС BUTTON — below Смена класса, the free one-per-account "Набор
-//  новичка".
+//  ПИСЬМО BUTTON — под «Класс», одна из двух наград MAIL_BONUS.
+//  Состав обеих лежит в shared/definitions.js, выдаёт claimMailBonus
+//  (server/db/repos/shop.js). См. getMailBonusBtnPos/_checkMailBonusBtnTouch,
+//  js/input.js.
+// ─────────────────────────────────────────────────────────
+// player.mailBonus — флаг аккаунта, приезжает при входе (restoreFromSave,
+// js/player.js) и ставится в тот момент, когда награда выдана. Пока он false,
+// кнопка на экране; после — исчезает совсем, вместе со своим слотом нажатий:
+// забрать можно один раз, а мёртвая кнопка в HUD это просто мусор.
+function _mailBonusAvailable() {
+  return !!player && !player.mailBonus;
+}
+
+// Какая из двух наград причитается ЭТОМУ игроку. Здесь — только чтобы
+// нарисовать панель: выдачей распоряжается сервер по своей копии билета, и
+// расходятся эти два мнения ровно в одном случае — билет купили в другой
+// вкладке. Тогда правым остаётся сервер, а панель поправится по ответу.
+function _mailBonusTier() {
+  return (typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive) ? 'ticket' : 'free';
+}
+
+function drawMailBonusButton() {
+  if (!_mailBonusAvailable()) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const mb = getMailBonusBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  // Холодная бирюза, а не янтарь «Бонуса»: две бесплатные награды подряд в
+  // одной колонке, и различать их обязано что-то кроме подписи в 11 пикселей.
+  // Та же бегущая полоса, но своей фазой — иначе кнопки пульсировали бы в
+  // такт и читались как одна.
+  const sweep = (Math.sin(Date.now() / 1100 + Math.PI / 2) + 1) / 2;
+  const grad = ctx.createLinearGradient(mb.x, mb.y, mb.x + mb.w, mb.y + mb.h);
+  grad.addColorStop(0, '#17283e');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#233e60');
+  grad.addColorStop(sweep, '#4fc3ff');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#233e60');
+  grad.addColorStop(1, '#17283e');
+  ctx.fillStyle = grad;
+  roundRect(ctx, mb.x, mb.y, mb.w, mb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(79,195,255,0.7)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, mb.x, mb.y, mb.w, mb.h, 9); ctx.stroke();
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+  ctx.strokeStyle = `rgba(79,195,255,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, mb.x - 2, mb.y - 2, mb.w + 4, mb.h + 4, 11); ctx.stroke();
+
+  drawIconCtx(ctx, 'mail', mb.x + mb.w / 2 - 16, mb.y + mb.h / 2, 12, '#bfe4ff');
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#bfe4ff';
+  ctx.fillText(t('mailBonusBtn'), mb.x + mb.w / 2 - 7, mb.y + mb.h / 2);
+
+  ctx.restore();
+}
+
+// Строки одной награды: баф-зелья всех видов, затем материалы, затем сундуки —
+// в том же порядке, в каком их складывает claimMailBonus, чтобы обещание и
+// выдача читались одним списком.
+function _mailBonusRows(tier) {
+  const out = [];
+  for (const bp of ITEM_DEF.filter(d => d.slot === 'buff_potion')) {
+    out.push(_bonusItemRow(_itemIcon(bp, 16), bp.name, tier.buffPotions));
+  }
+  for (const [id, qty] of Object.entries({ ...(tier.mats || {}), ...(tier.boxes || {}) })) {
+    const def = _anyItemDef(id);
+    if (def) out.push(_bonusItemRow(_itemIcon(def, 16), def.name, qty));
+  }
+  return out.join('');
+}
+
+// Карточка одной из двух наград. Показываются ОБЕ — и та, что игроку не
+// достанется, тоже: правило «с билетом одна, без билета другая» иначе
+// пришлось бы объяснять словами, а так оно видно.
+function _mailBonusCard(kind, mine) {
+  const tier = MAIL_BONUS[kind];
+  const title = kind === 'ticket' ? t('mailBonusTicketHdr') : t('mailBonusFreeHdr');
+  const accent = kind === 'ticket' ? '#ffcf56' : '#4fc3ff';
+  const lockNote = kind === 'ticket' ? t('mailBonusNeedTicket') : t('mailBonusHaveTicket');
+  return `<div style="border:1px solid ${mine ? accent + '66' : 'rgba(193,204,213,.10)'};
+      border-radius:12px;padding:12px 12px 8px;margin-bottom:10px;
+      background:${mine ? 'rgba(79,195,255,.05)' : 'transparent'};${mine ? '' : 'opacity:.5'}">
+    <div style="font-size:13px;font-weight:800;color:${mine ? accent : '#5b7183'};margin-bottom:8px">
+      ${title}${mine ? '' : ` <span style="font-weight:600;font-size:11px">· ${lockNote}</span>`}</div>
+    <div class="vip-items-row">${_mailBonusRows(tier)}</div>
+  </div>`;
+}
+
+function openMailBonusPanel() {
+  if (!_mailBonusAvailable()) return;
+  const existing = document.getElementById('mail-bonus-ov');
+  if (existing) existing.remove();
+  const mine = _mailBonusTier();
+
+  const ov = document.createElement('div');
+  ov.id = 'mail-bonus-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  // Прокручивается СПИСОК, а не всё окно. У «Набора новичка» окно прокручивалось
+  // целиком, и там это сходило с рук: одна награда, список короткий. Здесь их
+  // две, вместе они выше экрана — и «Забрать» уезжала под нижний край. Кнопку,
+  // ради которой окно открыли, искать прокруткой игрок не должен.
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;display:flex;flex-direction:column;background:#0c1420;border-radius:16px;border:1px solid rgba(79,195,255,.22);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#4fc3ff;margin-bottom:6px">${t('mailBonusTitle')}</div>
+    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('mailBonusDesc')}</div>
+    <div style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px">
+      ${_mailBonusCard('free', mine === 'free')}
+      ${_mailBonusCard('ticket', mine === 'ticket')}
+    </div>
+    <div id="mail-bonus-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-shrink:0">
+      <button onclick="document.getElementById('mail-bonus-ov').remove()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(193,204,213,.07);
+        color:#5797c4;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+      <button id="mail-bonus-go" onclick="_confirmMailBonus()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;
+        background:linear-gradient(135deg,#1d4a63,#2b7a9e);color:#bfe4ff;
+        font-size:14px;font-weight:700;cursor:pointer">${t('mailBonusClaimBtn')}</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _confirmMailBonus() {
+  const btn = document.getElementById('mail-bonus-go');
+  if (btn) { btn.disabled = true; btn.style.opacity = '.55'; btn.textContent = '…'; }
+  if (typeof netMailBonusClaim === 'function') netMailBonusClaim();
+}
+
+function onMailBonusDone(withTicket) {
+  const ov = document.getElementById('mail-bonus-ov');
+  if (ov) ov.remove();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (player) {
+    dmgNum(player.x, player.y - 30,
+      withTicket ? t('mailBonusDoneTicketToast') : t('mailBonusDoneToast'), '#4fc3ff');
+  }
+}
+
+function onMailBonusError(msg) {
+  const box = document.getElementById('mail-bonus-err');
+  const btn = document.getElementById('mail-bonus-go');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = t('mailBonusClaimBtn'); }
+  if (box) { box.style.display = 'block'; box.textContent = msg || 'Ошибка'; }
+  else if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+}
+
+// ─────────────────────────────────────────────────────────
+//  БОНУС BUTTON — below Письмо, the free one-per-account "Набор новичка".
 //  Contents: STARTER_BONUS (shared/definitions.js); granted by the
 //  starterBonusClaim handler (server/handlers/gram.js). See
 //  getStarterBonusBtnPos/_checkStarterBonusBtnTouch, js/input.js.
@@ -3494,8 +3654,9 @@ function drawStarterBonusButton() {
   ctx.restore();
 }
 
-// One row of the kit list — icon + what it is + how many.
-function _starterBonusRow(icon, label, qty) {
+// Одна строка списка награды — значок, что это и сколько. Общая для «Набора
+// новичка» и «Письма»: список у них разный, а вид строки один.
+function _bonusItemRow(icon, label, qty) {
   return `<div class="vip-ri"><span class="vip-ri-img" style="display:inline-flex;align-items:center;justify-content:center">${icon}</span><span class="vip-ri-label">${label}${qty ? ` <b style="color:#ffe0a3">×${qty}</b>` : ''}</span></div>`;
 }
 
@@ -3505,11 +3666,11 @@ function openStarterBonusPanel() {
   if (existing) existing.remove();
 
   const gearRows = _starterBonusGear()
-    .map(it => _starterBonusRow(_itemIcon(it, 16), it.name, 1)).join('');
+    .map(it => _bonusItemRow(_itemIcon(it, 16), it.name, 1)).join('');
   const bpRows = ITEM_DEF.filter(d => d.slot === 'buff_potion')
-    .map(bp => _starterBonusRow(_itemIcon(bp, 16), bp.name, STARTER_BONUS.buffPotions)).join('');
+    .map(bp => _bonusItemRow(_itemIcon(bp, 16), bp.name, STARTER_BONUS.buffPotions)).join('');
   const hpDef = ITEM_DEF.find(d => d.id === STARTER_BONUS.hpPotionId);
-  const hpRow = hpDef ? _starterBonusRow(_itemIcon(hpDef, 16), hpDef.name, STARTER_BONUS.hpPotions) : '';
+  const hpRow = hpDef ? _bonusItemRow(_itemIcon(hpDef, 16), hpDef.name, STARTER_BONUS.hpPotions) : '';
 
   const ov = document.createElement('div');
   ov.id = 'starter-bonus-ov';

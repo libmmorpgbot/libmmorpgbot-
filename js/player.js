@@ -127,6 +127,10 @@ function makePlayer(type) {
     // _sanitizeSavedStats); the HUD's Бонус button reads it to know whether
     // there is still anything to claim.
     starterBonus: false,
+    // «Письмо получено» — тоже серверное поле (mailBonusClaim, и так же
+    // вычищается из сохранений). Награда за письмом одна на аккаунт, и по
+    // этому флагу кнопка «Письмо» уходит с экрана насовсем.
+    mailBonus: false,
     empowers: 0,
     // Кодекс: { [setId]: boolean[] } filled-slot progress per set
     // (server-owned, see registerCodexSetItem/codexSync) and the flat stat
@@ -1156,6 +1160,7 @@ function restoreFromSave(data) {
   player.keptSP   = data.keptSP   || 0;
   player.empowers = data.empowers || 0;
   player.starterBonus = !!data.starterBonus;
+  player.mailBonus = !!data.mailBonus;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
   player.specialQuestsDone = data.specialQuestsDone || [];

@@ -30,7 +30,7 @@ const players = require('./players');
 const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, MAIL_BONUS,
   seasonActive, seasonShopPoints,
 } = require('../../../shared/definitions');
 const {
@@ -260,10 +260,47 @@ async function claimStarterBonus(db, playerId) {
   return { granted, hpPotions: STARTER_BONUS.hpPotions, charClass };
 }
 
+// ── письмо ──────────────────────────────────────────────────────────────────
+// Одна из двух наград MAIL_BONUS, один раз на аккаунт, и выбор между ними —
+// не выбор игрока. Сезонный билет читается ЗДЕСЬ, из player_vip, а не
+// принимается от клиента: клиентский `_seasonTicketActive` рисует панель, и
+// доверять ему выдачу значило бы отдать более щедрую награду любому, кто
+// пришлёт mailBonusClaim с подделанным флагом.
+//
+// Порядок тот же, что у набора новичка, и по той же причине: флаг ставится
+// условным UPDATE до выдачи, потому что задвоенная награда хуже потерянной, —
+// а потерянной она быть не может, транзакция откатит флаг вместе с выдачей.
+async function claimMailBonus(db, playerId) {
+  await items.lockPlayer(db, playerId);
+  const vip = await progression.vipOf(db, playerId);
+  const hasTicket = !!vip.seasonTicket;
+  const tier = hasTicket ? MAIL_BONUS.ticket : MAIL_BONUS.free;
+
+  const list = [];
+  for (const bp of _VIP_BP) list.push({ itemId: bp.id, qty: tier.buffPotions, enhance: 0 });
+  for (const [id, qty] of Object.entries(tier.mats || {})) list.push({ itemId: id, qty, enhance: 0 });
+  for (const [id, qty] of Object.entries(tier.boxes || {})) list.push({ itemId: id, qty, enhance: 0 });
+
+  const room = await _roomForAll(db, playerId, list);
+  if (!room.fits) {
+    const { SERVER_INV_MAX } = require('../../anticheat');
+    err('no_room', `Нужно ${room.need} свободных мест в инвентаре (занято ${room.used}/${SERVER_INV_MAX})`);
+  }
+
+  const { rowCount } = await query(db, `
+    UPDATE player_progress SET mail_bonus_claimed = true
+     WHERE player_id = $1 AND NOT mail_bonus_claimed`, [playerId]);
+  if (!rowCount) err('already', 'Письмо уже получено');
+
+  const granted = await _grantAll(db, playerId, list);
+  return { granted, seasonTicket: hasTicket };
+}
+
 // ── referrals ───────────────────────────────────────────────────────────────
 // Who this player brought in, and what each of them has earned them. The bonus
 // is 5% of every confirmed deposit those friends made — read from gram_tx,
 // which is the record of what was actually credited, rather than recomputed
+
 // from a running total nobody reconciles.
 async function referralsOf(db, playerId) {
   const { rows: me } = await query(db, 'SELECT telegram_id FROM players WHERE id = $1', [playerId]);
@@ -300,6 +337,6 @@ async function referralsOf(db, playerId) {
 }
 
 module.exports = {
-  buyPackage, claimStarterBonus, referralsOf,
+  buyPackage, claimStarterBonus, claimMailBonus, referralsOf,
   _packageContents, _roomForAll, ShopError,
 };
