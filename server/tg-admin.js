@@ -35,6 +35,8 @@ const money = require('./db/repos/money');
 const stats = require('./db/repos/stats');
 const progression = require('./db/repos/progression');
 const ops = require('./tg-ops');
+const { execFile } = require('child_process');
+const fs = require('fs');
 
 const PAGE = 8;                      // players per page — fits without scrolling
 const CURRENCY = { gold: 'Золото', gram: 'GRAM', nexum: 'Liberty' };
@@ -109,7 +111,7 @@ async function screenHome() {
     ].join('\n'),
     buttons: [
       [btn('👥 Игроки', 'a:list:0'), btn('🔎 Поиск', 'a:find')],
-      [btn('📊 Сервер', 'a:srv')],
+      [btn('📊 Сервер', 'a:srv'), btn('🚀 Выкладка', 'a:dep')],
     ],
   };
 }
@@ -207,6 +209,76 @@ async function screenVip(id) {
   };
 }
 
+// -- выкладка ---------------------------------------------------------------
+// Кнопка, а не команда в консоли: выкладывать должно быть можно с телефона и
+// не только тому, у кого настроен ssh.
+//
+// Чего она НЕ делает: не берёт код с чьей-то машины. Источник один - GitHub,
+// и выложить можно ровно то, что там лежит.
+const REPO_GIT = '/srv/liberty/repo.git';
+const DEPLOY_BRANCH = process.env.LIBERTY_BRANCH || 'postgres-migration';
+const NOTIFY_FILE = '/srv/liberty/.deploy-notify';
+
+function git(args, ms = 25000) {
+  return new Promise((resolve) => {
+    execFile('git', ['--git-dir=' + REPO_GIT].concat(args), { timeout: ms },
+      (err, out) => resolve(err ? null : String(out).trim()));
+  });
+}
+
+async function screenDeploy() {
+  const live = String(process.env.BUILD_COMMIT || '').trim();
+  // fetch перед показом: без него "последнее на GitHub" - это то, что успели
+  // забрать в прошлый раз, и кнопка предложила бы выложить вчерашнее.
+  const fetched = (await git(['fetch', '--prune', '--quiet', 'origin'])) !== null;
+  const head = await git(['rev-parse', '--short', 'origin/' + DEPLOY_BRANCH]);
+  const subj = head ? await git(['log', '-1', '--format=%s', head]) : null;
+  const behind = (live && head)
+    ? await git(['rev-list', '--count', live + '..origin/' + DEPLOY_BRANCH])
+    : null;
+
+  const lines = ['\u{1F680} <b>Выкладка</b>', ''];
+  lines.push('В игре: <code>' + esc(live || '-') + '</code>');
+  lines.push('В GitHub: <code>' + esc(head || '-') + '</code>');
+  if (!fetched) lines.push('', 'GitHub недоступен - показано то, что забрали раньше.');
+  lines.push('');
+
+  let buttons;
+  if (!head) {
+    lines.push('Не удалось прочитать репозиторий.');
+    buttons = [[btn('\u{1F504} Обновить', 'a:dep'), btn('\u{2B05}\u{FE0F} Назад', 'a:home')]];
+  } else if (live === head) {
+    lines.push('\u{2705} В игре ровно то, что в GitHub. Выкладывать нечего.');
+    buttons = [[btn('\u{1F504} Обновить', 'a:dep'), btn('\u{2B05}\u{FE0F} Назад', 'a:home')]];
+  } else {
+    lines.push('Новых коммитов: <b>' + esc(behind || '?') + '</b>');
+    if (subj) lines.push('Последний: ' + esc(subj.slice(0, 90)));
+    lines.push('');
+    lines.push('Выкладка перезапустит игру: кто сейчас играет - на несколько секунд вылетят.');
+    buttons = [
+      [btn('\u{1F680} Выложить ' + head, 'a:depgo:' + head)],
+      [btn('\u{1F504} Обновить', 'a:dep'), btn('\u{2B05}\u{FE0F} Назад', 'a:home')],
+    ];
+  }
+  return { text: lines.join('\n'), buttons };
+}
+
+// Запуск - отдельным процессом ВНЕ этой службы, потому что выкладка её
+// перезапускает, то есть убивает то, что её вызвало. systemd-run уводит её в
+// собственный юнит, который переживёт перезапуск; о результате скрипт
+// отчитается сам, сообщением в этот же чат.
+function startDeploy(chatId) {
+  return new Promise((resolve) => {
+    try { fs.writeFileSync(NOTIFY_FILE, String(chatId), { mode: 0o600 }); }
+    catch { /* не смогли - просто не будет отчёта */ }
+    execFile('sudo', ['-n', '/srv/liberty/deploy-button.sh'], { timeout: 15000 },
+      (err, out, errOut) => {
+        if (!err) return resolve(null);
+        resolve(String(errOut || err.message).split('\n')[0].slice(0, 120));
+      });
+  });
+}
+
 async function screenServer() {
   const { rows } = await query(null, `
     SELECT (SELECT count(*) FROM players WHERE telegram_id ~ '^[0-9]+$')::int AS players,
@@ -295,6 +367,7 @@ async function draw(name, arg1, arg2) {
     case 'cur':  return screenCurrency(Number(arg1), arg2);
     case 'vip':  return screenVip(Number(arg1));
     case 'srv':  return screenServer();
+    case 'dep':  return screenDeploy();
     default:     return screenHome();
   }
 }
@@ -390,6 +463,26 @@ async function handleCallback(cq) {
       return true;
     }
 
+    // Выкладка отвечает не как остальные: она перезапускает эту самую службу,
+    // поэтому нарисовать "готово" уже некому. Говорим, что запустили, и уходим -
+    // результат придёт отдельным сообщением от самого скрипта.
+    if (name === 'depgo') {
+      const failed = await startDeploy(chat);
+      if (failed) {
+        await ops.answerCallback(cq.id, 'Не запустилось: ' + failed, true);
+        const scd = await screenDeploy();
+        await ops.editIn(chat, msgId, scd.text, { buttons: scd.buttons });
+        return true;
+      }
+      await ops.answerCallback(cq.id, 'Запустил');
+      await ops.editIn(chat, msgId,
+        '\u{1F680} <b>Выкладываю ' + esc(String(a1 || '')) + '</b>\n\n'
+        + 'Игра перезапускается. Через полминуты придёт сообщение - получилось или нет.\n'
+        + 'Если не поднимется, откатится сама.',
+        { buttons: [[btn('\u{1F504} Проверить', 'a:dep')]] });
+      return true;
+    }
+
     let toast = '';
     let show = { name: 'home', a1: null, a2: null };
 
@@ -414,5 +507,6 @@ module.exports = {
   handle, handleCallback,
   // for tests
   screenHome, screenPlayer, screenList, screenCurrency, screenVip, screenServer,
+  screenDeploy,
   doLevel, doGive, doVip, search, MARK,
 };

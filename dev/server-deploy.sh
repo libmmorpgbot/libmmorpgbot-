@@ -19,6 +19,24 @@
 # и это правильно, иначе живой код опять начнёт расходиться с репозиторием.
 set -euo pipefail
 
+# ── отчёт в телеграм ───────────────────────────────────────────────────────
+# Выкладку можно запустить кнопкой из админки. Кнопка живёт в том же процессе,
+# который выкладка перезапускает, — то есть сказать «готово» ей нечем: её к
+# тому моменту уже нет. Поэтому о результате отчитывается сам скрипт.
+#
+# Кому писать — в /srv/liberty/.deploy-notify (id чата), его кладёт админка
+# перед запуском. Нет файла — никому не пишем, это обычный запуск из консоли.
+NOTIFY_FILE=/srv/liberty/.deploy-notify
+say() {
+  local chat token
+  [ -f "$NOTIFY_FILE" ] || return 0
+  chat=$(cat "$NOTIFY_FILE" 2>/dev/null | tr -dc '0-9-')
+  [ -n "$chat" ] || return 0
+  token=$(sed -n 's/^TG_BOT_TOKEN=//p' /srv/liberty/env | tail -1)
+  [ -n "$token" ] || return 0
+  curl -s --max-time 10 -o /dev/null     "https://api.telegram.org/bot$token/sendMessage"     --data-urlencode "chat_id=$chat"     --data-urlencode "parse_mode=HTML"     --data-urlencode "text=$1" || true
+}
+
 DRY=0
 if [ "${1:-}" = "--dry-run" ]; then DRY=1; shift; fi
 
@@ -170,13 +188,23 @@ for _ in $(seq 1 25); do
   case "$OUT" in
     *'"ok":true'*)
       case "$OUT" in
-        *"$COMMIT"*) echo "  ✓ живёт $COMMIT"; exit 0 ;;
+        *"$COMMIT"*)
+          echo "  ✓ живёт $COMMIT"
+          say "✅ <b>Выложено</b>
+Сборка: <code>$COMMIT</code>
+$(git -C "$REPO" log -1 --format=%s "$FULL" | cut -c1-80)"
+          rm -f "$NOTIFY_FILE"
+          exit 0 ;;
         *) echo "  ⚠ сервер жив, но собран не из $COMMIT" >&2 ;;
       esac ;;
   esac
 done
 
 echo "  ✗ сервер не ответил за 25с — откатываюсь" >&2
+say "🚨 <b>Выкладка не удалась</b>
+$COMMIT не поднялся за 25 секунд. Откатываюсь на предыдущую сборку —
+игра останется на том, что работало. Смотри журнал: journalctl -u liberty-next"
+
 rm -rf "$NEXT"
 cp -a /srv/liberty/next.old "$NEXT"
 chmod 755 "$NEXT"
@@ -188,4 +216,5 @@ sed -i '/^BUILD_COMMIT=/d' /srv/liberty/env
 systemctl restart liberty-next
 sleep 6
 curl -s --max-time 5 "$HEALTH" >&2 || true
+rm -f "$NOTIFY_FILE"
 exit 1
