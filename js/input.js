@@ -1,5 +1,5 @@
-const SKILL_SZ  = 48;   // skill-button diameter (they ride the fan's arc)
-const POTION_R  = 26;
+const SKILL_SZ  = hud(48);   // skill-button diameter (they ride the fan's arc)
+const POTION_R  = hud(26);
 
 // ─────────────────────────────────────────────────────────
 //  ACTION FAN  (bottom-right)
@@ -14,11 +14,14 @@ const POTION_R  = 26;
 // whole cluster follows the screen size without any piece needing a layout
 // rule of its own. Anything new that wants a place on the fan should ask
 // fanPos() for it rather than hardcoding coordinates.
-const FAN_MX = 64, FAN_MY = 70;  // pivot inset from the right edge / nav bar
-const FAN_R_ATK   = 40;          // attack button — drawn on the pivot itself
-const FAN_R_MODE  = 64;          // АВТО/РУЧ chip
-const FAN_R_SKILL = 96;          // the four skill buttons
-const FAN_R_OUTER = 192;         // potion / target
+// Радиусы и отступы — через hud() (js/constants.js): весь веер обязан
+// уменьшаться ЦЕЛИКОМ, иначе кнопки сойдут со своей дуги. Углы ниже не
+// масштабируются и не должны: угол не имеет размера.
+const FAN_MX = hud(64), FAN_MY = hud(70);  // pivot inset from the right edge / nav bar
+const FAN_R_ATK   = hud(40);     // attack button — drawn on the pivot itself
+const FAN_R_MODE  = hud(64);     // АВТО/РУЧ chip
+const FAN_R_SKILL = hud(96);     // the four skill buttons
+const FAN_R_OUTER = hud(192);    // potion / target
 const FAN_A_MODE   = -55;
 const FAN_A_SKILL  = -74;        // topmost skill …
 const FAN_A_STEP   = -37;        // … and counter-clockwise from there
@@ -37,7 +40,7 @@ function fanSkillAngle(idx) { return FAN_A_SKILL + idx * FAN_A_STEP; }
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
 function joyCenter() { return _joyCenter; }
-function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 130; }
+function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - hud(130); }
 
 function _inJoyZone(cx, cy) {
   const jc = joyCenter();
@@ -68,8 +71,11 @@ function getTargetBtnPos() {
   return { x: p.x, y: p.y, r: POTION_R };
 }
 
+// Ширина и высота — через hud(): это единственное место, откуда считает себя
+// вся левая колонка (Проф, Класс, Письмо, Бонус и список пати под ними), так
+// что уменьшается она отсюда одна.
 function getPvpBtnPos() {
-  return { x: 8, y: HEADER_H + 6, w: 80, h: 26 };
+  return { x: 8, y: HEADER_H + 6, w: hud(80), h: hud(26) };
 }
 
 // Directly below the Мир/ПК toggle, same column — opens the "Профессия"
@@ -110,10 +116,10 @@ function getStarterBonusBtnPos() {
 }
 
 function getPartyLeaveBtnPos() {
-  const bh = 26, gap = 4;
+  const bh = hud(26), gap = 4;
   const startY = _partyHudStartY();
   const count = (typeof partyMembers !== 'undefined') ? partyMembers.length : 0;
-  return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: 80, h: 22 };
+  return { x: getPvpBtnPos().x, y: startY + count * (bh + gap), w: hud(80), h: hud(22) };
 }
 
 // Party member list starts directly below the Бонус slot (which sits below
@@ -130,7 +136,7 @@ function _partyHudStartY() {
 // see getPartyInfoBtnPos, whose width completes the pair's total span back
 // to W/2 ± (80 + 6 + 52) / 2.
 function getPartyBtnPos() {
-  return { x: W / 2 - 69, y: HEADER_H + 52, w: 80, h: 26 };
+  return { x: W / 2 - hud(69), y: HEADER_H + hud(52), w: hud(80), h: hud(26) };
 }
 
 // "Инфо" button right next to Пати+ — view whoever is currently targeted
@@ -138,7 +144,7 @@ function getPartyBtnPos() {
 // showPeerProfileModal (js/ui.js) and netRequestPlayerProfile (js/network.js).
 function getPartyInfoBtnPos() {
   const pb = getPartyBtnPos();
-  return { x: pb.x + pb.w + 6, y: pb.y, w: 52, h: pb.h };
+  return { x: pb.x + pb.w + 6, y: pb.y, w: hud(52), h: pb.h };
 }
 
 function getPotionBtnPos() {
@@ -150,7 +156,7 @@ function getPotionBtnPos() {
 // skill arc. Drawn round, but the box stays x/y/w/h — that is what the hit
 // test and dev/harness.js read.
 function getAutoBtnPos() {
-  const r = 15;
+  const r = hud(15);
   const p = fanPos(FAN_R_MODE, FAN_A_MODE);
   return { x: p.x - r, y: p.y - r, w: r * 2, h: r * 2, cx: p.x, cy: p.y, r };
 }

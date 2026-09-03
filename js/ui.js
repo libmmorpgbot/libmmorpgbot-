@@ -2469,7 +2469,7 @@ const HUD_TEXT_DIM  = '#8fb0cd';
 
 // Both header plates — the player one and the map one — are this tall, so
 // they read as one row (hudMiniMapRect / drawHeader below).
-const HUD_PLATE_H = 96;
+const HUD_PLATE_H = hud(96);
 
 function _hudCorners(x, y, w, h, len, color) {
   ctx.strokeStyle = color || 'rgba(150,215,255,0.7)';
@@ -2549,7 +2549,10 @@ function _hudNum(v) {
 // below the header band, over the world — which is why the HUD's right-hand
 // button column starts underneath it (_positionHudMenuBtn below).
 function hudMiniMapRect() {
-  const w = Math.round(Math.min(96, W * 0.26));
+  // И потолок, и доля от ширины — обе через hud(): на узком экране размер
+  // диктует доля, и оставить её прежней значило бы не уменьшить карту там,
+  // где тесно как раз сильнее всего.
+  const w = Math.round(Math.min(hud(96), W * 0.26 * HUD_SCALE));
   return { x: W - w - 8, y: 4, w, h: HUD_PLATE_H };
 }
 
@@ -2674,12 +2677,16 @@ function drawHeader() {
 
   // ── Player plate ──────────────────────────────────────────
   const mp = hudMiniMapRect();
-  const px = 6, py = 4, pw = mp.x - px - 4, ph = HUD_PLATE_H;
-  const pRight = px + pw - 11;
+  // Всё внутри плашки разложено под ЕЁ высоту, а она уменьшается вместе с
+  // остальным HUD. Поэтому здесь исходные числа, пропущенные через hud() и
+  // hudF(): иначе аватар, полосы и чипы остались бы прежними в плашке,
+  // которая под них уже мала.
+  const px = hud(6), py = hud(4), pw = mp.x - px - hud(4), ph = HUD_PLATE_H;
+  const pRight = px + pw - hud(11);
   _hudPanel(px, py, pw, ph, 12);
 
   // ── Avatar + level badge ──────────────────────────────────
-  const avR = 25, avX = px + 30, avY = py + 32;
+  const avR = hud(25), avX = px + hud(30), avY = py + hud(32);
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
@@ -2702,49 +2709,49 @@ function drawHeader() {
   ctx.strokeStyle = 'rgba(122,196,255,0.85)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = p.charDef.color + '55'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(avX, avY, avR + hud(3), 0, Math.PI * 2); ctx.stroke();
 
-  const lbR = 11, lbX = avX - 14, lbY = avY + avR - 2;
+  const lbR = hud(11), lbX = avX - hud(14), lbY = avY + avR - 2;
   ctx.fillStyle = 'rgba(9,18,31,0.96)';
   ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(240,196,110,0.9)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.stroke();
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#f4d9a4';
   ctx.fillText(p.lvl, lbX, lbY + 0.5);
 
   // ── Name + class ──────────────────────────────────────────
-  const infoX = avX + avR + 12;
+  const infoX = avX + avR + hud(12);
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-  ctx.font = `bold 14px ${F}`; ctx.fillStyle = HUD_TEXT;
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 14), infoX, py + 20);
-  ctx.font = `11px ${F}`; ctx.fillStyle = p.charDef.color + 'e0';
-  ctx.fillText(p.charDef.name, infoX, py + 35);
+  ctx.font = `bold ${hudF(14)}px ${F}`; ctx.fillStyle = HUD_TEXT;
+  ctx.fillText((netUsername || p.charDef.name).slice(0, 14), infoX, py + hud(20));
+  ctx.font = `${hudF(11)}px ${F}`; ctx.fillStyle = p.charDef.color + 'e0';
+  ctx.fillText(p.charDef.name, infoX, py + hud(35));
   // БМ (battle might) reads as part of the class line — "Танк БМ 3150" — not
   // as a currency, so it sits here rather than in the chip row below.
-  const bmX = infoX + ctx.measureText(p.charDef.name).width + 8;
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(240,196,110,0.8)';
-  ctx.fillText(t('bmAbbrev'), bmX, py + 35);
+  const bmX = infoX + ctx.measureText(p.charDef.name).width + hud(8);
+  ctx.font = `bold ${hudF(9)}px ${F}`; ctx.fillStyle = 'rgba(240,196,110,0.8)';
+  ctx.fillText(t('bmAbbrev'), bmX, py + hud(35));
   const bmLblW = ctx.measureText(t('bmAbbrev')).width;
-  ctx.font = `bold 11px ${F}`; ctx.fillStyle = '#f0c46e';
-  ctx.fillText(_hudNum(typeof calcBM === 'function' ? calcBM(p) : 0), bmX + bmLblW + 4, py + 35);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.fillStyle = '#f0c46e';
+  ctx.fillText(_hudNum(typeof calcBM === 'function' ? calcBM(p) : 0), bmX + bmLblW + hud(4), py + hud(35));
 
   // ── HP / XP ───────────────────────────────────────────────
   const barX = infoX, barW = pRight - infoX;
-  _hudBar(barX, py + 42, barW, 12,
+  _hudBar(barX, py + hud(42), barW, hud(12),
     p.maxHp ? p.hp / p.maxHp : 0,
     '#2f7a2a', '#5fd45a',
     Math.ceil(p.hp) + ' / ' + p.maxHp);
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
   // that into "858.9999999999418" on the bar.
-  _hudBar(barX, py + 58, barW, 10,
+  _hudBar(barX, py + hud(58), barW, hud(10),
     p.xpNext ? p.xp / p.xpNext : 0,
     '#8a5a12', '#f0a63c',
     _hudNum(Math.floor(p.xp)) + ' / ' + _hudNum(p.xpNext));
 
   // ── Currency chips ────────────────────────────────────────
-  const chipY = py + 74, chipH = 18, chipGap = 5, chipX0 = px + 10;
+  const chipY = py + hud(74), chipH = hud(18), chipGap = hud(5), chipX0 = px + hud(10);
   const _nxBal = window._nexumBalance || 0;
   const _grBal = window._gramBalance || 0;
   const chips = [
@@ -2757,18 +2764,18 @@ function drawHeader() {
   for (let i = 0; i < chips.length; i++) {
     const c = chips[i], cx = chipX0 + i * (chipW + chipGap);
     ctx.fillStyle = 'rgba(9,19,32,0.85)';
-    roundRect(ctx, cx, chipY, chipW, chipH, 9); ctx.fill();
+    roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.fill();
     ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
-    roundRect(ctx, cx, chipY, chipW, chipH, 9); ctx.stroke();
+    roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.stroke();
     if (c.img) {
       const img = _getPotImg(c.img);
-      if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, cx + 3, chipY + 3, 12, 12);
-      else drawIconCtx(ctx, 'coin', cx + 9, chipY + chipH / 2, 11, c.color);
+      if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, cx + hud(3), chipY + hud(3), hud(12), hud(12));
+      else drawIconCtx(ctx, 'coin', cx + hud(9), chipY + chipH / 2, hud(11), c.color);
     } else {
-      drawIconCtx(ctx, c.icon, cx + 9, chipY + chipH / 2, 11, c.color);
+      drawIconCtx(ctx, c.icon, cx + hud(9), chipY + chipH / 2, hud(11), c.color);
     }
-    ctx.font = `bold 9.5px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = c.color;
-    ctx.fillText(c.val, cx + 18, chipY + chipH / 2 + 0.5);
+    ctx.font = `bold ${hudF(9.5)}px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = c.color;
+    ctx.fillText(c.val, cx + hud(18), chipY + chipH / 2 + 0.5);
   }
 
   ctx.restore();
@@ -2880,13 +2887,13 @@ function drawJoystick() {
 // hub at its centre. Geometry comes from fanCenter()/fanPos() in js/input.js,
 // so this and the buttons (and the hit tests) can never drift apart. Purely
 // decorative — nothing here is touchable.
-const FAN_TRAY_IN = 60, FAN_TRAY_OUT = 126;   // skill tray
+const FAN_TRAY_IN = hud(60), FAN_TRAY_OUT = hud(126);   // skill tray
 // Swept counter-clockwise, far enough round to seat the lowest skill button
 // whole. Both ends run off the screen — the near one past the right edge, the
 // far one under the bottom nav — and are simply clipped there, the way the
 // tray is meant to read: as a wheel the screen corner cuts into.
 const FAN_TRAY_A0 = -44, FAN_TRAY_A1 = -210;
-const FAN_COLLAR_IN = 46, FAN_COLLAR_OUT = 57;
+const FAN_COLLAR_IN = hud(46), FAN_COLLAR_OUT = hud(57);
 
 // Annular sector from a0° to a1°, swept counter-clockwise (a1 < a0)
 function _fanSector(c, rIn, rOut, a0, a1) {
@@ -3017,7 +3024,7 @@ function drawSkillButtons() {
     if (locked) {
       drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#c1ccd5');
     } else if (!ready) {
-      ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.font = `bold ${hudF(14)}px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
       ctx.fillStyle = '#c1ccd5';
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
     }
@@ -3144,16 +3151,16 @@ function drawPotionButton() {
   }
 
   ctx.globalAlpha = 1;
-  ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = ready && cd <= 0 ? '#90d653' : 'rgba(62,129,177,0.7)';
   ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
 
   // Show cooldown if active
   if (cd > 0) {
-    ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f17e8b';
+    ctx.font = `bold ${hudF(9)}px ${F}`; ctx.fillStyle = '#f17e8b';
     ctx.fillText(cd.toFixed(1) + t('secAbbrev'), pb.x, pb.y + pb.r + 10);
   } else {
-    ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(109,131,161,0.55)';
+    ctx.font = `${hudF(7)}px ${F}`; ctx.fillStyle = 'rgba(109,131,161,0.55)';
     ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
   }
 
@@ -3182,7 +3189,7 @@ function drawTargetButton() {
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, 20, hasTarget ? '#f17e8b' : '#a49783');
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, hud(20), hasTarget ? '#f17e8b' : '#a49783');
 
   ctx.restore();
 }
@@ -3194,9 +3201,9 @@ function drawTargetButton() {
 // «ничего ни на что не налезает» иначе остаётся обещанием, которое каждый
 // раз проверяют глазами по скриншоту. Так это считает dev/render-check.html
 // ТЕМ ЖЕ кодом, которым рисуется, а не своей копией формулы.
-const BUFF_CHIP_SZ = 22;
+const BUFF_CHIP_SZ = hud(22);
 const BUFF_SEATS = 11;
-const BUFF_R0 = FAN_R_SKILL + 46, BUFF_RING_STEP = 28;
+const BUFF_R0 = FAN_R_SKILL + hud(46), BUFF_RING_STEP = hud(28);
 const BUFF_A0 = -100, BUFF_A_END = -200;
 const BUFF_RINGS = 8;
 
@@ -3324,11 +3331,11 @@ function drawBuffStrip() {
       if (img && img.complete && img.naturalWidth > 0)
         ctx.drawImage(img, cx + 3, cy + 2, 16, 13);
     } else {
-      drawIconCtx(ctx, chip.icon, iconCX, iconCY, 11, chip.color);
+      drawIconCtx(ctx, chip.icon, iconCX, iconCY, hud(11), chip.color);
     }
 
     // Time label at bottom of cell
-    ctx.font = `bold 6px ${F2}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold ${hudF(6)}px ${F2}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = chip.color;
     ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 2);
   }
@@ -3361,10 +3368,10 @@ function drawPvpButton() {
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
   const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(224,188,127,0.9)';
-  drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, pvpColor);
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - hud(14), pb.y + pb.h / 2, hud(12), pvpColor);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
-  ctx.fillText(pvpLabel, pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
+  ctx.fillText(pvpLabel, pb.x + pb.w / 2 - hud(5), pb.y + pb.h / 2);
 
   ctx.restore();
 }
@@ -3395,10 +3402,10 @@ function drawProfessionButton() {
   }
 
   const profColor = ready ? '#cdb8ec' : 'rgba(224,188,127,0.9)';
-  drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - 14, pb.y + pb.h / 2, 12, profColor);
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - hud(14), pb.y + pb.h / 2, hud(12), profColor);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
-  ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - 5, pb.y + pb.h / 2);
+  ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - hud(5), pb.y + pb.h / 2);
 
   ctx.restore();
 }
@@ -3427,10 +3434,10 @@ function drawClassChangeButton() {
   roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
 
   const col = 'rgba(224,188,127,0.9)';
-  drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - 14, cb.y + cb.h / 2, 12, col);
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - hud(14), cb.y + cb.h / 2, hud(12), col);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = col;
-  ctx.fillText(t('classChangeBtnLbl'), cb.x + cb.w / 2 - 5, cb.y + cb.h / 2);
+  ctx.fillText(t('classChangeBtnLbl'), cb.x + cb.w / 2 - hud(5), cb.y + cb.h / 2);
 
   ctx.restore();
 }
@@ -3487,10 +3494,10 @@ function drawMailBonusButton() {
   ctx.strokeStyle = `rgba(79,195,255,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
   roundRect(ctx, mb.x - 2, mb.y - 2, mb.w + 4, mb.h + 4, 11); ctx.stroke();
 
-  drawIconCtx(ctx, 'mail', mb.x + mb.w / 2 - 16, mb.y + mb.h / 2, 12, '#bfe4ff');
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'mail', mb.x + mb.w / 2 - hud(16), mb.y + mb.h / 2, hud(12), '#bfe4ff');
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#bfe4ff';
-  ctx.fillText(t('mailBonusBtn'), mb.x + mb.w / 2 - 7, mb.y + mb.h / 2);
+  ctx.fillText(t('mailBonusBtn'), mb.x + mb.w / 2 - hud(7), mb.y + mb.h / 2);
 
   ctx.restore();
 }
@@ -3646,10 +3653,10 @@ function drawStarterBonusButton() {
   ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
   roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
 
-  drawIconCtx(ctx, 'star', bb.x + bb.w / 2 - 16, bb.y + bb.h / 2, 12, '#ffe0a3');
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'star', bb.x + bb.w / 2 - hud(16), bb.y + bb.h / 2, hud(12), '#ffe0a3');
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffe0a3';
-  ctx.fillText(t('starterBonusBtn'), bb.x + bb.w / 2 - 7, bb.y + bb.h / 2);
+  ctx.fillText(t('starterBonusBtn'), bb.x + bb.w / 2 - hud(7), bb.y + bb.h / 2);
 
   ctx.restore();
 }
@@ -3756,8 +3763,8 @@ function drawTargetFrame() {
   // player target still reads differently from a monster at a glance.
   _hudPanel(bx, by, bw, bh, 10, 'rgba(226,96,112,0.55)');
 
-  drawIconCtx(ctx, 'crosshair', bx + 15, by + 12, 11, color);
-  ctx.font = `bold 10.5px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'crosshair', bx + hud(15), by + hud(12), hud(11), color);
+  ctx.font = `bold ${hudF(10.5)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = color;
   ctx.fillText(name.slice(0, 16), bx + 25, by + 12);
 
@@ -3828,7 +3835,7 @@ function drawAutoToggle() {
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-  ctx.font = `bold 8px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold ${hudF(8)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
   ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), cx, cy + 0.5);
   ctx.restore();
@@ -3854,8 +3861,8 @@ function drawPartyButton() {
   ctx.lineWidth = 1.5;
   roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
 
-  drawIconCtx(ctx, 'party', pb.x + 14, pb.y + pb.h / 2, 12, '#90d653');
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'party', pb.x + hud(14), pb.y + pb.h / 2, hud(12), '#90d653');
+  ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#90d653';
   ctx.fillText(t('partyInviteBtnLbl'), pb.x + 23, pb.y + pb.h / 2);
 
@@ -3866,7 +3873,7 @@ function drawPartyButton() {
   roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.fill();
   ctx.strokeStyle = 'rgba(127,181,79,0.8)'; ctx.lineWidth = 1.5;
   roundRect(ctx, ib.x, ib.y, ib.w, ib.h, 9); ctx.stroke();
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center';
+  ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textAlign = 'center';
   ctx.fillStyle = '#90d653';
   ctx.fillText(t('partyInfoBtnLbl'), ib.x + ib.w / 2, ib.y + ib.h / 2 + 1);
 
@@ -3914,9 +3921,9 @@ function drawPartyHUD() {
     ctx.strokeStyle = 'rgba(117,163,77,0.55)'; ctx.lineWidth = 1.2;
     roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
 
-    drawIconCtx(ctx, 'party', bx + 11, by + bh / 2, 11, '#90d653');
+    drawIconCtx(ctx, 'party', bx + hud(11), by + bh / 2, hud(11), '#90d653');
 
-    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = `bold ${hudF(9)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#90d653';
     ctx.fillText((member.name || '?').slice(0, 12), bx + 20, by + 10);
 
@@ -3927,7 +3934,7 @@ function drawPartyHUD() {
       ctx.fillStyle = pct > 0.5 ? _partyHpGrads.hi : pct > 0.25 ? _partyHpGrads.mid : _partyHpGrads.lo;
       roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
     }
-    ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${hudF(6.5)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(193,204,213,0.88)';
     ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
 
@@ -3943,8 +3950,8 @@ function drawPartyHUD() {
   roundRect(ctx, lb.x, lb.y, lb.w, lb.h, 7); ctx.fill();
   ctx.strokeStyle = 'rgba(209,71,87,0.75)'; ctx.lineWidth = 1.2;
   roundRect(ctx, lb.x, lb.y, lb.w, lb.h, 7); ctx.stroke();
-  drawIconCtx(ctx, 'partyLeave', lb.x + 13, lb.y + lb.h / 2, 10, '#ef6d7c');
-  ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  drawIconCtx(ctx, 'partyLeave', lb.x + hud(13), lb.y + lb.h / 2, hud(10), '#ef6d7c');
+  ctx.font = `bold ${hudF(9)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ef6d7c';
   ctx.fillText(t('partyLeaveBtnLbl'), lb.x + 22, lb.y + lb.h / 2);
   ctx.restore();
@@ -3970,11 +3977,11 @@ function drawPartyInvitePopup() {
   ctx.strokeStyle = 'rgba(127,181,79,0.75)'; ctx.lineWidth = 1.5;
   roundRect(ctx, px, py, pw, ph, 12); ctx.stroke();
 
-  drawIconCtx(ctx, 'party', px + 20, py + 18, 16, '#90d653');
-  ctx.font = `bold 12px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  drawIconCtx(ctx, 'party', px + hud(20), py + hud(18), hud(16), '#90d653');
+  ctx.font = `bold ${hudF(12)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#c6d0d9';
   ctx.fillText(t('partyInviteTitle'), px + 34, py + 14);
-  ctx.font = `10px ${F}`; ctx.fillStyle = '#90d653';
+  ctx.font = `${hudF(10)}px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
 
   // Accept button
@@ -3983,7 +3990,7 @@ function drawPartyInvitePopup() {
   roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.fill();
   ctx.strokeStyle = 'rgba(127,181,79,0.8)'; ctx.lineWidth = 1.2;
   roundRect(ctx, ac.x, ac.y, ac.w, ac.h, 8); ctx.stroke();
-  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#90d653';
   ctx.fillText(t('acceptBtn'), ac.x + ac.w / 2, ac.y + ac.h / 2);
 

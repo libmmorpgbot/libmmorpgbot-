@@ -1,11 +1,38 @@
 // TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF → shared/definitions.js
+
+// ── размер HUD, одним числом ───────────────────────────────────────────────
+// Владелец: «сделать его компактней и меньше на процентов 10-15». HUD рисуется
+// кодом, и его размер задавали восемь десятков чисел, разбросанных по трём
+// файлам: высота шапки, радиусы веера, диаметр джойстика, кегли надписей,
+// поля кнопок. Уменьшить их по одному — это восемь десятков мест, где можно
+// ошибиться, и никакого способа потом сказать «а теперь ещё на пять».
+//
+// Поэтому множитель один, а числа рядом с ним — исходные, те, под которые
+// раскладка рисовалась. 0.87 это те самые 13% из середины просимого.
+//
+// Что он НЕ трогает и почему:
+//
+//   NAV_H     нижняя навигация — это не HUD, а постоянная мебель экрана, и
+//             62 px там стоят не для красоты: в них помещается иконка с
+//             подписью и палец. Сжимать её — отдельное решение, и его никто
+//             не просил;
+//   ZOOM      масштаб МИРА. Уменьшить его значит не «компактный интерфейс»,
+//             а «мелкие монстры».
+//
+// Дальше по коду встречается `hud(...)` и `hudF(...)` — это он же. Первый для
+// пикселей и округляет, второй для кеглей и оставляет десятую: 9.5 px после
+// округления стали бы 8, то есть на 16% мельче вместо 13.
+const HUD_SCALE = 0.87;
+function hud(n)  { return Math.round(n * HUD_SCALE); }
+function hudF(n) { return Math.round(n * HUD_SCALE * 10) / 10; }
+
 // Top band reserved for the HUD's player plate (drawHeader, js/ui.js): the
 // world is drawn from here down. The minimap plate deliberately hangs below
 // it, over the world — hudMiniMapRect() is what the right-hand button column
 // measures itself from, not this.
-const HEADER_H = 100;
+const HEADER_H = hud(100);
 const NAV_H = 62;
-const JOY_R = 58, JOY_KNOB = 24;
+const JOY_R = hud(58), JOY_KNOB = hud(24);
 const ZOOM = 0.75;
 
 // Basic-attack swing animation plays this many times faster than the

@@ -395,9 +395,26 @@ async function run() {
         }
       }
       if (row < 0) return null;
-      const half = (typeof W === 'number' ? W : 412) / ZOOM / 2;
+      // Камера ставится так, чтобы найденная граница легла ровно в середину
+      // кадра — там, где её и читают пробы ниже.
+      //
+      // По горизонтали так и было. По ВЕРТИКАЛИ бралась та же величина, а она
+      // считается от ширины экрана, и строка попадала в середину кадра только
+      // по совпадению. Проба при этом снимала не границу, а то, что оказалось
+      // в середине, и держалась на волоске: 79.5% при пороге 80. Стоило
+      // уменьшить HUD — шапка стала ниже, мир поехал вверх на 13 px, проба
+      // сползла на другой пятачок пола, и вышло 81%. Порода при этом не
+      // изменилась ни на единицу (35 в обоих прогонах) — то есть проверка
+      // ловила не то, что называла.
+      //
+      // Мир ложится на экран как (y − camY) · ZOOM + HEADER_H (js/game.js),
+      // отсюда и camY: он выражен через ту высоту, на которой строка должна
+      // оказаться, а не через ширину экрана.
+      const _wCss = (typeof W === 'number' ? W : 412);
+      const _hCss = (typeof H === 'number' ? H : 915);
       pixiWorldRender(1 / 60, performance.now(),
-        col * TILE - half, row * TILE - half, getTheme(dungeonLvl));
+        col * TILE - (_wCss / 2) / ZOOM,
+        row * TILE - (_hCss / 2 - HEADER_H) / ZOOM, getTheme(dungeonLvl));
       // readPixels считает от НИЖНЕГО левого угла. Обе пробы на одной высоте,
       // в середине кадра по вертикали: там нет ни шапки, ни нижней панели.
       const my = Math.round(cv.height / 2) - 24;
@@ -1095,6 +1112,17 @@ async function p_layout(w) {
         if (gap < out.minGap) out.minGap = Math.round(gap);
       }
     }
+    // Фишки идут по дуге СНАРУЖИ подноса веера. Зазор между ними и его
+    // золотой кромкой меряется здесь, потому что на снимке «почти касается» и
+    // «налезло» выглядят одинаково, а после уменьшения HUD это первое место,
+    // где они могли сойтись.
+    const _fc = fanCenter();
+    out.buffTray = 999;
+    for (const st of seats) {
+      const gap = Math.round(Math.hypot(st.x - _fc.x, st.y - _fc.y)
+        - BUFF_CHIP_SZ / 2 - FAN_TRAY_OUT);
+      if (gap < out.buffTray) out.buffTray = gap;
+    }
     out.offscreen = off.length; out.offscreenList = off.join(', ');
     out.underNav = nav.length;  out.underNavList = nav.join(', ');
     out.hits = hit.length;      out.hitList = hit.join(', ');
@@ -1215,6 +1243,9 @@ async function walletChecks(w) {
   ok(lay.minGap >= 4,
      `самый тесный зазор между гнездом и кнопкой — ${lay.minGap} px`,
      'меньше четырёх: на телефоне это уже «слиплось»');
+  ok(lay.buffTray >= 0,
+     `фишки идут снаружи подноса веера, не заходя на него (${lay.buffTray} px)`,
+     'первая дуга села на поднос — её радиус BUFF_R0 меньше FAN_TRAY_OUT');
 
   head('веер действий — четыре умения, атака и режим');
   ok(lay.sklOff === 0, 'все четыре кнопки умений целиком на экране и над навигацией',
