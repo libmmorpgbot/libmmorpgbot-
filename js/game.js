@@ -1502,12 +1502,8 @@ function _renderUI() {
   drawPartyHUD();
   drawTargetFrame();
   if (activeTab === 0) {
-    // Порядок из гайда к комплекту: иконки умений → веер → атака →
-    // переключатель режима. Веер рисуется ПОВЕРХ иконок, чтобы золотая
-    // окантовка гнезда осталась сверху и отверстие читалось вырезанным
-    // в металле, а не заклеенным.
+    drawActionFan();
     drawSkillButtons();
-    drawSkillFan();
     drawPotionButton();
     drawTargetButton();
     drawAttackButton();
@@ -3388,12 +3384,12 @@ window.addEventListener('load', () => {
     _uiBtnGrads = null;
     _partyHpGrads = null;
     _recalcEnemySimR();
-    // Высота шапки зависит от ширины экрана: панель одна и держит свою
-    // пропорцию. Пересчитывается ПЕРЕД updateJoyCenter — джойстик стоит от
-    // низа, но всё остальное в раскладке отсчитывается от HEADER_H.
-    if (typeof updateHeaderH === 'function') updateHeaderH();
     updateJoyCenter();
-    _hdrSlotsCache = null;
+    // The HUD's right-hand button column is laid out from the right edge in
+    // DOM pixels, so it has to be redone whenever W changes (rotation, a
+    // desktop window resize) — and on the first resize, which is what
+    // catches a login that beat the canvas to it.
+    if (typeof _positionHudColumn === 'function') _positionHudColumn();
     if (dungeon) clampCamera();
   };
   _doResize = resize;

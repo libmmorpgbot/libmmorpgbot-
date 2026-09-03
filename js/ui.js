@@ -2354,6 +2354,7 @@ function toggleHudMenu() {
   const btn = document.getElementById('hud-menu-btn');
   if (btn) btn.classList.toggle('expanded', _hudMenuExpanded);
   _syncGameOnlyBtns(activeTab);
+  if (_hudMenuExpanded) _positionHudColumn();
 }
 
 function setTab(n) {
@@ -2396,21 +2397,14 @@ function setTab(n) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  UNIFIED HEADER  (player info + minimap)
+//  HUD STATE  (caches shared by the header and the buttons)
 // ─────────────────────────────────────────────────────────
-let _hdrBgGrad = null, _hdrSepGrad = null, _hdrGradW = 0;
-let _hpGradGreen = null, _hpGradOrange = null, _hpGradRed = null;
-let _hpShineGrad = null, _xpGrad = null, _xpShineGrad = null;
 // Avatar bg gradient (re-created only when character color changes)
 let _avBgGrad = null, _avBgColor = '';
 // All button + target-frame gradients — rebuilt when null (set null on resize)
 let _uiBtnGrads = null;
-// Cached character name text width (measureText is expensive; name never changes mid-session)
-let _hdrNameW = 0, _hdrNameStr = '';
-let _nexumIconImg = null;
-let _gramIconImg = null;
 
-// Minimap floor-tile buffer — see the cache block inside drawHeader() below.
+// Minimap floor-tile buffer — see the cache block inside drawMiniMapPanel().
 // Only rebuilt when the player crosses into a new tile (or theme/scale
 // changes); every other frame just blits it at the current sub-tile offset.
 // Invalidated on floor change too, see buildTileCanvas() in js/game.js.
@@ -2450,189 +2444,124 @@ function setTelegramAvatar(url) {
   load(true);
 }
 
-// ── раскладка шапки ───────────────────────────────────────────────────────
-// Три блока, как на макете: панель статов слева, столбец валют посередине,
-// рамка карты справа. Считается в одном месте, потому что ширины связаны:
-// столбец валют — это то, что осталось между панелью и картой, и подгонять
-// его отдельно значит однажды получить наложение на узком экране.
-// ── гнёзда одной панели ───────────────────────────────────────────────────
-// Восемь отверстий G2 приходят из таблицы отсортированными по площади. Здесь
-// они раскладываются по назначению — раз и навсегда, а не по месту вызова:
-// карта, портрет, две полосы, четыре валюты. Классификация по ФОРМЕ, а не по
-// порядку: порядок зависит от того, какой пиксель конвейер счёл на единицу
-// больше, а форма — от того, что нарисовано.
-let _hdrSlotsCache = null, _hdrSlotsFor = null;
-function hdrSlots() {
-  const a = (typeof HUD_ART !== 'undefined') && HUD_ART.G2_wide_header_with_map;
-  if (!a || !a.slots || a.slots.length < 8) return null;
-  if (_hdrSlotsCache && _hdrSlotsFor === a) return _hdrSlotsCache;
-  // Соотношение сторон отверстия в реальных пикселях, а не в долях: доли
-  // сжаты пропорцией панели и «круглое» в них выглядит вытянутым.
-  const k = a.out[0] / a.out[1];
-  const shape = s => (s[2] * k) / s[3];
-  const rest = a.slots.slice();
-  const bars = rest.filter(s => shape(s) > 4).sort((p, q) => p[1] - q[1]);
-  const round = rest.filter(s => shape(s) <= 4);
-  // Карта — самое большое из круглых-и-квадратных, портрет — следующее,
-  // остальные четыре это валюты, слева направо.
-  round.sort((p, q) => (q[2] * q[3]) - (p[2] * p[3]));
-  const map = round[0], portrait = round[1];
-  const cur = round.slice(2).sort((p, q) => p[0] - q[0]);
-  if (!map || !portrait || bars.length < 2 || cur.length < 4) return null;
-  _hdrSlotsFor = a;
-  _hdrSlotsCache = { map, portrait, hp: bars[0], xp: bars[1], cur };
-  return _hdrSlotsCache;
-}
+// ─────────────────────────────────────────────────────────
+//  HUD PANEL SHELL
+// ─────────────────────────────────────────────────────────
+// Every floating HUD plate — the header, the minimap, the target frame, the
+// party list — is the same shell: a glass-navy body, a lit frame, a highlight
+// along the top edge and four corner ticks. Drawn from one place so the look
+// only has to be changed once.
+const HUD_FRAME     = 'rgba(104,178,240,0.55)';
+const HUD_FRAME_DIM = 'rgba(104,178,240,0.26)';
+const HUD_GLOW      = 'rgba(86,170,255,0.16)';
+const HUD_TEXT      = '#dbe9f8';
+const HUD_TEXT_DIM  = '#8fb0cd';
 
-function hdrLayout() {
-  const pad = HDR_PAD;
-  const panel = { x: pad, y: pad, w: W - pad * 2, h: HEADER_H - pad * 2 };
-  // Прямоугольник гнезда в экранных координатах.
-  const at = (s) => ({
-    x: panel.x + (s[0] - s[2] / 2) * panel.w,
-    y: panel.y + (s[1] - s[3] / 2) * panel.h,
-    w: s[2] * panel.w,
-    h: s[3] * panel.h,
-    cx: panel.x + s[0] * panel.w,
-    cy: panel.y + s[1] * panel.h,
-  });
-  const sl = hdrSlots();
-  if (!sl) {
-    // Панель не доехала — прежняя раскладка из трёх блоков.
-    const h = HEADER_H - pad * 2;
-    const mapW = Math.round(h * 0.92);
-    const panelW = Math.min(Math.round(W * 0.50), Math.round(h * 1.86));
-    return { pad, one: false,
-      panel: { x: pad, y: pad, w: panelW, h },
-      map: { x: W - pad - mapW, y: pad, w: mapW, h },
-      cur: { x: pad + panelW + 4, y: pad, h, w: W - pad - mapW - (pad + panelW) - 8 } };
+// Both header plates — the player one and the map one — are this tall, so
+// they read as one row (hudMiniMapRect / drawHeader below).
+const HUD_PLATE_H = 96;
+
+function _hudCorners(x, y, w, h, len, color) {
+  ctx.strokeStyle = color || 'rgba(150,215,255,0.7)';
+  ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+  const corners = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
+  for (const [cx, cy, sx, sy] of corners) {
+    ctx.beginPath();
+    ctx.moveTo(cx + sx * 3, cy + sy * len);
+    ctx.lineTo(cx + sx * 3, cy + sy * 3);
+    ctx.lineTo(cx + sx * len, cy + sy * 3);
+    ctx.stroke();
   }
-  return {
-    pad, one: true, panel,
-    map: at(sl.map), portrait: at(sl.portrait),
-    hp: at(sl.hp), xp: at(sl.xp),
-    cur: sl.cur.map(at),
-  };
+  ctx.lineCap = 'butt';
 }
 
-function drawHeader() {
-  if (!player || !dungeon) return;
+// The whole HUD is redrawn at 15fps into a cached canvas (see _renderUI,
+// js/game.js), so building these two gradients per panel per rebuild is
+// nothing next to keeping them in sync with a resize.
+function _hudPanel(x, y, w, h, r, frame) {
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, 'rgba(22,42,67,0.93)');
+  g.addColorStop(1, 'rgba(8,15,26,0.95)');
+  ctx.fillStyle = g;
+  roundRect(ctx, x, y, w, h, r); ctx.fill();
+
+  ctx.strokeStyle = HUD_GLOW; ctx.lineWidth = 3;
+  roundRect(ctx, x - 1, y - 1, w + 2, h + 2, r + 1); ctx.stroke();
+  ctx.strokeStyle = frame || HUD_FRAME; ctx.lineWidth = 1.2;
+  roundRect(ctx, x, y, w, h, r); ctx.stroke();
+  ctx.strokeStyle = 'rgba(150,210,255,0.13)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + r, y + 1.5); ctx.lineTo(x + w - r, y + 1.5); ctx.stroke();
+
+  _hudCorners(x, y, w, h, 10);
+}
+
+// A value bar (HP, XP, a party member's health) in the HUD's own style:
+// sunken track, gradient fill, a shine along the top of the fill.
+function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor) {
+  ctx.fillStyle = 'rgba(4,9,16,0.85)';
+  roundRect(ctx, x, y, w, h, h / 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
+  roundRect(ctx, x, y, w, h, h / 2); ctx.stroke();
+  const fw = Math.max(0, Math.min(1, pct)) * (w - 2);
+  if (fw > 1) {
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, c0); g.addColorStop(1, c1);
+    ctx.fillStyle = g;
+    roundRect(ctx, x + 1, y + 1, fw, h - 2, (h - 2) / 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    roundRect(ctx, x + 1, y + 1, fw, (h - 2) / 2, (h - 2) / 2); ctx.fill();
+  }
+  if (label) {
+    ctx.font = `bold ${Math.round(h * 0.62)}px system-ui, -apple-system, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillText(label, x + w / 2, y + h / 2 + 1.2);
+    ctx.fillStyle = labelColor || 'rgba(233,244,255,0.92)';
+    ctx.fillText(label, x + w / 2, y + h / 2);
+  }
+}
+
+// Header numbers are read at a glance, not counted — 5.5B of gold in full is
+// noise on a 60px chip. Anything under 10k keeps its exact value.
+function _hudNum(v) {
+  const n = Number(v) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e4) return (n / 1e3).toFixed(1) + 'K';
+  if (n >= 100 || Number.isInteger(n)) return String(Math.floor(n));
+  return n.toFixed(2);
+}
+
+// ─────────────────────────────────────────────────────────
+//  UNIFIED HEADER  (player plate + floating minimap)
+// ─────────────────────────────────────────────────────────
+// The minimap is its own plate to the right of the player one and hangs
+// below the header band, over the world — which is why the HUD's right-hand
+// button column starts underneath it (_positionHudMenuBtn below).
+function hudMiniMapRect() {
+  const w = Math.round(Math.min(96, W * 0.26));
+  return { x: W - w - 8, y: 4, w, h: HUD_PLATE_H };
+}
+
+function drawMiniMapPanel() {
   const p = player;
-  const F = 'system-ui, -apple-system, sans-serif';
-  const LAY = hdrLayout();
-  const hasArt = (typeof hudImg === 'function') && !!hudImg('A1_stat_panel');
-  // Тело панели НЕПРОЗРАЧНОЕ, сквозные в ней только гнёзда. Значит слоёв
-  // два, и перепутать их нельзя:
-  //   в гнездо (портрет, заливка полос, карта, иконки валют) — ДО панели,
-  //     чтобы золотая кромка отверстия осталась сверху;
-  //   на поверхность (имя, класс, числа на полосах, числа балансов,
-  //     уровень) — ПОСЛЕ, иначе текст уедет под металл и исчезнет совсем.
-  // Первый заход рисовал всё до панели, и на снимке пропали ник и все четыре
-  // баланса: гнёзда были заполнены верно, а поверхность пуста.
-  // over() копит замыкания и проигрывается одним куском после панели. Каждое
-  // само задаёт себе шрифт и цвет: к моменту вызова состояние ctx уже чужое.
-  const _over = [];
-  const over = fn => _over.push(fn);
-
-  ctx.save();
-
-  // ── Background (cached gradient — same every frame) ───────
-  if (!_hdrBgGrad || _hdrGradW !== W) {
-    _hdrGradW = W;
-    _hpGradGreen = null; // invalidate dependent bar gradients
-    _avBgGrad = null;    // also invalidate avatar bg on resize
-    _hdrNameW = 0;       // force measureText recompute (infoW changes with W)
-    _hdrBgGrad = ctx.createLinearGradient(0, 0, 0, HEADER_H);
-    _hdrBgGrad.addColorStop(0, 'rgba(24,18,9,0.98)');
-    _hdrBgGrad.addColorStop(1, 'rgba(13,10,4,0.99)');
-    _hdrSepGrad = ctx.createLinearGradient(0, 0, W, 0);
-    _hdrSepGrad.addColorStop(0,   'rgba(119,92,46,0)');
-    _hdrSepGrad.addColorStop(0.15,'rgba(170,133,70,0.75)');
-    _hdrSepGrad.addColorStop(0.85,'rgba(170,133,70,0.75)');
-    _hdrSepGrad.addColorStop(1,   'rgba(119,92,46,0)');
-  }
-  // Сплошная плашка во всю ширину — только в запасном виде. С ассетами шапка
-  // это ТРИ отдельные панели, и между ними должен быть виден мир: заливка
-  // поперёк экрана съедает полосу игрового поля ни за чем и выдаёт то, что
-  // панели просто положены на прямоугольник.
-  if (!hasArt) {
-    ctx.fillStyle = _hdrBgGrad;
-    ctx.fillRect(0, 0, W, HEADER_H);
-    ctx.strokeStyle = _hdrSepGrad; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(0, HEADER_H - 0.5); ctx.lineTo(W, HEADER_H - 0.5); ctx.stroke();
-  }
-
-  // Панель статов и рамка карты — до всего, что в них ложится.
-  // Одна панель на всю шапку. Рисуется ПОСЛЕ содержимого — ниже, у самого
-  // конца drawHeader, — потому что у неё сквозные гнёзда: портрет, полосы,
-  // валюты и карта ложатся ПОД неё, и золотая окантовка каждого отверстия
-  // остаётся сверху. Здесь только запасной путь на случай, если G2 не
-  // доехал: три отдельных блока, как было.
-  if (hasArt && !LAY.one) {
-    if (!hudDraw(ctx, 'F1_character_stat_panel_opaque', LAY.panel.x + LAY.panel.w / 2,
-        LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h)) {
-      hudDraw(ctx, 'A1_stat_panel', LAY.panel.x + LAY.panel.w / 2,
-        LAY.panel.y + LAY.panel.h / 2, LAY.panel.w, LAY.panel.h);
-    }
-    if (!hudDraw(ctx, 'F2_map_panel_opaque', LAY.map.x + LAY.map.w / 2,
-        LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h)) {
-      hudDraw(ctx, 'A2_map_panel', LAY.map.x + LAY.map.w / 2,
-        LAY.map.y + LAY.map.h / 2, LAY.map.w, LAY.map.h);
-    }
-  } else if (hasArt) {
-    // Фон под гнёздами: они сквозные, а мир за ними просвечивать не должен.
-    ctx.fillStyle = 'rgba(11,9,14,0.97)';
-    roundRect(ctx, LAY.panel.x, LAY.panel.y, LAY.panel.w, LAY.panel.h, 10);
-    ctx.fill();
-  }
-
-  // ── Minimap (right side) ──────────────────────────────────
-  // Local window only — shows just the area around the player instead of
-  // the whole (huge) world. The window follows the player continuously
-  // (float-precision top-left, not tile-snapped) and is small enough
-  // (~60×60 tiles) to redraw from scratch every frame with no cache needed.
-  const _MM_RADIUS = 30; // tiles each direction from the player
-  // Карта садится в ОКНО рамки A2 — измеренное отверстие, а не выдуманный
-  // отступ: 0.8773 × 0.8027 её размера, центр на 0.4996 × 0.5268.
-  const mmPad = 6;
-  let mmH, mmW, mmX, mmY;
-  if (LAY.one) {
-    // По БОЛЬШЕЙ стороне отверстия, а не по меньшей. Гнездо у G2 не круглое,
-    // 100 × 108: круг по меньшей стороне не доставал до верхней и нижней
-    // кромки, и в эти четыре пикселя было видно подземелье за панелью.
-    // Лишнее обрежет сама панель — она рисуется сверху, ради этого и
-    // разделены слои.
-    mmW = mmH = Math.round(Math.max(LAY.map.w, LAY.map.h) + 4);
-    mmX = Math.round(LAY.map.cx - mmW / 2);
-    mmY = Math.round(LAY.map.cy - mmH / 2);
-  } else if (hasArt) {
-    const win = Math.min(LAY.map.w * 0.86, LAY.map.h * 0.78);
-    mmW = mmH = Math.round(win);
-    mmX = Math.round(LAY.map.x + LAY.map.w * 0.4996 - mmW / 2);
-    mmY = Math.round(LAY.map.y + LAY.map.h * 0.5268 - mmH / 2);
-  } else {
-    mmH = HEADER_H - mmPad * 2;
-    mmW = mmH;
-    mmX = W - mmW - mmPad - 4;
-    mmY = mmPad;
-  }
+  const mp = hudMiniMapRect();
+  const _MM_RADIUS = 30;                       // tiles each direction from the player
+  const mmX = mp.x + 3, mmY = mp.y + 3, mmW = mp.w - 6, mmH = mp.h - 6;
   const mmSc = mmW / (_MM_RADIUS * 2);
   const th = getTheme(dungeonLvl);
-  const winTx = p.x / TILE - _MM_RADIUS, winTy = p.y / TILE - _MM_RADIUS;
+  // The window is only as square as the plate is: the player stays at its
+  // centre either way, so the vertical span is measured off mmH rather than
+  // assumed equal to the horizontal one.
+  const winTilesX = mmW / mmSc, winTilesY = mmH / mmSc;
+  const winTx = p.x / TILE - winTilesX / 2, winTy = p.y / TILE - winTilesY / 2;
 
-  // Map panel border (circular)
-  const mmCx = mmX + mmW / 2, mmCy = mmY + mmH / 2;
-  const mpX = mmX - 4; // left-edge reference used by the header divider/info-area layout below
-  ctx.fillStyle = 'rgba(15,11,4,0.92)';
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(143,111,57,0.6)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2 + 4, 0, Math.PI * 2); ctx.stroke();
+  _hudPanel(mp.x, mp.y, mp.w, mp.h, 11);
 
-  // Clip, draw tiles and blips
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.beginPath(); ctx.arc(mmCx, mmCy, mmW / 2, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = '#070604'; ctx.fillRect(mmX, mmY, mmW, mmH);
+  roundRect(ctx, mmX, mmY, mmW, mmH, 8); ctx.clip();
+  ctx.fillStyle = '#060b12'; ctx.fillRect(mmX, mmY, mmW, mmH);
 
   // The floor pattern only actually changes when the player crosses into a
   // new tile — this window's origin is float-precision but the underlying
@@ -2645,17 +2574,18 @@ function drawHeader() {
   const _mmTileFx = Math.floor(winTx), _mmTileFy = Math.floor(winTy);
   if (!_mmTileCv || _mmTileCvTx !== _mmTileFx || _mmTileCvTy !== _mmTileFy || _mmTileCvSc !== mmSc || _mmTileCvTheme !== th.mmFloor) {
     _mmTileCvTx = _mmTileFx; _mmTileCvTy = _mmTileFy; _mmTileCvSc = mmSc; _mmTileCvTheme = th.mmFloor;
-    const bufTiles = _MM_RADIUS * 2 + _MM_MARGIN * 2 + 2;
-    const bufPx = Math.ceil(bufTiles * mmSc);
+    const bufTilesX = Math.ceil(winTilesX) + _MM_MARGIN * 2 + 2;
+    const bufTilesY = Math.ceil(winTilesY) + _MM_MARGIN * 2 + 2;
+    const bufPxX = Math.ceil(bufTilesX * mmSc), bufPxY = Math.ceil(bufTilesY * mmSc);
     if (!_mmTileCv) _mmTileCv = document.createElement('canvas');
-    if (_mmTileCv.width !== bufPx || _mmTileCv.height !== bufPx) { _mmTileCv.width = bufPx; _mmTileCv.height = bufPx; }
+    if (_mmTileCv.width !== bufPxX || _mmTileCv.height !== bufPxY) { _mmTileCv.width = bufPxX; _mmTileCv.height = bufPxY; }
     const mctx = _mmTileCv.getContext('2d');
-    mctx.clearRect(0, 0, bufPx, bufPx);
+    mctx.clearRect(0, 0, bufPxX, bufPxY);
     mctx.fillStyle = th.mmFloor;
     mctx.beginPath();
     const bufTx0 = _mmTileFx - _MM_MARGIN, bufTy0 = _mmTileFy - _MM_MARGIN;
-    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTiles - 1);
-    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTiles - 1);
+    const tx0 = Math.max(0, bufTx0), tx1 = Math.min(dungeon.w - 1, bufTx0 + bufTilesX - 1);
+    const ty0 = Math.max(0, bufTy0), ty1 = Math.min(dungeon.h - 1, bufTy0 + bufTilesY - 1);
     for (let ty = ty0; ty <= ty1; ty++) {
       const row = dungeon.grid[ty];
       for (let tx = tx0; tx <= tx1; tx++) {
@@ -2667,9 +2597,13 @@ function drawHeader() {
   }
   const _mmBlitX = mmX - (winTx - (_mmTileCvTx - _MM_MARGIN)) * mmSc;
   const _mmBlitY = mmY - (winTy - (_mmTileCvTy - _MM_MARGIN)) * mmSc;
+  // Half strength: each location's own floor colour still identifies where you
+  // are, but at full opacity it shouts over the blips, which are the point.
+  ctx.globalAlpha = 0.42;
   ctx.drawImage(_mmTileCv, _mmBlitX, _mmBlitY);
+  ctx.globalAlpha = 1;
 
-  const mmEnemies = serverEnemies; // see the comment on the identical fallback in drawHeader()
+  const mmEnemies = serverEnemies;
   const _mmR = Math.max(1, mmSc * 0.8);
   ctx.fillStyle = 'rgba(233,55,76,0.9)';
   ctx.beginPath();
@@ -2689,7 +2623,7 @@ function drawHeader() {
     ctx.fillText('💀', ex, ey);
   });
   const _mmRn = Math.max(1, mmSc);
-  ctx.fillStyle = 'rgba(230,148,25,0.9)';
+  ctx.fillStyle = 'rgba(240,168,60,0.95)';
   ctx.beginPath();
   npcs.forEach(n => {
     const nx = mmX + (n.x / TILE - winTx) * mmSc, ny = mmY + (n.y / TILE - winTy) * mmSc;
@@ -2698,7 +2632,7 @@ function drawHeader() {
   ctx.fill();
   if (socket?.connected) {
     const _mmRop = Math.max(1.5, mmSc);
-    ctx.fillStyle = 'rgba(236,187,103,0.9)';
+    ctx.fillStyle = 'rgba(126,196,255,0.95)';
     ctx.beginPath();
     otherPlayers.forEach(op => {
       if (op.x == null) return;
@@ -2709,51 +2643,36 @@ function drawHeader() {
   }
   // Player is always at the window's center
   const pdx = mmX + mmW / 2, pdy = mmY + mmH / 2;
-  ctx.fillStyle = 'rgba(121,220,35,0.25)';
+  ctx.fillStyle = 'rgba(121,220,35,0.28)';
   ctx.beginPath(); ctx.arc(pdx, pdy, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#79dc23';
+  ctx.fillStyle = '#8dee46';
   ctx.beginPath(); ctx.arc(pdx, pdy, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
-  // Current room-level label (global monster level 1-80, or "Зал" in the hub)
-  const _hudRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(p.x, p.y) : null;
-  const _hudLbl = _hudRoom?.monsterLvl ? (t('levelAbbrev') + _hudRoom.monsterLvl) : t('hallShort');
-  // Подпись этажа держится за ГНЕЗДО, а не за окно карты: окно теперь шире
-  // отверстия и уходит под панель, и подпись ушла бы вместе с ним.
-  const _lblX = LAY.one ? LAY.map.cx : mmX + mmW / 2;
-  const _lblY = LAY.one ? (LAY.map.y + LAY.map.h - 8) : mmY + mmH - 3;
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.fillText(_hudLbl, _lblX + 1, _lblY + 1);
-  ctx.fillStyle = 'rgba(239,199,131,0.95)';
-  ctx.fillText(_hudLbl, _lblX, _lblY);
+  ctx.strokeStyle = HUD_FRAME_DIM; ctx.lineWidth = 1;
+  roundRect(ctx, mmX, mmY, mmW, mmH, 8); ctx.stroke();
+}
 
-  // Vertical divider — только в старой раскладке: у G2 разделитель перед
-  // картой отчеканен в самой панели, а этот проходил бы по другому месту.
-  if (!LAY.one) {
-    ctx.strokeStyle = 'rgba(120,96,55,0.3)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(mpX - 5, 5); ctx.lineTo(mpX - 5, HEADER_H - 5); ctx.stroke();
-  }
+function drawHeader() {
+  if (!player || !dungeon) return;
+  const p = player;
+  const F = 'system-ui, -apple-system, sans-serif';
 
-  // ── Avatar ────────────────────────────────────────────────
-  // Внутри панели A1, а не в углу экрана: измеренное окно панели —
-  // 0.8883 × 0.7982 её размера, и портрет садится к его левому краю.
-  // Портрет целиком внутри экрана: при выносе за левый край панели за ним
-  // уезжало и кольцо уровня, а оно снизу-слева и вылезало за нулевую
-  // координату — половина цифры просто не рисовалась.
-  // Кольцо ШИРЕ портрета: его окно — 0.7762 собственного размера, значит
-  // внешний радиус равен 1.29 радиуса портрета. Отступ считается от кольца,
-  // а не от портрета, иначе золото уезжает за нулевую координату — что и
-  // было видно как срезанный слева обод.
-  const avR = LAY.one ? Math.round(Math.min(LAY.portrait.w, LAY.portrait.h) / 2)
-    : (hasArt ? Math.round(LAY.panel.h * 0.24) : 18);
-  const avX = LAY.one ? Math.round(LAY.portrait.cx)
-    : (hasArt ? Math.round(LAY.panel.x + avR * 1.29 + 3) : 30);
-  const avY = LAY.one ? Math.round(LAY.portrait.cy)
-    : (hasArt ? Math.round(LAY.panel.y + LAY.panel.h * 0.46) : HEADER_H / 2);
+  ctx.save();
+
+  drawMiniMapPanel();
+
+  // ── Player plate ──────────────────────────────────────────
+  const mp = hudMiniMapRect();
+  const px = 6, py = 4, pw = mp.x - px - 4, ph = HUD_PLATE_H;
+  const pRight = px + pw - 11;
+  _hudPanel(px, py, pw, ph, 12);
+
+  // ── Avatar + level badge ──────────────────────────────────
+  const avR = 25, avX = px + 30, avY = py + 32;
   const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath(); ctx.arc(avX + 1, avY + 1, avR, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
   if (hasTgAvatar) {
     ctx.save();
     ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.clip();
@@ -2761,459 +2680,88 @@ function drawHeader() {
     ctx.restore();
   } else {
     if (!_avBgGrad || _avBgColor !== p.charDef.color) {
-      _avBgGrad = ctx.createRadialGradient(avX - 5, avY - 5, 2, avX, avY, avR);
-      _avBgGrad.addColorStop(0, p.charDef.color + '40');
-      _avBgGrad.addColorStop(1, 'rgba(0,0,0,0.6)');
+      _avBgGrad = ctx.createRadialGradient(avX - 6, avY - 6, 2, avX, avY, avR);
+      _avBgGrad.addColorStop(0, p.charDef.color + '55');
+      _avBgGrad.addColorStop(1, 'rgba(4,9,17,0.85)');
       _avBgColor = p.charDef.color;
     }
     ctx.fillStyle = _avBgGrad;
     ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
+    drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 26, p.charDef.color);
   }
-  // Обод по самому краю отверстия — только в старой раскладке. В гнезде
-  // единой панели он ложился вплотную под золотой рим и читался светлой
-  // каймой изнутри золота, будто оправа сделана из двух разных металлов.
-  if (!LAY.one) {
-    ctx.strokeStyle = p.charDef.color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
-  }
-  ctx.strokeStyle = p.charDef.color + '33'; ctx.lineWidth = 5;
-  // У гнезда единой панели свой золотой рим, и цветной обод класса впритык
-  // к нему читался вторым кольцом — светлой каймой поверх золота. Внутри
-  // отверстия он не нужен: рамку рисует сама панель.
-  if (!LAY.one) { ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke(); }
-  // Глиф по размеру гнезда, а не фиксированные 20 px: в отверстии на 70 px
-  // он занимал меньше трети и висел в пустоте.
-  if (!hasTgAvatar) {
-    drawIconCtx(ctx, p.charDef.icon, avX, avY + 1,
-      LAY.one ? Math.round(avR * 1.1) : 20, p.charDef.color);
-  }
-  if (hasArt) {
-    // Кольцо B1 — только в раскладке из трёх блоков. У единой панели гнездо
-    // портрета уже обрамлено ею самой, и второй обод внутри первого читался
-    // бы как недорисованная рамка.
-    if (!LAY.one) hudDraw(ctx, 'B1_portrait_ring', avX, avY, avR * 2.62, avR * 2.62);
-    // Уровень — в своё кольцо, снизу слева от портрета, как на макете.
-    // Кольцо садится НА край гнезда, то есть наполовину на металл панели,
-    // и потому рисуется после неё: под панелью от него оставалась одна
-    // обрезанная дуга внутри отверстия.
-    const lvR = Math.round(avR * (LAY.one ? 0.52 : 0.62));
-    const lvX = avX - avR * 0.72, lvY = avY + avR * 0.82;
-    const lvTxt = String(p.lvl);
-    const drawLv = () => {
-      ctx.fillStyle = 'rgba(12,9,16,0.94)';
-      ctx.beginPath(); ctx.arc(lvX, lvY, lvR * 0.9, 0, Math.PI * 2); ctx.fill();
-      hudDraw(ctx, 'B2_level_badge_ring', lvX, lvY, lvR * 2.3, lvR * 2.3);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      // Кегль сжимается под длину числа: на 1000 уровне четыре знака при
-      // прежнем размере вылезали за кольцо в обе стороны.
-      const lvFit = lvR * 1.5 / Math.max(1.6, lvTxt.length * 0.62);
-      ctx.font = `bold ${Math.max(7, Math.round(Math.min(lvR * 0.9, lvFit)))}px ${F}`;
-      ctx.fillStyle = '#f4d8a7';
-      ctx.fillText(lvTxt, lvX, lvY);
-      ctx.textBaseline = 'alphabetic';
-    };
-    if (LAY.one) over(drawLv); else drawLv();
-  }
+  ctx.strokeStyle = 'rgba(122,196,255,0.85)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = p.charDef.color + '55'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(avX, avY, avR + 3, 0, Math.PI * 2); ctx.stroke();
 
-  // ── Info area ─────────────────────────────────────────────
-  // Сдвиг вниз, а не переписывание всех координат строк: их тут полтора
-  // десятка, и каждая правка на глаз — шанс промахнуться на пиксель в
-  // одной из них. Блок целиком уезжает внутрь панели одним translate.
-  // Полоса под имя и полосы HP/XP лежат в одном столбце: их левый край —
-  // левый край гнезда HP, правый — его правый край. Раньше это считалось от
-  // портрета и от края панели, то есть от двух разных вещей, и имя стояло
-  // не над полосами, а рядом.
-  const infoX = LAY.one ? Math.round(LAY.hp.x)
-    : (hasArt ? avX + avR + 12 : avX + avR + 9);
-  const infoRight = LAY.one ? Math.round(LAY.hp.x + LAY.hp.w)
-    : (hasArt ? (LAY.panel.x + LAY.panel.w - 14) : (mpX - 10));
-  const infoW = infoRight - infoX;
-  const _infoDY = LAY.one ? 0 : (hasArt ? Math.round(LAY.panel.y + LAY.panel.h * 0.14) : 0);
-  ctx.save();
-  if (_infoDY) ctx.translate(0, _infoDY);
+  const lbR = 11, lbX = avX - 14, lbY = avY + avR - 2;
+  ctx.fillStyle = 'rgba(9,18,31,0.96)';
+  ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(240,196,110,0.9)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.stroke();
+  ctx.font = `bold 11px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f4d9a4';
+  ctx.fillText(p.lvl, lbX, lbY + 0.5);
 
-  // Row 1: Name + Level
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left'; ctx.font = `bold 13px ${F}`; ctx.fillStyle = '#f4d8a7';
-  if (LAY.one) {
-    // Имя занимает верхнюю полосу панели и НЕ выходит за неё: обрезается по
-    // ИЗМЕРЕННОЙ ширине, а не по числу знаков. Число знаков врёт — «ЩЩЩЩЩ»
-    // и «iiiii» занимают разное место, и на длинном нике буквы вылезали за
-    // золотую кромку.
-    // Полоса под имя у G2 — не отверстие, а утопленная площадка на самой
-    // панели: конвейер её и не нашёл, он искал сквозное. Значит имя ложится
-    // ПОВЕРХ панели, иначе его закрывает металл.
-    const nameY = LAY.panel.y + LAY.panel.h * 0.192;
-    over(() => {
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.font = `bold 13px ${F}`;
-      let nm = String(netUsername || p.charDef.name);
-      // Обрезка по ИЗМЕРЕННОЙ ширине, а не по числу знаков: «ЩЩЩЩЩ» и
-      // «iiiii» занимают разное место, и на длинном нике буквы вылезали за
-      // золотую кромку площадки. Место под класс вычитается заранее — он
-      // печатается справа в той же полосе и переменной длины.
-      ctx.save();
-      ctx.font = `10px ${F}`;
-      const clsW = 4 + ctx.measureText(_ellipsis(p.charDef.name, 12)).width;
-      ctx.restore();
-      ctx.font = `bold 13px ${F}`;
-      const maxW = infoW - 16 - clsW;
-      if (ctx.measureText(nm).width > maxW) {
-        while (nm.length > 1 && ctx.measureText(nm + '…').width > maxW) nm = nm.slice(0, -1);
-        nm += '…';
-      }
-      // Что вышло на экран, а не что задумывалось. Проверка читает эту
-      // запись и сравнивает с полосой; пересчитывать те же формулы у себя
-      // она не может — это подтвердило бы её собственную память, а не
-      // картинку. Отсюда же видно в консоли, чем кончилась обрезка, если
-      // ник однажды всё-таки вылезет.
-      // limit берётся из ГЕОМЕТРИИ полосы — её правого края и места под
-      // класс, — а не из maxW. Через maxW он был бы выведен из той самой
-      // величины, которую проверка и проверяет: сняв обрезку, я получил
-      // зелёную галочку на нике, вылезшем за панель на всю длину.
-      _hdrDrawnName = {
-        text: nm, w: ctx.measureText(nm).width,
-        x: infoX + 8, limit: infoRight - 8 - clsW,
-      };
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(nm, infoX + 9, nameY + 1);
-      ctx.fillStyle = '#f4d8a7';
-      ctx.fillText(nm, infoX + 8, nameY);
-      // Класс — справа в той же полосе: место есть, а отдельной строки под
-      // него в панели нет.
-      ctx.font = `10px ${F}`;
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(_ellipsis(p.charDef.name, 12), infoRight - 7, nameY + 1);
-      ctx.fillStyle = p.charDef.color + 'ee';
-      ctx.fillText(_ellipsis(p.charDef.name, 12), infoRight - 8, nameY);
-    });
-  } else {
-  ctx.fillText(_ellipsis(netUsername || p.charDef.name, 13), infoX, 15);
-  }
-  if (!hasArt) {
-    ctx.textAlign = 'right'; ctx.font = `bold 11px ${F}`; ctx.fillStyle = 'rgba(241,206,144,0.95)';
-    ctx.fillText(t('levelAbbrev') + p.lvl, infoRight, 15);
-  }
+  // ── Name + class ──────────────────────────────────────────
+  const infoX = avX + avR + 12;
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  ctx.font = `bold 14px ${F}`; ctx.fillStyle = HUD_TEXT;
+  ctx.fillText((netUsername || p.charDef.name).slice(0, 14), infoX, py + 20);
+  ctx.font = `11px ${F}`; ctx.fillStyle = p.charDef.color + 'e0';
+  ctx.fillText(p.charDef.name, infoX, py + 35);
+  // БМ (battle might) reads as part of the class line — "Танк БМ 3150" — not
+  // as a currency, so it sits here rather than in the chip row below.
+  const bmX = infoX + ctx.measureText(p.charDef.name).width + 8;
+  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(240,196,110,0.8)';
+  ctx.fillText(t('bmAbbrev'), bmX, py + 35);
+  const bmLblW = ctx.measureText(t('bmAbbrev')).width;
+  ctx.font = `bold 11px ${F}`; ctx.fillStyle = '#f0c46e';
+  ctx.fillText(_hudNum(typeof calcBM === 'function' ? calcBM(p) : 0), bmX + bmLblW + 4, py + 35);
 
-  // Row 2: Class name + inline stats (gold / atk / def)
-  ctx.textAlign = 'left'; ctx.font = `10px ${F}`; ctx.fillStyle = p.charDef.color + 'cc';
-  if (!LAY.one) ctx.fillText(p.charDef.name, infoX, 27);
-  if (!_hdrNameW || _hdrNameStr !== p.charDef.name) {
-    _hdrNameStr = p.charDef.name;
-    _hdrNameW = ctx.measureText(p.charDef.name).width;
-  }
-  ctx.textBaseline = 'middle';
-  // БМ уехал в столбец плашек четвёртой строкой. Здесь он печатался справа
-  // от названия класса, то есть от строки ПЕРЕМЕННОЙ длины: у «Целителя»
-  // он влезал, у класса подлиннее — вылезал за панель. Место, которое
-  // зависит от чужого текста, рано или поздно кончается.
-  if (!hasArt) {
-    const bmVal = typeof calcBM === 'function' ? calcBM(p) : 0;
-    const stxH = infoX + _hdrNameW + 10;
-    ctx.font = `bold 9px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = '#eaa742';
-    ctx.fillText(t('bmAbbrev'), stxH, 24);
-    const _bmLabelW = ctx.measureText(t('bmAbbrev')).width;
-    ctx.font = `bold 10px ${F}`; ctx.fillStyle = '#eaa742';
-    ctx.fillText(bmVal, stxH + _bmLabelW + 3, 24);
-  }
-  ctx.textBaseline = 'alphabetic';
-
-  // Separator — прежняя шапка чертила его на 32-м пикселе. У единой панели
-  // на этой высоте проходит гнездо полосы HP, и линия ложилась прямо на неё.
-  if (!LAY.one) {
-    ctx.strokeStyle = 'rgba(109,88,51,0.4)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(infoX, 32); ctx.lineTo(infoRight, 32); ctx.stroke();
-  }
-
-  // ── HP bar ────────────────────────────────────────────────
-  // 7, а не 9: жёлоб E10 рисуется поверх заливки и добавляет к ней свою
-  // кромку, так что видимая толщина полосы — это hbH плюс оправа. На
-  // девяти она выходила толще, чем имя над ней.
-  // Внутрь измеренного гнезда, с запасом в пиксель по краям: заливка
-  // ложится ПОД панель, и вылезти за кромку она не может, но и упираться
-  // в неё изнутри незачем.
-  const hpY = LAY.one ? Math.round(LAY.hp.cy) : 42;
-  const hbH = LAY.one ? Math.max(4, Math.round(LAY.hp.h - 4)) : 7;
-  const hpPct = Math.max(0, Math.min(1, p.hp / p.maxHp));
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(238,101,117,0.95)';
-  if (!LAY.one) ctx.fillText('HP', infoX, hpY);
-
-  // Внутрь измеренного гнезда, с запасом в два пикселя: заливка ложится ПОД
-  // панель, вылезти за кромку она не может, но и упираться в неё изнутри
-  // незачем. Подпись «HP» при единой панели не рисуется — на неё в гнезде
-  // места нет, а цвет полосы и так говорит, какая из двух какая.
-  const hbX = LAY.one ? Math.round(LAY.hp.x + 2) : infoX + 22;
-  const hbW = LAY.one ? Math.round(LAY.hp.w - 4) : infoW - 22;
-  ctx.fillStyle = 'rgba(33,12,14,0.92)';
-  roundRect(ctx, hbX, hpY - hbH / 2, hbW, hbH, 4); ctx.fill();
-  if (hpPct > 0) {
-    // Cache horizontal HP gradients — only depend on bar X/W, not HP amount
-    if (!_hpGradGreen || _hdrGradW !== W) {
-      _hpGradGreen  = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradGreen.addColorStop(0, '#335118'); _hpGradGreen.addColorStop(1, '#79b644');
-      _hpGradOrange = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradOrange.addColorStop(0, '#6e470c'); _hpGradOrange.addColorStop(1, '#e59620');
-      _hpGradRed    = ctx.createLinearGradient(hbX, 0, hbX + hbW, 0);
-      _hpGradRed.addColorStop(0, '#64161f'); _hpGradRed.addColorStop(1, '#da4658');
-      _hpShineGrad  = ctx.createLinearGradient(0, hpY - hbH / 2, 0, hpY);
-      _hpShineGrad.addColorStop(0, 'rgba(209,204,197,0.2)'); _hpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
-    }
-    ctx.fillStyle = hpPct > 0.5 ? _hpGradGreen : hpPct > 0.25 ? _hpGradOrange : _hpGradRed;
-    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.fill();
-    ctx.fillStyle = _hpShineGrad;
-    roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH * 0.5, 4); ctx.fill();
-    if (hpPct < 0.3) {
-      ctx.strokeStyle = 'rgba(218,70,88,0.6)'; ctx.lineWidth = 1.5;
-      roundRect(ctx, hbX, hpY - hbH / 2, hbW * hpPct, hbH, 4); ctx.stroke();
-    }
-  }
-  // Жёлоб ПОВЕРХ заливки — порядок слоёв из гайда ко второй партии: у E10
-  // сквозной центр, и цветная полоса ложится под него. Наоборот оправа
-  // просто скроется под заливкой и её не будет видно вовсе.
-  // Жёлоб E10 — только в старой раскладке: у гнезда единой панели своя
-  // оправа, и второй жёлоб внутри неё читается как двойная рамка.
-  if (hasArt && !LAY.one) hudDrawW(ctx, 'E10_bar_track_hollow', hbX + hbW / 2, hpY, hbW + 5);
-  // Сокращённые числа: 12973/22052 ещё влезает, а 2.6e+142 у опыта — нет,
-  // и раньше оно наезжало на собственную подпись «XP».
-  const _hpTxt = _fmtCur(Math.ceil(p.hp)) + '/' + _fmtCur(p.maxHp);
-  if (LAY.one) {
-    over(() => {
-      ctx.font = `bold ${Math.max(8, Math.round(hbH * 0.86))}px ${F}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillText(_hpTxt, hbX + hbW / 2 + 1, hpY + 1);
-      ctx.fillStyle = 'rgba(233,228,220,0.96)';
-      ctx.fillText(_hpTxt, hbX + hbW / 2, hpY);
-    });
-  } else {
-    ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(209,204,197,0.9)';
-    ctx.fillText(_hpTxt, hbX + hbW / 2, hpY);
-  }
-
-  // ── XP bar ────────────────────────────────────────────────
-  // Прежние 55 и 5 остались от старой шапки: при единой панели заливка
-  // уезжала на поверхность выше собственного гнезда, и нижняя капсула
-  // стояла пустой.
-  const xpY = LAY.one ? Math.round(LAY.xp.cy) : 55;
-  const xbH = LAY.one ? Math.max(3, Math.round(LAY.xp.h - 4)) : 5;
-  const xpPct = Math.min(1, p.xp / p.xpNext);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.font = `bold 9px ${F}`; ctx.fillStyle = 'rgba(237,190,110,0.9)';
-  if (!LAY.one) ctx.fillText('XP', infoX, xpY);
-
-  const xbX = LAY.one ? Math.round(LAY.xp.x + 2) : infoX + 22;
-  const xbW = LAY.one ? Math.round(LAY.xp.w - 4) : infoW - 22;
-  ctx.fillStyle = 'rgba(23,17,8,0.9)';
-  roundRect(ctx, xbX, xpY - xbH / 2, xbW, xbH, 3); ctx.fill();
-  if (xpPct > 0) {
-    if (!_xpGrad || _hdrGradW !== W) {
-      _xpGrad = ctx.createLinearGradient(xbX, 0, xbX + xbW, 0);
-      _xpGrad.addColorStop(0, '#523c17'); _xpGrad.addColorStop(1, '#eab457');
-      _xpShineGrad = ctx.createLinearGradient(0, xpY - xbH / 2, 0, xpY);
-      _xpShineGrad.addColorStop(0, 'rgba(209,204,197,0.16)'); _xpShineGrad.addColorStop(1, 'rgba(209,204,197,0)');
-    }
-    ctx.fillStyle = _xpGrad;
-    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH, 3); ctx.fill();
-    ctx.fillStyle = _xpShineGrad;
-    roundRect(ctx, xbX, xpY - xbH / 2, xbW * xpPct, xbH * 0.5, 3); ctx.fill();
-  }
-  if (hasArt && !LAY.one) hudDrawW(ctx, 'E10_bar_track_hollow', xbX + xbW / 2, xpY, xbW + 5);
+  // ── HP / XP ───────────────────────────────────────────────
+  const barX = infoX, barW = pRight - infoX;
+  _hudBar(barX, py + 42, barW, 12,
+    p.maxHp ? p.hp / p.maxHp : 0,
+    '#2f7a2a', '#5fd45a',
+    Math.ceil(p.hp) + ' / ' + p.maxHp);
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
-  // that into "858.9999999999418" on the bar. The stored value keeps its
-  // precision — only the display is whole.
-  const _xpTxt = _fmtCur(Math.floor(p.xp)) + '/' + _fmtCur(p.xpNext);
-  if (LAY.one) {
-    over(() => {
-      ctx.font = `bold ${Math.max(8, Math.round(xbH * 0.9))}px ${F}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillText(_xpTxt, xbX + xbW / 2 + 1, xpY + 1);
-      ctx.fillStyle = 'rgba(244,214,155,0.95)';
-      ctx.fillText(_xpTxt, xbX + xbW / 2, xpY);
-    });
-  } else {
-    ctx.font = `8px ${F}`; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(241,204,141,0.7)';
-    ctx.fillText(_xpTxt, xbX + xbW / 2, xpY);
-  }
+  // that into "858.9999999999418" on the bar.
+  _hudBar(barX, py + 58, barW, 10,
+    p.xpNext ? p.xp / p.xpNext : 0,
+    '#8a5a12', '#f0a63c',
+    _hudNum(Math.floor(p.xp)) + ' / ' + _hudNum(p.xpNext));
 
-  // Конец сдвинутого блока: дальше снова экранные координаты.
-  ctx.restore();
-
-  // ── валютные плашки ─────────────────────────────────────────────────────
-  // Три штуки столбиком между панелью и картой — как на макете. Раньше это
-  // была строка текста внутри панели статов, и на длинных числах она
-  // упиралась в миникарту: GRAM печатается с семью знаками после точки.
-  if (LAY.one) {
-    // Четыре гнезда единой панели. Иконка садится В гнездо, число — на
-    // чистую поверхность справа от него, до следующего гнезда. Никаких
-    // плашек: оправа у каждого гнезда своя, в самой панели.
-    const rows = _hdrCurrencies(p);
-    for (let i = 0; i < rows.length && i < LAY.cur.length; i++) {
-      const sl = LAY.cur[i];
-      const d = Math.min(sl.w, sl.h);
-      // Крупнее отверстия: рим гнезда обрежет лишнее, и иконка заполнит его
-      // целиком вместо того чтобы болтаться внутри с полем по кругу. Для
-      // невписывающихся в круг иконок ряд задаёт свой fit.
-      const fit = rows[i].fit || 1.5;
-      if (rows[i].img) {
-        // Обычный файл из /images, с небольшим запасом. Обе монеты —
-        // подробные рисунки 250-320 px с тёмной каймой по краю, и в гнезде на
-        // 21 px кайма съедала половину диаметра: Liberty читалась тёмным
-        // пятном. 1.18 отдаёт кайму под золотой рим гнезда, который и так
-        // обрежет лишнее, и оставляет на виду сам знак.
-        const im = _getPotImg(rows[i].img);
-        if (im && im.complete && im.naturalWidth > 0) {
-          const g = d * 1.18;
-          const k = Math.min(g / im.naturalWidth, g / im.naturalHeight);
-          const w = im.naturalWidth * k, h = im.naturalHeight * k;
-          ctx.drawImage(im, sl.cx - w / 2, sl.cy - h / 2, w, h);
-        }
-      } else {
-        hudDraw(ctx, rows[i].icon, sl.cx, sl.cy, d * fit, d * fit);
-      }
-      // Поле числа — от края гнезда до следующего гнезда, а на последнем до
-      // вертикального разделителя перед картой.
-      // Число ложится на чистую ПОВЕРХНОСТЬ справа от гнезда, а не в него,
-      // значит рисуется после панели.
-      const next = LAY.cur[i + 1];
-      const right = next ? next.x - 5 : LAY.map.x - 14;
-      const tx = sl.x + sl.w + 5;
-      const val = rows[i].val, col = rows[i].color, cy = sl.cy;
-      over(() => {
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = `bold ${Math.max(9, Math.round(d * 0.66))}px ${F}`;
-        let v = val;
-        const room = right - tx;
-        // Обрезка не «в никуда»: если число не влезло, вместо последнего
-        // знака ставится многоточие. Иначе 12345 превращается в 1234 и
-        // читается как настоящий баланс.
-        if (ctx.measureText(v).width > room) {
-          while (v.length > 1 && ctx.measureText(v + '…').width > room) v = v.slice(0, -1);
-          v += '…';
-        }
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        ctx.fillText(v, tx + 1, cy + 1);
-        ctx.fillStyle = col;
-        ctx.fillText(v, tx, cy);
-      });
-    }
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  } else if (hasArt) {
-    // Сеткой 2×2 — раскладка из трёх блоков.
-    const CUR_COLS = 2, CUR_GAP = 4;
-    const cw = Math.floor((LAY.cur.w - CUR_GAP) / CUR_COLS);
-    const chh = hudHeightAt('B3_currency_plate', cw);
-    const rows = _hdrCurrencies(p);
-    const CUR_ROWS = Math.ceil(rows.length / CUR_COLS);
-    const gap = Math.max(2, Math.round((LAY.cur.h - chh * CUR_ROWS) / (CUR_ROWS + 1)));
-    for (let i = 0; i < rows.length; i++) {
-      const col = i % CUR_COLS, row = Math.floor(i / CUR_COLS);
-      const cy = LAY.cur.y + gap + chh / 2 + row * (chh + gap);
-      const cx = LAY.cur.x + cw / 2 + col * (cw + CUR_GAP);
-      if (!hudDrawW(ctx, 'F3_currency_plate_opaque', cx, cy, cw)) {
-        hudDrawW(ctx, 'B3_currency_plate', cx, cy, cw);
-      }
-      // Гнездо иконки и поле числа — измеренные отверстия плашки:
-      // 0.1631 и 0.6322 её ширины.
-      // 0.86 вместо 0.62: гнездо под иконку в плашке — 0.19 её ширины, и
-      // иконка в 0.62 высоты болталась в нём с полем со всех сторон.
-      const plateL = cx - cw / 2;
-      hudDraw(ctx, rows[i].icon, plateL + cw * 0.1631, cy, chh * 0.86, chh * 0.86);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = `bold ${Math.max(8, Math.round(chh * 0.42))}px ${F}`;
-      ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(rows[i].val, plateL + cw * 0.6322, cy + 1);
-      ctx.fillStyle = rows[i].color;
-      ctx.fillText(rows[i].val, plateL + cw * 0.6322, cy);
-    }
-    ctx.textBaseline = 'alphabetic';
-  }
-
-  // ── панель ПОВЕРХ всего, что в неё легло ────────────────────────────────
-  // У G2 сквозные гнёзда: портрет, две полосы, четыре кружка валют и окно
-  // карты. Всё это нарисовано выше, панель ложится сверху, и золотая
-  // окантовка каждого отверстия остаётся над содержимым — ровно так гнездо
-  // и читается вырезанным в металле, а не заклеенным.
-  if (LAY.one) {
-    hudDraw(ctx, 'G2_wide_header_with_map',
-      LAY.panel.x + LAY.panel.w / 2, LAY.panel.y + LAY.panel.h / 2,
-      LAY.panel.w, LAY.panel.h);
-  }
-
-  // ── всё, что лежит НА панели, а не в её гнёздах ─────────────────────────
-  for (let i = 0; i < _over.length; i++) {
-    ctx.save();
-    _over[i]();
-    ctx.restore();
-  }
-
-  ctx.restore();
-}
-
-// Числа валют в шапке. Без сокращения GRAM печатался как 914.3503811 и
-// вылезал за плашку — а плашка узкая, потому что их три и между двумя
-// панелями.
-// Обрезка с многоточием. Просто slice даёт «AnonimMrBea» — строку, которая
-// выглядит настоящим именем и ничем не сообщает, что она укорочена.
-function _ellipsis(s, max) {
-  const str = String(s == null ? '' : s);
-  return str.length > max ? str.slice(0, max - 1) + '…' : str;
-}
-
-// Четыре числа шапки: три валюты и боевая мощь. Один список на обе
-// раскладки — единую панель и запасную из трёх блоков, — потому что порядок
-// и цвета у них обязаны совпадать: игрок запоминает, что фиолетовое это
-// GRAM, а не «второе слева».
-//
-// БМ — не валюта, но ведёт себя как она: одно число, которое растёт и на
-// которое смотрят. В строке класса оно упиралось в край панели, потому что
-// стояло справа от текста ПЕРЕМЕННОЙ длины.
-// Последний нарисованный ник: текст после обрезки и его измеренная ширина.
-// Пишется в drawHeader, читается render-check'ом.
-let _hdrDrawnName = null;
-
-function _hdrCurrencies(p) {
-  return [
-    { icon: 'C12_gold_coin',    color: '#f0c98a', val: _fmtCur(Math.floor(p.gold)) },
-    // Свои монеты, а не самоцветы из комплекта HUD. C13/C14 — аметист и рубин:
-    // красивые, но это не GRAM и не Liberty, и в шапке они читались как «какие-то
-    // кристаллы». У обеих валют есть собственный знак, и он должен быть тем же,
-    // что на карточке кошелька.
-    //
-    // img вместо icon: файл лежит в /images и в таблицу HUD_ART не входит, так
-    // что рисуется он не hudDraw, а обычной картинкой — см. ниже.
-    { img: '/images/gram-icon.png',     color: '#c9a4ff', val: _fmtCur(window._gramBalance || 0, 4) },
-    { img: '/images/nexum-coin_v2.png', color: '#6fc7ff', val: _fmtCur(window._nexumBalance || 0) },
-    // fit: во сколько раз иконка больше отверстия. Монета и самоцветы
-    // круглые — их можно пускать с запасом, рим обрежет лишнее и гнездо
-    // заполнится целиком. Меч вытянутый: на том же запасе круглый рим
-    // срезал у него и рукоять, и остриё, и в гнезде оставалась одна
-    // диагональная полоска, неотличимая от «иконка не загрузилась».
-    { icon: 'C11_single_broadsword', color: '#eaa742', fit: 1.0,
-      val: _fmtCur(typeof calcBM === 'function' ? calcBM(p) : 0) },
+  // ── Currency chips ────────────────────────────────────────
+  const chipY = py + 74, chipH = 18, chipGap = 5, chipX0 = px + 10;
+  const _nxBal = window._nexumBalance || 0;
+  const _grBal = window._gramBalance || 0;
+  const chips = [
+    { icon: 'coin', color: '#f0b44a', val: _hudNum(p.gold) },
+    { img: '/images/nexum-coin_v2.png', color: '#7fd0ff', val: _hudNum(_nxBal) },
+    { img: '/images/gram-icon.png', color: '#5fe08f', val: _grBal >= 1000 ? _hudNum(_grBal) : _grBal.toFixed(2) },
   ];
-}
+  const chipW = (pRight + 1 - chipX0 - chipGap * (chips.length - 1)) / chips.length;
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < chips.length; i++) {
+    const c = chips[i], cx = chipX0 + i * (chipW + chipGap);
+    ctx.fillStyle = 'rgba(9,19,32,0.85)';
+    roundRect(ctx, cx, chipY, chipW, chipH, 9); ctx.fill();
+    ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
+    roundRect(ctx, cx, chipY, chipW, chipH, 9); ctx.stroke();
+    if (c.img) {
+      const img = _getPotImg(c.img);
+      if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, cx + 3, chipY + 3, 12, 12);
+      else drawIconCtx(ctx, 'coin', cx + 9, chipY + chipH / 2, 11, c.color);
+    } else {
+      drawIconCtx(ctx, c.icon, cx + 9, chipY + chipH / 2, 11, c.color);
+    }
+    ctx.font = `bold 9.5px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = c.color;
+    ctx.fillText(c.val, cx + 18, chipY + chipH / 2 + 0.5);
+  }
 
-function _fmtCur(v, frac) {
-  const n = Number(v) || 0;
-  // Опыт на тысячном уровне — 2.6e+142. Приставки на такое не рассчитаны,
-  // а печатать сто сорок знаков в полосу шириной 90 px тем более нельзя:
-  // выше 999 триллионов остаётся показательная запись, но короткая.
-  if (!Number.isFinite(n)) return '—';
-  if (n >= 1e15) return n.toExponential(1).replace('e+', 'e');
-  if (n >= 1e12) return (n / 1e12).toFixed(1) + 'T';
-  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e5) return Math.round(n / 1e3) + 'K';
-  if (frac && n > 0 && n < 1000) return n.toFixed(Math.min(frac, 4)).replace(/0+$/, '').replace(/\.$/, '');
-  return String(Math.round(n * 100) / 100);
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3236,7 +2784,7 @@ function joyAlpha() {
     // Приватный режим и заблокированные куки бросают на самом ЧТЕНИИ, а не
     // возвращают null. Непойманное — это чёрный экран вместо игры.
     try { v = parseFloat(localStorage.getItem('liberty.joyAlpha')); } catch (e) { v = NaN; }
-    _joyAlpha = Number.isFinite(v) ? Math.min(JOY_ALPHA_MAX, Math.max(JOY_ALPHA_MIN, v)) : 0.62;
+    _joyAlpha = Number.isFinite(v) ? Math.min(JOY_ALPHA_MAX, Math.max(JOY_ALPHA_MIN, v)) : 0.66;
   }
   return _joyAlpha;
 }
@@ -3247,59 +2795,147 @@ function setJoyAlpha(v) {
   try { localStorage.setItem('liberty.joyAlpha', String(n)); } catch (e) { /* приватный режим */ }
 }
 
-// Пропорции сняты с присланного комплекта, а не подобраны: ручка A7 имеет
-// alpha bounds 603×610 в холсте 1254, база A6 — 1184×1189 там же, и гайд
-// прямо задаёт «вписати максимум у 430×430» для ручки на том же холсте.
-// 430/1184 и есть это число.
-const JOY_BASE_D = JOY_R * 2.12;
-const JOY_KNOB_D = JOY_BASE_D * 0.363;
-// Насколько ручка уезжает от центра. Меньше радиуса базы за вычетом
-// половины ручки — гайд: «зсув має залишати її в межах внутрішнього кола».
-const JOY_TRAVEL  = JOY_BASE_D * 0.29;
-
 let _joyKnobGrad = null, _joyKnobGradKx = null, _joyKnobGradKy = null;
+// Ring, four direction arrows, four studs on the diagonals, and a knob that
+// lights up while it is being pushed — the arrows are what make it read as a
+// pad rather than a circle drawn on the floor.
 function drawJoystick() {
   const jc = joyCenter();
+  const held = joy.active && (joy.dx || joy.dy);
 
-  // ── версия на ассетах ───────────────────────────────────────────────────
-  if (typeof hudDraw === 'function' && hudImg('A6_joystick_base')) {
-    const a = joyAlpha();
-    hudDraw(ctx, 'A6_joystick_base', jc.x, jc.y, JOY_BASE_D, JOY_BASE_D, a);
-    const kx = jc.x + joy.dx * JOY_TRAVEL, ky = jc.y + joy.dy * JOY_TRAVEL;
-    // Ручка плотнее базы и не опускается ниже половины: база может быть
-    // почти прозрачной, но то, ЧЕМ игрок целится, должно оставаться видимым.
-    hudDraw(ctx, 'A7_joystick_knob', kx, ky, JOY_KNOB_D, JOY_KNOB_D,
-      Math.min(1, Math.max(0.5, a + 0.25)));
-    return;
+  ctx.save();
+  // Значение ползунка (Профиль → Звук) — это покой; под пальцем джойстик
+  // всё равно плотнее, иначе настройка «почти прозрачно» отняла бы у игрока
+  // и то, чем он целится.
+  const _ja = joyAlpha();
+  ctx.globalAlpha = held ? Math.min(1, _ja + 0.29) : _ja;
+
+  const ring = ctx.createRadialGradient(jc.x, jc.y, JOY_R * 0.55, jc.x, jc.y, JOY_R);
+  ring.addColorStop(0, 'rgba(10,20,34,0.10)');
+  ring.addColorStop(1, 'rgba(12,26,45,0.55)');
+  ctx.fillStyle = ring;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(104,178,240,0.60)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(86,170,255,0.16)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R + 3, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(104,178,240,0.18)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R * 0.62, 0, Math.PI * 2); ctx.stroke();
+
+  // Direction arrows (N/E/S/W) and diamond studs on the diagonals
+  const ar = JOY_R - 11;
+  ctx.fillStyle = 'rgba(140,206,255,0.72)';
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 - Math.PI / 2;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const tx = jc.x + ca * ar, ty = jc.y + sa * ar;
+    ctx.beginPath();
+    ctx.moveTo(tx + ca * 5, ty + sa * 5);
+    ctx.lineTo(tx - ca * 3 - sa * 5, ty - sa * 3 + ca * 5);
+    ctx.lineTo(tx - ca * 3 + sa * 5, ty - sa * 3 - ca * 5);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(122,196,255,0.85)';
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2 - Math.PI / 4;
+    const sx = jc.x + Math.cos(a) * JOY_R, sy = jc.y + Math.sin(a) * JOY_R;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 4); ctx.lineTo(sx + 4, sy); ctx.lineTo(sx, sy + 4); ctx.lineTo(sx - 4, sy);
+    ctx.closePath(); ctx.fill();
   }
 
-  // ── запасной вид ────────────────────────────────────────────────────────
-  // Остаётся не для красоты: ассет — это сетевой запрос, и первые кадры
-  // после входа он ещё не пришёл. Джойстик, которого нет полсекунды, — это
-  // управление, которого нет полсекунды.
-  ctx.globalAlpha = joyAlpha();
-  ctx.strokeStyle = 'rgba(209,204,197,.6)'; ctx.lineWidth = 2; ctx.fillStyle = 'rgba(209,204,197,.07)';
-  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = 'rgba(209,204,197,.18)'; ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(jc.x - JOY_R, jc.y); ctx.lineTo(jc.x + JOY_R, jc.y);
-  ctx.moveTo(jc.x, jc.y - JOY_R); ctx.lineTo(jc.x, jc.y + JOY_R);
-  ctx.stroke();
+  // Knob
   const kx = jc.x + joy.dx * JOY_R, ky = jc.y + joy.dy * JOY_R;
-  // Recreate gradient only when knob position actually changes
   if (_joyKnobGrad === null || kx !== _joyKnobGradKx || ky !== _joyKnobGradKy) {
-    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .3, ky - JOY_KNOB * .3, 0, kx, ky, JOY_KNOB);
-    _joyKnobGrad.addColorStop(0, 'rgba(245,219,173,.95)'); _joyKnobGrad.addColorStop(1, 'rgba(169,140,91,.7)');
+    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .35, ky - JOY_KNOB * .35, 0, kx, ky, JOY_KNOB);
+    _joyKnobGrad.addColorStop(0, 'rgba(150,205,255,0.95)');
+    _joyKnobGrad.addColorStop(1, 'rgba(30,66,110,0.92)');
     _joyKnobGradKx = kx; _joyKnobGradKy = ky;
   }
-  ctx.fillStyle = _joyKnobGrad; ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(209,204,197,.7)'; ctx.lineWidth = 2;
+  ctx.fillStyle = 'rgba(86,170,255,0.18)';
+  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB + 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = _joyKnobGrad;
+  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(178,224,255,0.85)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.stroke();
-  ctx.globalAlpha = 1;
+
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
-//  SKILL BUTTONS (2×2 grid)
+//  ACTION FAN BACKDROP
+// ─────────────────────────────────────────────────────────
+// The tray the four skill buttons ride on, plus the collar around the attack
+// hub at its centre. Geometry comes from fanCenter()/fanPos() in js/input.js,
+// so this and the buttons (and the hit tests) can never drift apart. Purely
+// decorative — nothing here is touchable.
+const FAN_TRAY_IN = 60, FAN_TRAY_OUT = 126;   // skill tray
+// Swept counter-clockwise, far enough round to seat the lowest skill button
+// whole. Both ends run off the screen — the near one past the right edge, the
+// far one under the bottom nav — and are simply clipped there, the way the
+// tray is meant to read: as a wheel the screen corner cuts into.
+const FAN_TRAY_A0 = -44, FAN_TRAY_A1 = -210;
+const FAN_COLLAR_IN = 46, FAN_COLLAR_OUT = 57;
+
+// Annular sector from a0° to a1°, swept counter-clockwise (a1 < a0)
+function _fanSector(c, rIn, rOut, a0, a1) {
+  const r0 = a0 * Math.PI / 180, r1 = a1 * Math.PI / 180;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, rOut, r0, r1, true);
+  ctx.arc(c.x, c.y, rIn,  r1, r0, false);
+  ctx.closePath();
+}
+
+function _fanGem(x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y);
+  ctx.closePath(); ctx.fill();
+}
+
+function drawActionFan() {
+  if (!player) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const c = _uiBtnGrads.fanC;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, H - NAV_H); ctx.clip();
+
+  _fanSector(c, FAN_TRAY_IN, FAN_TRAY_OUT, FAN_TRAY_A0, FAN_TRAY_A1);
+  ctx.fillStyle = _uiBtnGrads.fanBg; ctx.fill();
+  ctx.strokeStyle = 'rgba(203,161,89,0.34)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // A hairline between each pair of seats, so the tray reads as four slots
+  // rather than one band — and a gem on the rim above each one.
+  const rims = [FAN_TRAY_A0, FAN_TRAY_A1];
+  ctx.strokeStyle = 'rgba(203,161,89,0.16)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const deg = (fanSkillAngle(i) + fanSkillAngle(i + 1)) / 2;
+    rims.push(deg);
+    const a = deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    ctx.beginPath();
+    ctx.moveTo(c.x + FAN_TRAY_IN * ca,  c.y + FAN_TRAY_IN * sa);
+    ctx.lineTo(c.x + FAN_TRAY_OUT * ca, c.y + FAN_TRAY_OUT * sa);
+    ctx.stroke();
+  }
+
+  _fanSector(c, FAN_COLLAR_IN, FAN_COLLAR_OUT, FAN_TRAY_A0 + 6, FAN_TRAY_A1 - 6);
+  ctx.fillStyle = _uiBtnGrads.fanCollar; ctx.fill();
+  ctx.strokeStyle = 'rgba(203,161,89,0.30)'; ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.fillStyle = 'rgba(203,161,89,0.5)';
+  for (const deg of rims) {
+    const a = deg * Math.PI / 180;
+    const gx = c.x + FAN_TRAY_OUT * Math.cos(a), gy = c.y + FAN_TRAY_OUT * Math.sin(a);
+    if (gx > W - 6 || gy > H - NAV_H - 6) continue;  // half a gem on the cut edges reads as dirt
+    _fanGem(gx, gy, 3.5);
+  }
+
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  SKILL BUTTONS (on the fan's arc — getSkillBtnPos, js/input.js)
 // ─────────────────────────────────────────────────────────
 // Gradient cache: 4 buttons × 3 states (flash / ready / cooldown)
 // Invalidated on resize via _skillBtnGradCache = null in game.js
@@ -3308,22 +2944,13 @@ function _buildSkillBtnGrads() {
   _skillBtnGradCache = Array.from({ length: 4 }, (_, i) => {
     const b = getSkillBtnPos(i);
     const flash = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    flash.addColorStop(0, 'rgba(76,51,14,0.97)'); flash.addColorStop(1, 'rgba(38,26,7,0.99)');
+    flash.addColorStop(0, 'rgba(31,53,83,0.97)'); flash.addColorStop(1, 'rgba(16,28,43,0.99)');
     const ready = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    ready.addColorStop(0, 'rgba(37,30,17,0.97)'); ready.addColorStop(1, 'rgba(18,14,8,0.99)');
+    ready.addColorStop(0, 'rgba(19,33,51,0.97)'); ready.addColorStop(1, 'rgba(10,17,26,0.99)');
     const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    cd.addColorStop(0, 'rgba(20,16,10,0.97)'); cd.addColorStop(1, 'rgba(11,9,5,0.99)');
+    cd.addColorStop(0, 'rgba(11,19,30,0.97)'); cd.addColorStop(1, 'rgba(7,11,18,0.99)');
     return { flash, ready, cd, x: b.x, y: b.y, w: b.w, h: b.h };
   });
-}
-
-// Металл веера поверх иконок. Отдельной функцией, а не внутри
-// drawSkillButtons, потому что рисуется он между двумя разными слоями:
-// после иконок и до кнопки атаки.
-function drawSkillFan() {
-  if (typeof fanSlots !== 'function' || !fanSlots()) return;
-  const r = fanRect();
-  hudDraw(ctx, 'A3_skill_fan', r.x + r.w / 2, r.y + r.h / 2, r.w, r.h);
 }
 
 const _F_SKILL = 'system-ui, -apple-system, Arial';
@@ -3346,21 +2973,10 @@ function drawSkillButtons() {
     const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const r = b.w / 2;
-    // Веер уже несёт и фон гнезда, и окантовку. Рисовать под иконку свой
-    // круг поверх него — это второй ободок внутри первого; гайд про это
-    // говорит отдельно: «не додавати другу золоту рамку».
-    const onFan = (typeof fanSlots === 'function') && !!fanSlots();
 
     // Background gradient (cached) — circular
-    if (!onFan) {
-      ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    } else if (isFlash) {
-      // Вспышка применения — единственное, что рисуется под иконкой и на
-      // веере: без неё нажатие умения ничем не отзывается.
-      ctx.fillStyle = 'rgba(234,167,66,0.30)';
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    }
+    ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
     // Icon — clipped to the circle and scaled to fully cover it, no padding
     // and no key-letter label, so the art fills the whole button.
@@ -3372,7 +2988,7 @@ function drawSkillButtons() {
       const d = r * 2;
       ctx.drawImage(img, cx - d / 2, cy - d / 2, d, d);
     } else {
-      drawIconCtx(ctx, sk.icon, cx, cy, r * 1.3, ready ? '#f2d39c' : '#7c7364');
+      drawIconCtx(ctx, sk.icon, cx, cy, r * 1.3, ready ? '#f2d39c' : '#3d7eac');
     }
     if (!ready) {
       ctx.globalAlpha = 1;
@@ -3382,19 +2998,17 @@ function drawSkillButtons() {
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    // Border — только в запасной раскладке: на веере окантовка уже своя.
-    if (!onFan) {
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(61,51,34,0.7)';
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    }
+    // Border
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(32,56,87,0.7)';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
     // Not-yet-studied skills show a lock instead of a cooldown countdown
     if (locked) {
-      drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#d1ccc5');
+      drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#c1ccd5');
     } else if (!ready) {
       ctx.font = `bold 14px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#d1ccc5';
+      ctx.fillStyle = '#c1ccd5';
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
     }
   }
@@ -3410,28 +3024,26 @@ function _buildUiBtnGrads() {
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
   const prof = getProfessionBtnPos();
+  const cc  = getClassChangeBtnPos();
   const pty = getPartyBtnPos();
-  const tfW = 160, tfH = 42;
-  const tfX = W / 2 - tfW / 2, tfY = HEADER_H + 6;
-  const hbX = tfX + 8, hbW = tfW - 16, hbY = tfY + 20;
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg0.addColorStop(0,'rgba(30,24,14,0.98)'); pg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pg0.addColorStop(0,'rgba(16,27,42,0.98)'); pg0.addColorStop(1,'rgba(9,16,25,0.99)');
   const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
   pg1.addColorStop(0,'rgba(44,63,27,0.98)'); pg1.addColorStop(1,'rgba(18,27,11,0.99)');
 
   const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg0.addColorStop(0,'rgba(30,24,14,0.98)'); tg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  tg0.addColorStop(0,'rgba(16,27,42,0.98)'); tg0.addColorStop(1,'rgba(9,16,25,0.99)');
   const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
   tg1.addColorStop(0,'rgba(52,13,18,0.98)'); tg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg0.addColorStop(0,'rgba(30,24,14,0.97)'); pvg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pvg0.addColorStop(0,'rgba(16,27,42,0.97)'); pvg0.addColorStop(1,'rgba(9,16,25,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
   pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
 
   const pfg0 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
-  pfg0.addColorStop(0,'rgba(30,24,14,0.97)'); pfg0.addColorStop(1,'rgba(17,13,7,0.99)');
+  pfg0.addColorStop(0,'rgba(16,27,42,0.97)'); pfg0.addColorStop(1,'rgba(9,16,25,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
@@ -3442,32 +3054,29 @@ function _buildUiBtnGrads() {
   ptg1.addColorStop(0,'rgba(47,13,17,0.97)'); ptg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const ag0 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag0.addColorStop(0,'rgba(26,21,12,0.90)'); ag0.addColorStop(1,'rgba(13,10,6,0.92)');
+  ag0.addColorStop(0,'rgba(14,24,37,0.90)'); ag0.addColorStop(1,'rgba(8,13,20,0.92)');
   const ag1 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
   ag1.addColorStop(0,'rgba(56,14,19,0.98)'); ag1.addColorStop(1,'rgba(26,7,9,0.99)');
   const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag2.addColorStop(0,'rgba(37,30,17,0.98)'); ag2.addColorStop(1,'rgba(18,14,8,0.99)');
+  ag2.addColorStop(0,'rgba(19,33,51,0.98)'); ag2.addColorStop(1,'rgba(10,17,26,0.99)');
 
   const aag0 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
   aag0.addColorStop(0,'rgba(33,7,10,0.95)'); aag0.addColorStop(1,'rgba(17,4,6,0.97)');
   const aag1 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
   aag1.addColorStop(0,'rgba(22,32,13,0.95)'); aag1.addColorStop(1,'rgba(11,16,7,0.97)');
 
-  const tfBg = ctx.createLinearGradient(tfX, tfY, tfX, tfY+tfH);
-  tfBg.addColorStop(0,'rgba(26,20,11,0.97)'); tfBg.addColorStop(1,'rgba(15,12,6,0.99)');
-  const hpHi = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
-  hpHi.addColorStop(0,'#314f17'); hpHi.addColorStop(1,'#6fb136');
-  const hpMid = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
-  hpMid.addColorStop(0,'#6e470c'); hpMid.addColorStop(1,'#e39827');
-  const hpLo = ctx.createLinearGradient(hbX, 0, hbX+hbW, 0);
-  hpLo.addColorStop(0,'#64131c'); hpLo.addColorStop(1,'#d33d4e');
-  const tfShine = ctx.createLinearGradient(0, hbY, 0, hbY+4);
-  tfShine.addColorStop(0,'rgba(209,204,197,0.15)'); tfShine.addColorStop(1,'rgba(209,204,197,0)');
+  // Action-fan backdrop (drawActionFan below) — concentric with the attack hub
+  const fc = fanCenter();
+  const fanBg = ctx.createRadialGradient(fc.x, fc.y, FAN_R_ATK, fc.x, fc.y, FAN_TRAY_OUT);
+  fanBg.addColorStop(0,'rgba(14,24,37,0.88)'); fanBg.addColorStop(1,'rgba(6,10,16,0.66)');
+  const fanCollar = ctx.createRadialGradient(fc.x, fc.y, FAN_COLLAR_IN, fc.x, fc.y, FAN_COLLAR_OUT);
+  fanCollar.addColorStop(0,'rgba(23,40,62,0.88)'); fanCollar.addColorStop(1,'rgba(10,17,26,0.88)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
-                  tfBg, hpHi, hpMid, hpLo, tfShine,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof, ptyBtn: pty };
+                  fanBg, fanCollar, fanC: fc,
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof,
+                  ccBtn: cc, ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -3497,23 +3106,16 @@ function drawPotionButton() {
 
   ctx.save();
 
-  // Круглая кнопка со своей заливкой. Зелёного ореола больше нет: он
-  // светился вокруг зелья постоянно, потому что «готово» — это обычное
-  // состояние, и подсветка, горящая всегда, не сообщает ничего, а бликом
-  // тянет взгляд к себе весь бой.
-  //
-  // Недоступность показывается наоборот — приглушением: отсутствие сигнала
-  // спокойнее постоянного сигнала.
-  const potArt = hudImg('E5_round_button');
-  if (potArt) {
-    hudDraw(ctx, 'E5_round_button', pb.x, pb.y, pb.r * 2.16, pb.r * 2.16,
-      (ready && cd <= 0) ? 1 : 0.66);
-  } else {
-    ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
-    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r * 0.92, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(84,70,46,0.6)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
+  // Circle background (cached gradient)
+  ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
+  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(41,72,112,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
+  if (ready && cd <= 0) {
+    ctx.strokeStyle = 'rgba(144,199,96,0.15)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
   // Draw PNG image or fallback SVG icon
@@ -3525,38 +3127,25 @@ function drawPotionButton() {
       const is = Math.round(pb.r * 0.85);
       ctx.drawImage(img, pb.x - is / 2, pb.y - is / 2 - 5, is, is);
     } else {
-      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), '#7c7364');
+      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), '#3d7eac');
     }
   } else {
-    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), ready && cd <= 0 ? '#90d653' : '#7c7364');
+    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), ready && cd <= 0 ? '#90d653' : '#3d7eac');
   }
 
   ctx.globalAlpha = 1;
-  // Счётчик в оправе, а не голой цифрой поверх зелья. Голая читалась хуже
-  // всего именно там, где важна: поверх светлой склянки. Пилюля из
-  // комплекта — та же, что у кнопок слева, только мелкая.
-  const _cntTxt = '×' + count;
-  ctx.font = `bold 10px ${F}`;
-  const _cntW = Math.max(26, ctx.measureText(_cntTxt).width + 14);
-  const _cntX = pb.x + pb.r * 0.60, _cntY = pb.y + pb.r * 0.70;
-  if (!hudDrawW(ctx, 'F7_count_badge_opaque', _cntX, _cntY, _cntW)
-      && !hudDrawW(ctx, 'E1_small_pill_button', _cntX, _cntY, _cntW)) {
-    ctx.fillStyle = 'rgba(12,9,6,0.85)';
-    roundRect(ctx, _cntX - _cntW / 2, _cntY - 8, _cntW, 16, 8); ctx.fill();
-    ctx.strokeStyle = 'rgba(201,168,106,0.6)'; ctx.lineWidth = 1;
-    roundRect(ctx, _cntX - _cntW / 2, _cntY - 8, _cntW, 16, 8); ctx.stroke();
-  }
-  hudGoldText(ctx, _cntTxt, _cntX, _cntY, 10, { dim: !(ready && cd <= 0) });
-  ctx.textBaseline = 'alphabetic';
+  ctx.font = `bold 10px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = ready && cd <= 0 ? '#90d653' : 'rgba(62,129,177,0.7)';
+  ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
 
   // Show cooldown if active
   if (cd > 0) {
     ctx.font = `bold 9px ${F}`; ctx.fillStyle = '#f17e8b';
     ctx.fillText(cd.toFixed(1) + t('secAbbrev'), pb.x, pb.y + pb.r + 10);
+  } else {
+    ctx.font = `7px ${F}`; ctx.fillStyle = 'rgba(109,131,161,0.55)';
+    ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
   }
-  // Подсказки «[F]» больше нет: это горячая клавиша настольной версии, а
-  // играют с телефона, где клавиш нет вовсе. Под кнопкой она читалась как
-  // часть интерфейса, которая ничего не значит.
 
   ctx.restore();
 }
@@ -3572,35 +3161,18 @@ function drawTargetButton() {
 
   ctx.save();
 
-  // Кнопка целиком из комплекта — со своей заливкой. Раньше под ободом
-  // рисовался ещё и градиентный диск, и на просвет получалось два разных
-  // тёмных круга один в другом.
-  const art = hudImg('E6_round_button_crimson');
+  ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
+  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
-  if (art) {
-    // Состояние — ЯРКОСТЬЮ самой кнопки, а не кольцом поверх неё. Кольцо
-    // читалось как вторая рамка и спорило с ободом.
-    hudDraw(ctx, 'E6_round_button_crimson', tb.x, tb.y, tb.r * 2.12, tb.r * 2.12,
-      hasTarget ? 1 : 0.72);
-  } else {
-    ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
-    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(113,94,62,0.6)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
-    drawIconCtx(ctx, 'crosshair', tb.x, tb.y - tb.r * 0.18, 18, hasTarget ? '#f17e8b' : '#a49783');
+  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(47,98,135,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
+  if (hasTarget) {
+    ctx.strokeStyle = 'rgba(235,73,92,0.15)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
 
-  // Подпись под прицелом. До неё кнопка была кружком с крестиком, и что
-  // она делает, приходилось выяснять нажатием — а нажатие в бою меняет
-  // цель, то есть цена вопроса «что это» была промахом по врагу.
-  // Кегль считается от длины слова: «ЦЕЛЬ» — четыре знака, «OBJETIVO» —
-  // восемь, и один фиксированный размер вылезал бы за круг на половине
-  // языков. Ширина круга на уровне подписи меньше диаметра, отсюда 1.5.
-  const _tgTxt = t('targetAbbrev');
-  hudGoldText(ctx, _tgTxt, tb.x, tb.y,
-    Math.max(7, Math.min(tb.r * 0.5, tb.r * 1.75 / _tgTxt.length)),
-    { dim: !hasTarget });
+  drawIconCtx(ctx, 'crosshair', tb.x, tb.y, 20, hasTarget ? '#f17e8b' : '#a49783');
 
   ctx.restore();
 }
@@ -3608,6 +3180,42 @@ function drawTargetButton() {
 // ─────────────────────────────────────────────────────────
 //  BUFF / DEBUFF STRIP  (left of skill panel)
 // ─────────────────────────────────────────────────────────
+// Размер фишки и раскладка её мест — отдельно от рисования, потому что
+// «ничего ни на что не налезает» иначе остаётся обещанием, которое каждый
+// раз проверяют глазами по скриншоту. Так это считает dev/render-check.html
+// ТЕМ ЖЕ кодом, которым рисуется, а не своей копией формулы.
+const BUFF_CHIP_SZ = 22;
+const BUFF_SEATS = 11;
+const BUFF_R0 = FAN_R_SKILL + 46, BUFF_RING_STEP = 28;
+const BUFF_A0 = -100, BUFF_A_END = -200;
+const BUFF_RINGS = 8;
+
+function buffSeats(count) {
+  const HALF = BUFF_CHIP_SZ / 2;
+  const A_STEP = (BUFF_A0 - BUFF_A_END) / (BUFF_SEATS - 1);
+  const FLOOR = H - NAV_H - 4;
+  const cpEl = typeof document !== 'undefined' ? document.getElementById('chat-preview') : null;
+  const chatUp = !!(cpEl && cpEl.style.display && cpEl.style.display !== 'none');
+  const CHAT_TOP = H - 118, CHAT_BOT = H - 72;
+  const CHAT_RIGHT = chatUp ? 58 + Math.min(170, W - 250) + 6 : -1e4;
+  const jc = joyCenter();
+  const pb = getPotionBtnPos(), tb = getTargetBtnPos();
+  const seats = [];
+  for (let ring = 0; ring < BUFF_RINGS && seats.length < count; ring++) {
+    const r = BUFF_R0 + ring * BUFF_RING_STEP;
+    for (let i = 0; i < BUFF_SEATS && seats.length < count; i++) {
+      const p = fanPos(r, BUFF_A0 - i * A_STEP);
+      if (p.y + HALF > FLOOR) continue;
+      if (p.y + HALF > CHAT_TOP && p.y - HALF < CHAT_BOT && p.x - HALF < CHAT_RIGHT) continue;
+      if (Math.hypot(p.x - jc.x, p.y - jc.y) < JOY_R + HALF + 6) continue;
+      if (Math.hypot(p.x - pb.x, p.y - pb.y) < pb.r + HALF + 4) continue;
+      if (Math.hypot(p.x - tb.x, p.y - tb.y) < tb.r + HALF + 4) continue;
+      seats.push(p);
+    }
+  }
+  return seats;
+}
+
 function drawBuffStrip() {
   if (!player) return;
   const p = player;
@@ -3641,7 +3249,7 @@ function drawBuffStrip() {
     { t: typeof faithShieldTimer !== 'undefined' ? faithShieldTimer : 0, icon:'shield',    color:'#ebad4e' },
     { t: typeof invisTimer       !== 'undefined' ? invisTimer       : 0, icon:'teleport',  color:'#f2d197' },
     { t: typeof dodgeTimer       !== 'undefined' ? dodgeTimer       : 0, icon:'dash',      color:'#98e456' },
-    { t: typeof guardTimer       !== 'undefined' ? guardTimer       : 0, icon:'shield',    color:'#9aa3ab' },
+    { t: typeof guardTimer       !== 'undefined' ? guardTimer       : 0, icon:'shield',    color:'#90a4b5' },
     { t: typeof vampirismTimer   !== 'undefined' ? vampirismTimer   : 0, icon:'drop',      color:'#c23b5e' },
   ];
   for (const b of skillBuffs) {
@@ -3661,93 +3269,58 @@ function drawBuffStrip() {
 
   if (!chips.length) return;
 
-  // 2-column icon grid to the left of the skill buttons panel
-  // Skill grid: left = W-14-(SKILL_SZ+SKILL_GAP)-SKILL_SZ = W-130, bottom = H-NAV_H-14
-  // ── где лежат бафы ──────────────────────────────────────────────────────
-  // Раньше — колонкой в два ряда у правого края, снизу вверх. Ровно там
-  // теперь веер умений, кнопка зелья и кнопка цели, и при трёх-четырёх
-  // бафах лента закрывала их целиком: «перекрывает UI процентов на сорок».
-  //
-  // Новое место — горизонтальная лента под шапкой, справа от колонки
-  // Мир/Проф/+Pack. Полоса освободилась, когда убрали баннер безопасной
-  // зоны, и она единственная на экране, где ничего не нажимается: бафы
-  // читают, а не трогают.
-  // ── где лежат бафы ──────────────────────────────────────────────────────
-  // Дугой вдоль внешнего края веера умений. Под колонкой кнопок они мешали
-  // списку пати, который встаёт ровно туда, а колонкой у правого края —
-  // закрывали сам веер.
-  //
-  // Дуга не подобрана на глаз. Четыре гнезда умений в A3 лежат на
-  // окружности; по трём из них считается её центр — (0.898, 0.897) размера
-  // веера — и радиус 0.707 его ширины. Бафы идут по той же окружности
-  // радиусом побольше, поэтому лента повторяет форму веера, а не просто
-  // висит рядом.
-  //
-  // Двенадцать мест: столько буффов и дебаффов может висеть разом на
-  // максимуме, и ряд, который на тринадцатом уезжает за экран, — это ряд,
-  // который однажды спрячет нужное.
-  // Геометрия — в js/input.js рядом с остальной раскладкой, чтобы её можно
-  // было проверить, не рисуя.
-  const SZ = BUFF_SZ, MAXB = BUFF_MAX;
-  // Raised clear of the chat widgets rather than bottom-aligned with the
-  // skills. #chat-btn and #chat-preview (index.html) sit at CSS bottom:72px
-  // and stand up to ~46px tall, so they own the band from H-118 to H-72 —
-  // and being DOM elements layered over the UI canvas, they paint over
-  // anything drawn there regardless of draw order. The bottom row of chips
-  // used to land at H-98..H-76, entirely inside that band, so an incoming
-  // chat message hid it completely. Chips grow upward from here, so only
-  // this baseline needs to move.
-  // Лента растёт ВНИЗ от полосы под шапкой, а не вверх от чата: сверху есть
-  // куда расти, снизу теперь везде кнопки.
+  // Chips ride an arc of their own just outside the skill buttons (fanPos,
+  // js/input.js), running the fan's whole outer edge: from below the potion
+  // at the top round to just above the nav bar at the bottom left. That sweep
+  // is divided into BUFF_SEATS evenly spaced seats; once they are full the
+  // next chip opens a ring further out, at the same angles.
+  // The arc deliberately starts below the potion rather than beside it: a
+  // seat squeezed between potion and target left one chip stranded up in the
+  // corner with a gap under it, since the seat below it was always dropped
+  // by the button guards further down.
+  const SZ = BUFF_CHIP_SZ, HALF = SZ / 2;
+  // Seats a chip can't actually be seen in are skipped, and the chip rides the
+  // next ring out instead:
+  //  · below the nav bar;
+  //  · under the chat preview bubble while it is up — #chat-preview
+  //    (index.html) is a DOM element layered over this canvas, so it paints
+  //    over anything drawn there regardless of draw order. Its geometry is the
+  //    CSS one (left:58px, bottom:72px, up to ~46px tall, max-width capped
+  //    against the viewport), mirrored here;
+  //  · inside the joystick, which a long list would otherwise swing into;
+  //  · under the potion / target buttons, which sit on their own wider arc
+  //    right where the top of this one starts.
+  const seats = buffSeats(chips.length);
   const F2 = 'system-ui, -apple-system, Arial';
 
   ctx.save();
 
-  const shown = Math.min(chips.length, MAXB);
-  for (let i = 0; i < shown; i++) {
-    // Шаг постоянный, а не «поделить дугу на число бафов»: иначе при двух
-    // бафах они расползались бы по всей дуге, а при десяти сползались в
-    // кучу, и одно и то же зелье каждый раз оказывалось в новом месте.
-    const _bp = buffSlotPos(i);
-    const cx = _bp.x, cy = _bp.y;
+  for (let i = 0; i < seats.length; i++) {
+    const cx = seats[i].x - HALF, cy = seats[i].y - HALF;
     const chip = chips[i];
 
-    // Тёмная подложка — всегда: у гнезда F6 сквозная середина, и без неё
-    // иконка бафа лежала бы прямо на подземелье.
-    ctx.fillStyle = chip.debuff ? 'rgba(37,8,11,0.90)' : 'rgba(20,15,6,0.90)';
-    roundRect(ctx, cx + 2, cy + 2, SZ - 4, SZ - 4, 4); ctx.fill();
+    // Background cell
+    ctx.fillStyle = chip.debuff ? 'rgba(37,8,11,0.90)' : 'rgba(10,17,26,0.90)';
+    roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.fill();
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
+    roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.stroke();
+    ctx.globalAlpha = 1;
 
     // Icon (upper portion of cell)
     const iconCX = cx + SZ / 2, iconCY = cy + SZ / 2 - 3;
     if (chip.kind === 'pot' && chip.img) {
       const img = _getPotImg(chip.img);
       if (img && img.complete && img.naturalWidth > 0)
-        ctx.drawImage(img, cx + 3, cy + 2, SZ - 6, SZ - 9);
+        ctx.drawImage(img, cx + 3, cy + 2, 16, 13);
     } else {
       drawIconCtx(ctx, chip.icon, iconCX, iconCY, 11, chip.color);
     }
 
-    // Оправа гнезда ПОВЕРХ иконки — порядок из гайда третьей партии.
-    // Своей рамки больше нет: две рамки в гнезде 24 px не помещаются.
-    if (!hudDraw(ctx, 'F6_buff_slot_hollow', cx + SZ / 2, cy + SZ / 2, SZ + 3, SZ + 3)) {
-      ctx.globalAlpha = 0.75;
-      ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
-      roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    // Дебафф красным ободком поверх оправы: у неё один вид на все бафы, а
-    // спутать «мне хорошо» с «мне плохо» дороже всего.
-    if (chip.debuff) {
-      ctx.strokeStyle = 'rgba(226,70,88,0.85)'; ctx.lineWidth = 1.5;
-      roundRect(ctx, cx + 1, cy + 1, SZ - 2, SZ - 2, 4); ctx.stroke();
-    }
-
     // Time label at bottom of cell
     ctx.font = `bold 6px ${F2}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(0,0,0,0.85)';
-    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 1.5);
     ctx.fillStyle = chip.color;
-    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 2.5);
+    ctx.fillText(chip.label, cx + SZ / 2, cy + SZ - 2);
   }
 
   ctx.restore();
@@ -3756,28 +3329,6 @@ function drawBuffStrip() {
 // ─────────────────────────────────────────────────────────
 //  PK / МИР BUTTON
 // ─────────────────────────────────────────────────────────
-// ── кнопка-пилюля из комплекта ────────────────────────────────────────────
-// Три кнопки слева — «Мир/ПК», «Проф», «+Pack» — рисовались тремя почти
-// одинаковыми кусками кода с собственными градиентами. Одна функция и один
-// ассет вместо этого: разной у них остаётся только подсветка состояния,
-// а она и есть единственное, что различается по смыслу.
-//
-// Возвращает false, если ассет не доехал — вызывающий тогда рисует
-// прежним способом, и кнопка не пропадает.
-function hudPill(b, opts) {
-  const o = opts || {};
-  if (!hudImg(o.accent ? 'E2_small_pill_button_accent' : 'E1_small_pill_button')) return false;
-  hudDrawW(ctx, o.accent ? 'E2_small_pill_button_accent' : 'E1_small_pill_button',
-    b.x + b.w / 2, b.y + b.h / 2, b.w + 6, o.dim ? 0.72 : 1);
-  if (o.hot) {
-    // Включённый режим ПК: красная кайма поверх, потому что своей «горячей»
-    // версии у пилюли нет, а перепутать мир с ПК — это потерянный персонаж.
-    ctx.strokeStyle = 'rgba(226,70,88,0.75)'; ctx.lineWidth = 1.6;
-    roundRect(ctx, b.x + 1, b.y + 1, b.w - 2, b.h - 2, b.h / 2); ctx.stroke();
-  }
-  return true;
-}
-
 function drawPvpButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
@@ -3786,16 +3337,16 @@ function drawPvpButton() {
 
   ctx.save();
 
-  if (!hudPill(pb, { hot: pvpMode })) {
-    ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
-    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-    ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(194,154,86,0.55)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-    if (pvpMode) {
-      ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
-      roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
-    }
+  ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(93,154,198,0.55)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+
+  if (pvpMode) {
+    ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
+    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
   }
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
@@ -3820,13 +3371,12 @@ function drawProfessionButton() {
 
   ctx.save();
 
-  if (!hudPill(pb, { dim: !ready })) {
-    ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
-    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-    ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(194,154,86,0.4)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-  }
+  ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(93,154,198,0.4)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
 
   if (ready) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
@@ -3847,30 +3397,37 @@ function drawProfessionButton() {
 //  КЛАСС BUTTON — прямо под Профессией, открывает окно смены класса.
 //  Первый заход спрятал смену ВНУТРЬ панели профессии, внизу: за два нажатия
 //  и там, где её никто не искал. Просили кнопку на экране — вот она.
+//  См. getClassChangeBtnPos/_checkClassChangeBtnTouch, js/input.js.
 // ─────────────────────────────────────────────────────────
+// Тише Профессии намеренно: смена класса стоит Liberty и делается один раз
+// за долгую игру, а Профессия — то, куда заходят каждый уровень. Поэтому
+// подсветки «готово» у неё нет, только ровная рамка колонки.
 function drawClassChangeButton() {
   if (!player || !player.type) return;
-  const cb = getClassChangeBtnPos();
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const cb = _uiBtnGrads.ccBtn;
   const F = 'system-ui, -apple-system, Arial';
 
   ctx.save();
-  if (!hudPill(cb, { dim: true })) {
-    ctx.fillStyle = _uiBtnGrads.pfg0;
-    roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(194,154,86,0.4)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
-  }
+
+  ctx.fillStyle = _uiBtnGrads.pfg0;
+  roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(93,154,198,0.4)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
+
   const col = 'rgba(224,188,127,0.9)';
   drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - 14, cb.y + cb.h / 2, 12, col);
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = col;
   ctx.fillText(t('classChangeBtnLbl'), cb.x + cb.w / 2 - 5, cb.y + cb.h / 2);
+
   ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
-//  БОНУС BUTTON — below Профессия, the free one-per-account "Набор новичка".
+//  БОНУС BUTTON — below Смена класса, the free one-per-account "Набор
+//  новичка".
 //  Contents: STARTER_BONUS (shared/definitions.js); granted by the
 //  starterBonusClaim handler (server/handlers/gram.js). See
 //  getStarterBonusBtnPos/_checkStarterBonusBtnTouch, js/input.js.
@@ -3911,31 +3468,23 @@ function drawStarterBonusButton() {
   // Warm amber, so it reads as a gift rather than as a second purchase button
   // next to +Pack's emerald. Same sweeping band, half a cycle out of phase,
   // so the two never pulse in lockstep.
-  // Та же акцентная пилюля, что у +Pack, но пульс в противофазе: две
-  // кнопки-подарка рядом, мигающие в такт, читаются как одна мигающая
-  // полоса и обе перестают быть заметными.
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320 + Math.PI);
-  if (hudPill(bb, { accent: true })) {
-    ctx.save();
-    ctx.globalAlpha = 0.10 + 0.10 * pulse;
-    hudDrawW(ctx, 'E2_small_pill_button_accent', bb.x + bb.w / 2, bb.y + bb.h / 2, bb.w + 12);
-    ctx.restore();
-  } else {
-    const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
-    const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
-    grad.addColorStop(0, '#3a2408');
-    grad.addColorStop(Math.max(0, sweep - 0.3), '#5c3a0d');
-    grad.addColorStop(sweep, '#f0b44a');
-    grad.addColorStop(Math.min(1, sweep + 0.3), '#5c3a0d');
-    grad.addColorStop(1, '#3a2408');
-    ctx.fillStyle = grad;
-    roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(240,180,74,0.7)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.stroke();
-    ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-    roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
-  }
+  const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
+  const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
+  grad.addColorStop(0, '#17283e');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#233e60');
+  grad.addColorStop(sweep, '#f0b44a');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#233e60');
+  grad.addColorStop(1, '#17283e');
+  ctx.fillStyle = grad;
+  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(240,180,74,0.7)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.stroke();
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+  ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
 
   drawIconCtx(ctx, 'star', bb.x + bb.w / 2 - 16, bb.y + bb.h / 2, 12, '#ffe0a3');
   ctx.font = `bold 11px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -3966,18 +3515,18 @@ function openStarterBonusPanel() {
   ov.id = 'starter-bonus-ov';
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#16120a;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#0c1420;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#f0b44a;margin-bottom:6px">${t('starterBonusTitle')}</div>
-    <div style="font-size:12.5px;color:#a2988a;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
+    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
     <div class="vip-items-row">${gearRows}${bpRows}${hpRow}</div>
     <div id="starter-bonus-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button onclick="document.getElementById('starter-bonus-ov').remove()" style="
-        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
-        color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(193,204,213,.07);
+        color:#5797c4;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
       <button id="starter-bonus-go" onclick="_confirmStarterBonus()" style="
         flex:1;padding:11px;border:none;border-radius:10px;
-        background:linear-gradient(135deg,#5c3a0d,#8a5c15);color:#ffe0a3;
+        background:linear-gradient(135deg,#233e60,#2b597a);color:#ffe0a3;
         font-size:14px;font-weight:700;cursor:pointer">${t('starterBonusClaimBtn')}</button>
     </div>
   </div>`;
@@ -4007,8 +3556,8 @@ function onStarterBonusError(msg) {
   const box = document.getElementById('starter-bonus-err');
   const btn = document.getElementById('starter-bonus-go');
   if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.textContent = t('starterBonusClaimBtn'); }
-  if (box) { box.style.display = 'block'; box.textContent = msg || t('genericErrorLbl'); }
-  else if (player) dmgNum(player.x, player.y - 30, msg || t('genericErrorLbl'), '#f88');
+  if (box) { box.style.display = 'block'; box.textContent = msg || 'Ошибка'; }
+  else if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4031,78 +3580,29 @@ function drawTargetFrame() {
     hp = Math.max(0, e.hp || 0); maxHp = e.maxHp || 1; color = e.color || '#e69419';
   }
 
-  // Уже прежнего и правее центра: слева под шапкой теперь колонка
-  // Мир/Проф/+Pack/Бонус и лента бафов под ней, и панель на 160 по центру
-  // ложилась на них краем. Ширина ограничена ещё и экраном — на узком
-  // телефоне середины между колонкой и кнопкой меню почти нет.
-  const _hostile = hudImg('F4_enemy_target_panel_hostile');
-  // Правая граница считается от кнопки «Меню», а не от края экрана: кнопка
-  // шириной около 104 и стоит в правом верхнем углу, и панель на прежнем
-  // пределе заходила под неё краем.
-  // По центру экрана, а не «где поместится». Кнопка меню стала уже, и
-  // ширина панели теперь подбирается так, чтобы центрированная она НЕ
-  // доставала ни до колонки кнопок слева, ни до меню справа — вместо того
-  // чтобы сдвигаться вбок и тем выдавать, что её положили куда влезло.
-  const _menuLeft = W - Math.floor(Math.min((HEADER_H - 12) * 1.3, W * 0.22)) - 18;
-  const _leftCol = 96;
-  const bw = Math.max(104, Math.min(144, (Math.min(_menuLeft, W - _leftCol) - _leftCol) - 8));
-  const bh = _hostile ? Math.round(hudHeightAt('F4_enemy_target_panel_hostile', bw)) : 42;
-  const bx = Math.round(W / 2 - bw / 2);
+  const bw = 168, bh = 44;
+  // Centred, unless that would run under the minimap plate hanging over the
+  // world on a narrow screen — then it slides left to clear it.
+  const _mpx = hudMiniMapRect().x;
+  const bx = Math.min(W / 2 - bw / 2, _mpx - 6 - bw);
   const by = HEADER_H + 6;
   const F = 'system-ui, -apple-system, Arial';
   const pct = Math.max(0, Math.min(1, hp / maxHp));
 
-  if (!_uiBtnGrads) _buildUiBtnGrads();
   ctx.save();
 
-  // Враждебная рамка из комплекта: багряная кайма, кровавые самоцветы и
-  // предупреждающая полоса слева уже нарисованы в ней. Свои рамки при этом
-  // не рисуются вовсе — иначе получаются две окантовки одна в другой.
-  if (_hostile) {
-    hudDrawW(ctx, 'F4_enemy_target_panel_hostile', bx + bw / 2, by + bh / 2, bw);
-  } else {
-    ctx.fillStyle = _uiBtnGrads.tfBg;
-    roundRect(ctx, bx, by, bw, bh, 9); ctx.fill();
-    ctx.strokeStyle = 'rgba(191,64,79,0.6)'; ctx.lineWidth = 1.5;
-    roundRect(ctx, bx, by, bw, bh, 9); ctx.stroke();
-    ctx.strokeStyle = 'rgba(209,86,101,0.1)'; ctx.lineWidth = 1;
-    roundRect(ctx, bx + 1.5, by + 1.5, bw - 3, bh - 3, 8); ctx.stroke();
-  }
+  // Same plate as the rest of the HUD, framed in the target's own colour so a
+  // player target still reads differently from a monster at a glance.
+  _hudPanel(bx, by, bw, bh, 10, 'rgba(226,96,112,0.55)');
 
-  // Имя — в спокойной верхней половине, как требует гайд к панели.
-  ctx.font = `bold 10px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillText(name.slice(0, 16), bx + 15, by + bh * 0.31 + 1);
+  drawIconCtx(ctx, 'crosshair', bx + 15, by + 12, 11, color);
+  ctx.font = `bold 10.5px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = color;
-  ctx.fillText(name.slice(0, 16), bx + 14, by + bh * 0.31);
-  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(name.slice(0, 16), bx + 25, by + 12);
 
-  // Полоса ограничена ВНУТРЕННЕЙ областью жёлоба, а не всей панелью: жёлоб
-  // у F4 непрозрачный и нарисован в самой картинке, и залить под ним всю
-  // ширину значило бы вылезти за его кромку.
-  // Жёлоб у F4 занимает нижнюю треть панели и его центр — на 0.70 её
-  // высоты. Полоса встаёт ВНУТРЬ него и с запасом по толщине: на 0.26
-  // высоты она была толще самого жёлоба и накрывала его кромку.
-  const hbh = _hostile ? Math.max(5, Math.round(bh * 0.17)) : 10;
-  const hbx = bx + (_hostile ? bw * 0.085 : 8);
-  const hbw = bw - (_hostile ? bw * 0.17 : 16);
-  const hby = _hostile ? Math.round(by + bh * 0.70 - hbh / 2) : by + 20;
-  if (!_hostile) {
-    ctx.fillStyle = 'rgba(38,12,15,0.9)';
-    roundRect(ctx, hbx, hby, hbw, hbh, 4); ctx.fill();
-  }
-  if (pct > 0) {
-    ctx.fillStyle = pct > 0.5 ? _uiBtnGrads.hpHi : (pct > 0.25 ? _uiBtnGrads.hpMid : _uiBtnGrads.hpLo);
-    roundRect(ctx, hbx, hby, hbw * pct, hbh, 4); ctx.fill();
-    ctx.fillStyle = _uiBtnGrads.tfShine;
-    roundRect(ctx, hbx, hby, hbw * pct, hbh * 0.45, 4); ctx.fill();
-  }
-  ctx.font = `bold ${_hostile ? 6.5 : 7.5}px ${F}`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-  ctx.fillText(_fmtCur(Math.ceil(hp)) + ' / ' + _fmtCur(maxHp), hbx + hbw / 2, hby + hbh / 2 + 0.7);
-  ctx.fillStyle = 'rgba(240,236,230,0.95)';
-  ctx.fillText(_fmtCur(Math.ceil(hp)) + ' / ' + _fmtCur(maxHp), hbx + hbw / 2, hby + hbh / 2);
+  _hudBar(bx + 9, by + 22, bw - 18, 12, pct,
+    pct > 0.5 ? '#7a1b26' : '#7a1b26', pct > 0.5 ? '#e0475b' : '#e0475b',
+    Math.ceil(hp) + ' / ' + maxHp);
 
   ctx.restore();
 }
@@ -4118,24 +3618,9 @@ function drawAttackButton() {
   const animBusy = (player.atkAnimTimer || 0) > 0;
   const ready = (player.atkTimer || 0) <= 0 && !animBusy;
 
-  // Веер несёт своё гнездо, D1 садится ВНУТРЬ него. Рисовать под кнопку
-  // собственный круг поверх веера — второй ободок внутри первого.
-  const onFan = (typeof fanSlots === 'function') && !!fanSlots();
-
   ctx.save();
-  if (onFan) {
-    // Готовность и режим — прозрачностью и подсветкой, а не заливкой:
-    // сама кнопка одна, отличать состояния поверх неё.
-    hudDraw(ctx, 'D1_attack_button', ab.x, ab.y, ab.r * 2, ab.r * 2,
-      autoAttackMode ? 0.55 : (animBusy ? 0.7 : 1));
-    if (!autoAttackMode && hasTarget && ready) {
-      ctx.strokeStyle = 'rgba(235,73,92,0.55)'; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r * 1.02, 0, Math.PI * 2); ctx.stroke();
-    }
-  } else {
-    ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
-    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
-  }
+  ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
+  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
 
   // cooldown arc overlay while attack animation is playing
   if (animBusy && player.castDuration > 0) {
@@ -4147,21 +3632,19 @@ function drawAttackButton() {
     ctx.stroke();
   }
 
-  if (!onFan) {
-    const borderColor = !autoAttackMode
-      ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
-      : 'rgba(84,70,46,0.45)';
-    ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
-    if (!autoAttackMode && hasTarget && ready) {
-      ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
-    }
-
-    ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-    const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c5344' : '#f1ce90');
-    drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
+  const borderColor = !autoAttackMode
+    ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
+    : 'rgba(41,72,112,0.45)';
+  ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
+  if (!autoAttackMode && hasTarget && ready) {
+    ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
   }
+
+  ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
+  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#2b5a7b' : '#f1ce90');
+  drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
 
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -4175,43 +3658,18 @@ function drawAutoToggle() {
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const ab = _uiBtnGrads.autoBtn;
   const F = 'system-ui, -apple-system, Arial';
-  const onFan = (typeof fanSlots === 'function') && !!fanSlots();
-
+  const cx = ab.x + ab.w / 2, cy = ab.y + ab.h / 2, r = ab.w / 2;
   ctx.save();
-  if (onFan) {
-    // Гайд: «це внутрішній фіолетовий диск без дублюючої золотої рамки» —
-    // окантовка гнезда уже нарисована в самом веере.
-    const cx = ab.x + ab.w / 2, cy = ab.y + ab.h / 2;
-    const d = ab.art || ab.w;
-    hudDraw(ctx, 'D2_attack_mode_button', cx, cy, d, d, autoAttackMode ? 1 : 0.82);
-  } else {
-    ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
-    roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.fill();
+  ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
-    ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 8); ctx.stroke();
-  }
+  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-  // Тиснёное золото, а не плоская заливка. Кнопка лежит поверх мира и
-  // поверх подсвеченного аметиста: одноцветная надпись читается на одном
-  // фоне и пропадает на другом, а тиснение держит букву на любом — у него
-  // есть тёмный край снизу и светлая грань сверху.
-  //
-  // Зелёный для АВТО остался, но не заливкой текста, а точкой-индикатором
-  // рядом: цвет надписи теперь означает «это кнопка», а состояние режима
-  // сообщает отдельная метка. Иначе игрок, который не различает зелёный и
-  // оранжевый, не различает и режимы.
-  // Кегль считается от РИСУНКА кнопки, а не от зоны нажатия: зона расширена
-  // до 44 px под палец, и надпись по ней была бы вдвое крупнее самой кнопки.
-  const _artD = ab.art || ab.h;
-  hudGoldText(ctx, autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'),
-    ab.x + ab.w / 2, ab.y + ab.h / 2, Math.max(8.5, Math.round(_artD * 0.34)));
-  const dot = 3;
-  ctx.beginPath();
-  ctx.arc(ab.x + ab.w / 2 + _artD * 0.42, ab.y + ab.h / 2 - _artD * 0.42, dot, 0, Math.PI * 2);
+  ctx.font = `bold 8px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
-  ctx.fill();
+  ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), cx, cy + 0.5);
   ctx.restore();
 }
 
@@ -4273,7 +3731,7 @@ function drawPartyHUD() {
     const _gh = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
     _gh.addColorStop(0, '#314f17'); _gh.addColorStop(1, '#6fb136');
     const _gm = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
-    _gm.addColorStop(0, '#6e470c'); _gm.addColorStop(1, '#e39827');
+    _gm.addColorStop(0, '#7a4a0c'); _gm.addColorStop(1, '#e39827');
     const _gl = ctx.createLinearGradient(_hbx, 0, _hbx + _hbw, 0);
     _gl.addColorStop(0, '#64131c'); _gl.addColorStop(1, '#d33d4e');
     _partyHpGrads = { hi: _gh, mid: _gm, lo: _gl, hbx: _hbx, c: ctx };
@@ -4309,7 +3767,7 @@ function drawPartyHUD() {
       roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
     }
     ctx.font = `6.5px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(209,204,197,0.88)';
+    ctx.fillStyle = 'rgba(193,204,213,0.88)';
     ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
 
     ctx.restore();
@@ -4353,7 +3811,7 @@ function drawPartyInvitePopup() {
 
   drawIconCtx(ctx, 'party', px + 20, py + 18, 16, '#90d653');
   ctx.font = `bold 12px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#d5d0ca';
+  ctx.fillStyle = '#c6d0d9';
   ctx.fillText(t('partyInviteTitle'), px + 34, py + 14);
   ctx.font = `10px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
@@ -5072,25 +4530,37 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
-// hud-menu-btn takes the slot rating-btn used to sit in (below the minimap,
-// aligned to its right edge) — everything else in this column already
-// chains its position off the button above it, so moving just this one
-// anchor cascades the whole stack down by one slot.
+// hud-menu-btn sits directly under the minimap plate, aligned to it —
+// everything else in this column chains its position off the button above it,
+// so this one anchor cascades the whole stack.
 function _positionHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
   if (!btn) return;
-  const mmPad = 6;
-  const mmH = HEADER_H - mmPad * 2;
-  // Уже прежнего: она занимала 0.27 ширины экрана под одно слово, и
-  // панель цели, которую положено держать по центру, приходилось сдвигать
-  // влево, чтобы её обойти.
-  const mmW = Math.floor(Math.min(mmH * 1.3, W * 0.22));
-  const mmX = W - mmW - mmPad - 4;
-  btn.style.top   = (HEADER_H + 6) + 'px';
-  btn.style.left  = mmX + 'px';
-  btn.style.width = (mmW + 8) + 'px';
+  // W is set by the canvas resize (js/game.js). The login handshake can beat
+  // that on a warm cache, and this column is laid out from the right edge —
+  // without a width the whole stack lands at x=0, on top of the Мир/Проф
+  // buttons. Come back on the next frame instead of writing NaNpx.
+  if (!W) { requestAnimationFrame(_positionHudColumn); return; }
+  const mp = hudMiniMapRect();
+  btn.style.top   = (mp.y + mp.h + 6) + 'px';
+  btn.style.left  = mp.x + 'px';
+  btn.style.width = mp.w + 'px';
   btn.style.right = 'auto';
   btn.style.transform = 'none';
+}
+
+// Re-runs the whole chain top-down. Called on resize (js/game.js) and
+// whenever the column is unfolded, so a stale or half-applied layout can
+// never survive on screen.
+function _positionHudColumn() {
+  _positionHudMenuBtn();
+  _positionRatingBtn();
+  _positionVipBtn();
+  _positionMarketBtn();
+  _positionGramShopBtn();
+  _positionEventsBtn();
+  _positionSeasonBtn();
+  _positionCodexBtn();
 }
 
 function showHudMenuBtn() {

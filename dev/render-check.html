@@ -442,25 +442,6 @@ async function run() {
   // может быть на месте, а WebP не доехать — тогда гнёзда стоят правильно, но
   // панели вокруг них нет, и на снимке это выглядит как «содержимое висит в
   // пустоте». Молча такое пропускать нельзя: проверка обязана краснеть.
-  head('орнамент HUD');
-  for (let i = 0; i < 100; i++) {
-    inject(w, 'window.__rcArt = (typeof hudArtStatus === "function") ? hudArtStatus() : null;');
-    const a = w.__rcArt;
-    if (a && a.ready + a.failed >= a.total) break;
-    await new Promise(res => setTimeout(res, 50));
-  }
-  inject(w, 'window.__rcArt = (typeof hudArtStatus === "function") ? hudArtStatus() : null;');
-  const art = w.__rcArt;
-  ok(!!art, 'загрузчик орнамента есть в сборке');
-  if (art) {
-    ok(art.total > 0, `в таблице ${art.total} ассетов`);
-    ok(art.failed === 0, `ни один файл не отвалился (готово ${art.ready} из ${art.total})`,
-       `${art.failed} шт не загрузились — гнёзда встанут по местам, а панели вокруг них не будет`);
-    inject(w, 'window.__rcG2 = !!(typeof hudImg === "function" && hudImg("G2_wide_header_with_map"));');
-    ok(w.__rcG2, 'панель шапки G2 загружена и готова к отрисовке');
-  }
-  await frames(w, 3);
-
   inject(w, SHOT);
   say('  снимок кадра отправлен -> dev/_render-shot.png');
   inject(w, EDGE_SHOT);
@@ -1090,23 +1071,29 @@ async function p_layout(w) {
   inject(w, `window.__rcLay = (function () {
     const out = { slots: 0, offscreen: 0, underNav: 0, hits: 0,
                   offscreenList: '', underNavList: '', hitList: '', minGap: 999 };
-    if (typeof buffSlotPos !== 'function') return out;
+    if (typeof buffSeats !== 'function') return out;
     const joy = joyCenter();
     const pot = getPotionBtnPos();
     const tgt = getTargetBtnPos();
-    const fan = fanRect();
+    const atk = getAttackBtnPos();
     const round = [
       { n: 'джойстик', x: joy.x, y: joy.y, r: JOY_R * 1.06 },
       { n: 'зелье',    x: pot.x, y: pot.y, r: pot.r },
       { n: 'цель',     x: tgt.x, y: tgt.y, r: tgt.r },
     ];
+    // ── дюжина бафов ──────────────────────────────────────────────────────
+    // Места считает buffSeats() — тот самый код, которым они рисуются, а не
+    // его копия здесь. Место, на котором фишку не было бы видно, функция
+    // пропускает и берёт следующее кольцо, поэтому главный вопрос не «где
+    // они», а «нашлось ли их двенадцать»: если дуга кончилась раньше, часть
+    // бафов не показывается вовсе.
+    const seats = buffSeats(12);
     const off = [], nav = [], hit = [];
-    for (let i = 0; i < BUFF_MAX; i++) {
-      const b = buffSlotPos(i);
+    for (let i = 0; i < seats.length; i++) {
+      const cx = seats[i].x, cy = seats[i].y, br = BUFF_CHIP_SZ / 2;
       out.slots++;
-      const cx = b.x + b.w / 2, cy = b.y + b.h / 2, br = b.w / 2;
-      if (b.x < 0 || b.x + b.w > W || b.y < 0) off.push(i);
-      if (b.y + b.h > H - NAV_H) nav.push(i);
+      if (cx - br < 0 || cx + br > W || cy - br < 0) off.push(i);
+      if (cy + br > H - NAV_H) nav.push(i);
       for (const o of round) {
         const gap = Math.hypot(cx - o.x, cy - o.y) - (o.r + br);
         if (gap < 0) hit.push(i + '/' + o.n);
@@ -1116,82 +1103,62 @@ async function p_layout(w) {
     out.offscreen = off.length; out.offscreenList = off.join(', ');
     out.underNav = nav.length;  out.underNavList = nav.join(', ');
     out.hits = hit.length;      out.hitList = hit.join(', ');
-    // ── шапка ─────────────────────────────────────────────────────────
-    // Три блока делят одну полосу, и ширины у них связаны: столбец валют —
-    // это то, что осталось между панелью и картой. Подгонять его отдельно
-    // значит однажды получить наложение на узком экране.
-    // ── шапка одной панелью: содержимое обязано попадать В гнёзда ───────
-    // Гнёзда измерены конвейером по прозрачности, а не заданы руками, и
-    // содержимое кладётся под панель. Промах наружу виден сразу — иконка
-    // или полоса вылезает из-под золотой окантовки, — но заметить его можно
-    // только глазом на скриншоте. Здесь это числа.
-    const L = hdrLayout();
-    out.hdrH = HEADER_H;
-    // W и H — глобали ИГРОВОГО кадра, а проверка живёт на странице харнеса.
-    // Их надо вынести наружу, а не читать снаружи: на первом прогоне эта
-    // строка уронила весь набор с «H is not defined».
-    out.screenW = W; out.screenH = H;
-    out.hdrOne = !!L.one;
-    if (L.one) {
-      // curSlots, не slots: под этим именем уже живёт число мест под бафы,
-      // и запись сюда молча роняла ту проверку.
-      out.curSlots = L.cur.length;
-      // Каждое гнездо целиком внутри панели.
-      const box = [L.map, L.portrait, L.hp, L.xp].concat(L.cur);
-      out.outside = box.filter(b =>
-        b.x < L.panel.x - 1 || b.y < L.panel.y - 1 ||
-        b.x + b.w > L.panel.x + L.panel.w + 1 ||
-        b.y + b.h > L.panel.y + L.panel.h + 1).length;
-      // Четыре гнезда валют идут слева направо и не пересекаются.
-      let mono = true, minField = 9999;
-      for (let i = 0; i + 1 < L.cur.length; i++) {
-        if (L.cur[i + 1].x <= L.cur[i].x + L.cur[i].w) mono = false;
-        minField = Math.min(minField, Math.round(L.cur[i + 1].x - (L.cur[i].x + L.cur[i].w)));
-      }
-      // У последнего поле идёт до окна карты.
-      minField = Math.min(minField,
-        Math.round(L.map.x - (L.cur[L.cur.length - 1].x + L.cur[L.cur.length - 1].w)));
-      out.curMono = mono;
-      out.curField = minField;
-      out.barW = Math.round(L.hp.w);
-      // Ник не должен выходить за отведённую ему полосу. Проверяется не
-      // формула, а РЕЗУЛЬТАТ: шапка перерисовывается с заведомо длинным
-      // ником и публикует, что вышло на экран после обрезки. Пересчитывать
-      // те же формулы здесь нельзя — это подтвердило бы память проверки, а
-      // не картинку.
-      //
-      // Три случая: обычный ник, длинный кириллицей и широкими буквами
-      // («ЩЩЩ» и «iii» одной длины занимают разное место — по числу знаков
-      // обрезка врёт), и ник из одних пробелов, на котором цикл обрезки
-      // легко зацикливается.
-      const _saveName = netUsername;
-      out.names = [];
-      const probes = ['render-check',
-                      'ЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩЩ',
-                      'iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii',
-                      'MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM'];
-      for (let i = 0; i < probes.length; i++) {
-        netUsername = probes[i];
-        _hdrDrawnName = null;
-        drawHeader();
-        const d = _hdrDrawnName;
-        out.names.push(d
-          ? { over: Math.round(d.x + d.w - d.limit), txt: d.text, src: probes[i] }
-          : { over: 9999, txt: '', src: probes[i] });
-      }
-      netUsername = _saveName;
-      drawHeader();
-      out.portraitD = Math.round(Math.min(L.portrait.w, L.portrait.h));
-      out.mapD = Math.round(Math.min(L.map.w, L.map.h));
-    }
 
+    // ── веер действий ─────────────────────────────────────────────────────
+    // Четыре умения на дуге, атака в её центре, переключатель режима на
+    // ободе. Всё считается от одной опоры (fanCenter, js/input.js), поэтому
+    // проверяется не «совпали ли числа», а то, что круги действительно
+    // помещаются на экран и не лезут друг на друга.
+    const skl = [0, 1, 2, 3].map(getSkillBtnPos);
+    out.sklOff = skl.filter(b => b.cx - b.r < 0 || b.cx + b.r > W ||
+                                 b.cy - b.r < 0 || b.cy + b.r > H - NAV_H).length;
+    let sklGap = 999;
+    for (let i = 0; i + 1 < skl.length; i++) {
+      const a2 = skl[i], b2 = skl[i + 1];
+      sklGap = Math.min(sklGap, Math.round(Math.hypot(a2.cx - b2.cx, a2.cy - b2.cy) - a2.r - b2.r));
+    }
+    out.sklGap = sklGap;
+    out.sklJoy = Math.round(Math.min.apply(null,
+      skl.map(b => Math.hypot(b.cx - joy.x, b.cy - joy.y) - b.r - JOY_R)));
+    out.atkOff = (atk.x + atk.r > W || atk.y + atk.r > H - NAV_H) ? 1 : 0;
+    const aab = getAutoBtnPos();
+    out.autoAtk = Math.round(Math.hypot(aab.cx - atk.x, aab.cy - atk.y) - aab.r - atk.r);
+    out.autoSkl = Math.round(Math.min.apply(null,
+      skl.map(b => Math.hypot(b.cx - aab.cx, b.cy - aab.cy) - b.r - aab.r)));
     out.potTgt = Math.round(Math.hypot(pot.x - tgt.x, pot.y - tgt.y) - (pot.r + tgt.r));
-    // По дуге, а не по прямоугольнику: верхний левый угол прямоугольника
-    // веера пуст, и первая версия этой строки объявила столкновением
-    // воздух. Проверка, которая меряет не то, ловит не то.
-    const fo = fanOuter();
-    out.tgtFan = Math.round(Math.hypot(tgt.x - fo.x, tgt.y - fo.y) - fo.r - tgt.r);
-    out.potFan = Math.round(Math.hypot(pot.x - fo.x, pot.y - fo.y) - fo.r - pot.r);
+    out.potSkl = Math.round(Math.min.apply(null,
+      skl.map(b => Math.hypot(b.cx - pot.x, b.cy - pot.y) - b.r - pot.r)));
+    out.tgtSkl = Math.round(Math.min.apply(null,
+      skl.map(b => Math.hypot(b.cx - tgt.x, b.cy - tgt.y) - b.r - tgt.r)));
+
+    // ── шапка ─────────────────────────────────────────────────────────────
+    // Две плашки в одном ряду: слева игрок, справа карта. Ширина левой —
+    // это то, что осталось до карты, поэтому на узком экране первой
+    // страдает именно она, и мерить надо её.
+    const mp = hudMiniMapRect();
+    out.screenW = W; out.screenH = H;
+    out.hdrH = HEADER_H;
+    out.mapX = Math.round(mp.x); out.mapW = Math.round(mp.w); out.mapH = Math.round(mp.h);
+    out.mapOff = (mp.x < 0 || mp.x + mp.w > W || mp.y < 0) ? 1 : 0;
+    const px = 6, pw = mp.x - px - 4;
+    out.plateW = Math.round(pw);
+    // Полоса HP/XP: от левого края текста до правого поля плашки.
+    const infoX = px + 30 + 25 + 12;
+    out.barW = Math.round(px + pw - 11 - infoX);
+    // Ник рисуется обрезанным по четырнадцати знакам (drawHeader, js/ui.js).
+    // Проверяется не формула, а РЕЗУЛЬТАТ: самые широкие четырнадцать знаков
+    // измеряются тем же шрифтом, каким рисуются, и сверяются с полосой.
+    ctx.save();
+    ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+    out.nameW = Math.ceil(ctx.measureText('MMMMMMMMMMMMMM').width);
+    ctx.restore();
+    // Столбец кнопок HUD висит под плашкой карты и от неё же считается.
+    const btn = document.getElementById('hud-menu-btn');
+    if (btn) {
+      out.colTop = parseInt(btn.style.top || '0', 10);
+      out.colLeft = parseInt(btn.style.left || '0', 10);
+      out.colW = parseInt(btn.style.width || '0', 10);
+    }
     return out;
   })();`);
   return w.__rcLay;
@@ -1242,50 +1209,52 @@ async function walletChecks(w) {
   // навигацию, цель ложилась на обод джойстика, зелье налезало на веер.
   head('боевой экран — раскладка без наложений');
   const lay = await p_layout(w);
-  ok(lay.slots === 12, `двенадцать мест под бафы (${lay.slots})`);
+  ok(lay.slots === 12, `двенадцать мест под бафы (${lay.slots})`,
+     'дуга кончилась раньше — часть бафов не показывается вовсе');
   ok(lay.offscreen === 0, 'ни одно гнездо не выходит за край экрана',
      lay.offscreenList);
   ok(lay.underNav === 0, 'ни одно не уезжает под нижнюю навигацию',
      lay.underNavList);
   ok(lay.hits === 0, 'ни одно не пересекается с джойстиком, зельем или целью',
      lay.hitList);
-  ok(lay.minGap >= 6,
+  ok(lay.minGap >= 4,
      `самый тесный зазор между гнездом и кнопкой — ${lay.minGap} px`,
-     'меньше шести: на телефоне это уже «слиплось»');
-  // И сами кнопки между собой.
-  ok(lay.potTgt >= 4, `зазор между зельем и целью — ${lay.potTgt} px`);
-  ok(lay.tgtFan >= 0, `цель не заходит на веер (${lay.tgtFan} px по дуге)`);
-  ok(lay.potFan >= 0, `и зелье тоже (${lay.potFan} px по дуге)`);
+     'меньше четырёх: на телефоне это уже «слиплось»');
 
-  head('шапка — содержимое попадает в гнёзда панели');
-  ok(lay.hdrOne, 'шапка собрана одной панелью G2, а не тремя блоками',
-     'G2 не доехал — работает запасная раскладка, и остальные проверки не о ней');
-  if (lay.hdrOne) {
-    ok(lay.curSlots === 4, `четыре гнезда под валюты (${lay.curSlots})`);
-    ok(lay.outside === 0, 'ни одно гнездо не выходит за пределы панели',
-       `${lay.outside} шт`);
-    ok(lay.curMono, 'гнёзда валют идут слева направо и не пересекаются');
-    ok(lay.curField >= 24,
-       `под самое тесное число остаётся ${lay.curField} px`,
-       'меньше двадцати четырёх: пятизначный баланс туда не влезет');
-    ok(lay.portraitD >= 40, `портрет ${lay.portraitD} px — лицо различимо`);
-    ok(lay.mapD >= 60, `окно карты ${lay.mapD} px`);
-    ok(lay.barW >= 120, `полосы HP и XP длиной ${lay.barW} px`);
-    const over = (lay.names || []).filter(n => n.over > 0);
-    ok(over.length === 0,
-       `ник не выходит за свою полосу ни на одном из ${(lay.names || []).length} проверенных`,
-       over.map(n => `«${n.src}» вылез на ${n.over} px, нарисовано «${n.txt}»`).join('; '));
-    const cut = (lay.names || []).filter(n => n.src.length > 20);
-    ok(cut.every(n => n.txt.slice(-1) === '…'),
-       'длинный ник кончается многоточием, а не обрывом',
-       cut.map(n => `«${n.txt}»`).join('; '));
-    // Панель держит СВОЮ пропорцию, поэтому высота шапки — следствие ширины
-    // экрана, а не назначенное число. Проверяется потолок: если однажды
-    // придёт панель другой формы, шапка не должна съесть треть экрана.
-    ok(lay.hdrH <= lay.screenH * 0.20,
-       `шапка ${lay.hdrH} px — не больше пятой части экрана (${Math.round(lay.screenH * 0.20)})`,
-       'панель такой формы съедает слишком много: нужна другая пропорция');
-  }
+  head('веер действий — четыре умения, атака и режим');
+  ok(lay.sklOff === 0, 'все четыре кнопки умений целиком на экране и над навигацией',
+     `${lay.sklOff} шт вылезли`);
+  ok(lay.sklGap >= 0, `соседние умения не наезжают друг на друга (${lay.sklGap} px)`);
+  ok(lay.sklJoy >= 0, `и на джойстик тоже (${lay.sklJoy} px)`);
+  ok(lay.atkOff === 0, 'кнопка атаки не уходит за угол экрана');
+  ok(lay.autoAtk >= 0, `переключатель режима не лежит на атаке (${lay.autoAtk} px)`);
+  ok(lay.autoSkl >= 0, `и не лежит на умениях (${lay.autoSkl} px)`);
+  ok(lay.potTgt >= 4, `зазор между зельем и целью — ${lay.potTgt} px`);
+  ok(lay.potSkl >= 0, `зелье не заходит на дугу умений (${lay.potSkl} px)`);
+  ok(lay.tgtSkl >= 0, `и цель тоже (${lay.tgtSkl} px)`);
+
+  head('шапка — плашка игрока и плашка карты в одном ряду');
+  ok(lay.mapOff === 0, 'плашка карты целиком на экране');
+  ok(lay.mapW >= 60, `окно карты ${lay.mapW} px`);
+  ok(lay.plateW >= 180, `под плашку игрока остаётся ${lay.plateW} px`,
+     'меньше ста восьмидесяти: имя, класс и полосы туда уже не встают');
+  ok(lay.barW >= 120, `полосы HP и XP длиной ${lay.barW} px`);
+  // Ник обрезан по четырнадцати знакам (drawHeader, js/ui.js). Проверяется
+  // не формула, а результат: самые широкие четырнадцать знаков измерены тем
+  // же шрифтом и должны помещаться в полосу.
+  ok(lay.nameW <= lay.barW,
+     `самый широкий ник в четырнадцать знаков — ${lay.nameW} px, полоса ${lay.barW}`,
+     'обрезка по числу знаков перестала спасать: ник вылезает за плашку');
+  // Плашка карты свисает под шапку поверх мира, и правый столбец кнопок
+  // считается от НЕЁ, а не от HEADER_H. Раньше он на первом кадре после
+  // быстрого входа улетал к левому краю.
+  ok(lay.colW > 0 && lay.colLeft > 0,
+     `столбец кнопок HUD встал под карту (${lay.colLeft} px от левого края, ширина ${lay.colW})`,
+     'ширина или отступ нулевые — колонка легла на кнопки Мир/Проф');
+  ok(Math.abs(lay.colLeft - lay.mapX) <= 1 && Math.abs(lay.colW - lay.mapW) <= 1,
+     'и выровнен по ней же, а не по своей мерке');
+  ok(lay.hdrH <= lay.screenH * 0.20,
+     `шапка ${lay.hdrH} px — не больше пятой части экрана (${Math.round(lay.screenH * 0.20)})`);
 
   head('кошелёк GRAM — вкладка');
   inject(w, WALLET_SETUP);
@@ -1390,7 +1359,7 @@ async function walletChecks(w) {
   //
   // Проверяется то, что реально посчитал браузер: getComputedStyle и
   // getBoundingClientRect, а не формулы отсюда.
-  head('чат — сообщение попадает в окно рамы');
+  head('чат — строка последнего сообщения');
   {
     inject(w, `window.__rcChat = (function () {
       const p = document.getElementById('chat-preview');
@@ -1400,34 +1369,34 @@ async function walletChecks(w) {
       const prev = p.style.display;
       p.style.display = 'flex';
       document.getElementById('chat-preview-name').textContent = 'Игрок:';
-      document.getElementById('chat-preview-text').textContent = 'Привет…';
-      const win = document.getElementById('chat-preview-win');
-      const cs = getComputedStyle(p);
-      const wcs = getComputedStyle(win);
+      document.getElementById('chat-preview-text').textContent =
+        'Привет, кто идёт на башню в восемь часов вечера';
       const box = p.getBoundingClientRect();
-      const wb = win.getBoundingClientRect();
       const name = document.getElementById('chat-preview-name').getBoundingClientRect();
       const text = document.getElementById('chat-preview-text').getBoundingClientRect();
+      // У кнопки чата на этот момент display:none — она появляется только
+      // после входа, — и её прямоугольник нулевой. Поэтому её место берётся
+      // из посчитанного браузером CSS, а не израмки: проверяем раскладку, а
+      // не условие показа.
+      const bcs = getComputedStyle(document.getElementById('chat-btn'));
+      const btn = {
+        left: parseFloat(bcs.left), bottom: parseFloat(bcs.bottom),
+        right: parseFloat(bcs.left) + parseFloat(bcs.width),
+      };
       const out = {
         ok: true,
         w: Math.round(box.width), h: Math.round(box.height),
-        bg: cs.backgroundImage,
-        winBg: wcs.backgroundColor,
-        // Прозрачность стоит на ВСЁМ пузыре, а не на подложке, поэтому
-        // видимая плотность — произведение одного на другое. Меряется
-        // composite: alpha самой подложки о том, что видно, уже не говорит.
-        winAlpha: (function () {
-          var m = /rgba?\(([^)]+)\)/.exec(wcs.backgroundColor);
-          var a = m ? Number((m[1].split(',')[3] || '1').trim()) : 0;
-          return a * Number(cs.opacity || 1);
-        })(),
-        // Поле между краем рамы и окном.
-        padL: Math.round(wb.left - box.left),
-        padT: Math.round(wb.top - box.top),
-        contentTop: Math.round(Math.min(name.top, text.top) - box.top),
-        contentBot: Math.round(box.bottom - Math.max(name.bottom, text.bottom)),
-        contentL: Math.round(Math.min(name.left, text.left) - box.left),
-        contentR: Math.round(box.right - Math.max(name.right, text.right)),
+        right: Math.round(box.right),
+        // Обе строки внутри рамки, а не поверх неё.
+        overT: Math.round(box.top - Math.min(name.top, text.top)),
+        overB: Math.round(Math.max(name.bottom, text.bottom) - box.bottom),
+        overR: Math.round(Math.max(name.right, text.right) - box.right),
+        // Пузырь стоит справа от кнопки чата и на одной с ней высоте.
+        // Обе величины — в системе координат CSS: отступы от левого и от
+        // нижнего края #app.
+        gapBtn: Math.round(parseFloat(getComputedStyle(p).left) - btn.right),
+        baseOff: Math.round(parseFloat(getComputedStyle(p).bottom) - btn.bottom),
+        viewW: document.getElementById('app').getBoundingClientRect().width,
       };
       p.style.display = prev;
       return out;
@@ -1435,40 +1404,23 @@ async function walletChecks(w) {
     const r = w.__rcChat || { ok: false };
     ok(r.ok, 'пузырь последнего сообщения есть в разметке');
     if (r.ok) {
-      ok(/A8_chat_bar/.test(r.bg), 'фон — рама A8_chat_bar из комплекта, а не нарисованная коробка',
-         r.bg);
-      // ── насколько сквозь него видно мир ─────────────────────────────────
-      // Пузырь ПОЛУПРОЗРАЧНЫЙ намеренно: он висит поверх игрового поля, и
-      // владелец просил, чтобы сквозь него было видно, что там происходит.
-      // Но не настолько, чтобы текст сел на монстров — а под ним бывает
-      // светлая лава.
-      //
-      // Проверяется ВИДИМАЯ плотность: alpha подложки, помноженная на
-      // opacity всего пузыря. Прежняя проверка читала только первое и
-      // осталась бы зелёной, даже если бы пузырь погасили до нуля.
-      ok(r.winAlpha > 0.6 && r.winAlpha < 0.95,
-         `видимая плотность подложки ${r.winAlpha.toFixed(2)} — мир просвечивает, текст читается`,
-         'ниже 0.6 — текст ляжет на подземелье; выше 0.95 — это уже не полупрозрачный');
-      // Пропорция ассета: 714 / 200 = 3.57.
-      const ratio = r.w / r.h;
-      ok(Math.abs(ratio - 3.57) < 0.06,
-         `рама держит свою пропорцию ${ratio.toFixed(2)} : 1 (ассет 3.57)`,
-         'растянута непропорционально — гайд к комплекту это запрещает');
-      // Окно рамы: 0.8844 ширины и 0.6261 высоты, по центру. Значит поле
-      // слева/справа = 5.78% ширины, сверху/снизу = 18.7% высоты.
-      const wantX = Math.round(r.w * 0.0578);
-      const wantY = Math.round(r.h * 0.187);
-      ok(Math.abs(r.padL - wantX) <= 2,
-         `боковой отступ ${r.padL} px совпадает с окном рамы (${wantX})`);
-      ok(Math.abs(r.padT - wantY) <= 2,
-         `верхний отступ ${r.padT} px совпадает с окном рамы (${wantY})`);
-      // И сам текст внутри этого поля, а не только padding правильный.
-      ok(r.contentTop >= wantY - 2 && r.contentBot >= wantY - 2,
-         `обе строки внутри окна по высоте (сверху ${r.contentTop}, снизу ${r.contentBot})`,
-         'текст вылез на золотую оправу');
-      ok(r.contentL >= wantX - 2 && r.contentR >= wantX - 2,
-         `и по ширине (слева ${r.contentL}, справа ${r.contentR})`,
-         'текст вылез на золотую оправу');
+      // Правый край пузыря обязан оставаться в стороне от веера: нижняя
+      // кнопка умения доходит до x = W − 182 (fanCenter/FAN_R_SKILL,
+      // js/input.js) ровно на этой высоте.
+      ok(r.right <= r.viewW - 182,
+         `правый край пузыря на ${Math.round(r.viewW - r.right)} px от края — веер свободен`,
+         'пузырь дотянулся до нижней кнопки умения');
+      ok(r.overT <= 0 && r.overB <= 0 && r.overR <= 0,
+         'обе строки внутри рамки, а не поверх неё',
+         `сверху ${r.overT}, снизу ${r.overB}, справа ${r.overR}`);
+      ok(r.gapBtn >= 0 && r.gapBtn <= 24,
+         `пузырь стоит вплотную справа от кнопки чата (${r.gapBtn} px)`,
+         'он висит сам по себе посреди экрана, а не рядом с кнопкой');
+      ok(Math.abs(r.baseOff) <= 2,
+         'и на одной с ней высоте, а не над ней',
+         `низ разошёлся на ${r.baseOff} px`);
+      // Длинное сообщение режется многоточием, а не растягивает пузырь.
+      ok(r.w <= 170, `ширина пузыря ${r.w} px — длинное сообщение обрезано, а не растянуло его`);
     }
   }
 

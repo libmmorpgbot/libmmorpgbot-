@@ -1,20 +1,43 @@
-const SKILL_SZ  = 54;
-const SKILL_GAP = 8;
+const SKILL_SZ  = 48;   // skill-button diameter (they ride the fan's arc)
 const POTION_R  = 26;
+
+// ─────────────────────────────────────────────────────────
+//  ACTION FAN  (bottom-right)
+// ─────────────────────────────────────────────────────────
+// Every right-hand control is polar around a single pivot instead of the old
+// stacked 2x2 grid: the manual-attack button sits ON the pivot, the four
+// skills ride an arc around it, the АВТО/РУЧ chip clips onto that arc's rim,
+// potion and target sit on a wider arc above, and the buff/debuff chips
+// follow an outer arc of their own (drawBuffStrip, js/ui.js). Angles are
+// canvas-standard — y grows downward, so -90° is straight up and -180°
+// straight left — and the pivot is pinned to the bottom-right corner, so the
+// whole cluster follows the screen size without any piece needing a layout
+// rule of its own. Anything new that wants a place on the fan should ask
+// fanPos() for it rather than hardcoding coordinates.
+const FAN_MX = 64, FAN_MY = 70;  // pivot inset from the right edge / nav bar
+const FAN_R_ATK   = 40;          // attack button — drawn on the pivot itself
+const FAN_R_MODE  = 64;          // АВТО/РУЧ chip
+const FAN_R_SKILL = 96;          // the four skill buttons
+const FAN_R_OUTER = 192;         // potion / target
+const FAN_A_MODE   = -55;
+const FAN_A_SKILL  = -74;        // topmost skill …
+const FAN_A_STEP   = -37;        // … and counter-clockwise from there
+const FAN_A_POTION = -84;
+const FAN_A_TARGET = -104;
+
+function fanCenter() { return { x: W - FAN_MX, y: H - NAV_H - FAN_MY }; }
+
+function fanPos(r, deg) {
+  const c = fanCenter(), a = deg * Math.PI / 180;
+  return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
+}
+
+function fanSkillAngle(idx) { return FAN_A_SKILL + idx * FAN_A_STEP; }
 
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
 function joyCenter() { return _joyCenter; }
-// Джойстик ниже, чем был: над ним теперь столбец круглых кнопок —
-// телепорт и чат, — и на прежней высоте они наезжали на его обод.
-// 96 вместо 130 опускает его к самой навигации, где ему и место: большой
-// палец левой руки лежит там, а не в середине экрана.
-// Выше — да, правее — нет. Правее не вышло: вторая дуга бафов идёт ВЛЕВО
-// от первой (правее её ждёт веер умений), и на 0.30 ширины джойстик
-// перекрывал два её гнезда. Перебрал: 0.30 даёт −5 px, 0.29 — ноль,
-// 0.27 — восемь. Восемь и оставил. Подъём на 112 при этом сохранён
-// целиком, он бафам не мешает.
-function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 112; }
+function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - 130; }
 
 function _inJoyZone(cx, cy) {
   const jc = joyCenter();
@@ -22,99 +45,27 @@ function _inJoyZone(cx, cy) {
          dist(cx, cy, jc.x, jc.y) < JOY_R * 1.35;
 }
 
-// ── веер умений ───────────────────────────────────────────────────────────
-// Прямоугольник, в котором лежит A3_skill_fan. Правым краем чуть за экран —
-// так на макете: веер срезан краем, и это его форма, а не ошибка вёрстки.
-//
-// Ширина в долях экрана, а не константой: на 320-пиксельном телефоне веер
-// в 196 px занял бы больше половины ширины и налез на джойстик.
-function fanRect() {
-  const a = (typeof HUD_ART !== 'undefined') && HUD_ART.A3_skill_fan;
-  const w = Math.min(200, W * 0.47);
-  const h = a ? w * a.out[1] / a.out[0] : w;
-  // Правым краем ВПРИТЫК, а не за экран. На макете веер срезан краем, и
-  // соблазн повторить это буквально был; но малое гнездо переключателя режима
-  // лежит на 0.90 ширины веера, и при заезде за край кнопка уезжала вместе с
-  // ним — вместе со своей подписью. Форму приходится жертвовать той кнопке,
-  // которая должна нажиматься.
-  return { x: W - w - 2, y: H - NAV_H - h + 12, w, h };
-}
-
-// Гнёзда веера в порядке ДУГИ, а не по площади. Таблица отдаёт их
-// отсортированными по величине — так находится место атаки, — но умения
-// идут по дуге снизу вверх, и первое умение должно лежать в нижнем гнезде,
-// а не в том, которое случайно оказалось на пиксель больше.
-let _fanSlotsCache = null;
-function fanSlots() {
-  if (_fanSlotsCache) return _fanSlotsCache;
-  const a = (typeof HUD_ART !== 'undefined') && HUD_ART.A3_skill_fan;
-  if (!a || !a.slots || a.slots.length < 6) return null;
-  const all = a.slots.slice();
-  const attack = all.shift();              // самое большое
-  const mode = all.pop();                  // самое маленькое
-  all.sort((p, q) => q[1] - p[1]);         // сверху вниз по экрану → снизу вверх по дуге
-  _fanSlotsCache = { attack, mode, skills: all };
-  return _fanSlotsCache;
-}
-
-function _fanAt(slot) {
-  const r = fanRect();
-  return {
-    x: r.x + slot[0] * r.w,
-    y: r.y + slot[1] * r.h,
-    r: slot[2] * r.w / 2,
-  };
-}
-
+// Skill button `idx`, counted from the top of the arc down. x/y/w/h is the
+// bounding box (what the gradient cache and the drawing code read); cx/cy/r
+// is the circle actually drawn and hit-tested.
 function getSkillBtnPos(idx) {
-  const f = fanSlots();
-  if (f) {
-    const p = _fanAt(f.skills[idx] || f.skills[0]);
-    return { x: p.x - p.r, y: p.y - p.r, w: p.r * 2, h: p.r * 2 };
-  }
-  // Запасная сетка 2×2 — на случай, если таблица ассетов не доехала.
-  const sz = SKILL_SZ, gap = SKILL_GAP;
-  const rx = W - 14, by = H - NAV_H - 14;
-  const col = idx % 2;             // 0=left, 1=right
-  const row = Math.floor(idx / 2); // 0=top, 1=bottom
-  return {
-    x: rx - (1 - col) * (sz + gap) - sz,
-    y: by - (1 - row) * (sz + gap) - sz,
-    w: sz, h: sz,
-  };
+  const r = SKILL_SZ / 2;
+  const p = fanPos(FAN_R_SKILL, fanSkillAngle(idx));
+  return { x: p.x - r, y: p.y - r, w: SKILL_SZ, h: SKILL_SZ, cx: p.x, cy: p.y, r };
 }
 
-// Attack and Target are stacked ABOVE the 2×2 skill grid (row); Potion takes
-// the primary slot above that row. Attack keeps the bigger (formerly
-// Potion's-slot-sized) radius here, Potion the smaller one below — icon size
-// scales off these radii, so this alone swaps how big each icon renders.
+// Attack is the fan's hub — the biggest button, right in the corner where the
+// thumb rests. Target and Potion ride the outer arc above the skills, Target
+// to the left of Potion (icon size scales off these radii, so the numbers
+// here alone decide how big each icon renders).
 function getAttackBtnPos() {
-  const f = fanSlots();
-  // Радиус чуть меньше гнезда: D1 садится ВНУТРЬ отверстия, а золотая
-  // окантовка гнезда остаётся сверху — гайд про порядок слоёв.
-  if (f) { const p = _fanAt(f.attack); return { x: p.x, y: p.y, r: p.r * 0.94 }; }
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = 30;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz / 2, y: gridTop - gap - r, r };
+  const c = fanCenter();
+  return { x: c.x, y: c.y, r: FAN_R_ATK };
 }
 
-// Цель — слева от веера, на уровне его верхней трети: место, где на макете
-// стоит «Target», и единственное свободное — веер занимает весь угол.
 function getTargetBtnPos() {
-  const f = fanSlots();
-  if (f) {
-    const r = fanRect();
-    // Слева от зелья, на ОДНОЙ с ним высоте: две кнопки одного ряда, а не
-    // лесенка. Зазор между ободами 6 px — это одна группа, а не две разные
-    // части экрана.
-    // Ниже зелья и левее его: прямо вниз идти некуда — там начинается
-    // веер. Кнопка спускается вдоль его дуги, а не в неё.
-    const pot = getPotionBtnPos();
-    return { x: pot.x - 56, y: pot.y + 16, r: 25 };
-  }
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const gridTop = H - NAV_H - 14 - 2 * sz - gap;
-  return { x: W - 14 - sz - gap - sz / 2, y: gridTop - gap - r, r };
+  const p = fanPos(FAN_R_OUTER, FAN_A_TARGET);
+  return { x: p.x, y: p.y, r: POTION_R };
 }
 
 function getPvpBtnPos() {
@@ -144,10 +95,6 @@ function getClassChangeBtnPos() {
 // kit (openStarterBonusPanel, js/ui.js). Only drawn while the account still
 // has it to claim, but the position is unconditional: the party list below is
 // laid out from it either way (see _partyHudStartY).
-//
-// Раньше между ним и Профессией стояла кнопка "+Pack". Её убрали целиком —
-// вместе с товаром, — и Бонус поднялся в освободившийся слот, а не остался
-// висеть с дыркой над собой.
 function getStarterBonusBtnPos() {
   const cc = getClassChangeBtnPos();
   return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
@@ -161,10 +108,10 @@ function getPartyLeaveBtnPos() {
 }
 
 // Party member list starts directly below the Бонус slot (which sits below
-// Профессия) — used to be further down, past the since-removed +Pack,
-// Special and "ТЕХ" gift buttons. Laid out from that slot whether or not the
-// button is currently drawn, so the list does not jump the moment the kit is
-// claimed.
+// +Pack, which sits below Профессия) — used to be two slots further down,
+// past the since-removed Special and "ТЕХ" gift buttons. Laid out from that
+// slot whether or not the button is currently drawn, so the list does not
+// jump the moment the kit is claimed.
 function _partyHudStartY() {
   const bonus = getStarterBonusBtnPos();
   return bonus.y + bonus.h + 6;
@@ -185,89 +132,18 @@ function getPartyInfoBtnPos() {
   return { x: pb.x + pb.w + 6, y: pb.y, w: 52, h: pb.h };
 }
 
-// Potion is above the attack/target row; AUTO sits directly above Potion
-// Фляга — над веером, как на макете: это расходник, а не умение, и она
-// намеренно вынесена из дуги, потому что промах по ней в бою дороже всего.
 function getPotionBtnPos() {
-  const f = fanSlots();
-  if (f) {
-    const r = fanRect();
-    // К правому краю экрана и ровно над кромкой веера. Раньше кнопка стояла
-    // посреди его ширины и висела над миром сама по себе; прижатая к стенке
-    // она читается как верхний ряд того же блока, что и умения под ней.
-    return { x: W - 36, y: r.y - 32, r: 27 };
-  }
-  const sz = SKILL_SZ, gap = SKILL_GAP, r = POTION_R;
-  const ab = getAttackBtnPos();
-  return { x: W - 14 - sz / 2, y: ab.y - ab.r - gap - r, r };
+  const p = fanPos(FAN_R_OUTER, FAN_A_POTION);
+  return { x: p.x, y: p.y, r: POTION_R + 2 };
 }
 
-// Переключатель ручной/авто садится в МАЛОЕ гнездо веера — гайд называет его
-// «єдине посадкове місце для D2_attack_mode_button».
+// АВТО/РУЧ chip, clipped onto the fan's rim between the attack hub and the
+// skill arc. Drawn round, but the box stays x/y/w/h — that is what the hit
+// test and dev/harness.js read.
 function getAutoBtnPos() {
-  const f = fanSlots();
-  if (f) {
-    const p = _fanAt(f.mode);
-    // Гнездо мелкое — 0.081 ширины веера, около 16 px, — а палец нет. Область
-    // нажатия расширена до 44: у макета тут одна кнопка, и она обязана
-    // нажиматься, а не «иногда нажиматься». art несёт размер РИСУНКА, чтобы
-    // отрисовка не раздувалась вместе с зоной попадания.
-    const d = Math.max(44, p.r * 2);
-    // Рисунок КРУПНЕЕ отверстия — так и на макете: «РУЧ» там не тонет в
-    // гнезде, а лежит на нём пилюлей. Само отверстие 0.081 ширины веера,
-    // около 16 px, и три буквы в него не помещаются никаким кеглем.
-    return { x: p.x - d / 2, y: p.y - d / 2, w: d, h: d, art: Math.max(30, p.r * 3.8) };
-  }
-  const pb = getPotionBtnPos();
-  const gap = SKILL_GAP;
-  const w = 52, h = 22;
-  return { x: pb.x - w / 2, y: pb.y - pb.r - gap - h, w, h };
-}
-
-// ── дуга бафов ─────────────────────────────────────────────────────────────
-// Две дуги по шесть вдоль внешнего края веера. Здесь, рядом с остальной
-// раскладкой, а не внутри рисовалки: положение бафов надо уметь проверить,
-// не рисуя их, — иначе «ничего ни на что не налезает» так и остаётся
-// обещанием, которое каждый раз проверяют глазами по скриншоту.
-//
-// Дуга не подобрана: четыре гнезда умений в A3 лежат на окружности, по трём
-// из них считается её центр — (0.898, 0.897) размера веера — и радиус
-// 0.707 ширины. Бафы идут по той же окружности радиусом побольше, поэтому
-// лента повторяет форму веера.
-const BUFF_SZ = 21, BUFF_PER_ARC = 6, BUFF_MAX = 12, BUFF_ARC_STEP = 26;
-// Концы: 1.03π — там, где нижнее гнездо ещё не достаёт до навигации,
-// 1.29π — где верхнее ещё не достаёт до кнопки цели.
-const BUFF_A0 = Math.PI * 1.02, BUFF_A1 = Math.PI * 1.31;
-// Внешний край веера. Он проходит через верхний правый и нижний левый углы
-// своего прямоугольника, и от центра дуги до них — 0.903 ширины. Нужен
-// именно он, а не край прямоугольника: верхний левый угол прямоугольника
-// ПУСТ, там воздух, и мерить по нему — значит объявлять столкновением то,
-// чего нет.
-const FAN_OUTER_R = 0.903;
-function fanOuter() {
-  const f = fanRect();
-  return { x: f.x + f.w * 0.898, y: f.y + f.h * 0.897, r: f.w * FAN_OUTER_R };
-}
-
-function buffSlotPos(i) {
-  const f = fanRect();
-  const cx0 = f.x + f.w * 0.898, cy0 = f.y + f.h * 0.897;
-  const ring = Math.floor(i / BUFF_PER_ARC);
-  const k = i % BUFF_PER_ARC;
-  // Вторая дуга ДАЛЬШЕ от центра, то есть левее первой. Раньше она шла
-  // ближе к центру — то есть правее, — и вторая шестёрка ложилась прямо на
-  // веер умений. Основная дуга — левая, остальные достраиваются от неё
-  // наружу.
-  const rr = f.w * 0.98 + ring * BUFF_ARC_STEP;
-  // Шаг постоянный, а не «поделить дугу на число бафов»: иначе при двух
-  // бафах они расползлись бы по всей дуге, а при десяти сползлись в кучу,
-  // и одно и то же зелье каждый раз оказывалось бы в новом месте.
-  const ang = BUFF_A0 + k * (BUFF_A1 - BUFF_A0) / (BUFF_PER_ARC - 1);
-  return {
-    x: cx0 + Math.cos(ang) * rr - BUFF_SZ / 2,
-    y: cy0 + Math.sin(ang) * rr - BUFF_SZ / 2,
-    w: BUFF_SZ, h: BUFF_SZ,
-  };
+  const r = 15;
+  const p = fanPos(FAN_R_MODE, FAN_A_MODE);
+  return { x: p.x - r, y: p.y - r, w: r * 2, h: r * 2, cx: p.x, cy: p.y, r };
 }
 
 // Invite accept/decline buttons (for popup)
@@ -398,8 +274,11 @@ function _checkSkillTouch(cx, cy) {
   const skills = SKILL_DEF[player.type];
   if (!skills) return false;
   for (let i = 0; i < 4; i++) {
+    // Circular, not the bounding box: on the arc the boxes of neighbouring
+    // buttons clip each other's corners, so a box test would hand a tap in
+    // the gap between two skills to whichever one happens to be checked first.
     const b = getSkillBtnPos(i);
-    if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+    if (Math.hypot(cx - b.cx, cy - b.cy) <= b.r + 6) {
       useSkill(i);
       return true;
     }
@@ -495,7 +374,6 @@ function _checkClassChangeBtnTouch(cx, cy) {
   }
   return false;
 }
-
 
 // Same gate the drawing uses (_starterBonusAvailable, js/ui.js): once the kit
 // is claimed the button is gone, and its slot must stop swallowing taps meant

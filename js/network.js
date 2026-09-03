@@ -3758,18 +3758,8 @@ function _refreshChatPreview() {
   const isMe = myName && last.username === myName;
   const nameEl = document.getElementById('chat-preview-name');
   const textEl = document.getElementById('chat-preview-text');
-  // Обрезка ЧИСЛОМ ЗНАКОВ, а не многоточием от CSS. У CSS обрезка зависит
-  // от ширины букв: «ЩЩЩЩЩЩЩЩ» и «iiiiiiii» занимают разное место, и пузырь
-  // то показывал полфразы, то одно слово. Здесь предел один для всех.
-  //
-  // Восемь знаков — это анонс, а не сообщение: он говорит, что в чате
-  // что-то есть и от кого, а читают его в чате.
-  const _cut = (s, n) => {
-    const str = String(s == null ? '' : s);
-    return str.length > n ? str.slice(0, n) + '…' : str;
-  };
-  if (nameEl) { nameEl.textContent = _cut(last.username, 10) + ':'; nameEl.classList.toggle('is-me', !!isMe); }
-  if (textEl) textEl.textContent = _cut(last.text, 8);
+  if (nameEl) { nameEl.textContent = last.username + ':'; nameEl.classList.toggle('is-me', !!isMe); }
+  if (textEl) textEl.textContent = last.text;
   preview.style.display = 'flex';
 }
 
