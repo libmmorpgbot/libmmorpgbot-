@@ -1161,6 +1161,19 @@ async function p_layout(w) {
     const mp = hudMiniMapRect();
     out.screenW = W; out.screenH = H;
     out.hdrH = HEADER_H;
+    out.navH = Math.round(NAV_H);
+    // Полоса скрыта до входа в игру (display:none), и её прямоугольник тогда
+    // нулевой. Показываем на время замера — проверяем размер, а не условие
+    // показа.
+    const _nav = document.getElementById('bottom-nav');
+    let navCss = -1;
+    if (_nav) {
+      const _prev = _nav.style.display;
+      _nav.style.display = 'block';
+      navCss = Math.round(_nav.getBoundingClientRect().height);
+      _nav.style.display = _prev;
+    }
+    out.navCss = navCss;
     out.mapX = Math.round(mp.x); out.mapW = Math.round(mp.w); out.mapH = Math.round(mp.h);
     out.mapOff = (mp.x < 0 || mp.x + mp.w > W || mp.y < 0) ? 1 : 0;
     const px = 6, pw = mp.x - px - 4;
@@ -1279,6 +1292,14 @@ async function walletChecks(w) {
      'ширина или отступ нулевые — колонка легла на кнопки Мир/Проф');
   ok(Math.abs(lay.colLeft - lay.mapX) <= 1 && Math.abs(lay.colW - lay.mapW) <= 1,
      'и выровнен по ней же, а не по своей мерке');
+  // NAV_H читается из CSS (--nav-h), и проверяется здесь то, что он совпал с
+  // РЕАЛЬНОЙ высотой полосы на экране. Если переменную однажды переименуют,
+  // JS тихо возьмёт запасное значение, полоса станет другой, а веер и
+  // джойстик продолжат отсчитываться от старой — под ними появится пустая
+  // лента, и заметит это игрок, а не проверка.
+  ok(Math.abs(lay.navH - lay.navCss) <= 1,
+     `высота навигации в коде и на экране совпадает (${lay.navH} / ${lay.navCss})`,
+     'NAV_H разошёлся с --nav-h: всё, что считается от низа, поедет');
   ok(lay.hdrH <= lay.screenH * 0.20,
      `шапка ${lay.hdrH} px — не больше пятой части экрана (${Math.round(lay.screenH * 0.20)})`);
 
