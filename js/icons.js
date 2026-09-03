@@ -96,6 +96,11 @@ const ICON_SVG = {
   chest:       `<rect x="3" y="10" width="18" height="10" rx="2"/><path d="M3 10a9 4 0 0 1 18 0"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="15" r="1.6"/>`,
   book:        `<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5"/><path d="M4 4.5v17"/><line x1="9" y1="7" x2="16" y2="7"/><line x1="9" y1="11" x2="16" y2="11"/>`,
 
+  // Конверт для кнопки «Письмо» (drawMailBonusButton, js/ui.js). Своего
+  // символа у неё не было, а chat — это пузырь речи: рядом с кнопкой чата
+  // в том же HUD две одинаковые иконки читались бы как одна кнопка дважды.
+  mail:        `<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>`,
+
   // ── Lock (studied/locked skill overlay) ─────────────────────────────────────
   lock:        `<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>`,
 

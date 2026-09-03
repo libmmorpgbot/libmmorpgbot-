@@ -72,7 +72,7 @@ const WRITE_ACTIONS = new Set([
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
   // player-log row at all.
   'pickupWorldDrop',
-  'gramShopBuy', 'starterBonusClaim', 'buyTeleportStone', 'useTeleportStone',
+  'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'buyTeleportStone', 'useTeleportStone',
   'seasonBurn', 'seasonBurnAll', 'seasonBurnBook',
   'enterLocation',
 ]);
@@ -853,6 +853,7 @@ class Session {
       upgrades: p.upgrades || {},
       bonusSP: p.bonusSP, keptSP: p.keptSP, empowers: p.empowers,
       starterBonus: !!p.starterBonusClaimed,
+      mailBonus: !!p.mailBonusClaimed,
       // Сколько раз этот аккаунт менял класс. Нужно КЛИЕНТУ: за Liberty
       // меняют только первый раз, и предлагать её на второй значит обещать то,
       // в чём сервер откажет. Считается по журналу движения денег — он

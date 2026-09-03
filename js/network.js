@@ -4144,6 +4144,14 @@ function netStarterBonusClaim() {
   if (socket?.connected) socket.emit('starterBonusClaim');
 }
 
+// «Письмо» — вторая бесплатная награда, и какая именно, решает сервер по
+// сезонному билету из своей базы. Локально не применяется ничего: инвентарь
+// приезжает своим inventorySync, а mailBonusDone несёт только флаг и то, по
+// какой ветке награда ушла.
+function netMailBonusClaim() {
+  if (socket?.connected) socket.emit('mailBonusClaim');
+}
+
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
@@ -5300,6 +5308,19 @@ function _initPetCraftHandlers(s) {
     // too, rather than leaving it offering something the server refuses.
     if (player && /получен/i.test(msg || '')) player.starterBonus = true;
     if (typeof onStarterBonusError === 'function') onStarterBonusError(msg);
+  });
+
+  // Письмо. seasonTicket в ответе — та ветка, по которой сервер ДЕЙСТВИТЕЛЬНО
+  // выдал награду; панель показывает её, а не ту, что нарисовала по своему
+  // флагу. Разойтись они могут в одном случае: билет купили в другой вкладке.
+  s.on('mailBonusDone', ({ seasonTicket } = {}) => {
+    if (player) player.mailBonus = true;
+    if (typeof seasonTicket === 'boolean') _seasonTicketActive = seasonTicket;
+    if (typeof onMailBonusDone === 'function') onMailBonusDone(!!seasonTicket);
+  });
+  s.on('mailBonusError', ({ msg }) => {
+    if (player && /получен/i.test(msg || '')) player.mailBonus = true;
+    if (typeof onMailBonusError === 'function') onMailBonusError(msg);
   });
 }
 

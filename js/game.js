@@ -1496,6 +1496,7 @@ function _renderUI() {
   drawPvpButton();
   drawProfessionButton();
   drawClassChangeButton();
+  drawMailBonusButton();
   drawStarterBonusButton();
   drawBuffStrip();
   drawPartyButton();

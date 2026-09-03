@@ -402,6 +402,10 @@ function _sanitizeSavedStats(raw) {
   // season fields above. Stripped, so the save path never writes this key at
   // all and whatever the claim recorded stands.
   delete s.starterBonus;
+  // Письмо: тот же флаг, та же причина. Награда с сезонным билетом заметно
+  // щедрее, и сохранение, которому позволено обнулить этот ключ, забирало бы
+  // её сколько угодно раз.
+  delete s.mailBonus;
   // "This invited friend has already been counted." Lives on the friend's own
   // record, so without this they could clear it and have their referrer paid
   // the 200 again on the next login.

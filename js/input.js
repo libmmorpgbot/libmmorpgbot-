@@ -91,13 +91,22 @@ function getClassChangeBtnPos() {
   return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
 }
 
-// Directly below Смена класса, same column — opens the free "Набор новичка"
+// Прямо под «Класс», та же колонка — «Письмо»: одна из двух наград
+// MAIL_BONUS, забирается один раз (openMailBonusPanel, js/ui.js). Место
+// безусловно, как и у «Бонуса» ниже: колонка не должна прыгать в тот момент,
+// когда награду забрали.
+function getMailBonusBtnPos() {
+  const cc = getClassChangeBtnPos();
+  return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
+}
+
+// Directly below Письмо, same column — opens the free "Набор новичка"
 // kit (openStarterBonusPanel, js/ui.js). Only drawn while the account still
 // has it to claim, but the position is unconditional: the party list below is
 // laid out from it either way (see _partyHudStartY).
 function getStarterBonusBtnPos() {
-  const cc = getClassChangeBtnPos();
-  return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
+  const mb = getMailBonusBtnPos();
+  return { x: mb.x, y: mb.y + mb.h + 6, w: mb.w, h: mb.h };
 }
 
 function getPartyLeaveBtnPos() {
@@ -375,6 +384,19 @@ function _checkClassChangeBtnTouch(cx, cy) {
   return false;
 }
 
+// Та же оговорка, что и у «Бонуса» ниже: пока награда не забрана, слот ловит
+// нажатие, а после — обязан перестать, иначе он съедал бы нажатия по тому,
+// что нарисовано под ним.
+function _checkMailBonusBtnTouch(cx, cy) {
+  if (typeof _mailBonusAvailable === 'function' && !_mailBonusAvailable()) return false;
+  const mb = getMailBonusBtnPos();
+  if (cx >= mb.x && cx <= mb.x + mb.w && cy >= mb.y && cy <= mb.y + mb.h) {
+    if (typeof openMailBonusPanel === 'function') openMailBonusPanel();
+    return true;
+  }
+  return false;
+}
+
 // Same gate the drawing uses (_starterBonusAvailable, js/ui.js): once the kit
 // is claimed the button is gone, and its slot must stop swallowing taps meant
 // for whatever is drawn under it.
@@ -546,6 +568,7 @@ function onTS(e) {
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
     if (_checkClassChangeBtnTouch(p.x, p.y)) continue;
+    if (_checkMailBonusBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
@@ -624,6 +647,7 @@ function onMD(e) {
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
   if (_checkClassChangeBtnTouch(p.x, p.y)) return;
+  if (_checkMailBonusBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;

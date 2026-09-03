@@ -358,6 +358,19 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('starterBonusDone', {});
   }));
 
+  // ── письмо ───────────────────────────────────────────────────────────────
+  // Награду выбирает claimMailBonus по сезонному билету из базы; сюда
+  // приходит только то, что она выдала. `seasonTicket` в ответе — чтобы
+  // клиент показал ту же награду, что легла в инвентарь, а не ту, которую он
+  // нарисовал по своему флагу: если билет купили в другой вкладке, эти два
+  // мнения расходятся, и правым остаётся сервер.
+  safeOn('mailBonusClaim', () => s.act('mailBonusClaim', 'mailBonusError', async (t, pid) => {
+    const res = await shopRepo.claimMailBonus(t, pid);
+    await s.pushItems(t); await s.pushStats(t);
+    s.socket.emit('mailBonusDone', { seasonTicket: res.seasonTicket });
+    return res;
+  }, r => r && { seasonTicket: r.seasonTicket, items: (r.granted || []).map(g => g.itemId) }));
+
   // ── referrals ────────────────────────────────────────────────────────────
   safeOn('getReferrals', () => s.act('getReferrals', 'gramError', async (t, pid) => {
     s.socket.emit('refData', await shopRepo.referralsOf(t, pid));
