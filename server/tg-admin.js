@@ -226,11 +226,24 @@ function git(args, ms = 25000) {
   });
 }
 
+// То же, но возвращает ПРИЧИНУ отказа, а не только его факт. fetch не проходит
+// по десятку разных поводов — нет сети, протух ключ доступа, упёрлись в лимит,
+// сменился адрес репозитория, — и все они выглядят одинаково, если причину
+// выбросить: экран говорит «GitHub недоступен» и молчит о том, почему. Разница
+// между «повторите через минуту» и «идите чинить ключ» — это ровно она.
+function gitErr(args, ms = 25000) {
+  return new Promise((resolve) => {
+    execFile('git', ['--git-dir=' + REPO_GIT].concat(args), { timeout: ms },
+      (err, out, errOut) => resolve(err ? String(errOut || err.message).trim() : null));
+  });
+}
+
 async function screenDeploy() {
   const live = String(process.env.BUILD_COMMIT || '').trim();
   // fetch перед показом: без него "последнее на GitHub" - это то, что успели
   // забрать в прошлый раз, и кнопка предложила бы выложить вчерашнее.
-  const fetched = (await git(['fetch', '--prune', '--quiet', 'origin'])) !== null;
+  const fetchErr = await gitErr(['fetch', '--prune', '--quiet', 'origin']);
+  const fetched = fetchErr === null;
   const head = await git(['rev-parse', '--short', 'origin/' + DEPLOY_BRANCH]);
   const subj = head ? await git(['log', '-1', '--format=%s', head]) : null;
   const behind = (live && head)
@@ -240,12 +253,29 @@ async function screenDeploy() {
   const lines = ['\u{1F680} <b>Выкладка</b>', ''];
   lines.push('В игре: <code>' + esc(live || '-') + '</code>');
   lines.push('В GitHub: <code>' + esc(head || '-') + '</code>');
-  if (!fetched) lines.push('', 'GitHub недоступен - показано то, что забрали раньше.');
+  if (!fetched) {
+    lines.push('', '\u{26A0}\u{FE0F} <b>Не смог обновиться с GitHub.</b> Справа — не то, что там'
+      + ' лежит сейчас, а слепок с прошлого удачного раза.');
+    // Первая строка ошибки git: её достаточно, чтобы отличить сеть от ключа.
+    const why = String(fetchErr || '').split('\n').find(l => l.trim()) || '';
+    if (why) lines.push('<code>' + esc(why.slice(0, 160)) + '</code>');
+  }
   lines.push('');
 
   let buttons;
   if (!head) {
     lines.push('Не удалось прочитать репозиторий.');
+    buttons = [[btn('\u{1F504} Обновить', 'a:dep'), btn('\u{2B05}\u{FE0F} Назад', 'a:home')]];
+  } else if (live === head && !fetched) {
+    // Совпадение со СЛЕПКОМ не значит, что выкладывать нечего: на GitHub с тех
+    // пор мог появиться десяток коммитов, и мы о них просто не знаем. Прежний
+    // экран показывал здесь зелёную галочку и «выкладывать нечего» — прямо под
+    // строкой о том, что до GitHub он не достучался. Две несовместимые вещи
+    // подряд, и верили, естественно, галочке.
+    lines.push('Совпадает со слепком — но что на GitHub сейчас, отсюда не видно.');
+    lines.push('');
+    lines.push('Обновите ещё раз; если не проходит, чинить надо связь сервера с');
+    lines.push('GitHub — сама выкладка берёт код оттуда же.');
     buttons = [[btn('\u{1F504} Обновить', 'a:dep'), btn('\u{2B05}\u{FE0F} Назад', 'a:home')]];
   } else if (live === head) {
     lines.push('\u{2705} В игре ровно то, что в GitHub. Выкладывать нечего.');
