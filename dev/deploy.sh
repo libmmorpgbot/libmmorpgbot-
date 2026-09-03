@@ -61,7 +61,13 @@ GIT_SSH_COMMAND="ssh -i $KEY -o BatchMode=yes" \
 # Канонический экземпляр — в репозитории. Кладём его на сервер каждый раз,
 # чтобы серверная копия не начала жить своей жизнью.
 scp -i "$KEY" -o BatchMode=yes -q dev/server-deploy.sh "$HOST:/srv/liberty/deploy.sh"
-"${SSH[@]}" 'chmod +x /srv/liberty/deploy.sh'
+# migrate-now.sh — туда же и по той же причине. Раньше его не клали вовсе, и
+# накатывать миграции с сервера было нечем: в консоли дроплета репозитория нет,
+# а `bash dev/migrate-now.sh` из шапки указывал в пустоту. Приходилось звать
+# server/db/migrate.sh руками — тот, что лежит в /srv/liberty/next с ПРОШЛОЙ
+# выкладки, то есть заведомо устаревший.
+scp -i "$KEY" -o BatchMode=yes -q dev/migrate-now.sh "$HOST:/srv/liberty/migrate-now.sh"
+"${SSH[@]}" 'chmod +x /srv/liberty/deploy.sh /srv/liberty/migrate-now.sh'
 
 # ── 4. pgtest, на котором гоняются проверки ────────────────────────────────
 # Проверки на дроплете запускаются из /srv/liberty/pgtest. Если его не
