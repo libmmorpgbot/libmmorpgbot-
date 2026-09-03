@@ -18,7 +18,6 @@
 const { tx, query, close } = require('../server/db');
 const players = require('../server/db/repos/players');
 const items = require('../server/db/repos/items');
-const money = require('../server/db/repos/money');
 const D = require('../shared/definitions');
 const { wipeItemsAll } = require('./fixtures');
 

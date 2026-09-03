@@ -246,7 +246,6 @@ function bucket() {
 // Скільки ударів на секунду сервер ПРИЙМЕ, якщо клієнт б'є з періодом p мс:
 // відкинутий удар не зсуває вікно, тож наступний прийнятий — рівно через
 // стільки періодів, скільки треба, щоб перекрити поріг.
-const landedPerSec = (periodMs, serverMs) => 1000 / (Math.ceil(serverMs / periodMs) * periodMs);
 
 function cadenceRule() {
   console.log('\n  ── темп удару: потік проти відра ──');
@@ -305,7 +304,7 @@ function cadenceRule() {
 }
 
 // Живий замір: та сама ціль, той самий гравець, різниця тільки в періоді.
-async function cadenceLive(f) {
+async function cadenceLive(_f) {
   console.log('\n  ── темп удару: живий замір на сервері ──');
   const c = client();
   await once(c.sock, 'connect');

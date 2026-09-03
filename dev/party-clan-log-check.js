@@ -327,7 +327,7 @@ async function mk(nick) {
   // сделанных проверок. Прогон, упавший на уборке, печатает ошибку вместо
   // итога, а проверка без итога считается сломанной (dev/all-checks.sh).
   const swallow = async (sql, args) => {
-    try { await pool().query(sql, args); } catch (e) { /* см. выше */ }
+    try { await pool().query(sql, args); } catch (_e) { /* см. выше */ }
   };
   await swallow('DELETE FROM clan_applications WHERE player_id = ANY($1)', [made]);
   await swallow('DELETE FROM clan_members WHERE player_id = ANY($1)', [made]);

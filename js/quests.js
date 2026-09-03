@@ -249,10 +249,9 @@ async function updateSpecialQuestUI() {
   el.innerHTML = html;
 }
 
-function onSpecialQuestDone(questId, reward, alreadyDone) {
+function onSpecialQuestDone(questId, _reward, alreadyDone) {
   if (!player) return;
   _specialQuestPending.delete(String(questId));
-  reward = reward || {};
   player.specialQuestsDone = player.specialQuestsDone || [];
   if (!player.specialQuestsDone.includes(questId)) player.specialQuestsDone.push(questId);
   // Gold and XP are the server's numbers and arrive on their own channels
