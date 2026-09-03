@@ -125,8 +125,32 @@ function loadClient(mutate) {
 
   // Ті самі файли й у тому самому порядку, що й у бандлі — інакше верхнього
   // рівня `const` з одного файлу не видно з іншого.
+  //
+  // Це ПІДМНОЖИНА бандла, і інакше не виходить: пісочниця не вдає браузер
+  // цілком, а решта файлів звертається до Image, WebSocket, window.matchMedia
+  // і далі за списком. Але підмножина мовчки розходиться з бандлом: у js/ui.js
+  // з'явилося посилання на FAN_R_SKILL з js/input.js, якого тут не було, і
+  // перевірка впала з «FAN_R_SKILL is not defined» — звинувативши робочий код.
+  // У справжньому бандлі input.js іде ПЕРЕД ui.js, тож у грі все працює.
+  //
+  // Тому порядок звіряється з бандлом нижче: розійдеться ще раз — скаже про це
+  // прямо, а не через ReferenceError у чужому файлі.
   const FILES = ['shared/definitions.js', 'js/constants.js', 'js/icons.js',
-    'js/definitions.js', 'js/i18n.js', 'js/player.js', 'js/ui.js'];
+    'js/definitions.js', 'js/i18n.js', 'js/player.js', 'js/input.js', 'js/ui.js'];
+  {
+    const ALL = require('../server/bundle-files');
+    const pos = FILES.map(f => ALL.findIndex(a => a.endsWith(f)));
+    const missing = FILES.filter((_, i) => pos[i] < 0);
+    if (missing.length) {
+      throw new Error('market-fix-check: цих файлів немає в бандлі: ' + missing.join(', '));
+    }
+    for (let i = 1; i < pos.length; i++) {
+      if (pos[i] < pos[i - 1]) {
+        throw new Error('market-fix-check: порядок розійшовся з бандлом — '
+          + FILES[i] + ' іде там раніше за ' + FILES[i - 1]);
+      }
+    }
+  }
   for (const f of FILES) {
     let src = fs.readFileSync(path.join(ROOT, f), 'utf8');
     if (mutate) src = mutate(f, src);

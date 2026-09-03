@@ -257,7 +257,13 @@ async function mk(nick) {
     // И строка про зелье теперь что-то говорит — раньше в журнале стояло голое
     // «usePotion» без единой подробности.
     const it = fs.readFileSync(path.join(ROOT, 'server/handlers2/items.js'), 'utf8');
-    const h = it.slice(it.indexOf("safeOn('usePotion'"), it.indexOf("safeOn('usePotion'") + 1400);
+    // До СЛЕДУЮЩЕГО обработчика, а не первые 1400 байт. Счётчик байтов
+    // означает, что достаточно дописать комментарий выше — и проверка
+    // объявит пропавшим то, что на месте: правка лечения сдвинула строку
+    // записи в журнал за границу окна, и проверка упала на работающем коде.
+    const _st = it.indexOf("safeOn('usePotion'");
+    const _nx = it.indexOf("safeOn(", _st + 10);
+    const h = it.slice(_st, _nx > 0 ? _nx : it.length);
     ok(/зелье: r\.potionId/.test(h) && /вылечено: r\.healed/.test(h),
       'в журнал пишется какое зелье и на сколько вылечило');
 
