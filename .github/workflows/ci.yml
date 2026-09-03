@@ -43,7 +43,12 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # ТА ЖЕ мажорная версия, что в бою (проверено: SHOW server_version
+        # на боевой отдаёт 18.6). Первый заход поднял здесь 16-ю, и sql-check
+        # объявил сломанным законный запрос: RETURNING old.pending — синтаксис
+        # PostgreSQL 18. Проверка на чужой версии ловит несуществующее и
+        # пропускает настоящее.
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: ci
           POSTGRES_DB: liberty
