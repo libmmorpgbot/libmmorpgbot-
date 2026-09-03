@@ -1385,6 +1385,50 @@ async function walletChecks(w) {
   //
   // Проверяется то, что реально посчитал браузер: getComputedStyle и
   // getBoundingClientRect, а не формулы отсюда.
+  // ── ПРОКРУТКА В ОВЕРЛЕЯХ ────────────────────────────────────────────────
+  // `* { touch-action:none }` (css/style.css) выключает прокрутку пальцем на
+  // всём — иначе палец, ведущий джойстик, таскал бы страницу. Всё, что должно
+  // прокручиваться, выведено из этого правила поимённо, и новый оверлей об
+  // этом не знает.
+  //
+  // Так и вышло: список наград «Письма» открывался, показывал обе награды и не
+  // двигался ни на миллиметр, а кнопка «Забрать» при этом работала — со
+  // стороны это выглядело как зависшая панель. Код при этом безупречен:
+  // overflow:auto стоит, содержимое выше контейнера, ошибок нет. Увидеть такое
+  // можно только в браузере, и только тронув пальцем.
+  head('оверлеи прокручиваются пальцем');
+  {
+    inject(w, `window.__rcOv = (function () {
+      const out = {};
+      const probe = (openFn, ovId) => {
+        try { openFn(); } catch (e) { return { err: String(e && e.message || e) }; }
+        const ov = document.getElementById(ovId);
+        if (!ov) return { missing: true };
+        // Прокручивается либо сам ящик, либо контейнер внутри него.
+        const all = [ov.firstElementChild, ...ov.querySelectorAll('*')];
+        const sc = all.find(el => el && el.scrollHeight > el.clientHeight + 1
+                                  && /auto|scroll/.test(getComputedStyle(el).overflowY));
+        const r = sc ? { has: true, touch: getComputedStyle(sc).touchAction } : { has: false };
+        ov.remove();
+        return r;
+      };
+      player.mailBonus = false; player.starterBonus = false;
+      out.mail = probe(() => openMailBonusPanel(), 'mail-bonus-ov');
+      out.starter = probe(() => openStarterBonusPanel(), 'starter-bonus-ov');
+      return out;
+    })();`);
+    const o = w.__rcOv || {};
+    for (const [name, r] of [['Письмо', o.mail], ['Набор новичка', o.starter]]) {
+      if (!r || r.missing || r.err) { ok(false, `${name}: панель открылась`, (r && (r.err || 'нет в разметке')) || 'нет данных'); continue; }
+      if (!r.has) { ok(true, `${name}: список помещается целиком, прокручивать нечего`); continue; }
+      // pan-y или auto/manipulation — что угодно, кроме none: none и есть та
+      // самая «зависшая панель».
+      ok(r.touch !== 'none',
+         `${name}: прокручиваемый список не под запретом касаний (touch-action: ${r.touch})`,
+         'touch-action:none — пальцем список не сдвинуть, хотя мышью он прокручивается');
+    }
+  }
+
   head('чат — строка последнего сообщения');
   {
     inject(w, `window.__rcChat = (function () {

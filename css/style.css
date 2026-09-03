@@ -763,6 +763,20 @@ canvas { display:block; width:100%; height:100%; }
 .bpanel.open { height:calc(100% - 62px); overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .bpanel.open *, #npc-dialog *, #char-select * { touch-action:pan-y; }
 .bpanel.open, #npc-dialog, #char-select { touch-action:pan-y; }
+/* ── оверлеи поверх игры, которым нужна прокрутка ──────────────────────────
+   Правило `* { touch-action:none }` в начале файла выключает прокрутку
+   пальцем ВЕЗДЕ — иначе палец, ведущий джойстик, таскал бы страницу. Всё,
+   что должно прокручиваться, выведено из него поимённо, строкой выше.
+
+   Новый оверлей об этом правиле не знает, и узнаёт о нём от игрока. Список
+   наград «Письма» открывался, показывал обе награды и не прокручивался ни на
+   миллиметр; кнопка «Забрать» при этом работала — то есть со стороны это
+   выглядело как зависшая панель, а не как забытая строчка в CSS.
+
+   Класс, а не ещё один id: следующему оверлею достаточно его повесить, и он
+   не станет третьим случаем той же истории. */
+.ov-scroll { touch-action:pan-y; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+.ov-scroll * { touch-action:pan-y; }
 .panel-hdr {
   padding:13px 16px 11px; border-bottom:1px solid var(--panel-line, #1f3654);
   font-family:var(--font-display); text-transform:uppercase;

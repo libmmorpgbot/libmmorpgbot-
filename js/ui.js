@@ -3551,7 +3551,7 @@ function openMailBonusPanel() {
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;display:flex;flex-direction:column;background:#0c1420;border-radius:16px;border:1px solid rgba(79,195,255,.22);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#4fc3ff;margin-bottom:6px">${t('mailBonusTitle')}</div>
     <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('mailBonusDesc')}</div>
-    <div style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px">
+    <div class="ov-scroll" style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px">
       ${_mailBonusCard('free', mine === 'free')}
       ${_mailBonusCard('ticket', mine === 'ticket')}
     </div>
@@ -3683,7 +3683,7 @@ function openStarterBonusPanel() {
   ov.id = 'starter-bonus-ov';
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#0c1420;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
+  ov.innerHTML = `<div class="ov-scroll" onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#0c1420;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#f0b44a;margin-bottom:6px">${t('starterBonusTitle')}</div>
     <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
     <div class="vip-items-row">${gearRows}${bpRows}${hpRow}</div>
