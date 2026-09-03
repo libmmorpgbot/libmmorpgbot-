@@ -72,6 +72,13 @@ echo "  выкладываю $COMMIT — $(git log -1 --format=%s "$FULL" | cut 
 # ── дерево собирается в стороне ────────────────────────────────────────────
 # Не в next: пока проверки не прошли, работающую игру трогать незачем.
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+# mktemp создаёт каталог с правами drwx------, и `cp -a "$T/." "$NEXT/"`
+# переносит их НА САМ $NEXT. Служба работает от пользователя liberty, войти в
+# каталог 0700 root:root он не может — systemd отвечает «Changing to the
+# requested working directory failed: Permission denied», сервер не стартует
+# вовсе, проверка здоровья не дожидается ответа, и всё откатывается. Выглядит
+# как «новый код не работает», хотя его никто даже не запускал.
+chmod 755 "$T"
 git archive "$FULL" | tar -xf - -C "$T"
 
 # ── проверка, которая ловит худшее ─────────────────────────────────────────
@@ -126,6 +133,17 @@ cp -a "$T/." "$NEXT/"
 ln -sfn "$SHARED/images" "$NEXT/images"
 ln -sfn "$SHARED/audio"  "$NEXT/audio"
 
+# Права на сам каталог — отдельной строкой, а не в надежде на cp. И проверить
+# тем пользователем, от которого работает служба: дешевле, чем узнать это из
+# неудавшегося перезапуска.
+chmod 755 "$NEXT"
+SVC_USER=$(systemctl show liberty-next -p User --value 2>/dev/null || echo liberty)
+if [ -n "$SVC_USER" ] && ! sudo -u "$SVC_USER" test -x "$NEXT"; then
+  echo "  ОТКАЗ: $SVC_USER не может войти в $NEXT — служба не поднимется" >&2
+  stat -c '    %A %U:%G %n' "$NEXT" >&2
+  exit 1
+fi
+
 if [ "$DRY" = 1 ]; then
   echo "  ── холостой прогон: игру не трогал ──"
   for l in node_modules images audio; do
@@ -137,6 +155,7 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 
+PREV_COMMIT=$(sed -n 's/^BUILD_COMMIT=//p' /srv/liberty/env | tail -1)
 sed -i '/^BUILD_COMMIT=/d' /srv/liberty/env
 echo "BUILD_COMMIT=$COMMIT" >> /srv/liberty/env
 systemctl restart liberty-next
@@ -160,6 +179,12 @@ done
 echo "  ✗ сервер не ответил за 25с — откатываюсь" >&2
 rm -rf "$NEXT"
 cp -a /srv/liberty/next.old "$NEXT"
+chmod 755 "$NEXT"
+# И BUILD_COMMIT — тоже назад. Без этого откат возвращает файлы, но оставляет
+# в env новый номер: игроки на старом коде, а /health называет новый. Ровно так
+# и вышло в первый раз, и по /health выкладка выглядела удавшейся.
+sed -i '/^BUILD_COMMIT=/d' /srv/liberty/env
+[ -n "$PREV_COMMIT" ] && echo "BUILD_COMMIT=$PREV_COMMIT" >> /srv/liberty/env
 systemctl restart liberty-next
 sleep 6
 curl -s --max-time 5 "$HEALTH" >&2 || true
