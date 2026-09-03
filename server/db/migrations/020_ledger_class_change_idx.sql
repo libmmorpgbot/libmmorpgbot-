@@ -34,11 +34,12 @@
 --
 -- Поэтому на боевой базе индекс строится ОТДЕЛЬНО и БЕЗ блокировки:
 --
---   bash dev/index-now.sh
+--   bash dev/migrate-now.sh
 --
 -- CONCURRENTLY нельзя положить сюда: migrate.sh гоняет файлы через
--- --single-transaction, а такой индекс внутри транзакции не создаётся. После
--- index-now.sh эта миграция находит индекс на месте и не делает ничего —
--- ровно для этого здесь IF NOT EXISTS.
+-- --single-transaction, а такой индекс внутри транзакции не создаётся.
+-- migrate-now.sh строит его без блокировки ДО того, как позвать migrate.sh, и
+-- эта миграция находит индекс на месте и не делает ничего — ровно для этого
+-- здесь IF NOT EXISTS.
 CREATE INDEX IF NOT EXISTS ledger_class_change_idx
   ON ledger (player_id) WHERE reason = 'class_change';

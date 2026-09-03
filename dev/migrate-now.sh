@@ -56,6 +56,42 @@ fi
 echo "  ✓ Доступ есть"
 echo
 
+# ── сперва индексы, которые нельзя строить миграцией ───────────────────────
+# migrate.sh гоняет каждый файл через --single-transaction — это и делает
+# миграцию атомарной. Но CREATE INDEX CONCURRENTLY внутри транзакции не
+# создаётся, а без CONCURRENTLY построение берёт на таблицу блокировку SHARE:
+# запись в неё встаёт на всё время работы. На боевом журнале денег это секунды
+# или минуты, и каждое движение денег упрётся в пятисекундный
+# statement_timeout — лечение выглядело бы как болезнь.
+#
+# Поэтому такие индексы строятся ЗДЕСЬ и ДО миграций: миграция потом находит
+# индекс на месте и не делает ничего (в ней IF NOT EXISTS).
+#
+# Пара «имя · SQL». Добавлять сюда всё, что требует CONCURRENTLY.
+INDEXES=(
+  "ledger_class_change_idx|CREATE INDEX CONCURRENTLY IF NOT EXISTS ledger_class_change_idx ON ledger (player_id) WHERE reason = 'class_change'"
+)
+for entry in "${INDEXES[@]}"; do
+  name="${entry%%|*}"
+  sql="${entry#*|}"
+  if [ "$(psql "$ADMIN_URL" -tAc "SELECT to_regclass('public.$name') IS NOT NULL")" = "t" ]; then
+    echo "  ok      индекс $name — уже есть"
+    continue
+  fi
+  echo "  строю   индекс $name (без остановки игры) ..."
+  # statement_timeout снят: построение большого индекса законно идёт дольше
+  # пяти секунд, а обрыв на середине оставляет непригодный INVALID-индекс.
+  if psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q -c "SET statement_timeout = 0" -c "$sql"; then
+    echo "  ✓       $name построен"
+  else
+    echo "  ✗ не построился: $name" >&2
+    echo "    Если остался в состоянии INVALID — снимите и повторите:" >&2
+    echo "      DROP INDEX CONCURRENTLY IF EXISTS $name;" >&2
+    exit 1
+  fi
+done
+echo
+
 cd "$APP_DIR"
 ADMIN_URL="$ADMIN_URL" bash server/db/migrate.sh
 
@@ -73,6 +109,14 @@ psql "$ADMIN_URL" -tAc "
   SELECT 'market FK            ' || COALESCE((
     SELECT delete_rule FROM information_schema.referential_constraints
      WHERE constraint_name='market_listings_item_id_fkey'), 'НЕТ')
+  UNION ALL
+  SELECT 'письмо (mail_bonus)  ' || CASE WHEN EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name='player_progress' AND column_name='mail_bonus_claimed') THEN 'ЕСТЬ' ELSE 'НЕТ' END
+  UNION ALL
+  SELECT 'индекс входа         ' || CASE WHEN EXISTS (
+    SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid
+     WHERE c.relname='ledger_class_change_idx' AND i.indisvalid) THEN 'ЕСТЬ' ELSE 'НЕТ' END
 " | sed 's/^/    /'
 
 echo

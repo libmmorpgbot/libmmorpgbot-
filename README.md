@@ -115,8 +115,22 @@ bash dev/deploy.sh
 
 ```bash
 ssh root@178.128.136.68
-set -a; . /srv/liberty/env; set +a
-bash /srv/liberty/pgtest/server/db/migrate.sh
+bash /srv/liberty/next/dev/migrate-now.sh
+```
+
+Он спросит пароль `doadmin` (DigitalOcean → Databases → liberty-db →
+Connection details), вводится вслепую и на диск не пишется. Дальше сам: строит
+индексы, которым нужен `CONCURRENTLY` (миграцией их не создать —
+`--single-transaction`), накатывает миграции, показывает, что схема на месте,
+и перезапускает сервер.
+
+Именно поэтому `ADMIN_URL` в `/srv/liberty/env` не лежит. А чтобы выкладка при
+этом не отказывалась работать после ручного наката, она спрашивает базу —
+применена ли миграция, — а не сравнивает файлы. Разовая выкладка с миграцией,
+если понадобится, делается так и ничего не оставляет на диске:
+
+```bash
+ADMIN_URL='postgres://doadmin:…' bash /srv/liberty/deploy.sh
 ```
 
 ### Кнопкой, с телефона
