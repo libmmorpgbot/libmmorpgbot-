@@ -989,6 +989,28 @@ function levelUniversalPassivePool(rlvl) {
 // ── Loot boxes ────────────────────────────────────────────────────────────────
 // Crafted at the forge (Кузнец → Материалы) from room-level keys. Opening one
 // rolls a rarity tier from `odds`, then a random matching gear item.
+// ── что вообще может выпасть из ящика ──────────────────────────────────────
+// Владелец: «сделай чтоб с необычных и редких ящиков не падали артефакты,
+// плащи, питомцы, крылья, удали их оттуда вообще».
+//
+// Оказалось, что панель ящика это УЖЕ обещала, а сервер выдавал другое. Панель
+// (openBoxModal, js/ui.js) перечисляла семь слотов снаряжения, сервер же брал
+// «всё, у чего есть слот, кроме use и box» — то есть на редком ящике панель
+// показывала 10 предметов, а выдать могла 24. Лишние четырнадцать: пять
+// артефактов, пять плащей, три питомца и крылья. На необычном сверх того ещё
+// шесть баф-зелий.
+//
+// Поэтому список один и лежит здесь, а не по копии на каждой стороне: две
+// копии одного правила — это и есть то, из-за чего панель врала.
+const BOX_LOOT_SLOTS = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+
+// noDrop — «этот предмет не выпадает». Панель его и не показывала, а сервер
+// показывал: уникальное оружие (Меч бездны, Меч первых и ещё восемь) лежало в
+// пуле редкого ящика наравне с обычным. Флаг для того и заведён.
+function boxLootPool(rarity) {
+  return ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && BOX_LOOT_SLOTS.includes(d.slot));
+}
+
 const BOX_DEF = [
   {
     id: 'box_uncommon', name: 'Необычный бокс', img: '/images/material/boxu.png', slot: 'box', rarity: 'uncommon',
@@ -2796,7 +2818,7 @@ if (typeof module !== 'undefined') module.exports = {
   VIP_THRESHOLDS, VIP_BONUSES,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,

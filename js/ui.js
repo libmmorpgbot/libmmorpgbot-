@@ -4224,11 +4224,17 @@ function burnItemForSeason(idx) {
 }
 
 // ── Loot boxes ────────────────────────────────────────────
+// Пул — общий с сервером (boxLootPool, shared/definitions.js). Здесь стоял
+// свой список слотов, и он был ПРАВ, а сервер выдавал шире: панель обещала
+// десять предметов, сервер мог отдать двадцать четыре. Теперь список один, и
+// разойтись им нечем.
+//
+// Оружие фильтруется по классу дополнительно, и только здесь: панель
+// показывает то, что игроку пригодится. Сервер этого не делает — из ящика
+// по-прежнему может прийти оружие чужого класса.
 function _boxCandidates(rarity) {
-  // No 'cloak'/'artifact' — craft-only, matches the kill-drop pool in js/combat.js.
-  const gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
-  return ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && gearSlots.includes(d.slot) &&
-    (d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type))));
+  return boxLootPool(rarity).filter(d =>
+    d.slot !== 'weapon' || (d.forClass && player && d.forClass.includes(player.type)));
 }
 
 function openBoxModal(idx) {

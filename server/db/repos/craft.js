@@ -37,7 +37,7 @@ const {
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
   ADV_SKILL_BOOK_CRAFT, craftResultEnhance,
-  CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES,
+  CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES, boxLootPool,
 } = require('../../../shared/definitions');
 
 class CraftError extends Error {
@@ -544,7 +544,12 @@ async function openBox(db, playerId, boxId) {
     if (roll < acc) { rarity = o.rarity; break; }
   }
 
-  const pool = ITEM_DEF.filter(d => d.rarity === rarity && d.slot && d.slot !== 'use' && d.slot !== 'box');
+  // Пул — общий с панелью (boxLootPool, shared/definitions.js). Здесь стояла
+  // своя копия правила — «всё, у чего есть слот, кроме use и box», — и она с
+  // панелью не совпадала: на редком ящике панель обещала 10 предметов, а
+  // выдать могло 24. Лишние — артефакты, плащи, питомцы, крылья и уникальное
+  // оружие с noDrop; на необычном сверх того баф-зелья.
+  const pool = boxLootPool(rarity);
   if (!pool.length) err('empty_pool', 'Пустая таблица наград');
   const won = pool[crypto.randomInt(pool.length)];
 
