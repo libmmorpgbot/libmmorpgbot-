@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -231,6 +231,11 @@ function generateHub() {
     // the pad itself needs to draw locked/unlocked — the zone's own geometry
     // now lives entirely on its own floor (generateFarmZone, below), not here.
     farmZoneEntry: { req: FARM_ENTRY_LEVEL },
+    // Фарм зона 2 — второй такой же пункт списка телепорта, со своим гейтом.
+    // Отдельное поле, а не второй элемент farmZoneEntry: клиент читает эти
+    // два по имени, и «список фарм-зон» на две зоны стоил бы обеим сторонам
+    // больше, чем стоит одна строка.
+    farmHighEntry: { req: FARM_HIGH_ENTRY_LEVEL },
     enemies: enemyList,
   };
 }
@@ -569,6 +574,103 @@ function generateFarmZone() {
   };
 }
 
+// Фарм зона 2 (см. блок FARM_HIGH_* в shared/definitions.js — там же разбор,
+// почему префикс не FARM2_: то имя занято Элитной фарм-зоной). Копия
+// generateFarmZone выше — те же четыре квадратные комнаты 2x2, соединённые
+// коридором-плюсом, та же половинная сила монстров, тот же возвратный пад, —
+// с тремя отличиями: полоса 40-53 вместо 21-30, виды рукава 3 вместо рукава
+// 2 и своя таблица дропа (_rollFarmHighLoot, server/game/loot.js). Вход, как
+// и у первой зоны, проверяется на сервере (resolveFloor/ZONE_LEVEL_REQ,
+// server/world.js), а не только клиентом.
+function generateFarmHigh() {
+  const rng = seededRng(2026 * 1337 + 777 + 601); // сосед seed'а первой зоны (600) — другая раскладка при той же геометрии
+  const w = FARM_SIZE + MARGIN * 2, h = FARM_SIZE + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const roomCoords = [
+    { x: X0, y: Y0 },                                     // top-left
+    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 },              // top-right
+    { x: X0, y: Y0 + FARM_ROOM + FARM_GAP },              // bottom-left
+    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 + FARM_ROOM + FARM_GAP }, // bottom-right
+  ];
+  const rooms = roomCoords.map(({ x, y }) => {
+    const room = {
+      x, y, size: FARM_ROOM,
+      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
+      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
+      isFarmHigh: true, monsterLvl: Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2), arm: 'farmHigh',
+    };
+    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
+    return room;
+  });
+  const midX = X0 + Math.floor(FARM_SIZE / 2);
+  paintRect(X0, rooms[0].cy - CW, X0 + FARM_SIZE - 1, rooms[0].cy + CW);
+  paintRect(X0, rooms[2].cy - CW, X0 + FARM_SIZE - 1, rooms[2].cy + CW);
+  paintRect(midX - CW, Y0, midX + CW, Y0 + FARM_SIZE - 1);
+  const midY = Y0 + Math.floor(FARM_SIZE / 2);
+
+  const FARM_WEAK_MULT = 0.5; // то же половинение, что и в первой зоне
+  // ── ранг и цвет считаются по полосе САМОЙ ЗОНЫ ────────────────────────────
+  // «Слабый» … «Запредельный» — это положение монстра на шкале. Первая
+  // Фарм-зона берёт шкалой рукав (её 21-30 целиком лежат внутри рукава 2), и
+  // это там верно. Полоса 40-53 так не ложится: по рукавной шкале уровень 40
+  // — это местный 20 рукава 2 при потолке 19, то есть «Запредельный», а
+  // следующий за ним 41 — местный 1 рукава 3, то есть «Слабый». Подъём
+  // рушился бы ровно посреди зоны, и цвет вместе с ним.
+  //
+  // Шкала зоны такой границы не знает: 40 — низ, 53 — верх, между ними ровный
+  // подъём, и ранг означает «насколько он силён ДЛЯ ЭТОЙ ЗОНЫ».
+  const maxLocalLvl = FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1;
+  const enemyList = [];
+  let eid = 0;
+  rooms.forEach((room, ri) => {
+    for (let n = 0; n < FARM_HIGH_MOBS_PER_ROOM; n++) {
+      const d = _enemyByEid.get(FARM_HIGH_SPECIES[Math.floor(rng() * FARM_HIGH_SPECIES.length)]);
+      if (!d) continue;
+      const lvl = FARM_HIGH_LVL_MIN + Math.floor(rng() * (FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1));
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      const localLvl = lvl - FARM_HIGH_LVL_MIN + 1;
+      enemyList.push({
+        id: `farmhi_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmHigh', farmHigh: true,
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
+        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl) * FARM_HIGH_XP_MULT, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(),
+        // Сами не бросаются — ровно как в первой Фарм-зоне (Room.js исключает
+        // farmHigh из проверки самоагра наравне с farmZone/farmZone2), но
+        // отвечают на удар и держат обычный aggroR как поводок отхода.
+        aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  });
+
+  const returnPad = { x: midX * TILE + TILE / 2, y: (Y0 + 2) * TILE + TILE / 2 };
+
+  return {
+    grid, rooms, w, h,
+    spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
+    returnPad,
+    farmHigh: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_HIGH_ENTRY_LEVEL },
+    enemies: enemyList,
+  };
+}
+
 // Элитная фарм-зона (Elite Farm Zone 2), its own floor (see
 // server/game/floors.js) — a private instance built fresh per party run
 // (server/index.js's _createFarm2Room, called from the farm2GroupStart
@@ -632,23 +734,7 @@ function generateFarmZone2() {
   }
   const rooms = [buildRoom(-1), buildRoom(1)];
 
-  // ── ранг и цвет считаются по полосе САМОЙ ЗОНЫ ────────────────────────────
-  // «Слабый» … «Запредельный» — это положение монстра на шкале, и раньше
-  // шкалой был рукав: localLvl = lvl - ARM_OFFSETS[1], потолок roomsInArm(2).
-  // Пока зона стояла на 30-40, она целиком лежала внутри рукава 2 и это
-  // работало.
-  //
-  // Полоса 40-53 пересекает границу рукавов 2 и 3. По рукавной шкале уровень
-  // 40 — это местный 20 при потолке 19, то есть «Запредельный», а следующий
-  // за ним 41 — местный 1, то есть «Слабый». Ранг падал бы до дна ровно
-  // посреди зоны, и цвет вместе с ним: два соседних монстра в одной пачке
-  // выглядели бы как из разных мест.
-  //
-  // Шкала зоны такой границы не знает: 40 — низ, 53 — верх, между ними
-  // ровный подъём. Ранг здесь и должен означать «насколько он силён ДЛЯ ЭТОЙ
-  // ЗОНЫ», а не «сколько комнат он прошёл бы в коридоре, которого зона не
-  // касается».
-  const maxLocalLvl = FARM2_LVL_MAX - FARM2_LVL_MIN + 1;
+  const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19) — same species/level band
   const enemyList = [];
   let eid = 0;
   // Pack cluster centers sit on an evenly-spaced GRID_N×GRID_N grid instead
@@ -692,7 +778,7 @@ function generateFarmZone2() {
           const gx = ccx + Math.floor(rng() * 3) - 1, gy = ccy + Math.floor(rng() * 3) - 1;
           if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
         }
-        const localLvl = lvl - FARM2_LVL_MIN + 1;
+        const localLvl = lvl - ARM_OFFSETS[1];
         const hp = Math.max(1, Math.round(stats.hp * FARM2_STAT_MULT));
         const atk = Math.max(1, Math.round(stats.atk * FARM2_STAT_MULT));
         const enemy = {
@@ -1087,7 +1173,7 @@ function generateCoop() {
 }
 
 module.exports = {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop,
   TILE, WALL, FLOOR,
 };

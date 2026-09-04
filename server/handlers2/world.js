@@ -37,7 +37,7 @@ const { query } = require('../db');
 const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
-  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE,
+  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -318,7 +318,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (result.arm === 'coop') return out;
 
     if (result.farmZone) out.items = loot._rollFarmZoneLoot(scratch, result.eid) || [];
-    else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch, result.eid) || [];
+    else if (result.farmHigh) out.items = loot._rollFarmHighLoot(scratch, result.eid) || [];
+    else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
     else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl, playerLevel) || [];
 
     // VIP and the season ticket buy a second roll, not a better one — the same
@@ -330,7 +331,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       + ((s._roomStats && s._roomStats.gearDropPct) || 0);
     const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
     const extra = bonus + ticket;
-    if (!result.farmZone && !result.farmZone2 && extra > 0 && rand() * 100 < extra) {
+    if (!result.farmZone && !result.farmHigh && !result.farmZone2 && extra > 0 && rand() * 100 < extra) {
       out.items.push(...(loot._rollMobLoot([], result.eid, result.rlvl, playerLevel) || []));
     }
 
@@ -487,6 +488,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const libertyChance = result.arm === 'coop' ? (COOP_LIBERTY_CHANCE || 0)
       : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : result.farmZone ? (FARM_LIBERTY_CHANCE || 0) * ticketLibertyMult
+      : result.farmHigh ? (FARM_HIGH_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : 0;
     const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
 
@@ -494,7 +496,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // co-op run — those pay their own fixed rewards — and, like Liberty, its
     // chance table never came across from the retired handler file, so
     // `result.gram` was emitted to the client while nothing set it.
-    const myGram = (result.farmZone || result.farmZone2 || result.arm === 'coop') ? 0
+    const myGram = (result.farmZone || result.farmHigh || result.farmZone2 || result.arm === 'coop') ? 0
       : (rand() < (GRAM_DROP_CHANCE || 0) ? (result.rlvl || 1) * (GRAM_PER_LEVEL || 0) : 0);
 
     // One key per KILL, not per enemy and not per attempt.

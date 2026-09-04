@@ -1587,7 +1587,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmZone2: d.farmZone2, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
@@ -2069,7 +2069,7 @@ class Room {
       // most expensive call in this loop off every already-chasing enemy,
       // every tick — which in a busy arm is most of them.
       //
-      // farmZone/farmZone2 are excluded from this self-pull trigger
+      // farmZone/farmHigh/farmZone2 are excluded from this self-pull trigger
       // explicitly rather than via aggroR:0 — zeroing aggroR used to also
       // zero the de-aggro leash below (aggroR * 2.2), which reset aggro back
       // to false the very next tick after attackEnemy/skillAttackEnemy set
@@ -2078,7 +2078,7 @@ class Room {
       // leash distance. farmZone2's own monsters stand in packs
       // (packMateIds, generateFarmZone2) that wake together on a hit
       // instead — see _wakePack — but never wake on proximity alone.
-      if (!e.aggro && !e.farmZone && !e.farmZone2 && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      if (!e.aggro && !e.farmZone && !e.farmHigh && !e.farmZone2 && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
@@ -2172,7 +2172,7 @@ class Room {
       // either one needs — same reasoning as Fear's and Coop's exemptions.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
       if (!e.ignoresSafeZone && e.arm !== 'fear' && e.arm !== 'coop' &&
-          !e.farmZone && !e.farmZone2 && ldx * ldx + ldy * ldy > LEASH_R2) {
+          !e.farmZone && !e.farmHigh && !e.farmZone2 && ldx * ldx + ldy * ldy > LEASH_R2) {
         e.hp = e.maxHp;
         e.x = e.spawnX; e.y = e.spawnY;
         e.aggro = false;
@@ -4496,7 +4496,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2 };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -4595,7 +4595,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmZone2: !!enemy.farmZone2 };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2 };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

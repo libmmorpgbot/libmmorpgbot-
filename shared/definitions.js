@@ -924,8 +924,9 @@ const CRAFT_MATS = [
 // The advanced ("2 профессия") books are deliberately NOT in any of these
 // pools: they are a capstone unlock, and ordinary dungeon monsters are not a
 // source of them at any level. They drop in Фарм-зона (FARM_ADV_SKILL_BOOK_
-// CHANCE, split per species by FARM_SPECIES_BOOKS) and Элитная фарм-зона
-// (FARM2_ADV_SKILL_BOOK_CHANCE), and are crafted at the forge out of 10 base
+// CHANCE, split per species by FARM_SPECIES_BOOKS), в Фарм зоне 2
+// (FARM_HIGH_ADV_SKILL_BOOK_CHANCE, split by FARM_HIGH_SPECIES_ADV_BOOKS) and
+// Элитная фарм-зона (FARM2_ADV_SKILL_BOOK_CHANCE), and are crafted at the forge out of 10 base
 // books (ADV_SKILL_BOOK_CRAFT) — nowhere else. A short-lived tuning did put
 // them on an 8-level cycle alongside the base books, which made them drop in
 // the corridors from level 5 on; that is what this replaces.
@@ -1324,7 +1325,7 @@ const FARM_BLESS_STONE_CHANCE = 0.00002 / 100 * 3 * 50;  // book(orig)×3, ×50 
 const FARM_EPIC_RECIPE_CHANCE      = 0.05 / 100;
 const FARM_LEGENDARY_RECIPE_CHANCE = 0.005 / 100;
 
-// ── «раскидать дроп по разным монстрам» ─────────────────────────────────────
+// ── «раскидать дроп по разным монстрам» ───────────────────────
 // Деление пула по видам монстров зоны — round-robin по списку в его
 // собственном порядке: id №0 первому виду, №1 второму, и так по кругу. 20 книг
 // на 6 видов дают 4/4/3/3/3/3, 16 — 3/3/3/3/2/2.
@@ -1334,7 +1335,7 @@ const FARM_LEGENDARY_RECIPE_CHANCE = 0.005 / 100;
 // Иначе «раскидать» означало бы просто урезать зону вшестеро.
 //
 // `offset` сдвигает начало раздачи. Он нужен, когда один и тот же вид делит
-// несколько пулов сразу (Элитная фарм-зона ниже делит четыре): без сдвига
+// несколько пулов сразу (Фарм зона 2 ниже делит четыре): без сдвига
 // монстр, которому достались книги мага, получил бы и пассивки мага, и снова
 // мага во второй профессии — набор вида читался бы как «класс такой-то»,
 // хотя никакой привязки к классу тут нет и не задумано.
@@ -1391,8 +1392,113 @@ const UNIQUE_SHARDS = [
 // instead of all 20 being rollable off any kill regardless of species.
 const FARM_SPECIES_SHARDS = _splitAcrossSpecies(UNIQUE_SHARDS.map(sh => sh.id), FARM_SPECIES);
 
+// ── Фарм зона 2 ──────────────────────────────────────────────────────────
+// ВНИМАНИЕ ПРО ИМЕНА. Ниже по файлу есть FARM2_*, а в коде — floor `farmZone2`
+// и события `farm2Group*`. Это НЕ эта зона: так называется «Элитная
+// фарм-зона», и её имя вшито в уже записанные строки журнала (mode='farm2')
+// и в протокол её лобби — переименование осиротило бы и то, и другое.
+// Поэтому вторая ОБЫЧНАЯ фарм-зона живёт под своим префиксом
+// FARM_HIGH_ / floor `farmHigh`, а farmZone2 остаётся за Элитной.
+//
+// По устройству это копия обычной Фарм-зоны, а не Элитной: свой пункт в
+// списке телепорта хаба, свободный вход в одиночку с FARM_HIGH_ENTRY_LEVEL,
+// без группы, без дневного лимита времени и без каскадного вывода. Те же
+// четыре комнаты 2x2 (generateFarmHigh, server/game/dungeon.js), тот же
+// половинный множитель статов, те же монстры, которые не бросаются сами.
+// Отличаются три вещи: полоса уровней, виды и таблица дропа.
+const FARM_HIGH_LVL_MIN = 40;
+const FARM_HIGH_LVL_MAX = 53;
+// «Отдельный телепорт в фарм зону 2, с 40 уровня» — вход открывается ровно на
+// нижней границе полосы, в отличие от обычной Фарм-зоны (вход 20, полоса
+// 21-30) и от Элитной (вход 25 при полосе 30-40).
+const FARM_HIGH_ENTRY_LEVEL = 40;
+const FARM_HIGH_MOBS_PER_ROOM = 20;
+const FARM_HIGH_XP_MULT = 3; // как в обычной Фарм-зоне — награда самой зоны поверх её таблицы дропа
+// 0.1% за убийство — та же ставка, что у обычной Фарм-зоны: это фарм-зона, а
+// не Элитная с её 0.3%.
+const FARM_HIGH_LIBERTY_CHANCE = 0.1 / 100;
+// Растения/вампиры/бехолдеры — виды рукава 3 (FLOOR_ENEMIES[3]), потому что
+// 40-53 лежит именно в его полосе (41-60). Обычная Фарм-зона стоит на видах
+// рукава 2, так что по монстрам две зоны различимы с первого взгляда.
+//
+// Порядок этого списка — не косметика: по нему делятся четыре пула ниже
+// (_splitAcrossSpecies), так что переставить его местами значит перераздать
+// весь дроп зоны.
+const FARM_HIGH_SPECIES = FLOOR_ENEMIES[3].species.flatMap(sp => [`${sp}_guard`, `${sp}_warrior`]);
+
+// ── Снаряжение: common → epic, по одному независимому броску на редкость ───
+// Не «одна ставка, потом жребий редкости», как в коридорах
+// (itemDropChanceAtLevel + itemRarityForLevel, где уровень монстра решает
+// РОВНО ОДНУ доступную редкость), а четыре отдельных броска. Здесь так и
+// задумано: зона отдаёт весь ряд от common до epic с одного и того же
+// монстра, и каждая редкость стоит ровно столько, сколько написано, не
+// завися от того, что выпало соседней.
+//
+// legendary в таблице нет — это потолок коридора 4 (61-78) и крафта, а не
+// фарм-зоны. Уникального оружия тут тоже нет: оно остаётся исключением
+// Элитной зоны (FARM2_UNIQUE_WEAPON_CHANCE ниже), которая берётся только
+// полной группой и под дневным лимитом.
+const FARM_HIGH_GEAR_CHANCE = {
+  common:   0.005  / 100,
+  uncommon: 0.005  / 100,
+  rare:     0.005  / 100,
+  epic:     0.0003 / 100,
+};
+
+// Книги. Три независимых броска, по одному на набор:
+//   первая профессия  — 20 базовых книг Q/W/E/R (skillKey);
+//   вторая профессия  — 20 книг «2 профессии» (advSkillKey);
+//   пассивки          — 16 книг пассивных навыков (passiveId), 10 классовых
+//                       и 6 универсальных.
+//
+// Ни один из трёх не отбирается по уровню монстра, в отличие от коридоров
+// (levelSkillBookPool и соседи выше, где на каждом уровне доступны только 5
+// книг из 20): все 56 книг игры достижимы в этой зоне — но не с одного вида
+// монстра, см. деление ниже.
+const FARM_HIGH_SKILL_BOOK_CHANCE     = 0.0009 / 100;
+const FARM_HIGH_ADV_SKILL_BOOK_CHANCE = 0.0007 / 100;
+const FARM_HIGH_PASSIVE_BOOK_CHANCE   = 0.0009 / 100;
+
+// Общее для всей зоны, без деления по видам: камень заточки — один предмет,
+// а рецепт не привязан ни к классу, ни к слоту.
+const FARM_HIGH_NORM_STONE_CHANCE       = 0.05  / 100;
+const FARM_HIGH_EPIC_RECIPE_CHANCE      = 0.01  / 100;
+const FARM_HIGH_LEGENDARY_RECIPE_CHANCE = 0.001 / 100;
+
+// ── И то же самое «раскидано по разным монстрам» ────────────────────────────
+// Ставки выше — общие для всей зоны: любой её монстр роняет epic-шмот с
+// шансом 0.0003%, книгу первой профессии с 0.0009% и так далее. Делится не
+// шанс, а ПУЛ: от какого вида что именно можно получить.
+//
+// Снаряжение делится по СЛОТАМ, а не поштучно, потому что слот — это то, что
+// игрок держит в голове («с вампиров броня, с бехолдеров кольца»), а
+// перечень из десяти id — нет. В каждой из четырёх редкостей ровно один и тот
+// же расклад: 4 оружия + по одной вещи на каждый из шести остальных слотов,
+// поэтому у любого вида непустой пул на любой редкости.
+//
+// Шестой вид берёт два слота: слотов семь, видов шесть.
+const FARM_HIGH_SPECIES_GEAR_SLOTS = {
+  [FARM_HIGH_SPECIES[0]]: ['weapon'],
+  [FARM_HIGH_SPECIES[1]]: ['helmet'],
+  [FARM_HIGH_SPECIES[2]]: ['body'],
+  [FARM_HIGH_SPECIES[3]]: ['gloves'],
+  [FARM_HIGH_SPECIES[4]]: ['boots'],
+  [FARM_HIGH_SPECIES[5]]: ['ring', 'belt'],
+};
+
+// Три книжных пула — round-robin по тем же шести видам. Смещения 0/2/4
+// разводят наборы: вид, которому досталась книга Q лева в первой профессии,
+// во второй профессии и в пассивках получает уже книги других классов, и его
+// набор не читается как «монстр одного класса».
+const FARM_HIGH_SPECIES_SKILL_BOOKS = _splitAcrossSpecies(
+  _SKILL_BOOK_SRC.map(([cls, key]) => `book_${cls}_${key}`), FARM_HIGH_SPECIES, 0);
+const FARM_HIGH_SPECIES_ADV_BOOKS = _splitAcrossSpecies(
+  _ADV_SKILL_BOOK_SRC.map(([cls, key]) => `book_adv_${cls}_${key}`), FARM_HIGH_SPECIES, 2);
+const FARM_HIGH_SPECIES_PASSIVE_BOOKS = _splitAcrossSpecies(
+  CRAFT_MATS.filter(m => m.passiveId).map(m => m.id), FARM_HIGH_SPECIES, 4);
+
 // ── Элитная фарм-зона (Elite Farm Zone 2) ────────────────────────────────
-// A second, harder farm zone: level 40-53 monsters, entered only as a full
+// A second, harder farm zone: level 30-40 monsters, entered only as a full
 // party of FARM2_PARTY_SIZE (see the farm2Group* lobby, server/index.js —
 // only the leader can launch the run, which force-moves every member in
 // together) rather than walked into freely like the original Фарм-зона.
@@ -1407,12 +1513,8 @@ const FARM_SPECIES_SHARDS = _splitAcrossSpecies(UNIQUE_SHARDS.map(sh => sh.id), 
 // packed room's monsters (including the original Фарм-зона's) are halved —
 // scaled back down by FARM2_STAT_MULT on top, on top of FARM2_SPD_MULT move
 // speed.
-// 40-53. Раньше было 30-40 — тот же диапазон, что у обычной Фарм-зоны
-// (21-30) плюс десяток, и обе зоны стояли на одних и тех же монстрах рукава
-// 2. Теперь Элитная целиком уехала в полосу рукава 3 (41-60): своя полоса,
-// свои виды, свой уровень редкости снаряжения в таблице ниже.
-const FARM2_LVL_MIN = 40;
-const FARM2_LVL_MAX = 53;
+const FARM2_LVL_MIN = 30;
+const FARM2_LVL_MAX = 40;
 const FARM2_ENTRY_LEVEL = 25; // entry gate is below FARM2_LVL_MIN on purpose — see FARM2_LVL_MIN's own comment for what a level-25 party is actually walking into
 const FARM2_PARTY_SIZE = 3;
 const FARM2_ROOM_COUNT = 2;
@@ -1429,92 +1531,29 @@ const FARM2_SPD_MULT = 2;
 const FARM2_STAT_MULT = 1 / 1.5;
 const FARM2_XP_PER_KILL = 1000; // flat, not level-scaled — see FARM_XP_MULT for the original zone's own approach
 const FARM2_DAILY_MINUTES = 120; // per-player cap inside the zone, resets daily (UTC) — see _farm2MinutesLeft, server/index.js
-// Растения/вампиры/бехолдеры — виды рукава 3 (FLOOR_ENEMIES[3]), потому что
-// 40-53 лежит именно в его полосе (41-60). Раньше зона делила виды с обычной
-// Фарм-зоной (рукав 2), и по монстрам две зоны было не отличить.
-//
-// Порядок этого списка — не косметика: по нему делятся четыре пула ниже
-// (_splitAcrossSpecies), так что переставить его местами значит перераздать
-// весь дроп зоны.
-const FARM2_SPECIES = FLOOR_ENEMIES[3].species.flatMap(sp => [`${sp}_guard`, `${sp}_warrior`]);
+// Same zombie/lizardman/orc rotation as the original Фарм-зона — 30-40 still
+// sits inside arm 2's own 21-40 range (ARM_OFFSETS[1] = 20), so these are
+// already the species tuned for this level band; only the level/stats differ.
+const FARM2_SPECIES = FARM_SPECIES;
 
-// Kill-loot rolls (_rollFarm2Loot, server/game/loot.js) — flat 0-1 chances,
-// one independent roll per kind per kill, same convention as
-// FARM_SHARD_CHANCE/FARM_EPIC_RECIPE_CHANCE above. Liberty is not part of
-// this table — it is currency (nexum), rolled and granted the same way
-// COOP_LIBERTY_CHANCE is (see the attack/skillAttack handlers,
-// server/handlers2/world.js).
-const FARM2_LIBERTY_CHANCE          = 0.1 / 100;
+// Kill-loot rolls (_rollFarm2Loot, server/index.js) — flat 0-1 chances, one
+// independent roll per kind per kill, same convention as FARM_SHARD_CHANCE/
+// FARM_EPIC_RECIPE_CHANCE above. Liberty is not part of this table — it is
+// currency (nexum), rolled and granted the same way COOP_LIBERTY_CHANCE is
+// (see the attack/skillAttack handlers, server/index.js).
+// 0.3% за убийство — число владельца: «в фарм зоне 0.1 должен быть, а в
+// Элитной 0.3».
+const FARM2_LIBERTY_CHANCE          = 0.3 / 100;
 const FARM2_BOX_RARE_CHANCE         = 0.0001 / 100;
 const FARM2_BOX_UNCOMMON_CHANCE     = 0.001 / 100;
-const FARM2_NORM_STONE_CHANCE       = 0.05 / 100;
+const FARM2_NORM_STONE_CHANCE       = 0.03 / 100;
 const FARM2_BLESS_STONE_CHANCE      = 0.006 / 100;
-const FARM2_EPIC_RECIPE_CHANCE      = 0.01 / 100;
-const FARM2_LEGENDARY_RECIPE_CHANCE = 0.001 / 100;
-
-// ── Снаряжение: common → epic, по одному независимому броску на редкость ───
-// Не «одна ставка, потом жребий редкости», как в коридорах
-// (itemDropChanceAtLevel + itemRarityForLevel, где уровень монстра решает
-// РОВНО ОДНУ доступную редкость), а четыре отдельных броска. Здесь так и
-// задумано: зона отдаёт весь ряд от common до epic с одного и того же
-// монстра, и каждая редкость стоит ровно столько, сколько написано, не
-// завися от того, что выпало соседней.
-//
-// legendary в таблице нет — это потолок коридора 4 (61-78) и крафта, а не
-// фарм-зоны.
-const FARM2_GEAR_CHANCE = {
-  common:   0.005  / 100,
-  uncommon: 0.005  / 100,
-  rare:     0.005  / 100,
-  epic:     0.0003 / 100,
-};
-
-// Книги. Три независимых броска, по одному на набор:
-//   первая профессия  — 20 базовых книг Q/W/E/R (skillKey);
-//   вторая профессия  — 20 книг «2 профессии» (advSkillKey);
-//   пассивки          — 16 книг пассивных навыков (passiveId), 10 классовых
-//                       и 6 универсальных.
-//
-// Ни один из трёх не отбирается по уровню монстра, в отличие от коридоров
-// (levelSkillBookPool и соседи выше, где на каждом уровне доступны только 5
-// книг из 20). «Навыков всех абсолютно»: все 56 книг игры достижимы в этой
-// зоне — но не с одного вида монстра, см. деление ниже.
-const FARM2_SKILL_BOOK_CHANCE       = 0.0009 / 100;
-const FARM2_ADV_SKILL_BOOK_CHANCE   = 0.0007 / 100;
-const FARM2_PASSIVE_BOOK_CHANCE     = 0.0009 / 100;
-
-// ── И то же самое «раскидано по разным монстрам» ────────────────────────────
-// Ставки выше — общие для всей зоны: любой её монстр роняет epic-шмот с
-// шансом 0.0003%, книгу первой профессии с 0.0009% и так далее. Делится не
-// шанс, а ПУЛ: от какого вида что именно можно получить.
-//
-// Снаряжение делится по СЛОТАМ, а не поштучно, потому что слот — это то, что
-// игрок держит в голове («с вампиров броня, с бехолдеров кольца»), а
-// перечень из десяти id — нет. В каждой из четырёх редкостей ровно один и тот
-// же расклад: 4 оружия + по одной вещи на каждый из шести остальных слотов,
-// поэтому у любого вида непустой пул на любой редкости.
-//
-// Шестой вид берёт два слота: слотов семь, видов шесть.
-const FARM2_SPECIES_GEAR_SLOTS = {
-  [FARM2_SPECIES[0]]: ['weapon'],
-  [FARM2_SPECIES[1]]: ['helmet'],
-  [FARM2_SPECIES[2]]: ['body'],
-  [FARM2_SPECIES[3]]: ['gloves'],
-  [FARM2_SPECIES[4]]: ['boots'],
-  [FARM2_SPECIES[5]]: ['ring', 'belt'],
-};
-
-// Три книжных пула — round-robin по тем же шести видам. Смещения 0/2/4
-// разводят наборы: вид, которому досталась книга Q лева в первой профессии,
-// во второй профессии и в пассивках получает уже книги других классов, и его
-// набор не читается как «монстр одного класса».
-const FARM2_SPECIES_SKILL_BOOKS = _splitAcrossSpecies(
-  _SKILL_BOOK_SRC.map(([cls, key]) => `book_${cls}_${key}`), FARM2_SPECIES, 0);
-const FARM2_SPECIES_ADV_BOOKS = _splitAcrossSpecies(
-  _ADV_SKILL_BOOK_SRC.map(([cls, key]) => `book_adv_${cls}_${key}`), FARM2_SPECIES, 2);
-const FARM2_SPECIES_PASSIVE_BOOKS = _splitAcrossSpecies(
-  CRAFT_MATS.filter(m => m.passiveId).map(m => m.id), FARM2_SPECIES, 4);
-
+const FARM2_EPIC_RECIPE_CHANCE      = 0.1 / 100;
+const FARM2_LEGENDARY_RECIPE_CHANCE = 0.01 / 100;
+// One flat roll per kill picking a random book from the FULL 20-book pool —
+// unlike FARM_SPECIES_BOOKS above there is no per-species split here, every
+// book is equally reachable off any of this zone's kills.
+const FARM2_ADV_SKILL_BOOK_CHANCE   = 0.005 / 100;
 // One random EPIC-tier unique weapon (UNIQUE_WEAPONS below, the `_e` ids —
 // legendary is not included) — the ONE deliberate exception to `noDrop`
 // (ITEM_DEF.push's own `noDrop: true` tag, further down this file), which
@@ -2832,15 +2871,19 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,
+  FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_MOBS_PER_ROOM,
+  FARM_HIGH_XP_MULT, FARM_HIGH_LIBERTY_CHANCE, FARM_HIGH_SPECIES,
+  FARM_HIGH_GEAR_CHANCE, FARM_HIGH_SKILL_BOOK_CHANCE, FARM_HIGH_ADV_SKILL_BOOK_CHANCE,
+  FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_NORM_STONE_CHANCE,
+  FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
+  FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS,
+  FARM_HIGH_SPECIES_ADV_BOOKS, FARM_HIGH_SPECIES_PASSIVE_BOOKS,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
   FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
   FARM2_LIBERTY_CHANCE, FARM_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
-  FARM2_UNIQUE_WEAPON_CHANCE, FARM2_GEAR_CHANCE,
-  FARM2_SKILL_BOOK_CHANCE, FARM2_PASSIVE_BOOK_CHANCE,
-  FARM2_SPECIES_GEAR_SLOTS, FARM2_SPECIES_SKILL_BOOKS, FARM2_SPECIES_ADV_BOOKS,
-  FARM2_SPECIES_PASSIVE_BOOKS,
+  FARM2_UNIQUE_WEAPON_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,

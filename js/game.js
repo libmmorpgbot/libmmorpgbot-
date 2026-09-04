@@ -1771,6 +1771,15 @@ function _buildArmGates() {
       { target: 'farmZone', req: fze.req || 0, label: typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона' }
     );
   }
+  // Фарм зона 2 — свой пункт в том же списке, со своим гейтом (40). Именно то
+  // «отдельный телепорт», которое отличает её от Элитной фарм-зоны: та берётся
+  // только через лобби группы в «Событиях», а сюда игрок входит с пада сам.
+  const fhe = dungeon.farmHighEntry;
+  if (fhe) {
+    _portalDestinations.push(
+      { target: 'farmHigh', req: fhe.req || 0, label: typeof t === 'function' ? t('farmHighLbl') : 'Фарм зона 2' }
+    );
+  }
   _portalPad = (onHub && _portalDestinations.length)
     ? { x: sx + _PORTAL_DX * TILE, y: sy + _PORTAL_DY * TILE }
     : null;
@@ -2364,15 +2373,20 @@ function _isGuildWarTile(tx, ty) {
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 
-// Фарм-зона gets a dedicated dark-icy palette instead of falling through to
+// Обе фарм-зоны get a dedicated dark-icy palette instead of falling through to
 // the biome theme (getTheme() clamps every floor past index 4 to the same
 // golem-fortress brown) — cold, dim blues instead of the old bright
 // green/tan so the zone reads as a frozen grinding spot, not a sunlit field.
 const _FARM_WALL    = '#2e4a5e';
 const _FARM_FLOOR_A = '#16242e';
 const _FARM_FLOOR_B = '#1c2f3a';
+// Обе фарм-зоны, а не только первая: Фарм зона 2 — её копия, и без этой ветки
+// она уезжала бы в биомную тему (getTheme() зажимает всё после 4-го этажа в
+// один и тот же коричневый форт големов) и не читалась бы как фарм-зона. Поля
+// друг другу не мешают: это разные этажи, и в снимке приходит ровно одно.
 function _isFarmZoneTile(tx, ty) {
-  const b = typeof dungeon !== 'undefined' && dungeon && dungeon.farmZone && dungeon.farmZone.bounds;
+  const d = typeof dungeon !== 'undefined' ? dungeon : null;
+  const b = d && ((d.farmZone && d.farmZone.bounds) || (d.farmHigh && d.farmHigh.bounds));
   return !!b && tx >= b.x0 && tx < b.x1 && ty >= b.y0 && ty < b.y1;
 }
 

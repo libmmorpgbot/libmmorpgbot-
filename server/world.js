@@ -11,14 +11,14 @@
 
 const Room = require('./game/Room');
 const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
-const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL } = require('../shared/definitions');
+const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL } = require('../shared/definitions');
 
 const floorRooms = new Map();
 
 // The generic level gate: every arm's own requirement, plus each simple
 // "just a level, no window or queue" zone folded in beside them, so a new one
 // needs no dedicated branch below.
-const ZONE_LEVEL_REQ = { ...ARM_LEVEL_REQ, farmZone: FARM_ENTRY_LEVEL };
+const ZONE_LEVEL_REQ = { ...ARM_LEVEL_REQ, farmZone: FARM_ENTRY_LEVEL, farmHigh: FARM_HIGH_ENTRY_LEVEL };
 const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [v, k]));
 
 // Floors a player can simply STAND on. The instanced and scheduled ones are
@@ -27,7 +27,7 @@ const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [
 // worse than the hub.
 const STANDABLE = new Set([
   FLOOR_IDS.hub, FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
-  FLOOR_IDS.farmZone, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
+  FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
 ]);
 
 // bossStates: { [floorId]: { [arm]: respawnAtMs } }, read out of boss_state

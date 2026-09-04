@@ -1666,6 +1666,7 @@ function _currentLocationBounds() {
   const px = player.x / TILE, py = player.y / TILE;
   const namedZones = [
     { z: dungeon.farmZone, zoneLabel: 'farmZoneLbl' },
+    { z: dungeon.farmHigh, zoneLabel: 'farmHighLbl' },
     { z: dungeon.guildWar, zoneLabel: 'guildWarLbl' },
     { z: dungeon.race10,   zoneLabel: 'race10ArenaLbl' },
   ];
@@ -1846,6 +1847,7 @@ function _floorEnemyPool(n, localLvl) {
 function _floorUISignature() {
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && _b.zoneLabel === 'farmZoneLbl') return 'farm';
+  if (_b && _b.zoneLabel === 'farmHighLbl') return 'farmHigh';
   return _currentArmIdx() || 'hub';
 }
 let _lastFloorUISignature = null;
@@ -1864,6 +1866,7 @@ function updateFloorUI() {
   // monsters nobody here actually is. Swap to its own species list instead.
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && _b.zoneLabel === 'farmZoneLbl') { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
+  if (_b && _b.zoneLabel === 'farmHighLbl') { grid.innerHTML = _farmHighMonsterListHtml(); return; }
 
   // Scoped to wherever the player actually is: the hub has no monsters at
   // all, and each corridor only ever spawns its own level band (arm 1 =
@@ -2061,6 +2064,129 @@ function _farmZoneMonsterListHtml() {
       <div class="mon-body">${_farmDropBodyHtml(e)}</div>
     </div>`).join('');
   return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}`;
+}
+
+// ── Фарм зона 2: бестиарий зоны ───────────────────────────────────────────
+// Та же форма, что у _farmZoneMonsterListHtml выше — аккордеон по видам, —
+// но зона делит между видами не один пул, а четыре (снаряжение и три
+// книжных набора, FARM_HIGH_SPECIES_* в shared/definitions.js), и панель
+// обязана это показывать: ставка у всей зоны общая, а вид решает, ЧТО
+// именно выпадет. Поэтому каждая строка — доля предмета в СВОЁМ пуле
+// (chance / pool.length), а не доля от каталога: игрок должен видеть, за чем
+// именно ему идти к этому монстру.
+function _farmHighBookRows(ids, chance, iconFor) {
+  const pool = (ids || []).map(id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === id)).filter(Boolean);
+  if (!pool.length) return '';
+  const per = _pctSmall(chance / pool.length * 100);
+  return pool.map(b => _dropRow(iconFor(b), b.name, per,
+    _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec')).join('');
+}
+
+// Иконка книги — та же, что рисует её инвентарная запись: картинка самого
+// навыка, если она есть в каталоге, иначе значок книги.
+function _farmHighSkillBookIcon(b) {
+  const src = b.advSkillKey
+    ? (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass] || []).find(sk => sk.key === b.advSkillKey)
+    : b.skillKey
+      ? (typeof SKILL_DEF !== 'undefined' && SKILL_DEF[b.forClass] || []).find(sk => sk.key === b.skillKey)
+      : null;
+  return src && src.img
+    ? `<img src="${src.img}" style="width:16px;height:16px;border-radius:4px;image-rendering:pixelated">`
+    : iconHTML('book', 16, '#f5c542');
+}
+
+// Снаряжение вида: свои слоты, и по одному броску на КАЖДУЮ редкость
+// (FARM_HIGH_GEAR_CHANCE) — не один бросок с жребием редкости, как в
+// коридорах. Поэтому и рисуется по разделу на редкость, с её собственным
+// заголовком: иначе шестнадцать строк подряд отличались бы только цветом, и
+// «сколько стоит эпик» пришлось бы выискивать глазами.
+function _farmHighGearSections(eid) {
+  const slots = (typeof FARM_HIGH_SPECIES_GEAR_SLOTS !== 'undefined' && FARM_HIGH_SPECIES_GEAR_SLOTS[eid]) || [];
+  if (!slots.length || typeof FARM_HIGH_GEAR_CHANCE === 'undefined') return '';
+  return Object.keys(FARM_HIGH_GEAR_CHANCE).map(rarity => {
+    const pool = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && slots.includes(d.slot));
+    if (!pool.length) return '';
+    const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
+    const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
+    const per = _pctSmall(FARM_HIGH_GEAR_CHANCE[rarity] / pool.length * 100);
+    const rows = pool.map(it => _dropRow(_itemIcon(it, 16), it.name, per, rc)).join('');
+    return `<div class="fi-drops-hdr" style="margin-top:8px">${tVars('gearRarityFmt', { rn })}</div><div class="fi-drops">${rows}</div>`;
+  }).join('');
+}
+
+// Строки, одинаковые для всех видов зоны: опыт, золото, Liberty, камень
+// заточки и оба рецепта. Всё остальное поделено, и живёт в разделах ниже.
+function _farmHighZoneRows(e) {
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const normStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone') : null;
+  const epicRec   = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'rece') : null;
+  const legRec    = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'recl') : null;
+  return `
+    ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
+    ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
+    ${(typeof FARM_HIGH_LIBERTY_CHANCE !== 'undefined' && FARM_HIGH_LIBERTY_CHANCE > 0)
+      ? _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM_HIGH_LIBERTY_CHANCE * 100), '#e8c15a')
+      : ''}
+    ${normStone ? _dropRow(_mi(normStone, 16), normStone.name, _pctSmall(FARM_HIGH_NORM_STONE_CHANCE * 100), '#f17e8b') : ''}
+    ${epicRec   ? _dropRow(_mi(epicRec, 16),   epicRec.name,   _pctSmall(FARM_HIGH_EPIC_RECIPE_CHANCE * 100), '#c98fef') : ''}
+    ${legRec    ? _dropRow(_mi(legRec, 16),    legRec.name,    _pctSmall(FARM_HIGH_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : ''}`;
+}
+
+function _farmHighSpeciesBodyHtml(e) {
+  const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
+  const S = typeof FARM_HIGH_SPECIES_SKILL_BOOKS   !== 'undefined' ? FARM_HIGH_SPECIES_SKILL_BOOKS[e.eid]   : [];
+  const A = typeof FARM_HIGH_SPECIES_ADV_BOOKS     !== 'undefined' ? FARM_HIGH_SPECIES_ADV_BOOKS[e.eid]     : [];
+  const P = typeof FARM_HIGH_SPECIES_PASSIVE_BOOKS !== 'undefined' ? FARM_HIGH_SPECIES_PASSIVE_BOOKS[e.eid] : [];
+  return `
+    <div class="fi-mstats">
+      <span>HP <b>${e.hp}</b></span>
+      <span>ATK <b>${e.atk}</b></span>
+      <span>DEF <b>${e.def}</b></span>
+      <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
+    </div>
+    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e))}
+    ${_farmHighGearSections(e.eid)}
+    ${sec(t('farmHighSkillBooksHdr'), _farmHighBookRows(S, FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
+    ${sec(t('farmHighAdvBooksHdr'), _farmHighBookRows(A, FARM_HIGH_ADV_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
+    ${sec(t('farmHighPassiveBooksHdr'), _farmHighBookRows(P, FARM_HIGH_PASSIVE_BOOK_CHANCE, b => _itemIcon(b, 16)))}`;
+}
+
+function _farmHighMonsterListHtml() {
+  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  const lvl = Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2);
+  // Имя/цвет ранга — по шкале САМОЙ ЗОНЫ, ровно как их считает её настоящий
+  // спавн (generateFarmHigh, server/game/dungeon.js — там же разбор, почему
+  // не по шкале рукава). Здесь показан средний уровень полосы, значит и ранг
+  // средний.
+  const localLvl = lvl - FARM_HIGH_LVL_MIN + 1;
+  const maxLocalLvl = FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1;
+  const items = (typeof FARM_HIGH_SPECIES !== 'undefined' ? FARM_HIGH_SPECIES : [])
+    .map(eid => eMap.get(eid)).filter(Boolean)
+    .map(base => {
+      const stats = monsterStatsAtLevel(lvl, base.eType);
+      const e = {
+        ...base,
+        // Те же половинные hp/atk, что кладёт генератор зоны.
+        name: monsterNameAtLevel(base.name, localLvl, false, base.fem, maxLocalLvl),
+        color: monsterColorAtLevel(base.color, base.endColor, localLvl, false, maxLocalLvl),
+        hp: Math.floor(stats.hp * 0.5), atk: Math.floor(stats.atk * 0.5), def: stats.def,
+        xp: xpAtLevel(lvl) * FARM_HIGH_XP_MULT, gold: goldAtLevel(lvl),
+      };
+      return `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:${e.color}"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl">${tVars('farmHighLevelRangeFmt', { a: FARM_HIGH_LVL_MIN, b: FARM_HIGH_LVL_MAX })}</span>
+          <div class="mon-name-row"><span class="mon-name">${e.name}</span></div>
+        </div>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div class="mon-body">${_farmHighSpeciesBodyHtml(e)}</div>
+    </div>`;
+    }).join('');
+  const hint = tVars('farmHighBestiaryHint', { a: FARM_HIGH_LVL_MIN, b: FARM_HIGH_LVL_MAX });
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${items}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
@@ -5690,124 +5816,29 @@ function _farm2BodyHTML() {
         </ul>
       </div>
       <div class="db-rules">
-        <div class="fi-drops-hdr">${t('farm2ZoneDropHdr')}</div>
+        <div class="fi-drops-hdr">${t('farm2DropHdr')}</div>
         ${_farm2DropRows()}
       </div>
-      <div class="db-rules">
-        <div class="fi-drops-hdr">${t('farm2BestiaryHdr')}</div>
-        ${_farm2SpeciesListHtml()}
-      </div>
     </div>`;
 }
 
-// ── «Раскидано по разным монстрам» — панель обязана это показывать ─────────
-// Снаряжение и все три книжных набора Элитной фарм-зоны берутся из
-// подмножества УБИТОГО ВИДА (FARM2_SPECIES_*, shared/definitions.js). Ставка
-// при этом общая для зоны, а не делится: любой её монстр роняет книгу первой
-// профессии с одним и тем же шансом — отличается только то, КАКУЮ.
-//
-// Поэтому каждая строка ниже — доля вида в его собственном пуле
-// (chance / pool.length), а не доля от каталога: игрок должен видеть, за чем
-// именно ему идти к этому монстру.
-function _farm2BookRows(ids, chance, defsFor) {
-  const pool = (ids || []).map(id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === id)).filter(Boolean);
+// The advanced-skill-book roll is ONE shared chance across the FULL 20-book
+// pool (all classes × Q/W/E/R — see _rollFarm2Loot, server/index.js, which
+// picks from the exact same `CRAFT_MATS.filter(m => m.advSkillKey)` set), so
+// this breaks that single chance down per book (equal share of the pool) and
+// renders each one's own class-skill icon, same idea as the original
+// Фарм-зона's per-species _farmSpeciesBookRows above.
+function _farm2AdvBookRows() {
+  const pool = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.advSkillKey);
   if (!pool.length) return '';
-  const per = _pctSmall(chance / pool.length * 100);
-  return pool.map(b => _dropRow(defsFor(b), b.name, per,
-    _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec')).join('');
-}
-
-// Иконка книги — та же, что рисует её инвентарная запись: картинка самого
-// навыка, если она есть в каталоге, иначе значок книги.
-function _farm2SkillBookIcon(b) {
-  const src = b.advSkillKey
-    ? (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass] || []).find(sk => sk.key === b.advSkillKey)
-    : b.skillKey
-      ? (typeof SKILL_DEF !== 'undefined' && SKILL_DEF[b.forClass] || []).find(sk => sk.key === b.skillKey)
-      : null;
-  return src && src.img
-    ? `<img src="${src.img}" style="width:16px;height:16px;border-radius:4px;image-rendering:pixelated">`
-    : iconHTML('book', 16, '#f5c542');
-}
-
-// Снаряжение вида: свои слоты, и по одному броску на КАЖДУЮ редкость
-// (FARM2_GEAR_CHANCE) — не один бросок с жребием редкости, как в коридорах.
-// Поэтому и рисуется по разделу на редкость, с её собственным заголовком:
-// иначе шестнадцать строк подряд отличались бы только цветом, и «сколько
-// стоит эпик» пришлось бы выискивать глазами.
-//
-// Строка на предмет — доля предмета в пуле своей редкости, тем же способом,
-// что и коридорная панель выше.
-function _farm2GearSections(eid) {
-  const slots = (typeof FARM2_SPECIES_GEAR_SLOTS !== 'undefined' && FARM2_SPECIES_GEAR_SLOTS[eid]) || [];
-  if (!slots.length || typeof FARM2_GEAR_CHANCE === 'undefined') return '';
-  return Object.keys(FARM2_GEAR_CHANCE).map(rarity => {
-    const pool = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && slots.includes(d.slot));
-    if (!pool.length) return '';
-    const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
-    const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
-    const per = _pctSmall(FARM2_GEAR_CHANCE[rarity] / pool.length * 100);
-    const rows = pool.map(it => _dropRow(_itemIcon(it, 16), it.name, per, rc)).join('');
-    return `<div class="fi-drops-hdr" style="margin-top:8px">${tVars('gearRarityFmt', { rn })}</div><div class="fi-drops">${rows}</div>`;
+  const perBookPct = _pctSmall(FARM2_ADV_SKILL_BOOK_CHANCE / pool.length * 100);
+  return pool.map(b => {
+    const def = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass] || []).find(s => s.key === b.advSkillKey);
+    const icon = def && def.img
+      ? `<img src="${def.img}" style="width:16px;height:16px;border-radius:4px;image-rendering:pixelated">`
+      : iconHTML('book', 16, '#f5c542');
+    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542');
   }).join('');
-}
-
-function _farm2SpeciesBodyHtml(e) {
-  const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
-  const S = typeof FARM2_SPECIES_SKILL_BOOKS   !== 'undefined' ? FARM2_SPECIES_SKILL_BOOKS[e.eid]   : [];
-  const A = typeof FARM2_SPECIES_ADV_BOOKS     !== 'undefined' ? FARM2_SPECIES_ADV_BOOKS[e.eid]     : [];
-  const P = typeof FARM2_SPECIES_PASSIVE_BOOKS !== 'undefined' ? FARM2_SPECIES_PASSIVE_BOOKS[e.eid] : [];
-  return `
-    <div class="fi-mstats">
-      <span>HP <b>${e.hp}</b></span>
-      <span>ATK <b>${e.atk}</b></span>
-      <span>DEF <b>${e.def}</b></span>
-      <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
-    </div>
-    ${_farm2GearSections(e.eid)}
-    ${sec(t('farm2SkillBooksHdr'), _farm2BookRows(S, FARM2_SKILL_BOOK_CHANCE, _farm2SkillBookIcon))}
-    ${sec(t('farm2AdvBooksHdr'), _farm2BookRows(A, FARM2_ADV_SKILL_BOOK_CHANCE, _farm2SkillBookIcon))}
-    ${sec(t('farm2PassiveBooksHdr'), _farm2BookRows(P, FARM2_PASSIVE_BOOK_CHANCE, b => _itemIcon(b, 16)))}`;
-}
-
-// Аккордеон по видам зоны — та же форма, что у бестиария обычной Фарм-зоны
-// (_farmZoneMonsterListHtml выше).
-function _farm2SpeciesListHtml() {
-  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
-  const lvl = Math.round((FARM2_LVL_MIN + FARM2_LVL_MAX) / 2);
-  const items = (typeof FARM2_SPECIES !== 'undefined' ? FARM2_SPECIES : [])
-    .map(eid => eMap.get(eid)).filter(Boolean)
-    .map(base => {
-      // Имя/цвет ранга — по шкале САМОЙ ЗОНЫ, ровно как их считает её
-      // настоящий спавн (generateFarmZone2, server/game/dungeon.js — там же
-      // разбор, почему не по шкале рукава). Здесь показан средний уровень
-      // полосы, значит и ранг средний.
-      const localLvl = lvl - FARM2_LVL_MIN + 1;
-      const maxLocalLvl = FARM2_LVL_MAX - FARM2_LVL_MIN + 1;
-      const stats = monsterStatsAtLevel(lvl, base.eType);
-      const e = {
-        ...base,
-        name: monsterNameAtLevel(base.name, localLvl, false, base.fem, maxLocalLvl),
-        color: monsterColorAtLevel(base.color, base.endColor, localLvl, false, maxLocalLvl),
-        hp: Math.max(1, Math.round(stats.hp * FARM2_STAT_MULT)),
-        atk: Math.max(1, Math.round(stats.atk * FARM2_STAT_MULT)),
-        def: stats.def, spd: base.spd * FARM2_SPD_MULT,
-      };
-      return `
-    <div class="mon-item">
-      <div class="mon-hdr" onclick="_toggleMonster(this)">
-        <span class="dot" style="background:${e.color}"></span>
-        <div class="mon-titles">
-          <span class="mon-lvl">${tVars('farm2LevelRangeFmt', { a: FARM2_LVL_MIN, b: FARM2_LVL_MAX })}</span>
-          <div class="mon-name-row"><span class="mon-name">${e.name}</span></div>
-        </div>
-        <span class="mon-chevron">›</span>
-      </div>
-      <div class="mon-body">${_farm2SpeciesBodyHtml(e)}</div>
-    </div>`;
-    }).join('');
-  const hint = tVars('farm2BestiaryHint', { a: FARM2_LVL_MIN, b: FARM2_LVL_MAX });
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${items}`;
 }
 
 // Same idea for the unique-weapon roll: one shared chance across the 5
@@ -5842,10 +5873,7 @@ function _farm2DropRows() {
     epicRec     ? _dropRow(_itemIcon(epicRec, 16),     epicRec.name,     _pctSmall(FARM2_EPIC_RECIPE_CHANCE * 100),  '#c98fef') : '',
     legRec      ? _dropRow(_itemIcon(legRec, 16),      legRec.name,      _pctSmall(FARM2_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : '',
     _dropRow(iconHTML('star', 16, '#b4eb84'), t('clanPerkXp'), `<b style="color:#b4eb84">${FARM2_XP_PER_KILL}</b>`, '#b4eb84'),
-    // Снаряжение и книги сюда НЕ попадают: они поделены между видами, и их
-    // строки живут в аккордеоне ниже (_farm2SpeciesListHtml). Здесь только то,
-    // что падает одинаково со всех — включая уникальное оружие, у которого
-    // деления нет: пять клинков на шесть видов не разложить.
+    _farm2AdvBookRows(),
     _farm2UniqueWeaponRows(),
   ];
   return `<div class="fi-drops">${rows.join('')}</div>`;
