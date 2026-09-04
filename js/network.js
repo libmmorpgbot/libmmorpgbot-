@@ -3804,6 +3804,29 @@ function _finishOnlineStart() {
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
   if (typeof showCodexBtn === 'function') showCodexBtn();
+
+  // ── АВТО включается само у тех, кому оно доступно ────────────────────────
+  // Кнопка AUTO открыта с VIP 2 (AUTO_ATTACK_VIP_MIN, js/input.js), но
+  // включать её приходилось руками при каждом заходе: autoAttackMode — это
+  // переменная сессии (js/state.js), и начинается она с false у всех, включая
+  // тех, кто за неё заплатил.
+  //
+  // Только здесь, а НЕ в _applyGameStart: эта функция — путь первого входа, и
+  // ни переподключение, ни переход между этажами сюда не заходят (см. ветку в
+  // обработчике gameStart выше). В _applyGameStart то же самое включало бы
+  // АВТО обратно на каждом шаге через портал — то есть отменяло бы выключение,
+  // сделанное руками, движением по карте.
+  //
+  // Элитная фарм-зона исключена той же оговоркой, что и в трёх других местах,
+  // где АВТО отказывают (farm2Started здесь, _autoPressEnd в js/input.js,
+  // _autoCastSkills в js/game.js): внутри неё оно запрещено целиком. Дойти
+  // сюда, уже будучи в забеге, нельзя — разрыв связи выкидывает из зоны, — но
+  // условие стоит рядом с остальными, а не держится в уме.
+  if ((window._vipData?.level || 0) >= AUTO_ATTACK_VIP_MIN
+      && !(typeof _farm2InRun !== 'undefined' && _farm2InRun)) {
+    autoAttackMode = true;
+  }
+
   state = 'playing';
   setTab(0);
   // Immediately save so a page refresh always finds the character type

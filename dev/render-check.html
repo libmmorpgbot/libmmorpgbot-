@@ -562,6 +562,11 @@ async function run() {
   // checks first made that check flake at 6.2 against a limit of 6.
   await walletChecks(w);
 
+  // После кошелька и ДО выкладки: этот блок дёргает _finishOnlineStart, то
+  // есть трогает HUD и вкладки, — после замеров вершин ему там уже нечего
+  // испортить, а подменённый выкладкой сокет ему не нужен.
+  await autoVipChecks(w);
+
   // ПОСЛЕДНИМИ: этот блок подменяет window.io заглушкой, и всё, что шло бы
   // после него, работало бы с ней, а не с настоящим сокетом.
   await deployChecks(w);
@@ -1968,6 +1973,60 @@ async function walletChecks(w) {
     var _t2 = document.getElementById('gram-credit-toast'); if (_t2) _t2.remove();
     var _p = document.getElementById('panel-profile'); if (_p) _p.style.display = 'none';
     activeTab = 0;`);
+}
+
+// ── АВТО у VIP включается само ─────────────────────────────────────────────
+// Кнопка AUTO открыта с VIP 2, но включать её приходилось руками при каждом
+// заходе: autoAttackMode — переменная сессии и начинается с false у всех,
+// включая тех, кто за неё заплатил.
+//
+// Проверяется поведением, а не чтением исходника: вызывается настоящая
+// _finishOnlineStart (путь первого входа) на настоящем бандле, и смотрится,
+// чем стало autoAttackMode. Условие «только для VIP 2+» без этого зеленело бы
+// и на «включаем всем», и на «не включаем никому».
+//
+// Читать и писать autoAttackMode/_farm2InRun можно ТОЛЬКО через inject: это
+// let в области видимости бандла, а не свойства window (см. шапку файла).
+async function autoVipChecks(w) {
+  head('АВТО у VIP включается само');
+
+  inject(w, `window.__rcAutoSaved = {
+    vip: window._vipData,
+    auto: autoAttackMode,
+    farm2: typeof _farm2InRun !== 'undefined' ? _farm2InRun : false,
+  };
+  window.__rcAutoMin = typeof AUTO_ATTACK_VIP_MIN !== 'undefined' ? AUTO_ATTACK_VIP_MIN : null;
+  window.__rcAutoRun = function (lvl, inFarm2) {
+    autoAttackMode = false;
+    window._vipData = { level: lvl, deposited: 0, pending: [] };
+    _farm2InRun = !!inFarm2;
+    _finishOnlineStart();
+    return autoAttackMode;
+  };`);
+
+  const MIN = w.__rcAutoMin;
+  ok(MIN === 2, 'порог АВТО — VIP 2, как и на самой кнопке', 'AUTO_ATTACK_VIP_MIN = ' + MIN);
+
+  const run = (lvl, inFarm2) => {
+    inject(w, `window.__rcAutoOut = window.__rcAutoRun(${lvl}, ${inFarm2 ? 'true' : 'false'});`);
+    return w.__rcAutoOut;
+  };
+
+  ok(run(MIN, false) === true, 'на пороге (VIP ' + MIN + ') АВТО включено сразу после входа');
+  ok(run(10, false) === true, 'выше порога — тоже');
+  ok(run(MIN - 1, false) === false,
+     'на уровень ниже порога (VIP ' + (MIN - 1) + ') — нет: кнопка ему всё равно откажет');
+  ok(run(0, false) === false, 'без VIP — нет');
+  // Внутри Элитной фарм-зоны АВТО запрещено целиком, и вход в игру не повод
+  // сделать исключение: три других места отказывают в нём там же.
+  ok(run(10, true) === false, 'в Элитной фарм-зоне не включается даже у VIP 10');
+
+  // Возврат к тому, что было: следующая секция подменяет сокет и ждёт HUD в
+  // прежнем виде, а не в том, каким его оставил пятый прогон входа.
+  inject(w, `autoAttackMode = window.__rcAutoSaved.auto;
+    window._vipData = window.__rcAutoSaved.vip;
+    _farm2InRun = window.__rcAutoSaved.farm2;
+    if (typeof closeWhatsNewModal === 'function') closeWhatsNewModal();`);
 }
 
 function finish(w) {
