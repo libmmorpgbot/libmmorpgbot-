@@ -1,5 +1,5 @@
 const {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop,
 } = require('./dungeon');
 
@@ -24,6 +24,11 @@ const FLOOR_IDS = {
   // занято Элитной зоной строкой выше — см. блок FARM_HIGH_* в
   // shared/definitions.js.
   farmHigh: 14,
+  // Сезонное крыло Фарм-зоны — ещё 4 комнаты, вход только с сезонным билетом
+  // (TICKET_ONLY, server/world.js). Свой этаж, потому что дверь в него должен
+  // сторожить сервер, а барьеры внутри этажа здесь клиентские — разбор в
+  // generateFarmSeason, server/game/dungeon.js.
+  farmSeason: 15,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -44,6 +49,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.coop,     key: 'coop',     generate: () => generateCoop() },
   { id: FLOOR_IDS.farmZone2, key: 'farmZone2', generate: () => generateFarmZone2() },
   { id: FLOOR_IDS.farmHigh, key: 'farmHigh', generate: () => generateFarmHigh() },
+  { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

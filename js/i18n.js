@@ -622,6 +622,11 @@ Object.assign(I18N_UI, {
   lockedNeedLevel: { ru: '🔒 Нужен {n} уровень', en: '🔒 Level {n} required', uk: '🔒 Потрібен {n} рівень', es: '🔒 Se requiere nivel {n}', tr: '🔒 Seviye {n} gerekli', pt: '🔒 Necessário nível {n}' },
   centralHall:   { ru: 'Центральный зал', en: 'Central Hall', uk: 'Центральний зал', es: 'Sala Central', tr: 'Merkez Salon', pt: 'Salão Central' },
   hallShort:     { ru: 'Зал', en: 'Hall', uk: 'Зал', es: 'Sala', tr: 'Salon', pt: 'Salão' },
+  // Сезонное крыло Фарм-зоны — ещё 4 комнаты за падом, вход только с сезонным
+  // билетом (см. _seasonPad, js/game.js).
+  lockedNeedTicket: { ru: '🔒 Нужен сезонный билет', en: '🔒 Season ticket required', uk: '🔒 Потрібен сезонний квиток', es: '🔒 Se requiere pase de temporada', tr: '🔒 Sezon bileti gerekli', pt: '🔒 Necessário passe de temporada' },
+  farmSeasonShort: { ru: 'Сезон', en: 'Season', uk: 'Сезон', es: 'Temp.', tr: 'Sezon', pt: 'Temp.' },
+  farmZoneShort:   { ru: 'Ферма', en: 'Farm', uk: 'Ферма', es: 'Granja', tr: 'Farm', pt: 'Fazenda' },
   enteredCorridorToast: { ru: 'Вы вошли в {arm} коридор', en: 'You entered the {arm} corridor', uk: 'Ви увійшли в {arm} коридор', es: 'Entraste al corredor {arm}', tr: '{arm} koridora girdin', pt: 'Você entrou no corredor {arm}' },
   deathGoldLbl:  { ru: 'золота', en: 'gold', uk: 'золота', es: 'de oro', tr: 'altın', pt: 'de ouro' },
   deathKillsLbl: { ru: 'убийств', en: 'kills', uk: 'вбивств', es: 'muertes', tr: 'öldürme', pt: 'mortes' },
@@ -881,6 +886,7 @@ Object.assign(I18N_UI, {
   locationDeniedToast: { ru: 'Не удалось перейти — попробуйте ещё раз', en: 'Could not travel — try again', uk: 'Не вдалося перейти — спробуйте ще раз', es: 'No se pudo viajar — inténtalo de nuevo', tr: 'Geçiş yapılamadı — tekrar dene', pt: 'Não foi possível viajar — tente de novo' },
   locationClosedToast: { ru: 'Локация сейчас закрыта', en: 'This location is closed right now', uk: 'Локація зараз зачинена', es: 'Esta ubicación está cerrada ahora', tr: 'Bu bölge şu an kapalı', pt: 'Este local está fechado agora' },
   locationLevelToast: { ru: 'Недостаточный уровень для этой локации', en: 'Your level is too low for this location', uk: 'Недостатній рівень для цієї локації', es: 'Tu nivel es demasiado bajo para esta ubicación', tr: 'Bu bölge için seviyen yetersiz', pt: 'Seu nível é baixo demais para este local' },
+  locationTicketToast: { ru: 'В эти комнаты пускают только с сезонным билетом', en: 'These rooms are open only with a season ticket', uk: 'У ці кімнати пускають лише із сезонним квитком', es: 'Estas salas solo se abren con un pase de temporada', tr: 'Bu odalara yalnızca sezon biletiyle girilir', pt: 'Estas salas só abrem com um passe de temporada' },
   ratingErrorToast: { ru: 'Не удалось загрузить рейтинг', en: 'Could not load the rating', uk: 'Не вдалося завантажити рейтинг', es: 'No se pudo cargar la clasificación', tr: 'Sıralama yüklenemedi', pt: 'Não foi possível carregar o ranking' },
   profileErrorToast: { ru: 'Не удалось загрузить профиль', en: 'Could not load the profile', uk: 'Не вдалося завантажити профіль', es: 'No se pudo cargar el perfil', tr: 'Profil yüklenemedi', pt: 'Não foi possível carregar o perfil' },
   prefsErrorToast: { ru: 'Настройки не сохранились — проверьте связь', en: 'Settings were not saved — check your connection', uk: 'Налаштування не збереглися — перевірте зв\'язок', es: 'Los ajustes no se guardaron — revisa tu conexión', tr: 'Ayarlar kaydedilmedi — bağlantını kontrol et', pt: 'As configurações não foram salvas — verifique a conexão' },
@@ -1038,6 +1044,7 @@ Object.assign(I18N_UI, {
   guildWarLbl: { ru: '🏰 Война гильдий', en: '🏰 Guild War', uk: '🏰 Війна гільдій', es: '🏰 Guerra de Clanes', tr: '🏰 Klan Savaşı', pt: '🏰 Guerra de Clãs' },
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
   farmHighLbl: { ru: '🌾 Фарм зона 2', en: '🌾 Farm Zone 2', uk: '🌾 Ферм-зона 2', es: '🌾 Zona de Farmeo 2', tr: '🌾 Farm Bölgesi 2', pt: '🌾 Zona de Farm 2' },
+  farmSeasonLbl: { ru: '🎟 Фарм зона · сезонные комнаты', en: '🎟 Farm Zone · season rooms', uk: '🎟 Ферм-зона · сезонні кімнати', es: '🎟 Zona de Farmeo · salas de temporada', tr: '🎟 Farm Bölgesi · sezon odaları', pt: '🎟 Zona de Farm · salas de temporada' },
   portalLbl: { ru: '🌀 Телепорт', en: '🌀 Portal', uk: '🌀 Телепорт', es: '🌀 Portal', tr: '🌀 Portal', pt: '🌀 Portal' },
   portalPickTitle: { ru: 'Куда телепортироваться?', en: 'Where to teleport?', uk: 'Куди телепортуватися?', es: '¿A dónde teletransportarse?', tr: 'Nereye ışınlanmak istersin?', pt: 'Para onde teleportar?' },
   // Teleport-stone button (above the chat button) — spends a stone bought

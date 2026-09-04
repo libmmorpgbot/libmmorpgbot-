@@ -58,7 +58,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // One cast at a time per connection. Held here rather than on the session so
   // it is cleared with the handlers when the socket goes.
   let teleportTimer = null;
-  const { io, enterFloor, floorIdOf, resolveFloor } = deps;
+  const { io, enterFloor, floorIdOf, resolveFloor, floorCtxOf, ticketOnlyFloor } = deps;
 
   // ── character selection ──────────────────────────────────────────────────
   // The class is written once and never again: setClass has `AND char_class IS
@@ -905,18 +905,37 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const want = floorIdOf(target);
     if (!Number.isFinite(want)) fail('Такой локации нет', 'bad_target');
     const prog = await players.progressOf(t, pid);
-    if (resolveFloor(want, prog) !== want) {
+    if (resolveFloor(want, prog, floorCtxOf(s)) !== want) {
       // 'level' was the only reason this could ever give, and now it is not:
       // a timed zone refuses because it is closed, which is a different thing
       // to be told and a different thing to do about it.
-      const closed = want === floorIdOf('guildWar') || want === floorIdOf('arena');
+      //
+      // Отказ по билету — третья причина, и она обязана называться своим
+      // именем. «Недостаточный уровень» игроку 40-го уровня перед сезонным
+      // крылом — это не подсказка, а загадка: он пойдёт качаться, а нужно
+      // было купить билет.
+      //
+      // Порядок разбора важен, и он такой:
+      //   закрыто  — сезон кончился, и крыло закрылось вместе с ним: билет
+      //              тут уже ни при чём, и звать за ним нечестно;
+      //   уровень  — проверяется ПЕРВЫМ из двух оставшихся, потому что тому,
+      //              кому не хватает и уровня, про билет говорить рано.
+      //              Спрашивается тем же resolveFloor с заведомо выданным
+      //              билетом: если и так не пускает, дело не в билете;
+      //   билет    — всё остальное.
+      const seasonOver = ticketOnlyFloor(want) && !seasonActive();
+      const closed = seasonOver || want === floorIdOf('guildWar') || want === floorIdOf('arena');
+      const lowLevel = resolveFloor(want, prog, { seasonTicket: true }) !== want;
+      const ticket = !closed && !lowLevel;
+      const reason = closed ? 'closed' : ticket ? 'ticket' : 'level';
       // The client's own modal first, then a throw. `return` here left act()
       // writing an 'enterLocation' success row for a portal that refused —
       // so the log placed players on floors they were never allowed onto, and
       // a level-gate bypass and an ordinary refusal looked the same in it.
-      s.socket.emit('enterLocationDenied', { target, reason: closed ? 'closed' : 'level' });
-      fail(closed ? 'Локация сейчас закрыта' : 'Недостаточный уровень',
-        closed ? 'closed' : 'level');
+      s.socket.emit('enterLocationDenied', { target, reason });
+      fail(closed ? 'Локация сейчас закрыта'
+        : ticket ? 'Нужен сезонный билет'
+        : 'Недостаточный уровень', reason);
     }
     const landed = await sendGameStart(t, want);
     // Where the player ACTUALLY IS on the new floor, not where they were on

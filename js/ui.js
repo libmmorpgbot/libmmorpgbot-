@@ -1664,8 +1664,12 @@ function _currentLocationBounds() {
   // completely normal play. zoneLabel lets drawMapPanel's status line reuse
   // this same detection instead of re-deriving it.
   const px = player.x / TILE, py = player.y / TILE;
+  // Сезонное крыло приходит под тем же полем `farmZone` (та же зона, те же
+  // монстры, та же палитра плитки) и отличается флагом seasonWing — им и
+  // отличается подпись места, иначе игрок в крыле читал бы «Фарм зона» и не
+  // понимал, в какой из двух половин стоит.
   const namedZones = [
-    { z: dungeon.farmZone, zoneLabel: 'farmZoneLbl' },
+    { z: dungeon.farmZone, zoneLabel: dungeon.farmZone && dungeon.farmZone.seasonWing ? 'farmSeasonLbl' : 'farmZoneLbl' },
     { z: dungeon.farmHigh, zoneLabel: 'farmHighLbl' },
     { z: dungeon.guildWar, zoneLabel: 'guildWarLbl' },
     { z: dungeon.race10,   zoneLabel: 'race10ArenaLbl' },
@@ -1846,7 +1850,7 @@ function _floorEnemyPool(n, localLvl) {
 // moved between locations — see _refreshFloorUIIfLocationChanged below.
 function _floorUISignature() {
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
-  if (_b && _b.zoneLabel === 'farmZoneLbl') return 'farm';
+  if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) return 'farm';
   if (_b && _b.zoneLabel === 'farmHighLbl') return 'farmHigh';
   return _currentArmIdx() || 'hub';
 }
@@ -1865,7 +1869,9 @@ function updateFloorUI() {
   // showing the regular 1-78 bestiary while standing inside it would name
   // monsters nobody here actually is. Swap to its own species list instead.
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
-  if (_b && _b.zoneLabel === 'farmZoneLbl') { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
+  // Крыло — те же виды и та же таблица дропа, что и первая зона, поэтому и
+  // список тот же самый: своя копия расходилась бы с ней на первой же правке.
+  if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
   if (_b && _b.zoneLabel === 'farmHighLbl') { grid.innerHTML = _farmHighMonsterListHtml(); return; }
 
   // Scoped to wherever the player actually is: the hub has no monsters at

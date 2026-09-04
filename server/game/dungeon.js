@@ -565,11 +565,122 @@ function generateFarmZone() {
   // trigger each other, same as every other zone's own entrance/return pair.
   const returnPad = { x: midX * TILE + TILE / 2, y: (Y0 + 2) * TILE + TILE / 2 };
 
+  // ── пад в сезонное крыло ─────────────────────────────────────────────────
+  // Противоположный конец того же вертикального коридора: возврат в хаб на
+  // севере, сезонное крыло на юге. Дальше друг от друга их на этой карте не
+  // поставить, а стоять они должны врозь — иначе один шаг попадал бы в оба.
+  //
+  // Пад — это ЕДИНСТВЕННАЯ дверь в крыло, и разделяет он именно комнаты:
+  // пройти туда ногами нельзя, крыло лежит на своём этаже. Гейт при этом не
+  // здесь: клиент рисует замок по seasonPad.requiresTicket, а пускает или
+  // отказывает сервер (resolveFloor/TICKET_ONLY, server/world.js). Клиентская
+  // проверка тут была бы охраной платной зоны силами клиента.
+  const seasonPad = {
+    x: midX * TILE + TILE / 2, y: (Y0 + FARM_SIZE - 3) * TILE + TILE / 2,
+    req: FARM_ENTRY_LEVEL, requiresTicket: true,
+  };
+
   return {
     grid, rooms, w, h,
     spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
-    returnPad,
+    returnPad, seasonPad,
     farmZone: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_ENTRY_LEVEL },
+    enemies: enemyList,
+  };
+}
+
+// Сезонное крыло Фарм-зоны — ещё четыре комнаты, вход только с сезонным
+// билетом. Это ОТДЕЛЬНЫЙ этаж, а не половина карты первой зоны, и причина
+// одна: барьеры внутри этажа в этой игре клиентские (см. _isGateBlocked,
+// js/game.js — по нему и работают уровневые ворота коридоров), а крыло
+// оплачено за GRAM. Переход между этажами сервер проверяет сам и по-другому
+// в него не попасть, поэтому дверь сюда — пад, а не стена.
+//
+// Внутри — точная копия первой зоны: та же геометрия 2x2, те же виды, та же
+// полоса 21-30, то же половинение статов и та же таблица дропа. Монстры
+// помечены `farmZone: true` НАМЕРЕННО, а не по недосмотру: по этой метке
+// сервер выбирает таблицу дропа, ставку Liberty и отказ в GRAM (см. rollLoot
+// и соседей, server/handlers2/world.js). Крыло — это те же комнаты, просто их
+// больше, и своей ветки в выплате у него быть не должно.
+function generateFarmSeason() {
+  const rng = seededRng(2026 * 1337 + 777 + 602); // сосед seed'ов первой зоны (600) и Фарм зоны 2 (601)
+  const w = FARM_SIZE + MARGIN * 2, h = FARM_SIZE + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const X0 = MARGIN, Y0 = MARGIN;
+  const roomCoords = [
+    { x: X0, y: Y0 },
+    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 },
+    { x: X0, y: Y0 + FARM_ROOM + FARM_GAP },
+    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 + FARM_ROOM + FARM_GAP },
+  ];
+  const rooms = roomCoords.map(({ x, y }) => {
+    const room = {
+      x, y, size: FARM_ROOM,
+      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
+      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
+      isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone',
+    };
+    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
+    return room;
+  });
+  const midX = X0 + Math.floor(FARM_SIZE / 2);
+  paintRect(X0, rooms[0].cy - CW, X0 + FARM_SIZE - 1, rooms[0].cy + CW);
+  paintRect(X0, rooms[2].cy - CW, X0 + FARM_SIZE - 1, rooms[2].cy + CW);
+  paintRect(midX - CW, Y0, midX + CW, Y0 + FARM_SIZE - 1);
+  const midY = Y0 + Math.floor(FARM_SIZE / 2);
+
+  const FARM_WEAK_MULT = 0.5;
+  const maxLocalLvl = roomsInArm(2) - 1; // шкала рукава 2 — та же полоса, те же виды
+  const enemyList = [];
+  let eid = 0;
+  rooms.forEach((room, ri) => {
+    for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
+      const d = _enemyByEid.get(FARM_SPECIES[Math.floor(rng() * FARM_SPECIES.length)]);
+      if (!d) continue;
+      const lvl = FARM_LVL_MIN + Math.floor(rng() * (FARM_LVL_MAX - FARM_LVL_MIN + 1));
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
+        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
+      }
+      const localLvl = lvl - ARM_OFFSETS[1];
+      enemyList.push({
+        // Префикс свой, чтобы id не столкнулись с id первой зоны: этажи разные,
+        // но журналы и античит смотрят на id, а не на этаж.
+        id: `farmsz_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
+        rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
+        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
+        xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(),
+        aggro: false, aggroR: 175 + rng() * 55,
+      });
+    }
+  });
+
+  return {
+    grid, rooms, w, h,
+    spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
+    // Возврат ведёт НАЗАД В ЗОНУ, а не в хаб: сюда пришли из неё, и высадка в
+    // центральном зале означала бы идти весь путь заново ради одного шага. Это
+    // единственный returnPad в игре со своей целью — у остальных её нет, и
+    // клиент читает 'hub' по умолчанию (см. _returnPads, js/game.js).
+    returnPad: { x: midX * TILE + TILE / 2, y: (Y0 + 2) * TILE + TILE / 2, target: 'farmZone' },
+    // Те же границы под тем же именем — по ним клиент красит плитку палитрой
+    // фарм-зоны и подписывает место на карте. `seasonWing` отличает крыло от
+    // первой зоны там, где подпись должна это сказать.
+    farmZone: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_ENTRY_LEVEL, seasonWing: true },
     enemies: enemyList,
   };
 }
@@ -1173,7 +1284,7 @@ function generateCoop() {
 }
 
 module.exports = {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop,
   TILE, WALL, FLOOR,
 };

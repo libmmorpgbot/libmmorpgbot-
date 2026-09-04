@@ -1307,6 +1307,8 @@ io.on('connection', (socket) => {
     enterFloor: world.enterFloor,
     floorIdOf: world.floorIdOf,
     resolveFloor: world.resolveFloor,
+    floorCtxOf: world.floorCtxOf,
+    ticketOnlyFloor: world.ticketOnlyFloor,
     modes: modesRuntime,
     // handlers2/coop.js destructures this out of `deps` (handlers2/modes.js
     // takes it off `modes` instead — two files, two conventions). It was in

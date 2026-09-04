@@ -1698,7 +1698,22 @@ const _PORTAL_DX = 0; // tiles, hub-side (NPCs sit north, at dy -11)
 const _PORTAL_DY = 7; // tiles south of spawn — closer in than the old arm-pad row (was 10)
 let _portalPad = null;          // hub-only: {x, y} — approach opens the modal
 let _portalDestinations = null; // hub-only: [{target, req, label}] — modal contents
-let _returnPads = null;   // arm-side: [{x, y}] (at most one) — enterLocation('hub') on trigger
+let _returnPads = null;   // arm-side: [{x, y, target}] (at most one) — enterLocation(target) on trigger
+// Сезонное крыло Фарм-зоны: {x, y, req} — пад внутри первой Фарм-зоны, за
+// которым лежат ещё четыре комнаты. Дверь в них одна, и это она.
+let _seasonPad = null;
+let _seasonMsgCd = 0; // троттлинг надписи «нужен билет», как у _gateMsgCd выше
+
+// Держит ли игрок билет ПРЯМО СЕЙЧАС. Обе половины обязательны и обе уже есть
+// на клиенте: _seasonTicketActive приходит в authOk, seasonActive() — общая с
+// сервером функция из shared/definitions.js. Ровно эту же пару проверяет
+// сервер, решая, пускать ли в крыло (resolveFloor, server/world.js), — если
+// они разойдутся, игрок увидит открытый пад и отказ за ним.
+function _seasonTicketOn() {
+  const has = typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive;
+  const on = typeof seasonActive !== 'function' || seasonActive();
+  return !!(has && on);
+}
 // Event-boss arena pad (see _evtArenaOpen) and the Guild War pad just below —
 // both sit right next to the main portal (_PORTAL_DX/_PORTAL_DY), one tile
 // either side of it, rather than off in their own row: same swirl look as
@@ -1728,7 +1743,7 @@ let _evtHpCd = 0;
 
 function _buildArmGates() {
   _closePortalModal();
-  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _raceBarriers = []; _coopBarriers = []; return; }
+  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _seasonPad = null; _raceBarriers = []; _coopBarriers = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
   ));
@@ -1749,7 +1764,17 @@ function _buildArmGates() {
   // Arm-side return pad — only present when THIS floor IS an arm (its own
   // returnPad field, see generateArm in server/game/dungeon.js); the hub
   // itself has none.
-  _returnPads = dungeon.returnPad ? [{ x: dungeon.returnPad.x, y: dungeon.returnPad.y }] : [];
+  // target — куда именно ведёт возврат. У всех зон это хаб и поля нет вовсе;
+  // у сезонного крыла — обратно в Фарм-зону, из которой в него и вошли
+  // (generateFarmSeason, server/game/dungeon.js).
+  _returnPads = dungeon.returnPad
+    ? [{ x: dungeon.returnPad.x, y: dungeon.returnPad.y, target: dungeon.returnPad.target || 'hub' }]
+    : [];
+  // Пад в сезонное крыло — только внутри первой Фарм-зоны, и только там, где
+  // сервер его прислал.
+  _seasonPad = dungeon.seasonPad
+    ? { x: dungeon.seasonPad.x, y: dungeon.seasonPad.y, req: dungeon.seasonPad.req || 0 }
+    : null;
 
   // armEntries is a hub-only field (generateHub, server/game/dungeon.js) —
   // the one reliable signal, from any floor's dungeon payload, that this is
@@ -1869,6 +1894,7 @@ function _requestEnterLocation(target, label, icon) {
 // still transitions directly (return pads, the event arena, Guild War).
 function _updateTeleportPads(dt) {
   if (!player) return;
+  if (_seasonMsgCd > 0) _seasonMsgCd -= dt;
   const TRIGGER_R = 26;
   if (_portalPad) {
     const inRange = dist(player.x, player.y, _portalPad.x, _portalPad.y) < TRIGGER_R;
@@ -1881,8 +1907,27 @@ function _updateTeleportPads(dt) {
   }
   (_returnPads || []).forEach(p => {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
-    _requestEnterLocation('hub', typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+    const home = p.target === 'farmZone'
+      ? (typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона')
+      : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+    _requestEnterLocation(p.target || 'hub', home);
   });
+  // ── пад в сезонное крыло ─────────────────────────────────────────────────
+  // Без билета он НЕ трогается: переход всё равно откажет (resolveFloor,
+  // server/world.js), а полноэкранная заставка загрузки этажа поднялась бы и
+  // опустилась на каждом шаге мимо пада. Замок вместо этого говорит, чего не
+  // хватает — тем же способом, что и уровневые ворота коридоров.
+  //
+  // Клиентская проверка здесь — вежливость, а не охрана: пускает сервер.
+  if (_seasonPad && dist(player.x, player.y, _seasonPad.x, _seasonPad.y) < TRIGGER_R) {
+    if (_seasonTicketOn()) {
+      _requestEnterLocation('farmSeason', typeof t === 'function' ? t('farmSeasonLbl') : 'Сезонные комнаты');
+    } else if (_seasonMsgCd <= 0) {
+      _seasonMsgCd = 1.5;
+      dmgNum(player.x, player.y - 40,
+        typeof t === 'function' ? t('lockedNeedTicket') : '🔒 Нужен сезонный билет', '#f17e8b');
+    }
+  }
   // Boss HP readout, refreshed 8x/sec — a DOM write every frame would be
   // wasted work for a bar that only needs to look live.
   _evtHpCd -= dt;
@@ -2046,7 +2091,20 @@ function _buildDecals(ts) {
   // ── teleport pads ──
   if (_portalPad) _pushSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '\u{1F300} \u0422\u0435\u043b\u0435\u043f\u043e\u0440\u0442', 'blue');
   const hallLbl = typeof t === 'function' ? t('hallShort') : '\u0417\u0430\u043b';
-  (_returnPads || []).forEach(p => _pushRingPad(p.x, p.y, _PAD_R, false, 0xeb4e61, 0x4ee69a, hallLbl, '#f17e8b', '#8ff0c0'));
+  // Подпись возвратного пада называет то, куда он ведёт: из сезонного крыла —
+  // назад в Фарм-зону, отовсюду ещё — в зал.
+  (_returnPads || []).forEach(p => _pushRingPad(p.x, p.y, _PAD_R, false, 0xeb4e61, 0x4ee69a,
+    p.target === 'farmZone' ? (typeof t === 'function' ? t('farmZoneShort') : '\u0424\u0430\u0440\u043c') : hallLbl,
+    '#f17e8b', '#8ff0c0'));
+  // Пад в сезонное крыло — то же кольцо, что и у возврата, только запертое,
+  // пока билета нет: замок в подписи и красный контур — тот же язык, которым
+  // говорят уровневые ворота коридоров, и переучивать игрока незачем.
+  if (_seasonPad) {
+    const open = _seasonTicketOn();
+    _pushRingPad(_seasonPad.x, _seasonPad.y, _PAD_R, !open, 0xeb4e61, 0xe8c15a,
+      (open ? '' : '\u{1F512} ') + (typeof t === 'function' ? t('farmSeasonShort') : '\u0421\u0435\u0437\u043e\u043d'),
+      '#f17e8b', '#f0d79a');
+  }
   if (_evtArenaOpen() && _evtPad) _pushSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
   if (_gwOpen() && _gwPad) _pushSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : '\u0412\u043e\u0439\u043d\u0430 \u0433\u0438\u043b\u044c\u0434\u0438\u0439', 'green');
   // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue

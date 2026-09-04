@@ -11,14 +11,34 @@
 
 const Room = require('./game/Room');
 const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
-const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL } = require('../shared/definitions');
+const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, seasonActive } = require('../shared/definitions');
 
 const floorRooms = new Map();
 
 // The generic level gate: every arm's own requirement, plus each simple
 // "just a level, no window or queue" zone folded in beside them, so a new one
 // needs no dedicated branch below.
-const ZONE_LEVEL_REQ = { ...ARM_LEVEL_REQ, farmZone: FARM_ENTRY_LEVEL, farmHigh: FARM_HIGH_ENTRY_LEVEL };
+const ZONE_LEVEL_REQ = {
+  ...ARM_LEVEL_REQ,
+  farmZone: FARM_ENTRY_LEVEL,
+  farmHigh: FARM_HIGH_ENTRY_LEVEL,
+  // Сезонное крыло — та же зона 20+, только за билетом; уровень с неё никто
+  // не снимал, билет добавлен СВЕРХУ (TICKET_ONLY ниже), а не вместо.
+  farmSeason: FARM_ENTRY_LEVEL,
+};
+
+// ── этажи за сезонным билетом ───────────────────────────────────────────────
+// Уровень — это то, что игрок набирает сам, и он лежит в player_progress, куда
+// resolveFloor и смотрит. Билет — покупка за GRAM, он живёт в другой таблице и
+// приходит сюда третьим аргументом: у сессии он уже прочитан
+// (Session.refreshVip), а изобретать здесь второй запрос к базе на каждый
+// переход между этажами значит платить за него на каждом шаге игрока.
+//
+// Отсутствие ctx — это ОТКАЗ, а не «пропустить проверку». Вызывающий, который
+// забыл передать билет, получит хаб, а не бесплатный вход в оплаченное крыло:
+// из двух способов ошибиться этот дешевле.
+const TICKET_ONLY = new Set([FLOOR_IDS.farmSeason]);
+
 const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [v, k]));
 
 // Floors a player can simply STAND on. The instanced and scheduled ones are
@@ -27,7 +47,7 @@ const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [
 // worse than the hub.
 const STANDABLE = new Set([
   FLOOR_IDS.hub, FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
-  FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
+  FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
 ]);
 
 // bossStates: { [floorId]: { [arm]: respawnAtMs } }, read out of boss_state
@@ -99,15 +119,33 @@ function _timedZoneOpen(f) {
   return true;
 }
 
-function resolveFloor(floorId, progress) {
+// `ctx.seasonTicket` — держит ли игрок сезонный билет. Проверяется ровно так
+// же, как его бонусы к дропу и опыту (`s.seasonTicket && seasonActive()`,
+// server/handlers2/world.js): крыло — часть сезона и закрывается вместе с ним.
+function resolveFloor(floorId, progress, ctx = {}) {
   const f = floorIdOf(floorId);
   if (!Number.isFinite(f) || !STANDABLE.has(f)) return FLOOR_IDS.hub;
   if (f === FLOOR_IDS.hub) return FLOOR_IDS.hub;
   const need = ZONE_LEVEL_REQ[FLOOR_KEY[f]] || 0;
   if ((progress && progress.lvl ? progress.lvl : 1) < need) return FLOOR_IDS.hub;
+  if (TICKET_ONLY.has(f) && !(ctx.seasonTicket && seasonActive())) return FLOOR_IDS.hub;
   if (!_timedZoneOpen(f)) return FLOOR_IDS.hub;
   return f;
 }
+
+// Что resolveFloor должен знать про ЭТОГО игрока сверх его уровня. Одно место
+// на всех вызывающих: и переход по паду, и восстановление этажа при входе
+// собирают контекст одинаково, иначе крыло закрывалось бы по одному правилу, а
+// открывалось по другому.
+function floorCtxOf(session) {
+  return { seasonTicket: !!(session && session.seasonTicket) };
+}
+
+// Нужен ли на этот этаж сезонный билет. Спрашивает обработчик перехода — не
+// чтобы решить, пускать ли (это дело resolveFloor), а чтобы НАЗВАТЬ причину
+// отказа: «нужен сезонный билет» и «недостаточный уровень» — разные вещи и
+// разные действия игрока. Список один и тот же, здесь.
+function ticketOnlyFloor(floorId) { return TICKET_ONLY.has(floorIdOf(floorId)); }
 
 // Moves a session onto a floor: out of the old Room, into the new one, with
 // the level gate applied. Returns the floor they LANDED on, which the caller
@@ -118,7 +156,7 @@ function resolveFloor(floorId, progress) {
 // home, the guild-war window opening. A player request never reaches this with
 // force set — enterLocation checks resolveFloor itself and refuses.
 function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
-  const target = force ? floorIdOf(wantedFloor) : resolveFloor(wantedFloor, progress);
+  const target = force ? floorIdOf(wantedFloor) : resolveFloor(wantedFloor, progress, floorCtxOf(session));
   const room = floorRooms.get(target);
   if (!room) return session.floor;
 
@@ -226,6 +264,6 @@ function statsSnapshot() {
 }
 
 module.exports = {
-  initFloors, enterFloor, resolveFloor, floorIdOf, roomOf, stopAll, statsSnapshot,
-  floorRooms, FLOOR_IDS, STANDABLE,
+  initFloors, enterFloor, resolveFloor, floorCtxOf, ticketOnlyFloor, floorIdOf, roomOf, stopAll, statsSnapshot,
+  floorRooms, FLOOR_IDS, STANDABLE, TICKET_ONLY,
 };

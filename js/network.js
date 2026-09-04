@@ -2272,7 +2272,12 @@ function netConnect(onReady) {
   // only the second loses the reason.
   socket.on('enterLocationDenied', ({ reason } = {}) => {
     _locationDeniedAt = Date.now();
-    _abortFloorChange(reason === 'closed' ? t('locationClosedToast') : t('locationLevelToast'));
+    _abortFloorChange(
+      reason === 'closed' ? t('locationClosedToast')
+      // Отказ по билету называется своим именем: игроку 40-го уровня перед
+      // сезонными комнатами «недостаточный уровень» — загадка, а не подсказка.
+      : reason === 'ticket' ? t('locationTicketToast')
+      : t('locationLevelToast'));
   });
   socket.on('locationError', ({ msg } = {}) => {
     // The gate emits its event and then throws, so the pair arrives in the

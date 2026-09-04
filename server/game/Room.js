@@ -1587,7 +1587,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, returnPad: d.returnPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
