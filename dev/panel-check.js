@@ -350,11 +350,26 @@ async function main() {
   ok(!(del.body.inventory || []).some(i => i.id === 'sw1'), 'предмета більше немає');
 
   // ── the broadcast reports a real number ──────────────────────────────────
-  const bc = await api('/admin/broadcast', {
+  // Число в ответе — не украшение: страница печатает его тостом. Раньше
+  // маршрут отвечал `{ok:true}`, и рассылка, дошедшая до сорока человек,
+  // сообщала о нуле.
+  //
+  // Чисел теперь ДВА, потому что действий два, и путать их нельзя. В чат
+  // сообщение уже ушло — это `sent`, окончательное. В бота оно только взято в
+  // работу (отправка идёт фоном, 25/с) — это `queued`, и называть его
+  // «отправлено» значило бы врать ровно так же, как молчать.
+  const bcChat = await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: `${TAG} тест`, target: 'chat' }) });
+  eq(bcChat.status, 200, 'розсилка в чат прийнята');
+  ok(Number.isFinite(bcChat.body.sent),
+    `у відповіді про чат є кількість (${bcChat.body.sent}) — сторінка друкує її тостом`);
+
+  const bcBot = await api('/admin/broadcast', {
     method: 'POST', body: JSON.stringify({ text: `${TAG} тест`, target: 'all' }) });
-  eq(bc.status, 200, 'розсилка прийнята');
-  ok(Number.isFinite(bc.body.sent),
-    `у відповіді є кількість (${bc.body.sent}) — сторінка друкує d.sent, а його не було`);
+  eq(bcBot.status, 200, 'розсилка в бота прийнята');
+  eq(bcBot.body.via, 'bot', 'і відповідь каже, що пішла саме в бота, а не в чат');
+  ok(Number.isFinite(bcBot.body.queued),
+    `у відповіді про бота є кількість (${bcBot.body.queued}) — і це «взято в роботу», а не «доставлено»`);
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

@@ -28,6 +28,7 @@ const players = require('../db/repos/players');
 const progression = require('../db/repos/progression');
 const market = require('../db/repos/market');
 const plog = require('../db/repos/playerlog');
+const tgGame = require('../tg-game');
 const { ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../../shared/definitions');
 
 const CATALOG = [...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF];
@@ -38,6 +39,40 @@ const num = (v, d = 0) => {
 };
 const int = (v, d = 0) => Math.trunc(num(v, d));
 const clampLimit = (v, d = 30, max = 200) => Math.max(1, Math.min(max, int(v, d) || d));
+
+// ── почему эти три условия — КОНСТАНТЫ, а не параметры запроса ─────────────
+// Карточка игрока открывалась с «canceling statement due to statement
+// timeout»: три запроса в ней читали журнал целиком. Лечится частичными
+// индексами (миграция 021), но частичный индекс планировщик применяет, только
+// если может ДОКАЗАТЬ его предикат из текста запроса. Из bind-параметра он
+// его вывести не может: значение приходит уже после планирования, и «этот
+// массив — ровно тот, что в предикате индекса» неоткуда узнать.
+//
+// Поэтому список причин переехал из параметра $2 в текст. Измерено на 4.5 млн
+// строк, у игрока 300 тыс. своих:
+//
+//   лента, параметром        Bitmap Scan, 300 898 строк прочитано → 47 мс
+//   лента, параметром        (generic-план) Index Scan Backward по pkey,
+//                            1 424 702 строки отброшено → 285 мс
+//   лента, константами       Index Scan по частичному индексу → 0.25 мс
+//   итог по мобам, было      Parallel Seq Scan ВСЕЙ таблицы → 135 мс
+//   итог по мобам, стало     Parallel Index Only Scan, Heap Fetches: 0 → 24 мс
+//
+// Разница не только в числах, а в том, ЧЕМ они растут. Полное чтение дорожает
+// от чужой игры тоже: журнал append-only, и чем больше в игре людей, тем
+// медленнее открывается карточка любого из них. Индексный проход стоит ровно
+// столько, сколько наиграл сам этот игрок.
+//
+// Строки склеиваются в SQL, и это безопасно ровно потому, что они здесь
+// литералы, а не данные: ни одна не приходит из запроса. Игрок по-прежнему
+// $1 — параметром.
+//
+// ВАЖНО: менять их можно только вместе с предикатами индексов в миграции 021.
+// Разойдутся — индекс останется на месте и молча перестанет применяться,
+// именно это и сторожит dev/adminperf-check.js.
+const NOISE_OUT = "reason <> 'mob_kill' AND reason <> 'mob_drop'";
+const NOISE_IN = "(reason = 'mob_kill' OR reason = 'mob_drop')";
+const SEASON_EVENT = "event LIKE 'season%'";
 
 module.exports = function registerAdminRoutes(app, deps) {
   const { io, modes, maintenance } = deps;
@@ -343,14 +378,13 @@ module.exports = function registerAdminRoutes(app, deps) {
       //
       // Сколько скрыто — говорится ниже, отдельной строкой. Молча урезанная
       // лента читается как «ничего не было».
-      const NOISE = ['mob_kill', 'mob_drop'];
       const { rows: ledger } = await query(null, `
         SELECT currency, delta, reason, ref_type, ref_id, created_at
-          FROM ledger WHERE player_id = $1 AND NOT (reason = ANY($2))
-         ORDER BY id DESC LIMIT 80`, [id, NOISE]);
+          FROM ledger WHERE player_id = $1 AND ${NOISE_OUT}
+         ORDER BY id DESC LIMIT 80`, [id]);
       const { rows: hid } = await query(null, `
         SELECT count(*)::int n, COALESCE(sum(delta), 0) AS s
-          FROM ledger WHERE player_id = $1 AND reason = ANY($2) AND currency = 'gold'`, [id, NOISE]);
+          FROM ledger WHERE player_id = $1 AND currency = 'gold' AND ${NOISE_IN}`, [id]);
       // Both lists in one stream, newest first, so a grant and the purchase it
       // paid for sit next to each other instead of in two panes.
       const merged = [
@@ -372,7 +406,7 @@ module.exports = function registerAdminRoutes(app, deps) {
       // showed "0 очков" for a player who had thousands.
       const { rows: seasonLog } = await query(null, `
         SELECT event, meta, created_at FROM player_logs
-         WHERE player_id = $1 AND event LIKE 'season%'
+         WHERE player_id = $1 AND ${SEASON_EVENT}
          ORDER BY created_at DESC LIMIT 60`, [id]);
 
       res.json({
@@ -810,22 +844,94 @@ module.exports = function registerAdminRoutes(app, deps) {
     } catch (e) { fail(res, e, req); }
   });
 
+  // ── рассылка ─────────────────────────────────────────────────────────────
+  // Вкладка называется «Рассылка через бота», а отправляла строку в игровой
+  // чат — то есть доходила только до тех, кто прямо сейчас в игре, и не
+  // доходила до бота вовсе. `target` при этом приходил с формы и здесь не
+  // читался, так что обе кнопки делали одно и то же.
+  //
+  // Теперь адресат читается и их три, и каждый называет себя честно:
+  //
+  //   all    в бот — всем, кто разрешил боту писать (players.can_message)
+  //   online в бот — только тем из них, кто сейчас в игре
+  //   chat   строкой в игровой чат, как было: быстрое объявление тем, кто
+  //          онлайн, без похода в Telegram
+  //
+  // Через бота пишет ИГРОВОЙ бот (server/tg-game.js), а не операторский:
+  // сообщение от бота, чей чат игрок никогда не открывал, Telegram отклонит
+  // с 403 — там же в шапке разбор, почему это отдельный транспорт.
+  const BROADCAST_TARGETS = new Set(['all', 'online', 'chat']);
+  // Telegram ограничивает массовую отправку примерно тридцатью сообщениями в
+  // секунду на бота; выше — 429 и временная блокировка. 40 мс между
+  // сообщениями держит 25/с, с запасом.
+  const BC_GAP_MS = 40;
+
   app.post('/admin/broadcast', guard, csrf, async (req, res) => {
     try {
       const text = String((req.body || {}).text || '').trim().slice(0, 200);
       if (!text) return deny(res, req, 400, 'Пустое сообщение');
-      // `target` has always been sent by the page and never read here. Both
-      // values reach the same people — a chat line only exists for someone
-      // connected — so the honest thing is to say so in the reply rather than
-      // pretend there are two behaviours.
-      const sent = io.sockets.sockets.size;
-      io.emit('chatMsg', { username: 'СИСТЕМА', text, time: new Date().toISOString() });
-      await adminAuth.audit(who(req), 'broadcast', { meta: { by: who(req), text } });
-      ops.alert('admin.broadcast', 'Рассылка в общий чат', text,
-        { админ: who(req), получателей: sent }).catch(() => {});
-      // The page prints `Отправлено ${d.sent} игрокам`, and this used to answer
-      // `{ok:true}` — so a broadcast that reached forty people reported zero.
-      res.json({ ok: true, sent });
+      const target = String((req.body || {}).target || 'all');
+      if (!BROADCAST_TARGETS.has(target)) return deny(res, req, 400, 'Неизвестный адресат');
+
+      await adminAuth.audit(who(req), 'broadcast', { meta: { by: who(req), text, target } });
+
+      if (target === 'chat') {
+        const sent = io.sockets.sockets.size;
+        io.emit('chatMsg', { username: 'СИСТЕМА', text, time: new Date().toISOString() });
+        ops.alert('admin.broadcast', 'Рассылка в игровой чат', text,
+          { админ: who(req), получателей: sent }).catch(() => {});
+        return res.json({ ok: true, via: 'chat', sent });
+      }
+
+      let tids = await players.broadcastTargets(null);
+      if (target === 'online') {
+        const on = onlineTids();
+        tids = tids.filter(t => on.has(t));
+      }
+      if (!tids.length) {
+        // Ноль получателей — это ответ, а не ошибка, и он бывает по двум
+        // совершенно разным причинам. Молчаливое «отправлено 0» читалось бы
+        // как поломка.
+        return res.json({ ok: true, via: 'bot', queued: 0, target,
+          note: 'Никто не разрешил боту писать (или из них никого нет в игре)' });
+      }
+
+      // ── ответ СРАЗУ, отправка в фоне ──────────────────────────────────────
+      // Тысяча сообщений на 25/с — это сорок секунд, а десять тысяч — семь
+      // минут. Держать на них HTTP-запрос значит гарантированно словить таймаут
+      // прокси и оставить админа в неведении, дошло ли хоть что-то. Поэтому
+      // панель получает число ВЗЯТЫХ в работу, а итог уходит операторам, когда
+      // рассылка закончится.
+      res.json({ ok: true, via: 'bot', queued: tids.length, target });
+
+      // Операторам говорится ДВАЖДЫ — на старте и в конце, — и это не
+      // болтливость. Выкладка бьёт по процессу process.exit'ом (shutdown,
+      // server/app.js), и рассылка, начатая за минуту до неё, умрёт молча.
+      // Начало без конца — единственный признак, по которому это вообще можно
+      // заметить; одного сообщения в конце для этого не хватает.
+      ops.alert('admin.broadcast', 'Рассылка через бота начата', text,
+        { админ: who(req), адресат: target, адресатов: tids.length }).catch(() => {});
+
+      (async () => {
+        const r = { sent: 0, blocked: 0, failed: 0 };
+        for (const tid of tids) {
+          const out = await tgGame.send(tid, text);
+          if (out && out.ok) r.sent++;
+          else if (out && out.blocked) r.blocked++;
+          else r.failed++;
+          await new Promise(done => setTimeout(done, BC_GAP_MS));
+        }
+        ops.alert('admin.broadcast', 'Рассылка через бота завершена', text, {
+          админ: who(req), адресат: target, взято: tids.length,
+          доставлено: r.sent,
+          // Не ошибка: человек не нажимал START или заблокировал бота.
+          'не открыт чат': r.blocked,
+          ошибок: r.failed,
+        }).catch(() => {});
+      })().catch(err => {
+        ops.alertError('admin.broadcast', 'Рассылка через бота оборвалась', err,
+          { админ: who(req), адресат: target }).catch(() => {});
+      });
     } catch (e) { fail(res, e, req); }
   });
 

@@ -241,6 +241,62 @@ async function main() {
     ok(seen.has(a), `дію '${a}' записано в журнал`);
   }
 
+  // ── розсилка ─────────────────────────────────────────────────────────────
+  // Вкладка називається «Рассылка через бота», а писала рядок у ігровий чат:
+  // доходило лише до тих, хто саме зараз у грі, і до бота не доходило зовсім.
+  // `target` при цьому надсилався формою і НЕ ЧИТАВСЯ — обидві кнопки робили
+  // одне й те саме.
+  //
+  // Тут перевіряється саме РІШЕННЯ: кого маршрут обрав і що відповів. Нічого
+  // нікуди не летить — OPS_LIVE=0 угорі файлу тримає гру закритою (див.
+  // server/tg-game.js), і це та сама умова, що захищає від справжнього
+  // повідомлення справжній людині посеред прогону.
+  console.log('  ── розсилка ──');
+  eq((await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: '   ', target: 'chat' }) })).status, 400,
+    'порожній текст — відмова');
+  eq((await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: 'привіт', target: 'кудись' }) })).status, 400,
+    'невідомий адресат — відмова, а не мовчазна підміна на «всім»');
+
+  const toChat = await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: `${TAG} у чат`, target: 'chat' }) });
+  eq(toChat.status, 200, 'у ігровий чат — надсилається');
+  eq(toChat.body.via, 'chat', 'і відповідь каже, що саме через чат');
+
+  // Гравець є, але писати йому бот не має права: can_message за замовчуванням
+  // false, і це не «нікого немає», а «ніхто не дозволяв».
+  const noOne = await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: `${TAG} у бот`, target: 'all' }) });
+  eq(noOne.status, 200, 'у бот без жодного дозволу — не помилка');
+  eq(noOne.body.via, 'bot', 'відповідь каже, що адресат — бот');
+  eq(noOne.body.queued, 0, 'і що взято в роботу нуль');
+  ok(!!noOne.body.note, 'і пояснює, ЧОМУ нуль — інакше це не відрізнити від поломки',
+    JSON.stringify(noOne.body));
+
+  // Той самий гравець, але дозвіл записано (міграція 013).
+  await tx(t => players.setWriteAccess(t, pid, true));
+  const toBot = await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: `${TAG} у бот`, target: 'all' }) });
+  eq(toBot.status, 200, 'з дозволом — надсилається');
+  eq(toBot.body.via, 'bot', 'через бота');
+  ok(toBot.body.queued >= 1, 'і гравець, який дозволив, потрапив у список',
+    JSON.stringify(toBot.body));
+
+  // «Онлайн» — це перетин двох множин, і гравця нашої перевірки в грі немає:
+  // він створений у базі, а не увійшов сокетом. Порожньо — правильна відповідь.
+  const online = await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: `${TAG} онлайн`, target: 'online' }) });
+  eq(online.status, 200, 'адресат «онлайн» — приймається');
+  eq(online.body.queued, 0, 'і нікого не знаходить, поки в грі нікого немає');
+
+  // Забаненому бот не пише: його в грі немає.
+  await api(`/admin/player/${TID}/ban`, { method: 'POST' });
+  const bcBanned = await api('/admin/broadcast', {
+    method: 'POST', body: JSON.stringify({ text: `${TAG} у бот`, target: 'all' }) });
+  eq(bcBanned.body.queued, 0, 'забанений випадає зі списку розсилки');
+  await api(`/admin/player/${TID}/unban`, { method: 'POST' });
+
   // ── maintenance ──────────────────────────────────────────────────────────
   console.log('  ── обслуговування ──');
   eq((await api('/admin/maintenance')).body.on, false, 'режим вимкнено за замовчуванням');

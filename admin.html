@@ -456,8 +456,14 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         <h3>Рассылка через бота</h3>
         <div class="broadcast-form">
           <div class="radio-row">
-            <label><input type="radio" name="bc-target" value="all" checked> Всем игрокам</label>
-            <label><input type="radio" name="bc-target" value="online"> Онлайн</label>
+            <label><input type="radio" name="bc-target" value="all" checked> В бот — всем</label>
+            <label><input type="radio" name="bc-target" value="online"> В бот — кто онлайн</label>
+            <label><input type="radio" name="bc-target" value="chat"> В игровой чат</label>
+          </div>
+          <div style="font-size:12px;color:var(--text2);line-height:1.5">
+            В бот доходит только тем, кто разрешил ему писать при входе в игру.
+            Отправка идёт в фоне (около 25 сообщений в секунду), итог придёт
+            операторам в Telegram.
           </div>
           <textarea id="bc-text" placeholder="Текст сообщения..."></textarea>
           <button class="btn btn-primary" onclick="doBroadcast()">Отправить</button>
@@ -1439,7 +1445,17 @@ async function doBroadcast() {
   try {
     const r = await api('/admin/broadcast', { method:'POST', body:JSON.stringify({ text:msg, target }) });
     const d = await r.json();
-    if (r.ok) { toast('Отправлено ' + (d.sent||0) + ' игрокам'); document.getElementById('bc-text').value=''; }
+    // Два разных ответа, потому что это два разных действия. В чат сообщение
+    // УЖЕ ушло и число окончательное; в бот оно только взято в работу —
+    // говорить «отправлено» про очередь значило бы врать, а именно за это
+    // вкладку и ругали.
+    if (r.ok) {
+      toast(d.via === 'chat'
+        ? 'В игровой чат — ' + (d.sent || 0) + ' игрокам'
+        : d.queued ? 'В бот: отправляю ' + d.queued + ' игрокам, итог придёт операторам'
+                   : (d.note || 'Получателей нет'));
+      document.getElementById('bc-text').value = '';
+    }
     else toast(d.error||'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
 }

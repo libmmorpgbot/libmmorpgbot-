@@ -70,6 +70,8 @@ echo
 # Пара «имя · SQL». Добавлять сюда всё, что требует CONCURRENTLY.
 INDEXES=(
   "ledger_class_change_idx|CREATE INDEX CONCURRENTLY IF NOT EXISTS ledger_class_change_idx ON ledger (player_id) WHERE reason = 'class_change'"
+  "ledger_player_events_idx|CREATE INDEX CONCURRENTLY IF NOT EXISTS ledger_player_events_idx ON ledger (player_id, id DESC) WHERE reason <> 'mob_kill' AND reason <> 'mob_drop'"
+  "ledger_player_mobgold_idx|CREATE INDEX CONCURRENTLY IF NOT EXISTS ledger_player_mobgold_idx ON ledger (player_id) INCLUDE (delta) WHERE currency = 'gold' AND (reason = 'mob_kill' OR reason = 'mob_drop')"
 )
 for entry in "${INDEXES[@]}"; do
   name="${entry%%|*}"
@@ -90,6 +92,64 @@ for entry in "${INDEXES[@]}"; do
     exit 1
   fi
 done
+echo
+
+# ── и один индекс, который так построить НЕЛЬЗЯ ────────────────────────────
+# player_logs секционирована по месяцам, а CREATE INDEX CONCURRENTLY на
+# секционированной таблице PostgreSQL просто отказывается делать:
+#
+#   ERROR: cannot create index on partitioned table "player_logs" concurrently
+#
+# Обычный CREATE INDEX на родителе сработал бы, но взял бы блокировку на все
+# секции на время построения — а flush журнала (server/db/repos/playerlog.js)
+# НЕ ПЕРЕСТАВЛЯЕТ пачку в очередь при ошибке: упёршись в пятисекундный таймаут,
+# он теряет её и пишет об этом операторам. Терять записи ради ускорения чтения
+# этих же записей — плохая сделка.
+#
+# Штатный обходной путь и делается ниже: пустой индекс на родителе (ON ONLY —
+# секции он не трогает), потом по индексу CONCURRENTLY на каждой секции, потом
+# ATTACH. Когда прицеплены все, родительский индекс становится валидным сам.
+# Секции, которые создаст ежемесячная задача, получат совпадающий индекс от
+# PostgreSQL автоматически — про них думать не нужно.
+SEASON_IDX=player_logs_season_idx
+SEASON_DEF="(player_id, created_at DESC) WHERE event LIKE 'season%'"
+if [ "$(psql "$ADMIN_URL" -tAc "SELECT to_regclass('public.$SEASON_IDX') IS NOT NULL")" = "t" ]; then
+  echo "  ok      индекс $SEASON_IDX — уже есть"
+else
+  echo "  строю   индекс $SEASON_IDX по секциям (без остановки игры) ..."
+  psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q \
+    -c "CREATE INDEX IF NOT EXISTS $SEASON_IDX ON ONLY player_logs $SEASON_DEF"
+  # Список секций спрашивается у базы, а не выводится из календаря: их состав
+  # меняет и ежемесячная задача, и чистка старых.
+  parts=$(psql "$ADMIN_URL" -tAc "
+    SELECT c.relname FROM pg_inherits i
+      JOIN pg_class c ON c.oid = i.inhrelid
+     WHERE i.inhparent = 'player_logs'::regclass ORDER BY 1")
+  for part in $parts; do
+    pidx="${part}_season_idx"
+    if [ "$(psql "$ADMIN_URL" -tAc "SELECT to_regclass('public.$pidx') IS NOT NULL")" != "t" ]; then
+      psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q \
+        -c "SET statement_timeout = 0" \
+        -c "CREATE INDEX CONCURRENTLY $pidx ON $part $SEASON_DEF" \
+        || { echo "  ✗ не построился: $pidx" >&2
+             echo "    Если остался INVALID: DROP INDEX CONCURRENTLY IF EXISTS $pidx;" >&2
+             exit 1; }
+    fi
+    psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -q \
+      -c "ALTER INDEX $SEASON_IDX ATTACH PARTITION $pidx"
+    echo "    ✓ $part"
+  done
+  # Родительский индекс валиден, только когда прицеплены ВСЕ секции. Пока он
+  # невалиден, планировщик его не берёт — то есть молчаливо ничего не
+  # ускорилось, и об этом надо сказать вслух.
+  if [ "$(psql "$ADMIN_URL" -tAc "
+        SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = '$SEASON_IDX'::regclass")" = "t" ]; then
+    echo "  ✓       $SEASON_IDX построен и валиден"
+  else
+    echo "  ✗ $SEASON_IDX собран не полностью — планировщик его не возьмёт" >&2
+    exit 1
+  fi
+fi
 echo
 
 cd "$APP_DIR"

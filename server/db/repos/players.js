@@ -226,6 +226,26 @@ async function canMessage(db, playerId) {
   return !!(rows.length && rows[0].can_message);
 }
 
+// ── кому бот вправе написать сам ───────────────────────────────────────────
+// Список получателей рассылки. Единственное условие, которое здесь по-настоящему
+// важно, — can_message: рассылка это НЕЗАПРОШЕННОЕ сообщение, и писать его
+// тому, кто не разрешал, Telegram и не даст (403), а попытка будет стоить
+// места в лимите бота. Забаненные исключены по той же причине, по которой они
+// исключены из рейтинга: их в игре нет.
+//
+// До миграции 013 колонки нет, и тогда список ПУСТ, а не «все». Это тот же
+// выбор, что и в canMessage выше, и в ту же безопасную сторону: рассылка,
+// которая не ушла никому, — видимая осечка (панель скажет «0 получателей»), а
+// рассылка всем, кто ничего не разрешал, — это тысячи 403 и жалоба на спам.
+async function broadcastTargets(db) {
+  if (!await _hasWriteAccessCols(db)) return [];
+  const { rows } = await query(db, `
+    SELECT telegram_id FROM players
+     WHERE can_message AND NOT banned
+     ORDER BY id`);
+  return rows.map(r => String(r.telegram_id));
+}
+
 // MONOTONIC, and migration 013 explains why at length: a grant sticks, a
 // refusal writes only the timestamp. The short version is that the client is
 // what reports this, and a client-driven path that can CLEAR a permission is a
@@ -1186,7 +1206,7 @@ module.exports = {
   realPlayerSql,
   idByTelegram,
   byTelegramId, ensure, setUsername, registerReferral, changeClass,
-  canMessage, setWriteAccess,
+  canMessage, setWriteAccess, broadcastTargets,
   tonAddressOf, setTonAddress, clearTonAddress,
   progressOf, prefsOf, skillsOf,
   savePrefs, PREF_FIELDS,
