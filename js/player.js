@@ -107,7 +107,7 @@ function makePlayer(type) {
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
     // book drops and is spent to study one.
     skillLevels: { Q:0, W:0, E:0, R:0 },
-    // 0 = locked/not yet studied, 1-5 = level (see PASSIVE_MAX_LEVEL,
+    // 0 = locked/not yet studied, 1-10 = level (see PASSIVE_MAX_LEVEL,
     // shared/definitions.js) — keyed by passive id across both the
     // class-exclusive pair and the six universal ones. Studied/upgraded with
     // books exactly like skillLevels above (see studyPassiveSkill/

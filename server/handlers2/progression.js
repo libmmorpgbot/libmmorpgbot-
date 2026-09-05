@@ -51,7 +51,10 @@ module.exports = function registerProgression(s, safeOn) {
   // database — the panel and the bag disagreed from the moment of the click,
   // which is what "я активировал, а книги на месте / навыка нет" describes
   // from either side of the discrepancy.
-  async function study(t, pid, kind, key, bookId, max, cost = SKILL_STUDY_COST) {
+  // chance === null means "always succeeds" (learnSkill, learnAdvSkill).
+  // Passives roll it like upgradeSkill does: the book is spent either way,
+  // the level only advances on success.
+  async function study(t, pid, kind, key, bookId, max, cost = SKILL_STUDY_COST, chance = null) {
     const current = (await players.skillsOf(t, pid));
     const map = kind === 'passive' ? current.passiveLevels : current.skillLevels;
     if ((map[key] || 0) >= max) fail('Уже максимальный уровень', 'maxed');
@@ -59,6 +62,13 @@ module.exports = function registerProgression(s, safeOn) {
     await items.lockPlayer(t, pid);
     if (!await items.removeQty(t, pid, bookId, cost)) {
       fail(`Нужно книг: ${cost}`, 'no_book');
+    }
+
+    if (chance !== null) {
+      // crypto, not Math.random: this decides whether a book is consumed for
+      // nothing, and a book is a tradeable item.
+      const success = require('crypto').randomInt(1e6) / 1e6 < chance;
+      if (!success) return { changed: false, level: null };
     }
 
     const res = await players.bumpSkill(t, pid, kind, key);
@@ -109,14 +119,15 @@ module.exports = function registerProgression(s, safeOn) {
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
-  // Studying a passive costs one book; raising it costs two — the same split
-  // the client applies (studyPassiveSkill / upgradePassiveSkillWithBook,
-  // js/ui.js). These two handlers shared one body and one price.
+  // Studying a passive costs one book and always succeeds, same as
+  // learnSkill; raising it costs two and rolls SKILL_UPGRADE_CHANCE, same as
+  // upgradeSkill — the book is spent on the attempt, not the outcome.
   safeOn('upgradePassive', ({ id } = {}) => s.act('upgradePassive', 'progressError', async (t, pid) => {
     if (typeof id !== 'string' || !id) fail('Не выбран пассивный навык', 'bad_passive');
-    await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL,
-      SKILL_UPGRADE_COST);
+    const res = await study(t, pid, 'passive', id, passiveBookId(id), PASSIVE_MAX_LEVEL,
+      SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE);
     await s.pushItems(t); await pushAfterStat(t);
+    s.socket.emit('upgradeRolled', { kind: 'passive', ok: res.changed, level: res.level });
   }));
 
   safeOn('learnAdvSkill', ({ key } = {}) => s.act('learnAdvSkill', 'progressError', async (t, pid) => {

@@ -182,8 +182,8 @@ async function main() {
 
   // Skills cap at their maximum instead of climbing forever.
   const s = await mk('f');
-  for (let i = 0; i < 12; i++) await tx(t => players.bumpSkill(t, s, 'passive', 'p1'));
-  eq((await players.skillsOf(null, s)).passiveLevels.p1, 5, 'пасивка зупинилась на максимумі 5');
+  for (let i = 0; i < 15; i++) await tx(t => players.bumpSkill(t, s, 'passive', 'p1'));
+  eq((await players.skillsOf(null, s)).passiveLevels.p1, 10, 'пасивка зупинилась на максимумі 10');
 
   // ensure() under a double login.
   // Tagged, like every other fixture in this file. A bare 'dup1' collides with

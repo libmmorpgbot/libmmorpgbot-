@@ -193,6 +193,10 @@ async function main() {
   eq(await skillLevel('adv_active', 'Q'), 0, 'і вимикається назад');
 
   // ── passives: one to learn, two to raise ─────────────────────────────────
+  // Learning is guaranteed like learnSkill; raising rolls SKILL_UPGRADE_CHANCE
+  // like upgradeSkill — checked the same way as upgradeSkill above (book gone
+  // either way, level matches the answer), retried with a fresh book per try
+  // so the rest of the suite still has a raised passive to work with.
   console.log('  ── пасивки ──');
   const passives = passivesForClass(CLASS) || [];
   if (!passives.length) {
@@ -216,12 +220,24 @@ async function main() {
       `на ${SKILL_UPGRADE_COST - 1} книгу пасивка не піднімається`);
     eq(await bookCount(pBook), SKILL_UPGRADE_COST - 1, 'і книга лишилась');
 
-    await giveBooks(pBook, 1);
-    sock.emit('upgradePassive', { id: pid0 });
-    await once(sock, 'progressSync', 8000).catch(() => null);
-    await wait(300);
-    eq(await skillLevel('passive', pid0), 2, 'на двох — піднімається');
-    eq(await bookCount(pBook), 0, `списано рівно ${SKILL_UPGRADE_COST}`);
+    let raised = false, attempts = 0;
+    while (!raised && attempts < 60) {
+      attempts++;
+      // Every attempt spends the full cost, win or lose — top up to it fresh
+      // each time rather than assuming last attempt's leftover.
+      const have = await bookCount(pBook);
+      if (have < SKILL_UPGRADE_COST) await giveBooks(pBook, SKILL_UPGRADE_COST - have);
+      rolled.length = 0;
+      sock.emit('upgradePassive', { id: pid0 });
+      await once(sock, 'upgradeRolled', 8000).catch(() => null);
+      await wait(200);
+      eq(await bookCount(pBook), 0, `списано рівно ${SKILL_UPGRADE_COST} за спробу`);
+      const r = rolled[0] || {};
+      eq(await skillLevel('passive', pid0), r.ok ? 2 : 1,
+        `рівень відповідає відповіді (ok=${r.ok})`);
+      raised = !!r.ok;
+    }
+    ok(raised, `пасивка зрештою піднята на двох (${attempts} спроб)`);
   }
 
   // ── it all survives a reconnect ──────────────────────────────────────────

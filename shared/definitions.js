@@ -2504,7 +2504,7 @@ function skillBookId(cls, key)  { return `book_${cls}_${key}`; }
 function advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
 function passiveBookId(id)      { return `book_pas_${id}`; }
 
-const PASSIVE_MAX_LEVEL = 5;
+const PASSIVE_MAX_LEVEL = 10;
 
 const PASSIVE_CLASS_DEF = {
   lev: [
