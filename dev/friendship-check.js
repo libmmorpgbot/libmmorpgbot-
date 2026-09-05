@@ -99,17 +99,19 @@ const claim = async (pid, tier) => {
     'друг, зарегистрированный до FRIENDSHIP_LAUNCH_AT, не считается даже прокачанным');
 
   // ── список друзей ────────────────────────────────────────────────────────
+  // Список — только НОВЫЕ друзья: тот, кто приглашён до FRIENDSHIP_LAUNCH_AT,
+  // не должен появляться в нём вовсе, даже с пометкой «не считается» — иначе
+  // список читался бы как «эта награда не работает для старых друзей», а не
+  // как «эта награда для друзей, приглашённых с такого-то момента».
   console.log('  ── список друзей ──');
   const withList = await shop.friendshipStatus(null, ref.id);
-  eq(withList.friends.length, 2, 'в списке оба приглашённых, а не только считающиеся');
+  eq(withList.friends.length, 1, 'в списке только новый друг — старый (stale) в него не попал');
   const lowRow = withList.friends.find(f => f.username === `${TAG}_low`);
-  const staleRow = withList.friends.find(f => f.username === `${TAG}_stale`);
-  ok(!!lowRow, 'друг ниже уровня в списке есть');
+  ok(!!lowRow, 'новый друг в списке есть');
   eq(lowRow && lowRow.lvl, D.FRIENDSHIP_LEVEL, 'и его уровень показан верно');
   eq(lowRow && lowRow.counts, true, 'и он отмечен как считающийся — уровень достигнут');
-  ok(!!staleRow, 'друг, приглашённый до запуска, в списке тоже есть');
-  eq(staleRow && staleRow.counts, false,
-    'но отмечен как НЕ считающийся — дата регистрации раньше FRIENDSHIP_LAUNCH_AT');
+  ok(!withList.friends.some(f => f.username === `${TAG}_stale`),
+    'друг, приглашённый до запуска, в списке отсутствует полностью');
 
   // ── первый тир ───────────────────────────────────────────────────────────
   console.log('  ── тир 1 ──');

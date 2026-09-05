@@ -4007,9 +4007,11 @@ function _friendshipTierCard(def, status) {
 }
 
 // Строка одного приглашённого друга: имя, уровень, и отметка — считается ли
-// он в тиры ПРЯМО СЕЙЧАС. Ответ на «а почему у меня 0, а друг есть» виден на
-// экране: либо не дорос до FRIENDSHIP_LEVEL, либо приглашён до появления этой
-// награды (FRIENDSHIP_LAUNCH_AT) — а не только в виде числа без объяснения.
+// он в тиры ПРЯМО СЕЙЧАС. Сервер уже не присылает сюда никого, кто приглашён
+// до FRIENDSHIP_LAUNCH_AT (friendshipStatus/_friendshipFriends, server/db/
+// repos/shop.js) — список только из новых друзей, как и обещает награда, —
+// так что «не считается» здесь означает ровно одно: друг ещё не дорос до
+// FRIENDSHIP_LEVEL.
 function _friendshipFriendRow(f) {
   const eligible = !!f.counts;
   const color = eligible ? '#98e456' : '#5b7183';
@@ -4025,9 +4027,9 @@ function _friendshipFriendRow(f) {
   </div>`;
 }
 
-// Каждый друг, а не только те, что уже считаются — иначе список молчал бы
-// ровно там, где объяснение нужнее всего: у игрока, чьи друзья все ниже
-// FRIENDSHIP_LEVEL или приглашены до этой награды.
+// Каждый НОВЫЙ друг (после FRIENDSHIP_LAUNCH_AT), а не только те, что уже
+// достигли уровня — иначе список молчал бы ровно там, где объяснение нужнее
+// всего: у игрока, чьи новые друзья все ещё ниже FRIENDSHIP_LEVEL.
 function _friendshipFriendsSection(friends) {
   const hdr = `<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
       color:#5b7183;margin:2px 0 6px">${t('friendshipFriendsHdr')}</div>`;

@@ -355,22 +355,20 @@ async function _friendshipCount(db, telegramId) {
   return rows[0].n;
 }
 
-// Every friend this player has ever invited, levelled or not, old or new —
-// not only the ones that count toward a tier. `counts` is the SAME test
-// _friendshipCount runs, repeated per row rather than shared with it: the
-// claim path only ever needs the number, and building the list it does not
-// use just to share one boolean would cost every claim a join it has no use
-// for. The panel shows `counts` next to each name specifically so "почему
-// у меня 0, а друг есть" has an answer on screen — too low a level, or
-// invited before this reward existed — rather than a number with no rows
-// under it.
+// Friends invited SINCE this reward shipped, only — one from before
+// FRIENDSHIP_LAUNCH_AT is excluded outright rather than merely marked as not
+// counting: the whole point of the cutoff is that those invites predate the
+// reward, and listing them next to the new ones (even greyed out) reads as
+// "this broke for my old friends" instead of "this is for friends invited
+// from now on". `counts` here therefore only still has to ask about the
+// level — every row already passed the date half of _friendshipCount's test.
 async function _friendshipFriends(db, telegramId) {
   const { rows } = await query(db, `
-    SELECT p.username, pp.lvl,
-           (p.created_at >= $2::timestamptz AND pp.lvl >= $3) AS counts
+    SELECT p.username, pp.lvl, (pp.lvl >= $3) AS counts
       FROM players p
       JOIN player_progress pp ON pp.player_id = p.id
      WHERE p.referred_by = $1
+       AND p.created_at >= $2::timestamptz
      ORDER BY pp.lvl DESC, p.username`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL]);
   return rows.map(r => ({ username: r.username, lvl: r.lvl, counts: r.counts }));
 }
