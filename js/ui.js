@@ -3914,6 +3914,168 @@ function onStarterBonusError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ДРУЖБА BUTTON — под «Бонус», та же колонка. Тиры и составы наград —
+//  FRIENDSHIP_TIERS (shared/definitions.js), выдаёт claimFriendshipTier
+//  (server/db/repos/shop.js). См. getFriendshipBtnPos/_checkFriendshipBtnTouch,
+//  js/input.js.
+// ─────────────────────────────────────────────────────────
+// В отличие от Письма и Бонуса кнопка не исчезает после первого забора: тиров
+// шесть, и следующий может открыться месяцы спустя, когда очередной друг
+// дорастёт до FRIENDSHIP_LEVEL. Рисуется как Класс/Профессия — ровной рамкой,
+// без бегущей полосы: подсвечивать её как срочный разовый подарок было бы
+// враньём, а какие тиры уже готовы, показывает сама панель.
+function drawFriendshipButton() {
+  if (!player || !player.type) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const fb = getFriendshipBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+
+  ctx.fillStyle = _uiBtnGrads.pfg0;
+  roundRect(ctx, fb.x, fb.y, fb.w, fb.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(224,120,150,0.4)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, fb.x, fb.y, fb.w, fb.h, 9); ctx.stroke();
+
+  const col = 'rgba(240,150,180,0.9)';
+  drawIconCtx(ctx, 'heart', fb.x + fb.w / 2 - hud(14), fb.y + fb.h / 2, hud(12), col);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = col;
+  ctx.fillText(t('friendshipBtnLbl'), fb.x + fb.w / 2 - hud(5), fb.y + fb.h / 2);
+
+  ctx.restore();
+}
+
+// Последний ответ сервера (friendshipStatus). Пусто до первого открытия
+// панели — карточки тиров тогда рисуются как «0 из N», а не как заведомо
+// неверное «уже готово».
+let _friendshipStatus = { count: 0, tiers: [] };
+
+// Строки одного тира: то же, что у Письма/Бонуса, плюс Liberty и GRAM — ни
+// один из старых наборов их не выдавал, поэтому _bonusItemRow сам по себе
+// сюда не годился без строки для валюты.
+function _friendshipRewardRows(tier) {
+  const out = [];
+  if (tier.buffPotions) {
+    for (const bp of ITEM_DEF.filter(d => d.slot === 'buff_potion')) {
+      out.push(_bonusItemRow(_itemIcon(bp, 16), bp.name, tier.buffPotions));
+    }
+  }
+  for (const [id, qty] of Object.entries(tier.mats || {})) {
+    const def = _anyItemDef(id);
+    if (def) out.push(_bonusItemRow(_itemIcon(def, 16), def.name, qty));
+  }
+  if (tier.wing) {
+    const def = _anyItemDef(tier.wing);
+    if (def) out.push(_bonusItemRow(_itemIcon(def, 16), def.name, 1));
+  }
+  if (tier.nexum) out.push(_bonusItemRow(_nexumIconHtml(16), t('libertyLbl'), tier.nexum));
+  if (tier.gram) {
+    out.push(_bonusItemRow(
+      '<img src="/images/gram-icon.png" width="16" height="16" style="vertical-align:middle">',
+      'GRAM', tier.gram));
+  }
+  return out.join('');
+}
+
+// Карточка одного тира с собственной кнопкой «Забрать» — в отличие от
+// Письма/Бонуса, где кнопка одна на всю панель, тиры здесь закрываются не
+// разом, и одна кнопка на все шесть значила бы либо шесть заявок сразу, либо
+// гадать, какую из них имел в виду игрок.
+function _friendshipTierCard(def, status) {
+  const st = (status.tiers || []).find(x => x.count === def.count) || {};
+  const done = !!st.claimed, ready = !!st.claimable;
+  const accent = done ? '#5b7183' : ready ? '#98e456' : '#e08cae';
+  const btnLabel = done ? t('friendshipClaimedLbl') : t('friendshipClaimBtn');
+  const btnBg = done
+    ? 'rgba(193,204,213,.07)'
+    : ready ? 'linear-gradient(135deg,#3f7a2e,#5fae3f)' : 'rgba(193,204,213,.07)';
+  const btnColor = done || !ready ? '#5b7183' : '#eaffe0';
+  return `<div style="border:1px solid ${ready ? accent + '66' : 'rgba(193,204,213,.10)'};
+      border-radius:12px;padding:12px 12px 8px;margin-bottom:10px;
+      background:${ready ? 'rgba(152,228,86,.05)' : 'transparent'};${done ? 'opacity:.55' : ''}">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px">
+      <div style="font-size:13px;font-weight:800;color:${accent}">${tVars('friendshipTierFmt', { n: def.count })}</div>
+      <button ${done || !ready ? 'disabled' : ''} onclick="_confirmFriendshipClaim(${def.count})" style="
+        padding:6px 14px;border:none;border-radius:8px;font-size:12px;font-weight:700;
+        cursor:${done || !ready ? 'default' : 'pointer'};background:${btnBg};color:${btnColor};
+        white-space:nowrap">${btnLabel}</button>
+    </div>
+    <div class="vip-items-row">${_friendshipRewardRows(def)}</div>
+  </div>`;
+}
+
+function _renderFriendshipList() {
+  const list = document.getElementById('friendship-list');
+  if (!list) return;
+  list.innerHTML = FRIENDSHIP_TIERS.map(def => _friendshipTierCard(def, _friendshipStatus)).join('');
+  const prog = document.getElementById('friendship-progress');
+  if (prog) {
+    prog.textContent = tVars('friendshipProgressFmt', { n: _friendshipStatus.count || 0, lvl: FRIENDSHIP_LEVEL });
+  }
+}
+
+function openFriendshipPanel() {
+  const existing = document.getElementById('friendship-ov');
+  if (existing) existing.remove();
+
+  const ov = document.createElement('div');
+  ov.id = 'friendship-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:360px;max-height:82vh;display:flex;flex-direction:column;background:#0c1420;border-radius:16px;border:1px solid rgba(224,120,150,.22);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#e08cae;margin-bottom:6px">${t('friendshipTitle')}</div>
+    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:10px">${tVars('friendshipDesc', { lvl: FRIENDSHIP_LEVEL })}</div>
+    <div id="friendship-progress" style="font-size:13px;font-weight:700;color:#bfe4ff;margin-bottom:12px">…</div>
+    <div id="friendship-list" class="ov-scroll" style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px"></div>
+    <div id="friendship-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-shrink:0">
+      <button onclick="document.getElementById('friendship-ov').remove()" style="
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(193,204,213,.07);
+        color:#5797c4;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+  _renderFriendshipList();
+  if (typeof netGetFriendship === 'function') netGetFriendship();
+}
+
+function onFriendshipData(data) {
+  _friendshipStatus = data || { count: 0, tiers: [] };
+  _renderFriendshipList();
+}
+
+// Пока запрос в пути, повторное нажатие любой карточки игнорируется — у
+// каждой своя кнопка, поэтому блокируется не одна из них, а вся панель:
+// пере-рендер по ответу всё равно заменит их разметку.
+let _friendshipClaimBusy = false;
+function _confirmFriendshipClaim(tier) {
+  if (_friendshipClaimBusy) return;
+  _friendshipClaimBusy = true;
+  const errBox = document.getElementById('friendship-err');
+  if (errBox) errBox.style.display = 'none';
+  if (typeof netFriendshipClaim === 'function') netFriendshipClaim(tier);
+}
+
+function onFriendshipDone() {
+  _friendshipClaimBusy = false;
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (typeof updateProfileUI === 'function') updateProfileUI();
+  // Перезапрашивается целиком, а не правится на месте: заодно подтягивает
+  // изменившийся count, если за это время подрос ещё один друг.
+  if (typeof netGetFriendship === 'function') netGetFriendship();
+  if (player) dmgNum(player.x, player.y - 30, t('friendshipDoneToast'), '#e08cae');
+}
+
+function onFriendshipError(msg) {
+  _friendshipClaimBusy = false;
+  const box = document.getElementById('friendship-err');
+  if (box) { box.style.display = 'block'; box.textContent = msg || 'Ошибка'; }
+  else if (player) dmgNum(player.x, player.y - 30, msg || 'Ошибка', '#f88');
+}
+
+// ─────────────────────────────────────────────────────────
 //  TARGET FRAME
 // ─────────────────────────────────────────────────────────
 function drawTargetFrame() {

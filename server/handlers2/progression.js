@@ -387,6 +387,27 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('refData', await shopRepo.referralsOf(t, pid));
   }));
 
+  // ── Дружба ───────────────────────────────────────────────────────────────
+  // Read fresh on every open rather than cached on the account at login: the
+  // count moves whenever an invited friend levels up on some OTHER
+  // connection, and there is no client-side flag worth keeping in sync for
+  // it the way starterBonus/mailBonus do — the panel simply asks again.
+  safeOn('getFriendship', () => s.act('getFriendship', 'friendshipError', async (t, pid) => {
+    s.socket.emit('friendshipData', await shopRepo.friendshipStatus(t, pid));
+  }));
+
+  safeOn('friendshipClaim', ({ tier } = {}) => s.act('friendshipClaim', 'friendshipError', async (t, pid) => {
+    const n = Number(tier);
+    if (!Number.isFinite(n)) fail('Награда не выбрана', 'bad_tier');
+    const res = await shopRepo.claimFriendshipTier(t, pid, n);
+    await s.pushItems(t); await s.pushStats(t); await s.pushBalances(t);
+    s.socket.emit('friendshipDone', { tier: res.tier, nexum: res.nexum, gram: res.gram });
+    return res;
+  }, r => r && {
+    tier: r.tier, nexum: r.nexum, gram: r.gram,
+    items: (r.granted || []).map(g => g.itemId),
+  }));
+
   // ── empower (Усиление) and reset ─────────────────────────────────────────
   // Усиление заменило Перерождение. Сбрасывать нечего: уровень, опыт, статы и
   // вложенные улучшения остаются как были, начисляются только EMPOWER_BONUS_SP

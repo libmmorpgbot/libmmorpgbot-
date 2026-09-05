@@ -4071,6 +4071,17 @@ function netGetReferrals() {
   if (socket?.connected) socket.emit('getReferrals');
 }
 
+// «Дружба» — asked fresh every time the panel opens (openFriendshipPanel,
+// js/ui.js): the qualifying-friend count can move while the panel is closed,
+// on some other connection, and there is no cached client flag for it worth
+// keeping in sync.
+function netGetFriendship() {
+  if (socket?.connected) socket.emit('getFriendship');
+}
+function netFriendshipClaim(tier) {
+  if (socket?.connected) socket.emit('friendshipClaim', { tier });
+}
+
 function netGetPvpHistory() {
   if (socket?.connected) socket.emit('getPvpHistory');
 }
@@ -5349,6 +5360,18 @@ function _initPetCraftHandlers(s) {
   s.on('mailBonusError', ({ msg }) => {
     if (player && /получен/i.test(msg || '')) player.mailBonus = true;
     if (typeof onMailBonusError === 'function') onMailBonusError(msg);
+  });
+
+  // Дружба. No account flag to update here — every tier's claimed/claimable
+  // state lives in the payload itself, and the panel re-renders it wholesale.
+  s.on('friendshipData', (data) => {
+    if (typeof onFriendshipData === 'function') onFriendshipData(data);
+  });
+  s.on('friendshipDone', (data) => {
+    if (typeof onFriendshipDone === 'function') onFriendshipDone(data);
+  });
+  s.on('friendshipError', ({ msg }) => {
+    if (typeof onFriendshipError === 'function') onFriendshipError(msg);
   });
 }
 

@@ -1498,6 +1498,7 @@ function _renderUI() {
   drawClassChangeButton();
   drawMailBonusButton();
   drawStarterBonusButton();
+  drawFriendshipButton();
   drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();

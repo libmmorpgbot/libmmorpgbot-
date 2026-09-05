@@ -2485,6 +2485,34 @@ const MAIL_BONUS = {
   ticket: { buffPotions: 30, mats: { bless_stone: 3 }, boxes: { box_uncommon: 2, box_rare: 2 } },
 };
 
+// ── Дружба (friendship rewards) ─────────────────────────────────────────────
+// Кнопка «Дружба» в колонке HUD под «Класс» (drawFriendshipButton, js/ui.js).
+// Награда растёт с числом приглашённых друзей, дошедших до FRIENDSHIP_LEVEL —
+// не до регистрации: приглашение, брошенное на выборе класса, не должно
+// закрывать тир, ради которого его и слали.
+//
+// Считаются только друзья, ЗАРЕГИСТРИРОВАННЫЕ не раньше FRIENDSHIP_LAUNCH_AT
+// (players.created_at, см. friendshipStatus, server/db/repos/shop.js) —
+// иначе у каждого, кто играет давно, тиры закрылись бы в момент выката одним
+// запросом, за старых друзей, приглашённых до того, как эта награда вообще
+// была придумана.
+//
+// Каждый тир заберут один раз: см. player_friendship_claims (миграция 022) —
+// та же схема «строка есть — значит, забрано», что у player_special_quests.
+// `count` — это порог числа друзей И идентификатор тира одновременно (не
+// индекс в массиве), поэтому переупорядочить или вставить тир сюда можно, не
+// боясь переадресовать уже сделанный когда-то claim.
+const FRIENDSHIP_LEVEL = 15;
+const FRIENDSHIP_LAUNCH_AT = '2026-09-05T00:00:00Z';
+const FRIENDSHIP_TIERS = [
+  { count: 1,   buffPotions: 3  },
+  { count: 5,   buffPotions: 10, mats: { bless_stone: 3 } },
+  { count: 10,  wing: 'wing_c', nexum: 1000 },
+  { count: 25,  wing: 'wing_u', nexum: 2000, gram: 2 },
+  { count: 50,  wing: 'wing_r', nexum: 4000, gram: 5 },
+  { count: 100, wing: 'wing_e', nexum: 10000, gram: 10 },
+];
+
 // ── Cost of learning and upgrading ──────────────────────────────────────────
 // Books to unlock a locked (level 0) skill or passive, books per upgrade
 // attempt once studied, and the chance an attempt succeeds. These lived in
@@ -2848,6 +2876,7 @@ if (typeof module !== 'undefined') module.exports = {
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST, STARTER_BONUS, MAIL_BONUS,
+  FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
