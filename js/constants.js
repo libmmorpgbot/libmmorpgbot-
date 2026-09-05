@@ -57,16 +57,34 @@ let HEADER_H = HEADER_BASE_H;
 let NAV_H = 50;
 
 // ── safe-area отступы (статус-бар, вырез под камеру, жестовая полоса) ──────
-// side — 'top' или 'bottom'. Telegram публикует их как --tg-safe-area-inset-*
-// (полноэкранный режим рисует мини-приложение от края до края); вне Telegram
-// то же самое даёт обычный env(), уже завёрнутый в --safe-top/--safe-bottom
-// (css/style.css). Там, где вырезать нечего, обе читаются как 0.
+// side — 'top' или 'bottom'. ДВА разных отступа от Telegram, а не один:
+//
+//   --tg-safe-area-inset-*          вырез/чёлка САМОГО УСТРОЙСТВА;
+//   --tg-content-safe-area-inset-*  полоса, которую в полноэкранном режиме
+//                                   поверх игры держит САМ Telegram — крестик
+//                                   «Закрыть», шеврон, три точки сверху. На
+//                                   экране без выреза первый может быть 0, а
+//                                   второй — нет: это Telegram, а не телефон
+//                                   рисует свою полосу, и именно под неё
+//                                   верхняя плашка HUD уезжала под системные
+//                                   часы и «Закрыть» — если считать только
+//                                   safe-area-inset, contentSafeArea никто не
+//                                   спрашивал.
+//
+// Вне Telegram то же самое даёт обычный env(), уже завёрнутый в
+// --safe-top/--safe-bottom (css/style.css). Берём максимум из всех трёх —
+// там, где резервировать нечего, каждая читается как 0.
 function _safeInset(side) {
   try {
     const cs = getComputedStyle(document.documentElement);
     const tg = parseFloat(cs.getPropertyValue('--tg-safe-area-inset-' + side));
+    const tgContent = parseFloat(cs.getPropertyValue('--tg-content-safe-area-inset-' + side));
     const std = parseFloat(cs.getPropertyValue('--safe-' + side));
-    return Math.max(Number.isFinite(tg) ? tg : 0, Number.isFinite(std) ? std : 0);
+    return Math.max(
+      Number.isFinite(tg) ? tg : 0,
+      Number.isFinite(tgContent) ? tgContent : 0,
+      Number.isFinite(std) ? std : 0
+    );
   } catch (e) { return 0; }
 }
 

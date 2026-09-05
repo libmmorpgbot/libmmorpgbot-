@@ -68,8 +68,18 @@
      есть. Используется только настоящими CSS-свойствами (height/bottom
      ниже), а не JS: именно calc()+var() в НИХ и не читается напрямую как
      число (см. комментарий у --nav-h выше). NAV_H в JS считает ту же сумму
-     сам — _recalcHudMetrics, js/constants.js. */
-  --nav-h-total:calc(var(--nav-h) + max(var(--tg-safe-area-inset-bottom, 0px), var(--safe-bottom)));
+     сам — _recalcHudMetrics, js/constants.js.
+
+     Три источника отступа, не один — max() из всех: --tg-safe-area-inset-*
+     это вырез САМОГО УСТРОЙСТВА, --tg-content-safe-area-inset-* — полоса,
+     которую в полноэкранном режиме поверх игры держит САМ Telegram (см.
+     тот же комментарий у _safeInset, js/constants.js), --safe-bottom —
+     запасной путь вне Telegram. */
+  --nav-h-total:calc(var(--nav-h) + max(
+    var(--tg-safe-area-inset-bottom, 0px),
+    var(--tg-content-safe-area-inset-bottom, 0px),
+    var(--safe-bottom)
+  ));
 }
 
 * {
@@ -1083,7 +1093,11 @@ canvas { display:block; width:100%; height:100%; }
    phone's own gesture area instead. */
 .nav-tabs {
   display:flex; height:100%;
-  padding-bottom:max(var(--tg-safe-area-inset-bottom, 0px), var(--safe-bottom));
+  padding-bottom:max(
+    var(--tg-safe-area-inset-bottom, 0px),
+    var(--tg-content-safe-area-inset-bottom, 0px),
+    var(--safe-bottom)
+  );
 }
 .nav-tab  {
   flex:1; display:flex; flex-direction:column;
