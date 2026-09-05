@@ -46,40 +46,8 @@
 
      56 → 50: снова просили на 10% ниже (56 сама уже была таким же шагом от
      62). Иконки и подписи уменьшены во столько же — ниже по файлу и в
-     разметке вкладок.
-
-     Само число ЧИСТОЕ (без calc/var) намеренно: getComputedStyle возвращает
-     свойство calc(...)/var(...) КАК ТЕКСТ, не вычисленным числом, стоит его
-     прочитать напрямую с этого же элемента, а не подставить в реальное CSS-
-     свойство — так что parseFloat('--nav-h') на calc()-значении даёт NaN, а
-     не пиксели. Проверено: render-check ловил ровно это (56 / 50, JS не
-     увидел добавку). Поэтому safe-area прибавляется ТАМ ЖЕ, где и для
-     HEADER_H — в JS (_recalcHudMetrics, js/constants.js), а не здесь. */
+     разметке вкладок. */
   --nav-h:50px;
-
-  /* ── safe-area вне Telegram ────────────────────────────────────────────
-     Резерв на случай, если страница открыта не в Telegram (dev/local.js,
-     ярлык на главном экране) — там --tg-safe-area-inset-* никто не
-     проставит, а обычный env() всё равно знает о вырезе под камеру. */
-  --safe-top:env(safe-area-inset-top, 0px);
-  --safe-bottom:env(safe-area-inset-bottom, 0px);
-
-  /* Фактическая высота полосы НА ЭКРАНЕ — --nav-h плюс отступ снизу, где он
-     есть. Используется только настоящими CSS-свойствами (height/bottom
-     ниже), а не JS: именно calc()+var() в НИХ и не читается напрямую как
-     число (см. комментарий у --nav-h выше). NAV_H в JS считает ту же сумму
-     сам — _recalcHudMetrics, js/constants.js.
-
-     Три источника отступа, не один — max() из всех: --tg-safe-area-inset-*
-     это вырез САМОГО УСТРОЙСТВА, --tg-content-safe-area-inset-* — полоса,
-     которую в полноэкранном режиме поверх игры держит САМ Telegram (см.
-     тот же комментарий у _safeInset, js/constants.js), --safe-bottom —
-     запасной путь вне Telegram. */
-  --nav-h-total:calc(var(--nav-h) + max(
-    var(--tg-safe-area-inset-bottom, 0px),
-    var(--tg-content-safe-area-inset-bottom, 0px),
-    var(--safe-bottom)
-  ));
 }
 
 * {
@@ -800,7 +768,7 @@ canvas { display:block; width:100%; height:100%; }
 
 /* ── BOTTOM PANELS ─────────────────────── */
 .bpanel {
-  position:absolute; left:0; right:0; bottom:var(--nav-h-total);
+  position:absolute; left:0; right:0; bottom:var(--nav-h);
   height:0; overflow:hidden;
   background:linear-gradient(175deg,var(--void-2),var(--void) 60%);
   border-top:2px solid var(--gold-dim);
@@ -808,7 +776,7 @@ canvas { display:block; width:100%; height:100%; }
   transition:height 0.28s cubic-bezier(.4,0,.2,1);
   display:none;
 }
-.bpanel.open { height:calc(100% - var(--nav-h-total)); overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.bpanel.open { height:calc(100% - var(--nav-h)); overflow-y:auto; -webkit-overflow-scrolling:touch; }
 .bpanel.open *, #npc-dialog *, #char-select * { touch-action:pan-y; }
 .bpanel.open, #npc-dialog, #char-select { touch-action:pan-y; }
 /* ── оверлеи поверх игры, которым нужна прокрутка ──────────────────────────
@@ -1080,25 +1048,13 @@ canvas { display:block; width:100%; height:100%; }
 
 /* ── BOTTOM NAV ────────────────────────── */
 #bottom-nav {
-  position:absolute; bottom:0; left:0; right:0; height:var(--nav-h-total);
+  position:absolute; bottom:0; left:0; right:0; height:var(--nav-h);
   background:linear-gradient(0deg,#060b13,#101d2e 70%);
   border-top:1px solid rgba(96,170,235,.45);
   box-shadow:0 -6px 18px rgba(0,0,0,.55), inset 0 1px 0 rgba(140,200,255,.10);
   z-index:50; display:none;
 }
-/* padding-bottom, not centred in the FULL (now safe-area-padded) bar height:
-   the coloured bar itself is allowed to run into the gesture-bar strip at
-   the very bottom of the screen — that's just background — but the tap
-   targets are not, or a thumb reaching for "Профиль" would land on the
-   phone's own gesture area instead. */
-.nav-tabs {
-  display:flex; height:100%;
-  padding-bottom:max(
-    var(--tg-safe-area-inset-bottom, 0px),
-    var(--tg-content-safe-area-inset-bottom, 0px),
-    var(--safe-bottom)
-  );
-}
+.nav-tabs { display:flex; height:100%; }
 .nav-tab  {
   flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center;

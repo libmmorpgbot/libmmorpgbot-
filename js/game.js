@@ -3435,12 +3435,6 @@ window.addEventListener('load', () => {
     // Ноль — это не новый размер экрана, это отсутствие ответа. Держим
     // последний известный: WebView пришлёт настоящий, когда вернётся.
     if (!(_w > 0 && _h > 0)) return;
-    // Before the unchanged-size skip below: entering/exiting Telegram's
-    // fullscreen normally does change #app's own size too, but the safe-area
-    // insets it comes with are a separate signal (safeAreaChanged can fire
-    // without the element's box changing at all), and this call is cheap
-    // enough that there is no reason to gate it on force or on W/H moving.
-    if (typeof _recalcHudMetrics === 'function') _recalcHudMetrics();
     if (!force && _w === _rzW && _h === _rzH && _dpr === _rzDpr) return;
     _rzW = _w; _rzH = _h; _rzDpr = _dpr;
     DPR = _dpr;

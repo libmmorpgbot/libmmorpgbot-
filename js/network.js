@@ -2813,27 +2813,10 @@ function _initTelegramWidget() {
     _waIsMiniApp = true;
     twa.ready();
     twa.expand();
-    // expand() only goes as tall as Telegram's own chrome allows — the app
-    // still sits below Telegram's header. requestFullscreen() (Bot API 8.0+)
-    // draws it edge to edge instead, which is why the safe-area handling
-    // below exists at all: edge to edge can mean under the status bar, and
-    // on some phones under a punch-hole camera. Older clients simply don't
-    // have the method, hence the optional chain — expand() above is already
-    // the right degraded behavior for them.
-    twa.requestFullscreen?.();
     twa.disableVerticalSwipes?.();
     twa.setHeaderColor?.('#000000');
     twa.setBackgroundColor?.('#000000');
     twa.lockOrientation?.();
-
-    // Telegram sets --tg-safe-area-inset-* (js/constants.js _safeInset) only
-    // once fullscreen actually takes effect, which is after this call
-    // returns. _recalcHudMetrics() alone would still see the CSS from
-    // before that — resize(true) is what both re-reads the safe area AND
-    // relays out everything anchored to HEADER_H/NAV_H for it.
-    twa.onEvent?.('fullscreenChanged', () => { if (_doResize) _doResize(true); });
-    twa.onEvent?.('safeAreaChanged', () => { if (_doResize) _doResize(true); });
-    twa.onEvent?.('contentSafeAreaChanged', () => { if (_doResize) _doResize(true); });
 
     const photoUrl = twa.initDataUnsafe?.user?.photo_url;
     if (photoUrl && typeof setTelegramAvatar === 'function') setTelegramAvatar(photoUrl);
