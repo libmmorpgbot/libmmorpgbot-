@@ -215,6 +215,7 @@ async function main() {
   await linkCheck();
   await repoCheck();
   await consequencesCheck();
+  await notifyCheck();
   await loginCheck();
   await webhookCheck();
 }
@@ -346,6 +347,35 @@ async function consequencesCheck() {
   ok(bonus !== null, 'друг дійшов до 20 рівня — реферер отримав нарахування');
   eq(bonus && bonus.referrerTelegramId, ref.telegramId, 'нарахування адресоване саме запрошувачу');
   eq((await prog.seasonOf(null, ref.id)).points, SEASON_REF_POINTS, 'бали сезону нараховані');
+}
+
+// ── «твій друг зайшов» — бот-сповіщення реферера ────────────────────────────
+// tgGame.notifyFriendJoined is unsolicited, so it must check canMessage BEFORE
+// it ever reaches send() — a referrer who never granted write access must not
+// get a DM just because a friend of theirs logged in. Observed through
+// tgGame.status().skipped rather than a captured message: OPS_LIVE=0 (set at
+// the top of this file) makes send() stop at its own gate before touching
+// Telegram, and count the attempt as `skipped` either way — so an unchanged
+// counter proves notifyFriendJoined never got that far, and one that moved by
+// exactly one proves it did.
+async function notifyCheck() {
+  console.log('  ── сповіщення реферера ──');
+  const ref = await mk('nref');
+  const friend = await mk('nfriend');
+
+  const before = tgGame.status().skipped;
+  await tgGame.notifyFriendJoined(ref.id, ref.telegramId, friend.username);
+  eq(tgGame.status().skipped, before,
+    'без дозволу на повідомлення (can_message) — спроби відправити немає взагалі');
+
+  const stored = await players.setWriteAccess(null, ref.id, true);
+  if (!stored.stored) {
+    skip('дозвіл на повідомлення — міграція 013 ще не застосована в цій базі');
+    return;
+  }
+  await tgGame.notifyFriendJoined(ref.id, ref.telegramId, friend.username);
+  eq(tgGame.status().skipped, before + 1,
+    'з дозволом — notifyFriendJoined дійшов до send(), і той порахував спробу');
 }
 
 // ── the wiring, through a real login ────────────────────────────────────────

@@ -387,6 +387,10 @@ async function registerFor(me, refId, io) {
   // none. The referral itself is committed either way. Same shape as
   // finishLogin's, deliberately — the client has one handler for this.
   if (io) io.to(`tg_${res.refId}`).emit('friendJoined', { username: me.username });
+  // The bot message reaches them even with no device online — see
+  // notifyFriendJoined's own comment in tg-game.js. Fire-and-forget: a DM
+  // that fails must not turn a completed referral into a broken /start reply.
+  tgGame.notifyFriendJoined(res.referrerId, res.refId, me.username).catch(() => {});
   return res.referrerUsername || '';
 }
 

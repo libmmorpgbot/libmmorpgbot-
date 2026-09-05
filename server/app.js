@@ -31,6 +31,7 @@ const adminAuth = require('./admin-auth');
 // The game bot's own updates. Required at the top rather than at the mount
 // below because /health reports its counters and /health is defined above it.
 const tgWebhook = require('./routes/tg-webhook');
+const tgGame = require('./tg-game');
 // socketForTelegramId is no longer imported here: the deposit push was its
 // last caller and now addresses the `tg_<id>` ROOM instead — see notifyCredited
 // below for why. It is still exported by session.js and still used through
@@ -1106,6 +1107,11 @@ io.on('connection', (socket) => {
       // there are none — the referral itself is committed either way. Same
       // shape as the season referral bonus in handlers2/world.js.
       io.to(`tg_${res.refId}`).emit('friendJoined', { username: s.username });
+      // The bot message is the one that reaches them when the emit above has
+      // nobody to land on — see notifyFriendJoined's own comment. Fire-and-
+      // forget: a DM that fails must not turn a completed referral into an
+      // error the new player sees.
+      tgGame.notifyFriendJoined(res.referrerId, res.refId, s.username).catch(() => {});
     } catch (err) {
       // Not silent. This is the one path where a referral is lost to a fault
       // rather than to a rule, and it is invisible from both sides: the

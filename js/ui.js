@@ -3950,7 +3950,7 @@ function drawFriendshipButton() {
 // Последний ответ сервера (friendshipStatus). Пусто до первого открытия
 // панели — карточки тиров тогда рисуются как «0 из N», а не как заведомо
 // неверное «уже готово».
-let _friendshipStatus = { count: 0, tiers: [] };
+let _friendshipStatus = { count: 0, tiers: [], friends: [] };
 
 // Строки одного тира: то же, что у Письма/Бонуса, плюс Liberty и GRAM — ни
 // один из старых наборов их не выдавал, поэтому _bonusItemRow сам по себе
@@ -4006,10 +4006,42 @@ function _friendshipTierCard(def, status) {
   </div>`;
 }
 
+// Строка одного приглашённого друга: имя, уровень, и отметка — считается ли
+// он в тиры ПРЯМО СЕЙЧАС. Ответ на «а почему у меня 0, а друг есть» виден на
+// экране: либо не дорос до FRIENDSHIP_LEVEL, либо приглашён до появления этой
+// награды (FRIENDSHIP_LAUNCH_AT) — а не только в виде числа без объяснения.
+function _friendshipFriendRow(f) {
+  const eligible = !!f.counts;
+  const color = eligible ? '#98e456' : '#5b7183';
+  const name = f.username ? _escHtml(f.username) : t('playerFallbackLbl');
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+      padding:6px 9px;border-radius:8px;background:rgba(193,204,213,.04);margin-bottom:4px">
+    <span style="font-size:12.5px;font-weight:600;color:#c1ccd5;overflow:hidden;
+      text-overflow:ellipsis;white-space:nowrap">@${name}</span>
+    <span style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-size:11.5px;color:#8197ab">${tVars('charLevelFmt', { lvl: f.lvl })}</span>
+      <span style="font-size:13px;font-weight:800;color:${color}">${eligible ? '✓' : '—'}</span>
+    </span>
+  </div>`;
+}
+
+// Каждый друг, а не только те, что уже считаются — иначе список молчал бы
+// ровно там, где объяснение нужнее всего: у игрока, чьи друзья все ниже
+// FRIENDSHIP_LEVEL или приглашены до этой награды.
+function _friendshipFriendsSection(friends) {
+  const hdr = `<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+      color:#5b7183;margin:2px 0 6px">${t('friendshipFriendsHdr')}</div>`;
+  if (!friends || !friends.length) {
+    return `${hdr}<div style="font-size:12px;color:#5b7183;margin-bottom:14px">${t('friendshipNoFriendsHint')}</div>`;
+  }
+  return `${hdr}<div style="margin-bottom:14px">${friends.map(_friendshipFriendRow).join('')}</div>`;
+}
+
 function _renderFriendshipList() {
   const list = document.getElementById('friendship-list');
   if (!list) return;
-  list.innerHTML = FRIENDSHIP_TIERS.map(def => _friendshipTierCard(def, _friendshipStatus)).join('');
+  list.innerHTML = _friendshipFriendsSection(_friendshipStatus.friends)
+    + FRIENDSHIP_TIERS.map(def => _friendshipTierCard(def, _friendshipStatus)).join('');
   const prog = document.getElementById('friendship-progress');
   if (prog) {
     prog.textContent = tVars('friendshipProgressFmt', { n: _friendshipStatus.count || 0, lvl: FRIENDSHIP_LEVEL });
@@ -4042,7 +4074,7 @@ function openFriendshipPanel() {
 }
 
 function onFriendshipData(data) {
-  _friendshipStatus = data || { count: 0, tiers: [] };
+  _friendshipStatus = data || { count: 0, tiers: [], friends: [] };
   _renderFriendshipList();
 }
 

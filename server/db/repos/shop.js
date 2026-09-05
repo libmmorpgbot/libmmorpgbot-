@@ -355,14 +355,35 @@ async function _friendshipCount(db, telegramId) {
   return rows[0].n;
 }
 
-// What the panel shows: how many qualifying friends this player has, and
-// which tiers are already claimed/claimable — the SAME two numbers the claim
-// below checks, so the button a player taps promises exactly what the server
-// will grant it for.
+// Every friend this player has ever invited, levelled or not, old or new —
+// not only the ones that count toward a tier. `counts` is the SAME test
+// _friendshipCount runs, repeated per row rather than shared with it: the
+// claim path only ever needs the number, and building the list it does not
+// use just to share one boolean would cost every claim a join it has no use
+// for. The panel shows `counts` next to each name specifically so "почему
+// у меня 0, а друг есть" has an answer on screen — too low a level, or
+// invited before this reward existed — rather than a number with no rows
+// under it.
+async function _friendshipFriends(db, telegramId) {
+  const { rows } = await query(db, `
+    SELECT p.username, pp.lvl,
+           (p.created_at >= $2::timestamptz AND pp.lvl >= $3) AS counts
+      FROM players p
+      JOIN player_progress pp ON pp.player_id = p.id
+     WHERE p.referred_by = $1
+     ORDER BY pp.lvl DESC, p.username`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL]);
+  return rows.map(r => ({ username: r.username, lvl: r.lvl, counts: r.counts }));
+}
+
+// What the panel shows: the friend list, how many of them qualify, and which
+// tiers are already claimed/claimable — the qualifying count is the SAME
+// number the claim below checks, so the button a player taps promises
+// exactly what the server will grant it for.
 async function friendshipStatus(db, playerId) {
   const { rows: me } = await query(db, 'SELECT telegram_id FROM players WHERE id = $1', [playerId]);
-  if (!me.length) return { count: 0, tiers: [] };
-  const count = await _friendshipCount(db, me[0].telegram_id);
+  if (!me.length) return { count: 0, tiers: [], friends: [] };
+  const friends = await _friendshipFriends(db, me[0].telegram_id);
+  const count = friends.reduce((n, f) => n + (f.counts ? 1 : 0), 0);
 
   const { rows: claimedRows } = await query(db,
     'SELECT tier FROM player_friendship_claims WHERE player_id = $1', [playerId]);
@@ -370,6 +391,7 @@ async function friendshipStatus(db, playerId) {
 
   return {
     count,
+    friends,
     tiers: FRIENDSHIP_TIERS.map(td => ({
       count: td.count,
       claimed: claimed.has(td.count),

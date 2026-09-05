@@ -931,6 +931,8 @@ Object.assign(I18N_UI, {
   friendshipClaimBtn: { ru: 'Забрать', en: 'Claim', uk: 'Забрати', es: 'Reclamar', tr: 'Al', pt: 'Resgatar' },
   friendshipClaimedLbl: { ru: 'Получено', en: 'Claimed', uk: 'Отримано', es: 'Reclamado', tr: 'Alındı', pt: 'Resgatado' },
   friendshipDoneToast: { ru: '✓ Награда за друзей получена!', en: '✓ Friendship reward claimed!', uk: '✓ Нагороду за друзів отримано!', es: '✓ ¡Recompensa de amistad reclamada!', tr: '✓ Dostluk ödülü alındı!', pt: '✓ Recompensa de amizade resgatada!' },
+  friendshipFriendsHdr: { ru: 'Ваши приглашённые', en: 'Your invited friends', uk: 'Ваші запрошені', es: 'Tus amigos invitados', tr: 'Davet ettikleriniz', pt: 'Seus amigos convidados' },
+  friendshipNoFriendsHint: { ru: 'Вы пока никого не пригласили', en: "You haven't invited anyone yet", uk: 'Ви поки нікого не запросили', es: 'Aún no has invitado a nadie', tr: 'Henüz kimseyi davet etmediniz', pt: 'Você ainda não convidou ninguém' },
   goldAmountFmt: { ru: '• {n} золота', en: '• {n} gold', uk: '• {n} золота', es: '• {n} de oro', tr: '• {n} altın', pt: '• {n} de ouro' },
   eachPotionFmt: { ru: '• {n}× каждое зелье (6 видов)', en: '• {n}× of each potion (6 kinds)', uk: '• {n}× кожне зілля (6 видів)', es: '• {n}× de cada poción (6 tipos)', tr: '• her iksirden {n}× (6 çeşit)', pt: '• {n}× de cada poção (6 tipos)' },
   costLbl: { ru: 'Стоимость', en: 'Cost', uk: 'Вартість', es: 'Costo', tr: 'Maliyet', pt: 'Custo' },

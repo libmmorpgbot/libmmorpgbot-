@@ -27,6 +27,8 @@
 // production env, and every detector that boots a server repeats that at the
 // top of its own file. A new variable would have been unset in all of them.
 const ops = require('./tg-ops');
+const players = require('./db/repos/players');
+const { _tgEsc } = require('./security');
 
 // Read at CALL time, not at module load — the same trap tg-ops.js documents
 // for isLive(). A constant computed on require() depends on whether the caller
@@ -125,6 +127,26 @@ async function send(chatId, html, { buttons = null, disablePreview = true } = {}
   return { ok: false, description: desc };
 }
 
+// ── «твой друг зашёл» ────────────────────────────────────────────────────────
+// The in-game 'friendJoined' socket event (app.js's login path, tg-webhook's
+// bot /start path) only reaches a referrer who happens to have the Mini App
+// open at that exact moment — which is the uncommon case. Most invites are
+// sent, forgotten, and the referrer finds out (if ever) next time they open
+// the app themselves. This is the other half: a real message from the bot,
+// so "кто-то зашёл по моей ссылке" reaches them whether or not they are online.
+//
+// Unsolicited — the referrer did nothing just now to trigger it — so
+// canMessage is checked HERE rather than left to either call site, per the
+// rule send() above documents. Both call sites reach a friend joining exactly
+// the same way, so the gate and the wording live in one place instead of two
+// copies that could drift apart.
+async function notifyFriendJoined(referrerId, referrerTelegramId, friendUsername) {
+  if (!referrerId || !referrerTelegramId) return;
+  if (!await players.canMessage(null, referrerId)) return;
+  const name = friendUsername ? `@${_tgEsc(friendUsername)}` : 'Друг';
+  await send(referrerTelegramId, `👥 ${name} зашёл в игру по вашей ссылке!`);
+}
+
 // Surfaced on /health beside the ops feed's own numbers: "the bot stopped
 // answering" and "the bot was never asked to answer" look identical from
 // outside and have completely different causes.
@@ -132,4 +154,4 @@ function status() {
   return { configured: !!token(), live: isLive(), ..._stats };
 }
 
-module.exports = { send, isLive, status };
+module.exports = { send, isLive, status, notifyFriendJoined };

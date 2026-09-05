@@ -98,6 +98,19 @@ const claim = async (pid, tier) => {
   eq((await shop.friendshipStatus(null, ref.id)).count, 1,
     'друг, зарегистрированный до FRIENDSHIP_LAUNCH_AT, не считается даже прокачанным');
 
+  // ── список друзей ────────────────────────────────────────────────────────
+  console.log('  ── список друзей ──');
+  const withList = await shop.friendshipStatus(null, ref.id);
+  eq(withList.friends.length, 2, 'в списке оба приглашённых, а не только считающиеся');
+  const lowRow = withList.friends.find(f => f.username === `${TAG}_low`);
+  const staleRow = withList.friends.find(f => f.username === `${TAG}_stale`);
+  ok(!!lowRow, 'друг ниже уровня в списке есть');
+  eq(lowRow && lowRow.lvl, D.FRIENDSHIP_LEVEL, 'и его уровень показан верно');
+  eq(lowRow && lowRow.counts, true, 'и он отмечен как считающийся — уровень достигнут');
+  ok(!!staleRow, 'друг, приглашённый до запуска, в списке тоже есть');
+  eq(staleRow && staleRow.counts, false,
+    'но отмечен как НЕ считающийся — дата регистрации раньше FRIENDSHIP_LAUNCH_AT');
+
   // ── первый тир ───────────────────────────────────────────────────────────
   console.log('  ── тир 1 ──');
   const t1 = D.FRIENDSHIP_TIERS.find(x => x.count === 1);
