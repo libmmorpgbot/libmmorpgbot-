@@ -1,19 +1,25 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  deploy — auto-deploy to the droplet after a green CI run on main
+#  deploy — auto-deploy to the droplet after a green CI run on postgres-migration
 # ═══════════════════════════════════════════════════════════════════════════
+#
+# postgres-migration is this repo's default/production branch (there is no
+# `main` — check with `git remote show origin` before ever changing this),
+# and it's the same branch dev/server-deploy.sh itself defaults to
+# (LIBERTY_BRANCH) when no commit is named explicitly.
 #
 # This is the automated half of dev/deploy.sh: that script is still how you
 # deploy from your own machine (and the only way to pass ADMIN_URL for a
 # migration that needs elevated DB rights — see its header). This workflow
-# covers the common case, a plain push to main, without a human at a
-# keyboard.
+# covers the common case, a plain push to postgres-migration, without a
+# human at a keyboard.
 #
 # ── why workflow_run instead of push ────────────────────────────────────────
 # Triggering on push would race CI: this would start deploying a commit CI
 # hasn't finished checking yet. workflow_run fires only once the `ci` workflow
 # (.github/workflows/ci.yml) has actually finished, and the job below checks
-# both that it finished GREEN and that it ran on main — a CI run from a pull
-# request has a different head_branch and never reaches deploy.
+# both that it finished GREEN and that it ran on postgres-migration — a CI
+# run from a pull request has a different head_branch and never reaches
+# deploy.
 #
 # ── why ADMIN_URL is never set here ─────────────────────────────────────────
 # dev/server-deploy.sh treats a missing ADMIN_URL as "only proceed if this
@@ -40,7 +46,8 @@
 #   2. Optionally repository variable LIBERTY_HOST, if the droplet's address
 #      ever changes — defaults to the address dev/deploy.sh itself uses.
 # Until the secret exists, this workflow's job is skipped (see the `if:` on
-# the ssh-key step) rather than failing loudly on every push to main.
+# the ssh-key step) rather than failing loudly on every push to
+# postgres-migration.
 name: deploy
 
 on:
@@ -52,7 +59,7 @@ jobs:
   deploy:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'postgres-migration'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
