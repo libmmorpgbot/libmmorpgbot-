@@ -1,0 +1,102 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  deploy — auto-deploy to the droplet after a green CI run on main
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This is the automated half of dev/deploy.sh: that script is still how you
+# deploy from your own machine (and the only way to pass ADMIN_URL for a
+# migration that needs elevated DB rights — see its header). This workflow
+# covers the common case, a plain push to main, without a human at a
+# keyboard.
+#
+# ── why workflow_run instead of push ────────────────────────────────────────
+# Triggering on push would race CI: this would start deploying a commit CI
+# hasn't finished checking yet. workflow_run fires only once the `ci` workflow
+# (.github/workflows/ci.yml) has actually finished, and the job below checks
+# both that it finished GREEN and that it ran on main — a CI run from a pull
+# request has a different head_branch and never reaches deploy.
+#
+# ── why ADMIN_URL is never set here ─────────────────────────────────────────
+# dev/server-deploy.sh treats a missing ADMIN_URL as "only proceed if this
+# deploy's migrations are already applied" and refuses otherwise — it will
+# NOT touch the running app. Deciding whether a migration is safe to run
+# unattended is the migration author's call, not this workflow's (see the
+# "МИГРАЦИЯ ОБЯЗАНА БЫТЬ ДОБАВЛЯЮЩЕЙ" comment in dev/server-deploy.sh) — so a
+# deploy that needs one simply fails here with a clear message, and someone
+# runs `bash dev/migrate-now.sh` by hand, same as today.
+#
+# ── what this does NOT do ───────────────────────────────────────────────────
+# The manual dev/deploy.sh also re-syncs dev/sync.sh's droplet copy
+# (/srv/liberty/pgtest) and re-runs dev/all-checks.sh there before deploying.
+# That predates ci.yml running the same checks against its own disposable
+# Postgres service on every push — this workflow only runs after THAT passed,
+# so re-running the same checks a second time on the droplet would just be
+# the same answer twice. If that stops being true (ci.yml stops covering a
+# check that pgtest still catches), bring the pgtest step back here too.
+#
+# ── setup required before this does anything ────────────────────────────────
+#   1. Repository secret LIBERTY_SSH_KEY — the PRIVATE half of a key
+#      authorized for root@<the droplet> (the same key dev/deploy.sh uses
+#      locally, or a new one added to the droplet's authorized_keys).
+#   2. Optionally repository variable LIBERTY_HOST, if the droplet's address
+#      ever changes — defaults to the address dev/deploy.sh itself uses.
+# Until the secret exists, this workflow's job is skipped (see the `if:` on
+# the ssh-key step) rather than failing loudly on every push to main.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+
+jobs:
+  deploy:
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      LIBERTY_HOST: ${{ vars.LIBERTY_HOST || '178.128.136.68' }}
+      COMMIT: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Проверить, что ключ деплоя настроен
+        id: keycheck
+        run: |
+          if [ -n "${{ secrets.LIBERTY_SSH_KEY }}" ]; then
+            echo "have_key=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_key=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::LIBERTY_SSH_KEY не задан — деплой пропущен. Добавьте секрет в Settings → Secrets and variables → Actions, чтобы включить авто-деплой."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.keycheck.outputs.have_key == '1'
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Ключ и known_hosts
+        if: steps.keycheck.outputs.have_key == '1'
+        env:
+          LIBERTY_SSH_KEY: ${{ secrets.LIBERTY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$LIBERTY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$LIBERTY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      # Канонический экземпляр деплой-скрипта — в репозитории (см. его же
+      # шапку). Кладём его на сервер перед каждым запуском, чтобы сервер
+      # выкладывал СЕБЯ версией из этого же коммита, а не вчерашней копией.
+      - name: Обновить деплой-скрипт на сервере
+        if: steps.keycheck.outputs.have_key == '1'
+        run: |
+          scp -i ~/.ssh/id_deploy -o BatchMode=yes dev/server-deploy.sh "root@$LIBERTY_HOST:/srv/liberty/deploy.sh"
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$LIBERTY_HOST" 'chmod +x /srv/liberty/deploy.sh'
+
+      - name: Холостой прогон
+        if: steps.keycheck.outputs.have_key == '1'
+        run: ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$LIBERTY_HOST" "bash /srv/liberty/deploy.sh --dry-run $COMMIT"
+
+      - name: Выложить
+        if: steps.keycheck.outputs.have_key == '1'
+        run: ssh -i ~/.ssh/id_deploy -o BatchMode=yes "root@$LIBERTY_HOST" "bash /srv/liberty/deploy.sh $COMMIT"
