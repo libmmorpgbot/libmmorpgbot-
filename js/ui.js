@@ -2640,6 +2640,11 @@ function _hudPanel(x, y, w, h, r, frame) {
 // A value bar (HP, XP, a party member's health) in the HUD's own style:
 // sunken track, gradient fill, a shine along the top of the fill.
 function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor) {
+  // Snapped to whole device-independent pixels: a track/fill drawn on a
+  // half-pixel boundary gets anti-aliased on both edges instead of one,
+  // which is a second, smaller source of the same "blurry" look as the
+  // undersized label font below.
+  x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
   ctx.fillStyle = 'rgba(4,9,16,0.85)';
   roundRect(ctx, x, y, w, h, h / 2); ctx.fill();
   ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
@@ -2654,12 +2659,24 @@ function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor) {
     roundRect(ctx, x + 1, y + 1, fw, (h - 2) / 2, (h - 2) / 2); ctx.fill();
   }
   if (label) {
-    ctx.font = `bold ${Math.round(h * 0.62)}px system-ui, -apple-system, sans-serif`;
+    // h*0.62 put the HP/XP readout at 6-7px on a scaled HUD — canvas text has
+    // no hinting at that size, so it renders as a grey smear rather than
+    // digits. Floored at 12: a thin bar's text overhangs it a little, which
+    // reads fine (it's how most game HUDs draw health text) and beats
+    // "technically inside, actually illegible."
+    const fontPx = Math.max(12, Math.round(h * 0.85));
+    ctx.font = `bold ${fontPx}px system-ui, -apple-system, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillText(label, x + w / 2, y + h / 2 + 1.2);
-    ctx.fillStyle = labelColor || 'rgba(233,244,255,0.92)';
-    ctx.fillText(label, x + w / 2, y + h / 2);
+    const lx = Math.round(x + w / 2), ly = Math.round(y + h / 2 + 0.5);
+    // A real stroke instead of a second offset fillText: the old approach
+    // read as a soft shadow that blurred INTO the glyph at small sizes
+    // rather than outlining it.
+    ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+    ctx.lineWidth = Math.max(2.5, fontPx * 0.22);
+    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+    ctx.strokeText(label, lx, ly);
+    ctx.fillStyle = labelColor || '#f4f9ff';
+    ctx.fillText(label, lx, ly);
   }
 }
 
@@ -2883,12 +2900,16 @@ function drawHeader() {
     _hudNum(Math.floor(p.xp)) + ' / ' + _hudNum(p.xpNext));
 
   // ── Currency chips ────────────────────────────────────────
-  const chipY = py + hud(74), chipH = hud(18), chipGap = hud(5), chipX0 = px + hud(10);
+  // Liberty (Nexum) is the balance players track exactly — teleport stones,
+  // gear crafting and pet crafting all cost precise Nexum amounts — so it is
+  // spelled out in full instead of through _hudNum's K/M/B rounding, which
+  // is fine for a glance at gold but hides the figure players need here.
+  const chipY = py + hud(74), chipH = hud(20), chipGap = hud(5), chipX0 = px + hud(10);
   const _nxBal = window._nexumBalance || 0;
   const _grBal = window._gramBalance || 0;
   const chips = [
     { icon: 'coin', color: '#f0b44a', val: _hudNum(p.gold) },
-    { img: '/images/nexum-coin_v2.png', color: '#7fd0ff', val: _hudNum(_nxBal) },
+    { img: '/images/nexum-coin_v2.png', color: '#7fd0ff', val: Math.floor(_nxBal).toLocaleString() },
     { img: '/images/gram-icon.png', color: '#5fe08f', val: _grBal >= 1000 ? _hudNum(_grBal) : _grBal.toFixed(2) },
   ];
   const chipW = (pRight + 1 - chipX0 - chipGap * (chips.length - 1)) / chips.length;
@@ -2901,13 +2922,27 @@ function drawHeader() {
     roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.stroke();
     if (c.img) {
       const img = _getPotImg(c.img);
-      if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, cx + hud(3), chipY + hud(3), hud(12), hud(12));
+      if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, cx + hud(3), chipY + hud(4), hud(12), hud(12));
       else drawIconCtx(ctx, 'coin', cx + hud(9), chipY + chipH / 2, hud(11), c.color);
     } else {
       drawIconCtx(ctx, c.icon, cx + hud(9), chipY + chipH / 2, hud(11), c.color);
     }
-    ctx.font = `bold ${hudF(9.5)}px ${F}`; ctx.textAlign = 'left'; ctx.fillStyle = c.color;
-    ctx.fillText(c.val, cx + hud(18), chipY + chipH / 2 + 0.5);
+    // Same 8px-with-no-hinting illegibility as the HP/XP bars, plus a
+    // shrink-to-fit so an un-rounded Liberty balance stays inside its chip
+    // instead of running under the next one.
+    const textX = cx + hud(19), maxTextW = cx + chipW - hud(4) - textX;
+    let fontPx = Math.max(11, hudF(13));
+    ctx.font = `bold ${fontPx}px ${F}`;
+    while (fontPx > 8 && ctx.measureText(c.val).width > maxTextW) {
+      fontPx -= 0.5;
+      ctx.font = `bold ${fontPx}px ${F}`;
+    }
+    ctx.textAlign = 'left';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(c.val, textX, chipY + chipH / 2 + 0.5);
+    ctx.fillStyle = c.color;
+    ctx.fillText(c.val, textX, chipY + chipH / 2 + 0.5);
   }
 
   ctx.restore();
