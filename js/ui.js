@@ -2909,8 +2909,8 @@ function drawHeader() {
   const _grBal = window._gramBalance || 0;
   const chips = [
     { icon: 'coin', color: '#f0b44a', val: _hudNum(p.gold) },
-    { img: '/images/nexum-coin_v2.png', color: '#7fd0ff', val: Math.floor(_nxBal).toLocaleString() },
-    { img: '/images/gram-icon.png', color: '#5fe08f', val: _grBal >= 1000 ? _hudNum(_grBal) : _grBal.toFixed(2) },
+    { img: '/images/nexum-coin_v2.png', color: '#5fe08f', val: Math.floor(_nxBal).toLocaleString() },
+    { img: '/images/gram-icon.png', color: '#7fd0ff', val: _grBal >= 1000 ? _hudNum(_grBal) : _grBal.toFixed(2) },
   ];
   const chipW = (pRight + 1 - chipX0 - chipGap * (chips.length - 1)) / chips.length;
   ctx.textBaseline = 'middle';
