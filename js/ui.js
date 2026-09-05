@@ -2639,7 +2639,7 @@ function _hudPanel(x, y, w, h, r, frame) {
 
 // A value bar (HP, XP, a party member's health) in the HUD's own style:
 // sunken track, gradient fill, a shine along the top of the fill.
-function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor) {
+function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor, fontScale) {
   // Snapped to whole device-independent pixels: a track/fill drawn on a
   // half-pixel boundary gets anti-aliased on both edges instead of one,
   // which is a second, smaller source of the same "blurry" look as the
@@ -2661,12 +2661,24 @@ function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor) {
   if (label) {
     // h*0.62 put the HP/XP readout at 6-7px on a scaled HUD — canvas text has
     // no hinting at that size, so it renders as a grey smear rather than
-    // digits. Floored at 12: a thin bar's text overhangs it a little, which
-    // reads fine (it's how most game HUDs draw health text) and beats
-    // "technically inside, actually illegible."
-    const fontPx = Math.max(12, Math.round(h * 0.85));
-    ctx.font = `bold ${fontPx}px system-ui, -apple-system, sans-serif`;
+    // digits. Floored at 12 (scaled down again by fontScale for callers that
+    // ask for it — the player's own HP/XP bar, now printing the full,
+    // un-abbreviated number, wants it smaller so a long value still fits):
+    // a thin bar's text overhangs it a little, which reads fine (it's how
+    // most game HUDs draw health text) and beats "technically inside,
+    // actually illegible."
+    const fs = fontScale || 1;
+    let fontPx = Math.max(Math.round(12 * fs), Math.round(h * 0.85 * fs));
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${fontPx}px system-ui, -apple-system, sans-serif`;
+    // Shrink-to-fit: a full, comma-separated HP/XP number can run longer than
+    // an abbreviated one ever did, and this is the guard against it running
+    // past the bar's own ends.
+    const maxTextW = w - 6;
+    while (fontPx > 7 && ctx.measureText(label).width > maxTextW) {
+      fontPx -= 0.5;
+      ctx.font = `bold ${fontPx}px system-ui, -apple-system, sans-serif`;
+    }
     const lx = Math.round(x + w / 2), ly = Math.round(y + h / 2 + 0.5);
     // A real stroke instead of a second offset fillText: the old approach
     // read as a soft shadow that blurred INTO the glyph at small sizes
@@ -2886,18 +2898,24 @@ function drawHeader() {
   ctx.fillText(_hudNum(typeof calcBM === 'function' ? calcBM(p) : 0), bmX + bmLblW + hud(4), py + hud(35));
 
   // ── HP / XP ───────────────────────────────────────────────
+  // Full numbers, not _hudNum's K/M/B rounding: unlike the BM figure above,
+  // this is the one pair of stats a player actually reads exact values off
+  // of moment to moment. fontScale 0.7 makes room for the longer string —
+  // see _hudBar's shrink-to-fit for the rest of that margin.
   const barX = infoX, barW = pRight - infoX;
   _hudBar(barX, py + hud(42), barW, hud(12),
     p.maxHp ? p.hp / p.maxHp : 0,
     '#2f7a2a', '#5fd45a',
-    Math.ceil(p.hp) + ' / ' + p.maxHp);
+    Math.ceil(p.hp).toLocaleString() + ' / ' + Math.floor(p.maxHp).toLocaleString(),
+    null, 0.7);
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
   // that into "858.9999999999418" on the bar.
   _hudBar(barX, py + hud(58), barW, hud(10),
     p.xpNext ? p.xp / p.xpNext : 0,
     '#8a5a12', '#f0a63c',
-    _hudNum(Math.floor(p.xp)) + ' / ' + _hudNum(p.xpNext));
+    Math.floor(p.xp).toLocaleString() + ' / ' + Math.floor(p.xpNext).toLocaleString(),
+    null, 0.7);
 
   // ── Currency chips ────────────────────────────────────────
   // Liberty (Nexum) is the balance players track exactly — teleport stones,
