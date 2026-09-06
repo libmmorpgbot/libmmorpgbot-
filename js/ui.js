@@ -5750,7 +5750,7 @@ function _arena3BodyHTML() {
 // covers the gap between rounds (see server/game/tournament.js's file header)
 // where this player is neither actively fighting nor free to register again.
 function _tournamentBodyHTML() {
-  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10, gapEndAt: 0 };
   const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
   const alive = typeof _trAlive !== 'undefined' && _trAlive;
   const open = st.phase === 'reg';
@@ -5779,9 +5779,16 @@ function _tournamentBodyHTML() {
     action = `<button class="db-action" onclick="netTournamentRegister()">${t('dbJoinBtn')}</button>`;
   }
 
+  // Between rounds (alive, not fighting), the gap has a real end time from
+  // the server (st.gapEndAt) — show that ticking down rather than the static
+  // registration count, which no longer means anything once the bracket is
+  // running (registration cleared the moment the tournament started).
+  const gapLeft = alive && !inMatch ? (st.gapEndAt || 0) - Date.now() : 0;
   const countdown = (!open && !inMatch && !alive)
     ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
-    : tVars('trCountFmt', { n: st.queued, need: st.needed });
+    : (gapLeft > 0)
+      ? _fmtEventEta(gapLeft)
+      : tVars('trCountFmt', { n: st.queued, need: st.needed });
 
   return `
     <div style="padding:16px">
@@ -6698,6 +6705,11 @@ function _dbRewardRows(gram, items) {
 // visible one is rendered.
 if (typeof setInterval === 'function') {
   setInterval(() => { if (_eventsPanelOpen()) _renderEventsBody(); }, 1000);
+  // Same idea for the standalone Турнир panel's own "Регистрация" tab: the
+  // between-round gap countdown (_tournamentBodyHTML's gapLeft) only reads
+  // as a live timer if something repaints it once a second — onTournamentState
+  // alone only fires on server pushes (round start/end), not every tick.
+  setInterval(() => { if (_tournamentPanelOpen() && _tourTab === 'reg') _renderTournamentPanelBody(); }, 1000);
 }
 
 // Victory modal. The prize is already granted server-side by the time this

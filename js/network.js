@@ -4518,9 +4518,23 @@ function _initTournamentHandlers(s) {
       live: !!st.live, minLevel: st.minLevel || 15,
       round: st.round || 0, totalRounds: st.totalRounds || 10,
       bracket: Array.isArray(st.bracket) ? st.bracket : [],
+      gapEndAt: st.gapEndAt || 0,
     };
     if (st.registered !== undefined) _trRegistered = !!st.registered;
     if (st.inMatch !== undefined) _trInMatch = !!st.inMatch;
+    // Between-round countdown: still alive in the bracket, not fighting right
+    // now, and the server has a real gap end time — reuses the same on-screen
+    // widget the live fight clock does (showArena3Timer/hideArena3Timer).
+    // Never touched while _trInMatch is true so this can't stomp the fight
+    // clock a tournamentState broadcast happens to land during — that one's
+    // owned entirely by tournamentFight/tournamentMatchResult below.
+    if (!_trInMatch) {
+      if (_trAlive && _trState.gapEndAt > Date.now()) {
+        if (typeof showArena3Timer === 'function') showArena3Timer(_trState.gapEndAt);
+      } else if (typeof hideArena3Timer === 'function') {
+        hideArena3Timer();
+      }
+    }
     if (typeof onTournamentState === 'function') onTournamentState();
   });
 

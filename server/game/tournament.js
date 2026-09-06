@@ -80,6 +80,12 @@ module.exports = function createTournament(deps) {
     bracketHistory: [],
 
     fightAt: 0, roundEndAt: 0,
+    // Wall-clock time the between-round gap ends, or 0 outside one — set by
+    // _trAfterRound right before it arms gapTimer, cleared by _trStartRound
+    // the moment the next round actually begins. Broadcast via
+    // _trPublicState so clients waiting between rounds have a real countdown
+    // to render instead of no timer at all.
+    gapEndAt: 0,
     freezeTimer: null, fightTimer: null, gapTimer: null,
     openTimer: null, closeTimer: null, notifyTimer: null,
   };
@@ -105,6 +111,8 @@ module.exports = function createTournament(deps) {
       minLevel: TOURNAMENT_MIN_LEVEL,
       round: _tr.roundIndex,
       totalRounds: TOURNAMENT_TOTAL_ROUNDS,
+      // 0 outside a between-round gap — see _tr.gapEndAt's own comment.
+      gapEndAt: _tr.gapEndAt,
       // Real per-round matchups, only for rounds actually dealt so far — see
       // _trStartRound/_trMarkWinner. Reset to [] by _trTryStart, so last
       // tournament's finished bracket stays visible until the next one begins.
@@ -346,13 +354,14 @@ module.exports = function createTournament(deps) {
   }
 
   // Applies this round's results and either arms the next round (after the
-  // 3-minute gap) or, if this was the last one, does nothing further — round
-  // 10's own _trApplyRoundResults already ended the tournament.
+  // TOURNAMENT_ROUND_GAP_MS gap) or, if this was the last one, does nothing
+  // further — round 10's own _trApplyRoundResults already ended the tournament.
   function _trAfterRound(idx) {
     _trApplyRoundResults(idx);
     _tr.matches.clear(); _tr.matchTag.clear(); _tr.roundResults.clear(); _tr.dmg.clear();
     if (idx >= TOURNAMENT_TOTAL_ROUNDS) return;
     clearTimeout(_tr.gapTimer);
+    _tr.gapEndAt = Date.now() + TOURNAMENT_ROUND_GAP_MS;
     _tr.gapTimer = safeTimeout('trGap', () => _trStartRound(idx + 1), TOURNAMENT_ROUND_GAP_MS);
     _trBroadcast();
   }
@@ -368,6 +377,7 @@ module.exports = function createTournament(deps) {
     const room = getRoom(FLOOR_IDS.tournament);
     if (!room) return;
     _tr.roundIndex = idx;
+    _tr.gapEndAt = 0; // the gap this round was waiting out is over
     _tr.matchTag.clear();
     _tr.roundResults.clear();
     const groups = _trBuildRoundGroups(idx);
