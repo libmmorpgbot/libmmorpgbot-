@@ -2590,6 +2590,20 @@ function passiveBonusTotal(passiveLevels, cls) {
 // GRAM threshold to reach THIS level (counter resets after each level-up)
 const VIP_THRESHOLDS = [0, 1, 5, 10, 25, 50, 100, 150, 200, 300, 500];
 
+// The running TOTAL a player must have deposited overall (since VIP 0) to be
+// AT each level — index i is VIP_THRESHOLDS[0]+...+VIP_THRESHOLDS[i]. Needed
+// because `deposited` (server/db/repos/progression.js's addVipSpend) is a
+// lifetime total that never resets, so it must be compared against a running
+// total too — comparing it against VIP_THRESHOLDS[i] directly (a per-level
+// delta) let players clear several levels off a single purchase, since each
+// delta is far smaller than what depositing THAT MANY levels actually costs.
+// js/ui.js's VIP panel derives the same numbers for its "total needed"
+// display; both read this one array so they cannot drift apart again.
+const VIP_CUMULATIVE = VIP_THRESHOLDS.reduce((out, t, i) => {
+  out.push(i === 0 ? t : out[i - 1] + t);
+  return out;
+}, []);
+
 // Cumulative permanent bonuses at each VIP level (index = level)
 const VIP_BONUSES = [
   { xp:0,   gold:0,   drop:0   }, // 0 – no VIP
@@ -2883,7 +2897,7 @@ if (typeof module !== 'undefined') module.exports = {
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
-  VIP_THRESHOLDS, VIP_BONUSES,
+  VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
