@@ -2193,6 +2193,31 @@ const GUILD_WAR_SHARD_MIN = 10;
 const GUILD_WAR_SHARD_MAX = 30;
 const GUILD_WAR_INCOME_INTERVAL_MS = 60 * 60 * 1000;
 
+// ── Tournament ("Турнир", 32-player double elimination) ─────────────────────
+// Registration opens every day at 23:00 Moscow time and stays open until
+// either 32 people have signed up (the bracket starts immediately, without
+// waiting for the rest of the window) or TOURNAMENT_WINDOW_MS runs out with
+// too few — same reg-window shape as arena3/race10 above, just a longer
+// window because 32 sign-ups is a much higher bar than 6.
+const TOURNAMENT_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
+const TOURNAMENT_HOURS_MSK = [23];
+const TOURNAMENT_WINDOW_MS = 3 * 60 * 60 * 1000;
+const TOURNAMENT_SIZE = 32;
+const TOURNAMENT_MIN_LEVEL = 15;
+
+// One fight lasts a minute. If both sides are still standing when it runs
+// out, whoever dealt more damage over the minute advances — a bracket match
+// cannot end in "nobody wins" the way an open death-battle round can, since
+// there is always a next round waiting on exactly one of the two.
+const TOURNAMENT_FIGHT_MS = 60 * 1000;
+// Grace before the clock actually starts, once a round's players have all
+// landed on the ring — same idea as DEATH_BATTLE_FREEZE_MS, shorter because
+// this is a 1v1 stare-down rather than a scatter of up to 32 strangers.
+const TOURNAMENT_COUNTDOWN_MS = 15 * 1000;
+// How long the ring sits empty between rounds, once every match from the
+// round just finished — win, loss or timeout — has been decided.
+const TOURNAMENT_ROUND_GAP_MS = 3 * 60 * 1000;
+
 // Both events warn everyone over the bot this far ahead, then again on start.
 const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;
 
@@ -2947,6 +2972,8 @@ if (typeof module !== 'undefined') module.exports = {
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
+  TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, TOURNAMENT_WINDOW_MS, TOURNAMENT_SIZE, TOURNAMENT_MIN_LEVEL,
+  TOURNAMENT_FIGHT_MS, TOURNAMENT_COUNTDOWN_MS, TOURNAMENT_ROUND_GAP_MS,
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
   GUILD_WAR_TOWER_HP, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,

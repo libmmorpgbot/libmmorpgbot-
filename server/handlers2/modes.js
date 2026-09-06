@@ -117,12 +117,14 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     _coop, _coopGroupOf, _createFearRoom, _db, _dbBroadcast, _dbPublicState,
     _dbReturnEntrant, _farm2, _farm2GroupOf, _fear, _fearStartWave,
     _race10, _race10Broadcast, _race10PublicState,
+    _tr, _trAllies, _trBroadcast, _trEnemies, _trPublicState, _trTryStart, _trTrackDamage,
     ARENA3_MIN_LEVEL, FEAR_ATTEMPTS, FEAR_MIN_LEVEL, FEAR_START_DELAY_MS,
     RACE10_MIN_LEVEL,
   } = modes;
-  // FEAR_MAX_WAVE is not the fear module's to own — Room.js reads it too, so
-  // it lives in shared/definitions and both take it from there.
-  const { FEAR_MAX_WAVE } = require('../../shared/definitions');
+  // FEAR_MAX_WAVE/TOURNAMENT_MIN_LEVEL/TOURNAMENT_SIZE are not fear.js/
+  // tournament.js's to own — Room.js and this file need them too, so all
+  // three live in shared/definitions.
+  const { FEAR_MAX_WAVE, TOURNAMENT_MIN_LEVEL, TOURNAMENT_SIZE } = require('../../shared/definitions');
   const { playerParty, safeTimeout } = deps;
   const { _pvpEliminate, _pvpFrozen, _returnToHub } = modes;
 
@@ -215,6 +217,13 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       // to share a party or a clan with the attacker.
       if (_a3Allies(attackerId, targetId)) return true;
       if (_a3Enemies(attackerId, targetId)) return false;
+      // A tournament pit is the same shape as arena3's teams, just 1v1: only
+      // your assigned opponent may ever hit you, and always can, even sharing
+      // a party or clan with them — see _trAllies/_trEnemies (server/game/
+      // tournament.js) for why distance alone (pits sit fairly close together
+      // on that floor) isn't what keeps different pits apart.
+      if (_trAllies(attackerId, targetId)) return true;
+      if (_trEnemies(attackerId, targetId)) return false;
       // A death battle is a free-for-all: party and clan protection would let
       // allied entrants refuse to fight and stall the round forever, so both are
       // suspended for as long as the two of them are in the same live round.
@@ -240,6 +249,9 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       // a modified client always report 0 and become unkillable.
       io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
       s.socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+      // Tallied unconditionally, not just on a kill — a tournament match the
+      // clock decides needs every hit counted, not only a killing one.
+      _trTrackDamage(s.socket.id, targetId, result.dmg);
       if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, s.socket.id, s.room); }
     });
 
@@ -254,6 +266,7 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (!result) return;
       io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
       s.socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+      _trTrackDamage(s.socket.id, targetId, result.dmg);
       if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, s.socket.id, s.room); }
     });
 
@@ -448,6 +461,62 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
         registered: _a3.queue.has(s.socket.id),
         inMatch: _a3.teams.has(s.socket.id),
         attemptsLeft: await modes.attemptsLeft(s.socket.id, 'arena3'),
+      });
+    });
+
+    // ── Турнир (32-player double elimination) ────────────────────────────────
+    safeOn('tournamentRegister', () => {
+      if (!s.authed) return;
+      if (_tr.matches.has(s.socket.id)) return; // already mid-bracket
+      if (_tr.phase !== 'reg') return s.socket.emit('tournamentError', { msg: 'Регистрация на турнир открыта в 23:00 по Москве' });
+      // Exact cap, not "at least" like arena3/race10 — the whole bracket below
+      // is a fixed shape built for exactly 32, not a variable N.
+      if (_tr.reg.size >= TOURNAMENT_SIZE && !_tr.reg.has(s.socket.id)) {
+        return s.socket.emit('tournamentError', { msg: `Регистрация заполнена (${TOURNAMENT_SIZE}/${TOURNAMENT_SIZE})` });
+      }
+      const cp = s.room?.players.get(s.socket.id);
+      if (!cp) return s.socket.emit('tournamentError', { msg: 'Выберите персонажа' });
+      const lvl = levelOf();
+      if (lvl < TOURNAMENT_MIN_LEVEL) {
+        return s.socket.emit('tournamentError', { msg: `Нужен ${TOURNAMENT_MIN_LEVEL} уровень` });
+      }
+      // Same cross-mode checks every other queue applies — a bracket that
+      // yanks someone out of another live event mid-fight (or the reverse)
+      // is worse than refusing the sign-up outright.
+      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
+        return s.socket.emit('tournamentError', { msg: 'Вы уже записаны на битву на смерть' });
+      }
+      if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
+        return s.socket.emit('tournamentError', { msg: 'Вы сейчас на арене 3х3' });
+      }
+      if (_race10.queue.has(s.socket.id) || (_race10.live && _race10.alive.has(s.socket.id))) {
+        return s.socket.emit('tournamentError', { msg: 'Вы сейчас в Кровавой Башне' });
+      }
+      if (_fear.has(s.socket.id)) return s.socket.emit('tournamentError', { msg: 'Вы сейчас в Страхе' });
+      if (_coop.has(s.socket.id) || _coopGroupOf.has(s.socket.id)) {
+        return s.socket.emit('tournamentError', { msg: 'Вы сейчас в Сотрудничестве' });
+      }
+      if (_farm2.has(s.socket.id) || _farm2GroupOf.has(s.socket.id)) {
+        return s.socket.emit('tournamentError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
+      }
+      _tr.reg.set(s.socket.id, { name: s.username });
+      s.socket.emit('tournamentRegistered', { registered: true });
+      _trBroadcast();
+      _trTryStart();
+    });
+
+    safeOn('tournamentUnregister', () => {
+      if (_tr.phase !== 'reg') return;
+      if (!_tr.reg.delete(s.socket.id)) return;
+      s.socket.emit('tournamentRegistered', { registered: false });
+      _trBroadcast();
+    });
+
+    safeOn('tournamentSync', () => {
+      s.socket.emit('tournamentState', {
+        ..._trPublicState(),
+        registered: _tr.reg.has(s.socket.id),
+        inMatch: _tr.matches.has(s.socket.id),
       });
     });
 

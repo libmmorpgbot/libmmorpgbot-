@@ -2477,6 +2477,8 @@ function _syncGameOnlyBtns(n) {
   if (teleEl && teleEl.dataset.shown === '1') teleEl.style.display = (n === 0) ? 'flex' : 'none';
   const menuEl = document.getElementById('hud-menu-btn');
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
+  const tourEl = document.getElementById('tournament-hud-btn');
+  if (tourEl && tourEl.dataset.shown === '1') tourEl.style.display = (n === 0) ? 'flex' : 'none';
   const subDisplay = (n === 0 && _hudMenuExpanded) ? 'flex' : 'none';
   _HUD_MENU_BTN_IDS.forEach(id => {
     const el = document.getElementById(id);
@@ -5085,6 +5087,33 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
+// Турнир sits inline in the player plate's own NAME row, right-aligned to
+// the same pRight edge the HP/XP bars and currency chips use — the row has
+// the name on the left and empty space the rest of the way across, which is
+// exactly where the owner pointed it. The plate itself is canvas-drawn
+// (drawHeader, above in this file); its geometry is duplicated here rather
+// than shared because drawHeader computes it fresh every frame from locals,
+// with nothing exported — px/py/pw/pRight use the exact same hud()-scaled
+// formula it does, so a drift between the two can't put this button over the
+// HP bar instead of the name row. Not part of the hud-menu-btn column at
+// all — see the comment on it in index.html for why it gets its own anchor.
+function _positionTournamentBtn() {
+  const btn = document.getElementById('tournament-hud-btn');
+  if (!btn) return;
+  if (!W) { requestAnimationFrame(_positionHudColumn); return; }
+  const mp = hudMiniMapRect();
+  const px = hud(6), py = hud(4), pw = mp.x - px - hud(4);
+  const pRight = px + pw - hud(11);
+  const w = hud(78), h = hud(22);
+  btn.style.top    = (py + hud(5)) + 'px';
+  btn.style.left   = (pRight - w) + 'px';
+  btn.style.width  = w + 'px';
+  btn.style.height = h + 'px';
+  btn.style.right  = 'auto';
+  btn.style.transform = 'none';
+  btn.style.fontSize = hudF(11.5) + 'px';
+}
+
 // hud-menu-btn sits directly under the minimap plate, aligned to it —
 // everything else in this column chains its position off the button above it,
 // so this one anchor cascades the whole stack.
@@ -5108,6 +5137,7 @@ function _positionHudMenuBtn() {
 // whenever the column is unfolded, so a stale or half-applied layout can
 // never survive on screen.
 function _positionHudColumn() {
+  _positionTournamentBtn();
   _positionHudMenuBtn();
   _positionRatingBtn();
   _positionVipBtn();
@@ -5116,6 +5146,11 @@ function _positionHudColumn() {
   _positionEventsBtn();
   _positionSeasonBtn();
   _positionCodexBtn();
+}
+
+function showTournamentHudBtn() {
+  const btn = document.getElementById('tournament-hud-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionTournamentBtn(); }
 }
 
 function showHudMenuBtn() {
@@ -5584,6 +5619,7 @@ function openEventsPanel() {
   if (typeof netFearSync === 'function') netFearSync();
   if (typeof netCoopSync === 'function') netCoopSync();
   if (typeof netFarm2Sync === 'function') netFarm2Sync();
+  if (typeof netTournamentSync === 'function') netTournamentSync();
   showEventsList();
 }
 
@@ -5630,6 +5666,7 @@ function _renderEventsBody() {
                  : _eventTab === 'coop'      ? _coopBodyHTML()
                  : _eventTab === 'farm2'     ? _farm2BodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
+                 : _eventTab === 'tournament'? _tournamentBodyHTML()
                  : _deathBattleBodyHTML();
 }
 
@@ -5706,6 +5743,170 @@ function _arena3BodyHTML() {
         </div>
       </div>
     </div>`;
+}
+
+// ── Турнир tab (32-player double elimination) ────────────────────────────────
+// _trState is pushed by js/network.js's tournamentState handler; _trAlive
+// covers the gap between rounds (see server/game/tournament.js's file header)
+// where this player is neither actively fighting nor free to register again.
+function _tournamentBodyHTML() {
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
+  const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
+  const alive = typeof _trAlive !== 'undefined' && _trAlive;
+  const open = st.phase === 'reg';
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = lvl < (st.minLevel || 15);
+
+  let phaseTxt, action;
+  if (inMatch) {
+    const opp = (typeof _trOpponent !== 'undefined' && _trOpponent) ? ' — ' + tVars('trOpponentFmt', { name: _trOpponent }) : '';
+    phaseTxt = tVars('trRoundFmt', { n: st.round, total: st.totalRounds }) + opp;
+    action = `<button class="db-action" disabled>${t('trPhaseFighting')}</button>`;
+  } else if (alive) {
+    phaseTxt = tVars('trRoundFmt', { n: st.round, total: st.totalRounds });
+    action = `<button class="db-action" disabled>${t('trPhaseWaiting')}</button>`;
+  } else if (!open) {
+    phaseTxt = t('trPhaseIdle');
+    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('trNeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('trNeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (_trRegistered) {
+    phaseTxt = t('trPhaseQueued');
+    action = `<button class="db-action db-leave" onclick="netTournamentUnregister()">${t('dbLeaveBtn')}</button>`;
+  } else {
+    phaseTxt = t('trPhaseIdle');
+    action = `<button class="db-action" onclick="netTournamentRegister()">${t('dbJoinBtn')}</button>`;
+  }
+
+  const countdown = (!open && !inMatch && !alive)
+    ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
+    : tVars('trCountFmt', { n: st.registered, need: st.needed });
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${countdown}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${t('trRule1')}</li>
+          <li>${t('trRule2')}</li>
+          <li>${t('trRule3')}</li>
+          <li>${t('trRule4')}</li>
+          <li>${t('trRule5')}</li>
+          <li>${t('trRule6')}</li>
+          <li>${t('trRule7')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+function onTournamentState() {
+  if (_eventsPanelOpen() && _eventTab === 'tournament') _renderEventsBody();
+  // The standalone panel (tournament-hud-btn) shows the same registration
+  // card on its own "Регистрация" tab, and its "Сетка" tab highlights the
+  // live round — both need to hear about every state push too.
+  if (_tournamentPanelOpen() && (_tourTab === 'reg' || _tourTab === 'bracket')) _renderTournamentPanelBody();
+}
+
+// ── Турнир panel (tournament-hud-btn) ────────────────────────────────────────
+// Separate from the compact card above: this is the dedicated screen with its
+// own three tabs (Регистрация / Сетка / Рейтинг), opened from the standing
+// gold button under the minimap rather than from the "События" list.
+let _tourTab = 'reg';
+let _tourRatingData = null; // null = not loaded yet, [] = loaded and empty
+
+function openTournamentPanel() {
+  const panel = document.getElementById('tournament-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  if (typeof netTournamentSync === 'function') netTournamentSync();
+  switchTournamentTab(_tourTab);
+}
+
+function closeTournamentPanel() {
+  const panel = document.getElementById('tournament-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _tournamentPanelOpen() {
+  return document.getElementById('tournament-panel')?.style.display === 'flex';
+}
+
+function switchTournamentTab(tab) {
+  _tourTab = tab;
+  ['reg', 'bracket', 'rating'].forEach(id => document.getElementById('ttab-' + id)?.classList.toggle('active', id === tab));
+  _renderTournamentPanelBody();
+  if (tab === 'rating' && _tourRatingData === null && typeof netGetTournamentRating === 'function') netGetTournamentRating();
+}
+
+function _renderTournamentPanelBody() {
+  const el = document.getElementById('tournament-panel-body');
+  if (!el) return;
+  el.innerHTML = _tourTab === 'bracket' ? _tournamentBracketBodyHTML()
+               : _tourTab === 'rating'  ? _tournamentRatingBodyHTML()
+               : _tournamentBodyHTML(); // same registration card as the compact "События" tab
+}
+
+// The fixed 10-round shape (server/game/tournament.js) — always the same
+// regardless of whether a tournament is currently running, so this is a
+// static table with the live round (if any) simply highlighted.
+const _TOUR_STAGE_TABLE = [
+  { r: 1,  tags: [['Верх', 'ub']],                          players: 32, matches: 16 },
+  { r: 2,  tags: [['Верх', 'ub'], ['Низ · LB1', 'lb']],      players: 32, matches: 16 },
+  { r: 3,  tags: [['Верх', 'ub'], ['Низ · LB2', 'lb']],      players: 24, matches: 12 },
+  { r: 4,  tags: [['Верх', 'ub'], ['Низ · LB3', 'lb']],      players: 12, matches: 6 },
+  { r: 5,  tags: [['Финал верха', 'ub'], ['Низ · LB4', 'lb']], players: 10, matches: 5 },
+  { r: 6,  tags: [['Низ · LB5', 'lb']],                      players: 4,  matches: 2 },
+  { r: 7,  tags: [['Низ · LB6', 'lb']],                      players: 4,  matches: 2 },
+  { r: 8,  tags: [['Низ · LB7', 'lb']],                      players: 2,  matches: 1 },
+  { r: 9,  tags: [['Финал низа', 'lb']],                     players: 2,  matches: 1 },
+  { r: 10, tags: [['Гранд-финал', 'gf']],                    players: 2,  matches: 1 },
+];
+
+function _tournamentBracketBodyHTML() {
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', round: 0, totalRounds: 10 };
+  const liveRound = st.phase === 'live' ? st.round : 0;
+  const status = liveRound
+    ? `<div class="db-count">Сейчас идёт раунд ${liveRound} из ${st.totalRounds}</div>`
+    : `<div class="rating-sub" style="text-align:center;margin-bottom:12px">Сетка фиксированная — турнир сейчас не идёт</div>`;
+  const rows = _TOUR_STAGE_TABLE.map(s => `
+    <div class="tour-round-row${s.r === liveRound ? ' tour-round-live' : ''}">
+      <div class="tour-round-num">${s.r}</div>
+      <div class="tour-round-tags">
+        ${s.tags.map(([label, cls]) => `<span class="tour-round-tag tour-tag-${cls}">${label}</span>`).join('')}
+      </div>
+      <div class="tour-round-meta"><b>${s.players}</b>${s.matches} ${s.matches === 1 ? 'матч' : 'матчей'}</div>
+    </div>`).join('');
+  return status + rows;
+}
+
+function _tournamentRatingBodyHTML() {
+  if (_tourRatingData === null) return `<div class="rating-loading">${t('questLoading')}</div>`;
+  if (!_tourRatingData.length) return `<div class="rating-empty">Чемпионов пока нет — станьте первым</div>`;
+  return _tourRatingData.map((r, i) => `
+    <div class="rating-row">
+      <div class="rating-rank${i < 3 ? ' rating-rank-' + (i + 1) : ''}">${i + 1}</div>
+      <div class="rating-avatar">🏆</div>
+      <div class="rating-name">${_escHtml(r.username)}</div>
+      <div class="rating-bm">
+        <div class="rating-bm-val">${r.wins}</div>
+        <div class="rating-bm-lbl">побед</div>
+      </div>
+    </div>`).join('');
+}
+
+function onTournamentRatingData(rows) {
+  _tourRatingData = rows || [];
+  if (_tournamentPanelOpen() && _tourTab === 'rating') _renderTournamentPanelBody();
+}
+
+function onTournamentRatingError(msg) {
+  const el = document.getElementById('tournament-panel-body');
+  if (el && _tourTab === 'rating') el.innerHTML = `<div class="rating-empty">${_escHtml(msg || t('ratingErrorToast'))}</div>`;
+  if (typeof _marketToast === 'function') _marketToast(msg || t('ratingErrorToast'), 'err');
 }
 
 // ── Кровавая Башня tab (10-player corridor race) ────────────────────────────

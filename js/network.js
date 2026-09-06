@@ -3796,6 +3796,7 @@ function _finishOnlineStart() {
   if (teleBtn) { teleBtn.dataset.shown = '1'; teleBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
   if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   _refreshChatPreview();
+  if (typeof showTournamentHudBtn === 'function') showTournamentHudBtn();
   if (typeof showHudMenuBtn === 'function') showHudMenuBtn();
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
@@ -4252,6 +4253,7 @@ function _initEventBossHandlers(s) {
   });
   _initDeathBattleHandlers(s);
   _initArena3Handlers(s);
+  _initTournamentHandlers(s);
   _initRace10Handlers(s);
   _initFearHandlers(s);
   _initCoopHandlers(s);
@@ -4489,6 +4491,120 @@ function _initArena3Handlers(s) {
     if (balance == null) return;
     window._nexumBalance = balance;
     if (player) player.nexumBalance = balance;
+  });
+}
+
+function netTournamentRegister()   { if (socket?.connected) socket.emit('tournamentRegister'); }
+function netTournamentUnregister() { if (socket?.connected) socket.emit('tournamentUnregister'); }
+function netTournamentSync()       { if (socket?.connected) socket.emit('tournamentSync'); }
+// Champions leaderboard for the standalone Турнир panel's "Рейтинг" tab —
+// separate request from tournamentSync (that one's just phase/registration).
+function netGetTournamentRating()  { if (socket?.connected) socket.emit('getTournamentRating'); }
+
+// ── Турнир (32-player double elimination) ────────────────────────────────────
+// Reuses the death-battle/arena3 freeze overlay (showDeathBattleFreeze) and
+// arena3's own round-clock display (showArena3Timer) for the countdown and
+// fight timer rather than a third copy of the same UI — see js/state.js's
+// _trRoundEndAt comment.
+function _initTournamentHandlers(s) {
+  s.on('tournamentState', (st) => {
+    _trState = {
+      phase: st.phase || 'idle', nextAt: st.nextAt || 0,
+      registered: st.registered || 0, needed: st.needed || 32,
+      live: !!st.live, minLevel: st.minLevel || 15,
+      round: st.round || 0, totalRounds: st.totalRounds || 10,
+    };
+    if (st.registered !== undefined) _trRegistered = !!st.registered;
+    if (st.inMatch !== undefined) _trInMatch = !!st.inMatch;
+    if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  s.on('tournamentRegistered', ({ registered }) => {
+    _trRegistered = !!registered;
+    _trAlive = !!registered;
+    if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  s.on('tournamentError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg, 'err');
+  });
+
+  // The bracket has deployed this player's next match — mirrors
+  // deathBattleStarted/arena3Started: the server has already moved this
+  // connection onto the ring, healed it and switched PvP on.
+  s.on('tournamentMatchStarted', ({ x, y, hp, opponent, fightAt, roundEndAt, round, totalRounds }) => {
+    if (!player) return;
+    _trInMatch = true;
+    _trAlive = true;
+    _trRegistered = false;
+    _trOpponent = opponent || null;
+    _trState = { ..._trState, round: round || _trState.round, totalRounds: totalRounds || _trState.totalRounds };
+    _trRoundEndAt = 0; // countdown only starts once the freeze ends — see tournamentFight below
+    if (hp) player.hp = hp;
+    pvpMode = true;
+    _dbFightAt = fightAt || 0;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('trArenaLbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('trRoundFmt', { n: round, total: totalRounds }), '#ffb020');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
+    if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  s.on('tournamentFight', ({ roundEndAt } = {}) => {
+    _dbFightAt = 0;
+    _trRoundEndAt = roundEndAt || 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbFightMsg'), '#ffb020');
+    if (typeof showArena3Timer === 'function') showArena3Timer(_trRoundEndAt);
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+  });
+
+  // This one match is over — win or lose, the bracket itself may still have
+  // this player in it (a win drops to the next round, and even a loss in the
+  // upper bracket only drops to the lower one) — tournamentEliminated/
+  // tournamentChampion are the two events that actually end the run.
+  s.on('tournamentMatchResult', ({ won, x, y }) => {
+    _trInMatch = false;
+    _trOpponent = null;
+    _trRoundEndAt = 0;
+    _dbFightAt = 0;
+    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
+    if (typeof hideArena3Timer === 'function') hideArena3Timer();
+    pvpMode = false;
+    if (player && x != null && y != null) {
+      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
+      else { player.x = x; player.y = y; }
+    }
+    if (typeof showEventBossBanner === 'function') {
+      showEventBossBanner(won ? t('trWonRoundMsg') : t('dbFightMsg'), won ? '#8fc95c' : '#f07886');
+    }
+    if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  s.on('tournamentEliminated', () => {
+    _trAlive = false;
+    _trInMatch = false;
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('trEliminatedMsg'), '#f07886');
+    if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  s.on('tournamentChampion', ({ champion }) => {
+    _trAlive = false;
+    _trInMatch = false;
+    if (typeof showEventBossBanner === 'function') {
+      showEventBossBanner(champion ? t('trChampionMsg') : t('trRunnerUpMsg'), champion ? '#ffd700' : '#f07886');
+    }
+    if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  // Champions leaderboard — see netGetTournamentRating and the "Рейтинг" tab
+  // of the standalone Турнир panel (js/ui.js).
+  s.on('tournamentRatingData', ({ rows }) => {
+    if (typeof onTournamentRatingData === 'function') onTournamentRatingData(rows);
+  });
+  s.on('tournamentRatingError', ({ msg }) => {
+    if (typeof onTournamentRatingError === 'function') onTournamentRatingError(msg);
   });
 }
 
