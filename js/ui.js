@@ -5326,13 +5326,19 @@ function renderVipPanel() {
 
   let progressHtml;
   if (level < 10) {
-    const needed = thresholds[level + 1] || 1;
-    const pct    = Math.min(100, (deposited / needed) * 100).toFixed(1);
+    const needed   = thresholds[level + 1] || 1;
+    // deposited is the LIFETIME total (server/db/repos/progression.js never
+    // resets it); needed is only the delta for this one level-up. Progress
+    // within the current level is deposited minus what the previous levels
+    // already used up — dividing the raw lifetime total by the delta shows a
+    // bar stuck near 100% for anyone past VIP 1, worse the higher the level.
+    const progress = Math.max(0, deposited - cumulative[level]);
+    const pct      = Math.min(100, (progress / needed) * 100).toFixed(1);
     progressHtml = `
       <div class="vip-progress-wrap">
         <div class="vip-progress-label">
           <span>${tVars('vipNextFmt', { lvl: level + 1, total: cumulative[level + 1] })}</span>
-          <span>${deposited.toFixed ? deposited.toFixed(2) : deposited} / ${needed} GRAM</span>
+          <span>${progress.toFixed ? progress.toFixed(2) : progress} / ${needed} GRAM</span>
         </div>
         <div class="vip-progress-bar"><div class="vip-progress-fill" style="width:${pct}%"></div></div>
       </div>`;
