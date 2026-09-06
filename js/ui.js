@@ -5087,28 +5087,33 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
-// Турнир sits directly under the minimap plate — the same anchor
-// hud-menu-btn used to own alone. It is always visible on tab 0 rather than
-// folded into that column (see index.html's comment on it), so it is
-// positioned first and hud-menu-btn chains underneath it (see
-// _positionHudMenuBtn), instead of the other way around.
+// Турнир is a small badge pinned to the player plate's own top-right
+// corner — half on/half off its border, the way a notification badge sits on
+// a card. The plate itself is canvas-drawn (drawHeader, above in this file);
+// its geometry is duplicated here rather than shared because drawHeader
+// computes it fresh every frame from locals, with nothing exported — px/py/pw
+// use the exact same hud()-scaled formula it does; a drift between the two
+// would put this badge over the currency chips instead of the corner. Not
+// part of the hud-menu-btn column at all — see the comment on it in
+// index.html for why it gets its own anchor instead of one more line there.
 function _positionTournamentBtn() {
   const btn = document.getElementById('tournament-hud-btn');
   if (!btn) return;
   if (!W) { requestAnimationFrame(_positionHudColumn); return; }
   const mp = hudMiniMapRect();
-  btn.style.top   = (mp.y + mp.h + 6) + 'px';
-  btn.style.left  = mp.x + 'px';
-  btn.style.width = mp.w + 'px';
-  btn.style.right = 'auto';
+  const px = hud(6), py = hud(4), pw = mp.x - px - hud(4);
+  const size = hud(30);
+  btn.style.top    = (py - size / 2) + 'px';
+  btn.style.left   = (px + pw - size / 2) + 'px';
+  btn.style.width  = size + 'px';
+  btn.style.height = size + 'px';
+  btn.style.right  = 'auto';
   btn.style.transform = 'none';
 }
 
-// hud-menu-btn sits directly under the minimap plate, aligned to it, UNLESS
-// the tournament button (above) is currently shown — then it drops one slot
-// to make room, the same way every button below it already chains off the
-// one above. Everything else in this column chains its position off THIS
-// button, so this one anchor cascades the whole rest of the stack.
+// hud-menu-btn sits directly under the minimap plate, aligned to it —
+// everything else in this column chains its position off the button above it,
+// so this one anchor cascades the whole stack.
 function _positionHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
   if (!btn) return;
@@ -5118,9 +5123,7 @@ function _positionHudMenuBtn() {
   // buttons. Come back on the next frame instead of writing NaNpx.
   if (!W) { requestAnimationFrame(_positionHudColumn); return; }
   const mp = hudMiniMapRect();
-  const tourBtn = document.getElementById('tournament-hud-btn');
-  const tourShown = !!tourBtn && tourBtn.style.display !== 'none';
-  btn.style.top   = (mp.y + mp.h + 6 + (tourShown ? 34 : 0)) + 'px';
+  btn.style.top   = (mp.y + mp.h + 6) + 'px';
   btn.style.left  = mp.x + 'px';
   btn.style.width = mp.w + 'px';
   btn.style.right = 'auto';
@@ -5129,8 +5132,7 @@ function _positionHudMenuBtn() {
 
 // Re-runs the whole chain top-down. Called on resize (js/game.js) and
 // whenever the column is unfolded, so a stale or half-applied layout can
-// never survive on screen. Тurnament first: hud-menu-btn's own offset
-// depends on whether it is currently shown.
+// never survive on screen.
 function _positionHudColumn() {
   _positionTournamentBtn();
   _positionHudMenuBtn();
@@ -5145,12 +5147,12 @@ function _positionHudColumn() {
 
 function showTournamentHudBtn() {
   const btn = document.getElementById('tournament-hud-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudColumn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionTournamentBtn(); }
 }
 
 function showHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudColumn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudMenuBtn(); }
 }
 
 function _positionRatingBtn() {
