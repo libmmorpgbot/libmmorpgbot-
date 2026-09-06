@@ -155,6 +155,25 @@ let _a3RoundEndAt = 0;
 // as well as on the server (see _dbFrozen).
 let _dbFightAt = 0;
 
+// Турнир (32-player double elimination) — see js/network.js's
+// _initTournamentHandlers and server/game/tournament.js. round/totalRounds
+// let the panel show "Раунд N из 10"; opponent is just a name for display,
+// the server is the only one deciding who can actually hit whom.
+let _trState = { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
+let _trRegistered = false;
+let _trInMatch = false;
+// True from a successful registration all the way through to elimination or
+// the tournament ending for this player — covers the gap between rounds
+// (see server/game/tournament.js's file header) when _trInMatch is false but
+// this player is still very much in the bracket, just waiting to be deployed
+// for the next one.
+let _trAlive = false;
+let _trOpponent = null;
+// Reuses the same freeze/round-timer overlay arena3 does (_dbFightAt,
+// showDeathBattleFreeze/showArena3Timer, js/ui.js) rather than a third copy
+// of the same countdown UI — see _initTournamentHandlers.
+let _trRoundEndAt = 0;
+
 // 10-player corridor race (Забег) — queue-driven like the 3v3 arena, but a
 // free-for-all against one shared boss instead of a team match: everyone who
 // makes it to the boss room fights the SAME boss, and whoever dealt it the

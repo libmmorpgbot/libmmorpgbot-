@@ -3939,6 +3939,49 @@ class Room {
     return placed;
   }
 
+  // The pits a tournament round can actually deploy into, same validated-not-
+  // assumed reasoning as pvpArenaSlots — a map tweak that dropped a pit's spot
+  // onto a wall should shrink capacity for that round, not silently strand a
+  // pair in geometry.
+  tournamentSlots() {
+    const tr = this._dungeon.tournament;
+    if (!tr) return [];
+    return (tr.pits || []).filter(p => this.canStandAt(p.a.x, p.a.y) && this.canStandAt(p.b.x, p.b.y));
+  }
+
+  // Places up to 16 simultaneous 1v1 pairs, one per pit, full HP and PvP on.
+  // `pairs` is an array of [socketIdA, socketIdB] — server/game/tournament.js
+  // owns which pit belongs to which match (same as _a3.teams living in
+  // arena3.js, not here); this just needs enough usable pits to seat them and
+  // reports what it actually placed so a pit that couldn't be honoured drops
+  // its match instead of stranding one side of it. A pair that loses a member
+  // between matchmaking and deploy (skipped below by the `if (!a || !b)`
+  // guard) is reported as unplaced entirely — a lone survivor deployed alone
+  // would have no opponent to fight and no way for the round to ever end.
+  tournamentDeploy(pairs) {
+    const slots = this.tournamentSlots();
+    const placed = [];
+    pairs.forEach((pair, i) => {
+      const spot = slots[i];
+      if (!spot) return;
+      const [sidA, sidB] = pair;
+      const a = this.players.get(sidA), b = this.players.get(sidB);
+      if (!a || !b) return;
+      [[a, sidA, spot.a], [b, sidB, spot.b]].forEach(([p, sid, pos]) => {
+        p.x = pos.x; p.y = pos.y;
+        p.hp = p.maxHp;
+        p.pvpMode = true;
+        // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
+        // whoever is currently online never checked which private Fear hall
+        // they might still be occupying.
+        if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
+        p._profileRev++;
+      });
+      placed.push({ pit: i, a: { socketId: sidA, x: spot.a.x, y: spot.a.y, hp: a.hp }, b: { socketId: sidB, x: spot.b.x, y: spot.b.y, hp: b.hp } });
+    });
+    return placed;
+  }
+
   // Places a race10 entrant into their own lane's spawn point (array index =
   // lane number), full HP, normal PvE combat (no pvpMode — this event has no
   // player-vs-player component at all). Falls back to the shared boss room if

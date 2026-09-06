@@ -5577,6 +5577,7 @@ function openEventsPanel() {
   if (typeof netFearSync === 'function') netFearSync();
   if (typeof netCoopSync === 'function') netCoopSync();
   if (typeof netFarm2Sync === 'function') netFarm2Sync();
+  if (typeof netTournamentSync === 'function') netTournamentSync();
   showEventsList();
 }
 
@@ -5623,6 +5624,7 @@ function _renderEventsBody() {
                  : _eventTab === 'coop'      ? _coopBodyHTML()
                  : _eventTab === 'farm2'     ? _farm2BodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
+                 : _eventTab === 'tournament'? _tournamentBodyHTML()
                  : _deathBattleBodyHTML();
 }
 
@@ -5699,6 +5701,68 @@ function _arena3BodyHTML() {
         </div>
       </div>
     </div>`;
+}
+
+// ── Турнир tab (32-player double elimination) ────────────────────────────────
+// _trState is pushed by js/network.js's tournamentState handler; _trAlive
+// covers the gap between rounds (see server/game/tournament.js's file header)
+// where this player is neither actively fighting nor free to register again.
+function _tournamentBodyHTML() {
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
+  const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
+  const alive = typeof _trAlive !== 'undefined' && _trAlive;
+  const open = st.phase === 'reg';
+  const lvl = (player && player.lvl) || 1;
+  const tooLow = lvl < (st.minLevel || 15);
+
+  let phaseTxt, action;
+  if (inMatch) {
+    const opp = (typeof _trOpponent !== 'undefined' && _trOpponent) ? ' — ' + tVars('trOpponentFmt', { name: _trOpponent }) : '';
+    phaseTxt = tVars('trRoundFmt', { n: st.round, total: st.totalRounds }) + opp;
+    action = `<button class="db-action" disabled>${t('trPhaseFighting')}</button>`;
+  } else if (alive) {
+    phaseTxt = tVars('trRoundFmt', { n: st.round, total: st.totalRounds });
+    action = `<button class="db-action" disabled>${t('trPhaseWaiting')}</button>`;
+  } else if (!open) {
+    phaseTxt = t('trPhaseIdle');
+    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
+  } else if (tooLow) {
+    phaseTxt = tVars('trNeedLevelFmt', { n: st.minLevel });
+    action = `<button class="db-action disabled" disabled>${tVars('trNeedLevelFmt', { n: st.minLevel })}</button>`;
+  } else if (_trRegistered) {
+    phaseTxt = t('trPhaseQueued');
+    action = `<button class="db-action db-leave" onclick="netTournamentUnregister()">${t('dbLeaveBtn')}</button>`;
+  } else {
+    phaseTxt = t('trPhaseIdle');
+    action = `<button class="db-action" onclick="netTournamentRegister()">${t('dbJoinBtn')}</button>`;
+  }
+
+  const countdown = (!open && !inMatch && !alive)
+    ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
+    : tVars('trCountFmt', { n: st.registered, need: st.needed });
+
+  return `
+    <div style="padding:16px">
+      <div class="db-countdown">${countdown}</div>
+      <div class="db-phase">${phaseTxt}</div>
+      ${action}
+      <div class="db-rules">
+        ${t('dbRulesHdr')}
+        <ul>
+          <li>${t('trRule1')}</li>
+          <li>${t('trRule2')}</li>
+          <li>${t('trRule3')}</li>
+          <li>${t('trRule4')}</li>
+          <li>${t('trRule5')}</li>
+          <li>${t('trRule6')}</li>
+          <li>${t('trRule7')}</li>
+        </ul>
+      </div>
+    </div>`;
+}
+
+function onTournamentState() {
+  if (_eventsPanelOpen() && _eventTab === 'tournament') _renderEventsBody();
 }
 
 // ── Кровавая Башня tab (10-player corridor race) ────────────────────────────

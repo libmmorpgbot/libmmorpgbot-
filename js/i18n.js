@@ -123,6 +123,33 @@ const I18N_UI = {
   eventSchedCoop:     { ru: 'Доступно всегда', en: 'Always available', uk: 'Доступно завжди', es: 'Siempre disponible', tr: 'Her zaman açık', pt: 'Sempre disponível' },
   eventSchedBoss:     { ru: 'Пн, Ср, Пт, Вс в 20:00 МСК', en: 'Mon, Wed, Fri, Sun at 20:00 MSK', uk: 'Пн, Ср, Пт, Нд о 20:00 МСК', es: 'Lun, Mié, Vie, Dom a las 20:00 MSK', tr: 'Pzt, Çar, Cum, Paz 20:00 MSK', pt: 'Seg, Qua, Sex, Dom às 20:00 MSK' },
   eventSchedGuildWar: { ru: 'Ежедневно 22:00–22:15 МСК', en: 'Daily 22:00–22:15 MSK', uk: 'Щодня 22:00–22:15 МСК', es: 'Todos los días 22:00–22:15 MSK', tr: 'Her gün 22:00–22:15 MSK', pt: 'Todos os dias 22:00–22:15 MSK' },
+  // ── Турнир (32-player double elimination) ────────────────────────────────
+  // Russian only for now, same as every other new string here — t()/tVars()
+  // fall back to .ru when the current language has no entry (see js/i18n.js's
+  // own t()), so this is a functional gap for en/uk/es/tr/pt, not a broken one.
+  tournamentTab:        { ru: 'Турнир' },
+  eventSubTournament:   { ru: 'Турнир на 32 участника, на вылет' },
+  eventSchedTournament: { ru: 'Ежедневно в 23:00 МСК' },
+  trArenaLbl:           { ru: 'Ринг турнира' },
+  trPhaseIdle:          { ru: 'До регистрации на турнир' },
+  trPhaseQueued:        { ru: 'Вы записаны, ждём остальных' },
+  trPhaseFighting:      { ru: 'Бой идёт' },
+  trPhaseWaiting:       { ru: 'Вы прошли дальше — ждите следующий раунд' },
+  trNeedLevelFmt:       { ru: 'Нужен {n} уровень' },
+  trCountFmt:           { ru: '{n}/{need}' },
+  trRoundFmt:           { ru: 'Раунд {n} из {total}' },
+  trOpponentFmt:        { ru: 'Соперник: {name}' },
+  trWonRoundMsg:        { ru: '✅ Победа в раунде! Ждите следующий' },
+  trEliminatedMsg:      { ru: '💀 Вы выбыли из турнира' },
+  trChampionMsg:        { ru: '🏆 Вы — ЧЕМПИОН ТУРНИРА!' },
+  trRunnerUpMsg:        { ru: 'Финал турнира: вы заняли 2-е место' },
+  trRule1:              { ru: 'Регистрация — каждый день в 23:00 по Москве, ровно 32 участника' },
+  trRule2:              { ru: 'Наберётся 32 человека — сетка стартует сразу, не дожидаясь конца окна' },
+  trRule3:              { ru: 'Проигрыш в первом бою не выбивает — даётся один шанс отыграться в нижней сетке' },
+  trRule4:              { ru: 'Проигрыш в нижней сетке — выбывание из турнира' },
+  trRule5:              { ru: 'Бой длится 1 минуту; если оба живы к концу — побеждает тот, кто нанёс больше урона' },
+  trRule6:              { ru: 'Следующий раунд начинается через 3 минуты после завершения всех боёв текущего' },
+  trRule7:              { ru: 'Финал турнира решает всё сразу, без переигровки' },
   // ── 3v3 arena ───────────────────────────────────────────────────────────
   a3Tab:        { ru: '3х3', en: '3v3', uk: '3х3', es: '3v3', tr: '3v3', pt: '3v3' },
   a3ArenaLbl:   { ru: 'Арена 3х3', en: '3v3 Arena', uk: 'Арена 3х3', es: 'Arena 3v3', tr: '3v3 Arena', pt: 'Arena 3v3' },

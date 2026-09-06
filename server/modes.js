@@ -45,6 +45,7 @@ const createFear = require('./game/fear');
 const createCoop = require('./game/coop');
 const createFarm2 = require('./game/farm2');
 const createGuildWar = require('./game/guildwar');
+const createTournament = require('./game/tournament');
 
 // The caps live INSIDE the factories — RACE10_ATTEMPTS, FEAR_ATTEMPTS and
 // COOP_ATTEMPTS are each declared in their own file and returned. Reading them
@@ -160,11 +161,12 @@ function announceOnce(key, text) {
 }
 
 const EVENT_NAME = {
-  boss:     'Мировой босс',
-  battle:   'Битва на смерть',
-  race10:   'Кровавая Башня',
-  a3:       'Арена 3х3',
-  guildWar: 'Война гильдий',
+  boss:       'Мировой босс',
+  battle:     'Битва на смерть',
+  race10:     'Кровавая Башня',
+  a3:         'Арена 3х3',
+  guildWar:   'Война гильдий',
+  tournament: 'Турнир',
 };
 
 // ── и то же самое В TELEGRAM ──────────────────────────────────────────────
@@ -198,6 +200,10 @@ const _EVENT_TEXT = {
   guildWar: {
     soon: (m) => `🏰 <b>Война гильдий</b>\n\nЛокация с замком откроется через ${m} мин. — с 22:00 до 22:15 по Москве.\nКлан, который захватит замок, будет получать осколки каждый час, пока держит его.`,
     now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗаходи в игру — локация с замком доступна до 22:15 по Москве.',
+  },
+  tournament: {
+    soon: (m) => `🏆 <b>Турнир</b>\n\nРегистрация откроется через ${m} мин. — в 23:00 по Москве.\nНужно ровно 32 участника — набралось, и сетка стартует сразу же.`,
+    now:  () => '🏆 <b>Турнир открыт!</b>\n\nЗаписывайся в игре — как наберётся 32 человека, сетка стартует. Проигрыш не выбивает сразу: один шанс отыграться в нижней сетке остаётся.',
   },
 };
 
@@ -451,6 +457,7 @@ function init(io) {
   }));
   Object.assign(modes, createFear(shared));
   Object.assign(modes, createCoop(shared));
+  Object.assign(modes, createTournament(shared));
   // Named and kept, rather than written inline into the factory's deps. It has
   // TWO callers — farm2.js settles the last partial minute with it, and the
   // per-minute ticker in handlers2/coop.js charges the whole ones — and the
@@ -491,7 +498,7 @@ function init(io) {
   modes._pvpFrozen = (socketId) => {
     const until = modes._teleportFrozen.get(socketId) || 0;
     if (until > Date.now()) return true;
-    return !!(modes._dbFrozen(socketId) || modes._a3Frozen(socketId) || modes._race10Frozen(socketId));
+    return !!(modes._dbFrozen(socketId) || modes._a3Frozen(socketId) || modes._race10Frozen(socketId) || modes._trFrozen(socketId));
   };
 
   // Order matters and is unchanged: whichever mode claims the elimination
@@ -501,13 +508,14 @@ function init(io) {
     const dbHandled   = modes._dbEliminate(socketId, killerSocketId);
     const a3Handled   = modes._a3Eliminate(socketId, killerSocketId);
     const r10Handled  = modes._race10Eliminate(socketId);
+    const trHandled   = modes._trEliminate(socketId);
     const fearHandled = (opts && opts.fearGrace)
       ? modes._fearHoldOnDisconnect(socketId, opts.telegramId)
       : modes._fearEliminate(socketId);
     const coopHandled = (opts && opts.fearGrace)
       ? modes._coopEjectOnDisconnect(socketId)
       : modes._coopEliminate(socketId);
-    if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !fearHandled && !coopHandled) {
+    if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !trHandled && !fearHandled && !coopHandled) {
       const victim = room && room.players.get(socketId);
       const killer = room && room.players.get(killerSocketId);
       recordPvpHistory(socketId, { kind: 'death', mode: 'open_pvp', opponent: killer && killer.username });
@@ -614,6 +622,7 @@ function init(io) {
     ['arena3', modes._a3Schedule],
     ['race10', modes._race10Schedule],
     ['deathBattle', modes._dbSchedule],
+    ['tournament', modes._trSchedule],
   ]) {
     if (typeof fn !== 'function') {
       console.error('[modes] ' + name + ': нет функции расписания — событие не запустится');
