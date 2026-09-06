@@ -1,6 +1,6 @@
 const {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentArena,
+  generateRace10, generateFear, generateCoop, generateTournamentPit,
 } = require('./dungeon');
 
 // Every location the player can stand in is its own floor id + its own
@@ -29,9 +29,10 @@ const FLOOR_IDS = {
   // сторожить сервер, а барьеры внутри этажа здесь клиентские — разбор в
   // generateFarmSeason, server/game/dungeon.js.
   farmSeason: 15,
-  // Турнир (32-player double elimination) — a grid of sealed 1v1 pits, see
-  // server/game/dungeon.js's generateTournamentArena and server/game/
-  // tournament.js for the bracket engine that deploys into it.
+  // Турнир (32-player double elimination) — a private 1v1 pit per match, same
+  // instanced-Room shape as fear/coop/farmZone2 below. See server/game/
+  // dungeon.js's generateTournamentPit and server/game/tournament.js's
+  // _createTournamentPitRoom for the bracket engine that deploys into it.
   tournament: 16,
 };
 
@@ -54,7 +55,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.farmZone2, key: 'farmZone2', generate: () => generateFarmZone2() },
   { id: FLOOR_IDS.farmHigh, key: 'farmHigh', generate: () => generateFarmHigh() },
   { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
-  { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentArena() },
+  { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentPit() },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

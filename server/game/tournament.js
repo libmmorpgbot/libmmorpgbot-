@@ -29,6 +29,7 @@ const {
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
 } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
+const Room = require('../game/Room');
 
 // How many global rounds the fixed 32-player bracket takes, start to Grand
 // Final — see _trBuildRoundGroups. Not a general formula, just this shape's
@@ -49,9 +50,35 @@ const TOURNAMENT_FINAL_LOSE_NEXUM = 50;
 
 module.exports = function createTournament(deps) {
   const {
-    io, getRoom, _findPlayerAnyFloor, _recordPvpHistory, _returnToHub, _socketTid,
+    io, _findPlayerAnyFloor, _recordPvpHistory, _returnToHub, _socketTid,
     notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
   } = deps;
+
+  // Every match gets its own Room, created here and never registered in
+  // floorRooms — same private-instance shape _createFearRoom uses (see
+  // server/game/fear.js's own comment for the reasoning in full).
+  // generateTournamentPit() (server/game/dungeon.js) builds a fresh
+  // single-pit dungeon on every call, so two concurrent matches never share
+  // players, AOI state or enemy lists — there is nothing left to leak through
+  // the way the old shared 4x4 grid needed a p._trPit lane key patched onto
+  // Room._playerLaneKey to stop.
+  function _createTournamentPitRoom() {
+    const room = new Room(FLOOR_IDS.tournament, io, {}, null);
+    _trRooms.add(room);
+    return room;
+  }
+
+  // Weak, observation-only index of the private pit Rooms above — same
+  // sweep-rather-than-trust shape as fear.js's _liveFearRooms.
+  const _trRooms = new Set();
+  function _liveTrRooms() {
+    const live = [];
+    _trRooms.forEach(r => {
+      if (r.players.size > 0) live.push(r);
+      else _trRooms.delete(r);
+    });
+    return live;
+  }
 
   const _tr = {
     phase: 'idle',        // 'idle' → 'reg' → 'live' → 'idle'
@@ -70,7 +97,7 @@ module.exports = function createTournament(deps) {
     roundIndex: 0,          // 1..TOURNAMENT_TOTAL_ROUNDS while a round is in flight, else the last one played
     matchTag: new Map(),    // socketId -> which group this round's match belongs to (see _trBuildRoundGroups)
     roundResults: new Map(),// loserSocketId -> winnerSocketId, accumulated as this round's matches resolve
-    matches: new Map(),     // socketId -> { opponent, pit } — only the pairs actually fighting right now
+    matches: new Map(),     // socketId -> { opponent } — only the pairs actually fighting right now
     dmg: new Map(),         // socketId -> damage dealt to their opponent this fight (tie-break on timeout)
     _roundLive: false,      // guards _trConcludeRound against running twice for the one round
     // The real bracket, for display only — [{ round, matches: [{ tag, a:{id,name}, b:{id,name}, winnerId }] }],
@@ -374,8 +401,6 @@ module.exports = function createTournament(deps) {
   // bracket has someone to advance; there's no fair way to decide a fight
   // nobody showed up to.
   function _trStartRound(idx) {
-    const room = getRoom(FLOOR_IDS.tournament);
-    if (!room) return;
     _tr.roundIndex = idx;
     _tr.gapEndAt = 0; // the gap this round was waiting out is over
     _tr.matchTag.clear();
@@ -408,27 +433,30 @@ module.exports = function createTournament(deps) {
 
     if (!toFight.length) { _trAfterRound(idx); return; }
 
-    // Force each entrant's own connection onto the tournament floor first —
-    // tournamentDeploy needs them already present in room.players to seat
-    // them, same reasoning death-battle/arena3 deploy follow.
-    const joined = toFight.filter(([a, b]) =>
-      io.sockets.sockets.get(a)?.data?._forceEnterLocation?.('tournament') !== false &&
-      io.sockets.sockets.get(b)?.data?._forceEnterLocation?.('tournament') !== false);
-    const placed = room.tournamentDeploy(joined);
-    const placedIds = new Set();
-    placed.forEach(m => { placedIds.add(m.a.socketId); placedIds.add(m.b.socketId); });
-    // A pair that passed the aOk/bOk check above (both looked connected and
-    // in the world a moment ago) but still didn't land on the ring — a failed
-    // floor transition, a pit tournamentDeploy couldn't seat them in, a
-    // player record gone by the time it ran — used to just vanish here: no
-    // roundResults entry, so _trApplyRoundResults never counts them as a
-    // winner or a loser and they drop out of the bracket with no elimination
-    // and no advancement. The exact "кого-то вообще не забирает на арену"
-    // report. Resolve it the same way a pre-existing disconnect already is,
-    // picking whichever side is still actually present.
+    // Each match gets its own freshly-created, private Room (see
+    // _createTournamentPitRoom) instead of sharing pit slots on one floor —
+    // a pair that fails to land in it (a failed floor transition, a player
+    // record gone by the time it ran) is resolved as a forfeit for whichever
+    // side actually made it in. Whoever DID make it in but the pair still
+    // didn't fight is sent back to hub rather than left standing in an
+    // abandoned private room until the next round moves them again.
+    const placed = [];
     toFight.forEach(([a, b]) => {
-      if (placedIds.has(a)) return; // tournamentDeploy always seats both sides of a pair together
-      const winner = (io.sockets.sockets.get(a) && _findPlayerAnyFloor(a)) ? a : b;
+      const pitRoom = _createTournamentPitRoom();
+      const slot = pitRoom.tournamentSlot();
+      const aJoined = !!(slot && io.sockets.sockets.get(a)?.data?._forceEnterLocation?.('tournament', { room: pitRoom, pos: slot.a }));
+      const bJoined = !!(slot && io.sockets.sockets.get(b)?.data?._forceEnterLocation?.('tournament', { room: pitRoom, pos: slot.b }));
+      const deployed = (aJoined && bJoined) ? pitRoom.tournamentDeploy(a, b) : null;
+      if (deployed) { placed.push(deployed); return; }
+      // The exact "кого-то вообще не забирает на арену" report: a pair that
+      // passed the aOk/bOk check above (both looked connected and in the
+      // world a moment ago) but still didn't end up fighting used to just
+      // vanish — no roundResults entry, so _trApplyRoundResults never counted
+      // them as a winner or a loser and they dropped out of the bracket with
+      // no elimination and no advancement.
+      if (aJoined) _returnToHub(a);
+      if (bJoined) _returnToHub(b);
+      const winner = aJoined ? a : b;
       const loser = winner === a ? b : a;
       _tr.roundResults.set(loser, winner);
       const entry = roundMatches.find(m => m.a.id === a && m.b.id === b);
@@ -440,9 +468,9 @@ module.exports = function createTournament(deps) {
     _tr._roundLive = true;
     _tr.fightAt = Date.now() + TOURNAMENT_COUNTDOWN_MS;
     _tr.roundEndAt = _tr.fightAt + TOURNAMENT_FIGHT_MS;
-    placed.forEach(({ pit, a, b }) => {
-      _tr.matches.set(a.socketId, { opponent: b.socketId, pit });
-      _tr.matches.set(b.socketId, { opponent: a.socketId, pit });
+    placed.forEach(({ a, b }) => {
+      _tr.matches.set(a.socketId, { opponent: b.socketId });
+      _tr.matches.set(b.socketId, { opponent: a.socketId });
       _tr.dmg.set(a.socketId, 0); _tr.dmg.set(b.socketId, 0);
       io.to(a.socketId).emit('tournamentMatchStarted', {
         x: a.x, y: a.y, hp: a.hp, opponent: _tr.names.get(b.socketId) || '?',
@@ -590,5 +618,6 @@ module.exports = function createTournament(deps) {
     TOURNAMENT_TOTAL_ROUNDS,
     _tr, _trNextOpenAt, _trPublicState, _trBroadcast, _trSchedule, _trOpenWindow, _trCloseWindow,
     _trTryStart, _trStartRound, _trEliminate, _trFrozen, _trAllies, _trEnemies, _trTrackDamage,
+    _trRooms, _liveTrRooms,
   };
 };

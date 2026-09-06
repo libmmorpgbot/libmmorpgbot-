@@ -1774,10 +1774,6 @@ class Room {
       return 'r' + p._raceLane;
     }
     if (p._fearLane != null) return 'f' + p._fearLane;
-    // Tournament pits, same isolation reasoning as everything above — see the
-    // comment on tournamentDeploy. No "converged" exception like race10's boss
-    // room: a 1v1 pit never has more than its own two occupants to converge.
-    if (p._trPit != null) return 't' + p._trPit;
     // Same convergence treatment as race10: once a Coop participant reaches
     // the shared boss room both lanes open into, they share one key with
     // their partner regardless of which lane they each ran — the whole
@@ -3943,56 +3939,44 @@ class Room {
     return placed;
   }
 
-  // The pits a tournament round can actually deploy into, same validated-not-
-  // assumed reasoning as pvpArenaSlots — a map tweak that dropped a pit's spot
-  // onto a wall should shrink capacity for that round, not silently strand a
-  // pair in geometry.
-  tournamentSlots() {
+  // The one pit a private tournament Room was generated with (see
+  // generateTournamentPit, server/game/dungeon.js, and
+  // _createTournamentPitRoom, server/game/tournament.js), or null if the map
+  // tweak that dropped it landed on a wall — same validated-not-assumed
+  // reasoning pvpArenaSlots always used, just for one pit instead of a shared
+  // grid of 16: every match gets its own freshly-built Room now, so there is
+  // no grid left to pick a slot out of.
+  tournamentSlot() {
     const tr = this._dungeon.tournament;
-    if (!tr) return [];
-    return (tr.pits || []).filter(p => this.canStandAt(p.a.x, p.a.y) && this.canStandAt(p.b.x, p.b.y));
+    if (!tr || !tr.pit) return null;
+    const { a, b } = tr.pit;
+    return (this.canStandAt(a.x, a.y) && this.canStandAt(b.x, b.y)) ? { a, b } : null;
   }
 
-  // Places up to 16 simultaneous 1v1 pairs, one per pit, full HP and PvP on.
-  // `pairs` is an array of [socketIdA, socketIdB] — server/game/tournament.js
-  // owns which pit belongs to which match (same as _a3.teams living in
-  // arena3.js, not here); this just needs enough usable pits to seat them and
-  // reports what it actually placed so a pit that couldn't be honoured drops
-  // its match instead of stranding one side of it. A pair that loses a member
-  // between matchmaking and deploy (skipped below by the `if (!a || !b)`
-  // guard) is reported as unplaced entirely — a lone survivor deployed alone
-  // would have no opponent to fight and no way for the round to ever end.
-  tournamentDeploy(pairs) {
-    const slots = this.tournamentSlots();
-    const placed = [];
-    pairs.forEach((pair, i) => {
-      const spot = slots[i];
-      if (!spot) return;
-      const [sidA, sidB] = pair;
-      const a = this.players.get(sidA), b = this.players.get(sidB);
-      if (!a || !b) return;
-      [[a, sidA, spot.a], [b, sidB, spot.b]].forEach(([p, sid, pos]) => {
-        p.x = pos.x; p.y = pos.y;
-        p.hp = p.maxHp;
-        p.pvpMode = true;
-        // Which pit this player belongs to — read by _playerLaneKey so the AOI
-        // stream (nearbyPlayerIds/the main player broadcast) isolates pits from
-        // each other the same way race10 lanes/Fear halls/coop lanes already
-        // are. Without this every tournament player's lane key was null (same
-        // bucket as "not in any instance"), and PLAYER_AOI_R2's 600px default
-        // reaches well past TR_PIT_PITCH's 520px spacing — so a client fighting
-        // in one pit was also streamed the occupants of the pit next door,
-        // reading as "то кидает в 3 на одной арене".
-        p._trPit = i;
-        // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
-        // whoever is currently online never checked which private Fear hall
-        // they might still be occupying.
-        if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
-        p._profileRev++;
-      });
-      placed.push({ pit: i, a: { socketId: sidA, x: spot.a.x, y: spot.a.y, hp: a.hp }, b: { socketId: sidB, x: spot.b.x, y: spot.b.y, hp: b.hp } });
+  // Places the one 1v1 pair this private Room exists for, full HP and PvP on.
+  // Returns null if the pit geometry is unusable or either side's record
+  // isn't here yet (the caller's own forceFloor into this room failed) —
+  // reported as unplaced entirely rather than seating a lone survivor with no
+  // opponent to fight and no way for the round to ever end.
+  tournamentDeploy(sidA, sidB) {
+    const slot = this.tournamentSlot();
+    if (!slot) return null;
+    const a = this.players.get(sidA), b = this.players.get(sidB);
+    if (!a || !b) return null;
+    [[a, sidA, slot.a], [b, sidB, slot.b]].forEach(([p, sid, pos]) => {
+      p.x = pos.x; p.y = pos.y;
+      p.hp = p.maxHp;
+      p.pvpMode = true;
+      // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
+      // whoever is currently online never checked which private Fear hall
+      // they might still be occupying.
+      if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
+      p._profileRev++;
     });
-    return placed;
+    return {
+      a: { socketId: sidA, x: slot.a.x, y: slot.a.y, hp: a.hp },
+      b: { socketId: sidB, x: slot.b.x, y: slot.b.y, hp: b.hp },
+    };
   }
 
   // Places a race10 entrant into their own lane's spawn point (array index =

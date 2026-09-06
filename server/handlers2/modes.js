@@ -219,9 +219,10 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_a3Enemies(attackerId, targetId)) return false;
       // A tournament pit is the same shape as arena3's teams, just 1v1: only
       // your assigned opponent may ever hit you, and always can, even sharing
-      // a party or clan with them — see _trAllies/_trEnemies (server/game/
-      // tournament.js) for why distance alone (pits sit fairly close together
-      // on that floor) isn't what keeps different pits apart.
+      // a party or clan with them. Each pit is its own private Room now (see
+      // _createTournamentPitRoom, server/game/tournament.js), so s.room
+      // itself already can't reach a target in a different match — this is
+      // the party/clan override for the one opponent sharing your own room.
       if (_trAllies(attackerId, targetId)) return true;
       if (_trEnemies(attackerId, targetId)) return false;
       // A death battle is a free-for-all: party and clan protection would let

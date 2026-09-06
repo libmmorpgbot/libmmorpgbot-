@@ -332,7 +332,7 @@ function _statsFromRoomRecord(p) {
 // Floors whose rooms are created per run rather than once at boot. Their
 // players stay out of the `floor_N` broadcast group, because two simultaneous
 // runs on the same floor id would otherwise see each other's traffic.
-const INSTANCED_FLOORS = new Set([11, 12, 13]);   // fear, coop, farmZone2
+const INSTANCED_FLOORS = new Set([11, 12, 13, 16]);   // fear, coop, farmZone2, tournament
 
 class Session {
   constructor(socket, io = null) {

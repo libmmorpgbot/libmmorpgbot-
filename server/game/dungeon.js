@@ -73,22 +73,19 @@ const A3_SPAWN_YS = [4, 13, 22];
 const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corridor
 
 // ── Турнир (32-player double elimination tournament) ────────────────────────
-// Its own floor now (generateTournamentArena, below). Unlike the 3v3 arena's
-// single shared lane, a tournament round can have as many as 16 separate 1v1
-// matches running at once (round 1: 32 players, 16 pairs) — so the floor is a
-// grid of sealed pits instead of one fighting area, one pit per concurrent
-// match, arranged 4x4 (16, the most any round ever needs — see
-// server/game/tournament.js's fixed round schedule). Two players per pit,
-// spawned facing each other same as the 3v3 bases. Pits are laid out with a
-// gap of open wall between them exactly like Fear's lanes, but — same as
-// race10's lanes — the wall gap is cosmetic, not the safety mechanism: what
-// actually keeps two pits from hitting each other is the explicit opponent
-// check in _isPvpImmune (server/handlers2/modes.js), the same way arena3
-// teams are kept apart by _a3Allies/_a3Enemies rather than by distance alone.
-const TR_PIT_SIZE  = 10;   // pit size (tiles) — same footprint as a Fear room
-const TR_PIT_GAP   = 3;    // wall padding between adjacent pits
-const TR_PIT_PITCH = TR_PIT_SIZE + TR_PIT_GAP;
-const TR_GRID_COLS = 4, TR_GRID_ROWS = 4; // 16 pits total
+// One private 1v1 pit per match now (generateTournamentPit, below), same
+// per-instance-Room shape Fear/coop/farmZone2 already use — see
+// _createTournamentPitRoom, server/game/tournament.js. Used to be a single
+// shared floor with up to 16 sealed pits laid out in a 4x4 grid (round 1: 32
+// players, 16 concurrent matches), separated only by a wall gap and the
+// explicit opponent check in _isPvpImmune, plus (briefly) a p._trPit lane
+// key patched onto Room._playerLaneKey's AOI filter. Both were separation
+// bolted onto ONE shared Room; a client still ended up seeing (and once, on
+// a lane-key bug, fighting) whoever the grid happened to seat next door —
+// «кидает в 3 на одной арене», «кидает в разные комнаты соперников». A
+// private Room per match has no shared players/AOI/enemy state to leak
+// through in the first place, so there is nothing left to separate.
+const TR_PIT_SIZE = 10; // pit size (tiles) — same footprint as a Fear room
 
 // ── Corridor race ("Кровавая Башня") ─────────────────────────────────────────
 // Its own floor now (generateRace10, below). Every entrant runs their own
@@ -1027,18 +1024,15 @@ function generatePvpArena() {
   };
 }
 
-// Турнир (32-player double elimination), now its own floor (see
-// server/game/floors.js). A grid of sealed 1v1 pits (see the TR_* constants
-// above) rather than one shared fighting area — every pit gets two facing
-// spawn points, close enough together to fight, far enough apart that a
-// round's deploy doesn't start the two of them already in contact (same
-// reasoning generatePvpArena's team spawns follow). `pits` is a flat array
-// indexed 0..15; server/game/tournament.js only ever uses as many of them as
-// the current round has matches (at most 16, in round 1) and leaves the rest
-// empty.
-function generateTournamentArena() {
-  const w = TR_GRID_COLS * TR_PIT_PITCH + MARGIN * 2 - TR_PIT_GAP;
-  const h = TR_GRID_ROWS * TR_PIT_PITCH + MARGIN * 2 - TR_PIT_GAP;
+// Турнир (32-player double elimination) — one sealed 1v1 pit, generated
+// fresh for every match the bracket deploys (see _createTournamentPitRoom,
+// server/game/tournament.js), the same way generateFear() is called fresh
+// for every fearEnter rather than once at boot. Two facing spawn points,
+// close enough together to fight, far enough apart that a round's deploy
+// doesn't start the two of them already in contact (same reasoning
+// generatePvpArena's team spawns follow).
+function generateTournamentPit() {
+  const w = TR_PIT_SIZE + MARGIN * 2, h = TR_PIT_SIZE + MARGIN * 2;
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
   function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
   function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
@@ -1046,24 +1040,18 @@ function generateTournamentArena() {
     for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
   }
 
-  const pits = [];
-  for (let row = 0; row < TR_GRID_ROWS; row++) {
-    for (let col = 0; col < TR_GRID_COLS; col++) {
-      const x0 = MARGIN + col * TR_PIT_PITCH;
-      const y0 = MARGIN + row * TR_PIT_PITCH;
-      paintRect(x0, y0, x0 + TR_PIT_SIZE - 1, y0 + TR_PIT_SIZE - 1);
-      const cy = y0 + Math.floor(TR_PIT_SIZE / 2);
-      pits.push({
-        a: { x: (x0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
-        b: { x: (x0 + TR_PIT_SIZE - 3) * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
-      });
-    }
-  }
+  const x0 = MARGIN, y0 = MARGIN;
+  paintRect(x0, y0, x0 + TR_PIT_SIZE - 1, y0 + TR_PIT_SIZE - 1);
+  const cy = y0 + Math.floor(TR_PIT_SIZE / 2);
+  const pit = {
+    a: { x: (x0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
+    b: { x: (x0 + TR_PIT_SIZE - 3) * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
+  };
 
   return {
     grid, rooms: [], w, h,
-    spawn: pits[0].a,
-    tournament: { pits },
+    spawn: pit.a,
+    tournament: { pit },
     enemies: [],
   };
 }
@@ -1344,6 +1332,6 @@ function generateCoop() {
 
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentArena,
+  generateRace10, generateFear, generateCoop, generateTournamentPit,
   TILE, WALL, FLOOR,
 };
