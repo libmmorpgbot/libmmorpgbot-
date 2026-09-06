@@ -2194,12 +2194,14 @@ const GUILD_WAR_SHARD_MAX = 30;
 const GUILD_WAR_INCOME_INTERVAL_MS = 60 * 60 * 1000;
 
 // ── Tournament ("Турнир", 32-player double elimination) ─────────────────────
-// Registration opens every day at 23:00 Moscow time and stays open until
-// either 32 people have signed up (the bracket starts immediately, without
-// waiting for the rest of the window) or TOURNAMENT_WINDOW_MS runs out with
-// too few — same reg-window shape as arena3/race10 above, just a longer
-// window because 32 sign-ups is a much higher bar than 6.
-const TOURNAMENT_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
+// Registration opens Thursday and Sunday at 23:00 Moscow time and stays open
+// until either 32 people have signed up (the bracket starts immediately,
+// without waiting for the rest of the window) or TOURNAMENT_WINDOW_MS runs
+// out with too few — same reg-window shape as arena3/race10 above, just a
+// longer window because 32 sign-ups is a much higher bar than 6.
+// `days` are Moscow weekdays, 0 = воскресенье .. 6 = суббота (see
+// nextEventStartAt's own comment) — 0 = Sunday, 4 = Thursday.
+const TOURNAMENT_DAYS_MSK  = [0, 4];
 const TOURNAMENT_HOURS_MSK = [23];
 const TOURNAMENT_WINDOW_MS = 3 * 60 * 60 * 1000;
 const TOURNAMENT_SIZE = 32;
