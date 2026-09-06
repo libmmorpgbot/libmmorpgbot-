@@ -2222,7 +2222,7 @@ const TOURNAMENT_FIGHT_MS = 60 * 1000;
 const TOURNAMENT_COUNTDOWN_MS = 15 * 1000;
 // How long the ring sits empty between rounds, once every match from the
 // round just finished — win, loss or timeout — has been decided.
-const TOURNAMENT_ROUND_GAP_MS = 3 * 60 * 1000;
+const TOURNAMENT_ROUND_GAP_MS = 2.5 * 60 * 1000;
 
 // Both events warn everyone over the bot this far ahead, then again on start.
 const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;

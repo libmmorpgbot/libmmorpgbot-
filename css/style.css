@@ -2103,6 +2103,12 @@ canvas { display:block; width:100%; height:100%; }
    shrinking to fit: ten rounds of real names do not fit one phone width at
    any readable size. ──────────────────────────────────────────────────── */
 .tour-cols { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; }
+/* #tournament-panel's own rule above forces touch-action:pan-y on every
+   descendant (meant for the game's vertical joystick handling, see that
+   rule's own comment) — that also killed horizontal swipe right here, the
+   one place in the panel that actually needs it. Higher specificity than
+   the universal selector wins this back for the bracket strip alone. */
+#tournament-panel .tour-cols { touch-action: pan-x pan-y; }
 .tour-col { flex: 0 0 138px; display: flex; flex-direction: column; gap: 8px; }
 .tour-col-hd {
   font-size: 12px; font-weight: 800; color: #5797c4; text-align: center;

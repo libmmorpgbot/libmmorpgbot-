@@ -405,6 +405,26 @@ module.exports = function createTournament(deps) {
       io.sockets.sockets.get(a)?.data?._forceEnterLocation?.('tournament') !== false &&
       io.sockets.sockets.get(b)?.data?._forceEnterLocation?.('tournament') !== false);
     const placed = room.tournamentDeploy(joined);
+    const placedIds = new Set();
+    placed.forEach(m => { placedIds.add(m.a.socketId); placedIds.add(m.b.socketId); });
+    // A pair that passed the aOk/bOk check above (both looked connected and
+    // in the world a moment ago) but still didn't land on the ring — a failed
+    // floor transition, a pit tournamentDeploy couldn't seat them in, a
+    // player record gone by the time it ran — used to just vanish here: no
+    // roundResults entry, so _trApplyRoundResults never counts them as a
+    // winner or a loser and they drop out of the bracket with no elimination
+    // and no advancement. The exact "кого-то вообще не забирает на арену"
+    // report. Resolve it the same way a pre-existing disconnect already is,
+    // picking whichever side is still actually present.
+    toFight.forEach(([a, b]) => {
+      if (placedIds.has(a)) return; // tournamentDeploy always seats both sides of a pair together
+      const winner = (io.sockets.sockets.get(a) && _findPlayerAnyFloor(a)) ? a : b;
+      const loser = winner === a ? b : a;
+      _tr.roundResults.set(loser, winner);
+      const entry = roundMatches.find(m => m.a.id === a && m.b.id === b);
+      if (entry) entry.winnerId = winner;
+      _trPayRoundReward(winner, loser);
+    });
     if (!placed.length) { _trAfterRound(idx); return; }
 
     _tr._roundLive = true;

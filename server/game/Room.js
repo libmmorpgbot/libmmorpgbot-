@@ -1774,6 +1774,10 @@ class Room {
       return 'r' + p._raceLane;
     }
     if (p._fearLane != null) return 'f' + p._fearLane;
+    // Tournament pits, same isolation reasoning as everything above — see the
+    // comment on tournamentDeploy. No "converged" exception like race10's boss
+    // room: a 1v1 pit never has more than its own two occupants to converge.
+    if (p._trPit != null) return 't' + p._trPit;
     // Same convergence treatment as race10: once a Coop participant reaches
     // the shared boss room both lanes open into, they share one key with
     // their partner regardless of which lane they each ran — the whole
@@ -3971,6 +3975,15 @@ class Room {
         p.x = pos.x; p.y = pos.y;
         p.hp = p.maxHp;
         p.pvpMode = true;
+        // Which pit this player belongs to — read by _playerLaneKey so the AOI
+        // stream (nearbyPlayerIds/the main player broadcast) isolates pits from
+        // each other the same way race10 lanes/Fear halls/coop lanes already
+        // are. Without this every tournament player's lane key was null (same
+        // bucket as "not in any instance"), and PLAYER_AOI_R2's 600px default
+        // reaches well past TR_PIT_PITCH's 520px spacing — so a client fighting
+        // in one pit was also streamed the occupants of the pit next door,
+        // reading as "то кидает в 3 на одной арене".
+        p._trPit = i;
         // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
         // whoever is currently online never checked which private Fear hall
         // they might still be occupying.
