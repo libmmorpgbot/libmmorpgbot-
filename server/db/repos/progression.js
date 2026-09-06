@@ -22,7 +22,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  VIP_THRESHOLDS, QUEST_DEF, questComplete, seasonActive, armIndexForLevel,
+  VIP_CUMULATIVE, QUEST_DEF, questComplete, seasonActive, armIndexForLevel,
   SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_PRIZES, SEASON_VIP_PRIZE, SEASON_ENHANCE_SPECIAL_SLOTS,
@@ -237,8 +237,11 @@ async function addVipSpend(db, playerId, gramAmount) {
   const was = rows[0].level;
   // The highest threshold this total has reached. Derived from the total, not
   // incremented — so a correction to `deposited` cannot leave the level behind.
+  // Against VIP_CUMULATIVE, not VIP_THRESHOLDS directly: the latter is only the
+  // per-level delta, and comparing a lifetime total against a single step's
+  // cost let one purchase clear several levels at once (shared/definitions.js).
   let now = 0;
-  for (let i = 0; i < VIP_THRESHOLDS.length; i++) if (deposited >= VIP_THRESHOLDS[i]) now = i;
+  for (let i = 0; i < VIP_CUMULATIVE.length; i++) if (deposited >= VIP_CUMULATIVE[i]) now = i;
   if (now <= was) return { level: was, deposited, newTiers: [] };
 
   const gained = [];

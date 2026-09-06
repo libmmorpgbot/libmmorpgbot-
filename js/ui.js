@@ -5299,12 +5299,13 @@ function closeVipPanel() {
   if (panel) panel.style.display = 'none';
 }
 
-// VIP_THRESHOLDS[lvl] is only the GRAM delta for that one level-up (the
-// server's deposit counter rolls over — resets to the remainder — after
-// each level, see server/index.js), which reads as "starting over from
-// scratch" every level. This is the running TOTAL a player must have
-// deposited overall (since VIP 0) to be at each level, for the "how much
-// do I need in total" answer the per-level number alone doesn't give.
+// VIP_THRESHOLDS[lvl] is only the GRAM delta for that one level-up; `deposited`
+// (server/db/repos/progression.js's addVipSpend) is a lifetime total that
+// never resets, so what it's actually compared against is VIP_CUMULATIVE —
+// the running TOTAL a player must have deposited overall (since VIP 0) to be
+// at each level. Read from shared/definitions.js so this can't drift from the
+// server's own copy again; the local fallback only covers a load order where
+// that script hasn't run yet.
 function _vipCumulative(thresholds) {
   const out = [0];
   for (let i = 1; i < thresholds.length; i++) out.push(out[i - 1] + thresholds[i]);
@@ -5320,7 +5321,7 @@ function renderVipPanel() {
   const pending   = vip.pending   || [];
   const bonuses   = typeof VIP_BONUSES    !== 'undefined' ? VIP_BONUSES    : null;
   const thresholds= typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500];
-  const cumulative= _vipCumulative(thresholds);
+  const cumulative= typeof VIP_CUMULATIVE !== 'undefined' ? VIP_CUMULATIVE : _vipCumulative(thresholds);
   const bon       = bonuses ? (bonuses[level] || bonuses[0]) : { xp:0, gold:0, drop:0 };
 
   let progressHtml;

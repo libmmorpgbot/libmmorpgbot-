@@ -14,7 +14,7 @@ const items = require('../server/db/repos/items');
 const money = require('../server/db/repos/money');
 const players = require('../server/db/repos/players');
 const prog = require('../server/db/repos/progression');
-const { VIP_THRESHOLDS, SEASON_REF_POINTS, SEASON_REF_LEVEL } = require('../shared/definitions');
+const { VIP_CUMULATIVE, SEASON_REF_POINTS, SEASON_REF_LEVEL } = require('../shared/definitions');
 const { wipeItemsAll } = require('./fixtures');
 
 let pass = 0, fail = 0; const failures = [];
@@ -64,11 +64,11 @@ async function main() {
 
   // ── VIP: tiers accrue from real spending, and collect once ───────────────
   const v = await mk('vip');
-  const t1 = await tx(t => prog.addVipSpend(t, v, VIP_THRESHOLDS[1]));
-  eq(t1.level, 1, `витрата ${VIP_THRESHOLDS[1]} GRAM дає VIP 1`);
+  const t1 = await tx(t => prog.addVipSpend(t, v, VIP_CUMULATIVE[1]));
+  eq(t1.level, 1, `витрата ${VIP_CUMULATIVE[1]} GRAM дає VIP 1`);
   eq(JSON.stringify(t1.newTiers), '[1]', 'нарахований рівно один новий рівень');
 
-  const t3 = await tx(t => prog.addVipSpend(t, v, VIP_THRESHOLDS[3] - VIP_THRESHOLDS[1]));
+  const t3 = await tx(t => prog.addVipSpend(t, v, VIP_CUMULATIVE[3] - VIP_CUMULATIVE[1]));
   eq(t3.level, 3, 'дострибнули до VIP 3');
   eq(JSON.stringify(t3.newTiers), '[2,3]', 'обидва пропущені рівні потрапили в нагороди');
   eq((await prog.vipOf(null, v)).pending.join(','), '1,2,3', 'до отримання чекають три рівні');
@@ -85,7 +85,7 @@ async function main() {
 
   // The double-tap that handed out the whole set twice on the old code.
   const v2 = await mk('vip2');
-  await tx(t => prog.addVipSpend(t, v2, VIP_THRESHOLDS[2]));
+  await tx(t => prog.addVipSpend(t, v2, VIP_CUMULATIVE[2]));
   const vr = await Promise.all([
     txRetry(t => prog.claimVip(t, v2, grant)).catch(() => ({ tiers: [] })),
     txRetry(t => prog.claimVip(t, v2, grant)).catch(() => ({ tiers: [] })),
@@ -95,7 +95,7 @@ async function main() {
 
   // A full inventory must leave the tiers claimable, not consume them.
   const v3 = await mk('vip3');
-  await tx(t => prog.addVipSpend(t, v3, VIP_THRESHOLDS[1]));
+  await tx(t => prog.addVipSpend(t, v3, VIP_CUMULATIVE[1]));
   await tx(async t => {
     await items.lockPlayer(t, v3);
     for (let i = 0; i < items.SERVER_INV_MAX; i++) await items.add(t, v3, 'sw1');
