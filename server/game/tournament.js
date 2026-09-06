@@ -160,7 +160,16 @@ module.exports = function createTournament(deps) {
     if (_tr.phase !== 'reg' || _tr.reg.size < TOURNAMENT_SIZE) return;
     const ready = [..._tr.reg.keys()].filter(sid =>
       io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
-    if (ready.length < TOURNAMENT_SIZE) return; // someone dropped between filling the slot and this check — wait for the next one
+    // Same fix as arena3's _a3TryStart: prune whoever dropped between filling
+    // the slot and this check, and broadcast the honest count. Leaving them
+    // in `reg` kept the head count stuck at 32/32 forever — tournamentRegister
+    // refuses sign-ups once reg.size >= TOURNAMENT_SIZE, so with a stale full
+    // count nobody new could ever register to retrigger this, and the window
+    // would eventually force-close as "didn't fill up" despite having filled.
+    const pruned = [..._tr.reg.keys()].filter(sid => !ready.includes(sid));
+    pruned.forEach(sid => _tr.reg.delete(sid));
+    if (pruned.length) _trBroadcast();
+    if (ready.length < TOURNAMENT_SIZE) return;
     clearTimeout(_tr.closeTimer);
     _tr.phase = 'live';
     _tr.names.clear();
