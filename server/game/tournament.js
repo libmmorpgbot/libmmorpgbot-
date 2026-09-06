@@ -35,6 +35,18 @@ const { FLOOR_IDS } = require('../game/floors');
 // own length, kept as a name rather than a bare 10 wherever it's compared.
 const TOURNAMENT_TOTAL_ROUNDS = 10;
 
+// Liberty (Nexum) paid per round win — not a single per-match constant like
+// arena3's ARENA3_REWARD, because a 10-round bracket pays out at every round,
+// not once at the end, and the grand final pays a different, higher tier to
+// BOTH sides. Kept here rather than in server/mode-rewards.js, whose
+// _trGrantReward closure only ever takes a plain amount and has no reason to
+// know these — requiring that file from here for just its constants would
+// also pull in its own `./db` require (real Postgres driver) for no reason.
+const TOURNAMENT_UB_ROUND_NEXUM = 10;
+const TOURNAMENT_LB_ROUND_NEXUM = 5;
+const TOURNAMENT_FINAL_WIN_NEXUM = 100;
+const TOURNAMENT_FINAL_LOSE_NEXUM = 50;
+
 module.exports = function createTournament(deps) {
   const {
     io, getRoom, _findPlayerAnyFloor, _recordPvpHistory, _returnToHub, _socketTid,
@@ -61,6 +73,11 @@ module.exports = function createTournament(deps) {
     matches: new Map(),     // socketId -> { opponent, pit } — only the pairs actually fighting right now
     dmg: new Map(),         // socketId -> damage dealt to their opponent this fight (tie-break on timeout)
     _roundLive: false,      // guards _trConcludeRound against running twice for the one round
+    // The real bracket, for display only — [{ round, matches: [{ tag, a:{id,name}, b:{id,name}, winnerId }] }],
+    // one entry per round actually dealt so far, in order. Nothing here drives
+    // the bracket logic itself (ubPool/lbPool/etc. above do that) — this is
+    // purely what the "Сетка" tab reads (see _trPublicState). Index 0 = round 1.
+    bracketHistory: [],
 
     fightAt: 0, roundEndAt: 0,
     freezeTimer: null, fightTimer: null, gapTimer: null,
@@ -71,16 +88,27 @@ module.exports = function createTournament(deps) {
     return nextEventStartAt(TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, from);
   }
 
+  // `queued` (not `registered`) for the head count on purpose — same split
+  // arena3PublicState/_a3Broadcast use (queued there too). `registered` is
+  // reserved for the per-socket boolean _trBroadcast overlays below; reusing
+  // one field name for both a count and a flag means every registered
+  // player's client would show "true/32" instead of "19/32" the moment this
+  // broadcast reaches them, since {...st, registered:true} would overwrite
+  // the count with the flag.
   function _trPublicState() {
     return {
       phase: _tr.phase,
       nextAt: _trNextOpenAt(),
-      registered: _tr.reg.size,
+      queued: _tr.reg.size,
       needed: TOURNAMENT_SIZE,
       live: _tr.phase === 'live',
       minLevel: TOURNAMENT_MIN_LEVEL,
       round: _tr.roundIndex,
       totalRounds: TOURNAMENT_TOTAL_ROUNDS,
+      // Real per-round matchups, only for rounds actually dealt so far — see
+      // _trStartRound/_trMarkWinner. Reset to [] by _trTryStart, so last
+      // tournament's finished bracket stays visible until the next one begins.
+      bracket: _tr.bracketHistory,
     };
   }
 
@@ -140,6 +168,7 @@ module.exports = function createTournament(deps) {
     _tr.ubPool = [..._tr.names.keys()];
     _tr.lbPool = []; _tr.dropFromUB3 = []; _tr.dropFromUB4 = [];
     _tr.ubChampion = null; _tr.ubFinalLoser = null; _tr.lbSemiSurvivor = null; _tr.lbChampion = null;
+    _tr.bracketHistory = []; // last tournament's bracket stays visible right up until this moment
     _tr.reg.clear();
     _trStartRound(1);
   }
@@ -334,14 +363,28 @@ module.exports = function createTournament(deps) {
     _tr.roundResults.clear();
     const groups = _trBuildRoundGroups(idx);
     const toFight = [];
+    // One bracket-history entry per round, built alongside the actual
+    // matchmaking below rather than derived from it afterwards — the pairing
+    // itself (who plays whom) only exists in this one place.
+    const roundMatches = [];
+    _tr.bracketHistory[idx - 1] = { round: idx, matches: roundMatches };
     groups.forEach(g => g.pairs.forEach(([a, b]) => {
       _tr.matchTag.set(a, g.tag); _tr.matchTag.set(b, g.tag);
+      const entry = {
+        tag: g.tag,
+        a: { id: a, name: _tr.names.get(a) || '?' },
+        b: { id: b, name: _tr.names.get(b) || '?' },
+        winnerId: null,
+      };
+      roundMatches.push(entry);
       const aOk = io.sockets.sockets.get(a) && _findPlayerAnyFloor(a);
       const bOk = io.sockets.sockets.get(b) && _findPlayerAnyFloor(b);
       if (aOk && bOk) { toFight.push([a, b]); return; }
       const winner = aOk ? a : b;
       const loser = winner === a ? b : a;
       _tr.roundResults.set(loser, winner);
+      entry.winnerId = winner;
+      _trPayRoundReward(winner, loser);
     }));
 
     if (!toFight.length) { _trAfterRound(idx); return; }
@@ -397,6 +440,43 @@ module.exports = function createTournament(deps) {
     const spotW = _returnToHub(winnerSid);
     io.to(loserSid).emit('tournamentMatchResult', { won: false, x: spotL?.x, y: spotL?.y });
     io.to(winnerSid).emit('tournamentMatchResult', { won: true, x: spotW?.x, y: spotW?.y });
+    _trMarkWinner(winnerSid, loserSid);
+    _trPayRoundReward(winnerSid, loserSid);
+  }
+
+  // Records the outcome on the bracket-history entry _trStartRound created
+  // for this pair, so the "Сетка" tab can show who actually won once a real
+  // fight (rather than a forfeit, which sets winnerId itself) decides it.
+  function _trMarkWinner(winnerSid, loserSid) {
+    const round = _tr.bracketHistory[_tr.roundIndex - 1];
+    const m = round && round.matches.find(x =>
+      (x.a.id === winnerSid && x.b.id === loserSid) || (x.a.id === loserSid && x.b.id === winnerSid));
+    if (m) m.winnerId = winnerSid;
+  }
+
+  // Liberty for winning a round — every round pays, not just the grand
+  // final: +10 for an upper-bracket win, +5 for a lower-bracket one (see
+  // _tr.matchTag for which this match was). The grand final is its own
+  // tier: both sides get paid, 100 to the champion and 50 to the runner-up,
+  // instead of the per-bracket amount. `ref` carries the round index so two
+  // different rounds never collide on mode-rewards.js's idempotency key —
+  // the account id is already part of that key, so nothing player-specific
+  // needs to be in `ref` itself.
+  function _trPayRoundReward(winnerSid, loserSid) {
+    const tag = _tr.matchTag.get(winnerSid);
+    if (tag === 'grandFinal') {
+      _trGrant(winnerSid, TOURNAMENT_FINAL_WIN_NEXUM, 'tournament:final:win');
+      _trGrant(loserSid, TOURNAMENT_FINAL_LOSE_NEXUM, 'tournament:final:lose');
+      return;
+    }
+    const upper = tag === 'ub' || tag === 'ubFinal';
+    _trGrant(winnerSid, upper ? TOURNAMENT_UB_ROUND_NEXUM : TOURNAMENT_LB_ROUND_NEXUM,
+      `tournament:${upper ? 'ub' : 'lb'}:r${_tr.roundIndex}`);
+  }
+
+  function _trGrant(sid, amount, ref) {
+    const sock = io.sockets.sockets.get(sid);
+    if (sock?.data?._trGrantReward) sock.data._trGrantReward(amount, ref).catch(() => {});
   }
 
   // The round's clock ran out (or the last live match just resolved and

@@ -258,6 +258,29 @@ function attach(socket, s) {
     } catch (err) { return _report('race10', err, id); }
   };
 
+  // Турнир: Liberty only, amount decided by the caller — a round win in the
+  // upper bracket, a round win in the lower bracket and the grand final's
+  // win/loss each pay a different amount (the TOURNAMENT_*_NEXUM constants
+  // live in server/game/tournament.js itself, not here, since this closure
+  // never needs to know them), unlike the other three closures here which
+  // each pay one fixed amount. `ref` must be unique per round (server/game/
+  // tournament.js includes the round index), the same way ARENA3_NEXUM's
+  // 'arena3' ref relies on credit()'s own 10-second bucket rather than on
+  // the ref string alone — two different rounds are always more than 10s
+  // apart, but the SAME round for the SAME player must never be paid twice.
+  socket.data._trGrantReward = async (amount, ref) => {
+    const id = pid();
+    if (!id || !(amount > 0)) return 0;
+    try {
+      await tx(async (t) => {
+        await credit(t, id, 'nexum', amount, ref);
+        await s.pushBalances(t);
+        _recordPayout(id, ref, { currency: 'nexum', amount });
+      });
+      return amount;
+    } catch (err) { _report(ref, err, id); return 0; }
+  };
+
   // Co-op boss: Liberty plus one safe-enhancement stone, to whoever landed the
   // killing blow. The run ends for both participants either way.
   socket.data._grantCoopBossReward = async () => {

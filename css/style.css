@@ -2096,46 +2096,39 @@ canvas { display:block; width:100%; height:100%; }
 }
 #tournament-panel, #tournament-panel * { touch-action: pan-y; pointer-events: auto; }
 
-/* ── Турнир · Сетка tab — one row per round, tagged by which bracket(s)
-   play it (see _tournamentBracketBodyHTML, js/ui.js) ──────────────────────── */
-.tour-round-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  margin-bottom: 6px;
-  background: rgba(193,204,213,.04);
+/* ── Турнир · Сетка tab — real bracket columns, one per round, each match
+   showing the two actual players (see _tournamentBracketBodyHTML, js/ui.js).
+   Only rounds that have actually been dealt appear — a round nobody has
+   reached yet has no real pairing to show. Horizontal scroll rather than
+   shrinking to fit: ten rounds of real names do not fit one phone width at
+   any readable size. ──────────────────────────────────────────────────── */
+.tour-cols { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; }
+.tour-col { flex: 0 0 138px; display: flex; flex-direction: column; gap: 8px; }
+.tour-col-hd {
+  font-size: 12px; font-weight: 800; color: #5797c4; text-align: center;
+  padding-bottom: 4px; border-bottom: 1px solid rgba(193,204,213,.12);
+}
+.tour-col.live .tour-col-hd { color: #ffb020; border-bottom-color: rgba(255,176,32,.35); }
+.tour-match {
+  display: flex; flex-direction: column; gap: 3px; padding: 8px 9px;
+  border-radius: 10px; background: rgba(193,204,213,.04);
   border: 1px solid rgba(193,204,213,.05);
 }
-.tour-round-row.tour-round-live {
-  background: rgba(255,176,32,.10);
-  border-color: rgba(255,176,32,.35);
-}
-.tour-round-num {
-  font-size: 13px;
-  font-weight: 800;
-  color: #5797c4;
-  width: 20px;
-  text-align: center;
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-.tour-round-tags { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
-.tour-round-tag {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  font-size: 10.5px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 99px;
+.tour-tag {
+  display: inline-flex; align-items: center; width: fit-content;
+  font-size: 9.5px; font-weight: 700; padding: 1px 7px; border-radius: 99px;
+  margin-bottom: 2px;
 }
 .tour-tag-ub { background: rgba(95,208,255,.14); color: #5fd0ff; }
 .tour-tag-lb { background: rgba(255,146,87,.14); color: #ff9257; }
 .tour-tag-gf { background: rgba(255,176,32,.16); color: #ffb020; }
-.tour-round-meta { text-align: right; flex-shrink: 0; font-size: 10.5px; color: #5797c4; }
-.tour-round-meta b { display: block; font-size: 14px; color: #f5dbae; font-weight: 700; }
+.tour-side {
+  font-size: 12.5px; color: #b3c1cd; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tour-side.win { color: #f5dbae; font-weight: 700; }
+.tour-side.lose { color: #5b6472; text-decoration: line-through; }
+.tour-vs { font-size: 9px; color: #3c5570; text-align: center; text-transform: uppercase; letter-spacing: .06em; }
 
 /* ── VIP button ───────────────────────────────────────────────────────────── */
 #vip-btn {

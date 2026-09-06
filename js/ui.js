@@ -5750,7 +5750,7 @@ function _arena3BodyHTML() {
 // covers the gap between rounds (see server/game/tournament.js's file header)
 // where this player is neither actively fighting nor free to register again.
 function _tournamentBodyHTML() {
-  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
   const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
   const alive = typeof _trAlive !== 'undefined' && _trAlive;
   const open = st.phase === 'reg';
@@ -5781,7 +5781,7 @@ function _tournamentBodyHTML() {
 
   const countdown = (!open && !inMatch && !alive)
     ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
-    : tVars('trCountFmt', { n: st.registered, need: st.needed });
+    : tVars('trCountFmt', { n: st.queued, need: st.needed });
 
   return `
     <div style="padding:16px">
@@ -5798,6 +5798,7 @@ function _tournamentBodyHTML() {
           <li>${t('trRule5')}</li>
           <li>${t('trRule6')}</li>
           <li>${t('trRule7')}</li>
+          <li>${t('trRule8')}</li>
         </ul>
       </div>
     </div>`;
@@ -5850,37 +5851,47 @@ function _renderTournamentPanelBody() {
                : _tournamentBodyHTML(); // same registration card as the compact "События" tab
 }
 
-// The fixed 10-round shape (server/game/tournament.js) — always the same
-// regardless of whether a tournament is currently running, so this is a
-// static table with the live round (if any) simply highlighted.
-const _TOUR_STAGE_TABLE = [
-  { r: 1,  tags: [['Верх', 'ub']],                          players: 32, matches: 16 },
-  { r: 2,  tags: [['Верх', 'ub'], ['Низ · LB1', 'lb']],      players: 32, matches: 16 },
-  { r: 3,  tags: [['Верх', 'ub'], ['Низ · LB2', 'lb']],      players: 24, matches: 12 },
-  { r: 4,  tags: [['Верх', 'ub'], ['Низ · LB3', 'lb']],      players: 12, matches: 6 },
-  { r: 5,  tags: [['Финал верха', 'ub'], ['Низ · LB4', 'lb']], players: 10, matches: 5 },
-  { r: 6,  tags: [['Низ · LB5', 'lb']],                      players: 4,  matches: 2 },
-  { r: 7,  tags: [['Низ · LB6', 'lb']],                      players: 4,  matches: 2 },
-  { r: 8,  tags: [['Низ · LB7', 'lb']],                      players: 2,  matches: 1 },
-  { r: 9,  tags: [['Финал низа', 'lb']],                     players: 2,  matches: 1 },
-  { r: 10, tags: [['Гранд-финал', 'gf']],                    players: 2,  matches: 1 },
-];
+// Which colour tag a match's tag reads as — 'ub'/'ubFinal' are the upper
+// bracket, everything else (including the finals) reuses lb/gf; see
+// server/game/tournament.js's _trBuildRoundGroups for where these tags come
+// from originally.
+const _TOUR_TAG_LABEL = {
+  ub: 'Верх', ubFinal: 'Финал верха',
+  lb: 'Низ', lbSemi: 'Низ', lbFinal: 'Финал низа',
+  grandFinal: 'Гранд-финал',
+};
+function _tourTagClass(tag) {
+  return tag === 'grandFinal' ? 'gf' : (tag === 'ub' || tag === 'ubFinal') ? 'ub' : 'lb';
+}
 
+// Real columns, real players — built from _trState.bracket, which the
+// server only ever fills in for rounds that have actually been dealt (see
+// _trStartRound, server/game/tournament.js). A round nobody has reached yet
+// has no genuine pairing to show, so it simply isn't drawn — no placeholder
+// "TBD" boxes guessing at a bracket that double-elimination hasn't decided.
 function _tournamentBracketBodyHTML() {
-  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', round: 0, totalRounds: 10 };
+  const st = (typeof _trState !== 'undefined' && _trState) || {};
+  const bracket = Array.isArray(st.bracket) ? st.bracket : [];
+  if (!bracket.length) {
+    return `<div class="rating-empty">Сетка появится, когда турнир начнётся — нужно 32 участника</div>`;
+  }
   const liveRound = st.phase === 'live' ? st.round : 0;
-  const status = liveRound
-    ? `<div class="db-count">Сейчас идёт раунд ${liveRound} из ${st.totalRounds}</div>`
-    : `<div class="rating-sub" style="text-align:center;margin-bottom:12px">Сетка фиксированная — турнир сейчас не идёт</div>`;
-  const rows = _TOUR_STAGE_TABLE.map(s => `
-    <div class="tour-round-row${s.r === liveRound ? ' tour-round-live' : ''}">
-      <div class="tour-round-num">${s.r}</div>
-      <div class="tour-round-tags">
-        ${s.tags.map(([label, cls]) => `<span class="tour-round-tag tour-tag-${cls}">${label}</span>`).join('')}
-      </div>
-      <div class="tour-round-meta"><b>${s.players}</b>${s.matches} ${s.matches === 1 ? 'матч' : 'матчей'}</div>
-    </div>`).join('');
-  return status + rows;
+  const cols = bracket.map(r => {
+    const matches = (r.matches || []).map(m => {
+      const decided = !!m.winnerId;
+      const aWon = decided && m.winnerId === m.a.id;
+      const bWon = decided && m.winnerId === m.b.id;
+      return `
+        <div class="tour-match">
+          <span class="tour-tag tour-tag-${_tourTagClass(m.tag)}">${_TOUR_TAG_LABEL[m.tag] || m.tag}</span>
+          <div class="tour-side${aWon ? ' win' : (decided ? ' lose' : '')}">${_escHtml(m.a.name)}</div>
+          <div class="tour-vs">vs</div>
+          <div class="tour-side${bWon ? ' win' : (decided ? ' lose' : '')}">${_escHtml(m.b.name)}</div>
+        </div>`;
+    }).join('');
+    return `<div class="tour-col${r.round === liveRound ? ' live' : ''}"><div class="tour-col-hd">Раунд ${r.round}</div>${matches}</div>`;
+  }).join('');
+  return `<div class="tour-cols">${cols}</div>`;
 }
 
 function _tournamentRatingBodyHTML() {

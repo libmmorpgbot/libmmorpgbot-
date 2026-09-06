@@ -159,7 +159,10 @@ let _dbFightAt = 0;
 // _initTournamentHandlers and server/game/tournament.js. round/totalRounds
 // let the panel show "Раунд N из 10"; opponent is just a name for display,
 // the server is the only one deciding who can actually hit whom.
-let _trState = { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10 };
+// bracket: real per-round matchups once the tournament is live — see
+// server/game/tournament.js's _tr.bracketHistory and the "Сетка" tab
+// (_tournamentBracketBodyHTML, js/ui.js). Empty before a tournament starts.
+let _trState = { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10, bracket: [] };
 let _trRegistered = false;
 let _trInMatch = false;
 // True from a successful registration all the way through to elimination or
