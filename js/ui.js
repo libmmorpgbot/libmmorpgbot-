@@ -2477,6 +2477,8 @@ function _syncGameOnlyBtns(n) {
   if (teleEl && teleEl.dataset.shown === '1') teleEl.style.display = (n === 0) ? 'flex' : 'none';
   const menuEl = document.getElementById('hud-menu-btn');
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
+  const tourEl = document.getElementById('tournament-hud-btn');
+  if (tourEl && tourEl.dataset.shown === '1') tourEl.style.display = (n === 0) ? 'flex' : 'none';
   const subDisplay = (n === 0 && _hudMenuExpanded) ? 'flex' : 'none';
   _HUD_MENU_BTN_IDS.forEach(id => {
     const el = document.getElementById(id);
@@ -5085,16 +5087,14 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
-// hud-menu-btn sits directly under the minimap plate, aligned to it —
-// everything else in this column chains its position off the button above it,
-// so this one anchor cascades the whole stack.
-function _positionHudMenuBtn() {
-  const btn = document.getElementById('hud-menu-btn');
+// Турнир sits directly under the minimap plate — the same anchor
+// hud-menu-btn used to own alone. It is always visible on tab 0 rather than
+// folded into that column (see index.html's comment on it), so it is
+// positioned first and hud-menu-btn chains underneath it (see
+// _positionHudMenuBtn), instead of the other way around.
+function _positionTournamentBtn() {
+  const btn = document.getElementById('tournament-hud-btn');
   if (!btn) return;
-  // W is set by the canvas resize (js/game.js). The login handshake can beat
-  // that on a warm cache, and this column is laid out from the right edge —
-  // without a width the whole stack lands at x=0, on top of the Мир/Проф
-  // buttons. Come back on the next frame instead of writing NaNpx.
   if (!W) { requestAnimationFrame(_positionHudColumn); return; }
   const mp = hudMiniMapRect();
   btn.style.top   = (mp.y + mp.h + 6) + 'px';
@@ -5104,10 +5104,35 @@ function _positionHudMenuBtn() {
   btn.style.transform = 'none';
 }
 
+// hud-menu-btn sits directly under the minimap plate, aligned to it, UNLESS
+// the tournament button (above) is currently shown — then it drops one slot
+// to make room, the same way every button below it already chains off the
+// one above. Everything else in this column chains its position off THIS
+// button, so this one anchor cascades the whole rest of the stack.
+function _positionHudMenuBtn() {
+  const btn = document.getElementById('hud-menu-btn');
+  if (!btn) return;
+  // W is set by the canvas resize (js/game.js). The login handshake can beat
+  // that on a warm cache, and this column is laid out from the right edge —
+  // without a width the whole stack lands at x=0, on top of the Мир/Проф
+  // buttons. Come back on the next frame instead of writing NaNpx.
+  if (!W) { requestAnimationFrame(_positionHudColumn); return; }
+  const mp = hudMiniMapRect();
+  const tourBtn = document.getElementById('tournament-hud-btn');
+  const tourShown = !!tourBtn && tourBtn.style.display !== 'none';
+  btn.style.top   = (mp.y + mp.h + 6 + (tourShown ? 34 : 0)) + 'px';
+  btn.style.left  = mp.x + 'px';
+  btn.style.width = mp.w + 'px';
+  btn.style.right = 'auto';
+  btn.style.transform = 'none';
+}
+
 // Re-runs the whole chain top-down. Called on resize (js/game.js) and
 // whenever the column is unfolded, so a stale or half-applied layout can
-// never survive on screen.
+// never survive on screen. Тurnament first: hud-menu-btn's own offset
+// depends on whether it is currently shown.
 function _positionHudColumn() {
+  _positionTournamentBtn();
   _positionHudMenuBtn();
   _positionRatingBtn();
   _positionVipBtn();
@@ -5118,9 +5143,14 @@ function _positionHudColumn() {
   _positionCodexBtn();
 }
 
+function showTournamentHudBtn() {
+  const btn = document.getElementById('tournament-hud-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudColumn(); }
+}
+
 function showHudMenuBtn() {
   const btn = document.getElementById('hud-menu-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudMenuBtn(); }
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionHudColumn(); }
 }
 
 function _positionRatingBtn() {
@@ -5763,6 +5793,108 @@ function _tournamentBodyHTML() {
 
 function onTournamentState() {
   if (_eventsPanelOpen() && _eventTab === 'tournament') _renderEventsBody();
+  // The standalone panel (tournament-hud-btn) shows the same registration
+  // card on its own "Регистрация" tab, and its "Сетка" tab highlights the
+  // live round — both need to hear about every state push too.
+  if (_tournamentPanelOpen() && (_tourTab === 'reg' || _tourTab === 'bracket')) _renderTournamentPanelBody();
+}
+
+// ── Турнир panel (tournament-hud-btn) ────────────────────────────────────────
+// Separate from the compact card above: this is the dedicated screen with its
+// own three tabs (Регистрация / Сетка / Рейтинг), opened from the standing
+// gold button under the minimap rather than from the "События" list.
+let _tourTab = 'reg';
+let _tourRatingData = null; // null = not loaded yet, [] = loaded and empty
+
+function openTournamentPanel() {
+  const panel = document.getElementById('tournament-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  if (typeof netTournamentSync === 'function') netTournamentSync();
+  switchTournamentTab(_tourTab);
+}
+
+function closeTournamentPanel() {
+  const panel = document.getElementById('tournament-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function _tournamentPanelOpen() {
+  return document.getElementById('tournament-panel')?.style.display === 'flex';
+}
+
+function switchTournamentTab(tab) {
+  _tourTab = tab;
+  ['reg', 'bracket', 'rating'].forEach(id => document.getElementById('ttab-' + id)?.classList.toggle('active', id === tab));
+  _renderTournamentPanelBody();
+  if (tab === 'rating' && _tourRatingData === null && typeof netGetTournamentRating === 'function') netGetTournamentRating();
+}
+
+function _renderTournamentPanelBody() {
+  const el = document.getElementById('tournament-panel-body');
+  if (!el) return;
+  el.innerHTML = _tourTab === 'bracket' ? _tournamentBracketBodyHTML()
+               : _tourTab === 'rating'  ? _tournamentRatingBodyHTML()
+               : _tournamentBodyHTML(); // same registration card as the compact "События" tab
+}
+
+// The fixed 10-round shape (server/game/tournament.js) — always the same
+// regardless of whether a tournament is currently running, so this is a
+// static table with the live round (if any) simply highlighted.
+const _TOUR_STAGE_TABLE = [
+  { r: 1,  tags: [['Верх', 'ub']],                          players: 32, matches: 16 },
+  { r: 2,  tags: [['Верх', 'ub'], ['Низ · LB1', 'lb']],      players: 32, matches: 16 },
+  { r: 3,  tags: [['Верх', 'ub'], ['Низ · LB2', 'lb']],      players: 24, matches: 12 },
+  { r: 4,  tags: [['Верх', 'ub'], ['Низ · LB3', 'lb']],      players: 12, matches: 6 },
+  { r: 5,  tags: [['Финал верха', 'ub'], ['Низ · LB4', 'lb']], players: 10, matches: 5 },
+  { r: 6,  tags: [['Низ · LB5', 'lb']],                      players: 4,  matches: 2 },
+  { r: 7,  tags: [['Низ · LB6', 'lb']],                      players: 4,  matches: 2 },
+  { r: 8,  tags: [['Низ · LB7', 'lb']],                      players: 2,  matches: 1 },
+  { r: 9,  tags: [['Финал низа', 'lb']],                     players: 2,  matches: 1 },
+  { r: 10, tags: [['Гранд-финал', 'gf']],                    players: 2,  matches: 1 },
+];
+
+function _tournamentBracketBodyHTML() {
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', round: 0, totalRounds: 10 };
+  const liveRound = st.phase === 'live' ? st.round : 0;
+  const status = liveRound
+    ? `<div class="db-count">Сейчас идёт раунд ${liveRound} из ${st.totalRounds}</div>`
+    : `<div class="rating-sub" style="text-align:center;margin-bottom:12px">Сетка фиксированная — турнир сейчас не идёт</div>`;
+  const rows = _TOUR_STAGE_TABLE.map(s => `
+    <div class="tour-round-row${s.r === liveRound ? ' tour-round-live' : ''}">
+      <div class="tour-round-num">${s.r}</div>
+      <div class="tour-round-tags">
+        ${s.tags.map(([label, cls]) => `<span class="tour-round-tag tour-tag-${cls}">${label}</span>`).join('')}
+      </div>
+      <div class="tour-round-meta"><b>${s.players}</b>${s.matches} ${s.matches === 1 ? 'матч' : 'матчей'}</div>
+    </div>`).join('');
+  return status + rows;
+}
+
+function _tournamentRatingBodyHTML() {
+  if (_tourRatingData === null) return `<div class="rating-loading">${t('questLoading')}</div>`;
+  if (!_tourRatingData.length) return `<div class="rating-empty">Чемпионов пока нет — станьте первым</div>`;
+  return _tourRatingData.map((r, i) => `
+    <div class="rating-row">
+      <div class="rating-rank${i < 3 ? ' rating-rank-' + (i + 1) : ''}">${i + 1}</div>
+      <div class="rating-avatar">🏆</div>
+      <div class="rating-name">${_escHtml(r.username)}</div>
+      <div class="rating-bm">
+        <div class="rating-bm-val">${r.wins}</div>
+        <div class="rating-bm-lbl">побед</div>
+      </div>
+    </div>`).join('');
+}
+
+function onTournamentRatingData(rows) {
+  _tourRatingData = rows || [];
+  if (_tournamentPanelOpen() && _tourTab === 'rating') _renderTournamentPanelBody();
+}
+
+function onTournamentRatingError(msg) {
+  const el = document.getElementById('tournament-panel-body');
+  if (el && _tourTab === 'rating') el.innerHTML = `<div class="rating-empty">${_escHtml(msg || t('ratingErrorToast'))}</div>`;
+  if (typeof _marketToast === 'function') _marketToast(msg || t('ratingErrorToast'), 'err');
 }
 
 // ── Кровавая Башня tab (10-player corridor race) ────────────────────────────

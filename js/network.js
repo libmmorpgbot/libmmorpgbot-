@@ -3796,6 +3796,7 @@ function _finishOnlineStart() {
   if (teleBtn) { teleBtn.dataset.shown = '1'; teleBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
   if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   _refreshChatPreview();
+  if (typeof showTournamentHudBtn === 'function') showTournamentHudBtn();
   if (typeof showHudMenuBtn === 'function') showHudMenuBtn();
   if (typeof showRatingBtn === 'function') showRatingBtn();
   if (typeof showVipBtn === 'function') showVipBtn();
@@ -4496,6 +4497,9 @@ function _initArena3Handlers(s) {
 function netTournamentRegister()   { if (socket?.connected) socket.emit('tournamentRegister'); }
 function netTournamentUnregister() { if (socket?.connected) socket.emit('tournamentUnregister'); }
 function netTournamentSync()       { if (socket?.connected) socket.emit('tournamentSync'); }
+// Champions leaderboard for the standalone Турнир panel's "Рейтинг" tab —
+// separate request from tournamentSync (that one's just phase/registration).
+function netGetTournamentRating()  { if (socket?.connected) socket.emit('getTournamentRating'); }
 
 // ── Турнир (32-player double elimination) ────────────────────────────────────
 // Reuses the death-battle/arena3 freeze overlay (showDeathBattleFreeze) and
@@ -4592,6 +4596,15 @@ function _initTournamentHandlers(s) {
       showEventBossBanner(champion ? t('trChampionMsg') : t('trRunnerUpMsg'), champion ? '#ffd700' : '#f07886');
     }
     if (typeof onTournamentState === 'function') onTournamentState();
+  });
+
+  // Champions leaderboard — see netGetTournamentRating and the "Рейтинг" tab
+  // of the standalone Турнир panel (js/ui.js).
+  s.on('tournamentRatingData', ({ rows }) => {
+    if (typeof onTournamentRatingData === 'function') onTournamentRatingData(rows);
+  });
+  s.on('tournamentRatingError', ({ msg }) => {
+    if (typeof onTournamentRatingError === 'function') onTournamentRatingError(msg);
   });
 }
 

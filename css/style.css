@@ -1846,6 +1846,28 @@ canvas { display:block; width:100%; height:100%; }
 .pvp-hist-win { color: #e6ac19; }
 .pvp-hist-lose { color: #a3957c; }
 
+/* ── Tournament button — gold, always visible on tab 0 (not part of the
+   fold-away column below: see the comment on it in index.html) ───────────── */
+#tournament-hud-btn {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  background: linear-gradient(180deg, rgba(80,58,10,.94), rgba(38,27,4,.96));
+  border: 1px solid rgba(255,176,32,.55);
+  border-radius: 9px;
+  color: #ffcf6b;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .4px;
+  cursor: pointer;
+  z-index: 52;
+  box-shadow: 0 2px 12px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,214,130,.2), 0 0 12px rgba(255,176,32,.22);
+}
+#tournament-hud-btn:active { background: linear-gradient(180deg, rgba(105,77,14,.96), rgba(52,37,6,.97)); }
+
 /* ── HUD menu toggle — folds the Рейтинг/VIP/.../Кодекс column away ────────── */
 #hud-menu-btn {
   position: absolute;
@@ -2059,6 +2081,59 @@ canvas { display:block; width:100%; height:100%; }
   letter-spacing: 4px;
   padding: 6px 0;
 }
+
+/* ── Турнир panel — same shell as #rating-panel, own id so both can exist ─── */
+#tournament-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  background: rgba(8,13,20,.97);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#tournament-panel, #tournament-panel * { touch-action: pan-y; pointer-events: auto; }
+
+/* ── Турнир · Сетка tab — one row per round, tagged by which bracket(s)
+   play it (see _tournamentBracketBodyHTML, js/ui.js) ──────────────────────── */
+.tour-round-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 6px;
+  background: rgba(193,204,213,.04);
+  border: 1px solid rgba(193,204,213,.05);
+}
+.tour-round-row.tour-round-live {
+  background: rgba(255,176,32,.10);
+  border-color: rgba(255,176,32,.35);
+}
+.tour-round-num {
+  font-size: 13px;
+  font-weight: 800;
+  color: #5797c4;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tour-round-tags { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.tour-round-tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+.tour-tag-ub { background: rgba(95,208,255,.14); color: #5fd0ff; }
+.tour-tag-lb { background: rgba(255,146,87,.14); color: #ff9257; }
+.tour-tag-gf { background: rgba(255,176,32,.16); color: #ffb020; }
+.tour-round-meta { text-align: right; flex-shrink: 0; font-size: 10.5px; color: #5797c4; }
+.tour-round-meta b { display: block; font-size: 14px; color: #f5dbae; font-weight: 700; }
 
 /* ── VIP button ───────────────────────────────────────────────────────────── */
 #vip-btn {

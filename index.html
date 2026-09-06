@@ -105,6 +105,17 @@
 <canvas id="canvas"></canvas>
 <canvas id="ui-canvas" style="position:absolute;inset:0;pointer-events:none;"></canvas>
 
+<!-- Tournament button (header area, left of minimap, directly above
+     hud-menu-btn) — always visible on tab 0, deliberately NOT folded into
+     that collapsible column: a live daily event with its own registration
+     window earns a standing button, not one more line behind "Меню". Opens
+     its own panel (registration / bracket / leaderboard), separate from the
+     compact card in the "События" panel — see openTournamentPanel, js/ui.js. -->
+<button id="tournament-hud-btn" onclick="openTournamentPanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 5H4a3 3 0 0 0 3 5"/><path d="M17 5h3a3 3 0 0 1-3 5"/></svg>
+  <span data-i18n="tournamentHudBtn">Турнир</span>
+</button>
+
 <!-- HUD menu toggle (header area, left of minimap) — folds Рейтинг/VIP/Маркет/
      Магазин/События/Сезон/Кодекс away so they don't sit on screen permanently;
      see toggleHudMenu, js/ui.js. -->
@@ -327,6 +338,22 @@
     <button class="rating-tab" id="rtab-clans" onclick="switchRatingTab('clans')" data-i18n="navClans">Кланы</button>
   </div>
   <div id="rating-body" class="rating-body"></div>
+</div>
+
+<!-- Турнир overlay panel: registration status, the fixed 10-round bracket
+     shape, and a champions leaderboard — reuses the rating panel's classes
+     (same shell, same row look) rather than a fourth copy of that CSS. -->
+<div id="tournament-panel" style="display:none">
+  <div class="rating-header">
+    <div class="rating-title" style="color:#ffb020"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 5H4a3 3 0 0 0 3 5"/><path d="M17 5h3a3 3 0 0 1-3 5"/></svg><span data-i18n="tournamentHudBtn">Турнир</span></div>
+    <button class="rating-close" onclick="closeTournamentPanel()">✕</button>
+  </div>
+  <div class="rating-tabs">
+    <button class="rating-tab active" id="ttab-reg" onclick="switchTournamentTab('reg')" data-i18n="tourTabReg">Регистрация</button>
+    <button class="rating-tab" id="ttab-bracket" onclick="switchTournamentTab('bracket')" data-i18n="tourTabBracket">Сетка</button>
+    <button class="rating-tab" id="ttab-rating" onclick="switchTournamentTab('rating')" data-i18n="tourTabRating">Рейтинг</button>
+  </div>
+  <div id="tournament-panel-body" class="rating-body"></div>
 </div>
 
 <!-- VIP overlay panel -->
