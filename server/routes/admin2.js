@@ -1264,6 +1264,25 @@ module.exports = function registerAdminRoutes(app, deps) {
   modeCtl('/admin/arena3/open',  () => need('_a3OpenWindow')(Date.now()), 'arena3_open');
   modeCtl('/admin/arena3/close', () => need('_a3CloseWindow')(), 'arena3_close');
 
+  // ── the tournament, 32-player double elimination ────────────────────────
+  // Same "no way to start it by hand" gap as arena3 had: registration only
+  // ever opened on the daily schedule. Opening it early while a bracket is
+  // already 'reg' or 'live' would stomp the running state (_trOpenWindow
+  // unconditionally clears _tr.reg and flips phase to 'reg'), so this guards
+  // the same way death_battle_open does rather than trusting the operator
+  // not to double-click it.
+  app.get('/admin/tournament', guard, (req, res) =>
+    res.json(modes._trPublicState ? modes._trPublicState() : {}));
+  modeCtl('/admin/tournament/open', () => {
+    if (modes._tr && modes._tr.phase !== 'idle') {
+      throw Object.assign(new Error('busy'), {
+        userMessage: modes._tr.phase === 'reg' ? 'Регистрация уже открыта' : 'Турнир уже идёт',
+      });
+    }
+    need('_trOpenWindow')(Date.now());
+  }, 'tournament_open');
+  modeCtl('/admin/tournament/close', () => need('_trCloseWindow')(), 'tournament_close');
+
   // ── Страх, one player at a time ──────────────────────────────────────────
   // Not an event with a window: a player walks in when they choose and spends
   // a daily attempt. What an operator actually needs is to GIVE the attempt

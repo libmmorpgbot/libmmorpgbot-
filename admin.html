@@ -338,6 +338,18 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         </div>
       </div>
       <div class="card">
+        <h3>🏆 Турнир</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="tr-status">—</div>
+        <div class="action-grid">
+          <button class="btn btn-primary" id="tr-open-btn" onclick="openTournament()">Открыть сейчас</button>
+          <button class="btn btn-red" id="tr-close-btn" onclick="closeTournament()">Закрыть регистрацию</button>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Обычно открывается по расписанию. Окно регистрации открывается немедленно;
+          турнир (32 игрока, двойное выбывание) стартует сам, как только наберётся ровно 32.
+        </div>
+      </div>
+      <div class="card">
         <h3>♻ Сброс ежедневных попыток</h3>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px">
           Возвращает попытку ВСЕМ игрокам сразу — для проверки режима или после сбоя.
@@ -722,6 +734,7 @@ async function loadDashboard() {
   loadRace10();
   loadGuildWar();
   loadArena3();
+  loadTournament();
 }
 
 // ── Технические работы ─────────────────────────────────────
@@ -930,6 +943,49 @@ async function closeArena3() {
     toast(r.ok ? 'Набор закрыт' : (d.error || 'Ошибка'), r.ok);
   } catch (e) { toast('Ошибка', false); }
   loadArena3();
+}
+
+// ── Турнир ──────────────────────
+async function loadTournament() {
+  const el = document.getElementById('tr-status');
+  const openBtn = document.getElementById('tr-open-btn');
+  const closeBtn = document.getElementById('tr-close-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/tournament')).json();
+    let txt, isReg = false, busy = false;
+    if (d.live) { txt = '🔴 Турнир идёт · раунд ' + (d.round || 0) + '/' + (d.totalRounds || 10); busy = true; }
+    else if (d.phase === 'reg') {
+      txt = '🟡 Регистрация открыта · записано ' + (d.queued || 0) + '/' + (d.needed || 32);
+      isReg = true; busy = true;
+    } else {
+      txt = '⚪ Не запущен — можно открыть регистрацию';
+      if (d.nextAt) txt += ' · по расписанию: ' + new Date(d.nextAt).toLocaleString('ru-RU');
+    }
+    el.textContent = txt;
+    if (openBtn)  { openBtn.disabled = busy;   openBtn.style.opacity  = busy   ? '.5' : '1'; }
+    if (closeBtn) { closeBtn.disabled = !isReg; closeBtn.style.opacity = !isReg ? '.5' : '1'; }
+  } catch (e) { el.textContent = '—'; }
+}
+
+async function openTournament() {
+  if (!confirm('Открыть регистрацию на турнир сейчас, вне расписания? Турнир стартует сам, как только наберётся ровно 32 игрока.')) return;
+  try {
+    const r = await api('/admin/tournament/open', { method: 'POST' });
+    const d = await r.json();
+    toast(r.ok ? 'Регистрация открыта' : (d.error || 'Ошибка'), r.ok);
+  } catch (e) { toast('Ошибка', false); }
+  loadTournament();
+}
+
+async function closeTournament() {
+  if (!confirm('Закрыть регистрацию на турнир? Все записавшиеся будут возвращены в "не зарегистрирован", турнир не начнётся.')) return;
+  try {
+    const r = await api('/admin/tournament/close', { method: 'POST' });
+    const d = await r.json();
+    toast(r.ok ? 'Регистрация закрыта' : (d.error || 'Ошибка'), r.ok);
+  } catch (e) { toast('Ошибка', false); }
+  loadTournament();
 }
 
 // ── Сброс попыток и уборка лута ────────
