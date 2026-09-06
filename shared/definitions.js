@@ -1788,8 +1788,12 @@ const CLAN_DESC_MAX_CHARS = 200;
 
 // Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
 const ENHANCE_MAX = 15;
-// Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js)
-const ENHANCEABLE_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet', 'cloak', 'artifact']);
+// Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js).
+// `wings` belongs here too — it's a real equipment slot with its own atk/def/hp
+// (see ITEM_DEF's wing_c..wing_l) sitting right alongside every other slot in
+// EQ_SLOTS (js/definitions.js), and was simply left out of this set by oversight —
+// enhanceBonus() already handles it correctly with no slot-specific change needed.
+const ENHANCEABLE_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet', 'cloak', 'artifact', 'wings']);
 function enhanceBonus(it, levels) {
   if (!levels) return {};
   const b = {};
