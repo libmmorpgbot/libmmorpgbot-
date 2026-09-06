@@ -1846,38 +1846,29 @@ canvas { display:block; width:100%; height:100%; }
 .pvp-hist-win { color: #e6ac19; }
 .pvp-hist-lose { color: #a3957c; }
 
-/* ── Tournament badge — small gold circle pinned to the player plate's own
-   top-right corner (see _positionTournamentBtn, js/ui.js), not a column
-   entry: the plate has no free space for a full labelled button, so this
-   sits half on/half off its border, the way a notification badge would. ── */
+/* ── Tournament button — solid gold pill inline in the player plate's own
+   name row, right-aligned (see _positionTournamentBtn, js/ui.js). Not a
+   column entry and not a bare corner badge: a live daily event gets a
+   legible label, the one clearly-different-colour thing on the plate. ── */
 #tournament-hud-btn {
   position: absolute;
   display: none;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, rgba(255,206,110,.35), rgba(38,27,4,.97) 72%);
-  border: 2px solid #ffb020;
-  color: #ffd77a;
+  gap: 4px;
+  border-radius: 7px;
+  background: linear-gradient(180deg, #ffd54a, #f0b400);
+  border: 1px solid #a97600;
+  color: #241a03;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-weight: 800;
+  letter-spacing: .2px;
+  white-space: nowrap;
   cursor: pointer;
   z-index: 53;
-  box-shadow: 0 2px 10px rgba(0,0,0,.55), 0 0 12px rgba(255,176,32,.5);
+  box-shadow: 0 2px 6px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.55);
 }
-#tournament-hud-btn:active { background: radial-gradient(circle at 35% 30%, rgba(255,206,110,.5), rgba(58,42,6,.98) 72%); }
-#tournament-hud-btn::after {
-  content: "";
-  position: absolute;
-  inset: -5px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255,176,32,.55);
-  animation: tourPulse 2.2s ease-out infinite;
-  pointer-events: none;
-}
-@keyframes tourPulse {
-  0%   { opacity: .9; transform: scale(1); }
-  100% { opacity: 0;  transform: scale(1.5); }
-}
-@media (prefers-reduced-motion: reduce) { #tournament-hud-btn::after { animation: none; } }
+#tournament-hud-btn:active { background: linear-gradient(180deg, #f0b400, #d99e00); }
 
 /* ── HUD menu toggle — folds the Рейтинг/VIP/.../Кодекс column away ────────── */
 #hud-menu-btn {

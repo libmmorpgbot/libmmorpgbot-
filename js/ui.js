@@ -5087,28 +5087,31 @@ function drawDead() {
 let _ratingTab = 'players';
 let _ratingData = { players: null, clans: null };
 
-// Турнир is a small badge pinned to the player plate's own top-right
-// corner — half on/half off its border, the way a notification badge sits on
-// a card. The plate itself is canvas-drawn (drawHeader, above in this file);
-// its geometry is duplicated here rather than shared because drawHeader
-// computes it fresh every frame from locals, with nothing exported — px/py/pw
-// use the exact same hud()-scaled formula it does; a drift between the two
-// would put this badge over the currency chips instead of the corner. Not
-// part of the hud-menu-btn column at all — see the comment on it in
-// index.html for why it gets its own anchor instead of one more line there.
+// Турнир sits inline in the player plate's own NAME row, right-aligned to
+// the same pRight edge the HP/XP bars and currency chips use — the row has
+// the name on the left and empty space the rest of the way across, which is
+// exactly where the owner pointed it. The plate itself is canvas-drawn
+// (drawHeader, above in this file); its geometry is duplicated here rather
+// than shared because drawHeader computes it fresh every frame from locals,
+// with nothing exported — px/py/pw/pRight use the exact same hud()-scaled
+// formula it does, so a drift between the two can't put this button over the
+// HP bar instead of the name row. Not part of the hud-menu-btn column at
+// all — see the comment on it in index.html for why it gets its own anchor.
 function _positionTournamentBtn() {
   const btn = document.getElementById('tournament-hud-btn');
   if (!btn) return;
   if (!W) { requestAnimationFrame(_positionHudColumn); return; }
   const mp = hudMiniMapRect();
   const px = hud(6), py = hud(4), pw = mp.x - px - hud(4);
-  const size = hud(30);
-  btn.style.top    = (py - size / 2) + 'px';
-  btn.style.left   = (px + pw - size / 2) + 'px';
-  btn.style.width  = size + 'px';
-  btn.style.height = size + 'px';
+  const pRight = px + pw - hud(11);
+  const w = hud(78), h = hud(22);
+  btn.style.top    = (py + hud(5)) + 'px';
+  btn.style.left   = (pRight - w) + 'px';
+  btn.style.width  = w + 'px';
+  btn.style.height = h + 'px';
   btn.style.right  = 'auto';
   btn.style.transform = 'none';
+  btn.style.fontSize = hudF(11.5) + 'px';
 }
 
 // hud-menu-btn sits directly under the minimap plate, aligned to it —
