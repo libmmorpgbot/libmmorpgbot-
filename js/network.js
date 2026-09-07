@@ -4685,6 +4685,17 @@ function _initRace10Handlers(s) {
     if (typeof onRace10State === 'function') onRace10State();
   });
 
+  // The instant this lane's monsters are all dead, the server teleports this
+  // racer straight into the (small, shared) boss room — see
+  // _race10ReachBoss, server/game/race10.js, and generateRace10's own
+  // comment for why there's no corridor left to walk into it.
+  s.on('race10ReachedBoss', ({ x, y }) => {
+    if (!player) return;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('race10ArenaLbl'));
+    else { player.x = x; player.y = y; }
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('race10ReachedBossMsg'), '#e8574f');
+  });
+
   s.on('race10Fight', () => {
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();

@@ -91,11 +91,15 @@ const TR_PIT_SIZE = 10; // pit size (tiles) — same footprint as a Fear room
 // Its own floor now (generateRace10, below). Every entrant runs their own
 // sealed lane: 60 level-5 monsters packed shoulder-to-shoulder, a short gap,
 // then 60 level-10 monsters the same way — "впритык", so there's no way past
-// them except fighting through. All lanes open into ONE shared room at the
-// far end holding a single boss (same identity as the world EVENT_BOSS — see
-// spawnRaceBoss, server/game/Room.js). Whoever has dealt it the most damage
-// when it dies wins; dying anywhere in a lane eliminates that player from
-// the run (see the 'respawn' handler, server/index.js).
+// them except fighting through. Clearing a lane teleports that racer straight
+// into one small shared room holding a single boss (same identity as the
+// world EVENT_BOSS — see spawnRaceBoss, server/game/Room.js and
+// _race10ReachBoss, server/game/race10.js) — not a walk down a room sized to
+// reach every lane's row, which is what made it enormous before, and which
+// left latecomers walking the empty last stretch alone instead of arriving
+// the moment they earned it. Whoever has dealt the boss the most damage when
+// it dies wins; dying anywhere in a lane eliminates that player from the run
+// (see the 'respawn' handler, server/index.js).
 //
 // The event takes however many players register, one lane each — but the
 // floor is generated once at startup and its geometry never changes, so the
@@ -119,7 +123,10 @@ const RACE10_TIER_GAP     = 4;   // tiles between the level-5 line and the level
 // rng()*55) from there, or a monster could start hitting a still-frozen
 // player during the pre-race countdown with no way to fight back or flee.
 const RACE10_LEAD_IN      = 9;   // (9-2)*40 = 280px clearance
-const RACE10_LEAD_OUT     = 6;   // last monster to the shared boss room
+// Dead-end clearance after the last monster — no longer "to the shared boss
+// room" (that's a teleport now, not a walk, see _race10ReachBoss), just
+// enough that killing the last one doesn't happen right up against a wall.
+const RACE10_LEAD_OUT     = 6;
 const RACE10_LANE_LEN     = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT;
 // Barrier positions (tile x, relative to the floor's own X0) — centred in
 // the gap after each tier's monster line, so the player runs into it right
@@ -128,7 +135,15 @@ const RACE10_LANE_LEN     = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_G
 // model as the level gates elsewhere in the open world (dungeon.corridorGates).
 const RACE10_BARRIER1_X = RACE10_LEAD_IN + RACE10_TIER_LEN + RACE10_TIER_GAP / 2;
 const RACE10_BARRIER2_X = RACE10_LEAD_IN + RACE10_TIER_LEN * 2 + RACE10_TIER_GAP + RACE10_LEAD_OUT / 2;
-const RACE10_BOSS_ROOM    = 44;  // shared room, square
+// One shared room, small — everyone teleports in the instant their own lane
+// clears (_race10ReachBoss), nobody walks the width of the map to reach it,
+// so it no longer needs to be tall enough to reach every lane's row (used to
+// be 44x250 tiles, spanning the whole floor's height, for exactly that
+// reason). RACE10_BOSS_SPOTS arrival points ringed around the boss so
+// simultaneous arrivals don't stack on the same tile.
+const RACE10_BOSS_ROOM  = 22;
+const RACE10_BOSS_SPOTS = 10;
+const RACE10_BOSS_SPOT_R = 3; // tiles from the boss the ring of arrival spots sits at
 const RACE10_H  = RACE10_LANES * RACE10_LANE_PITCH;
 const RACE10_W  = RACE10_LANE_LEN + RACE10_BOSS_ROOM;
 
@@ -1059,10 +1074,12 @@ function generateTournamentPit() {
 // Кровавая Башня (the 10-player corridor race), now its own floor (see
 // server/game/floors.js) instead of a slice of the hub's mega-grid. Ten
 // parallel sealed lanes, each running the full RACE10_LANE_LEN before
-// opening into one shared boss room spanning every lane's row — everyone who
-// registered gets their own lane (Room.raceDeploy), isolated from every
-// other lane the same way Fear's private halls are (see _raceVisible,
-// Room.js), just now on this floor instead of inside the hub's Room.
+// dead-ending — everyone who registered gets their own lane (Room.raceDeploy),
+// isolated from every other lane the same way Fear's private halls are (see
+// _raceVisible, Room.js), just now on this floor instead of inside the hub's
+// Room. Clearing a lane doesn't mean walking anywhere: it teleports that
+// racer into the one small shared boss room (_race10ReachBoss, server/game/
+// race10.js), centred on the floor's height rather than spanning it.
 // `bounds` covers the whole grid (there's nothing else on this floor to
 // distinguish it from), same reasoning generateGuildWar's own bounds field
 // has, so the client's "Кровавая Башня" tile tinting (_isRace10Tile,
@@ -1085,9 +1102,20 @@ function generateRace10() {
     paintRect(X0, cy - RACE10_LANE_HW, X0 + RACE10_LANE_LEN - 1, cy + RACE10_LANE_HW);
   }
   const bossRoomX0 = X0 + RACE10_LANE_LEN;
-  paintRect(bossRoomX0, Y0, bossRoomX0 + RACE10_BOSS_ROOM - 1, Y0 + RACE10_H - 1);
+  const bossRoomY0 = Y0 + Math.floor((RACE10_H - RACE10_BOSS_ROOM) / 2);
+  paintRect(bossRoomX0, bossRoomY0, bossRoomX0 + RACE10_BOSS_ROOM - 1, bossRoomY0 + RACE10_BOSS_ROOM - 1);
   const bossCx = bossRoomX0 + Math.floor(RACE10_BOSS_ROOM / 2);
-  const bossCy = Y0 + Math.floor(RACE10_H / 2);
+  const bossCy = bossRoomY0 + Math.floor(RACE10_BOSS_ROOM / 2);
+  // A small ring of arrival points around the boss, one per simultaneous
+  // arrival — without these, everyone _race10ReachBoss teleports in lands on
+  // the exact same tile as the boss and each other.
+  const bossArrivalSpots = Array.from({ length: RACE10_BOSS_SPOTS }, (_, i) => {
+    const ang = (i / RACE10_BOSS_SPOTS) * Math.PI * 2;
+    return {
+      x: (bossCx + Math.round(Math.cos(ang) * RACE10_BOSS_SPOT_R)) * TILE + TILE / 2,
+      y: (bossCy + Math.round(Math.sin(ang) * RACE10_BOSS_SPOT_R)) * TILE + TILE / 2,
+    };
+  });
 
   const enemyList = [];
   let eid = 0;
@@ -1151,12 +1179,16 @@ function generateRace10() {
         x: (X0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2,
       })),
       boss: { x: bossCx * TILE + TILE / 2, y: bossCy * TILE + TILE / 2 },
+      // Where _race10ReachBoss (server/game/race10.js) teleports a racer the
+      // instant their own lane clears — a ring around the boss so
+      // simultaneous arrivals don't stack on one tile (Room.raceBossSpot
+      // picks one, validated-not-assumed same as every other slot getter).
+      bossArrivalSpots,
       bounds: { x0: 0, y0: 0, x1: w, y1: h },
-      // Where the shared boss room starts (px, world x) — every lane's
-      // corridor ends before this and the one shared room spans everything
-      // past it. Room.js uses this to tell "still in my own sealed corridor"
-      // apart from "reached the shared room", the same distinction the boss
-      // itself already gets (see spawnRaceBoss's `lane`-less enemy).
+      // Past this x, a player is considered to have reached the shared boss
+      // room — Room._playerLaneKey uses it to let racers who got there see
+      // each other despite having run different lanes (the one deliberate
+      // exception to lane isolation, see that method's own comment).
       bossRoomX0: bossRoomX0 * TILE,
       // One barrier pair per lane: tier 0 blocks until every level-5 monster
       // in that lane is dead, tier 1 until every level-10 one is. lane/tier

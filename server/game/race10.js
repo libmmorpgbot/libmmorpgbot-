@@ -301,14 +301,26 @@ module.exports = function createRace10(deps) {
     running.forEach(sid => {
       if (joined.length >= _laneSpots.length) return;
       const ok = io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('race10', { pos: _laneSpots[joined.length] });
-      if (ok) joined.push(sid);
+      if (ok) { joined.push(sid); return; }
+      // "не закидывает на дорожку" — a socket that looked ready a moment ago
+      // (the aOk/bOk-style check at the top of _race10Start) but then failed
+      // to actually land on the floor used to just sit in _race10.queue
+      // forever: never deployed, never told why, still reading
+      // registered:true on its own screen for a race that had already
+      // started without it.
+      _race10.queue.delete(sid);
+      io.to(sid).emit('race10Registered', { registered: false });
+      io.to(sid).emit('race10Error', { msg: 'Не удалось войти в забег — попробуйте зарегистрироваться на следующий' });
     });
     const placed = room.raceDeploy(joined);
     _race10.bossId = room.spawnRaceBoss();
 
     placed.forEach(({ socketId, lane }) => {
       const name = _race10.queue.get(socketId)?.name || '?';
-      _race10.alive.set(socketId, { name, lane });
+      // atBoss: false — flips once in _race10ReachBoss, the instant this
+      // lane's monsters are all dead. Guards against teleporting the same
+      // racer twice if raceLaneClear somehow gets checked again afterward.
+      _race10.alive.set(socketId, { name, lane, atBoss: false });
       _race10.names.set(socketId, name);
       _race10.dmg.set(socketId, 0);
       _race10.queue.delete(socketId);
@@ -332,6 +344,26 @@ module.exports = function createRace10(deps) {
     clearTimeout(_race10.maxTimer);
     _race10.maxTimer = safeTimeout('race10Max', () => _race10Finish(null, true), RACE10_FREEZE_MS + RACE10_MAX_MS);
     _race10Broadcast();
+  }
+
+  // Teleports one racer into the shared boss room the instant their own lane
+  // is fully cleared — called from modes._onCombatResult on the kill that
+  // could be the lane's last one (see Room.raceLaneClear). Replaces walking
+  // an empty corridor stretch into a room sized to span every lane's row;
+  // see generateRace10's own comment for why that room used to be enormous.
+  // The atBoss guard makes this idempotent: nothing should call it twice for
+  // the same racer, but if it ever did, this must not re-teleport someone
+  // already standing at the boss to a fresh ring spot.
+  function _race10ReachBoss(socketId, lane) {
+    if (!_race10.live) return;
+    const run = _race10.alive.get(socketId);
+    if (!run || run.atBoss) return;
+    const room = getRoom(FLOOR_IDS.race10);
+    if (!room) return;
+    const spot = room.raceMoveToBoss(socketId, lane);
+    if (!spot) return;
+    run.atBoss = true;
+    io.to(socketId).emit('race10ReachedBoss', spot);
   }
 
   // Knocks one player out — dying anywhere in a lane, to anything. Safe to
@@ -421,6 +453,6 @@ module.exports = function createRace10(deps) {
     RACE10_REWARD, RACE10_MAX_MS,
     _race10, _race10Capacity, _race10NextOpenAt, _race10PublicState, _race10Broadcast, _race10Schedule,
     _race10OpenWindow, _race10CloseWindow, _race10Frozen, _race10StartSafe, _race10Start, _race10Deploy,
-    _race10Eliminate, _race10Finish,
+    _race10Eliminate, _race10Finish, _race10ReachBoss,
   };
 };

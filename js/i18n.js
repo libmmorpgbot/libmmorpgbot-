@@ -188,6 +188,11 @@ const I18N_UI = {
   race10Tab:      { ru: 'Кровавая Башня', en: 'Bloody Tower', uk: 'Кривава Вежа', es: 'Torre Sangrienta', tr: 'Kanlı Kule', pt: 'Torre Sangrenta' },
   race10ArenaLbl: { ru: 'Кровавая Башня', en: 'Bloody Tower', uk: 'Кривава Вежа', es: 'Torre Sangrienta', tr: 'Kanlı Kule', pt: 'Torre Sangrenta' },
   race10StartedMsg: { ru: '⚔️ Кровавая Башня открыта! Бегите к боссу', en: '⚔️ The Bloody Tower is open! Race to the boss', uk: '⚔️ Криваву Вежу відкрито! Біжіть до боса', es: '⚔️ ¡La Torre Sangrienta está abierta! Corre hacia el jefe', tr: '⚔️ Kanlı Kule açıldı! Patrona koş', pt: '⚔️ A Torre Sangrenta está aberta! Corra até o chefe' },
+  // Shown the instant a racer's own lane is cleared and the server teleports
+  // them into the shared boss room (race10ReachedBoss, js/network.js) —
+  // there's no more corridor to run, so the old "беги к боссу" framing would
+  // be wrong here.
+  race10ReachedBossMsg: { ru: '👹 Вы у босса — бейте!', en: '👹 You reached the boss — attack!', uk: '👹 Ви біля боса — бийте!', es: '👹 ¡Llegaste al jefe — ataca!', tr: '👹 Patrona ulaştın — saldır!', pt: '👹 Você chegou ao chefe — ataque!' },
   race10PhaseFighting: { ru: 'Забег идёт', en: 'Race in progress', uk: 'Забіг триває', es: 'Carrera en curso', tr: 'Yarış sürüyor', pt: 'Corrida em andamento' },
   race10PhaseIdle: { ru: 'До открытия Кровавой Башни', en: 'Bloody Tower opens in', uk: 'До відкриття Кривавої Вежі', es: 'La Torre Sangrienta abre en', tr: 'Kanlı Kule açılışına', pt: 'A Torre Sangrenta abre em' },
   race10Rule6:    { ru: 'Открыта каждый день в 20:30 по Москве, всего на 5 минут', en: 'Open every day at 20:30 Moscow time, for 5 minutes only', uk: 'Відкрита щодня о 20:30 за Москвою, лише на 5 хвилин', es: 'Abierta todos los días a las 20:30 (hora de Moscú), solo 5 minutos', tr: 'Her gün 20:30 Moskova saatiyle, sadece 5 dakika açık', pt: 'Aberta todos os dias às 20h30 (horário de Moscou), por apenas 5 minutos' },

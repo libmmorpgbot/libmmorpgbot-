@@ -4043,6 +4043,48 @@ class Room {
     return placed;
   }
 
+  // True once every non-boss race10 monster in this lane is dead — the
+  // signal _race10ReachBoss (server/game/race10.js) waits for before
+  // teleporting that racer into the shared boss room. Checked on the kill
+  // that could be the lane's last one, not every tick: a per-tick scan of
+  // every lane for every racer would cost far more than checking on the
+  // (comparatively rare) event that could actually flip this to true.
+  raceLaneClear(lane) {
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.arm === 'race10' && !e.raceBoss && e.lane === lane && e.hp > 0) return false;
+    }
+    return true;
+  }
+
+  // The small ring of arrival points around the shared boss (see
+  // generateRace10), validated the same way every other slot getter here is
+  // — a map tweak that dropped one onto a wall shrinks the ring instead of
+  // stranding an arrival on unwalkable ground.
+  raceBossSpots() {
+    const race = this._dungeon.race10;
+    if (!race) return [];
+    return (race.bossArrivalSpots || []).filter(s => this.canStandAt(s.x, s.y));
+  }
+
+  // Teleports one racer straight into the boss room the instant their lane
+  // clears (_race10ReachBoss) instead of making them walk a corridor's worth
+  // of empty room to get there. `i` picks which ring spot (mod the usable
+  // count), so simultaneous arrivals spread around it instead of stacking on
+  // one tile. Falls back to the boss's own spot if the whole ring is
+  // somehow unusable, rather than stranding the racer in their now-empty lane.
+  raceMoveToBoss(socketId, i) {
+    const race = this._dungeon.race10;
+    const p = this.players.get(socketId);
+    if (!race || !p) return null;
+    const spots = this.raceBossSpots();
+    const spot = spots.length ? spots[i % spots.length] : race.boss;
+    if (!spot) return null;
+    p.x = spot.x; p.y = spot.y;
+    p._profileRev++;
+    return { x: spot.x, y: spot.y };
+  }
+
   // Spawns the single shared race10 boss — same identity/stats as the world
   // EVENT_BOSS (full HP, normal aggro/attack AI included — unlike the 3v3
   // guard boss this one actually fights back). ignoresSafeZone carries over

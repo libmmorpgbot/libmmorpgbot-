@@ -750,6 +750,13 @@ function init(io) {
         modes._coopBossTrackKill(socketId, result)
           .catch(err => ops.alertError('modes.coopBoss', 'Ошибка награды за босса кооператива', err));
       } else modes._coopTrackKill(socketId, result);
+    // A corridor kill also still pays the ordinary reward path (RACE10_XP_MULT
+    // is baked into the enemy's own xp field, nothing extra to grant here) —
+    // this only checks whether it was the LAST monster in the lane, and if so
+    // teleports the racer straight into the boss room instead of leaving them
+    // to walk an empty corridor stretch to reach it.
+    } else if (result.arm === 'race10' && room && room.raceLaneClear(result.lane)) {
+      modes._race10ReachBoss(socketId, result.lane);
     }
 
     // A floor boss going down is floor-wide news: the client draws the respawn
