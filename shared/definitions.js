@@ -2078,7 +2078,11 @@ const EVENT_BOSS = {
   // no bigger than a demon warrior (size 22). "5× a regular monster" therefore
   // means 5 * (22 * 6.75) / 4.5 ≈ 165, not simply 5 * 22.
   size: 165,
-  hp: 1000000, atk: 20, def: 1, spd: 50,
+  // 5x the original 1,000,000 — same request for the world boss and the
+  // Кровавая Башня boss (server/game/Room.js's spawnRaceBoss reuses this HP
+  // directly). GUILD_WAR_TOWER_HP below is deliberately pinned to this same
+  // value ("здоровье как у мирового босса") and scales with it too.
+  hp: 5000000, atk: 20, def: 1, spd: 50,
   xp: 120, gold: 120,
   isBoss: true, eType: 'boss',
   // Exempts this one boss from three rules tuned for ordinary room-bound
