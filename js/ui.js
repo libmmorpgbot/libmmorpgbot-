@@ -4218,7 +4218,13 @@ function drawAutoToggle() {
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
-  ctx.font = `bold ${hudF(8)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // 8 was sized for the chip's old fixed 15px (base, pre-hud()) radius; the
+  // button is now the potion button's size (POTION_R's own base of 26)
+  // instead, so the label scales by that same 26/15 ratio in base units
+  // before hudF() applies HUD_SCALE — applying HUD_SCALE to `r` itself here
+  // would double-scale it, since r (ab.w/2) has already been through hud().
+  ctx.font = `bold ${hudF(8 * 26 / 15)}px ${F}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
   ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), cx, cy + 0.5);
   ctx.restore();

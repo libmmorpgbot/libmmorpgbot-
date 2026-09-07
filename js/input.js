@@ -6,9 +6,11 @@ const POTION_R  = hud(26);
 // ─────────────────────────────────────────────────────────
 // Every right-hand control is polar around a single pivot instead of the old
 // stacked 2x2 grid: the manual-attack button sits ON the pivot, the four
-// skills ride an arc around it, the АВТО/РУЧ chip clips onto that arc's rim,
-// potion and target sit on a wider arc above, and the buff/debuff chips
-// follow an outer arc of their own (drawBuffStrip, js/ui.js). Angles are
+// skills ride an arc around it, potion and target sit on a wider arc above,
+// the АВТО/РУЧ chip rides the potion button's own ray a bit further out (so
+// it renders directly above it, same size as it — see getAutoBtnPos), and
+// the buff/debuff chips follow an outer arc of their own (drawBuffStrip,
+// js/ui.js). Angles are
 // canvas-standard — y grows downward, so -90° is straight up and -180°
 // straight left — and the pivot is pinned to the bottom-right corner, so the
 // whole cluster follows the screen size without any piece needing a layout
@@ -19,10 +21,8 @@ const POTION_R  = hud(26);
 // масштабируются и не должны: угол не имеет размера.
 const FAN_MX = hud(64), FAN_MY = hud(70);  // pivot inset from the right edge / nav bar
 const FAN_R_ATK   = hud(40);     // attack button — drawn on the pivot itself
-const FAN_R_MODE  = hud(64);     // АВТО/РУЧ chip
 const FAN_R_SKILL = hud(96);     // the four skill buttons
 const FAN_R_OUTER = hud(192);    // potion / target
-const FAN_A_MODE   = -55;
 const FAN_A_SKILL  = -74;        // topmost skill …
 const FAN_A_STEP   = -37;        // … and counter-clockwise from there
 const FAN_A_POTION = -84;
@@ -162,12 +162,14 @@ function getPotionBtnPos() {
   return { x: p.x, y: p.y, r: POTION_R + 2 };
 }
 
-// АВТО/РУЧ chip, clipped onto the fan's rim between the attack hub and the
-// skill arc. Drawn round, but the box stays x/y/w/h — that is what the hit
-// test and dev/harness.js read.
+// АВТО/РУЧ chip — same angle as the potion (health) button, riding further
+// out along that same ray so it sits directly above it, and the same size
+// (POTION_R) instead of the small chip it used to be clipped onto the skill
+// arc's rim as. Drawn round, but the box stays x/y/w/h — that is what the
+// hit test and dev/harness.js read.
 function getAutoBtnPos() {
-  const r = hud(15);
-  const p = fanPos(FAN_R_MODE, FAN_A_MODE);
+  const r = POTION_R;
+  const p = fanPos(FAN_R_OUTER + r * 2 + hud(8), FAN_A_POTION);
   return { x: p.x - r, y: p.y - r, w: r * 2, h: r * 2, cx: p.x, cy: p.y, r };
 }
 
