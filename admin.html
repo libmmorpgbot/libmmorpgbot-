@@ -346,7 +346,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:8px">
           Обычно открывается по расписанию. Окно регистрации открывается немедленно;
-          турнир (32 игрока, двойное выбывание) стартует сам, как только наберётся ровно 32.
+          турнир (16 игроков, двойное выбывание) стартует сам, как только наберётся ровно 16.
         </div>
       </div>
       <div class="card">
@@ -954,9 +954,9 @@ async function loadTournament() {
   try {
     const d = await (await api('/admin/tournament')).json();
     let txt, isReg = false, busy = false;
-    if (d.live) { txt = '🔴 Турнир идёт · раунд ' + (d.round || 0) + '/' + (d.totalRounds || 10); busy = true; }
+    if (d.live) { txt = '🔴 Турнир идёт · раунд ' + (d.round || 0) + '/' + (d.totalRounds || 8); busy = true; }
     else if (d.phase === 'reg') {
-      txt = '🟡 Регистрация открыта · записано ' + (d.queued || 0) + '/' + (d.needed || 32);
+      txt = '🟡 Регистрация открыта · записано ' + (d.queued || 0) + '/' + (d.needed || 16);
       isReg = true; busy = true;
     } else {
       txt = '⚪ Не запущен — можно открыть регистрацию';
@@ -969,7 +969,7 @@ async function loadTournament() {
 }
 
 async function openTournament() {
-  if (!confirm('Открыть регистрацию на турнир сейчас, вне расписания? Турнир стартует сам, как только наберётся ровно 32 игрока.')) return;
+  if (!confirm('Открыть регистрацию на турнир сейчас, вне расписания? Турнир стартует сам, как только наберётся ровно 16 игроков.')) return;
   try {
     const r = await api('/admin/tournament/open', { method: 'POST' });
     const d = await r.json();

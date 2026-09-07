@@ -162,7 +162,7 @@ let _dbFightAt = 0;
 // bracket: real per-round matchups once the tournament is live — see
 // server/game/tournament.js's _tr.bracketHistory and the "Сетка" tab
 // (_tournamentBracketBodyHTML, js/ui.js). Empty before a tournament starts.
-let _trState = { phase: 'idle', nextAt: 0, registered: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10, bracket: [], gapEndAt: 0 };
+let _trState = { phase: 'idle', nextAt: 0, registered: 0, needed: 16, live: false, minLevel: 15, round: 0, totalRounds: 8, bracket: [], gapEndAt: 0 };
 let _trRegistered = false;
 let _trInMatch = false;
 // True from a successful registration all the way through to elimination or

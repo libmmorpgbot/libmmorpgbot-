@@ -5756,7 +5756,7 @@ function _arena3BodyHTML() {
 // covers the gap between rounds (see server/game/tournament.js's file header)
 // where this player is neither actively fighting nor free to register again.
 function _tournamentBodyHTML() {
-  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10, gapEndAt: 0 };
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 16, live: false, minLevel: 15, round: 0, totalRounds: 8, gapEndAt: 0 };
   const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
   const alive = typeof _trAlive !== 'undefined' && _trAlive;
   const open = st.phase === 'reg';
@@ -5886,7 +5886,7 @@ function _tournamentBracketBodyHTML() {
   const st = (typeof _trState !== 'undefined' && _trState) || {};
   const bracket = Array.isArray(st.bracket) ? st.bracket : [];
   if (!bracket.length) {
-    return `<div class="rating-empty">Сетка появится, когда турнир начнётся — нужно 32 участника</div>`;
+    return `<div class="rating-empty">Сетка появится, когда турнир начнётся — нужно 16 участников</div>`;
   }
   const liveRound = st.phase === 'live' ? st.round : 0;
   const cols = bracket.map(r => {

@@ -4514,9 +4514,9 @@ function _initTournamentHandlers(s) {
       // same payload is a boolean the server overlays ONLY for sockets that
       // are themselves registered (see _trBroadcast, server/game/
       // tournament.js) — two different fields, never read as if they were one.
-      queued: st.queued || 0, needed: st.needed || 32,
+      queued: st.queued || 0, needed: st.needed || 16,
       live: !!st.live, minLevel: st.minLevel || 15,
-      round: st.round || 0, totalRounds: st.totalRounds || 10,
+      round: st.round || 0, totalRounds: st.totalRounds || 8,
       bracket: Array.isArray(st.bracket) ? st.bracket : [],
       gapEndAt: st.gapEndAt || 0,
     };
