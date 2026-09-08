@@ -2947,13 +2947,15 @@ function drawHeader() {
     } else {
       drawIconCtx(ctx, c.icon, cx + hud(9), chipY + chipH / 2, hud(11), c.color);
     }
-    // Same 8px-with-no-hinting illegibility as the HP/XP bars, plus a
-    // shrink-to-fit so an un-rounded Liberty balance stays inside its chip
-    // instead of running under the next one.
+    // Same size as the HP/XP readout above (_hudBar's fontScale-0.7 base) —
+    // the two are read in the same glance, and one visibly bigger than the
+    // other reads as two HUDs stitched together rather than one. Same
+    // shrink-to-fit floor (7) too, so an un-rounded Liberty balance stays
+    // inside its chip instead of running under the next one.
     const textX = cx + hud(19), maxTextW = cx + chipW - hud(4) - textX;
-    let fontPx = Math.max(11, hudF(13));
+    let fontPx = Math.round(12 * 0.7);
     ctx.font = `bold ${fontPx}px ${F}`;
-    while (fontPx > 8 && ctx.measureText(c.val).width > maxTextW) {
+    while (fontPx > 7 && ctx.measureText(c.val).width > maxTextW) {
       fontPx -= 0.5;
       ctx.font = `bold ${fontPx}px ${F}`;
     }
