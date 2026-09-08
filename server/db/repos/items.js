@@ -804,36 +804,8 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   // holds the destination and nothing is left to say it had been worn. An
   // unequip and a withdrawal from storage are the same call with the same
   // arguments, so the origin is the only thing that tells them apart.
-  //
-  // item_id/enhance travel along for the same reason: whether the DESTINATION
-  // already holds a matching stack has to be asked before this row joins it —
-  // once its container is updated it would match its own question.
   const { rows: from } = await query(db,
-    'SELECT container, item_id, enhance FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
-  if (!from.length) return false;
-
-  // «Кладу в хранилище — оно ложится непонятно куда» / unequip lands a
-  // weapon wherever it sorted back when it was first looted, not at the
-  // bottom where a player expects what they just touched to show up.
-  //
-  // Only asked for a STACKABLE item: two non-stackable rows sharing an item
-  // id (two identical +7 swords) are never the same stack, so unequipping
-  // one is always a fresh arrival regardless of what else is sitting there —
-  // hasExistingStack only means "mergeStacks below is about to fold this
-  // into something older", which can't happen for gear.
-  let hasExistingStack = false;
-  if (container !== 'equipment') {
-    const { rows: cat } = await query(db,
-      'SELECT stackable FROM item_catalog WHERE item_id = $1', [from[0].item_id]);
-    if (cat.length && cat[0].stackable) {
-      const { rows: existing } = await query(db, `
-        SELECT 1 FROM player_items
-         WHERE player_id = $1 AND container = $2 AND item_id = $3 AND enhance = $4 AND id <> $5
-         LIMIT 1`, [playerId, container, from[0].item_id, from[0].enhance, rowId]);
-      hasExistingStack = existing.length > 0;
-    }
-  }
-
+    'SELECT container FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
   const { rowCount } = await query(db, `
     UPDATE player_items SET container = $3, slot = $4
      WHERE id = $1 AND player_id = $2`, [rowId, playerId, container, slot]);
@@ -843,6 +815,8 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   // Снаряжение исключено: там строка — это конкретная надетая вещь, и слот у
   // неё один.
   if (container !== 'equipment') {
+    const { rows: what } = await query(db,
+      'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
     // ── БЕЗ keep: выживает СТАРШАЯ строка ────────────────────────────────
     // «Раньше вещи оставались в том порядке, в котором отправлял, а теперь всё
     // вразброску.»
@@ -858,54 +832,14 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
     // Вызывающий её по id не перечитывает: moveTo возвращает булево, а
     // обработчики после него читают инвентарь целиком. keep нужен ровно одному
     // месту — attachFromListing, где на строку ещё смотрит живой лот.
-    await mergeStacks(db, playerId, container, from[0].item_id, from[0].enhance || 0);
-    // No stack was already there to fold into, so this row is exactly where
-    // mergeStacks left it: standing alone, under the id it had before this
-    // call — which sorts wherever it was when first created, not at the
-    // bottom. Give it a fresh id so it does.
-    if (!hasExistingStack) await _bumpToEnd(db, rowId, playerId);
+    if (what.length) {
+      await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0);
+    }
   }
-  if (container === 'equipment' || from[0].container === 'equipment') {
+  if (container === 'equipment' || (from.length && from[0].container === 'equipment')) {
     await require('./stats').refreshBm(db, playerId);
   }
   return true;
-}
-
-// Puts a row at the very end of its container's list. inventoryOf sorts by
-// id, and id is assigned once at creation and never touched again by
-// anything else in this file — so the only way to give a row a fresh,
-// higher-than-everything-it-shares-a-container-with id is to delete it and
-// insert its data back as a new row.
-//
-// Safe specifically because moveTo — the only caller — never hands the old
-// id to anyone afterward: it returns a boolean, and every handler that calls
-// it re-reads the whole inventory rather than tracking one row by id. A
-// closed (sold/cancelled) market listing that still names this id as its
-// snap-less item_id simply loses that link, the same way it already does
-// when the row is destroyed by an enhance burn or a craft — see migration
-// 010's ON DELETE SET NULL, which exists for exactly this.
-async function _bumpToEnd(db, rowId, playerId) {
-  const cols = await _hasSourceCols(db)
-    ? 'player_id, container, slot, item_id, enhance, qty, created_at, source, source_ref'
-    : 'player_id, container, slot, item_id, enhance, qty, created_at';
-  const { rows } = await query(db, `
-    WITH moved AS (
-      DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING ${cols}
-    )
-    INSERT INTO player_items (${cols}) SELECT ${cols} FROM moved
-    RETURNING id, item_id, qty`, [rowId, playerId]);
-  if (!rows.length) return null;
-  const newRowId = Number(rows[0].id);
-  // The same offsetting pair mergeStacks writes for the same reason: the
-  // account gained and lost nothing, only which row it lives under changed —
-  // but "what happened to row <rowId>" deserves an answer (historyOfRow reads
-  // exactly this), and dev/item-ledger-check.js's static half requires every
-  // player_items DELETE/INSERT to sit next to a ledger() call regardless.
-  await ledger(db, playerId, rows[0].item_id, -rows[0].qty,
-    { rowId, reason: 'row_bump', refType: 'row', refId: String(newRowId) });
-  await ledger(db, playerId, rows[0].item_id, rows[0].qty,
-    { rowId: newRowId, reason: 'row_bump', refType: 'row', refId: String(rowId) });
-  return newRowId;
 }
 
 // ── market handoff ──────────────────────────────────────────────────────────
