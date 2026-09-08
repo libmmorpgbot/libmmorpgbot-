@@ -570,7 +570,7 @@ let _clanView = 'main';      // 'main' | 'create' | 'search' | 'icon-pick'
 let _clanNewName = '';
 let _clanNewIcon = 1;
 let _clanSearchResults = null;   // null = loading, [] = empty result
-let _clanHomeTab = 0;            // 0=клан, 1=участники, 2=навыки
+let _clanHomeTab = 0;            // 0=клан, 1=участники, 2=навыки, 3=хранилище, 4=активность
 // Gold was spent optimistically for the in-flight clanCreate request — set
 // right before sending, cleared (and refunded on failure) when the server
 // responds. Gold isn't server-tracked like GRAM, so this is enforced the
@@ -777,6 +777,7 @@ function _renderClanHome(el) {
     typeof t === 'function' ? t('clanTabMembers') : 'Участники',
     typeof t === 'function' ? t('clanTabPerks') : 'Навыки',
     typeof t === 'function' ? t('clanTabStorage') : 'Хранилище',
+    typeof t === 'function' ? t('clanTabActivity') : 'Активность',
   ];
   const tabHtml = tabs.map((t, i) =>
     `<div class="clan-tab${_clanHomeTab === i ? ' active' : ''}" onclick="_setClanHomeTab(${i})">${t}</div>`
@@ -826,6 +827,9 @@ function _renderClanHome(el) {
       .slice().sort((a, b) => (b.bm || 0) - (a.bm || 0))
       .map(m => {
         const roleIcon = m.role === 'leader' ? '👑' : '⚔️';
+        const transferBtn = isLeader && m.role !== 'leader'
+          ? `<button class="clan-btn-sm" onclick="_clanTransferConfirm('${m.telegramId}')">${typeof t === 'function' ? t('clanTransferBtn') : 'Сделать лидером'}</button>`
+          : '';
         const kickBtn = isLeader && m.role !== 'leader'
           ? `<button class="clan-btn-sm clan-btn-danger" onclick="netClanKick('${m.telegramId}')">${typeof t === 'function' ? t('clanKickBtn') : 'Исключить'}</button>`
           : '';
@@ -833,6 +837,7 @@ function _renderClanHome(el) {
           <span class="clan-member-role">${roleIcon}</span>
           <span class="clan-member-name">${_esc(m.username)}</span>
           ${m.bm ? `<span class="clan-member-bm">БМ ${m.bm.toLocaleString()}</span>` : ''}
+          ${transferBtn}
           ${kickBtn}
         </div>`;
       }).join('');
@@ -886,6 +891,8 @@ function _renderClanHome(el) {
       <div class="clan-perks">${perksHtml}</div>`;
   } else if (_clanHomeTab === 3) {
     bodyHtml = _clanStorageHTML();
+  } else if (_clanHomeTab === 4) {
+    bodyHtml = _clanActivityHTML();
   }
 
   el.innerHTML = `
@@ -995,6 +1002,51 @@ function _clanStorageHTML() {
     ${claimBtn}
     ${s.canUse ? `<div class="clan-section-hdr">${t('clanStorageDepositHdr')}</div>
     <div class="clan-storage-list">${depositRows}</div>` : ''}`;
+}
+
+// ── Активность клана ──────────────────────────────────────
+// Who has put how many Shards into the clan storage, ever — a leaderboard,
+// not a log. The list itself (_clanActivity) is server state pushed on open
+// and after every deposit; this only draws it.
+function _clanActivityHTML() {
+  const rows = _clanActivity;
+  if (rows === null) {
+    if (typeof netClanActivitySync === 'function') netClanActivitySync();
+    return `<div class="clan-empty">${typeof t === 'function' ? t('clanStorageLoading') : 'Загрузка...'}</div>`;
+  }
+  if (!rows.length) {
+    return `
+      <div class="clan-section-hdr">${typeof t === 'function' ? t('clanActivityHdr') : 'Кто сколько внёс Осколков'}</div>
+      <div class="clan-empty">${typeof t === 'function' ? t('clanActivityEmpty') : 'Пока никто ничего не положил в хранилище'}</div>`;
+  }
+  const myTg = _myTelegramId();
+  const rowsHtml = rows.map((r, i) => `
+    <div class="clan-member${r.telegramId === myTg ? ' clan-member-me' : ''}">
+      <span class="clan-member-role">${i + 1}.</span>
+      <span class="clan-member-name">${_esc(r.username)}${r.inClan ? '' : ` <span class="clan-storage-who">(${typeof t === 'function' ? t('clanActivityLeftClan') : 'покинул клан'})</span>`}</span>
+      <span class="clan-member-bm">${typeof tVars === 'function' ? tVars('clanActivityQtyFmt', { n: _num(r.qty) }) : _num(r.qty) + ' Осколков'}</span>
+    </div>`).join('');
+  return `
+    <div class="clan-section-hdr">${typeof t === 'function' ? t('clanActivityHdr') : 'Кто сколько внёс Осколков'}</div>
+    ${rowsHtml}`;
+}
+
+// Server pushed new activity state — redraw only when that tab is showing.
+function onClanActivity() {
+  if (_clanHomeTab === 4) updateClanUI();
+}
+
+// telegramId only — never the username — travels through the onclick
+// attribute; the name for the confirm text is read back out of clanData
+// (already-parsed JS memory, not re-parsed HTML/JS) so a display name
+// containing quotes can't break out of the inline handler.
+function _clanTransferConfirm(telegramId) {
+  const member = clanData && (clanData.members || []).find(x => String(x.telegramId) === String(telegramId));
+  const name = member ? member.username : '';
+  const msg = typeof tVars === 'function'
+    ? tVars('clanTransferAsk', { name })
+    : `Сделать «${name}» лидером клана? Вы станете обычным участником.`;
+  if (confirm(msg)) netClanTransferLeader(telegramId);
 }
 
 // The clan payload keys members by telegramId, which this client otherwise

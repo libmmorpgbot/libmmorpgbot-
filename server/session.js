@@ -66,7 +66,7 @@ const WRITE_ACTIONS = new Set([
   'claimQuest', 'completeSpecialQuest', 'claimVipRewards',
   'gramDepositRequest', 'gramWithdrawRequest',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
-  'clanDisband', 'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim',
+  'clanDisband', 'clanTransferLeader', 'clanStorageDeposit', 'clanStorageGive', 'clanStorageClaim',
   'clanStorageCancel', 'clanStorageUnlock',
   'registerCodexSetItem', 'selectChar', 'respawn',
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no

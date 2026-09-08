@@ -76,6 +76,17 @@ module.exports = function registerSocial(s, safeOn, deps) {
     return membership;
   }
 
+  // The Activity tab: who has put how many shards into the clan, ever. Same
+  // shape of event as clanStorage — its own panel, pushed on open and after
+  // every deposit — but the list itself doesn't depend on who is asking, so
+  // unlike storageView it takes no playerId.
+  async function pushClanActivity(t) {
+    const membership = await clans.clanOf(t, s.playerId);
+    if (!membership) return s.socket.emit('clanActivity', null);
+    s.socket.emit('clanActivity', await clans.activityView(t, membership.clanId));
+    return membership;
+  }
+
   // ── membership ───────────────────────────────────────────────────────────
   safeOn('clanCreate', ({ name, icon } = {}) => s.act('clanCreate', 'clanError', async (t, pid) => {
     await clans.create(t, pid, _sanitizeName(name), icon);
@@ -139,6 +150,20 @@ module.exports = function registerSocial(s, safeOn, deps) {
     }
   }));
 
+  safeOn('clanTransferLeader', ({ telegramId } = {}) => s.act('clanTransferLeader', 'clanError', async (t, pid) => {
+    const target = await byTg(t, telegramId);
+    const m = await clans.clanOf(t, pid);
+    if (!target) fail('Игрок не найден', 'no_user');
+    if (!m) fail('Вы не состоите в клане', 'no_clan');
+    await clans.transferLeadership(t, pid, m.clanId, target);
+    await pushClan(t);
+    // The new leader's own tag/permissions come from clan_members.role, read
+    // fresh next time they touch anything clan-related — but their open panel
+    // should not sit there calling them a member until they reopen it.
+    const sock = deps.socketForPlayerId && deps.socketForPlayerId(target);
+    if (sock) sock.emit('clanData', await clans.dataView(t, m.clanId, target));
+  }));
+
   safeOn('clanLeave', () => s.act('clanLeave', 'clanError', async (t, pid) => {
     await clans.leave(t, pid);
     await s.refreshClan(t);          // the tag comes off now, not on relog
@@ -182,6 +207,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
       const n = await clans.deposit(t, pid, m.clanId, itemId, qty);
       await s.pushItems(t);
       await pushClanStorage(t);
+      await pushClanActivity(t);
       // The storage panel repaints either way, but a deposit into a shared box
       // is the kind of action a player wants confirmed by name and count —
       // otherwise the item is simply gone from their bag.
@@ -244,6 +270,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
 
   safeOn('clanStorageSync', () => s.act('clanStorageSync', 'clanStorageError', async (t) => {
     await pushClanStorage(t);
+  }));
+
+  safeOn('clanActivitySync', () => s.act('clanActivitySync', 'clanStorageError', async (t) => {
+    await pushClanActivity(t);
   }));
 
   // ── chat ─────────────────────────────────────────────────────────────────
