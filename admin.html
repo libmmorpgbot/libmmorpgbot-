@@ -526,10 +526,6 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         <h3>Текущие квесты</h3>
         <div id="quests-list"><div class="loading-center"><div class="spinner"></div></div></div>
       </div>
-      <div class="card">
-        <h3>Прогресс по основным заданиям</h3>
-        <div id="quest-progress-list"><div class="loading-center"><div class="spinner"></div></div></div>
-      </div>
     </div>
 
     <!-- Suspicious -->
@@ -715,7 +711,7 @@ function setTab(name) {
   else if (name==='clans') loadClans();
   else if (name==='chat') loadChat();
   else if (name==='market') loadMarket();
-  else if (name==='quests') { loadQuests(); loadQuestProgress(); }
+  else if (name==='quests') loadQuests();
   else if (name==='suspicious') loadSuspicious();
   else if (name==='referrals') loadReferrals();
 }
@@ -1640,36 +1636,10 @@ async function loadQuests() {
           <div style="font-weight:600">${esc(q.title)}</div>
           <div style="color:var(--text2);font-size:11px">${q.type} · 🪙${q.reward?.gold||0} · XP${q.reward?.xp||0} · 💎${q.reward?.nexum||0}</div>
         </div>
-        <span class="qbadge" style="background:var(--bg4);color:var(--text2)" title="Игроков выполнили">✓ ${fmt(q.completedCount||0)}</span>
         <span class="qbadge ${q.active?'':'off'}">${q.active?'Вкл':'Выкл'}</span>
         <button class="btn btn-sm btn-gray" style="margin-left:6px" onclick="toggleQuest('${q.id}',${!q.active})">${q.active?'Выкл':'Вкл'}</button>
         <button class="btn btn-sm btn-red" style="margin-left:4px" onclick="deleteQuest('${q.id}')">✕</button>
       </div>`).join('') : '<p style="color:var(--text2);text-align:center;padding:20px">Квестов нет</p>';
-  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
-}
-
-// The main story chain (shared/definitions.js QUEST_DEF) — a fixed sequence
-// every player advances through one quest at a time, distinct from the
-// admin-authored special quests above. "Completed" here isn't a flag the
-// panel toggles, it's read off how many players have already moved past each
-// step — see the server route's own comment for why that's a suffix sum.
-async function loadQuestProgress() {
-  const el = document.getElementById('quest-progress-list');
-  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
-  try {
-    const r = await api('/admin/quest-progress');
-    const d = await r.json();
-    const quests = d.quests || [];
-    if (!quests.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">Нет данных</p>'; return; }
-    el.innerHTML = `<div class="tbl-wrap"><table class="tbl">
-      <thead><tr><th>#</th><th>Локация</th><th>Задание</th><th>Выполнили</th></tr></thead>
-      <tbody>${quests.map(q=>`<tr>
-        <td>${q.idx+1}</td>
-        <td>${q.floor||''}</td>
-        <td>${esc(q.title)}</td>
-        <td>${fmt(q.completedCount||0)}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>`;
   } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
 }
 

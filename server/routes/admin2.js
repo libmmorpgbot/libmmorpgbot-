@@ -29,7 +29,7 @@ const progression = require('../db/repos/progression');
 const market = require('../db/repos/market');
 const plog = require('../db/repos/playerlog');
 const tgGame = require('../tg-game');
-const { ITEM_DEF, CRAFT_MATS, BOX_DEF, QUEST_DEF } = require('../../shared/definitions');
+const { ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../../shared/definitions');
 
 const CATALOG = [...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF];
 
@@ -1044,18 +1044,9 @@ module.exports = function registerAdminRoutes(app, deps) {
   // ── special quests ───────────────────────────────────────────────────────
   app.get('/admin/special-quests', guard, async (req, res) => {
     try {
-      // completed_count: one row per (player, quest) in player_special_quests
-      // is a claim that happened (see its own comment in 001_core.sql) — so
-      // counting rows per quest_id is counting players who finished it, exactly
-      // and without needing to touch player_progress at all.
-      const { rows } = await query(null, `
-        SELECT sq.id, sq.title, sq.description, sq.type, sq.url, sq.icon,
-               sq.reward_gold, sq.reward_xp, sq.reward_nexum, sq.active, sq.created_at,
-               count(psq.player_id)::int AS completed_count
-          FROM special_quests sq
-          LEFT JOIN player_special_quests psq ON psq.quest_id = sq.id
-         GROUP BY sq.id
-         ORDER BY sq.id DESC`);
+      const { rows } = await query(null,
+        `SELECT id, title, description, type, url, icon, reward_gold, reward_xp, reward_nexum,
+                active, created_at FROM special_quests ORDER BY id DESC`);
       // `reward` as an object AND the flat columns. The page prints
       // `q.reward?.gold` — optional chaining, so a missing `reward` renders 0
       // rather than throwing, which is why every quest showed all-zero rewards
@@ -1065,52 +1056,11 @@ module.exports = function registerAdminRoutes(app, deps) {
           ...r, id: Number(r.id),
           desc: r.description,
           createdAt: r.created_at,
-          completedCount: Number(r.completed_count) || 0,
           reward: {
             gold: Number(r.reward_gold) || 0,
             xp: Number(r.reward_xp) || 0,
             nexum: Number(r.reward_nexum) || 0,
           },
-        })),
-      });
-    } catch (e) { fail(res, e, req); }
-  });
-
-  // ── main quest chain progress ────────────────────────────────────────────
-  // QUEST_DEF (shared/definitions.js) has no per-quest completion flag of its
-  // own — quest_idx (player_progress) is a POSITIONAL pointer at where a
-  // player is CURRENTLY working, advanced by one on every claimQuest. A player
-  // sitting at quest_idx = N has therefore already claimed every quest at
-  // indices 0..N-1, and none from N onward — so "how many finished quest i" is
-  // "how many players have quest_idx > i", computed once as a suffix sum
-  // rather than with sixty separate COUNT queries.
-  app.get('/admin/quest-progress', guard, async (req, res) => {
-    try {
-      const { rows } = await query(null,
-        'SELECT quest_idx, count(*)::int AS n FROM player_progress GROUP BY quest_idx');
-      const total = QUEST_DEF.length;
-      // Clamped into the `total` bucket rather than dropped: nothing in this
-      // build advances quest_idx past QUEST_DEF.length, but a stray value from
-      // migrated data should still count as "finished everything", not vanish
-      // from the suffix sum silently.
-      const byIdx = new Map();
-      for (const r of rows) {
-        const idx = Math.min(Number(r.quest_idx), total);
-        byIdx.set(idx, (byIdx.get(idx) || 0) + Number(r.n));
-      }
-      // completedAfter[i] = players with quest_idx > i, i.e. players who have
-      // claimed QUEST_DEF[i]. Built from the top down so each step only adds
-      // the one idx bucket that just left the "not yet counted" side.
-      const completedAfter = new Array(total + 1).fill(0);
-      let suffix = 0;
-      for (let idx = total; idx >= 0; idx--) {
-        completedAfter[idx] = suffix;
-        suffix += byIdx.get(idx) || 0;
-      }
-      res.json({
-        quests: QUEST_DEF.map((q, i) => ({
-          idx: i, id: q.id, floor: q.floor, title: q.title, desc: q.desc,
-          completedCount: completedAfter[i],
         })),
       });
     } catch (e) { fail(res, e, req); }
