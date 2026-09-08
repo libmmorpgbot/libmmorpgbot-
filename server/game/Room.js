@@ -3963,7 +3963,7 @@ class Room {
     if (!slot) return null;
     const a = this.players.get(sidA), b = this.players.get(sidB);
     if (!a || !b) return null;
-    [[a, sidA, slot.a], [b, sidB, slot.b]].forEach(([p, sid, pos]) => {
+    [[a, slot.a], [b, slot.b]].forEach(([p, pos]) => {
       p.x = pos.x; p.y = pos.y;
       p.hp = p.maxHp;
       p.pvpMode = true;
