@@ -949,6 +949,7 @@ Object.assign(I18N_UI, {
   gramPkgLabel_pkg10: { ru: 'Стандарт', en: 'Standard', uk: 'Стандарт', es: 'Estándar', tr: 'Standart', pt: 'Padrão' },
   gramPkgLabel_pkg50: { ru: 'Элитный', en: 'Elite', uk: 'Елітний', es: 'Élite', tr: 'Elit', pt: 'Elite' },
   gramPkgLabel_pkg100: { ru: 'Легендарный', en: 'Legendary', uk: 'Легендарний', es: 'Legendario', tr: 'Efsanevi', pt: 'Lendário' },
+  gramPkgLabel_pkg600: { ru: 'Эпический', en: 'Epic', uk: 'Епічний', es: 'Épico', tr: 'Epik', pt: 'Épico' },
   mailBonusBtn: { ru: 'Письмо', en: 'Mail', uk: 'Лист', es: 'Carta', tr: 'Mektup', pt: 'Carta' },
   mailBonusTitle: { ru: 'Письмо', en: 'Mail', uk: 'Лист', es: 'Carta', tr: 'Mektup', pt: 'Carta' },
   mailBonusDesc: { ru: 'Подарок — один раз на аккаунт. Что именно придёт, решает сезонный билет: с ним награда своя, без него своя.', en: 'A gift — one per account. Which one arrives depends on the season ticket: holders get theirs, everyone else gets the other.', uk: 'Подарунок — один раз на акаунт. Що саме прийде, вирішує сезонний квиток: з ним нагорода своя, без нього своя.', es: 'Un regalo, uno por cuenta. Cuál llega lo decide el pase de temporada: con él, una recompensa; sin él, la otra.', tr: 'Bir hediye — hesap başına bir kez. Hangisinin geleceğini sezon bileti belirler: bilet sahibine biri, diğerlerine öteki.', pt: 'Um presente — um por conta. Qual chega depende do passe de temporada: com ele, uma recompensa; sem ele, a outra.' },
