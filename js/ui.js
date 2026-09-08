@@ -7740,10 +7740,18 @@ const _GRAM_SHOP_PKGS_UI = [
   { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
   { id:'pkg100', gram:180, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // pkg300 («Эпический» / «+Pack») стоял здесь верхним тиром обычной
-  // вкладки, потом уехал на собственную кнопку HUD. Товара больше нет вовсе:
-  // ни кнопки, ни карточки, ни строки в server/shop.js — купить его нельзя
-  // ниоткуда.
+  // Top tier — mirror of server/shop.js's pkg600 down to the digit; that copy
+  // is what actually validates and grants, this one only draws the card.
+  { id:'pkg600', gram:600, get label() { return t('gramPkgLabel_pkg600'); }, potions:200, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#c084fc',
+    skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
+    stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
+    enhance:8, nexum:20000 },
+  // The old pkg300 («Эпический» / «+Pack») stood here as the top tier of the
+  // regular tab, then moved to its own HUD button, then was removed
+  // entirely at the owner's request: no button, no card, no row in
+  // server/shop.js — pkg600 above is a new, unrelated product, not its
+  // return; a pkg300 receipt from back then still names 'pkg300' and still
+  // falls back to the generic packageFallbackLbl.
   // Усиление tab — pure material packs (the empowerment itself still happens
   // from the Персонаж → Усиление panel, see updateEmpowerUI; these only grant
   // the listed items). Зеркало серверного списка в server/shop.js — содержимое

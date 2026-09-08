@@ -59,16 +59,20 @@ const _GRAM_SHOP_PKGS = [
   { id:'pkg10',  gram:20,  gold:7000,   potions:20,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:5 }, enhance:5, nexum:500 },
   { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
   { id:'pkg100', gram:180, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // pkg300 («Эпический» / «+Pack») стоял здесь — полный эпический комплект
-  // с оружием в +3, 50 благословенных камней, 60 классовых книг, Liberty и
-  // бонусные очки навыка за 600 GRAM. Товар убран целиком по просьбе
-  // владельца: кнопки на HUD нет, карточки в магазине нет, и этой строки
-  // нет — значит gramShopBuy на 'pkg300' отвечает «нет такого пакета», а не
-  // списывает GRAM за то, чего в игре уже не существует.
-  //
-  // Прошлые покупки при этом остаются в GramTx как были: id в чеке — это
-  // запись о том, что случилось, а не ссылка на живой товар. Подпишется
-  // такой чек общим «Пакет» (packageFallbackLbl, js/ui.js).
+  // Top tier — the full epic gear set (6 armor slots + the class weapon),
+  // both at +8, plus a heavy stack of everything else the game hands out in
+  // smaller packages: 200 of every buff potion, 120 skill books (30 × the
+  // class's 4), 30 rare + 30 uncommon boxes, 30 safe (bless) and 100 regular
+  // (norm) enhancement stones, 50 legendary + 100 epic recipes, 20 bonus
+  // skill points, 20000 Liberty. Note this id is unrelated to the old
+  // 'pkg300' («Эпический» / «+Pack», 600 GRAM) that used to sit here and was
+  // removed at the owner's request — a past pkg300 receipt still shows the
+  // generic «Пакет» fallback (packageFallbackLbl, js/ui.js) rather than this
+  // one's name, since its GramTx row names 'pkg300', not 'pkg600'.
+  { id:'pkg600', gram:600, potions:200, armor:'epic', weapon:'epic', bonusSP:20,
+    skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
+    stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
+    enhance:8, nexum:20000 },
   // Pet+cloak+artifact packages (rendered on the GRAM shop's own Питомцы
   // tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same handler
   // since petChoice/classCloak/classArtifact/enhance are already fully
