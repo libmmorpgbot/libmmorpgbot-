@@ -103,7 +103,7 @@ async function inventoryOf(db, playerId) {
     SELECT id, container, slot, item_id, enhance, qty
       FROM player_items
      WHERE player_id = $1
-     ORDER BY id`, [playerId]);
+     ORDER BY sort_seq`, [playerId]);
   const out = { inventory: [], equipment: {}, storage: [] };
   for (const r of rows) {
     if (r.container === 'equipment') out.equipment[r.slot] = _row(r);
@@ -541,9 +541,12 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
     return rows.length ? Number(rows[0].id) : null;
   }
 
+  // sort_seq, not id — this MUST be the same order inventoryOf renders, or
+  // ref.idx (a position in the CLIENT's list) would resolve against a
+  // different ordering than the one the player actually clicked in.
   const { rows } = await query(db,
     `SELECT id, item_id, enhance FROM player_items
-      WHERE player_id = $1 AND container = $2 ORDER BY id`, [playerId, container]);
+      WHERE player_id = $1 AND container = $2 ORDER BY sort_seq`, [playerId, container]);
   if (!rows.length) return null;
 
   const wantId = typeof ref.id === 'string' && ref.id ? ref.id : null;
@@ -804,8 +807,36 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   // holds the destination and nothing is left to say it had been worn. An
   // unequip and a withdrawal from storage are the same call with the same
   // arguments, so the origin is the only thing that tells them apart.
+  //
+  // item_id/enhance travel along for the same reason: whether the DESTINATION
+  // already holds a matching stack has to be asked before this row joins it —
+  // once its container is updated it would match its own question.
   const { rows: from } = await query(db,
-    'SELECT container FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
+    'SELECT container, item_id, enhance FROM player_items WHERE id = $1 AND player_id = $2', [rowId, playerId]);
+  if (!from.length) return false;
+
+  // «Кладу в хранилище — оно ложится непонятно куда» / unequip lands a
+  // weapon wherever it sorted back when it was first looted, not at the
+  // bottom where a player expects what they just touched to show up.
+  //
+  // Only asked for a STACKABLE item: two non-stackable rows sharing an item
+  // id (two identical +7 swords) are never the same stack, so unequipping
+  // one is always a fresh arrival regardless of what else is sitting there —
+  // hasExistingStack only means "mergeStacks below is about to fold this
+  // into something older", which can't happen for gear.
+  let hasExistingStack = false;
+  if (container !== 'equipment') {
+    const { rows: cat } = await query(db,
+      'SELECT stackable FROM item_catalog WHERE item_id = $1', [from[0].item_id]);
+    if (cat.length && cat[0].stackable) {
+      const { rows: existing } = await query(db, `
+        SELECT 1 FROM player_items
+         WHERE player_id = $1 AND container = $2 AND item_id = $3 AND enhance = $4 AND id <> $5
+         LIMIT 1`, [playerId, container, from[0].item_id, from[0].enhance, rowId]);
+      hasExistingStack = existing.length > 0;
+    }
+  }
+
   const { rowCount } = await query(db, `
     UPDATE player_items SET container = $3, slot = $4
      WHERE id = $1 AND player_id = $2`, [rowId, playerId, container, slot]);
@@ -815,8 +846,6 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   // Снаряжение исключено: там строка — это конкретная надетая вещь, и слот у
   // неё один.
   if (container !== 'equipment') {
-    const { rows: what } = await query(db,
-      'SELECT item_id, enhance FROM player_items WHERE id = $1', [rowId]);
     // ── БЕЗ keep: выживает СТАРШАЯ строка ────────────────────────────────
     // «Раньше вещи оставались в том порядке, в котором отправлял, а теперь всё
     // вразброску.»
@@ -832,14 +861,33 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
     // Вызывающий её по id не перечитывает: moveTo возвращает булево, а
     // обработчики после него читают инвентарь целиком. keep нужен ровно одному
     // месту — attachFromListing, где на строку ещё смотрит живой лот.
-    if (what.length) {
-      await mergeStacks(db, playerId, container, what[0].item_id, what[0].enhance || 0);
-    }
+    await mergeStacks(db, playerId, container, from[0].item_id, from[0].enhance || 0);
+    // No stack was already there to fold into, so this row is exactly where
+    // mergeStacks left it: standing alone, at whatever position it sorted to
+    // when it was first created — not at the bottom, where a player expects
+    // what they just unequipped or deposited to land. Bump it there.
+    if (!hasExistingStack) await _bumpToEnd(db, rowId, playerId);
   }
-  if (container === 'equipment' || (from.length && from[0].container === 'equipment')) {
+  if (container === 'equipment' || from[0].container === 'equipment') {
     await require('./stats').refreshBm(db, playerId);
   }
   return true;
+}
+
+// Sends a row to the very end of its container's list — a single UPDATE, not
+// a new row. inventoryOf and resolveRow both order by sort_seq rather than
+// id: `id` means "created in this order, forever", and stays that way so
+// nothing that names a row by identity — item_ledger's row_id, a closed
+// market listing's item_id, a caller that captured a row id before this call
+// and still means the same row after it (dev/stats-check.js chains exactly
+// that: unequip, into storage, back to inventory, all against one captured
+// id) — has to learn otherwise. sort_seq is the one thing this call changes,
+// drawn from player_items' own id sequence so a bump always sorts after
+// everything, including rows created since.
+async function _bumpToEnd(db, rowId, playerId) {
+  await query(db, `
+    UPDATE player_items SET sort_seq = nextval(pg_get_serial_sequence('player_items', 'id'))
+     WHERE id = $1 AND player_id = $2`, [rowId, playerId]);
 }
 
 // ── market handoff ──────────────────────────────────────────────────────────
