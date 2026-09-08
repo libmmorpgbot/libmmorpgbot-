@@ -215,6 +215,75 @@ async function main() {
   } catch { /* expected */ }
   eq((await items.inventoryOf(null, t2)).inventory.length, 0,
     'предмет, виданий у транзакції що впала, не існує');
+
+  // ── 12. unequip lands at the bottom, not where it was first looted ───────
+  // «Снимаешь вещь — она ложится непонятно куда»: moveTo used to leave the
+  // row's DISPLAY position tied to its id, so a sword worn for a while
+  // reappeared wherever it sorted back from when it was first picked up —
+  // ahead of items acquired since. It must now come out AFTER everything
+  // already in the inventory — while still being the SAME row (same id):
+  // moveTo's callers are allowed to capture a row id before one call and use
+  // it again after a later one (see rowA reused across steps below), so
+  // "moved" must never mean "got a new identity".
+  const h = await mkPlayer('h');
+  const [rowA, rowB] = await tx(async t => {
+    await items.lockPlayer(t, h);
+    return [await items.add(t, h, SWORD), await items.add(t, h, SWORD)];
+  });
+  await tx(t => items.moveTo(t, rowA, h, 'equipment', 'weapon'));
+  // rowA is worn now; inventory holds only rowB. A third sword arrives while
+  // rowA is still equipped, so by pickup order it belongs BEFORE rowA's
+  // eventual return.
+  const rowC = await tx(async t => { await items.lockPlayer(t, h); return items.add(t, h, SWORD); });
+  await tx(t => items.moveTo(t, rowA, h, 'inventory'));
+  const invH = (await items.inventoryOf(null, h)).inventory;
+  eq(invH.length, 3, 'три предмети в інвентарі після зняття');
+  eq(invH.findIndex(i => i.rowId === rowB), 0, 'предмет, що лежав, — перший');
+  eq(invH.findIndex(i => i.rowId === rowC), 1, 'предмет, підібраний другим, — другий');
+  eq(invH[2].rowId, rowA, 'щойно знятий предмет — останній, і це ТОЙ САМИЙ рядок (id не змінився)');
+
+  // A SECOND moveTo against the very same captured rowA — exactly the
+  // pattern dev/stats-check.js relies on (unequip, into storage, back to
+  // inventory, all against one id) — must still find it.
+  await tx(t => items.moveTo(t, rowA, h, 'storage'));
+  const stoH = (await items.inventoryOf(null, h)).storage;
+  eq(stoH.length && stoH[0].rowId, rowA, 'той самий rowA переїхав у сховище другим викликом moveTo');
+
+  // ── 13. a stack already in storage stays put; a fresh one lands at the ───
+  //        bottom, and topping up an existing one does not move it either ──
+  const j = await mkPlayer('i');
+  const [jSword] = await tx(async t => {
+    await items.lockPlayer(t, j);
+    return [await items.add(t, j, SWORD), await items.add(t, j, STACKABLE, { qty: 2 })];
+  });
+  // First-ever deposit of this shard type into storage: nothing to merge
+  // into, so it must become storage's newest (and, so far, only) row.
+  await tx(async t => {
+    await items.lockPlayer(t, j);
+    const shardRow = (await items.inventoryOf(t, j)).inventory.find(i => i.id === STACKABLE).rowId;
+    await items.moveTo(t, shardRow, j, 'storage');
+  });
+  eq((await items.inventoryOf(null, j)).storage.length, 1, 'перший внесок — один рядок у сховищі');
+
+  // The sword follows it into storage — a second, unrelated arrival.
+  await tx(t => items.moveTo(t, jSword, j, 'storage'));
+  const stoMid = (await items.inventoryOf(null, j)).storage;
+  eq(stoMid.length, 2, 'у сховищі тепер два рядки');
+  eq(stoMid[0].id, STACKABLE, 'стек осколків лишився першим рядком');
+  eq(stoMid[1].id, SWORD, 'меч став другим');
+
+  // Depositing MORE of the same shard tops up the stack ALREADY in storage —
+  // it must merge in place, not jump the sword to become the new bottom.
+  await tx(async t => {
+    await items.lockPlayer(t, j);
+    await items.add(t, j, STACKABLE, { qty: 4 });
+    const shardRow = (await items.inventoryOf(t, j)).inventory.find(i => i.id === STACKABLE).rowId;
+    await items.moveTo(t, shardRow, j, 'storage');
+  });
+  const stoAfter = (await items.inventoryOf(null, j)).storage;
+  eq(stoAfter.length, 2, 'довкладення не породило нового рядка');
+  eq(stoAfter[0].id, STACKABLE, 'наявний стек лишився на своєму місці — не пірнув під меч');
+  eq(stoAfter[0].qty, 6, 'а кількість у ньому зросла на довкладене');
 }
 
 async function cleanup() {
