@@ -103,7 +103,7 @@ async function inventoryOf(db, playerId) {
     SELECT id, container, slot, item_id, enhance, qty
       FROM player_items
      WHERE player_id = $1
-     ORDER BY id`, [playerId]);
+     ORDER BY sort_seq`, [playerId]);
   const out = { inventory: [], equipment: {}, storage: [] };
   for (const r of rows) {
     if (r.container === 'equipment') out.equipment[r.slot] = _row(r);
@@ -541,9 +541,12 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
     return rows.length ? Number(rows[0].id) : null;
   }
 
+  // sort_seq, not id — this MUST be the same order inventoryOf renders, or
+  // ref.idx (a position in the CLIENT's list) would resolve against a
+  // different ordering than the one the player actually clicked in.
   const { rows } = await query(db,
     `SELECT id, item_id, enhance FROM player_items
-      WHERE player_id = $1 AND container = $2 ORDER BY id`, [playerId, container]);
+      WHERE player_id = $1 AND container = $2 ORDER BY sort_seq`, [playerId, container]);
   if (!rows.length) return null;
 
   const wantId = typeof ref.id === 'string' && ref.id ? ref.id : null;
@@ -860,9 +863,9 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
     // месту — attachFromListing, где на строку ещё смотрит живой лот.
     await mergeStacks(db, playerId, container, from[0].item_id, from[0].enhance || 0);
     // No stack was already there to fold into, so this row is exactly where
-    // mergeStacks left it: standing alone, under the id it had before this
-    // call — which sorts wherever it was when first created, not at the
-    // bottom. Give it a fresh id so it does.
+    // mergeStacks left it: standing alone, at whatever position it sorted to
+    // when it was first created — not at the bottom, where a player expects
+    // what they just unequipped or deposited to land. Bump it there.
     if (!hasExistingStack) await _bumpToEnd(db, rowId, playerId);
   }
   if (container === 'equipment' || from[0].container === 'equipment') {
@@ -871,41 +874,20 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   return true;
 }
 
-// Puts a row at the very end of its container's list. inventoryOf sorts by
-// id, and id is assigned once at creation and never touched again by
-// anything else in this file — so the only way to give a row a fresh,
-// higher-than-everything-it-shares-a-container-with id is to delete it and
-// insert its data back as a new row.
-//
-// Safe specifically because moveTo — the only caller — never hands the old
-// id to anyone afterward: it returns a boolean, and every handler that calls
-// it re-reads the whole inventory rather than tracking one row by id. A
-// closed (sold/cancelled) market listing that still names this id as its
-// snap-less item_id simply loses that link, the same way it already does
-// when the row is destroyed by an enhance burn or a craft — see migration
-// 010's ON DELETE SET NULL, which exists for exactly this.
+// Sends a row to the very end of its container's list — a single UPDATE, not
+// a new row. inventoryOf and resolveRow both order by sort_seq rather than
+// id: `id` means "created in this order, forever", and stays that way so
+// nothing that names a row by identity — item_ledger's row_id, a closed
+// market listing's item_id, a caller that captured a row id before this call
+// and still means the same row after it (dev/stats-check.js chains exactly
+// that: unequip, into storage, back to inventory, all against one captured
+// id) — has to learn otherwise. sort_seq is the one thing this call changes,
+// drawn from player_items' own id sequence so a bump always sorts after
+// everything, including rows created since.
 async function _bumpToEnd(db, rowId, playerId) {
-  const cols = await _hasSourceCols(db)
-    ? 'player_id, container, slot, item_id, enhance, qty, created_at, source, source_ref'
-    : 'player_id, container, slot, item_id, enhance, qty, created_at';
-  const { rows } = await query(db, `
-    WITH moved AS (
-      DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING ${cols}
-    )
-    INSERT INTO player_items (${cols}) SELECT ${cols} FROM moved
-    RETURNING id, item_id, qty`, [rowId, playerId]);
-  if (!rows.length) return null;
-  const newRowId = Number(rows[0].id);
-  // The same offsetting pair mergeStacks writes for the same reason: the
-  // account gained and lost nothing, only which row it lives under changed —
-  // but "what happened to row <rowId>" deserves an answer (historyOfRow reads
-  // exactly this), and dev/item-ledger-check.js's static half requires every
-  // player_items DELETE/INSERT to sit next to a ledger() call regardless.
-  await ledger(db, playerId, rows[0].item_id, -rows[0].qty,
-    { rowId, reason: 'row_bump', refType: 'row', refId: String(newRowId) });
-  await ledger(db, playerId, rows[0].item_id, rows[0].qty,
-    { rowId: newRowId, reason: 'row_bump', refType: 'row', refId: String(rowId) });
-  return newRowId;
+  await query(db, `
+    UPDATE player_items SET sort_seq = nextval(pg_get_serial_sequence('player_items', 'id'))
+     WHERE id = $1 AND player_id = $2`, [rowId, playerId]);
 }
 
 // ── market handoff ──────────────────────────────────────────────────────────
