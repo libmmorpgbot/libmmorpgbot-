@@ -2091,11 +2091,6 @@ function netConnect(onReady) {
   socket.on('clanStorageError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
-  // ── Активность клана ────────────────────────────────────────
-  socket.on('clanActivity', data => {
-    _clanActivity = data || null;
-    if (typeof onClanActivity === 'function') onClanActivity();
-  });
   socket.on('clanStorageOk', ({ msg } = {}) => {
     if (typeof _marketToast === 'function' && msg) _marketToast(msg, 'ok');
   });
@@ -2714,9 +2709,6 @@ function netClanDecline(telegramId) {
 function netClanKick(telegramId) {
   if (socket?.connected) socket.emit('clanKick', { telegramId });
 }
-function netClanTransferLeader(telegramId) {
-  if (socket?.connected) socket.emit('clanTransferLeader', { telegramId });
-}
 function netClanSetDescription(description) {
   if (socket?.connected) socket.emit('clanSetDescription', { description });
 }
@@ -2758,11 +2750,6 @@ function netClanStorageClaim() {
 }
 function netClanStorageUnlock() {
   if (socket?.connected) socket.emit('clanStorageUnlock');
-}
-
-// ── Активность клана ─────────────────────────────────────────
-function netClanActivitySync() {
-  if (socket?.connected && clanData) socket.emit('clanActivitySync');
 }
 
 // ── Auth ──────────────────────────────────────────────────────

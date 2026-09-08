@@ -1019,7 +1019,6 @@ canvas { display:block; width:100%; height:100%; }
 .clan-desc-actions { display:flex; gap:8px; margin-top:8px; }
 .clan-section-hdr  { font-size:11px; font-weight:700; color:#2e5f83; letter-spacing:1px; text-transform:uppercase; margin-bottom:7px; }
 .clan-member       { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid rgba(193,204,213,0.04); }
-.clan-member-me    { background:rgba(234,181,89,0.08); border-radius:6px; padding-left:6px; }
 .clan-member-role  { flex-shrink:0; font-size:14px; }
 .clan-member-name  { flex:1; font-size:13px; color:#b1bfcb; }
 .inv-tabs          { display:flex; border-bottom:1px solid rgba(193,204,213,0.07); margin-bottom:4px; }

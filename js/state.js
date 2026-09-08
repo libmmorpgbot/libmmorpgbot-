@@ -128,10 +128,6 @@ let clanData = null;
 // js/network.js). null = not fetched yet, or not in a clan. Everything in it
 // is server-owned; nothing here is computed locally.
 let _clanStorage = null;
-// Активность клана — кто сколько Осколков задонатил, pushed by the server on
-// every deposit (see 'clanActivity', js/network.js). null = not fetched yet,
-// or not in a clan.
-let _clanActivity = null;
 
 // Death Battle (Битва на смерть) — scheduled free-for-all, see the handlers
 // in js/network.js and the panel in js/ui.js.

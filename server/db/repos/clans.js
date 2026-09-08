@@ -271,26 +271,6 @@ async function setDescription(db, leaderId, clanId, text) {
   return t;
 }
 
-// Handing the clan to another member. Locked the same way accept/disband are
-// — on the clans row — because the two UPDATEs below must not interleave with
-// another leader-changing operation on this clan.
-//
-// The two statements run in this order specifically because of
-// clan_members_leader_key: a partial unique index over role='leader' allows
-// at most one such row per clan at any instant a constraint is checked. Doing
-// "insert the new leader" before "demote the old one" would, for the instant
-// between the two statements, try to have two — doing it the other way round
-// passes through zero, which the index has no opinion about.
-async function transferLeadership(db, leaderId, clanId, newLeaderId) {
-  await _requireLeader(db, leaderId, clanId, { lock: true });
-  if (newLeaderId === leaderId) err('self', 'Ви вже лідер');
-  await _requireMember(db, newLeaderId, clanId);
-
-  await query(db, `UPDATE clan_members SET role = 'member' WHERE clan_id = $1 AND role = 'leader'`, [clanId]);
-  await query(db, `UPDATE clan_members SET role = 'leader' WHERE clan_id = $1 AND player_id = $2`, [clanId, newLeaderId]);
-  return true;
-}
-
 // ── xp ──────────────────────────────────────────────────────────────────────
 // One point per monster killed, to the clan of whoever landed the killing
 // blow. That is the rate the retired build used (_clanXpAdd(myClanId, 1) in
@@ -343,14 +323,6 @@ async function deposit(db, playerId, clanId, itemId, qty) {
     INSERT INTO clan_storage (clan_id, item_id, qty) VALUES ($1, $2, $3)
     ON CONFLICT (clan_id, item_id) DO UPDATE SET qty = clan_storage.qty + EXCLUDED.qty`,
     [clanId, itemId, n]);
-  // Who put it in, kept separately from clan_storage (the shared pool, which
-  // forgets whose it was the moment it lands). This is the running total the
-  // Activity tab reads — append-only in effect, since it only ever grows.
-  await query(db, `
-    INSERT INTO clan_contributions (clan_id, player_id, qty, updated_at) VALUES ($1, $2, $3, now())
-    ON CONFLICT (clan_id, player_id) DO UPDATE
-      SET qty = clan_contributions.qty + EXCLUDED.qty, updated_at = now()`,
-    [clanId, playerId, n]);
   // The NORMALISED count, not what was asked for — the caller confirms this
   // number to the player, and `qty` from the wire has already been floored and
   // clamped by the time it gets here.
@@ -596,28 +568,6 @@ async function storageView(db, clanId, playerId) {
   };
 }
 
-// Who put how much into the clan's storage, ever — the Activity tab. Reads
-// clan_contributions rather than clan_storage (which only holds what is
-// still THERE) or item_ledger (which mixes a clan deposit in with every other
-// reason an item left someone's bag). Sorted highest-first, which is the
-// order a "top contributors" list is for.
-//
-// A former member who deposited and later left still shows up: the shards
-// they put in did not leave with them, so the credit does not either.
-async function activityView(db, clanId) {
-  const { rows } = await query(db, `
-    SELECT ct.player_id, ct.qty, ct.updated_at, p.username, p.telegram_id,
-           (cm.player_id IS NOT NULL) AS in_clan
-      FROM clan_contributions ct
-      JOIN players p ON p.id = ct.player_id
-      LEFT JOIN clan_members cm ON cm.clan_id = ct.clan_id AND cm.player_id = ct.player_id
-     WHERE ct.clan_id = $1 AND ct.qty > 0
-     ORDER BY ct.qty DESC, ct.updated_at ASC`, [clanId]);
-  return rows.map(r => ({
-    playerId: Number(r.player_id), telegramId: r.telegram_id, username: r.username,
-    qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
-  }));
-}
 
 // The whole clan panel in one round trip. The old version issued a query per
 // member to resolve names — an N+1 that ran every time anyone opened the tab.
@@ -741,10 +691,9 @@ async function _requireNoHeldShards(db, clanId, playerId) {
 }
 
 module.exports = {
-  dataView, storageView, activityView, memberDaysIn, canUseStorage,
+  dataView, storageView, memberDaysIn, canUseStorage,
   claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
-  transferLeadership,
   addXp, deposit, allocate, claim, cancelAllocation, unlockStorage,
   fullView, clanOf, badgeOf, search, levelFor, ClanError,
   CLAN_XP_PER_KILL,
