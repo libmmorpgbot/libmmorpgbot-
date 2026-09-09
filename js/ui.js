@@ -2132,11 +2132,12 @@ function _farmHighShardRows(eid) {
   return pool.map(sh => _dropRow(_mi(sh, 20), sh.name, pct, '#c9a24b')).join('');
 }
 
-// Строки, одинаковые для всех видов зоны: опыт, золото, Liberty, камень
+// Строки, одинаковые для всех видов зоны: опыт, золото, Liberty, оба камня
 // заточки и оба рецепта. Всё остальное поделено, и живёт в разделах ниже.
 function _farmHighZoneRows(e) {
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
-  const normStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone') : null;
+  const normStone  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone')  : null;
+  const blessStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'bless_stone') : null;
   const epicRec   = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'rece') : null;
   const legRec    = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'recl') : null;
   return `
@@ -2145,7 +2146,8 @@ function _farmHighZoneRows(e) {
     ${(typeof FARM_HIGH_LIBERTY_CHANCE !== 'undefined' && FARM_HIGH_LIBERTY_CHANCE > 0)
       ? _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM_HIGH_LIBERTY_CHANCE * 100), '#e8c15a')
       : ''}
-    ${normStone ? _dropRow(_mi(normStone, 16), normStone.name, _pctSmall(FARM_HIGH_NORM_STONE_CHANCE * 100), '#f17e8b') : ''}
+    ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  _pctSmall(FARM_HIGH_NORM_STONE_CHANCE * 100),  '#f17e8b') : ''}
+    ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, _pctSmall(FARM_HIGH_BLESS_STONE_CHANCE * 100), '#efc680') : ''}
     ${epicRec   ? _dropRow(_mi(epicRec, 16),   epicRec.name,   _pctSmall(FARM_HIGH_EPIC_RECIPE_CHANCE * 100), '#c98fef') : ''}
     ${legRec    ? _dropRow(_mi(legRec, 16),    legRec.name,    _pctSmall(FARM_HIGH_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : ''}`;
 }
