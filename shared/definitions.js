@@ -1470,6 +1470,10 @@ const FARM_HIGH_SHARD_CHANCE = FARM_SHARD_CHANCE * 1.3;
 const FARM_HIGH_NORM_STONE_CHANCE       = 0.05  / 100;
 const FARM_HIGH_EPIC_RECIPE_CHANCE      = 0.01  / 100;
 const FARM_HIGH_LEGENDARY_RECIPE_CHANCE = 0.001 / 100;
+// Камень БЕЗОПАСНОЙ заточки — добавлен позже, той же ставкой, что и в обычной
+// Фарм-зоне (FARM_BLESS_STONE_CHANCE), без ×1.3: тот множитель просили только
+// для осколков, здесь — «шанс тот же, как и в фарм зоне».
+const FARM_HIGH_BLESS_STONE_CHANCE = FARM_BLESS_STONE_CHANCE;
 
 // ── И то же самое «раскидано по разным монстрам» ────────────────────────────
 // Ставки выше — общие для всей зоны: любой её монстр роняет epic-шмот с
@@ -2964,7 +2968,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_MOBS_PER_ROOM,
   FARM_HIGH_XP_MULT, FARM_HIGH_LIBERTY_CHANCE, FARM_HIGH_SPECIES,
   FARM_HIGH_GEAR_CHANCE, FARM_HIGH_SKILL_BOOK_CHANCE, FARM_HIGH_ADV_SKILL_BOOK_CHANCE,
-  FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_NORM_STONE_CHANCE,
+  FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_NORM_STONE_CHANCE, FARM_HIGH_BLESS_STONE_CHANCE,
   FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS,
   FARM_HIGH_SPECIES_ADV_BOOKS, FARM_HIGH_SPECIES_PASSIVE_BOOKS,

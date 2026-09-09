@@ -15,7 +15,7 @@ const {
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE,
   FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_GEAR_CHANCE, FARM_HIGH_SKILL_BOOK_CHANCE, FARM_HIGH_ADV_SKILL_BOOK_CHANCE,
-  FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_NORM_STONE_CHANCE,
+  FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_NORM_STONE_CHANCE, FARM_HIGH_BLESS_STONE_CHANCE,
   FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS,
   FARM_HIGH_SPECIES_ADV_BOOKS, FARM_HIGH_SPECIES_PASSIVE_BOOKS,
@@ -262,6 +262,10 @@ function _rollFarmHighLoot(inv, eid) {
   // Рецепт не привязан ни к классу, ни к слоту, а камень заточки — один
   // предмет: делить тут нечего.
   if (Math.random() < FARM_HIGH_NORM_STONE_CHANCE) addMat('norm_stone', 1);
+  // Камень безопасной заточки — добавлен позже, ставкой обычной Фарм-зоны
+  // (FARM_HIGH_BLESS_STONE_CHANCE === FARM_BLESS_STONE_CHANCE, без ×1.3
+  // осколков) — так же, без деления по видам, как обычный камень выше.
+  if (Math.random() < FARM_HIGH_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
   if (Math.random() < FARM_HIGH_EPIC_RECIPE_CHANCE) addMat('rece', 1);
   if (Math.random() < FARM_HIGH_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
   return granted;

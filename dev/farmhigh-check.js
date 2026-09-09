@@ -18,10 +18,12 @@
 //
 //   «нужно было сделать отдельный телепорт в фарм зону 2, с 40 уровня»
 //
-// и ещё одним, позже:
+// и ещё двумя, позже:
 //
 //   «в фарм зоне 2 добавь выпадение осколков так же как в фарм зоне обычной,
 //    шансы выше на х1.3»
+//
+//   «добавь безопасные заточки тоже, шанс тот же как и в фарм зоне»
 //
 // Поэтому здесь два рода утверждений. Первый — про саму зону. Второй, ничуть
 // не менее важный, — КОНТРОЛЬНЫЙ: Элитная фарм-зона осталась той, какой была,
@@ -44,6 +46,7 @@ const {
   FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_SPECIES,
   FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_XP_MULT,
   FARM_HIGH_GEAR_CHANCE, FARM_HIGH_LIBERTY_CHANCE, FARM_HIGH_NORM_STONE_CHANCE,
+  FARM_HIGH_BLESS_STONE_CHANCE, FARM_BLESS_STONE_CHANCE,
   FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_SKILL_BOOK_CHANCE, FARM_HIGH_ADV_SKILL_BOOK_CHANCE, FARM_HIGH_PASSIVE_BOOK_CHANCE,
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS, FARM_HIGH_SPECIES_ADV_BOOKS,
@@ -148,6 +151,10 @@ ok(FARM_HIGH_GEAR_CHANCE.legendary === undefined,
 // Фарм-зоны (заказ приведён в шапке файла).
 eq(FARM_HIGH_SHARD_CHANCE, FARM_SHARD_CHANCE * 1.3, 'осколки — ×1.3 к ставке обычной Фарм-зоны');
 
+// Камень безопасной заточки — добавлен позже, БЕЗ ×1.3: ставка должна
+// совпасть с обычной Фарм-зоной один в один.
+eq(FARM_HIGH_BLESS_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, 'камень безопасной заточки — та же ставка, что в обычной Фарм-зоне');
+
 // ════════════════════════════════════════════════════════════════════════════
 head('и бросок идёт ИМЕННО по ним');
 // Ставки выше — это числа в каталоге. Ниже — то, по чему бросает сервер.
@@ -164,6 +171,7 @@ ok(gateHolds(sp0, FARM_HIGH_NORM_STONE_CHANCE, hasId('norm_stone')), 'камен
 ok(gateHolds(sp0, FARM_HIGH_EPIC_RECIPE_CHANCE, hasId('rece')), 'эпический рецепт — на своём');
 ok(gateHolds(sp0, FARM_HIGH_LEGENDARY_RECIPE_CHANCE, hasId('recl')), 'легендарный рецепт — на своём');
 ok(gateHolds(sp0, FARM_HIGH_SHARD_CHANCE, hasId(FARM_HIGH_SPECIES_SHARDS[sp0][0])), 'осколок — на своём');
+ok(gateHolds(sp0, FARM_HIGH_BLESS_STONE_CHANCE, hasId('bless_stone')), 'камень безопасной заточки — на своём');
 
 // Liberty здесь не бросается вовсе — это валюта, её начисляет обработчик
 // убийства (server/handlers2/world.js). В таблице предметов её быть не должно.
