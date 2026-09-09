@@ -2120,6 +2120,18 @@ function _farmHighGearSections(eid) {
   }).join('');
 }
 
+// Осколки уникального оружия — тот же независимый поштучный бросок, что и в
+// обычной Фарм-зоне (_farmSpeciesShardRows выше), просто по FARM_HIGH_SHARD_
+// CHANCE (её ×1.3) и по своему пулу вида (FARM_HIGH_SPECIES_SHARDS).
+function _farmHighShardRows(eid) {
+  const ids = (typeof FARM_HIGH_SPECIES_SHARDS !== 'undefined' && FARM_HIGH_SPECIES_SHARDS[eid]) || [];
+  const pool = ids.map(id => (typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : []).find(s => s.id === id)).filter(Boolean);
+  if (!pool.length) return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const pct = _pctSmall(FARM_HIGH_SHARD_CHANCE * 100);
+  return pool.map(sh => _dropRow(_mi(sh, 20), sh.name, pct, '#c9a24b')).join('');
+}
+
 // Строки, одинаковые для всех видов зоны: опыт, золото, Liberty, камень
 // заточки и оба рецепта. Всё остальное поделено, и живёт в разделах ниже.
 function _farmHighZoneRows(e) {
@@ -2152,6 +2164,7 @@ function _farmHighSpeciesBodyHtml(e) {
     </div>
     ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e))}
     ${_farmHighGearSections(e.eid)}
+    ${sec(t('uniqueShardsHdr'), _farmHighShardRows(e.eid))}
     ${sec(t('farmHighSkillBooksHdr'), _farmHighBookRows(S, FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
     ${sec(t('farmHighAdvBooksHdr'), _farmHighBookRows(A, FARM_HIGH_ADV_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
     ${sec(t('farmHighPassiveBooksHdr'), _farmHighBookRows(P, FARM_HIGH_PASSIVE_BOOK_CHANCE, b => _itemIcon(b, 16)))}`;

@@ -19,6 +19,7 @@ const {
   FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS,
   FARM_HIGH_SPECIES_ADV_BOOKS, FARM_HIGH_SPECIES_PASSIVE_BOOKS,
+  FARM_HIGH_SHARD_CHANCE, FARM_HIGH_SPECIES_SHARDS,
   FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
@@ -199,10 +200,14 @@ function _rollFarmZoneLoot(inv, eid) {
 // подмножества УБИТОГО ВИДА (FARM_HIGH_SPECIES_* в shared/definitions.js).
 // Ставки при этом общие для зоны — вид решает, ЧТО выпадет, а не как часто.
 //
-// Осколков уникального оружия здесь нет: это добыча первой Фарм-зоны, и
-// уникальное оружие остаётся её и Элитной зоны делом. Liberty тоже не
-// бросается здесь — это валюта (nexum), её бросают и начисляют обработчики
-// attack/skillAttack (server/handlers2/world.js) по FARM_HIGH_LIBERTY_CHANCE.
+// Осколки уникального оружия теперь падают и здесь — тот же независимый
+// поштучный бросок FARM_SHARD_CHANCE, что и в первой Фарм-зоне, только по
+// FARM_HIGH_SHARD_CHANCE (её ×1.3, по прямому запросу владельца) и по своему
+// пулу вида (FARM_HIGH_SPECIES_SHARDS). Уникальное ОРУЖИЕ само (не осколки —
+// готовые предметы) зона всё равно не роняет: это остаётся исключением
+// Элитной зоны. Liberty тоже не бросается здесь — это валюта (nexum), её
+// бросают и начисляют обработчики attack/skillAttack (server/handlers2/
+// world.js) по FARM_HIGH_LIBERTY_CHANCE.
 function _rollFarmHighLoot(inv, eid) {
   const granted = [];
   function addMat(id, qty) {
@@ -241,6 +246,17 @@ function _rollFarmHighLoot(inv, eid) {
     CRAFT_MATS.filter(m => m.advSkillKey).map(m => m.id));
   rollFrom(FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_SPECIES_PASSIVE_BOOKS[eid],
     CRAFT_MATS.filter(m => m.passiveId).map(m => m.id));
+
+  // ── осколки уникального оружия: как в первой Фарм-зоне, по каждому виду
+  // осколка отдельно, ×1.3 выше и по своему пулу вида ──────────────────────
+  // Пустой пул для незнакомого eid — тот же аварийный случай, что и у
+  // rollFrom выше: полный каталог осколков, а не тихая потеря броска.
+  const shardPool = (FARM_HIGH_SPECIES_SHARDS[eid] && FARM_HIGH_SPECIES_SHARDS[eid].length)
+    ? FARM_HIGH_SPECIES_SHARDS[eid]
+    : UNIQUE_SHARDS.map(s => s.id);
+  for (const shId of shardPool) {
+    if (Math.random() < FARM_HIGH_SHARD_CHANCE) addMat(shId, 1);
+  }
 
   // ── общее для всей зоны, без деления по видам ───────────────────────────
   // Рецепт не привязан ни к классу, ни к слоту, а камень заточки — один
