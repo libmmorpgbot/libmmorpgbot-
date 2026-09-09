@@ -18,6 +18,11 @@
 //
 //   «нужно было сделать отдельный телепорт в фарм зону 2, с 40 уровня»
 //
+// и ещё одним, позже:
+//
+//   «в фарм зоне 2 добавь выпадение осколков так же как в фарм зоне обычной,
+//    шансы выше на х1.3»
+//
 // Поэтому здесь два рода утверждений. Первый — про саму зону. Второй, ничуть
 // не менее важный, — КОНТРОЛЬНЫЙ: Элитная фарм-зона осталась той, какой была,
 // и её ни полоса, ни виды, ни таблица дропа этой работой не задеты. Именно
@@ -42,10 +47,10 @@ const {
   FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_SKILL_BOOK_CHANCE, FARM_HIGH_ADV_SKILL_BOOK_CHANCE, FARM_HIGH_PASSIVE_BOOK_CHANCE,
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS, FARM_HIGH_SPECIES_ADV_BOOKS,
-  FARM_HIGH_SPECIES_PASSIVE_BOOKS,
-  FARM_SPECIES, FARM_LVL_MIN, FARM_LVL_MAX, FARM_ENTRY_LEVEL,
+  FARM_HIGH_SPECIES_PASSIVE_BOOKS, FARM_HIGH_SHARD_CHANCE, FARM_HIGH_SPECIES_SHARDS,
+  FARM_SPECIES, FARM_LVL_MIN, FARM_LVL_MAX, FARM_ENTRY_LEVEL, FARM_SHARD_CHANCE,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_SPECIES, FARM2_ENTRY_LEVEL, FARM2_LIBERTY_CHANCE,
-  FLOOR_ENEMIES, ENEMY_DEF, ITEM_DEF, CRAFT_MATS, armIndexForLevel,
+  FLOOR_ENEMIES, ENEMY_DEF, ITEM_DEF, CRAFT_MATS, UNIQUE_SHARDS, armIndexForLevel,
 } = require('../shared/definitions');
 const loot = require('../server/game/loot');
 const { generateFarmHigh, generateHub } = require('../server/game/dungeon');
@@ -139,6 +144,10 @@ eq(pct(FARM_HIGH_PASSIVE_BOOK_CHANCE), 0.0009, 'книги пассивок 0.00
 ok(FARM_HIGH_GEAR_CHANCE.legendary === undefined,
   'legendary в зоне не падает — потолок коридора 4 и крафта, а не фарма');
 
+// Осколки уникального оружия — добавлены позже, ×1.3 к ставке обычной
+// Фарм-зоны (заказ приведён в шапке файла).
+eq(FARM_HIGH_SHARD_CHANCE, FARM_SHARD_CHANCE * 1.3, 'осколки — ×1.3 к ставке обычной Фарм-зоны');
+
 // ════════════════════════════════════════════════════════════════════════════
 head('и бросок идёт ИМЕННО по ним');
 // Ставки выше — это числа в каталоге. Ниже — то, по чему бросает сервер.
@@ -154,6 +163,7 @@ ok(gateHolds(sp0, FARM_HIGH_PASSIVE_BOOK_CHANCE, hasBook('passiveId')), 'кни�
 ok(gateHolds(sp0, FARM_HIGH_NORM_STONE_CHANCE, hasId('norm_stone')), 'камень обычной заточки — на своём');
 ok(gateHolds(sp0, FARM_HIGH_EPIC_RECIPE_CHANCE, hasId('rece')), 'эпический рецепт — на своём');
 ok(gateHolds(sp0, FARM_HIGH_LEGENDARY_RECIPE_CHANCE, hasId('recl')), 'легендарный рецепт — на своём');
+ok(gateHolds(sp0, FARM_HIGH_SHARD_CHANCE, hasId(FARM_HIGH_SPECIES_SHARDS[sp0][0])), 'осколок — на своём');
 
 // Liberty здесь не бросается вовсе — это валюта, её начисляет обработчик
 // убийства (server/handlers2/world.js). В таблице предметов её быть не должно.
@@ -191,6 +201,7 @@ const tables = {
   'книги 1-й профессии': FARM_HIGH_SPECIES_SKILL_BOOKS,
   'книги 2-й профессии': FARM_HIGH_SPECIES_ADV_BOOKS,
   'книги пассивок': FARM_HIGH_SPECIES_PASSIVE_BOOKS,
+  'осколки': FARM_HIGH_SPECIES_SHARDS,
 };
 for (const [name, tbl] of Object.entries(tables)) {
   const empty = FARM_HIGH_SPECIES.filter(sp => !(tbl[sp] || []).length);
@@ -207,6 +218,12 @@ const reachable = new Set([].concat(
 const missing = allBooks.filter(b => !reachable.has(b.id)).map(b => b.name);
 eq(missing.length, 0,
   `все ${allBooks.length} книг игры достижимы в зоне${missing.length ? ' (нет: ' + missing.slice(0, 5).join(', ') + ')' : ''}`);
+
+// Все 20 осколков уникального оружия достижимы в зоне — тем же способом.
+const reachableShards = new Set([].concat(...FARM_HIGH_SPECIES.map(sp => FARM_HIGH_SPECIES_SHARDS[sp])));
+const missingShards = UNIQUE_SHARDS.filter(sh => !reachableShards.has(sh.id)).map(sh => sh.name);
+eq(missingShards.length, 0,
+  `все ${UNIQUE_SHARDS.length} осколков достижимы в зоне${missingShards.length ? ' (нет: ' + missingShards.join(', ') + ')' : ''}`);
 
 // И все слоты снаряжения тоже — иначе «от common до epic» было бы неправдой
 // для той части набора, которую не роняет никто.

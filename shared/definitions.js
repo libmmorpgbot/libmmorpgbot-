@@ -1459,6 +1459,12 @@ const FARM_HIGH_SKILL_BOOK_CHANCE     = 0.0009 / 100;
 const FARM_HIGH_ADV_SKILL_BOOK_CHANCE = 0.0007 / 100;
 const FARM_HIGH_PASSIVE_BOOK_CHANCE   = 0.0009 / 100;
 
+// Осколки уникального оружия — то же независимое поштучное поведение, что и
+// FARM_SHARD_CHANCE в обычной Фарм-зоне (один бросок на каждый вид осколка),
+// просто ×1.3 выше по прямому запросу владельца. Делится по видам монстров
+// зоны (FARM_HIGH_SPECIES_SHARDS ниже), как и книги выше.
+const FARM_HIGH_SHARD_CHANCE = FARM_SHARD_CHANCE * 1.3;
+
 // Общее для всей зоны, без деления по видам: камень заточки — один предмет,
 // а рецепт не привязан ни к классу, ни к слоту.
 const FARM_HIGH_NORM_STONE_CHANCE       = 0.05  / 100;
@@ -1496,6 +1502,12 @@ const FARM_HIGH_SPECIES_ADV_BOOKS = _splitAcrossSpecies(
   _ADV_SKILL_BOOK_SRC.map(([cls, key]) => `book_adv_${cls}_${key}`), FARM_HIGH_SPECIES, 2);
 const FARM_HIGH_SPECIES_PASSIVE_BOOKS = _splitAcrossSpecies(
   CRAFT_MATS.filter(m => m.passiveId).map(m => m.id), FARM_HIGH_SPECIES, 4);
+
+// Осколки — тот же round-robin по видам зоны, что и книги выше. Смещение не
+// того же смысла ради, что у книг (осколки не подписаны классом, «читается
+// как класс такой-то» тут неоткуда взяться) — просто своё собственное 1,
+// чтобы не повторять один-в-один разбивку книг первой профессии (смещение 0).
+const FARM_HIGH_SPECIES_SHARDS = _splitAcrossSpecies(UNIQUE_SHARDS.map(sh => sh.id), FARM_HIGH_SPECIES, 1);
 
 // ── Элитная фарм-зона (Elite Farm Zone 2) ────────────────────────────────
 // A second, harder farm zone: level 30-40 monsters, entered only as a full
@@ -2956,6 +2968,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_HIGH_EPIC_RECIPE_CHANCE, FARM_HIGH_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS,
   FARM_HIGH_SPECIES_ADV_BOOKS, FARM_HIGH_SPECIES_PASSIVE_BOOKS,
+  FARM_HIGH_SHARD_CHANCE, FARM_HIGH_SPECIES_SHARDS,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
   FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
   FARM2_LIBERTY_CHANCE, FARM_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,
