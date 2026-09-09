@@ -3,7 +3,7 @@
 //
 // Pure data and pure functions over the shared catalog: no models, no
 // sockets, no session state — same shape as server/inventory.js.
-const { CRAFT_MATS, BOX_DEF, SEASON_TICKET_GRAM_PRICE } = require('../shared/definitions');
+const { CRAFT_MATS, BOX_DEF, SEASON_TICKET_GRAM_PRICE, seasonActive } = require('../shared/definitions');
 
 // ── VIP item data (server-side subset of js/definitions.js) ──────────────────
 const _VIP_WEAPONS = {
@@ -44,12 +44,17 @@ const _VIP_BP = [
 ];
 
 // ── GRAM Shop ─────────────────────────────────────────────────────────────────
-// Every package sells at its own nominal price — the 30% discount that used
-// to apply here (and the per-package noDiscount flag that opted specific
-// packs out of it) has been removed entirely. Mirrors js/ui.js's own
-// pkgPrice, which is what actually draws the price — this is what gets
-// charged, in gramShopBuy.
-function pkgPrice(pkg) { return pkg.gram; }
+// -30% end-of-season sale — every package, no exceptions — for as long as
+// seasonActive() holds (shared/definitions.js's SEASON_END_AT). This is the
+// authoritative price, charged in gramShopBuy; js/ui.js's own pkgPrice
+// mirrors it exactly, for the same reason js/ui.js's copy always has: what
+// the client shows and gates "afford" on must match what actually gets
+// charged, or a card reads as affordable/priced at one number and the
+// purchase bills another.
+const _SEASON_DISCOUNT_PCT = 30;
+function pkgPrice(pkg) {
+  return seasonActive() ? pkg.gram * (100 - _SEASON_DISCOUNT_PCT) / 100 : pkg.gram;
+}
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
