@@ -5496,17 +5496,26 @@ function _marketMinPriceForRaw(it, qty) {
   if (it.id === 'key_rare') return 0.006 * n;
   if (it.id && it.id.startsWith('key_')) return 0.003 * n;
   if (it.slot === 'recipe') return 0.01 * n;
+  if (it.slot === 'buff_potion') return 0.3 * n;
   if (it.slot === 'box') return (it.id === 'box_rare' ? 2 : 1) * n;
-  // Cloak/artifact keep their own flat floor at every rarity below 'rare' —
-  // has to win over the rarity-based gear checks below, or an uncommon
-  // cloak (cloak_u_<class>) would fall through to the cheaper floor.
+  // Rare pet/wings/artifact share their own floor, above rare weapon/armor's
+  // — has to win over both the flat cloak/artifact floor right below (an
+  // artifact IS 'rare' at this rarity, unlike cloak) and the generic
+  // rare-gear check further down.
+  if (it.rarity === 'rare' && (it.slot === 'pet' || it.slot === 'wings' || it.slot === 'artifact')) return 20;
+  // Cloak (any rarity — there's no 'rare' tier for it) and common/uncommon
+  // artifact (rare artifact is carved out above) keep this flat floor — has
+  // to win over the rarity-based gear checks below, or an uncommon cloak
+  // (cloak_u_<class>) would fall through to the cheaper floor.
   if (it.slot === 'cloak' || it.slot === 'artifact') return 2;
   // Skill/passive books — "вторая профессия" (advSkillKey) has its own,
   // higher floor and must be checked before the regular floor below, which
   // covers both active skill books (skillKey) and passive ones (passiveId).
   if (it.advSkillKey) return 10 * n;
   if (it.skillKey || it.passiveId) return 0.4 * n;
-  if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 10;
+  // Epic pet joins epic weapon/armor/wings here (unlike rare/uncommon pet
+  // below, which stay on the generic floor).
+  if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot)) return 30;
   if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 3;
   if (it.rarity === 'uncommon' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 0.3;
   return MARKET_MIN_PRICE;

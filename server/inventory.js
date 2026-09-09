@@ -32,12 +32,14 @@ const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
 const MARKET_MIN_PRICE_BOX_UNCOMMON = 1;   // box_uncommon (green, BOX_DEF), per box
 const MARKET_MIN_PRICE_BOX_RARE     = 2;   // box_rare (blue, BOX_DEF), per box
-const MARKET_MIN_PRICE_EPIC_GEAR   = 10;   // rarity:'epic' armor/weapon, flat
-const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' armor/weapon, flat
+const MARKET_MIN_PRICE_EPIC_GEAR   = 30;   // rarity:'epic' weapon/armor/wings/pet, flat
+const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' weapon/armor, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
+const MARKET_MIN_PRICE_RARE_PET_WING_ARTIFACT = 20; // rarity:'rare' pet/wings/artifact, flat
 const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any rarity below 'rare'
 const MARKET_MIN_PRICE_SKILL_BOOK  = 0.4;  // book_<cls>_<key> (has skillKey), flat, per book
 const MARKET_MIN_PRICE_ADV_SKILL_BOOK = 10; // book_adv_<cls>_<key> ("вторая профессия", has advSkillKey), flat, per book
+const MARKET_MIN_PRICE_BUFF_POTION = 0.3;  // slot:'buff_potion', per potion
 
 function _round2(n) { return Math.round(n * 100) / 100; }
 
@@ -95,14 +97,23 @@ function _marketMinPriceRaw(item) {
   if (item.id === 'key_rare') return MARKET_MIN_PRICE_KEY_RARE * qty;
   if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY_UNCOMMON * qty;
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
+  if (item.slot === 'buff_potion') return MARKET_MIN_PRICE_BUFF_POTION * qty;
   if (item.slot === 'box') {
     return (item.id === 'box_rare' ? MARKET_MIN_PRICE_BOX_RARE : MARKET_MIN_PRICE_BOX_UNCOMMON) * qty;
   }
-  // Cloak/artifact have their own flat floor at every rarity below 'rare'
-  // (there's no 'rare' tier for either), so this has to win over the
-  // rarity-based gear checks below rather than the other way around —
-  // otherwise an uncommon cloak (cloak_u_<class>) would fall through to the
-  // cheaper uncommon-gear floor instead.
+  // Rare pet/wings/artifact share their own floor, above rare weapon/armor's
+  // — has to win over both the flat cloak/artifact floor right below (an
+  // artifact IS 'rare' at this rarity, unlike cloak) and the generic
+  // rare-gear check further down (wings is in ENHANCEABLE_SLOTS and would
+  // otherwise land on the cheaper weapon/armor floor).
+  if (item.rarity === 'rare' && (item.slot === 'pet' || item.slot === 'wings' || item.slot === 'artifact')) {
+    return MARKET_MIN_PRICE_RARE_PET_WING_ARTIFACT;
+  }
+  // Cloak (any rarity — there's no 'rare' tier for it) and common/uncommon
+  // artifact (rare artifact is carved out above) share this flat floor, and
+  // it has to win over the rarity-based gear checks below rather than the
+  // other way around — otherwise an uncommon cloak (cloak_u_<class>) would
+  // fall through to the cheaper uncommon-gear floor instead.
   if (item.slot === 'cloak' || item.slot === 'artifact') return MARKET_MIN_PRICE_CLOAK_ARTIFACT;
   // Skill/passive books — "вторая профессия" (advSkillKey) has its own,
   // higher floor and must be checked before the regular floor below, which
@@ -110,7 +121,9 @@ function _marketMinPriceRaw(item) {
   // class-exclusive and the 6 universal ones alike).
   if (item.advSkillKey) return MARKET_MIN_PRICE_ADV_SKILL_BOOK * qty;
   if (item.skillKey || item.passiveId) return MARKET_MIN_PRICE_SKILL_BOOK * qty;
-  if (item.rarity === 'epic' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_EPIC_GEAR;
+  // Epic pet joins epic weapon/armor/wings here (unlike rare/uncommon pet
+  // below, which stay on the generic floor).
+  if (item.rarity === 'epic' && ENHANCEABLE_SLOTS.has(item.slot)) return MARKET_MIN_PRICE_EPIC_GEAR;
   if (item.rarity === 'rare' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_RARE_GEAR;
   if (item.rarity === 'uncommon' && ENHANCEABLE_SLOTS.has(item.slot) && item.slot !== 'pet') return MARKET_MIN_PRICE_UNCOMMON_GEAR;
   return MARKET_MIN_PRICE;
