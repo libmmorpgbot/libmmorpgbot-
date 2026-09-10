@@ -692,7 +692,7 @@ const SEASON_RATING_MIN_POINTS = 5000;
 // used both to size the GRAM amount credited (distributeSeasonPrizes, server/
 // db/repos/progression.js) and to print it next to the USDT the place was
 // originally sized against.
-const SEASON_PRIZE_GRAM_RATE = 1.33; // 1.33 USDT = 1 GRAM
+const SEASON_PRIZE_GRAM_RATE = 1.37; // 1.37 USDT = 1 GRAM
 function seasonPrizeGram(usdt) {
   return Math.round((Math.max(0, Number(usdt) || 0) / SEASON_PRIZE_GRAM_RATE) * 100) / 100;
 }
