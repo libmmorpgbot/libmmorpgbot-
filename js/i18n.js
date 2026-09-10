@@ -463,6 +463,8 @@ const I18N_UI = {
   csCooldownSec: { ru: 'сек', en: 's', uk: 'сек', es: 's', tr: 'sn', pt: 's' },
   csContinue:    { ru: 'Продолжить', en: 'Continue', uk: 'Продовжити', es: 'Continuar', tr: 'Devam Et', pt: 'Continuar' },
   csCreateChar:  { ru: 'Создать персонажа', en: 'Create Character', uk: 'Створити персонажа', es: 'Crear Personaje', tr: 'Karakter Oluştur', pt: 'Criar Personagem' },
+  csTryChar:     { ru: 'Опробовать персонажа', en: 'Try Character', uk: 'Спробувати персонажа', es: 'Probar Personaje', tr: 'Karakteri Dene', pt: 'Testar Personagem' },
+  trialLeaveBtn: { ru: '← Вернуться к выбору', en: '← Back to selection', uk: '← Повернутися до вибору', es: '← Volver a la selección', tr: '← Seçime dön', pt: '← Voltar à seleção' },
   csLoadingSprites: { ru: 'Загрузка спрайтов...', en: 'Loading sprites...', uk: 'Завантаження спрайтів...', es: 'Cargando sprites...', tr: 'Sprite\'lar yükleniyor...', pt: 'Carregando sprites...' },
   csWaitingServer:  { ru: 'Ожидание сервера...', en: 'Waiting for server...', uk: 'Очікування сервера...', es: 'Esperando al servidor...', tr: 'Sunucu bekleniyor...', pt: 'Aguardando o servidor...' },
   csStarting:       { ru: 'Запуск!', en: 'Starting!', uk: 'Запуск!', es: '¡Iniciando!', tr: 'Başlatılıyor!', pt: 'Iniciando!' },

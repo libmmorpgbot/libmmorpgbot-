@@ -1248,6 +1248,32 @@ function generateFear() {
   };
 }
 
+// ── Опробовать персонажа (character trial) ──────────────────────────────────
+// Its own floor (see server/game/floors.js), same "private, generated fresh
+// per entrant" shape as Страх just above — one player, one sealed empty room,
+// created by server/handlers2/trial.js's trialEnter rather than at boot. No
+// lanes (there is never more than one occupant) and no baked-in monsters:
+// Room.trialSpawnMonsters lays down a single static batch once the player is
+// deployed, same "geometry now, monsters at runtime" split Fear uses.
+// Bigger than Fear's own 12-tile room on purpose — this has to comfortably
+// fit the widest AOE any class's kit throws (250px, Assassin's «Крик»)
+// with room to walk around a monster and see it from every side.
+const TRIAL_ROOM = 20;
+
+function generateTrial() {
+  const w = TRIAL_ROOM + MARGIN * 2, h = TRIAL_ROOM + MARGIN * 2;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  const X0 = MARGIN, Y0 = MARGIN;
+  for (let gy = Y0; gy < Y0 + TRIAL_ROOM; gy++) {
+    for (let gx = X0; gx < X0 + TRIAL_ROOM; gx++) grid[gy][gx] = FLOOR;
+  }
+  const spawn = {
+    x: (X0 + Math.floor(TRIAL_ROOM / 2)) * TILE + TILE / 2,
+    y: (Y0 + Math.floor(TRIAL_ROOM / 2)) * TILE + TILE / 2,
+  };
+  return { grid, rooms: [], w, h, spawn, enemies: [] };
+}
+
 // ── Сотрудничество (Cooperation) ─────────────────────────────────────────────
 // A 2-player-only co-op climb, its own floor (see server/game/floors.js).
 // Called fresh for every pair (see _createCoopRoom, server/index.js) —
@@ -1364,6 +1390,6 @@ function generateCoop() {
 
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentPit,
+  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial,
   TILE, WALL, FLOOR,
 };

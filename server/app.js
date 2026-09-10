@@ -1398,6 +1398,7 @@ io.on('connection', (socket) => {
   require('./handlers2/world')(s, safeOn, deps);
   require('./handlers2/modes')(s, safeOn, deps);
   require('./handlers2/coop')(s, safeOn, deps);
+  require('./handlers2/trial')(s, safeOn, deps);
 
   // Preferences: the ONLY place a client value reaches the database. Six
   // fields, none of which touches combat or the economy.

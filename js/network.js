@@ -836,6 +836,17 @@ function netConnect(onReady) {
   // account and a failed Telegram check both showed an empty error box.
   socket.on('authError', ({ msg, code } = {}) => { showAuthError(msg, code); });
 
+  // "Опробовать персонажа" (server/handlers2/trial.js). trialError only ever
+  // fires for a malformed class name, which the button never sends — this is
+  // a defensive log, not a UI a player should reach.
+  socket.on('trialError', ({ msg } = {}) => { console.error('[trial]', msg); });
+  // The server has torn the private trial room down and put the session back
+  // in its pre-selectChar state — show the carousel again, exactly like the
+  // very first login does (#char-select is a full-screen overlay, z-index
+  // 100, so this alone covers the HUD underneath; see leaveTrial, js/game.js,
+  // for the button that sends this).
+  socket.on('trialLeft', () => { if (typeof csShow === 'function') csShow(_savedData); });
+
   // The server allows one live session per account: a second login kicks the
   // first (see loginTelegramWebApp, server/index.js). This is that message.
   //
@@ -1339,19 +1350,35 @@ function netConnect(onReady) {
       camera.x = player.x - W / (2 * ZOOM); camera.y = player.y - _visH() / 2;
       clampCamera();
     }
-    // See matching comment in selectChar() (game.js) — one savedData blob per
-    // account, not per-type, so don't gate restoration on a .type match.
-    const restore = _savedData || null;
-    if (restore) { restoreFromSave(restore); _savedData = null; }
-    // Did the data we just restored actually carry progress? Recorded before
-    // anything can save, so _emitSaveProgress can tell "this character really
-    // is empty" from "this session never managed to load the character".
-    if (restore && !_looksBlankSave(restore)) _sessionHasRealData = true;
-    // Either real data just got restored above, or there genuinely was none
-    // (brand-new account) — either way the fresh-login decision has now been
-    // made for real, so any authOk from here on is a genuine reconnect. See
-    // _playerRestored's declaration for the race this closes.
-    _playerRestored = true;
+    // A trial gameStart (server/handlers2/trial.js, "Опробовать персонажа")
+    // is not the account's real character arriving — skip BOTH of these for
+    // one. Consuming _savedData here would mean the real character's own
+    // first gameStart (whenever it actually happens) finds it already null
+    // and silently loses gold/potions/buffs/classChanges — everything
+    // restoreFromSave (js/player.js) applies from it, only ever meant to run
+    // once per login. And setting _playerRestored here would make the
+    // reconnect branch above (`if (player && _playerRestored)`) fire with
+    // `player.type` still the TRIAL's class on the very next reconnect — for
+    // an account that has never picked a real class, that calls
+    // netSelectChar(trialType, ...) on a socket blip, and the server's own
+    // selectChar handler writes the first class it is ever asked for
+    // permanently (`AND char_class IS NULL`). A trial must never be able to
+    // reach that write.
+    if (!payload.trial) {
+      // See matching comment in selectChar() (game.js) — one savedData blob per
+      // account, not per-type, so don't gate restoration on a .type match.
+      const restore = _savedData || null;
+      if (restore) { restoreFromSave(restore); _savedData = null; }
+      // Did the data we just restored actually carry progress? Recorded before
+      // anything can save, so _emitSaveProgress can tell "this character really
+      // is empty" from "this session never managed to load the character".
+      if (restore && !_looksBlankSave(restore)) _sessionHasRealData = true;
+      // Either real data just got restored above, or there genuinely was none
+      // (brand-new account) — either way the fresh-login decision has now been
+      // made for real, so any authOk from here on is a genuine reconnect. See
+      // _playerRestored's declaration for the race this closes.
+      _playerRestored = true;
+    }
     csOnServerReady();
   }
 
@@ -3812,6 +3839,12 @@ function _escAttr(s) {
 
 function _finishOnlineStart() {
   csHide();
+  // Hidden unconditionally here and shown back on by startTrial's own
+  // callback (js/game.js) — a real selectChar always runs this function too,
+  // and this is the one place both paths converge, so it is where a stale
+  // "still in a trial" button from an earlier session state gets cleared.
+  const _tlb = document.getElementById('trial-leave-btn');
+  if (_tlb) _tlb.style.display = 'none';
   document.getElementById('bottom-nav').style.display = 'block';
   document.querySelectorAll('.bpanel').forEach(p => p.style.display = 'block');
   const chatBtn = document.getElementById('chat-btn');
@@ -3984,6 +4017,18 @@ function netAttack(enemyId, splash) {
 
 function netSelectChar(type, savedStats) {
   if (socket?.connected) socket.emit('selectChar', { type, savedStats: savedStats || null });
+}
+
+// "Опробовать персонажа" — see server/handlers2/trial.js. Neither call
+// touches the account's real class/level/skills; the server answers
+// trialEnter with a normal 'gameStart' (handled generically, same as
+// selectChar's) and trialLeave with 'trialLeft', which js/ui.js's handler
+// below turns back into the character-select carousel.
+function netTrialEnter(type) {
+  if (socket?.connected) socket.emit('trialEnter', { type });
+}
+function netTrialLeave() {
+  if (socket?.connected) socket.emit('trialLeave');
 }
 
 function netPvpAttack(targetSocketId) {

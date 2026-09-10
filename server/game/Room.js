@@ -474,6 +474,19 @@ const FEAR_AGGRO_R = 500;
 // here too since Fear's waves are spawned at runtime instead of at world-gen.
 const _FEAR_ENEMY_BY_EID = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 
+// ── "Опробовать персонажа" (character trial) tuning ────────────────────────
+// A fixed, static batch — no waves, no escalation — so a player can sit in
+// one spot and try every skill in a kit without the pack thinning out from
+// under them the way a Fear wave would. TRIAL_MOB_LEVEL is the level named
+// in the feature request; TRIAL_HP_MULT keeps a monster standing through a
+// full rotation of skills instead of dying to the first hit, since the point
+// is repeated testing, not a kill.
+const TRIAL_MOB_LEVEL = 42;
+const TRIAL_MOB_COUNT = 10;
+const TRIAL_HP_MULT = 15;
+const TRIAL_SPAWN_RING_MIN = 120;
+const TRIAL_SPAWN_RING_MAX = 320;
+
 // ── Сотрудничество (Coop) tuning ────────────────────────────────────────────
 // COOP_STAGE_LEVELS/COOP_BOSS_LEVEL live in shared/definitions.js — the
 // client needs the level list too (for its own stage preview), same reason
@@ -1019,6 +1032,54 @@ class Room {
       spawned++;
     }
     this._fearAlive.set(lane, spawned);
+  }
+
+  // Spawns TRIAL_MOB_COUNT harmless monsters at TRIAL_MOB_LEVEL, scattered in
+  // a ring around the room's single entry point — for "Опробовать персонажа"
+  // (server/handlers2/trial.js), the same species-lookup machinery
+  // fearSpawnWave above uses, just one static batch with no lanes/waves.
+  // `trialHarmless` is what actually keeps them from ever fighting back — see
+  // the AI tick loop below, where it gates the self-aggro trigger AND the
+  // whole chase/attack block, regardless of how `aggro` got set. `atk: 0`
+  // here is belt and suspenders, not the real guard: the tick loop's damage
+  // formula floors at 1 no matter what atk is (Math.max(1, ...)), which is
+  // exactly why a flag that skips the block entirely is the one that matters.
+  trialSpawnMonsters() {
+    const spawn = this._dungeon && this._dungeon.spawn;
+    if (!spawn) return;
+    const lvl = TRIAL_MOB_LEVEL;
+    const armIdx = armIndexForLevel(lvl);
+    const fe = FLOOR_ENEMIES[armIdx];
+    const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
+    const maxLocalLvl = roomsInArm(armIdx) - 1;
+    for (let n = 0; n < TRIAL_MOB_COUNT; n++) {
+      const pool = bandForLocalLevel(fe, localLvl).pool;
+      const d = _FEAR_ENEMY_BY_EID.get(pool[Math.floor(Math.random() * pool.length)]);
+      if (!d) continue;
+      let ex = spawn.x, ey = spawn.y;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const ang = Math.random() * Math.PI * 2;
+        const ring = TRIAL_SPAWN_RING_MIN + Math.random() * (TRIAL_SPAWN_RING_MAX - TRIAL_SPAWN_RING_MIN);
+        const tx = spawn.x + Math.cos(ang) * ring, ty = spawn.y + Math.sin(ang) * ring;
+        if (!this._isWall(tx, ty)) { ex = tx; ey = ty; break; }
+      }
+      const stats = monsterStatsAtLevel(lvl, d.eType);
+      const e = {
+        id: `trial_${this._trialSeq = (this._trialSeq || 0) + 1}`,
+        ...d, isBoss: false, arm: 'trial', rlvl: lvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+        maxHp: Math.floor(stats.hp * TRIAL_HP_MULT), hp: Math.floor(stats.hp * TRIAL_HP_MULT),
+        atk: 0, def: stats.def, spd: d.spd,
+        xp: 0, gold: 0,
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1, aggro: false, aggroR: FEAR_AGGRO_R,
+        trialHarmless: true,
+        _idx: this._allocIdx(),
+      };
+      this.enemies.push(e);
+      this._enemyMap.set(e.id, e);
+    }
   }
 
   // Who currently owns this hall, or null. Lets server/index.js confirm that
@@ -2085,7 +2146,7 @@ class Room {
       // leash distance. farmZone2's own monsters stand in packs
       // (packMateIds, generateFarmZone2) that wake together on a hit
       // instead — see _wakePack — but never wake on proximity alone.
-      if (!e.aggro && !e.farmZone && !e.farmHigh && !e.farmZone2 && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      if (!e.aggro && !e.farmZone && !e.farmHigh && !e.farmZone2 && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
@@ -2096,7 +2157,14 @@ class Room {
         e._shp = -1;
       }
 
-      if (e.aggro) {
+      // trialHarmless gates the WHOLE block, not just the self-aggro trigger
+      // above: attackEnemy/skillAttackEnemy set `enemy.aggro = true`
+      // unconditionally on any hit, so a trial monster the player swings at
+      // would otherwise wake up anyway. Skipping the block here is what
+      // actually keeps it standing still and harmless no matter how aggro got
+      // set — see trialSpawnMonsters' own comment for why atk:0 alone isn't
+      // enough.
+      if (e.aggro && !e.trialHarmless) {
         // `stationary` holds an enemy on its spawn point while leaving the
         // rest of its behaviour alone — it still aggros, still swings at
         // anyone who steps into reach. Used by the tower's boss (see

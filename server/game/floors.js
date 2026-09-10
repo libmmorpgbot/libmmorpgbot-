@@ -1,6 +1,6 @@
 const {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentPit,
+  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial,
 } = require('./dungeon');
 
 // Every location the player can stand in is its own floor id + its own
@@ -34,6 +34,12 @@ const FLOOR_IDS = {
   // dungeon.js's generateTournamentPit and server/game/tournament.js's
   // _createTournamentPitRoom for the bracket engine that deploys into it.
   tournament: 16,
+  // "Опробовать персонажа" — a private, never-directly-standable sandbox
+  // (same shape as farmZone2 above: registered here purely so this floor id
+  // resolves and its geometry template exists; the shared Room booted for it
+  // is never actually entered — trialEnter, server/handlers2/trial.js,
+  // always builds its own private Room instead, exactly like Fear/coop do).
+  trial: 17,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -56,6 +62,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.farmHigh, key: 'farmHigh', generate: () => generateFarmHigh() },
   { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
   { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentPit() },
+  { id: FLOOR_IDS.trial,     key: 'trial',     generate: () => generateTrial() },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

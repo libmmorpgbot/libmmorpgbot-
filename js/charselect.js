@@ -93,6 +93,12 @@ function _csSwitchChar(type) {
     }
     btn.onclick = () => selectChar(type);
   }
+
+  // "Опробовать персонажа" — always the same action regardless of type;
+  // only needs rebinding because the carousel closes over `type` fresh on
+  // every switch, same reason cs-btn-active's onclick is rebuilt above.
+  const trialBtn = document.getElementById('cs-btn-trial');
+  if (trialBtn) trialBtn.onclick = () => startTrial(type);
 }
 
 // ── Carousel: active card centered, neighbors peeking at the edges ───────

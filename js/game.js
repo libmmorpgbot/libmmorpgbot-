@@ -1649,6 +1649,50 @@ function selectChar(type) {
   netSelectChar(type, savedStats);
 }
 
+// "Опробовать персонажа" — same loading-screen/sprite-gate dance as
+// selectChar above, minus the saved-stats restore (there is nothing of this
+// account's to restore into a throwaway character): a private sandbox room,
+// level 100, every skill unlocked, level-42 monsters that never fight back.
+// See server/handlers2/trial.js for what actually builds that room; this
+// only has to preload the RIGHT enemy sprites for it, since the trial's
+// monsters come from whichever arm level 42 falls in, not floor 1's.
+const TRIAL_MOB_LEVEL = 42;
+function startTrial(type) {
+  joy.active = false; joy.dx = 0; joy.dy = 0;
+  player = makePlayer(type);
+  player.trial = true;
+  dungeonLvl = 1;
+  csStartLoading(type, () => {
+    initNpcs();
+    _finishOnlineStart();
+    const _tlb = document.getElementById('trial-leave-btn');
+    if (_tlb) _tlb.style.display = 'block';
+  });
+  const _trialArmIdx = (typeof armIndexForLevel === 'function') ? armIndexForLevel(TRIAL_MOB_LEVEL) : 1;
+  const _trialArm = FLOOR_ENEMIES[_trialArmIdx];
+  const _trialEids = (_trialArm?.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([_trialArm?.boss]).filter(Boolean);
+  let _spritesPending = 1 + _trialEids.length;
+  const _spritesTotal = _spritesPending;
+  const _onSpriteSetReady = () => {
+    if (typeof csLoadProgress === 'function') {
+      csLoadProgress(_spritesTotal - _spritesPending + 1, _spritesTotal);
+    }
+    if (--_spritesPending === 0) csOnSpritesReady();
+  };
+  _trialEids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
+  loadSprites(type, _onSpriteSetReady);
+  netTrialEnter(type);
+}
+
+// The in-game "Вернуться к выбору" button (index.html, shown only while
+// player.trial is set — see gameStart's handling of the `trial` flag,
+// js/network.js) — tells the server to tear the sandbox room down and asks
+// for the carousel back. No confirmation dialog: nothing here is a
+// character worth losing, that is the whole point of a trial.
+function leaveTrial() {
+  if (typeof netTrialLeave === 'function') netTrialLeave();
+}
+
 
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';

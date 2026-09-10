@@ -285,6 +285,20 @@ canvas { display:block; width:100%; height:100%; }
 .cs-btn-assassin    { background:linear-gradient(135deg,#18131c,#4a3a52); color:#d9cfe0; box-shadow:0 4px 18px rgba(74,58,82,.35); }
 .cs-btn:hover  { opacity:.88; transform:translateY(-1px); }
 .cs-btn:active { transform:scale(.98); opacity:.75; }
+/* Row holding cs-btn-active and its "Опробовать персонажа" sibling
+   (js/charselect.js's _csSwitchChar) — the row supplies the width/margin
+   .cs-btn normally carries on its own, so both buttons share it evenly. */
+.cs-btn-row { display:flex; gap:8px; margin:14px 16px 0; }
+.cs-btn-row .cs-btn { flex:1.4; margin:0; width:auto; }
+.cs-btn-trial {
+  flex:1; margin:0; padding:13px 8px; border-radius:3px;
+  border:1px solid rgba(193,204,213,.35); background:rgba(193,204,213,.08);
+  color:#c1ccd5; font-family:var(--font-display); text-transform:uppercase;
+  font-size:11px; font-weight:700; letter-spacing:1px; cursor:pointer;
+  transition:all .15s; user-select:none; touch-action:manipulation;
+}
+.cs-btn-trial:hover  { opacity:.88; background:rgba(193,204,213,.14); }
+.cs-btn-trial:active { transform:scale(.98); opacity:.75; }
 .cs-btn.cs-resume {
   background:linear-gradient(135deg,#142337,#1f3553) !important;
   color:#e69419 !important;
