@@ -332,6 +332,11 @@ const I18N_UI = {
   seasonNoPlayers: { ru: 'Пока никто не набрал очков', en: 'Nobody has scored yet', uk: 'Поки ніхто не набрав очок', es: 'Nadie ha puntuado aún', tr: 'Henüz kimse puan almadı', pt: 'Ninguém pontuou ainda' },
   seasonPrizesHdr: { ru: 'Награды сезона:', en: 'Season prizes:', uk: 'Нагороди сезону:', es: 'Premios de temporada:', tr: 'Sezon ödülleri:', pt: 'Prêmios da temporada:' },
   seasonPlaceFmt: { ru: '{n} место', en: 'Place {n}', uk: '{n} місце', es: 'Puesto {n}', tr: '{n}. sıra', pt: '{n}º lugar' },
+  seasonPrizeGramFmt: { ru: '{g} GRAM (~{u} USDT)', en: '{g} GRAM (~{u} USDT)', uk: '{g} GRAM (~{u} USDT)', es: '{g} GRAM (~{u} USDT)', tr: '{g} GRAM (~{u} USDT)', pt: '{g} GRAM (~{u} USDT)' },
+  seasonWinnersBtn: { ru: 'Забрать награду', en: 'Claim reward', uk: 'Забрати нагороду', es: 'Reclamar premio', tr: 'Ödülü al', pt: 'Resgatar prêmio' },
+  seasonWinnersHdr: { ru: 'Итоги сезона', en: 'Season results', uk: 'Підсумки сезону', es: 'Resultados de la temporada', tr: 'Sezon sonuçları', pt: 'Resultados da temporada' },
+  seasonWinnersMyPrize: { ru: 'Ваша награда — {n} GRAM уже на балансе', en: 'Your reward — {n} GRAM already on your balance', uk: 'Ваша нагорода — {n} GRAM вже на балансі', es: 'Tu premio — {n} GRAM ya está en tu saldo', tr: 'Ödülün — {n} GRAM zaten bakiyende', pt: 'Sua recompensa — {n} GRAM já está no seu saldo' },
+  seasonNextStart: { ru: 'Новый сезон начнётся 11.09 в 12:00 (МСК)', en: 'New season starts Sep 11 at 12:00 (Moscow time)', uk: 'Новий сезон почнеться 11.09 о 12:00 (за МСК)', es: 'La nueva temporada empieza el 11.09 a las 12:00 (hora de Moscú)', tr: 'Yeni sezon 11.09\'da 12:00\'de başlıyor (Moskova saati)', pt: 'A nova temporada começa em 11.09 às 12:00 (horário de Moscou)' },
 
   // ── Страх (Fear): private wave-survival instance ──────────────────────────
   fearTab:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },

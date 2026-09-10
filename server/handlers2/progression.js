@@ -289,6 +289,16 @@ module.exports = function registerProgression(s, safeOn) {
     });
   }));
 
+  // ── season ───────────────────────────────────────────────────────────────
+  // "Итоги" screen the ended Сезон tab links to — top 20 (cash places 1-10
+  // plus the VIP places 11-20), with whatever distributeSeasonPrizes already
+  // credited riding along on each cash row. Fetched on demand like
+  // seasonRating above, for the same reason: it is a database query, not
+  // something worth pushing to everyone on every tick.
+  safeOn('seasonWinners', () => s.act('seasonWinners', 'seasonError', async (t) => {
+    const list = await progression.seasonWinners(t, progression.CURRENT_SEASON);
+    s.socket.emit('seasonWinnersData', { list });
+  }));
 
   // ── season ───────────────────────────────────────────────────────────────
   // Burning destroys gear for points — no gold back, no materials. The old

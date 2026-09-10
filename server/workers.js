@@ -17,11 +17,13 @@ const cards = require('./ops-cards');
 const gram = require('./db/repos/gram');
 const money = require('./db/repos/money');
 const items = require('./db/repos/items');
+const progression = require('./db/repos/progression');
 const { query, stats: poolStats } = require('./db');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('./shop');
 
 const DEPOSIT_EVERY_MS = Number(process.env.DEPOSIT_SCAN_MS || 15000);
 const RECONCILE_EVERY_MS = Number(process.env.RECONCILE_MS || 6 * 3600 * 1000);
+const SEASON_PRIZE_EVERY_MS = Number(process.env.SEASON_PRIZE_MS || 60000);
 const TG_POLL_TIMEOUT_S = 25;
 
 const timers = [];
@@ -318,6 +320,25 @@ async function reconcileItems() {
   }
 }
 
+// ── season prizes ────────────────────────────────────────────────────────────
+// Credits places 1-10's GRAM prize the moment the season ends. Database-only
+// (no chain, no Telegram), so — like reconcile/reconcileItems below — it runs
+// on every process regardless of OPS_LIVE, and distributeSeasonPrizes itself
+// is the thing that makes a tick every minute harmless once it's done: gated
+// shut by seasonActive() while the season runs, and a no-op once every
+// top-10 row already has a prize_paid_at.
+async function paySeasonPrizes() {
+  try {
+    const res = await progression.distributeSeasonPrizes(null);
+    if (res && res.paid) {
+      await ops.send('alerts', `🏆 Сезон ${progression.CURRENT_SEASON}: начислены призы ${res.paid} игрокам (места 1-10).`);
+    }
+  } catch (err) {
+    console.error('[workers] season prizes:', err);
+    await ops.alertError('season.prizes', 'Ошибка начисления призов сезона', err);
+  }
+}
+
 // ── maintenance ─────────────────────────────────────────────────────────────
 // Log partitions must exist before the month they cover. A partitioned table
 // with no partition for today rejects every insert, so this running late is a
@@ -342,8 +363,10 @@ async function maintain() {
 
 function start(opts = {}) {
   // Run once at boot so a partition or an expiry gap is closed immediately
-  // rather than at the first scheduled tick.
+  // rather than at the first scheduled tick — and so does a season-end prize
+  // owed since before a restart, rather than waiting out SEASON_PRIZE_EVERY_MS.
   maintain();
+  paySeasonPrizes();
 
   // Reconciliation and partition maintenance are database-only and safe
   // anywhere. The other two reach OUTSIDE this process — the chain and the
@@ -356,6 +379,7 @@ function start(opts = {}) {
   // not have to work out which of two cadences a silence belongs to.
   timers.push(setInterval(() => reconcileItems(), RECONCILE_EVERY_MS));
   timers.push(setInterval(() => maintain(), 6 * 3600 * 1000));
+  timers.push(setInterval(() => paySeasonPrizes(), SEASON_PRIZE_EVERY_MS));
 
   const live = ops.isLive();
   if (live) {
@@ -395,4 +419,4 @@ function status() {
   };
 }
 
-module.exports = { start, stop, status, scanDeposits, reconcile, reconcileItems, maintain, pollOps };
+module.exports = { start, stop, status, scanDeposits, reconcile, reconcileItems, maintain, pollOps, paySeasonPrizes };

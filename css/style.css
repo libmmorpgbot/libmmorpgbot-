@@ -3119,6 +3119,7 @@ canvas { display:block; width:100%; height:100%; }
 .season-place.p1 { color: #ffd35c; } .season-place.p2 { color: #ced7de; } .season-place.p3 { color: #d99a5c; }
 .season-name { flex: 1; color: #c1ccd5; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .season-pts { color: #7ee0c0; font-weight: 800; font-size: 12.5px; }
+.season-prize { color: #ffd35c; font-weight: 800; font-size: 12.5px; white-space: nowrap; }
 
 /* "Задания" tab — bulk-burn buttons (gear by rarity, and one row per book
    stack the player is holding). */

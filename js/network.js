@@ -2490,6 +2490,11 @@ function netConnect(onReady) {
     if (typeof onSeasonRating === 'function') onSeasonRating();
   });
 
+  socket.on('seasonWinnersData', (data) => {
+    _seasonWinners = data || { list: [] };
+    if (typeof onSeasonWinners === 'function') onSeasonWinners();
+  });
+
   // Items are already gone via the inventorySync that preceded this.
   socket.on('seasonBurned', ({ burned, points, total } = {}) => {
     if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
@@ -5103,8 +5108,9 @@ function netClaimQuest(idx) {
 }
 
 // ── Сезон ───────────────────────────────────────────────────────────────────
-function netSeasonSync()   { if (socket?.connected) socket.emit('seasonSync'); }
-function netSeasonRating() { if (socket?.connected) socket.emit('seasonRating'); }
+function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
+function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
+function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'); }
 // Burning destroys the item/stack for season points — the server owns both
 // halves, nothing is applied locally.
 // Same identity check as netSellItem, and it matters more here: burning

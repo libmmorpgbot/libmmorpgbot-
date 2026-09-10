@@ -4963,8 +4963,10 @@ function _renderSeasonBody() {
                   : _seasonInfoHTML();
 }
 
-// Prize table — display only, the payout itself happens outside the game.
-// Places 1-10 pay USDT; 11-20 pay a VIP level instead (vipPrize).
+// Prize table. Places 1-10 pay GRAM, auto-credited to the balance the moment
+// the season ends (distributeSeasonPrizes, server-side) — the GRAM figure is
+// what actually lands, the USDT alongside it is only the reference value the
+// place was sized against. 11-20 still pay a VIP level, handled by hand.
 function _seasonPrizesHTML() {
   const st = _seasonState || {};
   const prizes = st.prizes || [];
@@ -4975,7 +4977,7 @@ function _seasonPrizesHTML() {
       ${prizes.map(p => `<div class="db-reward-row">
         <span class="db-reward-fallback">${medal(p.place)}</span>
         <span>${tVars('seasonPlaceFmt', { n: p.place })}</span>
-        <span class="db-reward-qty">${p.usdt} USDT</span>
+        <span class="db-reward-qty">${tVars('seasonPrizeGramFmt', { g: (p.gram || 0).toFixed(2), u: p.usdt })}</span>
       </div>`).join('')}
       ${vip ? `<div class="db-reward-row">
         <span class="db-reward-fallback">⭐</span>
@@ -4999,9 +5001,63 @@ function _seasonInfoHTML() {
         <div class="db-countdown">${st.points || 0}</div>
         <div class="db-phase">${t('seasonPointsLbl')}</div>
         <div class="db-count">${ended ? t('seasonEnded') : tVars('seasonEndsIn', { t: _fmtEventEta(left) })}</div>
+        ${ended ? `
+          <div class="db-count">${t('seasonNextStart')}</div>
+          <button class="db-action" style="margin-top:10px" onclick="_openSeasonWinners()">${t('seasonWinnersBtn')}</button>
+        ` : ''}
       </div>
       ${_seasonPrizesHTML()}
     </div>`;
+}
+
+// ── "Итоги сезона" — the screen the button above opens once the season is
+// over. Every prize here was already credited server-side the moment the
+// season ended (distributeSeasonPrizes) — this only shows who won what, it
+// does not itself move anything.
+function _openSeasonWinners() {
+  if (typeof netSeasonWinners === 'function') netSeasonWinners();
+  _renderSeasonWinners();
+}
+
+function _renderSeasonWinners() {
+  const existing = document.getElementById('season-winners-ov');
+  if (existing) existing.remove();
+  const list = (_seasonWinners && _seasonWinners.list) || [];
+  const fallback = _seasonWinners === null ? t('seasonLoading') : t('seasonNoPlayers');
+  const rows = list.map(x => {
+    const mine = player && x.username === player.username;
+    const prizeTxt = x.prizeGram != null ? `${x.prizeGram.toFixed(2)} GRAM`
+                    : x.vip ? `VIP ${x.vip}` : '—';
+    const pc = x.place <= 3 ? ' p' + x.place : '';
+    return `<div class="season-row${mine ? ' me' : ''}">
+      <span class="season-place${pc}">${x.place}</span>
+      <span class="season-name">${_esc(x.username)}</span>
+      <span class="season-pts">${x.points}</span>
+      <span class="season-prize">${prizeTxt}</span>
+    </div>`;
+  }).join('');
+  const mine = list.find(x => player && x.username === player.username);
+  const myNote = (mine && mine.prizeGram != null)
+    ? `<div class="imod-enh-chance" style="margin-top:10px;color:#7ee0c0">${tVars('seasonWinnersMyPrize', { n: mine.prizeGram.toFixed(2) })}</div>`
+    : '';
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'season-winners-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800;color:#ffcf56">${t('seasonWinnersHdr')}</div>
+        <button onclick="document.getElementById('season-winners-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      ${rows || `<div class="db-phase">${fallback}</div>`}
+      ${myNote}
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function onSeasonWinners() {
+  if (document.getElementById('season-winners-ov')) _renderSeasonWinners();
 }
 
 // ── "Задания" tab: every way to earn points, plus the burn controls ────────

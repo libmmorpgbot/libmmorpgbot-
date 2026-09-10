@@ -281,6 +281,7 @@ let _seasonState = { endAt: 0, active: false, points: 0, prizes: [], vipPrize: n
                      ref: { points: 200, level: 20 },
                      empowerPoints: 500, shopPointsPerGram: 100 };
 let _seasonRating = null;   // null = not fetched yet
+let _seasonWinners = null;  // "Итоги" screen data — null = not fetched yet
 // Whether THIS account owns the season ticket (server-authoritative — set
 // from authOk on login, and again the moment a purchase confirms; see
 // onGramShopResult, js/ui.js). Drives its chip in the buff strip

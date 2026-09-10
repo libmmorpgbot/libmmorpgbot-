@@ -688,21 +688,33 @@ function seasonShopPoints(price) {
 // down to 1 point.
 const SEASON_RATING_MIN_POINTS = 5000;
 
-// Paid out manually off-chain; the game only ranks players and shows this.
+// Fixed rate for this season's payout, not a live price feed — set once and
+// used both to size the GRAM amount credited (distributeSeasonPrizes, server/
+// db/repos/progression.js) and to print it next to the USDT the place was
+// originally sized against.
+const SEASON_PRIZE_GRAM_RATE = 1.36; // 1.36 USDT = 1 GRAM
+function seasonPrizeGram(usdt) {
+  return Math.round((Math.max(0, Number(usdt) || 0) / SEASON_PRIZE_GRAM_RATE) * 100) / 100;
+}
+
+// Auto-credited in GRAM straight to the winner's balance the moment the
+// season ends (distributeSeasonPrizes) — no more manual off-chain payout for
+// places 1-10. `usdt` is kept as the reference value each place was sized
+// against; `gram` is what actually lands on the balance.
 const SEASON_PRIZES = [
-  { place: 1,  usdt: 100 },
-  { place: 2,  usdt: 50  },
-  { place: 3,  usdt: 30  },
-  { place: 4,  usdt: 10  },
-  { place: 5,  usdt: 10  },
-  { place: 6,  usdt: 10  },
-  { place: 7,  usdt: 10  },
-  { place: 8,  usdt: 5   },
-  { place: 9,  usdt: 5   },
-  { place: 10, usdt: 5   },
+  { place: 1,  usdt: 100, gram: seasonPrizeGram(100) },
+  { place: 2,  usdt: 50,  gram: seasonPrizeGram(50)  },
+  { place: 3,  usdt: 30,  gram: seasonPrizeGram(30)  },
+  { place: 4,  usdt: 10,  gram: seasonPrizeGram(10)  },
+  { place: 5,  usdt: 10,  gram: seasonPrizeGram(10)  },
+  { place: 6,  usdt: 10,  gram: seasonPrizeGram(10)  },
+  { place: 7,  usdt: 10,  gram: seasonPrizeGram(10)  },
+  { place: 8,  usdt: 5,   gram: seasonPrizeGram(5)   },
+  { place: 9,  usdt: 5,   gram: seasonPrizeGram(5)   },
+  { place: 10, usdt: 5,   gram: seasonPrizeGram(5)   },
 ];
-// Places 11-20 get a VIP level instead of cash — same off-chain/display-only
-// handling as SEASON_PRIZES above.
+// Places 11-20 get a VIP level instead of cash — still paid out manually,
+// unlike SEASON_PRIZES above.
 const SEASON_VIP_PRIZE = { from: 11, to: 20, vip: 1 };
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
@@ -2936,6 +2948,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_EMPOWER_POINTS,
   SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
   SEASON_RATING_MIN_POINTS, SEASON_PRIZES, SEASON_VIP_PRIZE,
+  SEASON_PRIZE_GRAM_RATE, seasonPrizeGram,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

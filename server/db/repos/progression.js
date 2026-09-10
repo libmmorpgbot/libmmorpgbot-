@@ -18,7 +18,7 @@
 // because absence is what "not claimed" already means, and the primary key is
 // what makes a second claim impossible rather than merely checked-for.
 
-const { query } = require('../index');
+const { query, tx } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
@@ -399,16 +399,94 @@ async function seasonBoard(db, { season = CURRENT_SEASON, limit = 50, minPoints 
 
 async function seasonOf(db, playerId, season = CURRENT_SEASON) {
   const { rows } = await query(db, `
-    SELECT points, tier, boss_paid, ref_paid, quests,
+    SELECT points, tier, boss_paid, ref_paid, quests, prize_gram,
            (SELECT count(*) + 1 FROM player_season s2
              WHERE s2.season = $2 AND s2.points > s.points)::int AS place
       FROM player_season s WHERE player_id = $1 AND season = $2`, [playerId, season]);
-  if (!rows.length) return { points: 0, tier: 0, place: null, bossPaid: false, refPaid: false, quests: {} };
+  if (!rows.length) {
+    return { points: 0, tier: 0, place: null, bossPaid: false, refPaid: false, quests: {}, prizeGram: 0 };
+  }
   const r = rows[0];
   return {
     points: Number(r.points), tier: r.tier, place: r.place,
     bossPaid: r.boss_paid, refPaid: r.ref_paid, quests: r.quests,
+    prizeGram: Number(r.prize_gram || 0),
   };
+}
+
+// ── season-end prizes ────────────────────────────────────────────────────
+// Places 1-10 get their SEASON_PRIZES USDT value, converted to GRAM at
+// SEASON_PRIZE_GRAM_RATE, credited straight onto the winner's balance — once
+// the season is OVER, never while the board can still move. Replaces the old
+// "paid out manually off-chain" flow for cash places; 11-20's VIP prize is
+// unchanged and still handled by hand.
+//
+// place is computed over the FULL ranked board, not just the still-unpaid
+// rows — otherwise a job that crashed after paying places 1-3 would, on
+// retry, rank the remaining unpaid rows starting from 1 again and hand place
+// 4's finisher place 1's prize. Filtering to unpaid happens only after the
+// real place is known.
+//
+// Safe to call on every tick of the background job that drives this
+// (server/workers.js): seasonActive() gates it shut while the season runs,
+// and once nothing is left with prize_paid_at IS NULL it does nothing.
+async function distributeSeasonPrizes(db, season = CURRENT_SEASON) {
+  if (seasonActive()) return { paid: 0, reason: 'active' };
+  const { rows } = await query(db, `
+    WITH ranked AS (
+      SELECT player_id, prize_paid_at,
+             row_number() OVER (ORDER BY points DESC, player_id) AS place
+        FROM player_season
+       WHERE season = $1 AND points >= $2
+    )
+    SELECT player_id, place FROM ranked
+     WHERE place <= $3 AND prize_paid_at IS NULL
+     ORDER BY place`, [season, SEASON_RATING_MIN_POINTS, SEASON_PRIZES.length]);
+  if (!rows.length) return { paid: 0 };
+
+  let paid = 0;
+  for (const r of rows) {
+    const prize = SEASON_PRIZES[Number(r.place) - 1];
+    if (!prize) continue;
+    await tx(async (t) => {
+      await money.credit(t, r.player_id, 'gram', prize.gram, {
+        reason: 'season_prize', refType: 'season', refId: String(season),
+        idemKey: `season_prize:${season}:${r.player_id}`,
+      });
+      await query(t, `
+        UPDATE player_season SET prize_gram = $3, prize_paid_at = now()
+         WHERE player_id = $1 AND season = $2`, [r.player_id, season, prize.gram]);
+    });
+    paid++;
+  }
+  return { paid };
+}
+
+// The season panel's "Итоги" screen. Top 20 — the whole prize table, cash
+// places and VIP places alike — so it reads as one list of winners rather
+// than two payloads the client has to stitch together. prizeGram comes off
+// the row itself (what distributeSeasonPrizes actually credited), not
+// re-derived from place, so it reads 0/blank for a season this table
+// predates.
+async function seasonWinners(db, season = CURRENT_SEASON) {
+  const { rows } = await query(db, `
+    SELECT s.player_id, s.points, s.prize_gram, p.username,
+           row_number() OVER (ORDER BY s.points DESC, s.player_id) AS place
+      FROM player_season s JOIN players p ON p.id = s.player_id
+     WHERE s.season = $1 AND s.points >= $2
+     ORDER BY s.points DESC, s.player_id
+     LIMIT $3`, [season, SEASON_RATING_MIN_POINTS, SEASON_VIP_PRIZE.to]);
+  return rows.map(r => {
+    const place = Number(r.place);
+    const cash = SEASON_PRIZES[place - 1];
+    const vip = (!cash && place >= SEASON_VIP_PRIZE.from && place <= SEASON_VIP_PRIZE.to)
+      ? SEASON_VIP_PRIZE.vip : null;
+    return {
+      place, username: r.username, points: Number(r.points),
+      prizeGram: cash ? Number(r.prize_gram || 0) : null,
+      vip,
+    };
+  });
 }
 
 // ── daily attempts ──────────────────────────────────────────────────────────
@@ -581,6 +659,7 @@ async function seasonState(db, playerId) {
     ticket: !!vip.seasonTicket,
     points: mine.points,
     place: mine.place,
+    myPrizeGram: mine.prizeGram,
     minRatingPoints: SEASON_RATING_MIN_POINTS,
     prizes: SEASON_PRIZES,
     vipPrize: SEASON_VIP_PRIZE,
@@ -649,6 +728,7 @@ module.exports = {
   bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,
   addSeasonPoints, paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
+  distributeSeasonPrizes, seasonWinners,
   takeAttempt, attemptsLeft, spendSeconds, secondsLeft,
   CURRENT_SEASON, ProgressionError,
 };
