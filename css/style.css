@@ -117,6 +117,19 @@ canvas { display:block; width:100%; height:100%; }
 }
 
 .auth-error { color:#ee6676; font-size:12px; min-height:16px; text-align:center; margin-top:16px; }
+.auth-chat-link {
+  display:inline-block;
+  margin-top:14px;
+  padding:10px 22px;
+  border-radius:10px;
+  background:linear-gradient(180deg,#2fa5e0,#1c7fbf);
+  color:#fff;
+  font-size:13px;
+  font-weight:600;
+  text-decoration:none;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);
+}
+.auth-chat-link:active { filter:brightness(0.92); }
 #login-screen.splash-out {
   animation: splash-out 0.4s ease both;
   pointer-events: none;

@@ -834,7 +834,7 @@ function netConnect(onReady) {
   // `{ msg, code }` (session.act, server/session.js) and authError always was
   // — this handler asked for a field the server has never sent, so a banned
   // account and a failed Telegram check both showed an empty error box.
-  socket.on('authError', ({ msg } = {}) => { showAuthError(msg); });
+  socket.on('authError', ({ msg, code } = {}) => { showAuthError(msg, code); });
 
   // The server allows one live session per account: a second login kicks the
   // first (see loginTelegramWebApp, server/index.js). This is that message.
@@ -858,7 +858,7 @@ function netConnect(onReady) {
     // overriding every one of them.
     const fallback = typeof t === 'function' ? t('loggedInElsewhere') : 'Вы вошли с другого устройства';
     const msg = (code === 'another_device' ? fallback : reason) || fallback;
-    showAuthError(msg);
+    showAuthError(msg, code);
     _kicked = true;
     // Сплеш сейчас вернётся на экран со своим текстом, а socket.disconnect()
     // ниже поднимет 'disconnect'. Плашка «нет соединения с сервером» и не
@@ -2771,9 +2771,15 @@ function netClanActivitySync() {
 }
 
 // ── Auth ──────────────────────────────────────────────────────
-function showAuthError(msg) {
+function showAuthError(msg, code) {
   const el = document.getElementById('auth-error');
   if (el) el.textContent = msg;
+  // The chat link only makes sense while the game itself is the thing
+  // refusing — maintenance. Every other authError/kicked reason (banned,
+  // logged in elsewhere) has its own resolution and shouldn't point players
+  // at a chat that can't help with it.
+  const link = document.getElementById('auth-chat-link');
+  if (link) link.style.display = code === 'maintenance' ? '' : 'none';
 }
 
 // ── what the write-access gate tells the server ─────────────────────────────
