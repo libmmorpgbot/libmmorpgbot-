@@ -461,19 +461,27 @@ function setHudPotion(itemId) {
 //  PEER PROFILE MODAL (view another player's stats/equipment —
 //  currently reached from the party invite popup's info button)
 // ─────────────────────────────────────────────────────────
+// Read by openPeerItemModal (below) when a filled slot is clicked — the
+// item objects live only inside `profile`, which is this function's own
+// closure, so the click handler (built as an onclick-attribute string, not
+// a real closure) needs somewhere outside it to read the same data from.
+let _peerProfileEquipment = null;
+
 function showPeerProfileModal(fromName, profile) {
   if (!profile) return;
   const existing = document.getElementById('peer-profile-ov');
   if (existing) existing.remove();
+  _peerProfileEquipment = profile.equipment;
 
   const fmt1 = v => ((v || 0) * 100).toFixed(1) + '%';
   const eqCells = EQ_SLOTS.map(({ slot, label, emptyIcon }) => {
     const it = profile.equipment[slot];
     const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '';
     const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
-    return `<div class="eq-cell${it ? ' filled' : ''}"
+    const onclick = it ? ` onclick="event.stopPropagation();openPeerItemModal('${slot}')"` : '';
+    return `<div class="eq-cell${it ? ' filled' : ''}"${onclick}
       title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
-      style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
+      style="${it ? 'border-color:' + rc + '55;position:relative' : 'cursor:default'}">
       <div class="cell-icon">${it ? _itemIcon(it, 28) : iconHTML(emptyIcon, 22, '#6c6354')}</div>
       <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
       ${enhBadge}
@@ -509,6 +517,41 @@ function showPeerProfileModal(fromName, profile) {
     <div style="font-size:12px;font-weight:700;color:#a2988a;margin:14px 0 8px">${t('peerEquipHdr')}</div>
     <div id="peer-eq-grid" class="eq-grid-5col">${eqCells}</div>
   </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+// Opens on top of the peer profile modal when a filled equipment cell is
+// clicked — full stat breakdown for that one item, reusing the same stat
+// rows the market compare modal uses (_ITEM_STAT_FIELDS, above), just
+// without a second card to diff against.
+function openPeerItemModal(slot) {
+  const it = _peerProfileEquipment && _peerProfileEquipment[slot];
+  if (!it) return;
+  const existing = document.getElementById('peer-item-ov');
+  if (existing) existing.remove();
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
+  const rows = _ITEM_STAT_FIELDS.filter(f => it[f.key]).map(f => `<div class="compare-stat-row">
+      <span class="compare-stat-lbl">${f.label()}</span>
+      <span class="compare-stat-val">${f.fmt(it[f.key])}</span>
+    </div>`).join('');
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'peer-item-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800;color:#90d653">${t('itemDetailsTitle')}</div>
+        <button onclick="document.getElementById('peer-item-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div class="item-detail-card">
+        <div class="market-row-icon" style="width:44px;height:44px">${_itemIcon(it, 32)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}</div>
+        </div>
+      </div>
+      ${rows || `<div class="compare-card-empty">${t('compareNoStatsLbl')}</div>`}
+    </div>`;
   document.getElementById('app').appendChild(ov);
 }
 
@@ -6972,6 +7015,13 @@ function _marketRowHtml(l, mode) {
   // Кнопка, которая не может сработать, не должна нажиматься.
   const _mine = mode === 'buy' && typeof netUsername !== 'undefined' && netUsername
     && String(l.sellerUsername || '').toLowerCase() === String(netUsername).toLowerCase();
+  // Compare only makes sense against an equipment slot the character can
+  // actually wear — books/potions/materials have no EQ_SLOTS counterpart to
+  // diff against, so the button is left out for those rows entirely.
+  const _canCompare = mode === 'buy' && EQ_SLOTS.some(s => s.slot === it.slot);
+  const compareBtn = _canCompare
+    ? `<button class="market-compare-btn" onclick="openMarketCompare('${l.id}')">${t('compareBtn')}</button>`
+    : '';
   const action = mode === 'buy'
     ? (_mine
       ? `<button class="market-buy-btn disabled" disabled>${t('marketOwnLotBtn')}</button>`
@@ -6982,7 +7032,7 @@ function _marketRowHtml(l, mode) {
     <div class="market-row-info">
       <div class="market-row-name" style="color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${qtySuffix}</div>
       <div class="market-row-sub">${sub}</div>
-      ${action}
+      <div class="market-row-actions">${action}${compareBtn}</div>
     </div>
     <div class="market-row-price">${l.price.toFixed(2)}<br><span style="font-size:9px;color:#a3957c;font-weight:600">GRAM</span></div>
   </div>`;
@@ -7385,6 +7435,84 @@ function _confirmMarketBuy(listingId) {
   const ov = document.getElementById('market-buy-ov');
   if (ov) ov.remove();
   netMarketBuy(listingId);
+}
+
+// ── Item stat rows — shared by the market compare modal and the peer
+// item-detail modal below. Mirrors statStr's field list (js/player.js) but
+// keeps each stat on its own row with a translated label, so two items'
+// values can be aligned instead of concatenated into one string.
+const _ITEM_STAT_FIELDS = [
+  { key: 'atk',        label: () => t('clanPerkAtk'),          fmt: v => '+' + v },
+  { key: 'def',        label: () => t('statDef'),              fmt: v => '+' + v },
+  { key: 'hp',         label: () => 'HP',                      fmt: v => '+' + v },
+  { key: 'critChance', label: () => t('statCritChance'),       fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'atkSpeed',   label: () => t('statAtkSpeedAbbrev'),   fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'hpPct',      label: () => t('statHpPctLbl'),         fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'skillPct',   label: () => t('statSkillPowerInline'), fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'speedPct',   label: () => t('statSpeedInline'),      fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'atkPct',     label: () => t('statAtkPctLbl'),        fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'critPower',  label: () => t('statCritPower'),        fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'xpPct',      label: () => t('statXpPctLbl'),         fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+  { key: 'dropPct',    label: () => t('statDropPctLbl'),       fmt: v => '+' + (v * 100).toFixed(0) + '%' },
+];
+
+// One item's card inside the compare modal. Each stat row is colored
+// against `other`'s value for the same key — bigger wins, since nothing in
+// this game has a stat where lower is better. `it` may be null (empty slot).
+function _compareCardHtml(headerLbl, it, other) {
+  if (!it) {
+    return `<div class="compare-card">
+      <div class="compare-card-hdr">${headerLbl}</div>
+      <div class="compare-card-empty">${t('compareEmptySlotLbl')}</div>
+    </div>`;
+  }
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
+  const rows = _ITEM_STAT_FIELDS.filter(f => it[f.key] || (other && other[f.key])).map(f => {
+    const v  = it[f.key] || 0;
+    const ov = (other && other[f.key]) || 0;
+    const cls = v === ov ? '' : (v > ov ? 'better' : 'worse');
+    return `<div class="compare-stat-row">
+      <span class="compare-stat-lbl">${f.label()}</span>
+      <span class="compare-stat-val ${cls}">${f.fmt(v)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="compare-card">
+    <div class="compare-card-hdr">${headerLbl}</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="market-row-icon" style="width:40px;height:40px">${_itemIcon(it, 28)}</div>
+      <div class="compare-card-name" style="color:${rc};margin-top:0;min-width:0;flex:1">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}</div>
+    </div>
+    ${rows || `<div class="compare-card-empty">${t('compareNoStatsLbl')}</div>`}
+  </div>`;
+}
+
+// ── Compare flow — market listing vs. whatever is currently worn in the
+// same slot. Two cards side by side rather than a diff table: each reads
+// on its own (icon, name, full stat list), with per-stat coloring doing the
+// side-by-side comparison work without hiding either item's own numbers.
+function openMarketCompare(listingId) {
+  const l = _marketLots.find(x => String(x.id) === String(listingId));
+  if (!l || !player) return;
+  const existing = document.getElementById('market-compare-ov');
+  if (existing) existing.remove();
+  const it = l.item || {};
+  const equipped = player.equipment[it.slot] || null;
+  const ov = document.createElement('div');
+  ov.className = 'market-modal-overlay';
+  ov.id = 'market-compare-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="market-modal-sheet" onclick="event.stopPropagation()">
+      <div style="display:flex;align-items:center;margin-bottom:14px">
+        <div style="font-size:16px;font-weight:800;color:#90d653">${t('compareTitle')}</div>
+        <button onclick="document.getElementById('market-compare-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
+      </div>
+      <div class="compare-grid">
+        ${_compareCardHtml(t('compareEquippedLbl'), equipped, it)}
+        ${_compareCardHtml(t('compareMarketLbl'), it, equipped)}
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
 }
 
 function marketCancelListing(listingId) {
