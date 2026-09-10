@@ -1,6 +1,6 @@
 // ── Character Select ──────────────────────────────────────────
 
-const _CS_TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock'];
+const _CS_TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock', 'runefighter', 'assassin'];
 const _CS_CARD_GAP = 150; // px between adjacent card centers in the carousel
 
 let _csRAF = null;
@@ -11,13 +11,15 @@ let _csDragWired  = false;
 
 // Emoji prefixes are language-neutral; only the trailing word is translated
 // (see js/i18n.js's csBadgeMelee/csBadgeRanged/csBadgeSupport).
-const _CS_BADGE_EMOJI = { lev: '🛡', deathknight: '💀', ranger: '🏹', mage: '✨', warlock: '💜' };
+const _CS_BADGE_EMOJI = { lev: '🛡', deathknight: '💀', ranger: '🏹', mage: '✨', warlock: '💜', runefighter: '⚔', assassin: '🗡' };
 const _CS_BADGE_KEY = {
   lev:         'csBadgeMelee',
   deathknight: 'csBadgeMelee',
   ranger:      'csBadgeRanged',
   mage:        'csBadgeRanged',
   warlock:     'csBadgeSupport',
+  runefighter: 'csBadgeMelee',
+  assassin:    'csBadgeMelee',
 };
 function _csBadgeText(type) {
   return _CS_BADGE_EMOJI[type] + ' ' + (typeof t === 'function' ? t(_CS_BADGE_KEY[type]) : '');

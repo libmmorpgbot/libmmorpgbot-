@@ -6,7 +6,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
-        skillDamageMult, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
+        skillDamageMult, skillDefIgnoreOf, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -22,9 +22,16 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
 // со скоростью поднимут потолок сами. Ровно та же причина, по которой список
 // надеваемых слотов и строки карточки предмета тоже выводятся, а не пишутся.
 const _MOVE_SPEED_ITEM_MAX = Math.max(0, ...ITEM_DEF.map(d => d.speedPct || 0));
+// «Бегство» (assassin R base, js/player.js) is the first SKILL to move this
+// ceiling: it doubles run speed for 5s and, unlike every other skill window,
+// carries no server-side accounting at all — movement is client-reported
+// either way, so there is nothing to check but the same physically-possible
+// cap everything else already leans on. Fold its own fraction in exactly like
+// the item term above, or the legitimate burst it produces trips the guard
+// below the moment MOVE_GUARD is 'enforce' (the deploy default).
 const _MOVE_SPEED_MAX = Math.max(...Object.values(CHAR_DEF).map(c => c.speed || 0)) *
   (1 + PASSIVE_MAX_LEVEL * ((PASSIVE_COMMON_DEF.find(p => p.stat === 'moveSpeedPct') || {}).perLevel || 0)
-     + _MOVE_SPEED_ITEM_MAX);
+     + _MOVE_SPEED_ITEM_MAX + SKILL_SPEED_MAX_PCT);
 // ...and the rate the bucket below actually refills at, which is deliberately
 // a little faster than that.
 //
@@ -3089,10 +3096,18 @@ class Room {
     const levels = p._skillLevels || sd.skillLevels || {};
     const lvl = Math.max(0, Math.floor(Number(levels[key])) || 0);
     if (lvl <= 0) return 0;
+    return skillDamageMult(p.type || sd.type, key, this._advSlotActive(p, key), lvl, skillPct);
+  }
+
+  // Is this slot's advanced ("вторая профессия") variant the one that would
+  // cast — same learned+active pair _skillMultFor already read inline, split
+  // out so skillAttackEnemy/pvpSkillAttack can ask the same question for
+  // skillDefIgnoreOf without a second copy of the learned/active lookup.
+  _advSlotActive(p, key) {
+    const sd = p._sd || {};
     const learned = p._advLearned || sd.advSkillLearned || {};
     const active = p._advActive || sd.advSkillActive || {};
-    const adv = !!(learned[key] && active[key]);
-    return skillDamageMult(p.type || sd.type, key, adv, lvl, skillPct);
+    return !!(learned[key] && active[key]);
   }
 
   // May this player's basic hits splash at all?
@@ -3160,7 +3175,10 @@ class Room {
     // refused outright rather than falling back to a default.
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
-    const base = Math.max(1, Math.round(this._atkOf(attacker) * mult) - this._defOf(target) + Math.floor(Math.random() * 7) - 3);
+    // Same defense-ignore as skillAttackEnemy — see SKILL_DEF_IGNORE.
+    const _defIgnore2 = skillDefIgnoreOf(attacker.type, key, this._advSlotActive(attacker, key));
+    const _targetDef = _defIgnore2 > 0 ? Math.round(this._defOf(target) * (1 - _defIgnore2)) : this._defOf(target);
+    const base = Math.max(1, Math.round(this._atkOf(attacker) * mult) - _targetDef + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     target.hp = Math.max(0, target.hp - dmg);
@@ -3558,7 +3576,8 @@ class Room {
     //
     // Поэтому дальше идёт весь тик, а от лечения при полном здоровье
     // защищают Math.min и условия внутри.
-    const full = p.hp >= p.maxHp;
+    const cap = this._maxHpOf(p);
+    const full = p.hp >= cap;
     let rate = p.hpRegen;
     // Проверяется, а не предполагается: p.hpRegen заполняет setPlayerStats, и
     // между входом в комнату и первым его вызовом игрок уже здесь. `undefined
@@ -3570,9 +3589,14 @@ class Room {
     // Безопасная зона. Прибавка непрерывная, как и пассивная, поэтому клиент
     // может предсказывать её тем же выражением — и предсказывает.
     if (this._inSafeZone(p.x, p.y)) rate += SAFE_ZONE_REGEN_PER_SEC;
+    // «Регенерация» (Rune Fighter E base) — flat HP/sec while the window is
+    // open, folded straight into the continuous rate rather than its own
+    // discrete tick (unlike «Бабочки» below): a flat per-second rate needs no
+    // tick-catch-up bookkeeping the way a PERCENTAGE tick does.
+    if (p._regenHotUntil > now) rate += (p._regenHotRate || 0);
 
     const before = p.hp;
-    if (rate > 0 && !full) p.hp = Math.min(p.maxHp, p.hp + rate * dt);
+    if (rate > 0 && !full) p.hp = Math.min(cap, p.hp + rate * dt);
 
     // «Бабочки» — не ставка в секунду, а тик РАЗ в секунду, и накопитель нужен
     // именно поэтому: комната тикает сорок раз в секунду, и размазать 5% по
@@ -3662,8 +3686,13 @@ class Room {
     if (kind === 'vampirism') { p._vampUntil = until; p._vampPct = pct; return true; }
     if (kind === 'butterflies') { p._butterfliesUntil = until; p._butterAt = Date.now(); return true; }
     if (kind === 'haste') { p._hasteUntil = until; p._hasteMult = pct; return true; }
-    // Боевой баф: множители атаки и защиты плюс прибавки к криту. Приходит
-    // объектом, потому что один навык может давать несколько сразу (у Танка
+    // «Регенерация» (Rune Fighter E base) — flat HP/sec, own window because
+    // the rate is a flat number (5+level) rather than a percentage of maxHp
+    // like «Бабочки» above; see _regenTick.
+    if (kind === 'regen') { p._regenHotUntil = until; p._regenHotRate = Number(pct) || 0; return true; }
+    // Боевой баф: множители атаки и защиты плюс прибавки к криту и (со
+    // «Пульса», Rune Fighter R adv) максимуму здоровья. Приходит объектом,
+    // потому что один навык может давать несколько сразу (у Танка
     // продвинутый E — и защита, и атака).
     if (kind === 'buff') {
       p._buffUntil = until;
@@ -3671,6 +3700,7 @@ class Room {
       p._buffDef = Number(pct && pct.def) || 1;
       p._buffCritChance = Number(pct && pct.critChance) || 0;
       p._buffCritPower = Number(pct && pct.critPower) || 0;
+      p._buffHp = Number(pct && pct.hp) || 1;
       return true;
     }
     return false;
@@ -3701,17 +3731,20 @@ class Room {
       vampUntil: live(p._vampUntil || 0), vampPct: p._vampPct || 0,
       butterfliesUntil: live(p._butterfliesUntil || 0), butterAt: p._butterAt || 0,
       hasteUntil: live(p._hasteUntil || 0), hasteMult: p._hasteMult || 1,
+      regenHotUntil: live(p._regenHotUntil || 0), regenHotRate: p._regenHotRate || 0,
       buffUntil: live(p._buffUntil || 0),
       buffAtk: p._buffAtk || 1, buffDef: p._buffDef || 1,
       buffCritChance: p._buffCritChance || 0, buffCritPower: p._buffCritPower || 0,
+      buffHp: p._buffHp || 1,
     };
-    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.buffUntil) ? w : null;
+    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.regenHotUntil || w.buffUntil) ? w : null;
   }
 
   restoreSkillWindows(socketId, w) {
     const p = this.players.get(socketId);
     if (!p || !w) return;
     if (w.vampUntil) { p._vampUntil = w.vampUntil; p._vampPct = w.vampPct; }
+    if (w.regenHotUntil) { p._regenHotUntil = w.regenHotUntil; p._regenHotRate = w.regenHotRate; }
     if (w.butterfliesUntil) {
       p._butterfliesUntil = w.butterfliesUntil;
       // Часы тика переносятся вместе с окном, иначе первый же тик на новом
@@ -3723,6 +3756,7 @@ class Room {
       p._buffUntil = w.buffUntil;
       p._buffAtk = w.buffAtk; p._buffDef = w.buffDef;
       p._buffCritChance = w.buffCritChance; p._buffCritPower = w.buffCritPower;
+      p._buffHp = w.buffHp;
     }
   }
 
@@ -3743,6 +3777,14 @@ class Room {
   _buffOn(p) { return !!(p && p._buffUntil > Date.now()); }
   _atkOf(p) { return this._buffOn(p) ? (p.atk || 0) * p._buffAtk : (p.atk || 0); }
   _defOf(p) { return this._buffOn(p) ? (p.def || 0) * p._buffDef : (p.def || 0); }
+  // «Пульс» (Rune Fighter R adv) — the one skill buffing maxHP. p.maxHp
+  // itself is never touched: it's rebuilt wholesale by setPlayerStats on
+  // every level-up/gear-change/floor-transition (repos/stats.js), the same
+  // way p.atk/p.def are, and multiplying it in place here would go stale the
+  // instant any of those ran mid-buff. Read on demand instead, exactly like
+  // _atkOf/_defOf — the two places that gate healing (setPlayerHp's clamp,
+  // _regenTick's "already full" check) call this rather than p.maxHp.
+  _maxHpOf(p) { return this._buffOn(p) ? Math.floor((p.maxHp || 0) * p._buffHp) : (p.maxHp || 0); }
   _critChanceOf(p) {
     const c = (p && p.critChance) || 0;
     // Тот же потолок 0.80, что и в repos/stats.js: иначе баф крита в связке с
@@ -4288,8 +4330,11 @@ class Room {
     }
     // Never raises current HP: a stat recomputation is not a heal. Equipping
     // +HP gear must not top the bar up, and taking it off must not leave the
-    // player above their new maximum.
-    if (p.hp > p.maxHp) p.hp = p.maxHp;
+    // player above their new maximum. _maxHpOf, not p.maxHp: a stat
+    // recompute (gear change, level-up, floor move) is common enough mid-cast
+    // that clamping to the UNBUFFED max here would strip «Пульс»'s extra HP
+    // on the very next unrelated action.
+    if (p.hp > this._maxHpOf(p)) p.hp = this._maxHpOf(p);
   }
 
   // Authoritative HP, from the server's own healing and damage paths.
@@ -4298,7 +4343,7 @@ class Room {
   setPlayerHp(socketId, hp) {
     const p = this.players.get(socketId);
     if (!p) return;
-    const v = Math.max(0, Math.min(p.maxHp, Math.floor(Number(hp) || 0)));
+    const v = Math.max(0, Math.min(this._maxHpOf(p), Math.floor(Number(hp) || 0)));
     if (p.hp === v) return;
     // Момент смерти. Нужен потоку: тело показывается ровно столько, сколько
     // идёт анимация падения, и после этого игрок пропадает с чужих экранов.
@@ -4629,7 +4674,12 @@ class Room {
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
     // Same defDown discount as attackEnemy above.
-    const _effDef2 = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
+    let _effDef2 = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
+    // «Смертоносность» (adv assassin Q) — ignores 50% of THIS hit's effective
+    // defense. Unlike defDown above, this is a property of the cast, not a
+    // debuff left on the enemy for anyone else's next hit — see SKILL_DEF_IGNORE.
+    const _defIgnore = skillDefIgnoreOf(attacker.type, key, this._advSlotActive(attacker, key));
+    if (_defIgnore > 0) _effDef2 = Math.round(_effDef2 * (1 - _defIgnore));
     const base = Math.max(1, Math.floor((this._atkOf(attacker) - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     // Missing here (unlike attackEnemy/pvpAttack/pvpSkillAttack, which all

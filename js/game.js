@@ -994,6 +994,14 @@ function update(dt, realDt) {
     butterfliesTimer -= realDt;
     if (butterfliesTimer <= 0) { butterfliesTimer = 0; _butterfliesTickAcc = 0; }
   }
+  // Rune Fighter / Assassin timers — same realDt/recompute() discipline as
+  // the ones above. rfRegenTimer doesn't call recompute(): the heal itself
+  // ticks server-side (Room._regenTick) same as butterflies, this is icon-only.
+  if (rfRegenTimer > 0) { rfRegenTimer -= realDt; if (rfRegenTimer <= 0) rfRegenTimer = 0; }
+  if (pulseTimer > 0) { pulseTimer -= realDt; if (pulseTimer <= 0) { pulseTimer = 0; recompute(); } }
+  if (pierceTimer > 0) { pierceTimer -= realDt; if (pierceTimer <= 0) { pierceTimer = 0; recompute(); } }
+  if (killerTimer > 0) { killerTimer -= realDt; if (killerTimer <= 0) { killerTimer = 0; recompute(); } }
+  if (sprintTimer > 0) { sprintTimer -= realDt; if (sprintTimer <= 0) { sprintTimer = 0; recompute(); } }
   if (invisTimer > 0) { invisTimer -= realDt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
   if ((player.stunTimer || 0) > 0) { player.stunTimer -= realDt; if (player.stunTimer <= 0) player.stunTimer = 0; }
   if ((player.slowTimer || 0) > 0) { player.slowTimer -= realDt; if (player.slowTimer <= 0) player.slowTimer = 0; }

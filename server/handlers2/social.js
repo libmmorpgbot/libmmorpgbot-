@@ -20,7 +20,8 @@ const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
         SKILL_HASTE, skillHasteOf, skillBuffOf,
-        VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT } = require('../../shared/definitions');
+        VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
+        RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
 const party = require('../party');
 const players = require('../db/repos/players');
@@ -458,7 +459,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (!b) fail('Этот навык не даёт бафа', 'not_buff');
     const sec = b.sec + (sk.skillLevels[k] || 0);
     s.room.setSkillWindow(s.socket.id, 'buff', sec * 1000, {
-      atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower,
+      atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower, hp: b.hp,
     });
     return { sec, atk: b.atk || 1, def: b.def || 1 };
   }));
@@ -518,6 +519,17 @@ module.exports = function registerSocial(s, safeOn, deps) {
       s.room.setSkillWindow(s.socket.id, 'vampirism', (VAMPIRISM_SEC + lvl) * 1000, pct);
       lastHealAt.set(k, now);
       return { window: 'vampirism', sec: VAMPIRISM_SEC + lvl, pct };
+    }
+    // «Регенерация» (Rune Fighter E base) — flat HP/sec for a fixed window,
+    // not a fraction of maxHp, so it can't go through skillSelfHealOf below
+    // (that function only knows pct-of-maxHp heals). advPct on this same slot
+    // ("Возврат") DOES go through the generic path further down — only the
+    // base variant needs interception here.
+    if (st.charClass === 'runefighter' && k === 'E' && !adv) {
+      const rate = RUNEFIGHTER_REGEN_RATE + lvl;
+      s.room.setSkillWindow(s.socket.id, 'regen', RUNEFIGHTER_REGEN_SEC * 1000, rate);
+      lastHealAt.set(k, now);
+      return { window: 'regen', sec: RUNEFIGHTER_REGEN_SEC, rate };
     }
 
     // ── разовое лечение ───────────────────────────────────────────────────

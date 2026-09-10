@@ -1499,7 +1499,7 @@ function renderCodexPanel() {
   const moreBtn = filtered.length > _codexShown
     ? `<button class="codex-more-btn" onclick="_codexShowMore()">Показать ещё (${filtered.length - _codexShown})</button>` : '';
 
-  const clsOptions = ['lev', 'deathknight', 'ranger', 'mage', 'warlock']
+  const clsOptions = ['lev', 'deathknight', 'ranger', 'mage', 'warlock', 'runefighter', 'assassin']
     .map(c => `<option value="${c}"${_codexFilters.cls === c ? ' selected' : ''}>${CHAR_DEF[c].name}</option>`).join('');
   const rarityOptions = ['common', 'uncommon', 'rare', 'epic', 'legendary']
     .map(r => `<option value="${r}"${_codexFilters.rarity === r ? ' selected' : ''}>${_RARITY_NAMES[r]}</option>`).join('');
@@ -2052,7 +2052,7 @@ function _farmSpeciesShardRows(eid) {
 // of the species' own pool) so players can see which class+skill book a
 // given species is actually good for, instead of one opaque merged line
 // shared by every species.
-const _FARM_ADV_BOOK_CLASS_COLOR = { lev: '#9aa3ab', deathknight: '#a58fc4', ranger: '#8fbf5a', mage: '#66aaff', warlock: '#c47a92' };
+const _FARM_ADV_BOOK_CLASS_COLOR = { lev: '#9aa3ab', deathknight: '#a58fc4', ranger: '#8fbf5a', mage: '#66aaff', warlock: '#c47a92', runefighter: '#a86b3f', assassin: '#6a5578' };
 function _farmSpeciesBookRows(eid) {
   const ids = (typeof FARM_SPECIES_BOOKS !== 'undefined' && FARM_SPECIES_BOOKS[eid]) || [];
   const pool = ids.map(id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === id)).filter(Boolean);
@@ -5546,7 +5546,7 @@ function _renderVipLevels(curLevel, pending, bonuses, cumulative) {
 }
 
 function _vipItemDesc(lvl) {
-  const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s' }[player?.type] || 't';
+  const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s', runefighter:'n', assassin:'d' }[player?.type] || 't';
   const wepPfx = { uncommon:'u', rare:'r', epic:'e', legendary:'l' };
 
   function wep(rarity, enhance) {
@@ -8051,7 +8051,7 @@ function _shopExtraRewardRows(pkg, ri) {
   if (pkg.weapon) {
     const key = pkg.weapon.toLowerCase();
     const pfx = _SHOP_WEP_PFX_MAP[key] || 'c';
-    const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s' }[player?.type] || 't';
+    const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s', runefighter:'n', assassin:'d' }[player?.type] || 't';
     rows += ri(`/images/wep/${pfx}${wepSfx}.png`, pkg.enhance ? `+${pkg.enhance}` : '', key);
   }
   if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');

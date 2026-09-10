@@ -39,6 +39,8 @@ const CHAR_DEF = {
   ranger:      { name:'Егерь',        icon:'archerClass',color:'#5c7a4a', baseHP:140, baseAtk:2, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#8fbf5a' },
   mage:        { name:'Маг',          icon:'mageClass',  color:'#5c7fbf', baseHP:110, baseAtk:4, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#66aaff' },
   warlock:     { name:'Целитель',     icon:'mageClass',  color:'#8a3a4a', baseHP:160, baseAtk:2, baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#a855e0' },
+  runefighter: { name:'Рунный боец',  icon:'warrior',    color:'#a86b3f', baseHP:230, baseAtk:3, baseDef:8,  speed:160, atkRange:58,  atkSpeed:1.100, atkType:'melee' },
+  assassin:    { name:'Ассасин',      icon:'skull',      color:'#2e2438', baseHP:95,  baseAtk:4, baseDef:2,  speed:165, atkRange:56,  atkSpeed:1.350, atkType:'melee' },
 };
 
 // ── Monster level curve ────────────────────────────────────────────────────────
@@ -835,6 +837,8 @@ const _SKILL_BOOK_SRC = [
   ['ranger', 'Q', 'Мульти-выстрел'], ['ranger', 'W', 'Комбо стрела'], ['ranger', 'E', 'Прыжок'], ['ranger', 'R', 'Скорость атаки'],
   ['mage', 'Q', 'Ледяной шар'], ['mage', 'W', 'Ледяная нова'], ['mage', 'E', 'Барьер'], ['mage', 'R', 'Телепорт'],
   ['warlock', 'Q', 'Тёмное исцеление'], ['warlock', 'W', 'Оковы тьмы'], ['warlock', 'E', 'Тёмный щит'], ['warlock', 'R', 'Тёмная молитва'],
+  ['runefighter', 'Q', 'Сильный удар'], ['runefighter', 'W', 'Встряска'], ['runefighter', 'E', 'Регенерация'], ['runefighter', 'R', 'Замедление'],
+  ['assassin', 'Q', 'Шепот смерти'], ['assassin', 'W', 'Буйство'], ['assassin', 'E', 'Пронзание'], ['assassin', 'R', 'Бегство'],
 ];
 
 // [class, skillKey, name] — advanced-skill counterpart of _SKILL_BOOK_SRC
@@ -846,6 +850,8 @@ const _ADV_SKILL_BOOK_SRC = [
   ['ranger', 'Q', 'Град стрел'], ['ranger', 'W', 'Остриё'], ['ranger', 'E', 'Баф Крит'], ['ranger', 'R', 'Ускорение'],
   ['mage', 'Q', 'Урон молнии'], ['mage', 'W', 'Разряд'], ['mage', 'E', 'Вспышка'], ['mage', 'R', 'Перенесение'],
   ['warlock', 'Q', 'Бабочки'], ['warlock', 'W', 'Колючие оковы'], ['warlock', 'E', 'Жажда'], ['warlock', 'R', 'Исцеление'],
+  ['runefighter', 'Q', 'Удар в череп'], ['runefighter', 'W', 'Сокрушение'], ['runefighter', 'E', 'Возврат'], ['runefighter', 'R', 'Пульс'],
+  ['assassin', 'Q', 'Смертоносность'], ['assassin', 'W', 'Крик'], ['assassin', 'E', 'Убийца'], ['assassin', 'R', 'Прыжок за спину'],
 ];
 
 // [class, passiveId, name] — class-exclusive pair of passives, one book per
@@ -1063,6 +1069,18 @@ const ITEM_DEF = [
   { id:'st3', name:'Посох охотника',   slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/rs.png', atk:30, hpPct:0.05,         rarity:'rare'     },
   { id:'st4', name:'Посох Героя',      slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/es.png', atk:60, hpPct:0.10,         rarity:'epic'     },
   { id:'st5', name:'Посох Легенды',    slot:'weapon', forClass:['mage','warlock'], img:'/images/wep/ls.png', atk:120, hpPct:0.20, critChance:0.10, rarity:'legendary'},
+  // ── Rune Fighter blades ────────────────────────────────────
+  { id:'rf1', name:'Ржавый рунный клинок',  slot:'weapon', forClass:['runefighter'], img:'/images/wep/cn.png', atk:6,                             rarity:'common'   },
+  { id:'rf2', name:'Стальной рунный клинок',slot:'weapon', forClass:['runefighter'], img:'/images/wep/un.png', atk:16, critChance:0.03,           rarity:'uncommon' },
+  { id:'rf3', name:'Клинок дракона',        slot:'weapon', forClass:['runefighter'], img:'/images/wep/rn.png', atk:26, critChance:0.06,           rarity:'rare'     },
+  { id:'rf4', name:'Клинок теней',          slot:'weapon', forClass:['runefighter'], img:'/images/wep/en.png', atk:48, critChance:0.12,           rarity:'epic'     },
+  { id:'rf5', name:'Клинок героя',          slot:'weapon', forClass:['runefighter'], img:'/images/wep/ln.png', atk:70, critChance:0.28,           rarity:'legendary'},
+  // ── Assassin daggers ────────────────────────────────────────
+  { id:'as1', name:'Ржавый кинжал',    slot:'weapon', forClass:['assassin'], img:'/images/wep/cd.png', atk:7,  critChance:0.02,                   rarity:'common'   },
+  { id:'as2', name:'Стальной кинжал',  slot:'weapon', forClass:['assassin'], img:'/images/wep/ud.png', atk:17, critChance:0.06,                   rarity:'uncommon' },
+  { id:'as3', name:'Кинжал дракона',   slot:'weapon', forClass:['assassin'], img:'/images/wep/rd.png', atk:27, critChance:0.10,                   rarity:'rare'     },
+  { id:'as4', name:'Кинжал теней',     slot:'weapon', forClass:['assassin'], img:'/images/wep/ed.png', atk:50, critChance:0.16,                   rarity:'epic'     },
+  { id:'as5', name:'Кинжал героя',     slot:'weapon', forClass:['assassin'], img:'/images/wep/ld.png', atk:74, critChance:0.32,                   rarity:'legendary'},
   // ── Helmet ────────────────────────────────────────────────
   { id:'hm1', name:'Кожаный шлем',     slot:'helmet', img:'/images/arm/ch.png', hp:25,           rarity:'common'   },
   { id:'hm2', name:'Железный шлем',    slot:'helmet', img:'/images/arm/uh.png', hp:50,           rarity:'uncommon' },
@@ -1245,6 +1263,8 @@ const GEAR_CRAFT_RECIPES = [
   { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
   { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
   { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'rf4', mats:[{id:'rf3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
+  { itemId:'as4', mats:[{id:'as3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
   { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
@@ -1255,6 +1275,8 @@ const GEAR_CRAFT_RECIPES = [
   { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
   { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'rf5', mats:[{id:'rf4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
+  { itemId:'as5', mats:[{id:'as4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
 ];
 
 // ── Уникальное оружие ───────────────────────────────────────────────────────
@@ -1690,6 +1712,12 @@ const GEAR_TIER_CRAFT_RECIPES = [
   // ── Staves ───────────────────────────────────────────────
   { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
   { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
+  // ── Rune fighter blades ────────────────────────────────────
+  { itemId:'rf2', mats:[{id:'rf1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'rf3', mats:[{id:'rf2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
+  // ── Assassin daggers ───────────────────────────────────────
+  { itemId:'as2', mats:[{id:'as1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
+  { itemId:'as3', mats:[{id:'as2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
   // ── Helmets ──────────────────────────────────────────────
   { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
   { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
@@ -1944,7 +1972,7 @@ function _codexSetBonus(slots) {
 }
 
 function _buildCodexSets() {
-  const CLASSES = ['deathknight', 'lev', 'ranger', 'mage', 'warlock'];
+  const CLASSES = ['deathknight', 'lev', 'ranger', 'mage', 'warlock', 'runefighter', 'assassin'];
   const sets = [];
   let n = 0;
   const ctr = {};
@@ -2382,6 +2410,18 @@ const SKILL_DMG_MULT = {
     E: { base: null, adv: null },  // Гнев мертвеца / Щит
     R: { base: 1.5,  adv: 1.5  },  // Кувырок / Рывок
   },
+  runefighter: {
+    Q: { base: 1,    adv: 1    },  // Сильный удар (×3 hits) / Удар в череп (×5 hits)
+    W: { base: 3,    adv: 4    },  // Встряска / Сокрушение — AOE
+    E: { base: null, adv: null },  // Регенерация (HoT) / Возврат (full heal) — no direct damage
+    R: { base: 2,    adv: null },  // Замедление — leap, hits on arrival / Пульс — pure buff
+  },
+  assassin: {
+    Q: { base: 3,    adv: 3    },  // Шепот смерти / Смертоносность (ignores 50% target def)
+    W: { base: 2,    adv: 3    },  // Буйство / Крик — AOE
+    E: { base: null, adv: null },  // Пронзание / Убийца — crit buffs, no direct damage
+    R: { base: null, adv: 2    },  // Бегство — speed buff / Прыжок за спину — leap, hits on arrival
+  },
 };
 
 // Level and gear scaling, shared by every damaging skill: +1% per skill level,
@@ -2402,6 +2442,34 @@ function skillDamageMult(cls, key, advActive, skillLvl, skillPct) {
   if (!base) return 0;
   return base * skillScaleMult(skillLvl, skillPct);
 }
+
+// ── игнор защиты одним ударом ───────────────────────────────────────────────
+// «Смертоносность» (продвинутый Q ассасина) режет 50% защиты цели ТОЛЬКО для
+// своего собственного попадания — в отличие от «Охоты» (adv DK R), которая
+// вешает на моба тянущийся дебафф (enemy.defDownTimer), снижающий защиту для
+// ЛЮБОГО следующего удара от кого угодно. Здесь дебаффу неоткуда взяться:
+// эффект — свойство самого навыка, а не цели, так что своя маленькая таблица
+// вместо ещё одного args-параметра на attackEnemy/pvpSkillAttack.
+const SKILL_DEF_IGNORE = {
+  assassin: { Q: { adv: 0.5 } },
+};
+function skillDefIgnoreOf(cls, key, advActive) {
+  const row = (SKILL_DEF_IGNORE[cls] || {})[key];
+  if (!row) return 0;
+  return (advActive ? row.adv : row.base) || 0;
+}
+
+// ── навыки, ускоряющие БЕГ ──────────────────────────────────────────────────
+// «Бегство» (базовый R ассасина) — первый в игре навык, бафающий скорость
+// передвижения, а не атаки. Он не открывает окно на сервере вообще: движение
+// проверяет только общий потолок правдоподобной скорости (_MOVE_SPEED_MAX,
+// server/game/Room.js), собранный из класса, пассивок и предметов — mult
+// здесь прибавляет туда третье слагаемое тем же способом, каким крылья уже
+// прибавляют своё (_MOVE_SPEED_ITEM_MAX). Сам множитель клиент применяет
+// локально в recompute() (js/player.js), ровно как древние клиентские таймеры
+// вроде dodgeTimer — серверу нечего проверять по навыку, которого сам не
+// считает, только не пускать бег выше своего же потолка.
+const SKILL_SPEED_MAX_PCT = 1.0; // «Бегство»: ×2 скорости — потолок для _MOVE_SPEED_MAX
 
 // The stat-upgrade slots (UPGRADE_DEF, js/definitions.js) and what the next
 // point in one costs. Shared so the server can charge it: upgradeStats used to
@@ -2821,6 +2889,15 @@ const SKILL_BUFFS = {
                   adv:  { def: 1.50, sec: 4 } } },              // Жажда
   lev:     { E: { base: { def: 1.80, sec: 10 },                 // Гнев мертвеца
                   adv:  { def: 1.80, atk: 1.10, sec: 10 } } },  // Щит
+  assassin: {
+    E: { base: { critChance: 0.50, sec: 5 },                     // Пронзание
+         adv:  { critChance: 0.50, critPower: 0.50, sec: 5 } },  // Убийца
+  },
+  // «Пульс» — единственный навык в игре, бафающий максимум здоровья, а не
+  // атаку/защиту/крит. hp читает тот же 'buff'-канал (Room.setSkillWindow/
+  // _maxHpOf), а не отдельный механизм — устройство окна уже рассчитано на
+  // «один навык даёт несколько множителей сразу» (см. Щит Танка выше).
+  runefighter: { R: { adv: { hp: 1.30, sec: 600 } } },           // Пульс
 };
 
 // Что даёт этот навык, или null, если он не бафает. Object.hasOwn по той же
@@ -2857,6 +2934,16 @@ const SKILL_SELF_HEAL = {
     Q: { pct: 0.20, advKind: 'butterflies' },            // «Тёмное исцеление» / «Бабочки»
     R: { pct: 0.10, advPct: 0.20, party: true },         // «Тёмная молитва» / «Исцеление»
   },
+  // Базовая «Регенерация» перехватывается отдельной веткой в handlers2/
+  // social.js ДО этой таблицы — это тик 5+уровень HP/сек десять секунд, а не
+  // доля maxHp, и у неё свой механизм (RUNEFIGHTER_REGEN_*, Room._regenTick),
+  // ровно как у «Бабочек». Продвинутый «Возврат» — обычное разовое лечение на
+  // всё здоровье разом, и advOnly здесь не даёт эту запись случайно
+  // сработать на базовом навыке, если та ветка когда-нибудь не сматчится.
+  runefighter: { E: { advPct: 1.0, advOnly: true } },     // «Возврат»
+  // «Прыжок за спину» (adv R) — восстанавливает 30% здоровья при попадании,
+  // тем же разовым механизмом, что и «Перенесение» мага.
+  assassin: { R: { advPct: 0.30, advOnly: true } },       // «Прыжок за спину»
 };
 
 // «Бабочки» (продвинутый Q чернокнижника): 5% maxHp в секунду, десять секунд
@@ -2872,6 +2959,14 @@ const BUTTERFLIES_TICK_PCT = 0.05;
 const VAMPIRISM_SEC = 10;
 const VAMPIRISM_PCT = 0.10;
 const ADV_VAMPIRISM_PCT = 0.15;   // «Истощение» — продвинутый Q
+
+// «Регенерация» (базовый E рунного бойца): флат HP/сек — не доля maxHp, как у
+// «Бабочек», поэтому свой рейт, а не общий тик-процент. RATE — сколько
+// восстанавливает уровень 0 (сама таблица SKILL_SELF_HEAL прибавляет уровень
+// слота сверху, см. ветку в handlers2/social.js), SEC — фиксированная
+// длительность окна (в описании навыка нет прокачки по времени).
+const RUNEFIGHTER_REGEN_RATE = 5;
+const RUNEFIGHTER_REGEN_SEC = 10;
 
 // Безопасная зона: +1 HP в секунду сверх пассивной регенерации. Считал только
 // клиент (js/game.js), поэтому в хабе полоса дёргалась 120 → 121 → 120:
@@ -2957,6 +3052,8 @@ if (typeof module !== 'undefined') module.exports = {
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, SKILL_SPEED_MAX_PCT,
+  RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,

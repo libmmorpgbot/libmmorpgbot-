@@ -33,6 +33,18 @@ _VIP_WEAPONS.mage = {
   legendary: { id:'st5', name:'Посох Легенды',  slot:'weapon', img:'/images/wep/ls.png', atk:100,hpPct:0.15,  rarity:'legendary'},
 };
 _VIP_WEAPONS.warlock = _VIP_WEAPONS.mage;
+_VIP_WEAPONS.runefighter = {
+  uncommon:  { id:'rf2', name:'Стальной рунный клинок', slot:'weapon', img:'/images/wep/un.png', atk:16, critChance:0.03, rarity:'uncommon' },
+  rare:      { id:'rf3', name:'Клинок дракона',         slot:'weapon', img:'/images/wep/rn.png', atk:26, critChance:0.06, rarity:'rare'     },
+  epic:      { id:'rf4', name:'Клинок теней',           slot:'weapon', img:'/images/wep/en.png', atk:48, critChance:0.12, rarity:'epic'     },
+  legendary: { id:'rf5', name:'Клинок героя',           slot:'weapon', img:'/images/wep/ln.png', atk:70, critChance:0.28, rarity:'legendary'},
+};
+_VIP_WEAPONS.assassin = {
+  uncommon:  { id:'as2', name:'Стальной кинжал', slot:'weapon', img:'/images/wep/ud.png', atk:17, critChance:0.06, rarity:'uncommon' },
+  rare:      { id:'as3', name:'Кинжал дракона',  slot:'weapon', img:'/images/wep/rd.png', atk:27, critChance:0.10, rarity:'rare'     },
+  epic:      { id:'as4', name:'Кинжал теней',    slot:'weapon', img:'/images/wep/ed.png', atk:50, critChance:0.16, rarity:'epic'     },
+  legendary: { id:'as5', name:'Кинжал героя',    slot:'weapon', img:'/images/wep/ld.png', atk:74, critChance:0.32, rarity:'legendary'},
+};
 
 const _VIP_BP = [
   { id:'bp_hp',       name:'Зелье здоровья',  slot:'buff_potion', img:'/images/potion/hp.png',       rarity:'uncommon', buffType:'hp',       buffDur:600},
@@ -122,6 +134,8 @@ const _SHOP_CLASS_WEAPONS = {
   ranger:      { common:'bw1', uncommon:'bw2', rare:'bw3', epic:'bw4' },
   mage:        { common:'st1', uncommon:'st2', rare:'st3', epic:'st4' },
   warlock:     { common:'st1', uncommon:'st2', rare:'st3', epic:'st4' },
+  runefighter: { common:'rf1', uncommon:'rf2', rare:'rf3', epic:'rf4' },
+  assassin:    { common:'as1', uncommon:'as2', rare:'as3', epic:'as4' },
 };
 // Armor slot IDs per rarity for the shop
 const _SHOP_ARMOR_SETS = {

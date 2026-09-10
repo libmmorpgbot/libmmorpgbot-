@@ -320,6 +320,10 @@ function recompute() {
   }
   if (typeof faithShieldTimer !== 'undefined' && faithShieldTimer > 0) defMult *= 1.50;
   if (defMult !== 1) d = Math.floor(d * defMult);
+  // "Пульс" (adv Rune Fighter R) — the one skill that buffs maxHP rather
+  // than atk/def/crit. Same active-skill-buff treatment as the others here:
+  // rebuilt from the timer every recompute() rather than mutated at cast time.
+  if (typeof pulseTimer !== 'undefined' && pulseTimer > 0) h = Math.floor(h * 1.30);
 
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
@@ -338,8 +342,14 @@ function recompute() {
   }
   const _critChanceBuff = (typeof critChanceBuffTimer !== 'undefined' && critChanceBuffTimer > 0) ? 0.05 : 0; // "Баф Крит" (adv ranger E)
   const _critDmgBuff    = (typeof critDmgBuffTimer    !== 'undefined' && critDmgBuffTimer    > 0) ? 0.05 : 0; // "Жадность" (adv DK W)
-  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd;
+  // "Пронзание" / "Убийца" (assassin E base/adv) — +50% crit chance either
+  // way, adv additionally adding +50% crit power. Own timers (js/state.js)
+  // since the magnitude doesn't match either buff above.
+  const _pierceCritChance = (typeof pierceTimer !== 'undefined' && pierceTimer > 0) ? 0.50 : 0;
+  const _killerCritChance = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
+  const _killerCritPower  = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
+  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff + _pierceCritChance + _killerCritChance);
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower;
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
   player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;
@@ -347,6 +357,11 @@ function recompute() {
   // собирала её из базовой и пассивок, и бонус предмета сюда не попадал:
   // на сервере он считался, на экране не значил ничего.
   player.speed      = player.baseSpeed * (1 + (pt ? pt.moveSpeedPct : 0) + speedPct);
+  // "Бегство" (assassin R base) — ×2 run speed. Server enforces no window for
+  // this (movement is client-reported either way); it only needs to tolerate
+  // the resulting top speed — see SKILL_SPEED_MAX_PCT folded into
+  // _MOVE_SPEED_MAX, server/game/Room.js.
+  if (typeof sprintTimer !== 'undefined' && sprintTimer > 0) player.speed *= 2;
 }
 
 // The panel's figure and the server's are the same function now
@@ -692,7 +707,7 @@ function useSkill(idx) {
       // окно на СЕРВЕРЕ, и открывает его netSkillHeal, а не эта строка.
       if (_advActive('Q')) { // Истощение — 15% lifesteal + 20% ATK, 10s (+1s per level)
         vampirismTimer = 10 + _skillBuffSec('Q');
-        advDkQAtkTimer = 10 + _skillBuffSec('Q');
+        advDkQAtkTimer = 10 + _skillBuffSec('Q');
       if (typeof netSkillBuff === 'function') netSkillBuff('Q');
         recompute();
         if (typeof netSkillHeal === 'function') netSkillHeal('Q');
@@ -706,7 +721,7 @@ function useSkill(idx) {
       }
     } else if (sk.key === 'W') {
       if (_advActive('W')) { // Жадность — +5% crit damage, 20 min (+1s per level)
-        critDmgBuffTimer = 1200 + _skillBuffSec('W');
+        critDmgBuffTimer = 1200 + _skillBuffSec('W');
       if (typeof netSkillBuff === 'function') netSkillBuff('W');
         recompute();
         dmgNum(player.x, player.y - 40, '💰 Жадность!', '#f5c542');
@@ -718,13 +733,13 @@ function useSkill(idx) {
       }
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Безумие — +25% ATK + basic attacks splash AOE, 5s (+1s per level)
-        madnessTimer = 5 + _skillBuffSec('E');
+        madnessTimer = 5 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '💢 Безумие!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 12);
       } else { // Гнев мертвеца — +20% ATK 5s (+1s per level)
-        battleCryTimer = 5 + _skillBuffSec('E');
+        battleCryTimer = 5 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute(); // applies the buff off the timer above and pushes the new stats to the server
         dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
@@ -819,7 +834,7 @@ function useSkill(idx) {
       }
     } else if (sk.key === 'E') {
       if (_advActive('E')) { // Баф Крит — +5% crit chance, 20 min (+1s per level)
-        critChanceBuffTimer = 1200 + _skillBuffSec('E');
+        critChanceBuffTimer = 1200 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '🎯 Баф Крит!', '#f5c542');
@@ -886,13 +901,13 @@ function useSkill(idx) {
         spawnAOE(player.x, player.y, 220, 'flash', '#c9a3ff');
         _skillAOEMult(220, _skillMult('E'), 'E'); netSpawnAoe(player.x, player.y, 220, 'flash', '#c9a3ff');
         _pvpSkillAOE(220, _skillMult('E'), 'E');
-        barrierTimer = 3 + _skillBuffSec('E');
+        barrierTimer = 3 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '✨ Вспышка!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 14);
       } else { // Barrier — +50% DEF for 3s (+1s per level)
-        barrierTimer = 3 + _skillBuffSec('E');
+        barrierTimer = 3 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
@@ -959,7 +974,7 @@ function useSkill(idx) {
     } else if (sk.key === 'E') { // Тёмный щит / Жажда — +50% DEF self + party 4s (+1s per
       // level); advanced additionally grants ×2 attack speed for the same duration.
       const _advE3 = _advActive('E');
-      faithShieldTimer = 4 + _skillBuffSec('E');
+      faithShieldTimer = 4 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
       if (_advE3) atkSpeedTimer = 4 + _skillBuffSec('E');
       recompute();
@@ -1015,7 +1030,7 @@ function useSkill(idx) {
     } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
       // level) either way; advanced additionally gives +10% ATK for the same duration.
       const _advE4 = _advActive('E');
-      guardTimer = 10 + _skillBuffSec('E');
+      guardTimer = 10 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
       if (_advE4) levShieldAtkTimer = 10 + _skillBuffSec('E');
       recompute();
@@ -1051,6 +1066,171 @@ function useSkill(idx) {
         spawnAOE(_chargeTarget.x, _chargeTarget.y, 40);
       }
       spawnBurst(player.x, player.y, _advR5 ? '#f5c542' : '#e8e0cc', 8);
+    }
+  } else if (player.type === 'runefighter') {
+    if (sk.key === 'Q') { // Сильный удар / Удар в череп — N hits in a row on
+      // the nearest/PvP target. Cooldown improves -1s/level (base only, per
+      // the skill's own description) — the generic assignment at the top of
+      // useSkill() doesn't know that, so it's overridden here.
+      const _advQ5 = _advActive('Q');
+      if (!_advQ5) player.skillCooldowns.Q = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
+      const hits = _advQ5 ? 5 : 3;
+      const dmgMult = _skillMult('Q');
+      const pvpTgt = _pvpPlayerTarget();
+      const tgt = pvpTgt ? null : nearestEnemy();
+      if (pvpTgt || tgt) {
+        for (let i = 0; i < hits; i++) {
+          setTimeout(() => {
+            if (!player) return;
+            if (pvpTgt) {
+              spawnAOE(pvpTgt.op.x, pvpTgt.op.y, 40);
+              netPvpSkillAttack(pvpTgt.id, dmgMult, 'Q');
+            } else if ((tgt.hp || 0) > 0) {
+              spawnAOE(tgt.x, tgt.y, 40);
+              netSkillAttack(tgt.id, dmgMult, 'Q');
+            }
+          }, i * 120);
+        }
+        faceTowards(pvpTgt ? pvpTgt.op.x : tgt.x, pvpTgt ? pvpTgt.op.y : tgt.y);
+      }
+      spawnBurst(player.x, player.y, _advQ5 ? '#f5c542' : '#c98a4a', 8);
+      dmgNum(player.x, player.y - 40, _advQ5 ? '💀 Удар в череп!' : '⚔ Сильный удар!', _advQ5 ? '#f5c542' : '#c98a4a');
+    } else if (sk.key === 'W') { // Встряска / Сокрушение — AOE; base cooldown
+      // improves -1s/level.
+      const _advW5 = _advActive('W');
+      if (!_advW5) player.skillCooldowns.W = Math.max(6, sk.cd - _skillLvl('W')) * (1 - (player.cdrPct || 0));
+      const r = _advW5 ? 220 : 150;
+      spawnAOE(player.x, player.y, r, 'shockwave', '#c98a4a');
+      _skillAOEMult(r, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r, 'shockwave', '#c98a4a');
+      _pvpSkillAOE(r, _skillMult('W'), 'W');
+      dmgNum(player.x, player.y - 40, _advW5 ? '💥 Сокрушение!' : '💥 Встряска!', _advW5 ? '#f5c542' : '#c98a4a');
+      spawnBurst(player.x, player.y, _advW5 ? '#f5c542' : '#c98a4a', 12);
+    } else if (sk.key === 'E') { // Регенерация — HoT, 5+level HP/sec for 10s
+      // (server ticks it, Room._regenTick — see RUNEFIGHTER_REGEN_*) /
+      // Возврат — instant full heal.
+      const _advE5 = _advActive('E');
+      if (!_advE5) rfRegenTimer = (typeof RUNEFIGHTER_REGEN_SEC !== 'undefined') ? RUNEFIGHTER_REGEN_SEC : 10;
+      if (typeof netSkillHeal === 'function') netSkillHeal('E');
+      dmgNum(player.x, player.y - 40, _advE5 ? '❤ Возврат!' : '❤ Регенерация!', _advE5 ? '#f5c542' : '#7fce7f');
+      spawnBurst(player.x, player.y, _advE5 ? '#f5c542' : '#7fce7f', 10);
+    } else if (sk.key === 'R') {
+      const _advR6 = _advActive('R');
+      if (_advR6) { // Пульс — +30% maxHP, 10 minutes (+1s/level, same house
+        // rule as every other buff duration — see SKILL_BUFFS.runefighter)
+        pulseTimer = 600 + _skillBuffSec('R');
+        if (typeof netSkillBuff === 'function') netSkillBuff('R');
+        recompute();
+        dmgNum(player.x, player.y - 40, '💗 Пульс!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 12);
+      } else { // Замедление — leap 140px toward target, ×2 dmg on arrival +
+        // 50% slow (3s +1s/level)
+        const slowDur = 3 + _skillBuffSec('R');
+        const pvpTgt2 = _pvpPlayerTarget();
+        let _rdx2, _rdy2, _chargeTarget2 = null, _chargePvpTarget2 = null;
+        if (pvpTgt2) { _rdx2 = pvpTgt2.op.x - player.x; _rdy2 = pvpTgt2.op.y - player.y; _chargePvpTarget2 = pvpTgt2; }
+        else {
+          _chargeTarget2 = (targetId && !targetIsPlayer)
+            ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
+            : nearestEnemy();
+          if (_chargeTarget2) { _rdx2 = _chargeTarget2.x - player.x; _rdy2 = _chargeTarget2.y - player.y; }
+          else { _rdx2 = joy.dx || 1; _rdy2 = joy.dy || 0; }
+        }
+        const len2 = Math.hypot(_rdx2, _rdy2) || 1;
+        _dashTo(player.x + (_rdx2 / len2) * 140, player.y + (_rdy2 / len2) * 140);
+        if (_chargePvpTarget2) {
+          netPvpSkillAttack(_chargePvpTarget2.id, _skillMult('R'), 'R');
+          _chargePvpTarget2.op.slowTimer = slowDur; netPvpSkillCC(_chargePvpTarget2.id, 'slow', slowDur);
+          faceTowards(_chargePvpTarget2.op.x, _chargePvpTarget2.op.y);
+          spawnAOE(_chargePvpTarget2.op.x, _chargePvpTarget2.op.y, 40);
+        } else if (_chargeTarget2) {
+          netSkillAttack(_chargeTarget2.id, _skillMult('R'), 'R');
+          _chargeTarget2.slowTimer = slowDur; netSkillSlow([_chargeTarget2.id], slowDur);
+          faceTowards(_chargeTarget2.x, _chargeTarget2.y);
+          spawnAOE(_chargeTarget2.x, _chargeTarget2.y, 40);
+        }
+        spawnBurst(player.x, player.y, '#c98a4a', 8);
+        dmgNum(player.x, player.y - 40, '❄ Замедление!', '#c98a4a');
+      }
+    }
+  } else if (player.type === 'assassin') {
+    if (sk.key === 'Q') { // Шепот смерти / Смертоносность — single-target
+      // hit; adv ignores 50% of the target's defense (SKILL_DEF_IGNORE,
+      // shared/definitions.js — applied server-side in the damage formula
+      // itself, nothing to send here beyond the slot). Base cooldown
+      // improves -1s/level.
+      const _advQ6 = _advActive('Q');
+      if (!_advQ6) player.skillCooldowns.Q = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
+      const dmgMult2 = _skillMult('Q');
+      const pvpTgt3 = _pvpPlayerTarget();
+      if (pvpTgt3) {
+        spawnAOE(pvpTgt3.op.x, pvpTgt3.op.y, 40);
+        netPvpSkillAttack(pvpTgt3.id, dmgMult2, 'Q');
+        faceTowards(pvpTgt3.op.x, pvpTgt3.op.y);
+      } else {
+        const tgt2 = nearestEnemy();
+        if (tgt2) {
+          spawnAOE(tgt2.x, tgt2.y, 40);
+          netSkillAttack(tgt2.id, dmgMult2, 'Q');
+          faceTowards(tgt2.x, tgt2.y);
+        }
+      }
+      spawnBurst(player.x, player.y, _advQ6 ? '#f5c542' : '#8b2f45', 10);
+      dmgNum(player.x, player.y - 40, _advQ6 ? '💀 Смертоносность!' : '🗡 Шепот смерти!', _advQ6 ? '#f5c542' : '#8b2f45');
+    } else if (sk.key === 'W') { // Буйство — AOE, radius +10px/level
+      // (_skillMobRange) / Крик — AOE, fixed radius 250
+      const _advW6 = _advActive('W');
+      const r2 = _advW6 ? 250 : (120 + _skillMobRange('W'));
+      spawnAOE(player.x, player.y, r2, 'shockwave', '#8b2f45');
+      _skillAOEMult(r2, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r2, 'shockwave', '#8b2f45');
+      _pvpSkillAOE(r2, _skillMult('W'), 'W');
+      dmgNum(player.x, player.y - 40, _advW6 ? '😱 Крик!' : '🌀 Буйство!', _advW6 ? '#f5c542' : '#8b2f45');
+      spawnBurst(player.x, player.y, _advW6 ? '#f5c542' : '#8b2f45', 12);
+    } else if (sk.key === 'E') { // Пронзание — +50% crit chance / Убийца —
+      // +50% crit chance and +50% crit power, both 5s (+1s/level). Base
+      // cooldown improves -1s/level.
+      const _advE6 = _advActive('E');
+      if (!_advE6) player.skillCooldowns.E = Math.max(20, sk.cd - _skillLvl('E')) * (1 - (player.cdrPct || 0));
+      if (_advE6) killerTimer = 5 + _skillBuffSec('E'); else pierceTimer = 5 + _skillBuffSec('E');
+      if (typeof netSkillBuff === 'function') netSkillBuff('E');
+      recompute();
+      dmgNum(player.x, player.y - 40, _advE6 ? '🎯 Убийца!' : '🎯 Пронзание!', _advE6 ? '#f5c542' : '#8b2f45');
+      spawnBurst(player.x, player.y, _advE6 ? '#f5c542' : '#8b2f45', 10);
+    } else if (sk.key === 'R') { // Бегство — ×2 run speed 5s (+1s/level),
+      // base cooldown improves -1s/level / Прыжок за спину — leap behind the
+      // target, ×2 dmg + heal 30% of own HP on arrival.
+      const _advR7 = _advActive('R');
+      if (!_advR7) player.skillCooldowns.R = Math.max(10, sk.cd - _skillLvl('R')) * (1 - (player.cdrPct || 0));
+      if (_advR7) {
+        const pvpTgt4 = _pvpPlayerTarget();
+        let _rdx3, _rdy3, _chargeTarget3 = null, _chargePvpTarget3 = null;
+        if (pvpTgt4) { _rdx3 = pvpTgt4.op.x - player.x; _rdy3 = pvpTgt4.op.y - player.y; _chargePvpTarget3 = pvpTgt4; }
+        else {
+          _chargeTarget3 = (targetId && !targetIsPlayer)
+            ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
+            : nearestEnemy();
+          if (_chargeTarget3) { _rdx3 = _chargeTarget3.x - player.x; _rdy3 = _chargeTarget3.y - player.y; }
+          else { _rdx3 = joy.dx || 1; _rdy3 = joy.dy || 0; }
+        }
+        const len3 = Math.hypot(_rdx3, _rdy3) || 1;
+        _dashTo(player.x + (_rdx3 / len3) * 140, player.y + (_rdy3 / len3) * 140);
+        if (_chargePvpTarget3) {
+          netPvpSkillAttack(_chargePvpTarget3.id, _skillMult('R'), 'R');
+          faceTowards(_chargePvpTarget3.op.x, _chargePvpTarget3.op.y);
+          spawnAOE(_chargePvpTarget3.op.x, _chargePvpTarget3.op.y, 40);
+        } else if (_chargeTarget3) {
+          netSkillAttack(_chargeTarget3.id, _skillMult('R'), 'R');
+          faceTowards(_chargeTarget3.x, _chargeTarget3.y);
+          spawnAOE(_chargeTarget3.x, _chargeTarget3.y, 40);
+        }
+        if (typeof netSkillHeal === 'function') netSkillHeal('R');
+        dmgNum(player.x, player.y - 40, '🗡 Прыжок за спину!', '#f5c542');
+        spawnBurst(player.x, player.y, '#f5c542', 8);
+      } else {
+        sprintTimer = 5 + _skillBuffSec('R');
+        recompute();
+        dmgNum(player.x, player.y - 40, '💨 Бегство!', '#8b2f45');
+        spawnBurst(player.x, player.y, '#8b2f45', 8);
+      }
     }
   }
 }

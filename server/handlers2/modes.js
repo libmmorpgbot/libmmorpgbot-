@@ -68,6 +68,12 @@ const CC_SKILLS = {
   mage:    { Q: { base: null,   adv: 'stun' }, W: { base: 'slow', adv: 'slow' } },
   warlock: { W: { base: 'stun', adv: 'stun' } },
   lev:     { Q: { base: 'stun', adv: 'stun' }, R: { base: null,   adv: 'slow' } },
+  // "Замедление" (Rune Fighter R base) slows on the leap itself — the
+  // INVERSE of lev/deathknight's R, where the base variant is CC-less and
+  // only the advanced dash adds one. Rune Fighter's own adv R ("Пульс") isn't
+  // a dash at all, so it carries no CC.
+  runefighter: { R: { base: 'slow', adv: null } },
+  assassin: {},
 };
 // Exactly what the client's own 'pvpPlayerCC' handler acts on (js/network.js):
 // anything else is rebroadcast to every nearby player as an unknown string and

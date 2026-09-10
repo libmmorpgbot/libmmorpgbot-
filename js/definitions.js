@@ -115,6 +115,18 @@ const SKILL_DEF = {
     { key:'E', name:'Тёмный щит',       icon:'barrier', img:'/images/skill/sshit.png',        cd:18, desc:'+50% защита себе и пати 4 сек' },
     { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  img:'/images/skill/spartyheal.png',   cd:25, desc:'+10% maxHP себе и +10% пати'   },
   ],
+  runefighter: [
+    { key:'Q', name:'Сильный удар', icon:'sword',    img:'/images/skill/rf_stronghit.png', cd:20, desc:'3 удара подряд'                    },
+    { key:'W', name:'Встряска',     icon:'whirlwind',img:'/images/skill/rf_shake.png',     cd:16, desc:'АОЕ ×3 урона, радиус 150'          },
+    { key:'E', name:'Регенерация',  icon:'hpPlus',   img:'/images/skill/rf_regen.png',     cd:20, desc:'+5 HP/сек на 10 сек'               },
+    { key:'R', name:'Замедление',   icon:'roll',     img:'/images/skill/rf_slam.png',      cd:10, desc:'Прыжок ×2 урона + замедление 50% на 3 сек', auto:false },
+  ],
+  assassin: [
+    { key:'Q', name:'Шепот смерти', icon:'crosshair',img:'/images/skill/as_whisper.png',   cd:20, desc:'Удар ×3 урона'                     },
+    { key:'W', name:'Буйство',      icon:'whirlwind',img:'/images/skill/as_rampage.png',   cd:8,  desc:'АОЕ ×2 урона, радиус 120'          },
+    { key:'E', name:'Пронзание',    icon:'star',     img:'/images/skill/as_pierce.png',    cd:30, desc:'+50% шанс крита на 5 сек'          },
+    { key:'R', name:'Бегство',      icon:'lightning',img:'/images/skill/as_flee.png',      cd:20, desc:'×2 скорость бега на 5 сек'         },
+  ],
 };
 
 // ── Advanced skills ("вторая профессия") ────────────────────────────────────
@@ -167,6 +179,27 @@ const ADV_SKILL_DEF = {
     { key:'E', name:'Жажда',          icon:'barrier', img:'/images/skill/adv/adv_jajda.png',         cd:18, desc:'+50% защита себе и пати, ×2 скорость атаки, на 4 сек' },
     { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати' },
   ],
+  runefighter: [
+    { key:'Q', name:'Удар в череп', icon:'skull',    img:'/images/skill/adv/adv_rf_skullhit.png', cd:20, desc:'5 ударов подряд' },
+    { key:'W', name:'Сокрушение',   icon:'whirlwind',img:'/images/skill/adv/adv_rf_crush.png',    cd:6,  desc:'АОЕ ×4 урона, радиус 220' },
+    { key:'E', name:'Возврат',      icon:'heart',    img:'/images/skill/adv/adv_rf_return.png',   cd:30, desc:'Восстанавливает всё здоровье' },
+    // Base R ("Замедление") is a leap and carries auto:false — this
+    // advanced replacement is a stationary self-buff instead, so auto must
+    // be explicitly re-enabled here (see the same override on ranger's adv
+    // E above) or it would silently inherit the leap's auto:false through
+    // _activeSkillDef's {...base, ...adv} spread.
+    { key:'R', name:'Пульс',        icon:'heart',    img:'/images/skill/adv/adv_rf_pulse.png',    cd:60, desc:'+30% максимума здоровья на 10 минут', auto:true },
+  ],
+  assassin: [
+    { key:'Q', name:'Смертоносность', icon:'skull',  img:'/images/skill/adv/adv_as_deadly.png',   cd:20, desc:'Удар ×3 урона, игнорируя 50% защиты цели' },
+    { key:'W', name:'Крик',           icon:'wind',   img:'/images/skill/adv/adv_as_scream.png',   cd:8,  desc:'АОЕ ×3 урона, радиус 250' },
+    { key:'E', name:'Убийца',         icon:'star',   img:'/images/skill/adv/adv_as_killer.png',   cd:30, desc:'+50% шанс крита и +50% силы крита на 5 сек' },
+    // Base R ("Бегство") is a stationary speed buff with no auto override —
+    // this advanced replacement displaces the character instead, so auto
+    // must be explicitly disabled here (see the lev/deathknight/mage R
+    // slots above, all auto:false for the same reason).
+    { key:'R', name:'Прыжок за спину',icon:'roll',   img:'/images/skill/adv/adv_as_backstab.png', cd:20, desc:'Прыжок за спину врагу ×2 урона + восстанавливает 30% здоровья', auto:false },
+  ],
 };
 
 // Bonus category for each skill key per class
@@ -177,6 +210,8 @@ const SKILL_BONUS_TYPE = {
   ranger:      { Q: 'damage', W: 'damage', E: 'buff', R: 'buff'     },
   mage:        { Q: 'damage', W: 'damage', E: 'buff', R: 'mobility' },
   warlock:     { Q: 'heal',   W: 'buff',   E: 'buff', R: 'heal'     },
+  runefighter: { Q: 'damage', W: 'damage', E: 'heal', R: 'buff'     },
+  assassin:    { Q: 'damage', W: 'mobility', E: 'buff', R: 'buff'   },
 };
 
 const NPC_DEF = [

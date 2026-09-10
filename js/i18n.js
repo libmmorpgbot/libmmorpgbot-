@@ -1193,6 +1193,8 @@ Object.assign(I18N_UI, {
   className_ranger:      { ru: 'Егерь',          en: 'Ranger',        uk: 'Єгер',          es: 'Guardabosques',         tr: 'Avcı',           pt: 'Guardião' },
   className_mage:        { ru: 'Маг',            en: 'Mage',          uk: 'Маг',           es: 'Mago',                   tr: 'Büyücü',         pt: 'Mago' },
   className_warlock:     { ru: 'Целитель',       en: 'Healer',        uk: 'Цілитель',      es: 'Sanador',               tr: 'Şifacı',         pt: 'Curandeiro' },
+  className_runefighter: { ru: 'Рунный боец',    en: 'Rune Fighter',  uk: 'Рунний боєць',  es: 'Guerrero rúnico',      tr: 'Rün Savaşçısı',  pt: 'Guerreiro Rúnico' },
+  className_assassin:    { ru: 'Ассасин',        en: 'Assassin',      uk: 'Асасин',        es: 'Asesino',                tr: 'Suikastçı',      pt: 'Assassino' },
   hudMenuBtn: { ru: 'Меню', en: 'Menu', uk: 'Меню', es: 'Menú', tr: 'Menü', pt: 'Menu' },
   navRatingBtn: { ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
   navCodexBtn: { ru: 'Кодекс', en: 'Codex', uk: 'Кодекс', es: 'Códice', tr: 'Kodeks', pt: 'Códex' },
@@ -1268,6 +1270,8 @@ const I18N_CLASSES = {
   ranger:      { en: 'Ranger',      uk: 'Єгер',         es: 'Guardabosques',       tr: 'Avcı',            pt: 'Guardião' },
   mage:        { en: 'Mage',        uk: 'Маг',          es: 'Mago',                tr: 'Büyücü',          pt: 'Mago' },
   warlock:     { en: 'Healer',      uk: 'Цілитель',     es: 'Sanador',             tr: 'Şifacı',          pt: 'Curandeiro' },
+  runefighter: { en: 'Rune Fighter',uk: 'Рунний боєць', es: 'Guerrero rúnico',    tr: 'Rün Savaşçısı',  pt: 'Guerreiro Rúnico' },
+  assassin:    { en: 'Assassin',    uk: 'Асасин',       es: 'Asesino',             tr: 'Suikastçı',       pt: 'Assassino' },
 };
 
 // key: class -> skillKey -> {name, desc}
@@ -1321,6 +1325,26 @@ const I18N_SKILLS = {
          desc: { en: '+50% defense to self and party for 4s', uk: '+50% захисту собі й паті на 4 сек', es: '+50% de defensa a ti y al grupo durante 4s', tr: '4sn boyunca kendine ve gruba +%50 savunma', pt: '+50% de defesa para você e o grupo por 4s' } },
     R: { name: { en: 'Dark Prayer',    uk: 'Темна молитва', es: 'Oración Oscura',   tr: 'Karanlık Dua',    pt: 'Oração Sombria' },
          desc: { en: '+10% maxHP to self and +10% to party', uk: '+10% макс. HP собі та +10% паті', es: '+10% de HP máx. a ti y +10% al grupo', tr: 'Kendine +%10, grubuna +%10 maksimum HP', pt: '+10% do HP máximo para você e +10% para o grupo' } },
+  },
+  runefighter: {
+    Q: { name: { en: 'Strong Strike', uk: 'Сильний удар', es: 'Golpe Fuerte', tr: 'Güçlü Vuruş', pt: 'Golpe Forte' },
+         desc: { en: '3 hits in a row', uk: '3 удари поспіль', es: '3 golpes seguidos', tr: 'Art arda 3 vuruş', pt: '3 golpes seguidos' } },
+    W: { name: { en: 'Shake', uk: 'Струс', es: 'Sacudida', tr: 'Sarsıntı', pt: 'Tremor' },
+         desc: { en: 'AOE ×3 damage, radius 150', uk: 'АОЕ ×3 урону, радіус 150', es: 'Daño en área ×3, radio 150', tr: 'Alan hasarı ×3, yarıçap 150', pt: 'Dano em área ×3, raio 150' } },
+    E: { name: { en: 'Regeneration', uk: 'Регенерація', es: 'Regeneración', tr: 'Yenilenme', pt: 'Regeneração' },
+         desc: { en: '+5 HP/sec for 10s', uk: '+5 HP/сек на 10 сек', es: '+5 HP/seg durante 10s', tr: '10sn boyunca +5 HP/sn', pt: '+5 HP/seg por 10s' } },
+    R: { name: { en: 'Slow', uk: 'Уповільнення', es: 'Ralentización', tr: 'Yavaşlatma', pt: 'Lentidão' },
+         desc: { en: 'Leap ×2 damage + 50% slow for 3s', uk: 'Стрибок ×2 урону + уповільнення 50% на 3 сек', es: 'Salto ×2 daño + ralentización 50% durante 3s', tr: 'Sıçrama ×2 hasar + %50 yavaşlatma, 3sn', pt: 'Salto ×2 de dano + lentidão de 50% por 3s' } },
+  },
+  assassin: {
+    Q: { name: { en: 'Death Whisper', uk: 'Шепіт смерті', es: 'Susurro de Muerte', tr: 'Ölüm Fısıltısı', pt: 'Sussurro da Morte' },
+         desc: { en: '×3 damage strike', uk: 'Удар ×3 урону', es: 'Golpe ×3 daño', tr: '×3 hasarlı vuruş', pt: 'Golpe ×3 de dano' } },
+    W: { name: { en: 'Rampage', uk: 'Буйство', es: 'Frenesí', tr: 'Çılgınlık', pt: 'Fúria' },
+         desc: { en: 'AOE ×2 damage, radius 120', uk: 'АОЕ ×2 урону, радіус 120', es: 'Daño en área ×2, radio 120', tr: 'Alan hasarı ×2, yarıçap 120', pt: 'Dano em área ×2, raio 120' } },
+    E: { name: { en: 'Pierce', uk: 'Пронизування', es: 'Perforación', tr: 'Delme', pt: 'Perfuração' },
+         desc: { en: '+50% crit chance for 5s', uk: '+50% шансу криту на 5 сек', es: '+50% de probabilidad crítica durante 5s', tr: '5sn boyunca +%50 kritik şansı', pt: '+50% de chance crítica por 5s' } },
+    R: { name: { en: 'Flee', uk: 'Втеча', es: 'Huida', tr: 'Kaçış', pt: 'Fuga' },
+         desc: { en: '×2 run speed for 5s', uk: '×2 швидкості бігу на 5 сек', es: '×2 velocidad de carrera durante 5s', tr: '5sn boyunca ×2 koşu hızı', pt: '×2 de velocidade de corrida por 5s' } },
   },
 };
 
@@ -1378,6 +1402,26 @@ const I18N_ADV_SKILLS = {
          desc: { en: '+50% defense to self and party, ×2 attack speed, for 4s', uk: '+50% захисту собі й паті, ×2 швидкості атаки, на 4 сек', es: '+50% de defensa a ti y al grupo, ×2 velocidad de ataque, durante 4s', tr: 'Kendine ve gruba +%50 savunma, ×2 saldırı hızı, 4sn', pt: '+50% de defesa para você e o grupo, ×2 de velocidade de ataque, por 4s' } },
     R: { name: { en: 'Healing', uk: 'Зцілення', es: 'Curación', tr: 'İyileştirme', pt: 'Cura' },
          desc: { en: 'Heals 20% HP to self and party', uk: 'Лікує 20% HP собі й паті', es: 'Cura 20% de HP a ti y al grupo', tr: 'Kendine ve gruba %20 HP iyileştirir', pt: 'Cura 20% de HP para você e o grupo' } },
+  },
+  runefighter: {
+    Q: { name: { en: 'Skull Strike', uk: 'Удар у череп', es: 'Golpe al Cráneo', tr: 'Kafatası Darbesi', pt: 'Golpe no Crânio' },
+         desc: { en: '5 hits in a row', uk: '5 ударів поспіль', es: '5 golpes seguidos', tr: 'Art arda 5 vuruş', pt: '5 golpes seguidos' } },
+    W: { name: { en: 'Crush', uk: 'Розтрощення', es: 'Aplastamiento', tr: 'Ezme', pt: 'Esmagamento' },
+         desc: { en: 'AOE ×4 damage, radius 220', uk: 'АОЕ ×4 урону, радіус 220', es: 'Daño en área ×4, radio 220', tr: 'Alan hasarı ×4, yarıçap 220', pt: 'Dano em área ×4, raio 220' } },
+    E: { name: { en: 'Restore', uk: 'Повернення', es: 'Restauración', tr: 'Geri Dönüş', pt: 'Restauração' },
+         desc: { en: 'Restores all HP', uk: 'Відновлює все здоров\'я', es: 'Restaura toda la salud', tr: 'Tüm canı yeniler', pt: 'Restaura toda a vida' } },
+    R: { name: { en: 'Pulse', uk: 'Пульс', es: 'Pulso', tr: 'Nabız', pt: 'Pulso' },
+         desc: { en: '+30% max HP for 10 minutes', uk: '+30% макс. здоров\'я на 10 хвилин', es: '+30% de HP máx. durante 10 minutos', tr: '10 dakika boyunca +%30 maksimum HP', pt: '+30% do HP máximo por 10 minutos' } },
+  },
+  assassin: {
+    Q: { name: { en: 'Deadliness', uk: 'Смертоносність', es: 'Letalidad', tr: 'Ölümcüllük', pt: 'Mortalidade' },
+         desc: { en: '×3 damage strike, ignoring 50% of the target\'s defense', uk: 'Удар ×3 урону, ігноруючи 50% захисту цілі', es: 'Golpe ×3 daño, ignorando 50% de la defensa del objetivo', tr: 'Hedefin savunmasının %50\'sini yok sayan ×3 hasarlı vuruş', pt: 'Golpe ×3 de dano, ignorando 50% da defesa do alvo' } },
+    W: { name: { en: 'Scream', uk: 'Крик', es: 'Grito', tr: 'Çığlık', pt: 'Grito' },
+         desc: { en: 'AOE ×3 damage, radius 250', uk: 'АОЕ ×3 урону, радіус 250', es: 'Daño en área ×3, radio 250', tr: 'Alan hasarı ×3, yarıçap 250', pt: 'Dano em área ×3, raio 250' } },
+    E: { name: { en: 'Killer', uk: 'Вбивця', es: 'Asesino', tr: 'Katil', pt: 'Assassino' },
+         desc: { en: '+50% crit chance and +50% crit power for 5s', uk: '+50% шансу криту та +50% сили криту на 5 сек', es: '+50% de probabilidad crítica y +50% de poder crítico durante 5s', tr: '5sn boyunca +%50 kritik şansı ve +%50 kritik gücü', pt: '+50% de chance crítica e +50% de poder crítico por 5s' } },
+    R: { name: { en: 'Backstab', uk: 'Удар у спину', es: 'Puñalada Trasera', tr: 'Sırtından Vurma', pt: 'Ataque pelas Costas' },
+         desc: { en: 'Leaps behind the enemy, ×2 damage + restores 30% HP', uk: 'Стрибок за спину ворогу, ×2 урону + відновлює 30% здоров\'я', es: 'Salta detrás del enemigo, ×2 daño + restaura 30% de HP', tr: 'Düşmanın arkasına sıçrar, ×2 hasar + %30 HP yeniler', pt: 'Salta atrás do inimigo, ×2 de dano + restaura 30% do HP' } },
   },
 };
 

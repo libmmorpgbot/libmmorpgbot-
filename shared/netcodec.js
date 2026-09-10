@@ -82,7 +82,7 @@
 const NC_FACING = ['front', 'back', 'left', 'right', 'frontright', 'frontleft', 'backleft', 'backright'];
 // Appended, never reordered — indices are wire values other clients/servers
 // may already have cached.
-const NC_CHAR_TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock'];
+const NC_CHAR_TYPES = ['lev', 'deathknight', 'ranger', 'mage', 'warlock', 'runefighter', 'assassin'];
 
 const _ncEnc = new TextEncoder();
 const _ncDec = new TextDecoder();

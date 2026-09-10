@@ -100,6 +100,11 @@ let critChanceBuffTimer = 0; // Ranger E adv "Баф Крит" — +5% crit chan
 let levShieldAtkTimer = 0;   // Lev E adv "Щит" — +10% atk, 10s (alongside guardTimer's own unchanged def)
 let butterfliesTimer = 0;    // Warlock Q adv "Бабочки" — periodic self-heal, 10s
 let _butterfliesTickAcc = 0; // 1s tick accumulator for the above
+let rfRegenTimer = 0;        // Rune Fighter E base "Регенерация" — periodic self-heal, 10s (icon only — server ticks the heal, Room._regenTick)
+let pulseTimer = 0;          // Rune Fighter R adv "Пульс" — +30% maxHP, 10 min
+let pierceTimer = 0;         // Assassin E base "Пронзание" — +50% crit chance, 5s
+let killerTimer = 0;         // Assassin E adv "Убийца" — +50% crit chance + 50% crit power, 5s
+let sprintTimer = 0;         // Assassin R base "Бегство" — ×2 run speed, 5s
 
 // Target & PK mode
 let targetId = null;
