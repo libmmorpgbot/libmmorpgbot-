@@ -5026,8 +5026,9 @@ function _renderSeasonWinners() {
   const fallback = _seasonWinners === null ? t('seasonLoading') : t('seasonNoPlayers');
   const rows = list.map(x => {
     const mine = player && x.username === player.username;
-    const prizeTxt = x.prizeGram != null ? `${x.prizeGram.toFixed(2)} GRAM`
-                    : x.vip ? `VIP ${x.vip}` : '—';
+    const prizeTxt = x.prizeGram != null
+      ? `${x.prizeGram.toFixed(2)} <img src="/images/gram-icon.png" width="14" height="14" style="vertical-align:middle">`
+      : x.vip ? `VIP ${x.vip}` : '—';
     const pc = x.place <= 3 ? ' p' + x.place : '';
     return `<div class="season-row${mine ? ' me' : ''}">
       <span class="season-place${pc}">${x.place}</span>
@@ -5038,7 +5039,7 @@ function _renderSeasonWinners() {
   }).join('');
   const mine = list.find(x => player && x.username === player.username);
   const myNote = (mine && mine.prizeGram != null)
-    ? `<div class="imod-enh-chance" style="margin-top:10px;color:#7ee0c0">${tVars('seasonWinnersMyPrize', { n: mine.prizeGram.toFixed(2) })}</div>`
+    ? `<div class="imod-enh-chance" style="margin-top:10px;color:#7ee0c0">${tVars('seasonWinnersMyPrize', { n: mine.prizeGram.toFixed(2) })} <img src="/images/gram-icon.png" width="14" height="14" style="vertical-align:middle"></div>`
     : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
