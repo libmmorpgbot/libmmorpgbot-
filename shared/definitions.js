@@ -619,7 +619,7 @@ function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 // as long as the roll actually succeeded — a miss costs the stone and pays
 // nothing, the task is to enhance, not to attempt. Season 2's slot/rarity/
 // stone-type table is gone; every successful enhance is worth the same.
-const SEASON_ENHANCE_POINTS = 3;
+const SEASON_ENHANCE_POINTS = 5;
 
 // ── Вторая профессия ──────────────────────────────────────────────────────
 // Crafting (successfully) an advanced skill book — craftAdvSkillBook,
@@ -681,7 +681,7 @@ function seasonMarketPoints(price, perGram) {
 // only, awarded from server/game/tournament.js's _trPayRoundReward through
 // the same socket.data._seasonAward* closure factory mode-rewards.js already
 // built for death-battle's entry/win points.
-const SEASON_TOURNAMENT_WIN_POINTS = 2;
+const SEASON_TOURNAMENT_WIN_POINTS = 20;
 
 // ── Фарм-зоны ─────────────────────────────────────────────────────────────
 // Repeatable: kill the target count in a zone, then press the claim button

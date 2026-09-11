@@ -5210,8 +5210,8 @@ function _seasonTasksHTML() {
           <li>${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 50 })}</li>
           <li>${tVars('seasonMarketSellFmt', { n: st.marketSellPointsPerGram || 10 })}</li>
           <li>${tVars('season2ShopFmt', { n: st.shopPointsPerGram || 100 })}</li>
-          <li>${tVars('seasonEnhanceFmt', { n: st.enhancePoints || 3 })}</li>
-          <li>${tVars('seasonTournamentWinFmt', { n: st.tournamentWinPoints || 2 })}</li>
+          <li>${tVars('seasonEnhanceFmt', { n: st.enhancePoints || 5 })}</li>
+          <li>${tVars('seasonTournamentWinFmt', { n: st.tournamentWinPoints || 20 })}</li>
           <li>${tVars('season2AdvBookFmt', { n: st.advBookPoints || 300 })}</li>
           <li>${tVars('season2EmpowerFmt', { n: st.empowerPoints || 500 })}</li>
           <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>
