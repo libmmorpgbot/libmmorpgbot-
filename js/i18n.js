@@ -468,6 +468,11 @@ const I18N_UI = {
   csLoadingSprites: { ru: 'Загрузка спрайтов...', en: 'Loading sprites...', uk: 'Завантаження спрайтів...', es: 'Cargando sprites...', tr: 'Sprite\'lar yükleniyor...', pt: 'Carregando sprites...' },
   csWaitingServer:  { ru: 'Ожидание сервера...', en: 'Waiting for server...', uk: 'Очікування сервера...', es: 'Esperando al servidor...', tr: 'Sunucu bekleniyor...', pt: 'Aguardando o servidor...' },
   csStarting:       { ru: 'Запуск!', en: 'Starting!', uk: 'Запуск!', es: '¡Iniciando!', tr: 'Başlatılıyor!', pt: 'Iniciando!' },
+  // ── Смена класса (js/ui.js openClassChangeModal / _ccRenderPicker / _ccRenderConfirm) ──
+  ccPickClass:   { ru: 'Выбрать класс', en: 'Pick this class', uk: 'Обрати клас', es: 'Elegir esta clase', tr: 'Bu sınıfı seç', pt: 'Escolher esta classe' },
+  ccConfirmQ:    { ru: 'Точно хотите сменить класс?', en: 'Change class for real?', uk: 'Точно хочете змінити клас?', es: '¿Cambiar de clase de verdad?', tr: 'Sınıfı gerçekten değiştir?', pt: 'Trocar de classe mesmo?' },
+  ccYes:         { ru: 'Да', en: 'Yes', uk: 'Так', es: 'Sí', tr: 'Evet', pt: 'Sim' },
+  ccNo:          { ru: 'Нет', en: 'No', uk: 'Ні', es: 'No', tr: 'Hayır', pt: 'Não' },
   // ── Write-access gate (js/network.js _waShowGate) ──
   // Shown before the character select to a Mini App player whose Telegram
   // account has not let the bot DM them. Refusing means not entering, so the

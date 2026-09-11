@@ -670,48 +670,110 @@ function openUpgradeResetModal() {
 // ─────────────────────────────────────────────────────────
 //  СМЕНА КЛАССА  (Профиль → Сменить класс, стоит Liberty)
 // ─────────────────────────────────────────────────────────
-// Окно устроено как сброс улучшений выше — та же цена в Liberty, то же
-// подтверждение, — но говорит вслух ДВЕ вещи, которых там нет: снаряжение
-// чужого класса снимется в инвентарь, а изученные навыки сбросятся. Человек
-// должен знать это до нажатия, а не после.
+// Два шага, не один: сперва браузер классов — статы и навыки каждого, как на
+// экране выбора персонажа, с кнопкой «Выбрать класс» под каждым — потом,
+// только для выбранного, стоимость и явное подтверждение (Да/Нет). Раньше
+// нажатие на имя класса СРАЗУ отправляло смену — единственным способом узнать
+// навыки нового класса было уже сменить его. Теперь смотреть и подтверждать —
+// два разных действия.
 function openClassChangeModal() {
   if (!player) return;
-  const costLib = (typeof CLASS_CHANGE_FIRST_NEXUM !== 'undefined') ? CLASS_CHANGE_FIRST_NEXUM : 2000;
-  const costGram = (typeof CLASS_CHANGE_GRAM !== 'undefined') ? CLASS_CHANGE_GRAM : 3;
-  const bal = window._nexumBalance || 0;
-  const gbal = window._gramBalance || 0;
+  const ov = document.createElement('div');
+  ov.id = 'class-change-ov';
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div id="cc-body" onclick="event.stopPropagation()" style="width:100%;max-width:380px;max-height:86vh;overflow-y:auto;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;"></div>`;
+  document.getElementById('app').appendChild(ov);
+  _ccRenderPicker();
+}
+
+// Шаг 1: карточка на класс — статы (те же _CS_STAT_MAX/_csBadgeText, что и
+// экран выбора персонажа, js/charselect.js — одна шкала, одна подпись бейджа
+// на оба экрана) и его полный список навыков (SKILL_DEF, js/definitions.js).
+function _ccRenderPicker() {
+  const body = document.getElementById('cc-body');
+  if (!body || !player) return;
   const cur = player.type;
-  // Первая смена или нет. Число приходит от сервера (он считает его по журналу
-  // движения денег), клиент только показывает то, что действительно можно.
-  // Показывать Liberty на второй смене значит обещать то, в чём сервер
-  // откажет — «после первой смены не пропадает возможность менять за Либерти».
-  const isFirst = Number(player.classChanges || 0) === 0;
-
-  // Смена требует, чтобы всё было снято. Считаем здесь, чтобы сказать это ДО
-  // нажатия, а не отказом после.
-  const wornNow = Object.values(player.equipment || {}).filter(Boolean).length;
-
   // Рунный боец и Ассасин не предлагаются сменой — их можно взять только
   // новым персонажем (или опробовать), сервер откажет и без этого фильтра
   // (changeClass, server/handlers2/economy.js), но список не должен обещать
   // то, что оплаченная смена потом отменит отказом.
-  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur && c !== 'runefighter' && c !== 'assassin').map(c => {
-    const d = CHAR_DEF[c];
-    return `<button onclick="_confirmClassChange('${c}')" style="
-      display:flex;align-items:center;gap:10px;width:100%;margin-bottom:8px;padding:10px 12px;
-      border:1px solid rgba(209,204,197,.14);border-radius:10px;background:rgba(209,204,197,.04);
-      color:#d9cfbe;font-size:14px;font-weight:600;cursor:pointer;text-align:left">
-      <span style="flex:1">${d.name}</span>
-    </button>`;
-  }).join('');
+  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur && c !== 'runefighter' && c !== 'assassin');
+  body.innerHTML = `
+    <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:14px">Смена класса</div>
+    ${classes.map(c => _ccClassCard(c)).join('')}
+    <button onclick="document.getElementById('class-change-ov').remove()" style="
+      width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+      color:#968a7a;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px">${t('cancelBtn')}</button>`;
+}
 
-  const ov = document.createElement('div');
-  ov.id = 'class-change-ov';
-  ov.onclick = () => ov.remove();
-  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:360px;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;">
+function _ccStatRow(label, val, max, color) {
+  const pct = Math.round(Math.min(1, val / max) * 100);
+  const shown = (typeof val === 'number' && val % 1 !== 0) ? val.toFixed(2) : val;
+  return `<div class="cs-sbar"><span class="cs-sbl">${label}</span>
+    <div class="cs-sbtrack"><div class="cs-sbfill" style="width:${pct}%;background:${color}"></div></div>
+    <span class="cs-sbv">${shown}</span></div>`;
+}
+
+function _ccClassCard(type) {
+  const d = CHAR_DEF[type];
+  const skills = (typeof SKILL_DEF !== 'undefined' && SKILL_DEF[type]) || [];
+  const skillsHtml = skills.map(sk => `
+    <div class="cs-skill">
+      ${sk.img
+        ? `<img src="${sk.img}" width="28" height="28" style="image-rendering:pixelated;border-radius:6px;flex-shrink:0">`
+        : `<div class="cs-skill-key">${sk.key}</div>`}
+      <div class="cs-skill-body">
+        <div class="cs-skill-name">${sk.name}</div>
+        <div class="cs-skill-desc">${sk.desc}</div>
+        <div class="cs-skill-cd">${t('csCooldown')}: ${sk.cd} ${t('csCooldownSec')}</div>
+      </div>
+    </div>`).join('');
+  return `
+    <div style="border:1px solid rgba(209,204,197,.14);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(209,204,197,.03)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:15px;font-weight:700;color:${d.color}">${d.name}</div>
+        <div style="font-size:12px;color:#a2988a">${_csBadgeText(type)}</div>
+      </div>
+      <div style="margin-bottom:4px">
+        ${_ccStatRow('HP',   d.baseHP,  _CS_STAT_MAX.hp,  d.color)}
+        ${_ccStatRow('ATK',  d.baseAtk, _CS_STAT_MAX.atk, d.color)}
+        ${_ccStatRow('DEF',  d.baseDef, _CS_STAT_MAX.def, d.color)}
+        ${_ccStatRow('СПД',  d.speed,   _CS_STAT_MAX.spd, d.color)}
+        ${_ccStatRow('АТ/С', d.atkSpeed,_CS_STAT_MAX.as,  d.color)}
+      </div>
+      <div class="cs-skills-list" style="margin:8px 0 10px">${skillsHtml}</div>
+      <button onclick="_ccRenderConfirm('${type}')" style="
+        width:100%;padding:10px;border-radius:9px;border:1px solid rgba(229,170,82,.4);
+        background:rgba(229,170,82,.14);color:#e5aa52;font-size:13px;font-weight:700;cursor:pointer">
+        ${t('ccPickClass')}</button>
+    </div>`;
+}
+
+// Шаг 2: цена и явное «да/нет» — то, что раньше показывалось СРАЗУ надо всеми
+// именами классов разом, теперь только под тем одним, что выбрали на шаге 1.
+// «Нет» возвращает к браузеру (шаг 1), а не закрывает окно целиком — человек
+// смотрел навыки, чтобы выбрать, не чтобы начинать заново.
+function _ccRenderConfirm(type) {
+  const body = document.getElementById('cc-body');
+  if (!body || !player) return;
+  const d = CHAR_DEF[type];
+  const costLib = (typeof CLASS_CHANGE_FIRST_NEXUM !== 'undefined') ? CLASS_CHANGE_FIRST_NEXUM : 2000;
+  const costGram = (typeof CLASS_CHANGE_GRAM !== 'undefined') ? CLASS_CHANGE_GRAM : 3;
+  const bal = window._nexumBalance || 0;
+  const gbal = window._gramBalance || 0;
+  // Первая смена или нет. Число приходит от сервера (он считает его по журналу
+  // движения денег), клиент только показывает то, что действительно можно.
+  const isFirst = Number(player.classChanges || 0) === 0;
+  // Смена требует, чтобы всё было снято. Считаем здесь, чтобы сказать это ДО
+  // нажатия, а не отказом после.
+  const wornNow = Object.values(player.equipment || {}).filter(Boolean).length;
+  _classPay = 'nexum';
+
+  body.innerHTML = `
     <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:10px">Смена класса</div>
     <div style="font-size:13px;color:#a2988a;line-height:1.5;margin-bottom:14px">
+      Новый класс — <b style="color:${d.color}">${d.name}</b>.<br>
       <b style="color:#e0a24a">Снимите всю экипировку</b> — иначе смена не пройдёт.<br>
       Навыки и улучшения переносятся полностью.<br>
       Уровень, опыт, вещи, валюта и клан остаются.<br>
@@ -722,7 +784,10 @@ function openClassChangeModal() {
            Бесплатная за Liberty была только первой.`}
     </div>
     ${wornNow > 0
-      ? `<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Надето вещей: ${wornNow}. Снимите всё и вернитесь.</div>`
+      ? `<div style="font-size:12px;color:#eb4e61;margin-bottom:12px">Надето вещей: ${wornNow}. Снимите всё и вернитесь.</div>
+         <button onclick="_ccRenderPicker()" style="
+           width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+           color:#968a7a;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>`
       : `${isFirst ? `<div style="display:flex;gap:8px;margin-bottom:10px">
           <button onclick="_setClassPay('nexum')" id="cc-pay-nexum" style="
             flex:1;padding:9px;border-radius:9px;border:1px solid rgba(229,170,82,.5);
@@ -733,13 +798,16 @@ function openClassChangeModal() {
             background:rgba(209,204,197,.05);color:#4fd67a;font-size:13px;font-weight:700;cursor:pointer">
             ${costGram} GRAM</button>
          </div>
-         <div style="font-size:11px;color:#7d7466;margin-bottom:10px">Выберите, чем платить, затем класс</div>` : ''}
-         ${classes}`}
-    <button onclick="document.getElementById('class-change-ov').remove()" style="
-      width:100%;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
-      color:#968a7a;font-size:14px;font-weight:600;cursor:pointer;margin-top:4px">${t('cancelBtn')}</button>
-  </div>`;
-  document.getElementById('app').appendChild(ov);
+         <div style="font-size:11px;color:#7d7466;margin-bottom:10px">Выберите, чем платить</div>` : ''}
+        <div style="font-size:13px;color:#d9cfbe;font-weight:700;margin-bottom:10px;text-align:center">${t('ccConfirmQ')}</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="_ccRenderPicker()" style="
+            flex:1;padding:11px;border:none;border-radius:10px;background:rgba(209,204,197,.07);
+            color:#968a7a;font-size:14px;font-weight:700;cursor:pointer">${t('ccNo')}</button>
+          <button onclick="_confirmClassChange('${type}')" style="
+            flex:1;padding:11px;border:none;border-radius:10px;background:rgba(79,214,122,.16);
+            border:1px solid rgba(79,214,122,.4);color:#4fd67a;font-size:14px;font-weight:700;cursor:pointer">${t('ccYes')}</button>
+        </div>`}`;
 }
 
 // Чем платить. Первая смена может пройти за Liberty; на всех следующих сервер
