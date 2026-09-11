@@ -329,6 +329,40 @@ const MAX_SPLASH_PER_SWING = 16;
 // 350 a basic hit gets, because several skills are area effects centred away
 // from the caster — but bounded, which it was not at all.
 const CC_REACH = 460;
+// skillAttackEnemy/pvpSkillAttack checked a flat 600 for every skill,
+// regardless of class — a melee class (real atkRange 56-58) could skill-hit
+// something over 10x further away than its actual reach. Slack beyond
+// CHAR_DEF[cls].atkRange for the true single-target skills (see
+// _isRangedSingleTargetSkill below): covers the few frames of travel
+// between the client picking nearestEnemy() and this packet landing, same
+// purpose as the +enemy.size term attackEnemy's own floor already adds.
+const SKILL_RANGE_SLACK = 60;
+// Which (class, slot) pairs are "true" single-target-at-range skills: the
+// caster stays put and hits whatever nearestEnemy()/the locked PvP target
+// resolved to (js/player.js useSkill) — exactly the "attack from any
+// distance" case, since nothing bounded it to the caster's own attack range
+// the way a basic hit is (loosely) bounded by ATTACK_RATE_FALLBACK's 350.
+// Every other skill is either untargeted (a self buff/heal), already
+// self-bounded by its own AOE/cone radius that js/player.js checks before
+// ever emitting a hit (_skillAOEMult/_skillDirMult — see the SKILL_BURST_MS
+// comment above, both radii well under 600), or a dash/leap that is
+// SUPPOSED to reach past melee range — that is the entire point of a gap
+// closer, and capping the target pick at atkRange would make it uncastable
+// on anything not already in melee reach. advActive is read off the
+// player's own server-tracked skill state (_advSlotActive), never trusted
+// from the packet, so a class can't lie its way into the looser branch.
+function _isRangedSingleTargetSkill(cls, key, advActive) {
+  if (key === 'Q' && (cls === 'lev' || cls === 'runefighter' || cls === 'assassin')) return true;
+  // Warlock base W ("Оковы тьмы") never calls netSkillAttack for PvE at all
+  // (see useSkill) — a 'W' skillAttack from a warlock is always the adv
+  // variant ("Колючие оковы"), so this doesn't even need the advActive check.
+  if (key === 'W' && cls === 'warlock') return true;
+  // Ranger base W ("Комбо-выстрел") is the directional 3-arrow cone
+  // instead (_skillDirMult, radius 240) — only the adv variant ("Остриё")
+  // is the plain single-target hit this branch is meant for.
+  if (key === 'W' && cls === 'ranger' && advActive) return true;
+  return false;
+}
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
@@ -3237,14 +3271,19 @@ class Room {
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
     if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
-    if (dx * dx + dy * dy > 600 * 600) return null;
+    // Same per-skill range as skillAttackEnemy — see _isRangedSingleTargetSkill.
+    const _advActivePvp = this._advSlotActive(attacker, key);
+    const _rangeLimitPvp = _isRangedSingleTargetSkill(attacker.type, key, _advActivePvp)
+      ? ((_charDef(attacker.type)?.atkRange || 210) + SKILL_RANGE_SLACK)
+      : 600;
+    if (dx * dx + dy * dy > _rangeLimitPvp * _rangeLimitPvp) return null;
     // 0 means the slot's active variant deals no direct damage — a buff, a
     // heal or a pure stun. A client claiming a hit from one of those is
     // refused outright rather than falling back to a default.
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
     // Same defense-ignore as skillAttackEnemy — see SKILL_DEF_IGNORE.
-    const _defIgnore2 = skillDefIgnoreOf(attacker.type, key, this._advSlotActive(attacker, key));
+    const _defIgnore2 = skillDefIgnoreOf(attacker.type, key, _advActivePvp);
     const _targetDef = _defIgnore2 > 0 ? Math.round(this._defOf(target) * (1 - _defIgnore2)) : this._defOf(target);
     const base = Math.max(1, Math.round(this._atkOf(attacker) * mult) - _targetDef + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
@@ -4720,7 +4759,11 @@ class Room {
     // Same instance-isolation rule attackEnemy applies — see its comment.
     if (!this._raceVisible(attacker, enemy)) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
-    if (rdx * rdx + rdy * rdy > 600 * 600) return null;
+    const _advActiveNow = this._advSlotActive(attacker, key);
+    const _rangeLimit = _isRangedSingleTargetSkill(attacker.type, key, _advActiveNow)
+      ? ((_charDef(attacker.type)?.atkRange || 210) + SKILL_RANGE_SLACK + (enemy.size || 0))
+      : 600;
+    if (rdx * rdx + rdy * rdy > _rangeLimit * _rangeLimit) return null;
     if (!this._hasLOS(attacker.x, attacker.y, enemy.x, enemy.y)) return null;
     if (enemy.guildWar) {
       // THE WINDOW FIRST. There was no check for it at all: the castle could be
@@ -4746,7 +4789,7 @@ class Room {
     // «Смертоносность» (adv assassin Q) — ignores 50% of THIS hit's effective
     // defense. Unlike defDown above, this is a property of the cast, not a
     // debuff left on the enemy for anyone else's next hit — see SKILL_DEF_IGNORE.
-    const _defIgnore = skillDefIgnoreOf(attacker.type, key, this._advSlotActive(attacker, key));
+    const _defIgnore = skillDefIgnoreOf(attacker.type, key, _advActiveNow);
     if (_defIgnore > 0) _effDef2 = Math.round(_effDef2 * (1 - _defIgnore));
     const base = Math.max(1, Math.floor((this._atkOf(attacker) - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
