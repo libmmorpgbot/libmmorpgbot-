@@ -262,6 +262,13 @@ module.exports = function createArena3(deps) {
     const joinedB = _joinTeam(teamB, _ar.teamB);
 
     const placed = room.pvpArenaDeploy(joinedA, joinedB);
+    // ── ВРЕМЕННАЯ ДИАГНОСТИКА: «кто-то не на своей базе, не рядом с союзниками» ──
+    // Снимок фактически назначенных команд и координат сразу после
+    // pvpArenaDeploy, на каждый бой. Ищите по тегу [DIAG-ARENA3] в логах
+    // процесса. Убрать после того, как разберёмся.
+    console.log('[DIAG-ARENA3] deploy', JSON.stringify(
+      placed.map(p => ({ sid: p.socketId, team: p.team, x: p.x, y: p.y }))
+    ));
     // Someone can vanish between the readiness filter above and the deploy. A
     // side with nobody on it would never trigger the win check — no one is left
     // to be killed — and with no match timer that would hold the arena until the

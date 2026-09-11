@@ -330,6 +330,14 @@ module.exports = function createRace10(deps) {
     });
     const placed = room.raceDeploy(joined);
     _race10.bossId = room.spawnRaceBoss();
+    // ── ВРЕМЕННАЯ ДИАГНОСТИКА: «жалуются, что двое оказались на одной дорожке» ──
+    // Один снимок фактически назначенных дорожек и координат сразу после
+    // raceDeploy, на каждый забег. Ищите по тегу [DIAG-RACE10] в логах
+    // процесса (journalctl/pm2, смотря чем запущен). Убрать после того, как
+    // разберёмся — постоянно эта строка не нужна.
+    console.log('[DIAG-RACE10] deploy', JSON.stringify(
+      placed.map(p => ({ sid: p.socketId, lane: p.lane, x: p.x, y: p.y }))
+    ));
 
     placed.forEach(({ socketId, lane }) => {
       const name = _race10.queue.get(socketId)?.name || '?';
