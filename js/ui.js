@@ -7668,6 +7668,17 @@ function openMarketCompare(listingId) {
   if (existing) existing.remove();
   const it = l.item || {};
   const equipped = player.equipment[it.slot] || null;
+  // ── заточка ─────────────────────────────────────────────────────────────
+  // l.item/player.equipment carry the item's RAW base atk/def/hp — the
+  // enhance bonus is a separate additive (recompute(), js/player.js: `a +=
+  // (it.atk||0) + (eb.atk||0)`), never stored back onto the item itself. The
+  // card already showed "+N" next to the name, but the numbers underneath
+  // were the unenhanced base — a +12 sword and a +0 one of the same base
+  // item compared identical. _itemWithEnhance (js/npc.js, already used for
+  // the craft-result preview) folds enhanceBonus into a display copy without
+  // touching the real item/equipment objects.
+  const itDisp = _itemWithEnhance(it, it.enhance || 0);
+  const equippedDisp = equipped ? _itemWithEnhance(equipped, equipped.enhance || 0) : null;
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
   ov.id = 'market-compare-ov';
@@ -7679,8 +7690,8 @@ function openMarketCompare(listingId) {
         <button onclick="document.getElementById('market-compare-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div class="compare-grid">
-        ${_compareCardHtml(t('compareEquippedLbl'), equipped, it)}
-        ${_compareCardHtml(t('compareMarketLbl'), it, equipped)}
+        ${_compareCardHtml(t('compareEquippedLbl'), equippedDisp, itDisp)}
+        ${_compareCardHtml(t('compareMarketLbl'), itDisp, equippedDisp)}
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -7719,7 +7730,8 @@ function openMarketSellPicker() {
         <div id="market-qty-row" style="display:none;margin-bottom:10px">
           <div style="font-size:11px;color:#a3957c;margin-bottom:5px" id="market-qty-label">${t('quantityLbl')}</div>
           <input type="number" id="market-qty-input" min="1" step="1" value="1"
-            style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;box-sizing:border-box" oninput="_clampMarketQtyInput()">
+            style="width:100%;padding:11px;border-radius:9px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:15px;font-weight:700;box-sizing:border-box"
+            oninput="_updateMarketPriceHint();_updateMarketFeePreview()" onblur="_clampMarketQtyInput()">
         </div>
         <div style="font-size:11px;color:#a3957c;margin-bottom:5px" id="market-price-hint">${tVars('priceForOneFmt', { min: MARKET_MIN_PRICE, max: MARKET_MAX_PRICE })}</div>
         <input type="number" id="market-price-input" min="${MARKET_MIN_PRICE}" max="${MARKET_MAX_PRICE}" step="0.1" value="1"
@@ -7831,6 +7843,15 @@ function _pickMarketSellItem(idx) {
   _updateMarketFeePreview();
 }
 
+// onblur only, not oninput — «нельзя стереть число чтоб вписать нужное».
+// Rewriting input.value on every keystroke meant clearing the field to type
+// a new amount produced an empty string first, Number('') is 0, and the
+// clamp below snapped that straight back to 1 before the next digit ever
+// landed — so selecting all and typing "50" always came out "150". Live
+// updates while typing still happen (see the input's own oninput, now just
+// _updateMarketPriceHint/_updateMarketFeePreview, both of which already
+// tolerate an empty/invalid field via _currentMarketQty()'s own fallback to
+// 1 without touching the DOM); only leaving the field clamps it for real.
 function _clampMarketQtyInput() {
   const idx = _marketSellPick;
   const it  = idx !== null && player ? player.inventory[idx] : null;
