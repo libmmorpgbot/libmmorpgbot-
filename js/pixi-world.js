@@ -1996,7 +1996,14 @@ function _updateOtherPlayers(pulse, ts) {
     }
 
     // Read every frame by the 2D name/clan overlay — cheap, independent of gfx.
-    const barTop = usedSprite ? -39 : -20;
+    // -39 was tuned against dispScale 1.5, which every class shared until
+    // Rune Fighter/Assassin needed a bigger one (js/sprites.js) to read at
+    // the same on-screen size as everyone else — a taller sprite pushes the
+    // head further up, so the bar/name has to follow or it ends up sitting
+    // low against the chest instead of clear above the head. Scaling by the
+    // SAME ratio the sprite itself grew by keeps every other class's tuning
+    // exactly as it was (dispScale 1.5 → ratio 1 → unchanged).
+    const barTop = usedSprite ? -39 * ((def.dispScale || 1.5) / 1.5) : -20;
     p._nameBarTop = barTop;
 
     const slowed  = (p.slowTimer||0) > 0;
@@ -2126,8 +2133,13 @@ function _updatePlayer(dt, ts) {
     _plGfx.lineStyle(0);
   }
 
-  // HP bar
-  const barTop = usedSprite ? player.y - 39 : player.y - 28;
+  // HP bar. Same dispScale-proportional offset as the other-players block
+  // above (see its comment) — stored in _lastPlayerBarTop so
+  // _drawPlayerNameOnUI (js/game.js) positions this player's OWN name the
+  // same way _nameBarTop already does for everyone else's.
+  const barOffset = usedSprite ? -39 * ((def.dispScale || 1.5) / 1.5) : -28;
+  _lastPlayerBarTop = barOffset;
+  const barTop = player.y + barOffset;
   const bw = 44, bh = 4, bx = player.x - bw / 2;
   const hpPct = Math.max(0, Math.min(1, player.hp / player.maxHp));
   _plGfx.beginFill(0x1e0000, 0.75); _plGfx.drawRect(bx, barTop, bw, bh); _plGfx.endFill();
@@ -2135,8 +2147,6 @@ function _updatePlayer(dt, ts) {
     const bc = hpPct > 0.5 ? 0x2ecc71 : hpPct > 0.25 ? 0xf39c12 : 0xe74c3c;
     _plGfx.beginFill(bc); _plGfx.drawRect(bx, barTop, bw * hpPct, bh); _plGfx.endFill();
   }
-
-  _lastPlayerUsedSprite = usedSprite;
 }
 
 // ── equipped pets ─────────────────────────────────────────

@@ -167,8 +167,11 @@ let _uiOverlay, _uiCtx = null;
 let _hudCv = null, _hudCvCtx = null, _uiLastMs = 0;
 // Camera position cached for UI overlay coordinate conversion
 let _lastCamX = 0, _lastCamY = 0;
-// Player sprite state flag (used by _drawPlayerNameOnUI for bar offset)
-let _lastPlayerUsedSprite = false;
+// The actual (dispScale-scaled) offset pixi-world.js just drew this frame's
+// own HP bar at — _drawPlayerNameOnUI reads this instead of re-deriving a
+// flat -39 so a taller class's own name follows its own bar, the same way
+// _nameBarTop already keeps every OTHER player's name in step with theirs.
+let _lastPlayerBarTop = -39;
 // Rendered-name-bitmap cache (own player) — see _buildNameBitmap below
 let _nameBitmap = null, _prevNameKey = '';
 // Clan tag cache: icon pre-rendered to offscreen canvas; blit with drawImage (1 call vs 256 fillRects)
@@ -1388,7 +1391,7 @@ function _drawClanTagBitmap(cv, x, yMid) {
 }
 
 function _drawPlayerNameOnUI() {
-  const barTop = _lastPlayerUsedSprite ? player.y - 39 : player.y - 28;
+  const barTop = player.y + _lastPlayerBarTop;
   const nameY = barTop - 4;
   const sx = (player.x - _lastCamX) * ZOOM;
   const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
