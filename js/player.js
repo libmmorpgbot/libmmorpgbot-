@@ -745,7 +745,7 @@ function useSkill(idx) {
         dmgNum(player.x, player.y - 40, '⚔ +20% ATK!', '#a5f');
         spawnBurst(player.x, player.y, '#a5f', 10);
       }
-    } else if (sk.key === 'R') { // Рывок тьмы / Охота — dash 140px toward target/enemy, ×1.5 on arrival;
+    } else if (sk.key === 'R') { // Рывок тьмы / Охота — dash 280px toward target/enemy, ×1.5 on arrival;
       // advanced additionally strips 20% of the (PvE) target's defense for 10s.
       const _advR = _advActive('R');
       const _pvpR = _pvpPlayerTarget();
@@ -758,10 +758,11 @@ function useSkill(idx) {
           ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
           : nearestEnemy();
         if (_chargeTarget) { _rdx = _chargeTarget.x - player.x; _rdy = _chargeTarget.y - player.y; }
-        else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
+        else if (joy.dx || joy.dy) { _rdx = joy.dx; _rdy = joy.dy; }
+        else { const fv = _facingVec(); _rdx = fv.dx; _rdy = fv.dy; }
       }
       const len = Math.hypot(_rdx, _rdy) || 1;
-      _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
+      _dashTo(player.x + (_rdx / len) * 280, player.y + (_rdy / len) * 280);
       if (_chargePvpTarget) {
         netPvpSkillAttack(_chargePvpTarget.id, _skillMult('R'), 'R');
         faceTowards(_chargePvpTarget.op.x, _chargePvpTarget.op.y);
@@ -839,11 +840,11 @@ function useSkill(idx) {
         recompute();
         dmgNum(player.x, player.y - 40, '🎯 Баф Крит!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 10);
-      } else { // Jump — dash 80px (+1s per level)
+      } else { // Jump — dash 160px (+1s per level)
         dodgeTimer = 0.6 + _skillBuffSec('E');
-        const dx = joy.dx || 0, dy = joy.dy || 0;
-        const len = Math.hypot(dx, dy) || 1;
-        _dashTo(player.x + (dx / len) * 80, player.y + (dy / len) * 80);
+        const fv = (joy.dx || joy.dy) ? { dx: joy.dx, dy: joy.dy } : _facingVec();
+        const len = Math.hypot(fv.dx, fv.dy) || 1;
+        _dashTo(player.x + (fv.dx / len) * 160, player.y + (fv.dy / len) * 160);
         spawnBurst(player.x, player.y, '#7e7', 6);
       }
     } else if (sk.key === 'R') { // Скорость атаки / Ускорение — ×1.5 or (advanced) ×2 attack speed
@@ -913,14 +914,14 @@ function useSkill(idx) {
         dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
         spawnBurst(player.x, player.y, '#e8e', 8);
       }
-    } else if (sk.key === 'R') { // Teleport / Перенесение — dash (+10px per level);
+    } else if (sk.key === 'R') { // Teleport / Перенесение — dash, base 360px (+20px per level);
       // advanced additionally restores 20% HP on arrival.
       const _advR3 = _advActive('R');
-      const dx = joy.dx || 0, dy = joy.dy || 0;
-      const len = Math.hypot(dx, dy) || 1;
-      const range = 180 + _skillMobRange('R');
-      const tx = player.x + (dx / len) * range;
-      const ty = player.y + (dy / len) * range;
+      const fv = (joy.dx || joy.dy) ? { dx: joy.dx, dy: joy.dy } : _facingVec();
+      const len = Math.hypot(fv.dx, fv.dy) || 1;
+      const range = (180 + _skillMobRange('R')) * 2;
+      const tx = player.x + (fv.dx / len) * range;
+      const ty = player.y + (fv.dy / len) * range;
       spawnBurst(player.x, player.y, '#f4f', 6);
       _dashTo(tx, ty); // steps toward tx/ty, stopping at walls or locked gates
       spawnBurst(player.x, player.y, _advR3 ? '#f5c542' : '#f4f', 6);
@@ -1036,7 +1037,7 @@ function useSkill(idx) {
       recompute();
       dmgNum(player.x, player.y - 40, _advE4 ? '🛡 Щит!' : '🛡 +80% DEF!', _advE4 ? '#f5c542' : '#e8e0cc');
       spawnBurst(player.x, player.y, _advE4 ? '#f5c542' : '#e8e0cc', 10);
-    } else if (sk.key === 'R') { // Кувырок / Рывок — dash 140px toward
+    } else if (sk.key === 'R') { // Кувырок / Рывок — dash 280px toward
       // target/enemy, ×1.5 on arrival; advanced additionally slows the (PvE)
       // target 30% for 10s.
       const _advR5 = _advActive('R');
@@ -1050,10 +1051,11 @@ function useSkill(idx) {
           ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
           : nearestEnemy();
         if (_chargeTarget) { _rdx = _chargeTarget.x - player.x; _rdy = _chargeTarget.y - player.y; }
-        else { _rdx = joy.dx || 1; _rdy = joy.dy || 0; }
+        else if (joy.dx || joy.dy) { _rdx = joy.dx; _rdy = joy.dy; }
+        else { const fv = _facingVec(); _rdx = fv.dx; _rdy = fv.dy; }
       }
       const len = Math.hypot(_rdx, _rdy) || 1;
-      _dashTo(player.x + (_rdx / len) * 140, player.y + (_rdy / len) * 140);
+      _dashTo(player.x + (_rdx / len) * 280, player.y + (_rdy / len) * 280);
       if (_chargePvpTarget) {
         netPvpSkillAttack(_chargePvpTarget.id, _skillMult('R'), 'R');
         if (_advR5) { _chargePvpTarget.op.slowTimer = 10; netPvpSkillCC(_chargePvpTarget.id, 'slow', 10); }
@@ -1122,7 +1124,7 @@ function useSkill(idx) {
         recompute();
         dmgNum(player.x, player.y - 40, '💗 Пульс!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 12);
-      } else { // Замедление — leap 140px toward target, ×2 dmg on arrival +
+      } else { // Замедление — leap 280px toward target, ×2 dmg on arrival +
         // 50% slow (3s +1s/level)
         const slowDur = 3 + _skillBuffSec('R');
         const pvpTgt2 = _pvpPlayerTarget();
@@ -1133,10 +1135,11 @@ function useSkill(idx) {
             ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
             : nearestEnemy();
           if (_chargeTarget2) { _rdx2 = _chargeTarget2.x - player.x; _rdy2 = _chargeTarget2.y - player.y; }
-          else { _rdx2 = joy.dx || 1; _rdy2 = joy.dy || 0; }
+          else if (joy.dx || joy.dy) { _rdx2 = joy.dx; _rdy2 = joy.dy; }
+          else { const fv = _facingVec(); _rdx2 = fv.dx; _rdy2 = fv.dy; }
         }
         const len2 = Math.hypot(_rdx2, _rdy2) || 1;
-        _dashTo(player.x + (_rdx2 / len2) * 140, player.y + (_rdy2 / len2) * 140);
+        _dashTo(player.x + (_rdx2 / len2) * 280, player.y + (_rdy2 / len2) * 280);
         if (_chargePvpTarget2) {
           netPvpSkillAttack(_chargePvpTarget2.id, _skillMult('R'), 'R');
           _chargePvpTarget2.op.slowTimer = slowDur; netPvpSkillCC(_chargePvpTarget2.id, 'slow', slowDur);
@@ -1209,10 +1212,11 @@ function useSkill(idx) {
             ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
             : nearestEnemy();
           if (_chargeTarget3) { _rdx3 = _chargeTarget3.x - player.x; _rdy3 = _chargeTarget3.y - player.y; }
-          else { _rdx3 = joy.dx || 1; _rdy3 = joy.dy || 0; }
+          else if (joy.dx || joy.dy) { _rdx3 = joy.dx; _rdy3 = joy.dy; }
+          else { const fv = _facingVec(); _rdx3 = fv.dx; _rdy3 = fv.dy; }
         }
         const len3 = Math.hypot(_rdx3, _rdy3) || 1;
-        _dashTo(player.x + (_rdx3 / len3) * 140, player.y + (_rdy3 / len3) * 140);
+        _dashTo(player.x + (_rdx3 / len3) * 280, player.y + (_rdy3 / len3) * 280);
         if (_chargePvpTarget3) {
           netPvpSkillAttack(_chargePvpTarget3.id, _skillMult('R'), 'R');
           faceTowards(_chargePvpTarget3.op.x, _chargePvpTarget3.op.y);

@@ -37,6 +37,17 @@ function faceTowards(tx, ty) {
   player.facing = facing8FromDelta(dx, dy, player.facing);
 }
 
+// Inverse of facing8FromDelta — a unit vector for the character's current
+// facing. Used to aim a dash/jump at the direction the player is actually
+// looking when there's no joystick input and no nearby target to aim at
+// instead (those skills used to fall back to a fixed direction, or to a
+// zero vector that meant standing still and pressing the button did nothing).
+function _facingVec() {
+  const idx = Math.max(0, FACING8_DIRS.indexOf(player.facing));
+  const angle = idx * 45 * Math.PI / 180;
+  return { dx: Math.cos(angle), dy: Math.sin(angle) };
+}
+
 function fireProj(tx, ty, enemyId, pvpTargetId) {
   const d = player.charDef, len = Math.hypot(tx - player.x, ty - player.y);
   if (len < 1) return;

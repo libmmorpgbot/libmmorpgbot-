@@ -1328,7 +1328,7 @@ const I18N_SKILLS = {
     W: { name: { en: 'Combo Arrow',    uk: 'Комбо-стріла',  es: 'Flecha Combo',     tr: 'Kombo Ok',        pt: 'Flecha Combo' },
          desc: { en: '3 arrows ×1 damage', uk: '3 стріли ×1 урон', es: '3 flechas ×1 daño', tr: '3 ok ×1 hasar', pt: '3 flechas ×1 dano' } },
     E: { name: { en: 'Jump',           uk: 'Стрибок',       es: 'Salto',             tr: 'Zıplama',         pt: 'Salto' },
-         desc: { en: 'Dash 80px', uk: 'Ривок 80px', es: 'Embestida 80px', tr: '80px atılım', pt: 'Investida de 80px' } },
+         desc: { en: 'Dash 160px', uk: 'Ривок 160px', es: 'Embestida 160px', tr: '160px atılım', pt: 'Investida de 160px' } },
     R: { name: { en: 'Attack Speed',   uk: 'Швидкість атаки', es: 'Velocidad de Ataque', tr: 'Saldırı Hızı', pt: 'Velocidade de Ataque' },
          desc: { en: '×1.5 attack speed for 5s', uk: '×1.5 швидкості атаки на 5 сек', es: '×1.5 velocidad de ataque durante 5s', tr: '5sn boyunca ×1.5 saldırı hızı', pt: '×1.5 de velocidade de ataque por 5s' } },
   },
@@ -1340,7 +1340,7 @@ const I18N_SKILLS = {
     E: { name: { en: 'Barrier',        uk: 'Бар\'єр',       es: 'Barrera',          tr: 'Bariyer',         pt: 'Barreira' },
          desc: { en: '+50% defense for 3s', uk: '+50% захисту на 3 сек', es: '+50% de defensa durante 3s', tr: '3sn boyunca +%50 savunma', pt: '+50% de defesa por 3s' } },
     R: { name: { en: 'Teleport',       uk: 'Телепорт',      es: 'Teletransporte',   tr: 'Işınlanma',       pt: 'Teleporte' },
-         desc: { en: 'Dash 180px in facing direction', uk: 'Ривок 180px за напрямком', es: 'Embestida 180px en la dirección', tr: 'Baktığı yöne 180px atılım', pt: 'Investida de 180px na direção' } },
+         desc: { en: 'Dash 360px in facing direction', uk: 'Ривок 360px за напрямком', es: 'Embestida 360px en la dirección', tr: 'Baktığı yöne 360px atılım', pt: 'Investida de 360px na direção' } },
   },
   warlock: {
     Q: { name: { en: 'Dark Heal',      uk: 'Темне зцілення', es: 'Curación Oscura', tr: 'Karanlık Şifa',   pt: 'Cura Sombria' },
@@ -1417,7 +1417,7 @@ const I18N_ADV_SKILLS = {
     E: { name: { en: 'Flash', uk: 'Спалах', es: 'Destello', tr: 'Parlama', pt: 'Clarão' },
          desc: { en: 'AOE damage ×2, radius 220 + defense +80% for 3s', uk: 'АОЕ урон ×2, радіус 220 + захист +80% на 3 сек', es: 'Daño en área ×2, radio 220 + defensa +80% durante 3s', tr: 'Alan hasarı ×2, yarıçap 220 + savunma +%80, 3sn', pt: 'Dano em área ×2, raio 220 + defesa +80% por 3s' } },
     R: { name: { en: 'Transference', uk: 'Перенесення', es: 'Transferencia', tr: 'Aktarım', pt: 'Transferência' },
-         desc: { en: 'Dash 180px + restores 20% health', uk: 'Ривок 180px + відновлює 20% здоров\'я', es: 'Embestida 180px + restaura 20% de salud', tr: '180px atılım + %20 can yeniler', pt: 'Investida de 180px + restaura 20% de vida' } },
+         desc: { en: 'Dash 360px + restores 20% health', uk: 'Ривок 360px + відновлює 20% здоров\'я', es: 'Embestida 360px + restaura 20% de salud', tr: '360px atılım + %20 can yeniler', pt: 'Investida de 360px + restaura 20% de vida' } },
   },
   warlock: {
     Q: { name: { en: 'Butterflies', uk: 'Метелики', es: 'Mariposas', tr: 'Kelebekler', pt: 'Borboletas' },

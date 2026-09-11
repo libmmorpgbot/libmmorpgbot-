@@ -1017,13 +1017,17 @@ function onEmpowerError(msg) {
 // ─────────────────────────────────────────────────────────
 //  SKILL UPGRADE UI
 // ─────────────────────────────────────────────────────────
-function _skillBonusDesc(type, level) {
+function _skillBonusDesc(type, level, mobilityMult) {
   if (level <= 0) return null;
   switch (type) {
     case 'damage':   return `+${level}% ${t('bonusToDamage')}`;
     case 'buff':     return `+${level}${t('bonusToDuration')}`;
     case 'heal':     return `+${level}% ${t('bonusToHeal')}`;
-    case 'mobility': return `+${level * 10}${t('bonusToRange')}`;
+    // 10px/level is the shared 'mobility' rate (SKILL_BONUS_TYPE above) — true
+    // for assassin W's AOE radius, but mage R's dash distance was doubled
+    // (js/player.js useSkill, sk.key==='R') without touching _skillMobRange
+    // itself, so its own per-level gain is actually double the shared rate.
+    case 'mobility': return `+${level * 10 * (mobilityMult || 1)}${t('bonusToRange')}`;
     default:         return null;
   }
 }
@@ -1096,8 +1100,9 @@ function updateSkillsUI() {
       const locked = level <= 0;
       const maxed = level >= 10;
       const bonusType = bonusTypes[sk.key] || 'damage';
-      const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level);
-      const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1);
+      const mobilityMult = (player.type === 'mage' && sk.key === 'R') ? 2 : 1;
+      const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level, mobilityMult);
+      const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1, mobilityMult);
       const bookId = _skillBookId(player.type, sk.key);
       const bookName = (_skillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
       const bookCount = countMaterial(bookId);

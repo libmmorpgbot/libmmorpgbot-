@@ -100,14 +100,14 @@ const SKILL_DEF = {
   ranger: [
     { key:'Q', name:'Мульти-выстрел', icon:'multiShot',   img:'/images/skill/lmulti.png',    cd:6,  desc:'3 стрелы под углом ±0.35 рад' },
     { key:'W', name:'Комбо стрела',   icon:'poisonArrow', img:'/images/skill/lkombo.png',    cd:10, desc:'3 стрелы ×1 урон'             },
-    { key:'E', name:'Прыжок',         icon:'roll',        img:'/images/skill/lprijok.png',   cd:8,  desc:'Рывок 80px', auto:false },
+    { key:'E', name:'Прыжок',         icon:'roll',        img:'/images/skill/lprijok.png',   cd:8,  desc:'Рывок 160px', auto:false },
     { key:'R', name:'Скорость атаки', icon:'arrowRain',   img:'/images/skill/latkspeed.png', cd:20, desc:'×1.5 скорость атаки на 5 сек' },
   ],
   mage: [
     { key:'Q', name:'Ледяной шар',  icon:'fireball', img:'/images/skill/mshar_v2.png',  cd:5,  desc:'Снаряд ×2 урона'               },
     { key:'W', name:'Ледяная нова', icon:'iceNova',  img:'/images/skill/mnova.png',     cd:10, desc:'АОЕ урон 130 + заморозка 3 сек' },
     { key:'E', name:'Барьер',       icon:'barrier',  img:'/images/skill/mbarier.png',   cd:18, desc:'Защита +50% на 3 сек'           },
-    { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 180px по направлению', auto:false },
+    { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 360px по направлению', auto:false },
   ],
   warlock: [
     { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP'                    },
@@ -171,7 +171,7 @@ const ADV_SKILL_DEF = {
     { key:'Q', name:'Урон молнии',  icon:'fireball', img:'/images/skill/adv/adv_uronmolnii.png',  cd:5,  desc:'Снаряд ×3 урона + стан 3 сек' },
     { key:'W', name:'Разряд',       icon:'iceNova',  img:'/images/skill/adv/adv_razryad.png',     cd:10, desc:'АОЕ урон ×3, радиус 220' },
     { key:'E', name:'Вспышка',      icon:'barrier',  img:'/images/skill/adv/adv_vspishka.png',    cd:18, desc:'АОЕ урон ×2, радиус 220 + защита +80% на 3 сек' },
-    { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 180px + восстанавливает 20% здоровья', auto:false },
+    { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 360px + восстанавливает 20% здоровья', auto:false },
   ],
   warlock: [
     { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду' },
