@@ -488,8 +488,11 @@ function update(dt, realDt) {
       if (inp.len > 0) {
         player._chasing = false;
         // Manual joystick input cancels a manually-armed sustained attack
-        // (autoAttackMode is a separate persistent toggle and stays as-is).
+        // (autoAttackMode is a separate persistent toggle and stays as-is),
+        // and any skill still approaching its target (see the skill-chase
+        // branch below) — taking the stick back is taking back control.
         _chaseArmed = false;
+        player._skillChase = null;
         // Speed depends only on player.speed (character stat), not on how
         // far the stick is pushed — inp.dx/dy are already a unit vector
         // (inputDir() normalizes them), so no inp.len factor here.
@@ -502,6 +505,42 @@ function update(dt, realDt) {
         // restart the run animation) every frame. The new angle must move
         // clearly past the current sector's edge before facing switches.
         player.facing = facing8FromDelta(inp.dx, inp.dy, player.facing);
+      } else if (player._skillChase) {
+        // A single-target skill (Q/W — see _isRangedSingleTargetSkill,
+        // js/player.js) was pressed against a target too far away to cast
+        // on: close the gap first, same mechanics as the basic-attack chase
+        // just below, then fire the exact same useSkill(idx) call once in
+        // range instead of leaving the press stranded or letting it hit
+        // whatever happened to be nearest instead of what was targeted.
+        const sc = player._skillChase;
+        const _scEnt = serverEnemiesMap.get(sc.targetId);
+        if (!_scEnt || (_scEnt.hp || 0) <= 0 || !hasLOS(player.x, player.y, _scEnt.x, _scEnt.y)) {
+          // Died, or line of sight broke mid-approach (walked behind a
+          // wall) — nothing legitimate left to run toward.
+          player._skillChase = null;
+          player._chasing = false;
+        } else {
+          const _sdx = _scEnt.x - player.x, _sdy = _scEnt.y - player.y;
+          const _slen = Math.hypot(_sdx, _sdy);
+          const _sRange = (player.charDef.atkRange || 60) + SKILL_RANGE_SLACK + (_scEnt.size || 0);
+          if (_slen > _sRange) {
+            const nvx = (_sdx / _slen) * player.speed * _spdMult * dt;
+            const nvy = (_sdy / _slen) * player.speed * _spdMult * dt;
+            if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y) && !_isRaceBarrierBlocked(player.x + nvx, player.y) && !_isCoopBarrierBlocked(player.x + nvx, player.y)) player.x += nvx;
+            if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy) && !_isRaceBarrierBlocked(player.x, player.y + nvy) && !_isCoopBarrierBlocked(player.x, player.y + nvy)) player.y += nvy;
+            faceTowards(_scEnt.x, _scEnt.y);
+            player._chasing = true;
+          } else {
+            // Close enough now — deliver the cast. useSkill() itself clears
+            // player._skillChase (it re-checks range and this time passes),
+            // so nothing here can loop: cleared eagerly anyway in case that
+            // skill's own state (cooldown/level) changed while approaching
+            // and it bails out early without reaching that point.
+            player._chasing = false;
+            player._skillChase = null;
+            useSkill(sc.idx);
+          }
+        }
       } else if (targetId && (autoAttackMode || _chaseArmed)) {
         // Chase locked target when no manual input — pressing attack on a
         // distant target (manual or auto-attack mode) closes the gap instead

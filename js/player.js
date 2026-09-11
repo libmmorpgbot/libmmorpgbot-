@@ -576,6 +576,27 @@ function _lockedEnemy() {
   return t;
 }
 
+// Must match SKILL_RANGE_SLACK, server/game/Room.js — the server checks
+// CHAR_DEF[type].atkRange + this same slack for these exact skills'
+// skillAttackEnemy call, so the client deciding "close enough to cast" has
+// to agree with what the server will actually accept: disagreeing either
+// way means either chasing forever toward a hit the server would already
+// take, or firing early into one it refuses.
+const SKILL_RANGE_SLACK = 60;
+
+// The handful of skills where the caster stays put and hits a single
+// locked/nearest target — same (class, slot, advActive) list as
+// _isRangedSingleTargetSkill server-side (server/game/Room.js). Everything
+// else (self buff/heal, AOE-around-caster, directional cone, dash/leap)
+// either has no "range to a target" concept or is already its own mechanic
+// — see that function's comment for the full reasoning.
+function _isRangedSingleTargetSkill(cls, key, advActive) {
+  if (key === 'Q' && (cls === 'lev' || cls === 'runefighter' || cls === 'assassin')) return true;
+  if (key === 'W' && cls === 'warlock') return true;
+  if (key === 'W' && cls === 'ranger' && advActive) return true;
+  return false;
+}
+
 // Return direction toward locked target or nearest enemy; fall back to joystick if active
 function nearestEnemyDir() {
   const jl = Math.hypot(joy.dx, joy.dy);
@@ -706,6 +727,29 @@ function useSkill(idx) {
   }
   if ((player.skillCooldowns[sk.key] || 0) > 0) return;
 
+  // From here this press will definitely do something — clear any earlier
+  // pending skill-chase (a different press, still approaching its own
+  // target) before this one decides whether it needs its own.
+  player._skillChase = null;
+
+  // Single-target skills that hit whatever's targeted (the locked/tapped
+  // target, or nearest as a fallback — see _lockedEnemy) rather than
+  // something centred on the caster: if that target is out of the skill's
+  // real cast range, don't fire it (and don't spend the cooldown/animation
+  // below) — arm an approach instead, same idea as the existing basic-
+  // attack chase (js/game.js's `_chaseArmed`/`player._chasing`). The
+  // movement loop there re-runs this exact useSkill(idx) once close enough.
+  if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(player.type, sk.key, _advActive(sk.key))) {
+    const _rangeTgt = _lockedEnemy() || nearestEnemy();
+    if (_rangeTgt) {
+      const _castRange = (player.charDef.atkRange || 60) + SKILL_RANGE_SLACK + (_rangeTgt.size || 0);
+      if (dist(_rangeTgt.x, _rangeTgt.y, player.x, player.y) > _castRange) {
+        player._skillChase = { idx, targetId: _rangeTgt.id };
+        return;
+      }
+    }
+  }
+
   player.skillCooldowns[sk.key] = sk.cd * (1 - (player.cdrPct || 0));
   skillFlash = { key: sk.key, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
@@ -822,7 +866,7 @@ function useSkill(idx) {
           netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
           faceTowards(pvpTgt.op.x, pvpTgt.op.y);
         } else {
-          const tgt = nearestEnemy();
+          const tgt = _lockedEnemy() || nearestEnemy();
           if (tgt) {
             spawnAOE(tgt.x, tgt.y, 40);
             netSkillAttack(tgt.id, _skillMult('W'), 'W');
@@ -976,7 +1020,7 @@ function useSkill(idx) {
         netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
         faceTowards(pvpTgt.op.x, pvpTgt.op.y);
       } else {
-        const tgt = nearestEnemy();
+        const tgt = _lockedEnemy() || nearestEnemy();
         if (tgt) {
           spawnAOE(tgt.x, tgt.y, 40);
           if (_advW3) netSkillAttack(tgt.id, dmgMult3, 'W');
@@ -1025,7 +1069,7 @@ function useSkill(idx) {
         netPvpSkillCC(pvpTgt.id, 'stun', stunDur);
         faceTowards(pvpTgt.op.x, pvpTgt.op.y);
       } else {
-        const tgt = nearestEnemy();
+        const tgt = _lockedEnemy() || nearestEnemy();
         if (tgt) {
           spawnAOE(tgt.x, tgt.y, 50);
           netSkillAttack(tgt.id, dmgMult4, 'Q');
@@ -1092,7 +1136,7 @@ function useSkill(idx) {
       const hits = _advQ5 ? 5 : 3;
       const dmgMult = _skillMult('Q');
       const pvpTgt = _pvpPlayerTarget();
-      const tgt = pvpTgt ? null : nearestEnemy();
+      const tgt = pvpTgt ? null : (_lockedEnemy() || nearestEnemy());
       if (pvpTgt || tgt) {
         for (let i = 0; i < hits; i++) {
           setTimeout(() => {
@@ -1181,7 +1225,7 @@ function useSkill(idx) {
         netPvpSkillAttack(pvpTgt3.id, dmgMult2, 'Q');
         faceTowards(pvpTgt3.op.x, pvpTgt3.op.y);
       } else {
-        const tgt2 = nearestEnemy();
+        const tgt2 = _lockedEnemy() || nearestEnemy();
         if (tgt2) {
           spawnAOE(tgt2.x, tgt2.y, 40);
           netSkillAttack(tgt2.id, dmgMult2, 'Q');
