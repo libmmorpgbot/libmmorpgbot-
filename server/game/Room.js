@@ -515,7 +515,7 @@ const _FEAR_ENEMY_BY_EID = new Map(ENEMY_DEF.map(e => [e.eid, e]));
 // in the feature request; TRIAL_HP_MULT keeps a monster standing through a
 // full rotation of skills instead of dying to the first hit, since the point
 // is repeated testing, not a kill.
-const TRIAL_MOB_LEVEL = 42;
+const TRIAL_MOB_LEVEL = 1;
 const TRIAL_MOB_COUNT = 10;
 const TRIAL_HP_MULT = 15;
 const TRIAL_SPAWN_RING_MIN = 120;
