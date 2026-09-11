@@ -161,7 +161,18 @@ const SPRITE_DEF = {
   },
   runefighter: {
     frameW: 128, frameH: 128,
-    dispScale: 1.5,
+    // 1.75, not 1.5 like every other class: the sheets THEMSELVES draw this
+    // character smaller inside the same 128×128 frame — measured, the actual
+    // non-transparent pixels run ~53px tall against ~59px average for the
+    // five original classes at the same dispScale, which is what "меньше
+    // других персонажей" was actually reporting. Rendering scales the WHOLE
+    // frame to a fixed on-screen height (pixi-world.js), so a character
+    // drawn smaller inside that frame comes out smaller on screen no matter
+    // what the frame's own bounding box says — this compensates for that
+    // directly, since re-cropping 25 sheets is not something a display
+    // constant can substitute for, but bringing the apparent size back in
+    // line with the other classes is exactly what one can do.
+    dispScale: 1.75,
     anims: {
       'front-idle': { src:'images/RuneFighter/Front - Idle.png?v=2', cols:15, rows:1, n:15, fps:7, loop:true },
       'back-idle': { src:'images/RuneFighter/Back - Idle.png?v=2', cols:15, rows:1, n:15, fps:7, loop:true },
@@ -192,7 +203,10 @@ const SPRITE_DEF = {
   },
   assassin: {
     frameW: 128, frameH: 128,
-    dispScale: 1.5,
+    // 2.0, not 1.5 — same reasoning as runefighter's own dispScale comment
+    // above, and this one draws smaller still: ~45px of actual character
+    // inside the 128px frame against the same ~59px average.
+    dispScale: 2.0,
     anims: {
       'front-idle': { src:'images/Assassin/Front - Idle.png?v=2', cols:15, rows:1, n:15, fps:7, loop:true },
       'back-idle': { src:'images/Assassin/Back - Idle.png?v=2', cols:15, rows:1, n:15, fps:7, loop:true },
