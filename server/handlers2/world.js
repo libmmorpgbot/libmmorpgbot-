@@ -685,6 +685,16 @@ module.exports = function registerWorld(s, safeOn, deps) {
         });
         const mq = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
         if (mq) mate.socket.emit('questSync', mq);
+        // Same season farm-zone counter as the killer's own kill, above — a
+        // party's OTHER members never got it: this loop paid their gold/xp
+        // share and their regular quest chain, but nothing here ever called
+        // bumpFarmKill for them. The Elite farm zone (farmZone2) requires a
+        // party of up to FARM2_PARTY_SIZE, so whichever member's client
+        // actually lands the kill was the only one whose farm2Kills counter
+        // ever moved — «в элитной фарм зоне квест не считается сезонный».
+        if (result.farmZone) await progression.bumpFarmKill(t, pid, 'farmKills');
+        else if (result.farmZone2) await progression.bumpFarmKill(t, pid, 'farm2Kills');
+        else if (result.farmHigh) await progression.bumpFarmKill(t, pid, 'farmHighKills');
         await mate.pushBalances(t);
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
         mate.socket.emit('enemyKilled', {
