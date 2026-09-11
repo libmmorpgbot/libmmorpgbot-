@@ -8036,27 +8036,21 @@ function _clearPendingSell() {
 // ─────────────────────────────────────────────────────────
 //  GRAM SHOP PANEL
 // ─────────────────────────────────────────────────────────
-// -30% end-of-season sale — every package, no exceptions — for as long as
-// seasonActive() holds (shared/definitions.js's SEASON_END_AT). server/
-// shop.js's own pkgPrice(pkg) is what actually gets charged; this copy only
-// decides what to show/gate "afford" on, and the two must keep matching.
-const _SEASON_DISCOUNT_PCT = 30;
+// Plain nominal price — the end-of-season -30% sale that used to run here
+// (for as long as seasonActive() held) was removed at the owner's request.
+// server/shop.js's own pkgPrice(pkg) is what actually gets charged; this
+// copy only decides what to show/gate "afford" on, and the two must keep
+// matching.
 function pkgPrice(pkg) {
-  return seasonActive() ? pkg.gram * (100 - _SEASON_DISCOUNT_PCT) / 100 : pkg.gram;
+  return pkg.gram;
 }
-// Price line for the shop cards and confirm modals below. During the season
-// this shows the crossed-out nominal price next to the discounted one plus a
-// red -30% chip; once the season ends it's back to the plain price.
+// Price line for the shop cards and confirm modals below.
 function packPriceHtml(gram, color) {
-  if (!seasonActive()) return `<span style="color:${color || '#8bd66a'}">${gram} GRAM</span>`;
-  const discounted = gram * (100 - _SEASON_DISCOUNT_PCT) / 100;
-  return `<span style="text-decoration:line-through;color:#7a7368;margin-right:5px">${gram}</span>`
-    + `<span style="color:${color || '#8bd66a'}">${discounted} GRAM</span>`
-    + `<span style="display:inline-block;background:#e5484d;color:#fff;font-size:9.5px;font-weight:800;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle">-${_SEASON_DISCOUNT_PCT}%</span>`;
+  return `<span style="color:${color || '#8bd66a'}">${gram} GRAM</span>`;
 }
 const _GRAM_SHOP_PKGS_UI = [
   // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
-  // branch): x2 xp, +30% bonus-loot re-roll chance, +10% Liberty drop chance,
+  // branch): x2 xp, +60% bonus-loot re-roll chance, x2 Liberty drop chance,
   // for as long as the current season is running. Own reward-row rendering
   // in _shopExtraRewardRows (pkg.seasonTicket branch) since none of the
   // usual reward kinds (armor/weapon/potions/...) apply.
@@ -8108,8 +8102,6 @@ function _stoneOrMatLabel(id) {
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionGramShopBtn(); }
-  const badge = document.getElementById('gram-shop-btn-discount');
-  if (badge) badge.style.display = seasonActive() ? 'block' : 'none';
 }
 
 // ─────────────────────────────────────────────────────────
