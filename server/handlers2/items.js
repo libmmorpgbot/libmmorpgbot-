@@ -164,6 +164,30 @@ module.exports = function registerItems(s, safeOn) {
     // the result rather than applying the multiplier itself.
     await s.pushStats(t);
     s.socket.emit('buffSync', { buffs: res.buffs });
+
+    // ── когда баф кончается, а сила остаётся ──────────────────────────────
+    // pushStats() bakes the buff's bonus into the Room's cached p.atk/maxHp/
+    // atkSpeed/hpRegen (server/game/Room.js's setPlayerStats) — a snapshot,
+    // not a live formula. stats.compute() re-checks the buff's own expiry
+    // correctly every time it runs, but nothing was calling it again once
+    // the buff itself ran out: the cached, still-boosted numbers kept being
+    // used for every attack/heal tick until some UNRELATED action (gear
+    // change, level-up, another potion) happened to trigger the next push —
+    // which, in a long Fear/farm run with no level-ups, could be never. That
+    // is "время банок заканчивается, но эффект остаётся".
+    //
+    // One-shot timer, sized to the buff's own duration (already the whole
+    // remaining time — useBuffPotion refuses a second drink while one of
+    // this type is running, so `res.seconds` is always the fresh, full
+    // duration here). Firing pushStats() again is enough: stats.compute()
+    // sees the now-expired buffs entry and simply stops applying its bonus,
+    // the same way a level-up or a gear change already corrects it today.
+    // +500ms is slack for event-loop jitter, not a correction for the
+    // reported seconds — buffsRemaining() already rounds UP (Math.ceil), so
+    // this timer can only fire at or after the real expiry, never before.
+    if (res.seconds > 0) {
+      setTimeout(() => { s.pushStats().catch(() => {}); }, res.seconds * 1000 + 500);
+    }
   }));
 
   // ── world drops ──────────────────────────────────────────────────────────
