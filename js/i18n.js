@@ -324,8 +324,8 @@ const I18N_UI = {
     es: '+{n}% de probabilidad de objetos', tr: 'Eşya düşme şansına +%{n}', pt: '+{n}% de chance de itens',
   },
   seasonTicketLibertyRowFmt: {
-    ru: '+{n}% к выпадению LIBERTY', en: '+{n}% Liberty drop chance', uk: '+{n}% до випадіння LIBERTY',
-    es: '+{n}% de probabilidad de Liberty', tr: 'Liberty düşme şansına +%{n}', pt: '+{n}% de chance de Liberty',
+    ru: 'x2 к шансу выпадения LIBERTY', en: 'x2 Liberty drop chance', uk: 'x2 до шансу випадіння LIBERTY',
+    es: 'x2 de probabilidad de Liberty', tr: 'Liberty düşme şansında x2', pt: 'x2 de chance de Liberty',
   },
   seasonPointsLbl:{ ru: 'Очки сезона', en: 'Season points', uk: 'Очки сезону', es: 'Puntos de temporada', tr: 'Sezon puanı', pt: 'Pontos da temporada' },
   seasonEndsIn:   { ru: 'До конца сезона: {t}', en: 'Season ends in {t}', uk: 'До кінця сезону: {t}', es: 'La temporada acaba en {t}', tr: 'Sezon bitişine {t}', pt: 'A temporada acaba em {t}' },

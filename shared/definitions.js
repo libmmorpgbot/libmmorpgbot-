@@ -2809,8 +2809,8 @@ const GRAM_PER_LEVEL = 0.0000001;
 
 const SEASON_TICKET_GRAM_PRICE = 15;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
-const SEASON_TICKET_DROP_PCT = 30;     // +30 to the bonus loot re-roll chance
-const SEASON_TICKET_LIBERTY_PCT = 10;  // +10% (relative) to the Liberty drop chance
+const SEASON_TICKET_DROP_PCT = 60;     // +60 to the bonus loot re-roll chance
+const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop chance — x2
 
 // ── Clan levels & cumulative bonuses ──────────────────────────
 // Each level's bonus is the CUMULATIVE total at that level (not the increment).

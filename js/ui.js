@@ -3583,7 +3583,7 @@ function drawBuffStrip() {
   if (typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive &&
       typeof _seasonState !== 'undefined' && _seasonState.active) {
     const _stLeft = Math.max(0, (_seasonState.endAt || 0) - Date.now());
-    if (_stLeft > 0) chips.push({ kind:'pot', img:'/images/season_ticket.png', label: _fmtChipEta(_stLeft), color:'#ffcf56' });
+    if (_stLeft > 0) chips.push({ kind:'pot', img:'/images/season_ticket.png?v=2', label: _fmtChipEta(_stLeft), color:'#ffcf56' });
   }
 
   // Skill buffs
@@ -8168,7 +8168,7 @@ function _shopExtraRewardRows(pkg, ri) {
   // and icon here, tap it for the full breakdown (_openSeasonTicketInfo).
   if (pkg.seasonTicket) {
     rows += `<div class="vip-ri vip-ri-gold" style="cursor:pointer" onclick="event.stopPropagation();_openSeasonTicketInfo()">
-      <img class="vip-ri-img" src="/images/season_ticket.png">
+      <img class="vip-ri-img" src="/images/season_ticket.png?v=2">
       <span class="vip-ri-label">${t('seasonTicketShopLbl')}</span>
     </div>`;
   }
@@ -8205,7 +8205,7 @@ function _renderSeasonTicketInfo() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <img src="/images/season_ticket.png" width="40" height="40" style="margin-right:10px;border-radius:6px">
+        <img src="/images/season_ticket.png?v=2" width="40" height="40" style="margin-right:10px;border-radius:6px">
         <div style="font-size:16px;font-weight:800;color:#ffcf56">${t('seasonTicketShopLbl')}</div>
         <button onclick="document.getElementById('season-ticket-info-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
