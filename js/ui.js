@@ -4670,7 +4670,7 @@ function openInvItemModal(idx) {
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">${t('equipBtn')}</button>
-      <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('inv',${idx})">${t('enhanceBtnLbl')}</button>
+      <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('inv',${idx})">${iconHTML('hammer',16,'currentColor')} ${t('enhanceBtnLbl')}</button>
     </div>
     <div class="imod-btns">
       ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
@@ -4976,7 +4976,7 @@ function openEqItemModal(slot) {
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
     <div class="imod-btns">
       <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#381c1f,#672d34);color:#f28a96" onclick="unequipFromModal('${slot}')">${t('unequipBtn')}</button>
-      <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('eq','${slot}')">${t('enhanceBtnLbl')}</button>
+      <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('eq','${slot}')">${iconHTML('hammer',16,'currentColor')} ${t('enhanceBtnLbl')}</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -5020,7 +5020,9 @@ function onEnhanceResult({ id, slot, outcome, newEnhance, rowId } = {}) {
 
 function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId }) {
   if (!player) return;
-  const icon = outcome === 'success' ? '✅' : outcome === 'fail' ? '❌' : '💥';
+  const iconName = outcome === 'success' ? 'checkCircle' : outcome === 'fail' ? 'xCircle' : 'burst';
+  const iconColor = outcome === 'success' ? '#98e456' : outcome === 'fail' ? '#f17e8b' : '#eb4e61';
+  const icon = iconHTML(iconName, 48, iconColor);
   const cls  = outcome === 'success' ? 'success' : outcome === 'fail' ? 'fail' : 'burn';
   const text = outcome === 'success' ? tVars('enhSuccessToast', { n: newEnhance })
     : outcome === 'burned' ? t('itemBurnedToast') : t('enhFailedToast');

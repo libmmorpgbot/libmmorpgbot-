@@ -872,7 +872,7 @@ Object.assign(I18N_UI, {
   itemBurnedToast: { ru: 'Вещь сгорела!', en: 'The item burned!', uk: 'Річ згоріла!', es: '¡El objeto se destruyó!', tr: 'Eşya yandı!', pt: 'O item queimou!' },
   enhFailedToast: { ru: 'Заточка не удалась', en: 'Enchant failed', uk: 'Гартування не вдалося', es: 'El encantamiento falló', tr: 'Büyü başarısız oldu', pt: 'O encantamento falhou' },
   unequipBtn: { ru: 'Снять', en: 'Unequip', uk: 'Зняти', es: 'Desequipar', tr: 'Çıkar', pt: 'Desequipar' },
-  enhanceBtnLbl: { ru: '⚒ Заточка', en: '⚒ Enchant', uk: '⚒ Гартування', es: '⚒ Encantar', tr: '⚒ Büyüle', pt: '⚒ Encantar' },
+  enhanceBtnLbl: { ru: 'Заточка', en: 'Enchant', uk: 'Гартування', es: 'Encantar', tr: 'Büyüle', pt: 'Encantar' },
   enhNormalCardTitle: { ru: 'Обычная заточка', en: 'Normal enchant', uk: 'Звичайне гартування', es: 'Encantamiento normal', tr: 'Normal büyü', pt: 'Encantamento normal' },
   enhSafeCardTitle: { ru: 'Безопасная заточка', en: 'Safe enchant', uk: 'Безпечне гартування', es: 'Encantamiento seguro', tr: 'Güvenli büyü', pt: 'Encantamento seguro' },
   enhNormalCardDesc: { ru: 'Дешёвый камень. Если заточка не удастся — предмет сломается и будет потерян навсегда.', en: 'Cheap stone. If the enchant fails, the item breaks and is lost for good.', uk: 'Дешевий камінь. Якщо гартування не вдасться — предмет зламається і буде втрачено назавжди.', es: 'Piedra barata. Si el encantamiento falla, el objeto se rompe y se pierde para siempre.', tr: 'Ucuz taş. Büyü başarısız olursa eşya kırılır ve sonsuza dek kaybolur.', pt: 'Pedra barata. Se o encantamento falhar, o item quebra e é perdido para sempre.' },

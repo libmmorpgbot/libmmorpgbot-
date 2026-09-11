@@ -108,6 +108,18 @@ const ICON_SVG = {
   ghost: `<path d="M12 2a7 7 0 0 0-7 7v12l2.5-2.5L10 21l2-2 2 2 2.5-2.5L19 21V9a7 7 0 0 0-7-7z"/><circle cx="9.5" cy="10" r="1"/><circle cx="14.5" cy="10" r="1"/>`,
   crown: `<path d="M3 8L7 11L12 5L17 11L21 8L19 18H5L3 8Z"/><line x1="5" y1="21" x2="19" y2="21"/>`,
   flag:  `<line x1="5" y1="21" x2="5" y2="3"/><path d="M5 4l13 4-13 4z"/>`,
+
+  // ── Enchanting (item-modal enhance panel, js/ui.js) ─────────────────────────
+  // Blacksmith hammer for the "⚒ Заточка" button — a rotated square head plus
+  // the same diagonal-handle-with-guard shape `sword`/`weapon` already use
+  // above, so it reads as the same family of icon rather than a one-off.
+  hammer: `<rect x="13" y="2" width="8" height="5" rx="1.2" transform="rotate(45 17 4.5)"/><path d="M13.5 8.5L4 18"/><path d="M2.5 19.5l3 3"/>`,
+  // Success/fail/burn indicators for the enhance result reveal — plain
+  // circle-with-mark glyphs, same construction as `hpPlus`/`crosshair` above,
+  // so a big colored one reads clearly at the result-banner size.
+  checkCircle: `<circle cx="12" cy="12" r="9"/><polyline points="8,12.3 11,15.3 16,8.7"/>`,
+  xCircle: `<circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>`,
+  burst: `<path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z"/><line x1="3.5" y1="19" x2="5.5" y2="17"/><line x1="20.5" y1="19" x2="18.5" y2="17"/><line x1="12" y1="18.5" x2="12" y2="21.5"/>`,
 };
 
 // ── DOM helper: returns an <svg> string ───────────────────────────────────────
