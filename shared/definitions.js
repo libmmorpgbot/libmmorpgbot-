@@ -667,12 +667,18 @@ function seasonShopPoints(price) {
 // ── Рынок игроков ─────────────────────────────────────────────────────────
 // Season 3's headline new sources: BOTH sides of a market trade score,
 // scaled by the GRAM that actually moved — awarded inside market.buy()
-// (server/db/repos/market.js) in the same transaction as the trade itself,
-// same shape as seasonShopPoints above (per whole GRAM, floored).
+// (server/db/repos/market.js) in the same transaction as the trade itself.
+// Unlike seasonShopPoints above, price is NOT floored to a whole GRAM first
+// — a lot of real market listings sit well under 1 GRAM (0.1, 0.2, ...), and
+// flooring the price before multiplying zeroed every one of them out, no
+// matter how many actually sold. addSeasonPoints itself still floors the
+// final POINTS total to a whole number before writing it (player_season.
+// points is bigint), so a 0.1-GRAM sale (perGram 10) correctly nets exactly
+// 1 point rather than being silently discarded.
 const SEASON_MARKET_BUY_POINTS_PER_GRAM = 50;
 const SEASON_MARKET_SELL_POINTS_PER_GRAM = 10;
 function seasonMarketPoints(price, perGram) {
-  return Math.max(0, Math.floor(Number(price) || 0)) * perGram;
+  return Math.max(0, Number(price) || 0) * perGram;
 }
 
 // ── Турнир ────────────────────────────────────────────────────────────────
