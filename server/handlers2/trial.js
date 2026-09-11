@@ -38,7 +38,13 @@ module.exports = function registerTrial(s, safeOn, deps) {
       equipped: [], passives: {},
       skill_levels: Object.fromEntries(skillKeys.map(k => [k, SKILL_MAX_LEVEL])),
       adv_learned: Object.fromEntries(skillKeys.map(k => [k, true])),
-      adv_active: Object.fromEntries(skillKeys.map(k => [k, false])),
+      // Active, not just learned — "все навыки открыты для пробного
+      // использования" means the вторая профессия variant is what a player
+      // sees the instant they walk in, not a base skill they have to
+      // remember to toggle. The base version stays one tap away either way
+      // (js/ui.js's skill panel toggle reads advSkillLearned the same way
+      // for a real account), so nothing about the base kit is hidden.
+      adv_active: Object.fromEntries(skillKeys.map(k => [k, true])),
       clan_level: 0,
     };
     return { row, st: stats.compute(row) };
@@ -105,19 +111,34 @@ module.exports = function registerTrial(s, safeOn, deps) {
     // reusing fullState keeps this payload the exact shape js/network.js's
     // 'gameStart' handler already expects, rather than a hand-built partial
     // that is one missing field away from a silent client-side crash.
-    // Overridden below: progress (class/level shown for the trial) and stats/
-    // skills (the fake row this whole handler exists to hand out).
+    // Overridden below: progress (class/level shown for the trial) and
+    // stats (the fake row this whole handler exists to hand out).
     const state = await s.fullState(null);
     state.progress = {
       ...state.progress,
       charClass: type, lvl: TRIAL_LEVEL, xp: 0, xpNext: xpToNext(TRIAL_LEVEL),
     };
     state.stats = st;
-    state.skills = {
+    // fullState's own `skills` is the account's REAL (and, for most trial
+    // entrants, empty) skill record — left in place it would just sit there
+    // unread beside the real fields below, which is confusing to anyone
+    // inspecting the payload even though nothing on the client reads it.
+    delete state.skills;
+    // FLAT, not nested under `skills` — a normal login's skill state never
+    // arrives on 'gameStart' at all (it rides 'authOk's savedData, applied
+    // once by restoreFromSave, js/player.js), and js/network.js's
+    // _applyGameStart deliberately skips that whole path for a trial
+    // payload (see its own comment: consuming _savedData here would starve
+    // the account's REAL first gameStart of it). So _applyGameStart has its
+    // own small trial-only branch that reads these four fields straight off
+    // the payload — same names restoreFromSave itself reads, just top-level
+    // instead of nested one level under a `skills` key nothing was ever
+    // reading.
+    s.socket.emit('gameStart', {
+      ...state, ...s.worldPayload(FLOOR_IDS.trial, room), trial: true,
       skillLevels: row.skill_levels, passiveLevels: {},
       advSkillLearned: row.adv_learned, advSkillActive: row.adv_active,
-    };
-    s.socket.emit('gameStart', { ...state, ...s.worldPayload(FLOOR_IDS.trial, room), trial: true });
+    });
   });
 
   // ── leaving ────────────────────────────────────────────────────────────────

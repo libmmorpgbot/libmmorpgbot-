@@ -1378,6 +1378,17 @@ function netConnect(onReady) {
       // made for real, so any authOk from here on is a genuine reconnect. See
       // _playerRestored's declaration for the race this closes.
       _playerRestored = true;
+    } else if (player) {
+      // A trial's own skill state — never reaches player.skillLevels through
+      // restoreFromSave (skipped above, on purpose), so it has to land here
+      // instead. Same four fields, same shape trialEnter builds them in
+      // (server/handlers2/trial.js) and restoreFromSave itself reads them in
+      // (js/player.js) — just applied directly rather than through the
+      // one-time-per-login _savedData machinery a trial must stay out of.
+      player.skillLevels = { Q: 0, W: 0, E: 0, R: 0, ...(payload.skillLevels || {}) };
+      player.passiveLevels = { ...(payload.passiveLevels || {}) };
+      player.advSkillLearned = { Q: false, W: false, E: false, R: false, ...(payload.advSkillLearned || {}) };
+      player.advSkillActive = { Q: false, W: false, E: false, R: false, ...(payload.advSkillActive || {}) };
     }
     csOnServerReady();
   }
