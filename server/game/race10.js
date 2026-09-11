@@ -199,9 +199,25 @@ module.exports = function createRace10(deps) {
     // deployed; anyone else is dropped rather than counted. Registration never
     // required being on any particular floor, so this checks wherever each one
     // actually is, not just the hub.
+    //
+    // «жалуются... не забирает на событие»: this used to drop a registered
+    // entrant with zero notice whenever the socket was connected but
+    // _findPlayerAnyFloor came back empty for a moment (mid floor-change,
+    // char-select, a reconnect that hadn't re-joined a room yet right at
+    // 20:30:00) — every OTHER rejection path in this file (capacity,
+    // out-of-attempts, force-enter failure) tells the client exactly why;
+    // this was the one silent exception, and from that client's own screen
+    // it read as "registered, then nothing happened."
     const ready = [..._race10.queue.keys()].filter(sid =>
       io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
-    [..._race10.queue.keys()].forEach(sid => { if (!ready.includes(sid)) _race10.queue.delete(sid); });
+    [..._race10.queue.keys()].forEach(sid => {
+      if (ready.includes(sid)) return;
+      _race10.queue.delete(sid);
+      if (io.sockets.sockets.get(sid)) {
+        io.to(sid).emit('race10Registered', { registered: false });
+        io.to(sid).emit('race10Error', { msg: 'Не удалось войти в забег — попробуйте зарегистрироваться на следующий' });
+      }
+    });
     if (ready.length < RACE10_MIN_PLAYERS) {
       // Not enough showed up. Nobody is charged an attempt (that happens on
       // deploy) — there is no second start, so this is "not today" and
@@ -393,6 +409,53 @@ module.exports = function createRace10(deps) {
     return true;
   }
 
+  // A network blip (Wi-Fi/LTE handover, a suspended WebView) can reconnect
+  // the same account under a NEW socket id while the old one is still
+  // sitting around — the exact "a moment longer than its own disconnect
+  // cleanup takes to land" case Room.addPlayer's stale-entry cleanup
+  // already exists for. Called unconditionally from server/world.js's
+  // enterFloor whenever a reconnect's addPlayer reports a stale entry, so
+  // it has to cover both places this module keys state by socket id:
+  //
+  // - Mid-race (_race10.alive/names/dmg): addPlayer's own raceCarry (same
+  //   file, Room.js) already carries the departing socket's lane/position/
+  //   hp onto the new record, so the reconnect lands back in its own
+  //   corridor instead of this floor's default spawn — the shared boss
+  //   room, empty of everything but the boss — «жалуются... пустая без
+  //   монстров». Placement alone isn't enough, though: without rekeying
+  //   these maps too, dying again after reconnecting would silently no-op
+  //   (_race10Eliminate looks up a socket id nothing here recognises any
+  //   more), and reaching the boss or landing the winning hit wouldn't
+  //   credit the right account either.
+  // - Still registered, not yet deployed (_race10.queue): a reconnect
+  //   during the 5-minute registration window (RACE10_REG_MS) orphans the
+  //   entry to a socket id that no longer exists — session.js's own
+  //   `registered: !!_race10.queue.has(sid)` then correctly stops claiming
+  //   they're registered (nothing shows stale), but the registration
+  //   itself is just gone unless they notice and press the button again —
+  //   «жалуются... не забирает на событие». Handled the same way: move the
+  //   entry across rather than requiring a fresh click.
+  function _race10Rekey(oldSocketId, newSocketId) {
+    if (oldSocketId === newSocketId) return;
+    if (_race10.queue.has(oldSocketId)) {
+      _race10.queue.set(newSocketId, _race10.queue.get(oldSocketId));
+      _race10.queue.delete(oldSocketId);
+    }
+    const entry = _race10.alive.get(oldSocketId);
+    if (!entry) return;
+    _race10.alive.delete(oldSocketId);
+    _race10.alive.set(newSocketId, entry);
+    if (_race10.names.has(oldSocketId)) {
+      _race10.names.set(newSocketId, _race10.names.get(oldSocketId));
+      _race10.names.delete(oldSocketId);
+    }
+    if (_race10.dmg.has(oldSocketId)) {
+      _race10.dmg.set(newSocketId, _race10.dmg.get(oldSocketId));
+      _race10.dmg.delete(oldSocketId);
+    }
+    // _race10.bossId is an enemy id, not a socket id — nothing to rekey there.
+  }
+
   async function _race10Finish(winnerId, timedOut) {
     if (!_race10.live) return;
     clearTimeout(_race10.freezeTimer);
@@ -453,6 +516,6 @@ module.exports = function createRace10(deps) {
     RACE10_REWARD, RACE10_MAX_MS,
     _race10, _race10Capacity, _race10NextOpenAt, _race10PublicState, _race10Broadcast, _race10Schedule,
     _race10OpenWindow, _race10CloseWindow, _race10Frozen, _race10StartSafe, _race10Start, _race10Deploy,
-    _race10Eliminate, _race10Finish, _race10ReachBoss,
+    _race10Eliminate, _race10Finish, _race10ReachBoss, _race10Rekey,
   };
 };

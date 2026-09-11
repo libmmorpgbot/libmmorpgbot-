@@ -3080,20 +3080,41 @@ class Room {
     // (same-tick race) or the real disconnect ran first and this is a
     // genuine reconnect within the window. Fear is a private, single-owner
     // room with no cross-player bookkeeping, so it's safe to simply hand the
-    // same lane to the new socket — unlike race10/arena3/deathBattle, which
-    // stay on the clean-eliminate path (server/index.js) since those are
-    // shared/competitive instances a lone reconnect can't resume into on its
-    // own.
+    // same lane to the new socket.
+    //
+    // Кровавая Башня (race10) needs the exact same same-tick carry, for the
+    // exact same reason — «жалуются... пустая без монстров»: without this, a
+    // network blip mid-race dropped the stale entry through the PLAIN
+    // removePlayer path below (no _race10Eliminate, since that only runs
+    // from the socket 'disconnect' handler, which the reconnecting socket
+    // never reaches here), and the new connection landed at this floor's
+    // default spawn — the shared boss room, generateRace10 — with
+    // _raceLane cleared: no corridor, no monsters, and still silently
+    // counted as "alive" in race10.js's own _race10.alive (nobody told it
+    // the socket id changed), so the run could never even finish for
+    // everyone else either. Unlike Fear this needs no timed grace window —
+    // the reconnecting socket is arriving THIS SAME CALL, not some seconds
+    // later — so it's just carried straight across, no hold-and-claim pair
+    // needed. _raceActive (cleared by despawnRaceBoss, server/game/Room.js,
+    // on every ending) guards against reviving a lane from a race that
+    // finished in the gap between the stale entry dying and this reconnect.
     let staleSocketId = null;
+    let raceCarry = null;
     if (telegramId) {
       for (const [sid, p] of this.players) {
         if (sid !== socketId && p.telegramId === telegramId) { staleSocketId = sid; break; }
       }
-      if (staleSocketId) this.removePlayer(staleSocketId);
+      if (staleSocketId) {
+        const staleP = this.players.get(staleSocketId);
+        if (this._raceActive && staleP && staleP._raceLane != null) {
+          raceCarry = { lane: staleP._raceLane, x: staleP.x, y: staleP.y, hp: staleP.hp };
+        }
+        this.removePlayer(staleSocketId);
+      }
     }
     const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
     const spawn = this.spawnPointFor();
-    const carry = fearCarry;
+    const carry = fearCarry || raceCarry;
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
@@ -3101,7 +3122,7 @@ class Room {
       x: carry ? carry.x : spawn.x, y: carry ? carry.y : spawn.y, facing: 'front', moving: false,
       hp: carry ? carry.hp : 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
-      _raceLane: null,
+      _raceLane: raceCarry ? raceCarry.lane : null,
       _fearLane: fearCarry ? fearCarry.lane : null,
       // Coop has no reconnect carry — a disconnect ends the run for both
       // participants on the spot (see _coopEjectOnDisconnect, server/

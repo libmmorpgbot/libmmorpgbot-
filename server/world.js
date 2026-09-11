@@ -189,12 +189,29 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
     // over a player's head was null for everyone. Two people in two clans
     // standing beside each other saw nothing over either head.
     const clan = session.clan || null;
-    room.addPlayer(
+    const _added = room.addPlayer(
       session.socket.id, session.username,
       clan && clan.name, clan && clan.icon,
       (clan && clan.atkBonus) || 0, session.telegramId,
       clan && clan.clanId,
     );
+    // A reconnect (new socket id, same telegramId) that replaced a stale
+    // entry: Room.addPlayer's own raceCarry (server/game/Room.js) already
+    // moved a mid-race entry's lane/position/hp onto this new record — but
+    // race10.js separately keys its OWN bookkeeping by socket id too, both
+    // mid-race (_race10.alive/names/dmg) and while still just registered
+    // and waiting (_race10.queue). _race10Rekey moves whichever of those
+    // (if any) the stale socket id was in; it's a safe no-op otherwise, so
+    // this doesn't need to know which case applies. Without it: a mid-race
+    // reconnect would stand in the right corridor but dying again, or
+    // hitting the boss, would silently not count — «жалуются... пустая без
+    // монстров» is only the placement half of that bug; a reconnect during
+    // the registration window would drop the registration outright unless
+    // noticed and redone — «жалуются... не забирает на событие».
+    if (_added && _added.staleSocketId) {
+      const m = require('./modes').modes;
+      if (m && typeof m._race10Rekey === 'function') m._race10Rekey(_added.staleSocketId, session.socket.id);
+    }
     // The CLASS, without which the room has a player record with no `type`:
     // no sprite for anyone else to draw, no class multipliers in combat, and
     // the event modes refusing entry with "Выберите персонажа" to someone who
