@@ -25,6 +25,8 @@ const money = require('./money');
 const { MARKET_FEE_PCT, MARKET_MAX_PRICE, MARKET_MAX_QTY, MARKET_LIST_COOLDOWN_MS, _marketMinPrice } =
   require('../../inventory');
 const { _marketMaxActive, MARKET_VIP_PCT } = require('../../market-helpers');
+const { SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM, seasonMarketPoints } =
+  require('../../../shared/definitions');
 const progression = require('./progression');
 const { _catalogBase } = require('../../anticheat');
 
@@ -453,6 +455,15 @@ async function buy(db, buyerId, listingId) {
   // rather than into the game, and counting the whole of it would make VIP
   // farmable by two accounts selling to each other.
   await progression.addVipSpend(db, buyerId, price * MARKET_VIP_PCT);
+
+  // ── очки сезона ────────────────────────────────────────────────────────
+  // Season 3: BOTH sides of a trade score, at different rates — the buyer
+  // spent real GRAM, the seller only receives it, so the buyer's rate is
+  // higher. Unlike VIP spend above, the FULL price counts on both sides: a
+  // trade between two real accounts is exactly the activity this quest is
+  // for, and addSeasonPoints itself no-ops once the season is over.
+  await progression.addSeasonPoints(db, buyerId, seasonMarketPoints(price, SEASON_MARKET_BUY_POINTS_PER_GRAM));
+  await progression.addSeasonPoints(db, sellerId, seasonMarketPoints(price, SEASON_MARKET_SELL_POINTS_PER_GRAM));
 
   return {
     listingId: Number(listingId), sellerId, price, fee, payout,

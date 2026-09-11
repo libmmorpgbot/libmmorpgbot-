@@ -226,32 +226,51 @@ const I18N_UI = {
   seasonTabSeason:{ ru: 'Сезон', en: 'Season', uk: 'Сезон', es: 'Temporada', tr: 'Sezon', pt: 'Temporada' },
   seasonTabTasks: { ru: 'Задания', en: 'Tasks', uk: 'Завдання', es: 'Tareas', tr: 'Görevler', pt: 'Tarefas' },
   seasonTabRating:{ ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
-  season2Title: { ru: 'Сезон 2', en: 'Season 2', uk: 'Сезон 2', es: 'Temporada 2', tr: 'Sezon 2', pt: 'Temporada 2' },
+  season2Title: { ru: 'Сезон 3: Новые классы', en: 'Season 3: New Classes', uk: 'Сезон 3: Нові класи', es: 'Temporada 3: Nuevas clases', tr: 'Sezon 3: Yeni Sınıflar', pt: 'Temporada 3: Novas classes' },
   season2Desc: {
-    ru: 'Гонка очков сезона: точи снаряжение, крафти книги профессий, сжигай лишнее, зови друзей, усиливайся и покупай на рынке — лучшие получат призы.',
-    en: 'The season points race: enhance your gear, craft profession books, burn junk, invite friends, empower, and buy on the market — the best players win prizes.',
-    uk: 'Гонка очок сезону: точи спорядження, крафти книги професій, спалюй зайве, клич друзів, посилюйся і купуй на ринку — найкращі отримають призи.',
-    es: 'La carrera de puntos de temporada: mejora tu equipo, crea libros de profesión, quema lo que no sirve, invita amigos, potencia y compra en el mercado — los mejores ganan premios.',
-    tr: 'Sezon puan yarışı: eşyanı geliştir, meslek kitapları hazırla, gereksizleri yak, arkadaş davet et, yeniden doğ ve pazardan alışveriş yap — en iyiler ödül kazanır.',
-    pt: 'A corrida de pontos da temporada: aprimore seu equipamento, crie livros de profissão, queime o que não serve, convide amigos, renasça e compre no mercado — os melhores ganham prêmios.',
+    ru: 'Гонка очков сезона: торгуй на рынке, покупай в магазине, точи снаряжение, фарми монстров в фарм-зонах и побеждай на турнире — лучшие получат денежные призы.',
+    en: 'The season points race: trade on the market, buy in the shop, enhance your gear, farm monsters in the farm zones, and win on the tournament — the best players win cash prizes.',
+    uk: 'Гонка очок сезону: торгуй на ринку, купуй в магазині, точи спорядження, фарми монстрів у фарм-зонах і перемагай на турнірі — найкращі отримають грошові призи.',
+    es: 'La carrera de puntos de temporada: comercia en el mercado, compra en la tienda, mejora tu equipo, farmea monstruos en las zonas de farmeo y gana en el torneo — los mejores ganan premios en efectivo.',
+    tr: 'Sezon puan yarışı: pazarda alışveriş yap, mağazadan satın al, eşyanı geliştir, farm bölgelerinde canavar avla ve turnuvada kazan — en iyiler nakit ödül kazanır.',
+    pt: 'A corrida de pontos da temporada: negocie no mercado, compre na loja, aprimore seu equipamento, faça farm de monstros nas zonas de farm e vença no torneio — os melhores ganham prêmios em dinheiro.',
   },
-  season2EnhSpecialHdr: {
-    ru: 'Заточка питомца / артефакта / плаща:', en: 'Enhancing a pet / artifact / cloak:',
-    uk: 'Заточка пітомця / артефакта / плаща:', es: 'Mejorar mascota / artefacto / capa:',
-    tr: 'Evcil hayvan / artefakt / pelerin geliştirme:', pt: 'Aprimorar pet / artefato / manto:',
+  seasonEnhanceFmt: {
+    ru: 'Заточка любой вещи любой заточкой — +{n} очков', en: 'Enhance any item with any stone — +{n} points',
+    uk: 'Заточка будь-якої речі будь-якою заточкою — +{n} очок', es: 'Mejorar cualquier objeto con cualquier piedra — +{n} puntos',
+    tr: 'Herhangi bir eşyayı herhangi bir taşla geliştir — +{n} puan', pt: 'Aprimorar qualquer item com qualquer pedra — +{n} pontos',
   },
-  season2EnhSpecialFmt: {
-    ru: '{r}: обычная +{norm} · безопасная +{safe}', en: '{r}: normal +{norm} · safe +{safe}',
-    uk: '{r}: звичайна +{norm} · безпечна +{safe}', es: '{r}: normal +{norm} · segura +{safe}',
-    tr: '{r}: normal +{norm} · güvenli +{safe}', pt: '{r}: normal +{norm} · segura +{safe}',
+  seasonMarketBuyFmt: {
+    ru: 'Покупка на рынке — +{n} очков за каждый потраченный GRAM', en: 'Buying on the market — +{n} points per GRAM spent',
+    uk: 'Купівля на ринку — +{n} очок за кожен витрачений GRAM', es: 'Comprar en el mercado — +{n} puntos por cada GRAM gastado',
+    tr: 'Pazardan alışveriş — harcanan her GRAM için +{n} puan', pt: 'Comprar no mercado — +{n} pontos por GRAM gasto',
   },
-  season2EnhGearHdr: {
-    ru: 'Заточка предметов:', en: 'Enhancing gear:', uk: 'Заточка предметів:',
-    es: 'Mejorar objetos:', tr: 'Eşya geliştirme:', pt: 'Aprimorar itens:',
+  seasonMarketSellFmt: {
+    ru: 'Продажа на рынке — +{n} очков за каждый вырученный GRAM', en: 'Selling on the market — +{n} points per GRAM earned',
+    uk: 'Продаж на ринку — +{n} очок за кожен вирученний GRAM', es: 'Vender en el mercado — +{n} puntos por cada GRAM obtenido',
+    tr: 'Pazarda satış — kazanılan her GRAM için +{n} puan', pt: 'Vender no mercado — +{n} pontos por GRAM ganho',
   },
-  season2EnhGearFmt: {
-    ru: '{r}: обычная +{n} очков', en: '{r}: normal +{n} points', uk: '{r}: звичайна +{n} очок',
-    es: '{r}: normal +{n} puntos', tr: '{r}: normal +{n} puan', pt: '{r}: normal +{n} pontos',
+  seasonTournamentWinFmt: {
+    ru: 'Победа в раунде турнира — +{n} очков за соперника', en: 'Winning a tournament round — +{n} points per opponent',
+    uk: 'Перемога в раунді турніру — +{n} очок за суперника', es: 'Ganar una ronda del torneo — +{n} puntos por rival',
+    tr: 'Turnuva turunu kazanmak — rakip başına +{n} puan', pt: 'Vencer uma rodada do torneio — +{n} pontos por adversário',
+  },
+  seasonFarmQuestsHdr: {
+    ru: 'Задания на убийства:', en: 'Kill quests:', uk: 'Завдання на вбивства:',
+    es: 'Misiones de caza:', tr: 'Avlanma görevleri:', pt: 'Missões de caça:',
+  },
+  seasonFarmTaskFmt: {
+    ru: '{label}: убей {target} монстров — +{n} очков', en: '{label}: kill {target} monsters — +{n} points',
+    uk: '{label}: вбий {target} монстрів — +{n} очок', es: '{label}: mata {target} monstruos — +{n} puntos',
+    tr: '{label}: {target} canavar öldür — +{n} puan', pt: '{label}: mate {target} monstros — +{n} pontos',
+  },
+  seasonFarmProgressFmt: {
+    ru: '{cur} / {target}', en: '{cur} / {target}', uk: '{cur} / {target}',
+    es: '{cur} / {target}', tr: '{cur} / {target}', pt: '{cur} / {target}',
+  },
+  seasonFarmClaimBtn: {
+    ru: 'Забрать очки', en: 'Claim points', uk: 'Забрати очки',
+    es: 'Reclamar puntos', tr: 'Puanları al', pt: 'Resgatar pontos',
   },
   season2AdvBookFmt: {
     ru: 'Скрафтить книгу второй профессии — +{n} очков', en: 'Craft an advanced (2nd profession) skill book — +{n} points',
@@ -332,11 +351,11 @@ const I18N_UI = {
   seasonNoPlayers: { ru: 'Пока никто не набрал очков', en: 'Nobody has scored yet', uk: 'Поки ніхто не набрав очок', es: 'Nadie ha puntuado aún', tr: 'Henüz kimse puan almadı', pt: 'Ninguém pontuou ainda' },
   seasonPrizesHdr: { ru: 'Награды сезона:', en: 'Season prizes:', uk: 'Нагороди сезону:', es: 'Premios de temporada:', tr: 'Sezon ödülleri:', pt: 'Prêmios da temporada:' },
   seasonPlaceFmt: { ru: '{n} место', en: 'Place {n}', uk: '{n} місце', es: 'Puesto {n}', tr: '{n}. sıra', pt: '{n}º lugar' },
-  seasonPrizeGramFmt: { ru: '{g} GRAM (~{u} USDT)', en: '{g} GRAM (~{u} USDT)', uk: '{g} GRAM (~{u} USDT)', es: '{g} GRAM (~{u} USDT)', tr: '{g} GRAM (~{u} USDT)', pt: '{g} GRAM (~{u} USDT)' },
+  seasonPrizeUsdFmt: { ru: '${n}', en: '${n}', uk: '${n}', es: '${n}', tr: '${n}', pt: '${n}' },
   seasonWinnersBtn: { ru: 'Забрать награду', en: 'Claim reward', uk: 'Забрати нагороду', es: 'Reclamar premio', tr: 'Ödülü al', pt: 'Resgatar prêmio' },
   seasonWinnersHdr: { ru: 'Итоги сезона', en: 'Season results', uk: 'Підсумки сезону', es: 'Resultados de la temporada', tr: 'Sezon sonuçları', pt: 'Resultados da temporada' },
-  seasonWinnersMyPrize: { ru: 'Ваша награда — {n} GRAM уже на балансе', en: 'Your reward — {n} GRAM already on your balance', uk: 'Ваша нагорода — {n} GRAM вже на балансі', es: 'Tu premio — {n} GRAM ya está en tu saldo', tr: 'Ödülün — {n} GRAM zaten bakiyende', pt: 'Sua recompensa — {n} GRAM já está no seu saldo' },
-  seasonNextStart: { ru: 'Новый сезон начнётся 11.09 в 12:00 (МСК)', en: 'New season starts Sep 11 at 12:00 (Moscow time)', uk: 'Новий сезон почнеться 11.09 о 12:00 (за МСК)', es: 'La nueva temporada empieza el 11.09 a las 12:00 (hora de Moscú)', tr: 'Yeni sezon 11.09\'da 12:00\'de başlıyor (Moskova saati)', pt: 'A nova temporada começa em 11.09 às 12:00 (horário de Moscou)' },
+  seasonWinnersMyPrize: { ru: 'Ваша награда — ${n}, выплачивается вручную администрацией', en: 'Your reward — ${n}, paid out by hand by the team', uk: 'Ваша нагорода — ${n}, виплачується вручну адміністрацією', es: 'Tu premio — ${n}, pagado a mano por el equipo', tr: 'Ödülün — ${n}, ekip tarafından elden ödenir', pt: 'Sua recompensa — ${n}, paga manualmente pela equipe' },
+  seasonNextStart: { ru: 'Дата следующего сезона будет объявлена позже', en: 'The next season\'s date will be announced later', uk: 'Дату наступного сезону буде оголошено пізніше', es: 'La fecha de la próxima temporada se anunciará más adelante', tr: 'Sonraki sezonun tarihi daha sonra duyurulacak', pt: 'A data da próxima temporada será anunciada em breve' },
 
   // ── Страх (Fear): private wave-survival instance ──────────────────────────
   fearTab:      { ru: 'Страх', en: 'Fear', uk: 'Страх', es: 'Miedo', tr: 'Korku', pt: 'Medo' },

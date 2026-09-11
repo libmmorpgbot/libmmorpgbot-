@@ -262,29 +262,27 @@ let _farm2InRun = false;
 let _farm2Group = null;
 let _farm2OpenGroups = [];
 
-// Сезон 2 — points race with a fixed end date. Everything here is pushed by
+// Сезон 3 — points race with a fixed end date. Everything here is pushed by
 // the server (points are server-owned, see the seasonSync handler in
-// server/index.js); nothing is computed locally. The point VALUES below are
-// just a reasonable default for the first paint before seasonState arrives —
-// the server's own numbers (shared/definitions.js) always win.
+// server/handlers2/progression.js); nothing is computed locally. The point
+// VALUES below are just a reasonable default for the first paint before
+// seasonState arrives — the server's own numbers (shared/definitions.js)
+// always win.
 //
-// Two fields the server also sends are deliberately not mirrored here. The
-// rating threshold is read as _seasonRating.minPoints by _seasonRatingHTML
-// (js/ui.js) — a different payload that arrives on its own — so the
-// minRatingPoints: 5000 that used to sit below was a second number nobody
-// ever consulted. The enhanceable special slots are
-// SEASON_ENHANCE_SPECIAL_SLOTS (shared/definitions.js), in this bundle's
-// scope and the same set seasonEnhancePoints() prices from server-side, so
-// the enhanceSpecialSlots: ['pet', 'cloak', 'artifact'] literal that used
-// to sit below was a hand-copy that would not have followed the real one
-// when it changed.
-let _seasonState = { endAt: 0, active: false, points: 0, prizes: [], vipPrize: null,
-                     enhanceSpecial: { common: { norm: 20, bless: 5 }, uncommon: { norm: 40, bless: 15 }, rare: { norm: 100, bless: 40 } },
-                     enhanceGear: { rare: 20, epic: 100 },
+// The rating threshold is NOT mirrored here on purpose — it's read as
+// _seasonRating.minPoints by _seasonRatingHTML (js/ui.js), a different
+// payload that arrives on its own, so a second copy here would just be a
+// number nobody consults.
+let _seasonState = { endAt: 0, active: false, points: 0, prizes: [],
+                     enhancePoints: 3,
                      advBookPoints: 300,
                      burn: { common: 1, uncommon: 5 }, bookBurnPoints: 60,
                      ref: { points: 200, level: 20 },
-                     empowerPoints: 500, shopPointsPerGram: 100 };
+                     empowerPoints: 500, shopPointsPerGram: 100,
+                     marketBuyPointsPerGram: 50, marketSellPointsPerGram: 10,
+                     tournamentWinPoints: 2,
+                     farm:  { target: 5000, points: 10, progress: 0 },
+                     farm2: { target: 5000, points: 15, progress: 0 } };
 let _seasonRating = null;   // null = not fetched yet
 let _seasonWinners = null;  // "Итоги" screen data — null = not fetched yet
 // Whether THIS account owns the season ticket (server-authoritative — set

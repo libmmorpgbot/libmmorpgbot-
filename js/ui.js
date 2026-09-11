@@ -5044,27 +5044,32 @@ function _renderSeasonBody() {
                   : _seasonInfoHTML();
 }
 
-// Prize table. Places 1-10 pay GRAM, auto-credited to the balance the moment
-// the season ends (distributeSeasonPrizes, server-side) — the GRAM figure is
-// what actually lands, the USDT alongside it is only the reference value the
-// place was sized against. 11-20 still pay a VIP level, handled by hand.
+// Prize table. All 20 places pay real USD, by hand, outside the game — see
+// distributeSeasonPrizes's own comment (server/db/repos/progression.js) for
+// why nothing here is auto-credited this season. Consecutive places worth
+// the same amount are grouped into one row ("4-10 место — $10") rather than
+// seven identical lines — that grouping is the only thing this function
+// does that the server-sent SEASON_PRIZES array doesn't already say.
+function _seasonPrizeGroups(prizes) {
+  const groups = [];
+  for (const p of prizes) {
+    const last = groups[groups.length - 1];
+    if (last && last.usd === p.usd && p.place === last.to + 1) last.to = p.place;
+    else groups.push({ from: p.place, to: p.place, usd: p.usd });
+  }
+  return groups;
+}
 function _seasonPrizesHTML() {
   const st = _seasonState || {};
-  const prizes = st.prizes || [];
-  const vip = st.vipPrize;
+  const groups = _seasonPrizeGroups(st.prizes || []);
   const medal = p => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : '🏅';
   return `<div class="db-rewards-hdr">${t('seasonPrizesHdr')}</div>
     <div class="db-rewards">
-      ${prizes.map(p => `<div class="db-reward-row">
-        <span class="db-reward-fallback">${medal(p.place)}</span>
-        <span>${tVars('seasonPlaceFmt', { n: p.place })}</span>
-        <span class="db-reward-qty">${tVars('seasonPrizeGramFmt', { g: (p.gram || 0).toFixed(2), u: p.usdt })}</span>
+      ${groups.map(g => `<div class="db-reward-row">
+        <span class="db-reward-fallback">${medal(g.from)}</span>
+        <span>${g.from === g.to ? tVars('seasonPlaceFmt', { n: g.from }) : tVars('seasonPlaceRangeFmt', { a: g.from, b: g.to })}</span>
+        <span class="db-reward-qty">${tVars('seasonPrizeUsdFmt', { n: g.usd })}</span>
       </div>`).join('')}
-      ${vip ? `<div class="db-reward-row">
-        <span class="db-reward-fallback">⭐</span>
-        <span>${tVars('seasonPlaceRangeFmt', { a: vip.from, b: vip.to })}</span>
-        <span class="db-reward-qty">VIP ${vip.vip}</span>
-      </div>` : ''}
     </div>`;
 }
 
@@ -5107,9 +5112,7 @@ function _renderSeasonWinners() {
   const fallback = _seasonWinners === null ? t('seasonLoading') : t('seasonNoPlayers');
   const rows = list.map(x => {
     const mine = player && x.username === player.username;
-    const prizeTxt = x.prizeGram != null
-      ? `${x.prizeGram.toFixed(2)} <img src="/images/gram-icon.png" width="14" height="14" style="vertical-align:middle">`
-      : x.vip ? `VIP ${x.vip}` : '—';
+    const prizeTxt = x.prizeUsd != null ? `$${x.prizeUsd}` : '—';
     const pc = x.place <= 3 ? ' p' + x.place : '';
     return `<div class="season-row${mine ? ' me' : ''}">
       <span class="season-place${pc}">${x.place}</span>
@@ -5119,8 +5122,8 @@ function _renderSeasonWinners() {
     </div>`;
   }).join('');
   const mine = list.find(x => player && x.username === player.username);
-  const myNote = (mine && mine.prizeGram != null)
-    ? `<div class="imod-enh-chance" style="margin-top:10px;color:#7ee0c0">${tVars('seasonWinnersMyPrize', { n: mine.prizeGram.toFixed(2) })} <img src="/images/gram-icon.png" width="14" height="14" style="vertical-align:middle"></div>`
+  const myNote = (mine && mine.prizeUsd != null)
+    ? `<div class="imod-enh-chance" style="margin-top:10px;color:#7ee0c0">${tVars('seasonWinnersMyPrize', { n: mine.prizeUsd })}</div>`
     : '';
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
@@ -5158,19 +5161,33 @@ function _seasonBookStacks() {
   return out;
 }
 
+// One farm-zone quest card: label, target, progress bar, claim button. The
+// button is always clickable — the server is the real gate (claimFarmKillPoints
+// refuses under target) — but dimmed below 100% so it reads as "not yet"
+// rather than inviting a tap that will just bounce.
+function _seasonFarmQuestHTML(label, q, zoneKey) {
+  q = q || { target: 5000, points: 10, progress: 0 };
+  const pct = Math.max(0, Math.min(100, Math.round((q.progress / Math.max(1, q.target)) * 100)));
+  const ready = q.progress >= q.target;
+  return `
+    <div style="margin-top:10px;padding:10px;border:1px solid rgba(209,204,197,.14);border-radius:10px">
+      <div style="font-size:13px;color:#d9cfbe;margin-bottom:8px">${tVars('seasonFarmTaskFmt', { label, target: q.target, n: q.points })}</div>
+      <div class="cs-sbar">
+        <div class="cs-sbtrack"><div class="cs-sbfill" style="width:${pct}%;background:#50af95"></div></div>
+        <span class="cs-sbv">${tVars('seasonFarmProgressFmt', { cur: Math.min(q.progress, q.target), target: q.target })}</span>
+      </div>
+      <button class="db-action" style="margin-top:8px${ready ? '' : ';opacity:.5'}" onclick="_seasonClaimFarm('${zoneKey}')">${t('seasonFarmClaimBtn')}</button>
+    </div>`;
+}
+
+function _seasonClaimFarm(zone) {
+  if (typeof netSeasonClaimFarmKills === 'function') netSeasonClaimFarmKills(zone);
+}
+
 function _seasonTasksHTML() {
   const st = _seasonState || {};
   const ended = !st.active;
-  const sp = st.enhanceSpecial || {};
-  const gear = st.enhanceGear || {};
   const bp = st.burn || { common: 1, uncommon: 5 };
-
-  const enhSpecialRows = ['common', 'uncommon', 'rare'].filter(r => sp[r]).map(r =>
-    `<li>${tVars('season2EnhSpecialFmt', { r: _RARITY_NAMES[r] || r, norm: sp[r].norm, safe: sp[r].bless })}</li>`
-  ).join('');
-  const enhGearRows = ['rare', 'epic'].filter(r => gear[r]).map(r =>
-    `<li>${tVars('season2EnhGearFmt', { r: _RARITY_NAMES[r] || r, n: gear[r] })}</li>`
-  ).join('');
 
   const bookStacks = _seasonBookStacks();
   const bookRows = bookStacks.map(s => `
@@ -5184,17 +5201,22 @@ function _seasonTasksHTML() {
   return `
     <div style="padding:16px">
       <div class="db-rules">
-        <b>${t('season2EnhSpecialHdr')}</b>
-        <ul>${enhSpecialRows}</ul>
-        <b>${t('season2EnhGearHdr')}</b>
-        <ul>${enhGearRows}</ul>
         <ul>
+          <li>${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 50 })}</li>
+          <li>${tVars('seasonMarketSellFmt', { n: st.marketSellPointsPerGram || 10 })}</li>
+          <li>${tVars('season2ShopFmt', { n: st.shopPointsPerGram || 100 })}</li>
+          <li>${tVars('seasonEnhanceFmt', { n: st.enhancePoints || 3 })}</li>
+          <li>${tVars('seasonTournamentWinFmt', { n: st.tournamentWinPoints || 2 })}</li>
           <li>${tVars('season2AdvBookFmt', { n: st.advBookPoints || 300 })}</li>
           <li>${tVars('season2EmpowerFmt', { n: st.empowerPoints || 500 })}</li>
-          <li>${tVars('season2ShopFmt', { n: st.shopPointsPerGram || 100 })}</li>
           <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>
         </ul>
         <div class="imod-enh-chance">${t('seasonRefNote')}</div>
+      </div>
+      <div class="db-rules">
+        <b>${t('seasonFarmQuestsHdr')}</b>
+        ${_seasonFarmQuestHTML(t('farmZoneLbl'), st.farm, 'farm')}
+        ${_seasonFarmQuestHTML(t('farm2Lbl'), st.farm2, 'farm2')}
       </div>
       ${ended ? '' : `<div class="db-rules">
         ${t('seasonBurnHdr')}
@@ -5233,7 +5255,7 @@ function _seasonBurnBookConfirm(id) {
   if (typeof netSeasonBurnBook === 'function') netSeasonBurnBook(id, s.qty);
 }
 
-// ── "Рейтинг" tab: top 50, 5000+ points only ────────────────────────────────
+// ── "Рейтинг" tab: top 20 ────────────────────────────────────────────────
 function _seasonRatingHTML() {
   const r = _seasonRating;
   if (!r) return `<div style="padding:16px"><div class="db-phase">${t('seasonLoading')}</div></div>`;
@@ -5254,8 +5276,13 @@ function _seasonRatingHTML() {
          <span class="season-pts">${r.me.points}</span>
        </div>`
     : '';
+  // Season 3's floor is "scored at all" (SEASON_RATING_MIN_POINTS = 1) —
+  // not a real threshold worth printing, unlike Season 2's 5000.
+  const minLine = (r.minPoints || 0) > 1
+    ? `<div class="imod-enh-chance" style="margin-bottom:10px">${tVars('season2RatingMinFmt', { n: r.minPoints })}</div>`
+    : '';
   return `<div style="padding:16px">
-    <div class="imod-enh-chance" style="margin-bottom:10px">${tVars('season2RatingMinFmt', { n: r.minPoints || 5000 })}</div>
+    ${minLine}
     ${rows || `<div class="db-phase">${t('seasonNoPlayers')}</div>`}
     ${meRow}
     ${_seasonPrizesHTML()}

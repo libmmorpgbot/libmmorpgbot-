@@ -2552,6 +2552,18 @@ function netConnect(onReady) {
     if (typeof onSeasonState === 'function') onSeasonState();
   });
 
+  // The farm-zone kill quests' claim button. `total` here is the full
+  // seasonState the server already re-read (same as every other season
+  // event above), so the panel's progress bar resets to whatever remained
+  // after this claim without a second round trip.
+  socket.on('seasonFarmClaimed', ({ points, total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof _marketToast === 'function' && points) {
+      _marketToast(tVars('seasonEventDoneMsg', { n: points }), 'ok');
+    }
+    if (typeof onSeasonState === 'function') onSeasonState();
+  });
+
   socket.on('seasonBurnError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
@@ -5173,6 +5185,11 @@ function netClaimQuest(idx) {
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
 function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'); }
+// The farm-zone kill quests' claim button. `zone` is 'farm' or 'farm2' —
+// the server maps it to the right jsonb key/target/rate itself.
+function netSeasonClaimFarmKills(zone) {
+  if (socket?.connected) socket.emit('seasonClaimFarmKills', { zone });
+}
 // Burning destroys the item/stack for season points — the server owns both
 // halves, nothing is applied locally.
 // Same identity check as netSellItem, and it matters more here: burning

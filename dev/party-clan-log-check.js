@@ -177,35 +177,20 @@ async function mk(nick) {
   }
 
   // ═══ 2в. Очки сезона за заточку ════════════════════════════════════════
-  // Таблица есть, экспортируется и показывается игроку в панели сезона — а
-  // функция, которая по ней считает, не вызывалась НИГДЕ. Панель обещала
-  // «Редкий: +20 очков», заточка проходила, очки не начислялись никогда:
-  // «Сезон не работает, за заточку ниче не дают».
+  // Сезон 2 держал таблицу очков по слоту/редкости/камню; Сезон 3 снял её —
+  // любой успешный бросок, любым камнем, платит один плоский
+  // SEASON_ENHANCE_POINTS. Проверяется, что начисление всё ещё привязано к
+  // УДАВШЕЙСЯ заточке (не к попытке) и что число совпадает с тем, что панель
+  // сезона показывает игроку.
   console.log('\n  ── очки сезона за заточку ──');
   {
     const D = require('../shared/definitions');
     const eco = fs.readFileSync(path.join(ROOT, 'server/handlers2/economy.js'), 'utf8');
     const h = eco.slice(eco.indexOf("safeOn('enhanceItem'"), eco.indexOf("safeOn('enhanceItem'") + 4000);
-    ok(/seasonEnhancePoints\(/.test(h), 'обработчик заточки считает очки');
-    ok(/addSeasonPoints\(t, pid, _pts\)/.test(h), 'и начисляет их');
-    // Слот и редкость — ИЗ КАТАЛОГА, а не из запроса: в запросе slot это
-    // подсказка, где искать вещь, и клиент вправе прислать любую.
-    ok(/_def\.slot, _def\.rarity/.test(h), 'слот и редкость берутся из каталога, а не из пакета');
-    ok(h.indexOf('seasonEnhancePoints(') > h.indexOf("res.outcome === 'success'"),
+    ok(/addSeasonPoints\(t, pid, SEASON_ENHANCE_POINTS\)/.test(h), 'обработчик заточки начисляет SEASON_ENHANCE_POINTS');
+    ok(h.indexOf('addSeasonPoints(t, pid, SEASON_ENHANCE_POINTS)') > h.indexOf("res.outcome === 'success'"),
       'очки только за УДАВШУЮСЯ заточку');
-
-    // И числа те же, что показаны игроку: панель отдаёт свои значения из тех же
-    // констант, что и начисление. Разойтись они могут только если кто-то
-    // поменяет одну сторону.
-    const shown = { special: D.SEASON_ENHANCE_SPECIAL_POINTS, gear: D.SEASON_ENHANCE_GEAR_POINTS };
-    eq(D.seasonEnhancePoints('pet', 'common', 'norm'), shown.special.common.norm, 'питомец обычный, обычный камень');
-    eq(D.seasonEnhancePoints('pet', 'common', 'bless'), shown.special.common.bless, 'питомец обычный, безопасный');
-    eq(D.seasonEnhancePoints('cloak', 'rare', 'norm'), shown.special.rare.norm, 'плащ редкий, обычный камень');
-    eq(D.seasonEnhancePoints('weapon', 'rare', 'norm'), shown.gear.rare, 'предмет редкий');
-    eq(D.seasonEnhancePoints('weapon', 'epic', 'norm'), shown.gear.epic, 'предмет эпический');
-    // Безопасный камень на обычной вещи очков не даёт — так в таблице.
-    eq(D.seasonEnhancePoints('weapon', 'epic', 'bless'), 0, 'предмет безопасным камнем — без очков');
-    eq(D.seasonEnhancePoints('weapon', 'common', 'norm'), 0, 'обычный предмет — без очков');
+    ok(D.SEASON_ENHANCE_POINTS > 0, 'константа задана и положительна');
   }
 
   // ═══ 3. Журнал ═════════════════════════════════════════════════════════

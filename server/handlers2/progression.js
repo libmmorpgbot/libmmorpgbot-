@@ -23,6 +23,8 @@ const {
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
   SEASON_RATING_MIN_POINTS,
+  SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
+  SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
 } = require('../../shared/definitions');
 const shop = require('../shop');
 
@@ -269,7 +271,9 @@ module.exports = function registerProgression(s, safeOn) {
     // destructured keys, and there are none to compare. That blind spot is
     // now checked separately — see the same file.
     const list = await progression.seasonBoard(t, {
-      limit: 50,
+      // Season 3: top 20, matching SEASON_PRIZES' own length — every row the
+      // leaderboard can show is a row someone is owed a prize for.
+      limit: 20,
       // The board must agree with the threshold printed above it. It defaulted
       // to 1, so the panel said "нужно 5000 очков" and then listed players
       // with one.
@@ -309,6 +313,26 @@ module.exports = function registerProgression(s, safeOn) {
   safeOn('seasonSync', () => s.act('seasonSync', 'seasonError', async (t, pid) => {
     s.socket.emit('seasonState', await progression.seasonState(t, pid));
   }));
+
+  // ── season ───────────────────────────────────────────────────────────────
+  // The farm-zone kill quests' claim button. Kills only ever bump a counter
+  // (world.js's onKill); this is the one place they become season points,
+  // converting every complete 5000-kill (or 5000-kill, farm zone 2) cycle
+  // the counter currently covers and leaving any partial progress toward the
+  // next one — see claimFarmKillPoints's own comment for why it can pay more
+  // than one cycle in a single press.
+  const _FARM_ZONES = {
+    farm:  { key: 'farmKills',  target: SEASON_FARM_KILL_TARGET,  points: SEASON_FARM_KILL_POINTS },
+    farm2: { key: 'farm2Kills', target: SEASON_FARM2_KILL_TARGET, points: SEASON_FARM2_KILL_POINTS },
+  };
+  safeOn('seasonClaimFarmKills', ({ zone } = {}) =>
+    s.act('seasonClaimFarmKills', 'seasonError', async (t, pid) => {
+      const z = Object.hasOwn(_FARM_ZONES, zone) ? _FARM_ZONES[zone] : null;
+      if (!z) fail('Неизвестная зона', 'bad_zone');
+      const res = await progression.claimFarmKillPoints(t, pid, z.key, z.target, z.points);
+      s.socket.emit('seasonFarmClaimed', { zone, cycles: res.cycles, points: res.points, total: res.total });
+      s.socket.emit('seasonState', await progression.seasonState(t, pid));
+    }));
 
   async function afterBurn(t, pid, res) {
     await s.pushItems(t);

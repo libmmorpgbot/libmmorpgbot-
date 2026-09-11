@@ -46,7 +46,7 @@ const ops = require('./tg-ops');
 const {
   DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   race10Rewards, race10Liberty,
-  SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS, SEASON_TOURNAMENT_WIN_POINTS,
 } = require('../shared/definitions');
 
 // The co-op boss. Not in shared/definitions because nothing else refers to it
@@ -199,6 +199,9 @@ function attach(socket, s) {
   };
   socket.data._seasonAwardEvent = _awardSeason(SEASON_EVENT_POINTS, 'event');
   socket.data._seasonAwardWin = _awardSeason(SEASON_EVENT_WIN_POINTS, 'win');
+  // Tournament round wins — every round is one opponent beaten, grand final
+  // included, so a single flat rate covers every call site in tournament.js.
+  socket.data._seasonAwardTournamentWin = _awardSeason(SEASON_TOURNAMENT_WIN_POINTS, 'win');
 
   // Death battle: GRAM plus a fixed item set.
   socket.data._dbGrantWin = async () => {

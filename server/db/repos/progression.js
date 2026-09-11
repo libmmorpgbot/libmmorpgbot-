@@ -25,10 +25,11 @@ const {
   VIP_CUMULATIVE, QUEST_DEF, questComplete, seasonActive, armIndexForLevel,
   SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
-  SEASON_PRIZES, SEASON_VIP_PRIZE, SEASON_ENHANCE_SPECIAL_SLOTS,
-  SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS, SEASON_ADV_BOOK_POINTS,
+  SEASON_PRIZES, SEASON_ENHANCE_POINTS, SEASON_ADV_BOOK_POINTS,
   SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS, SEASON_EMPOWER_POINTS,
-  SEASON_SHOP_POINTS_PER_GRAM, CRAFT_MATS,
+  SEASON_SHOP_POINTS_PER_GRAM, SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM,
+  SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
+  SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS, CRAFT_MATS,
 } = require('../../../shared/definitions');
 
 class ProgressionError extends Error {
@@ -39,7 +40,7 @@ const err = (code, msg) => { throw new ProgressionError(code, msg); };
 // The season a date belongs to. Kept as an explicit number rather than derived
 // from "is the current season active", so a claim written a second before the
 // deadline is still attributed to the season it was earned in.
-const CURRENT_SEASON = 2;
+const CURRENT_SEASON = 3;
 
 // ── special quests ──────────────────────────────────────────────────────────
 // One row per (player, quest). The PRIMARY KEY is the once-only rule: the
@@ -341,6 +342,49 @@ async function addSeasonPoints(db, playerId, points, season = CURRENT_SEASON) {
   return Number(rows[0].points);
 }
 
+// ── farm-zone kill quests: bump on kill, claim converts cycles to points ───
+// `zone` is a plain key under player_season.quests (jsonb; unused since
+// Season 1) — 'farmKills' or 'farm2Kills'. Bumping never touches points or
+// checks seasonActive(): it is just a counter, same as questOnKill counts
+// kills unconditionally elsewhere in this file; the button below is the only
+// place a kill actually becomes points.
+async function bumpFarmKill(db, playerId, zone, season = CURRENT_SEASON) {
+  const { rows } = await query(db, `
+    INSERT INTO player_season (player_id, season, quests) VALUES ($1, $2, jsonb_build_object($3::text, 1))
+    ON CONFLICT (player_id, season) DO UPDATE
+      SET quests = jsonb_set(player_season.quests, ARRAY[$3],
+                              to_jsonb(COALESCE((player_season.quests->>$3)::int, 0) + 1))
+    RETURNING quests->>$3 AS progress`, [playerId, season, zone]);
+  return Number(rows[0].progress);
+}
+
+// The claim button. Converts as many COMPLETE cycles as progress currently
+// covers in one press — kill 12000 before ever claiming and one press pays
+// 2 cycles' worth of points, keeping the 2000 leftover toward the third
+// rather than discarding it. FOR UPDATE because this is read-then-write
+// (unlike the plain counter above): two claims arriving together must not
+// both read the same progress and both think they earned the same cycle.
+async function claimFarmKillPoints(db, playerId, zone, target, pointsPerCycle, season = CURRENT_SEASON) {
+  if (!seasonActive()) err('season_over', 'Сезон завершён');
+  await query(db, `
+    INSERT INTO player_season (player_id, season) VALUES ($1, $2)
+    ON CONFLICT (player_id, season) DO NOTHING`, [playerId, season]);
+  const { rows } = await query(db, `
+    SELECT quests FROM player_season WHERE player_id = $1 AND season = $2 FOR UPDATE`, [playerId, season]);
+  const progress = Number((rows[0]?.quests || {})[zone] || 0);
+  const cycles = Math.floor(progress / target);
+  if (cycles <= 0) err('not_enough', 'Пока недостаточно убийств');
+  const remaining = progress - cycles * target;
+  const points = cycles * pointsPerCycle;
+  const { rows: out } = await query(db, `
+    UPDATE player_season
+       SET quests = jsonb_set(quests, ARRAY[$3], to_jsonb($4::int)),
+           points = points + $5
+     WHERE player_id = $1 AND season = $2
+    RETURNING points`, [playerId, season, zone, remaining, points]);
+  return { cycles, points, remaining, total: Number(out[0].points) };
+}
+
 // The referral bonus: paid once, when an invited friend crosses the level
 // threshold. `ref_paid` lives on the FRIEND's row — on the old model it was a
 // field in the friend's own blob, so they could clear it and have their
@@ -415,11 +459,12 @@ async function seasonOf(db, playerId, season = CURRENT_SEASON) {
 }
 
 // ── season-end prizes ────────────────────────────────────────────────────
-// Places 1-10 get their SEASON_PRIZES USDT value, converted to GRAM at
-// SEASON_PRIZE_GRAM_RATE, credited straight onto the winner's balance — once
-// the season is OVER, never while the board can still move. Replaces the old
-// "paid out manually off-chain" flow for cash places; 11-20's VIP prize is
-// unchanged and still handled by hand.
+// Season 2's places 1-10 auto-credited GRAM the moment the season ended.
+// Season 3's SEASON_PRIZES entries carry no `gram` field at all — the prizes
+// are real USD, paid by hand outside the game — so every place here now
+// takes the `continue` branch below and this is a safe no-op for the current
+// season. Left in place (rather than deleted) so an OLDER season, re-run
+// with an explicit `season` argument, still pays out exactly as it did.
 //
 // place is computed over the FULL ranked board, not just the still-unpaid
 // rows — otherwise a job that crashed after paying places 1-3 would, on
@@ -447,7 +492,7 @@ async function distributeSeasonPrizes(db, season = CURRENT_SEASON) {
   let paid = 0;
   for (const r of rows) {
     const prize = SEASON_PRIZES[Number(r.place) - 1];
-    if (!prize) continue;
+    if (!prize || !prize.gram) continue;
     await tx(async (t) => {
       await money.credit(t, r.player_id, 'gram', prize.gram, {
         reason: 'season_prize', refType: 'season', refId: String(season),
@@ -462,29 +507,25 @@ async function distributeSeasonPrizes(db, season = CURRENT_SEASON) {
   return { paid };
 }
 
-// The season panel's "Итоги" screen. Top 20 — the whole prize table, cash
-// places and VIP places alike — so it reads as one list of winners rather
-// than two payloads the client has to stitch together. prizeGram comes off
-// the row itself (what distributeSeasonPrizes actually credited), not
-// re-derived from place, so it reads 0/blank for a season this table
-// predates.
+// The season panel's "Итоги" screen. Top 20 — the whole SEASON_PRIZES table
+// — so it reads as one list of winners the operator can pay from directly:
+// place, username and the USD amount that place is owed. Nothing here is
+// credited automatically (see distributeSeasonPrizes above); this is a
+// read-only report.
 async function seasonWinners(db, season = CURRENT_SEASON) {
   const { rows } = await query(db, `
-    SELECT s.player_id, s.points, s.prize_gram, p.username,
+    SELECT s.player_id, s.points, p.username,
            row_number() OVER (ORDER BY s.points DESC, s.player_id) AS place
       FROM player_season s JOIN players p ON p.id = s.player_id
      WHERE s.season = $1 AND s.points >= $2
      ORDER BY s.points DESC, s.player_id
-     LIMIT $3`, [season, SEASON_RATING_MIN_POINTS, SEASON_VIP_PRIZE.to]);
+     LIMIT $3`, [season, SEASON_RATING_MIN_POINTS, SEASON_PRIZES.length]);
   return rows.map(r => {
     const place = Number(r.place);
     const cash = SEASON_PRIZES[place - 1];
-    const vip = (!cash && place >= SEASON_VIP_PRIZE.from && place <= SEASON_VIP_PRIZE.to)
-      ? SEASON_VIP_PRIZE.vip : null;
     return {
       place, username: r.username, points: Number(r.points),
-      prizeGram: cash ? Number(r.prize_gram || 0) : null,
-      vip,
+      prizeUsd: cash ? cash.usd : null,
     };
   });
 }
@@ -659,13 +700,9 @@ async function seasonState(db, playerId) {
     ticket: !!vip.seasonTicket,
     points: mine.points,
     place: mine.place,
-    myPrizeGram: mine.prizeGram,
     minRatingPoints: SEASON_RATING_MIN_POINTS,
     prizes: SEASON_PRIZES,
-    vipPrize: SEASON_VIP_PRIZE,
-    enhanceSpecialSlots: [...SEASON_ENHANCE_SPECIAL_SLOTS],
-    enhanceSpecial: SEASON_ENHANCE_SPECIAL_POINTS,
-    enhanceGear: SEASON_ENHANCE_GEAR_POINTS,
+    enhancePoints: SEASON_ENHANCE_POINTS,
     advBookPoints: SEASON_ADV_BOOK_POINTS,
     burn: SEASON_BURN_POINTS,
     bookBurnPoints: SEASON_BOOK_BURN_POINTS,
@@ -674,6 +711,22 @@ async function seasonState(db, playerId) {
     eventWinPoints: SEASON_EVENT_WIN_POINTS,
     empowerPoints: SEASON_EMPOWER_POINTS,
     shopPointsPerGram: SEASON_SHOP_POINTS_PER_GRAM,
+    marketBuyPointsPerGram: SEASON_MARKET_BUY_POINTS_PER_GRAM,
+    marketSellPointsPerGram: SEASON_MARKET_SELL_POINTS_PER_GRAM,
+    tournamentWinPoints: SEASON_TOURNAMENT_WIN_POINTS,
+    // Repeatable kill-then-claim quests. Progress lives in player_season.
+    // quests (jsonb) — bumped on every qualifying kill (server/handlers2/
+    // world.js), converted into season points only by the claim button
+    // (seasonClaimFarmKills, server/handlers2/progression.js), never by the
+    // kill count reaching the target on its own.
+    farm: {
+      target: SEASON_FARM_KILL_TARGET, points: SEASON_FARM_KILL_POINTS,
+      progress: Number((mine.quests || {}).farmKills || 0),
+    },
+    farm2: {
+      target: SEASON_FARM2_KILL_TARGET, points: SEASON_FARM2_KILL_POINTS,
+      progress: Number((mine.quests || {}).farm2Kills || 0),
+    },
   };
 }
 
@@ -727,7 +780,8 @@ module.exports = {
   claimSpecialQuest, claimedSpecialQuests,
   bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,
-  addSeasonPoints, paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
+  addSeasonPoints, bumpFarmKill, claimFarmKillPoints,
+  paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
   distributeSeasonPrizes, seasonWinners,
   takeAttempt, attemptsLeft, spendSeconds, secondsLeft,
   CURRENT_SEASON, ProgressionError,

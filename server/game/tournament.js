@@ -518,6 +518,10 @@ module.exports = function createTournament(deps) {
   // needs to be in `ref` itself.
   function _trPayRoundReward(winnerSid, loserSid) {
     const tag = _tr.matchTag.get(winnerSid);
+    // Season 3: +2 points per opponent beaten. Every round here — grand
+    // final included — is one 1v1 match, so "per opponent" is just "every
+    // round win", one flat rate, no branching needed.
+    _trAwardSeasonWin(winnerSid);
     if (tag === 'grandFinal') {
       _trGrant(winnerSid, TOURNAMENT_FINAL_WIN_NEXUM, 'tournament:final:win');
       _trGrant(loserSid, TOURNAMENT_FINAL_LOSE_NEXUM, 'tournament:final:lose');
@@ -531,6 +535,11 @@ module.exports = function createTournament(deps) {
   function _trGrant(sid, amount, ref) {
     const sock = io.sockets.sockets.get(sid);
     if (sock?.data?._trGrantReward) sock.data._trGrantReward(amount, ref).catch(() => {});
+  }
+
+  function _trAwardSeasonWin(sid) {
+    const sock = io.sockets.sockets.get(sid);
+    sock?.data?._seasonAwardTournamentWin?.('tournament')?.catch?.(() => {});
   }
 
   // The round's clock ran out (or the last live match just resolved and

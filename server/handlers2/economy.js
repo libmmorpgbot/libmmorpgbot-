@@ -22,7 +22,7 @@ const crypto = require('crypto');
 const consumables = require('../db/repos/consumables');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, seasonEnhancePoints,
+  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, SEASON_ENHANCE_POINTS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
@@ -274,28 +274,17 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       if (_q) s.socket.emit('questSync', _q);
 
       // ── очки сезона ────────────────────────────────────────────────────
-      // Таблица (SEASON_ENHANCE_*, shared/definitions.js) существовала,
-      // экспортировалась и показывалась игроку в панели сезона — а
-      // seasonEnhancePoints() не вызывался ни из одного места. Панель обещала
-      // «Редкий: +20 очков», заточка проходила, очки не начислялись никогда.
-      //
-      // Слот и редкость берутся ИЗ КАТАЛОГА по итогу заточки, а не из запроса:
-      // в запросе `slot` — это подсказка, где искать вещь, и клиент вправе
-      // прислать любую. Ровно это и написано над самой функцией.
+      // Сезон 3: флэт — любой предмет, любая редкость, любой камень, пока
+      // бросок успешен. Раньше (Сезон 2) очки зависели от слота/редкости/
+      // типа камня; таблица снята вместе с той таблицей.
       //
       // В ТОЙ ЖЕ транзакции, что и заточка, по той же причине, что и квест
       // строкой выше: иначе на удавшемся броске камень потрачен, вещь
       // заточена, а очки не начислены.
-      const _def = ITEM_DEF.find(d => d.id === res.itemId);
-      const _pts = _def
-        ? seasonEnhancePoints(_def.slot, _def.rarity, stoneType === 'bless' ? 'bless' : 'norm')
-        : 0;
-      if (_pts > 0) {
-        const _total = await progression.addSeasonPoints(t, pid, _pts);
-        // null означает «сезон не идёт» — тогда и говорить не о чем.
-        if (_total != null) {
-          s.socket.emit('seasonEventDone', { task: 'enhance', points: _pts, total: _total });
-        }
+      const _total = await progression.addSeasonPoints(t, pid, SEASON_ENHANCE_POINTS);
+      // null означает «сезон не идёт» — тогда и говорить не о чем.
+      if (_total != null) {
+        s.socket.emit('seasonEventDone', { task: 'enhance', points: SEASON_ENHANCE_POINTS, total: _total });
       }
     }
     await pushAll(t);

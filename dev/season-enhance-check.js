@@ -4,11 +4,11 @@
 //
 //   DATABASE_URL=... PG_CA_FILE=... node dev/season-enhance-check.js
 //
-// «Сезон не работает, за заточку ниче не дают» — и это было правдой ровно так,
-// как сказано: таблица SEASON_ENHANCE_* существовала, экспортировалась и
-// ПОКАЗЫВАЛАСЬ игроку в панели сезона, а seasonEnhancePoints() не вызывался ни
-// из одного места. Панель обещала «Редкий: +20 очков», заточка проходила, очки
-// не начислялись никогда.
+// «Сезон не работает, за заточку ниче не дают» — было правдой в Сезоне 2:
+// таблица SEASON_ENHANCE_* существовала, ПОКАЗЫВАЛАСЬ игроку в панели сезона,
+// а seasonEnhancePoints() не вызывался ни из одного места. Сезон 3 снял ту
+// таблицу целиком — теперь любой успешный бросок, любым камнем, даёт один и
+// тот же SEASON_ENHANCE_POINTS, и это как раз то, что здесь и проверяется.
 //
 // Здесь это проверяется НЕ чтением исходника: поднимается настоящий сервер,
 // настоящий сокет затачивает настоящий предмет, и очки читаются из базы. Иначе
@@ -27,7 +27,7 @@ delete process.env.MOVE_GUARD;
 const { pool, close, tx } = require('../server/db');
 const items = require('../server/db/repos/items');
 const app = require('../server/app');
-const { ITEM_DEF, seasonEnhancePoints, seasonActive } = require('../shared/definitions');
+const { ITEM_DEF, SEASON_ENHANCE_POINTS, seasonActive } = require('../shared/definitions');
 
 let pass = 0, fail = 0;
 const ok = (c, name, got) => {
@@ -77,10 +77,9 @@ const pointsOf = async pid => {
   ok(seasonActive() === true, 'сезон идёт — без него начислять нечего');
   if (!seasonActive()) { console.log('\n  0 пройшло, 1 впало\n'); await close(); process.exit(1); }
 
-  // Редкий пояс: по таблице — 20 очков за обычный камень, 0 за безопасный.
+  // Любой предмет — Сезон 3 больше не смотрит на редкость/слот.
   const GEAR = ITEM_DEF.find(d => d.id === 'nd3');
-  eq(GEAR.rarity, 'rare', 'подопытный предмет редкий');
-  eq(seasonEnhancePoints(GEAR.slot, GEAR.rarity, 'norm'), 20, 'таблица обещает за него 20');
+  eq(GEAR.rarity, 'rare', 'подопытный предмет редкий (хотя это больше не важно)');
 
   const rowId = await tx(async (t) => {
     await items.lockPlayer(t, pid);
@@ -110,25 +109,30 @@ const pointsOf = async pid => {
 
   ok(wins > 0, `хотя бы одна заточка удалась (${wins})`);
   // ГЛАВНОЕ. До исправления здесь было ровно 0 при любом числе удач.
-  eq(after - before, wins * 20, `очки выросли на 20 за каждую удачу (${before} -> ${after}, удач ${wins})`);
-  eq(sawEvent, wins * 20, 'и клиенту сказали ту же сумму');
+  eq(after - before, wins * SEASON_ENHANCE_POINTS,
+    `очки выросли на ${SEASON_ENHANCE_POINTS} за каждую удачу (${before} -> ${after}, удач ${wins})`);
+  eq(sawEvent, wins * SEASON_ENHANCE_POINTS, 'и клиенту сказали ту же сумму');
 
-  // Безопасный камень по таблице очков не даёт — иначе «безопасная» заточка
-  // была бы способом фармить сезон без риска.
+  // Безопасный камень в Сезоне 3 платит ТАК ЖЕ, как обычный — флэт-правило
+  // не смотрит на тип камня (в отличие от Сезона 2, где бросал 0).
   await tx(async (t) => {
     await items.lockPlayer(t, pid);
     await items.add(t, pid, 'bless_stone', { qty: 10, source: 'test' });
   });
   await wait(300);
   const beforeB = await pointsOf(pid);
-  for (let i = 0; i < 4; i++) {
+  let winsB = 0;
+  for (let i = 0; i < 10 && winsB < 1; i++) {
     const done = once(sock, 'enhanceResult', 8000).catch(() => null);
     sock.emit('enhanceItem', { rowId, stoneType: 'bless' });
-    await done;
+    const r = await done;
+    if (r && r.outcome === 'success') winsB++;
     await wait(250);
   }
   await wait(700);
-  eq(await pointsOf(pid) - beforeB, 0, 'за безопасный камень на предмете очков нет');
+  ok(winsB > 0, `хотя бы одна безопасная заточка удалась (${winsB})`);
+  eq(await pointsOf(pid) - beforeB, winsB * SEASON_ENHANCE_POINTS,
+    `безопасный камень тоже платит ${SEASON_ENHANCE_POINTS} за удачу`);
 
   sock.disconnect();
   await pool().query('DELETE FROM player_items WHERE player_id = $1', [pid]).catch(() => {});

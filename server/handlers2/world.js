@@ -554,6 +554,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // from `eid`, which the result does carry.
       const quest = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
       if (quest) s.socket.emit('questSync', quest);
+      // Season 3's farm-zone kill quests. A plain counter, not points —
+      // seasonClaimFarmKills (server/handlers2/progression.js) is what turns
+      // completed cycles into season points, so this runs unconditionally
+      // and never checks seasonActive() itself.
+      if (result.farmZone) await progression.bumpFarmKill(t, pid, 'farmKills');
+      else if (result.farmZone2) await progression.bumpFarmKill(t, pid, 'farm2Kills');
       let refBonus = null;
       // The stats.refreshBm that used to be here has moved into
       // players.grantXp. It was the only refresh in the build, and it sat on

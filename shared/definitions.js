@@ -597,49 +597,29 @@ function armIndexForLevel(lvl) {
 // the entrance doubles as a gate matching where the PREVIOUS arm tops out.
 const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 
-// ── Сезон 2 ─────────────────────────────────────────────────────────────────
+// ── Сезон 3: Новые классы ────────────────────────────────────────────────────
 // A time-boxed points race. Every point is counted server-side only
 // (savedData.seasonPoints2 is stripped from client saves the same way the
 // balances are — see _sanitizeSavedStats) so the leaderboard the prizes are
 // read off cannot be written to by the people competing on it.
 //
-// Season 1 scored kills and burning; Season 2 drops the kill-quest grind
-// entirely and scores itemization/economy actions instead — enhancing gear,
-// crafting an advanced ("2 профессия") skill book, burning junk gear and
-// books, referring a friend, empowering, and buying on the market. Kept in
-// its own field (seasonPoints2, not the old seasonPoints) so Season 1's
-// final totals — already paid out — don't carry over as a Season 2 head
-// start.
-const SEASON_END_AT = Date.UTC(2026, 8, 10, 15, 0, 0); // 10 Sep 2026, 18:00 MSK (UTC+3)
+// Season 2 scored itemization actions; Season 3 replaces that quest list
+// with economy actions built around the game's biggest sinks and the two
+// new classes' launch — buying and selling on the player market, buying in
+// the GRAM shop, farming either farm zone, enhancing gear (now a flat rate,
+// any slot, any rarity, any stone), and winning a tournament round. Kept in
+// the same `seasonPoints2` field/`player_season` table as Season 2 — only
+// the season NUMBER changes (CURRENT_SEASON, server/db/repos/progression.js)
+// — so last season's already-paid totals never carry over as a head start.
+const SEASON_END_AT = Date.UTC(2026, 9, 1, 15, 0, 0); // 1 Oct 2026, 18:00 MSK (UTC+3)
 function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 
 // ── Заточка (enhance) ────────────────────────────────────────────────────
-// Points for a SUCCESSFUL enhance only — a miss costs the stone and pays
-// nothing, the task is to enhance, not to attempt.
-//
-// The pet/cloak/artifact trio is priced separately from (and above) regular
-// gear at the same rarity, and — unlike regular gear — it also pays on a
-// SAFE (bless_stone) success, just less than a normal-stone one: the safe
-// stone can't destroy the item on a miss, so the risk (and the reward) is
-// lower. Regular gear only pays on a normal-stone success, and only at
-// rare/epic — nothing for common/uncommon gear, nothing for a safe success.
-const SEASON_ENHANCE_SPECIAL_SLOTS = new Set(['pet', 'cloak', 'artifact']);
-const SEASON_ENHANCE_SPECIAL_POINTS = {
-  common:   { norm: 20,  bless: 5  },
-  uncommon: { norm: 40,  bless: 15 },
-  rare:     { norm: 100, bless: 40 },
-};
-const SEASON_ENHANCE_GEAR_POINTS = { rare: 20, epic: 100 };
-// `slot`/`rarity` off the item's own catalog entry (never trust the request),
-// `stoneType` is enhanceItem's own 'bless' | 'norm'.
-function seasonEnhancePoints(slot, rarity, stoneType) {
-  if (SEASON_ENHANCE_SPECIAL_SLOTS.has(slot)) {
-    const row = SEASON_ENHANCE_SPECIAL_POINTS[rarity];
-    return row ? (row[stoneType === 'bless' ? 'bless' : 'norm'] || 0) : 0;
-  }
-  if (stoneType === 'bless') return 0;
-  return SEASON_ENHANCE_GEAR_POINTS[rarity] || 0;
-}
+// Flat now, on purpose: any item, any rarity, any stone (normal or safe),
+// as long as the roll actually succeeded — a miss costs the stone and pays
+// nothing, the task is to enhance, not to attempt. Season 2's slot/rarity/
+// stone-type table is gone; every successful enhance is worth the same.
+const SEASON_ENHANCE_POINTS = 3;
 
 // ── Вторая профессия ──────────────────────────────────────────────────────
 // Crafting (successfully) an advanced skill book — craftAdvSkillBook,
@@ -684,40 +664,65 @@ function seasonShopPoints(price) {
   return Math.max(0, Math.floor(Number(price) || 0)) * SEASON_SHOP_POINTS_PER_GRAM;
 }
 
-// ── Рейтинг ───────────────────────────────────────────────────────────────
-// The leaderboard only lists players who have cleared this floor — a low
-// score simply doesn't show up, rather than showing everyone all the way
-// down to 1 point.
-const SEASON_RATING_MIN_POINTS = 5000;
-
-// Fixed rate for this season's payout, not a live price feed — set once and
-// used both to size the GRAM amount credited (distributeSeasonPrizes, server/
-// db/repos/progression.js) and to print it next to the USDT the place was
-// originally sized against.
-const SEASON_PRIZE_GRAM_RATE = 1.37; // 1.37 USDT = 1 GRAM
-function seasonPrizeGram(usdt) {
-  return Math.round((Math.max(0, Number(usdt) || 0) / SEASON_PRIZE_GRAM_RATE) * 100) / 100;
+// ── Рынок игроков ─────────────────────────────────────────────────────────
+// Season 3's headline new sources: BOTH sides of a market trade score,
+// scaled by the GRAM that actually moved — awarded inside market.buy()
+// (server/db/repos/market.js) in the same transaction as the trade itself,
+// same shape as seasonShopPoints above (per whole GRAM, floored).
+const SEASON_MARKET_BUY_POINTS_PER_GRAM = 50;
+const SEASON_MARKET_SELL_POINTS_PER_GRAM = 10;
+function seasonMarketPoints(price, perGram) {
+  return Math.max(0, Math.floor(Number(price) || 0)) * perGram;
 }
 
-// Auto-credited in GRAM straight to the winner's balance the moment the
-// season ends (distributeSeasonPrizes) — no more manual off-chain payout for
-// places 1-10. `usdt` is kept as the reference value each place was sized
-// against; `gram` is what actually lands on the balance.
+// ── Турнир ────────────────────────────────────────────────────────────────
+// Per ROUND won — every round of the bracket is a single 1v1, so "per
+// opponent" and "per round win" are the same count here. Paid to the winner
+// only, awarded from server/game/tournament.js's _trPayRoundReward through
+// the same socket.data._seasonAward* closure factory mode-rewards.js already
+// built for death-battle's entry/win points.
+const SEASON_TOURNAMENT_WIN_POINTS = 2;
+
+// ── Фарм-зоны ─────────────────────────────────────────────────────────────
+// Repeatable: kill the target count in a zone, then press the claim button
+// (seasonClaimFarmKills, server/handlers2/progression.js) to convert the
+// completed cycles into season points — the button is what actually credits
+// them, not the kill count on its own, so a kill made after the season ends
+// cannot slip in under the wire and a claim only ever pays for cycles
+// finished while the season was still running (claimFarmKillPoints itself
+// checks seasonActive()). Progress lives in player_season.quests (jsonb;
+// unused since Season 1) rather than a new column, keyed 'farmKills' /
+// 'farm2Kills'. Kill counting itself (bumpFarmKill) happens unconditionally
+// in the same transaction as the kill (server/handlers2/world.js's onKill),
+// same as every other per-kill counter in this file.
+const SEASON_FARM_KILL_TARGET = 5000;
+const SEASON_FARM_KILL_POINTS = 10;
+const SEASON_FARM2_KILL_TARGET = 5000;
+const SEASON_FARM2_KILL_POINTS = 15;
+
+// ── Рейтинг ───────────────────────────────────────────────────────────────
+// Season 2's floor (5000) was sized against a much bigger economy — a single
+// empowerment was worth a tenth of it. Season 3's actions are worth 2-100
+// points each, so the floor drops to "has scored at all" instead of hiding
+// the whole board from everyone but a handful of whales.
+const SEASON_RATING_MIN_POINTS = 1;
+
+// Places 1-20, all real money (USD), paid by hand — no GRAM conversion and
+// no auto-credit (distributeSeasonPrizes skips any place whose entry here has
+// no `gram` field, which is every entry this season; see that function's own
+// comment). SEASON_PRIZES is the single source both the leaderboard-adjacent
+// prize table and the "Итоги" screen read from — a place not listed here
+// simply isn't paid.
 const SEASON_PRIZES = [
-  { place: 1,  usdt: 100, gram: seasonPrizeGram(100) },
-  { place: 2,  usdt: 50,  gram: seasonPrizeGram(50)  },
-  { place: 3,  usdt: 30,  gram: seasonPrizeGram(30)  },
-  { place: 4,  usdt: 10,  gram: seasonPrizeGram(10)  },
-  { place: 5,  usdt: 10,  gram: seasonPrizeGram(10)  },
-  { place: 6,  usdt: 10,  gram: seasonPrizeGram(10)  },
-  { place: 7,  usdt: 10,  gram: seasonPrizeGram(10)  },
-  { place: 8,  usdt: 5,   gram: seasonPrizeGram(5)   },
-  { place: 9,  usdt: 5,   gram: seasonPrizeGram(5)   },
-  { place: 10, usdt: 5,   gram: seasonPrizeGram(5)   },
+  { place: 1,  usd: 100 },
+  { place: 2,  usd: 50  },
+  { place: 3,  usd: 50  },
+  { place: 4,  usd: 10  }, { place: 5,  usd: 10 }, { place: 6,  usd: 10 }, { place: 7,  usd: 10 },
+  { place: 8,  usd: 10  }, { place: 9,  usd: 10 }, { place: 10, usd: 10 },
+  { place: 11, usd: 5   }, { place: 12, usd: 5  }, { place: 13, usd: 5  }, { place: 14, usd: 5  },
+  { place: 15, usd: 5   }, { place: 16, usd: 5  }, { place: 17, usd: 5  }, { place: 18, usd: 5  },
+  { place: 19, usd: 5   }, { place: 20, usd: 5  },
 ];
-// Places 11-20 get a VIP level instead of cash — still paid out manually,
-// unlike SEASON_PRIZES above.
-const SEASON_VIP_PRIZE = { from: 11, to: 20, vip: 1 };
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
 // the client to add them to its own inventory (see the claimQuest handler,
@@ -3035,15 +3040,17 @@ if (typeof module !== 'undefined') module.exports = {
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
   SEASON_END_AT, seasonActive,
-  SEASON_ENHANCE_SPECIAL_SLOTS, SEASON_ENHANCE_SPECIAL_POINTS, SEASON_ENHANCE_GEAR_POINTS, seasonEnhancePoints,
+  SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
   SEASON_EMPOWER_POINTS,
   SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
-  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, SEASON_VIP_PRIZE,
-  SEASON_PRIZE_GRAM_RATE, seasonPrizeGram,
+  SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM, seasonMarketPoints,
+  SEASON_TOURNAMENT_WIN_POINTS,
+  SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
+  SEASON_RATING_MIN_POINTS, SEASON_PRIZES,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
