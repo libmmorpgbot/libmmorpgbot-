@@ -50,6 +50,19 @@
   </div>
 </div>
 
+<!-- First-launch language prompt — shown once, before Character Select, only
+     when the account has no saved language preference anywhere (neither this
+     device's localStorage nor the server save — see _showCharSelect,
+     js/network.js). Picking a language here calls the same setLang() the
+     Profile → Язык picker uses, so it persists exactly the same way and this
+     screen never shows again. -->
+<div id="first-lang-select" style="display:none">
+  <div class="fls-card">
+    <div class="fls-title">🌐 Choose your language</div>
+    <div class="lang-card-grid" id="fls-grid"></div>
+  </div>
+</div>
+
 <!-- Character Select -->
 <div id="char-select" style="display:none">
 

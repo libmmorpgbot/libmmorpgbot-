@@ -222,6 +222,35 @@ function csHide() {
   if (el) el.style.display = 'none';
 }
 
+// ── First-launch language prompt ────────────────────────────────────────
+// Shown once, before this screen (csShow), on any device that hasn't picked
+// a language yet — see _showCharSelect (js/network.js) for the actual
+// (localStorage-only) condition. Picking a card here calls the exact same
+// setLang() the Profile → Язык picker uses (js/ui.js's _renderLangPicker),
+// so the choice persists exactly the same way and this device never asks
+// again.
+function _showFirstLangPicker(onDone) {
+  const el = document.getElementById('first-lang-select');
+  const grid = document.getElementById('fls-grid');
+  if (!el || !grid || typeof I18N_LANGS === 'undefined') { onDone(); return; }
+  grid.innerHTML = I18N_LANGS.map(l => `
+    <button class="lang-card" onclick="_firstLangPick('${l.code}')">
+      <span class="lang-card-flag">${l.flag}</span>
+      <span class="lang-card-name">${l.native}</span>
+    </button>`).join('');
+  window._firstLangDone = onDone;
+  el.style.display = 'flex';
+}
+
+function _firstLangPick(code) {
+  if (typeof setLang === 'function') setLang(code);
+  const el = document.getElementById('first-lang-select');
+  if (el) el.style.display = 'none';
+  const done = window._firstLangDone;
+  window._firstLangDone = null;
+  if (typeof done === 'function') done();
+}
+
 function _csStartAnim() {
   if (_csRAF) return;
   let last = performance.now();

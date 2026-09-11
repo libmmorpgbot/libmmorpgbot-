@@ -1337,6 +1337,25 @@ canvas { display:block; width:100%; height:100%; }
 .lang-card-flag { font-size: 20px; line-height: 1; }
 .lang-card-name { flex: 1; text-align: left; }
 .lang-card-check { color: #90d653; font-weight: 700; }
+
+/* First-launch language prompt — see index.html for when this shows */
+#first-lang-select {
+  position: absolute; inset: 0; z-index: 150;
+  background: radial-gradient(ellipse at 50% 20%,#111d2e 0%,#080e15 100%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 18px;
+}
+.fls-card {
+  width: 100%; max-width: 360px;
+  background: rgba(193,204,213,0.04);
+  border: 1px solid rgba(193,204,213,0.12);
+  border-radius: 16px;
+  padding: 22px 18px;
+}
+.fls-title {
+  font-size: 15px; font-weight: 700; color: #f4d7a7;
+  text-align: center; margin-bottom: 16px;
+}
 .gram-input {
   flex: 1;
   background: rgba(0,0,0,0.4);

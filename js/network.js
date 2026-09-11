@@ -3234,7 +3234,22 @@ function _showCharSelect(savedData) {
     }
     selectChar(type);
   } else {
-    csShow(savedData);
+    // First-ever visit to THIS device: nobody has picked a language here yet.
+    // savedData.lang can't answer that — the DB column defaults every
+    // account to 'ru' (001_core.sql) whether or not anyone ever chose it, so
+    // it is never absent and can't tell "explicitly Russian" apart from
+    // "never asked". localStorage can: it's unset only the very first time
+    // this browser opens the game. Ask before showing the class carousel,
+    // not after — picking one goes through setLang() (js/i18n.js), which
+    // persists it here too, so this device never asks again.
+    const hasLangPref = (() => {
+      try { return !!localStorage.getItem('lang'); } catch (_) { return false; }
+    })();
+    if (!hasLangPref && typeof _showFirstLangPicker === 'function') {
+      _showFirstLangPicker(() => csShow(savedData));
+    } else {
+      csShow(savedData);
+    }
   }
 }
 
