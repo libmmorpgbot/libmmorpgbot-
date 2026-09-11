@@ -682,7 +682,13 @@ function openClassChangeModal() {
   ov.id = 'class-change-ov';
   ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
   ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div id="cc-body" onclick="event.stopPropagation()" style="width:100%;max-width:380px;max-height:86vh;overflow-y:auto;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;"></div>`;
+  // ov-scroll (css/style.css): the global `* { touch-action:none }` rule
+  // kills finger-scroll everywhere so a joystick drag never scrolls the page
+  // instead — every overlay that needs to scroll has to opt back in by name,
+  // and this one is exactly the kind the rule's own comment warns about
+  // (looks fully working, "Забрать"/"Выбрать класс" clicks land, just never
+  // moves under a finger).
+  ov.innerHTML = `<div id="cc-body" class="ov-scroll" onclick="event.stopPropagation()" style="width:100%;max-width:380px;max-height:86vh;overflow-y:auto;background:#16120a;border-radius:16px;border:1px solid rgba(209,204,197,.12);padding:20px 18px;"></div>`;
   document.getElementById('app').appendChild(ov);
   _ccRenderPicker();
 }
