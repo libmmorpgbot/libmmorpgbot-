@@ -691,7 +691,11 @@ function openClassChangeModal() {
   // нажатия, а не отказом после.
   const wornNow = Object.values(player.equipment || {}).filter(Boolean).length;
 
-  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur).map(c => {
+  // Рунный боец и Ассасин не предлагаются сменой — их можно взять только
+  // новым персонажем (или опробовать), сервер откажет и без этого фильтра
+  // (changeClass, server/handlers2/economy.js), но список не должен обещать
+  // то, что оплаченная смена потом отменит отказом.
+  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur && c !== 'runefighter' && c !== 'assassin').map(c => {
     const d = CHAR_DEF[c];
     return `<button onclick="_confirmClassChange('${c}')" style="
       display:flex;align-items:center;gap:10px;width:100%;margin-bottom:8px;padding:10px 12px;
@@ -760,27 +764,24 @@ function _confirmClassChange(type) {
 }
 
 function onClassChanged(from, to) {
-  // ── экран выбора персонажа, а не перезагрузка ───────────────────────────
+  // ── игра перезагружается ────────────────────────────────────────────────
   // Смена класса меняет слишком многое, чтобы дособирать это по частям:
   // спрайты персонажа, набор умений, панель профессии, то, что можно надеть.
-  // Раньше это чинилось полной перезагрузкой страницы — а она молча теряла
-  // сам смысл кнопки: игрок просил ПОСМОТРЕТЬ на новый класс, а получал
-  // обратно прямо в игру с тем же экраном, с которого ушёл. Показ char-select
-  // здесь и есть та полная пересборка (та же машина, что и первый вход,
-  // csShow/selectChar), только без белого экрана между ними.
+  // Показ экрана выбора персонажа здесь когда-то заменял перезагрузку, но
+  // владелец захотел его убрать: после смены класса игрок должен остаться в
+  // игре, а не увидеть карусель (та же карусель, что и у нового аккаунта, —
+  // и с ней «Опробовать персонажа», не предназначенную для того, кто уже
+  // играет).
   //
-  // player.type сервер уже сменил (js/network.js, обработчик 'classChanged',
-  // перед этим вызовом) и оплата уже прошла — так что показываем карусель на
-  // НОВОМ классе с рабочей кнопкой «Продолжить», а не «Создать».
+  // Перезагрузка честнее любой досборки: клиент возвращается с полным
+  // состоянием от сервера. Секунда задержки — чтобы человек успел прочитать,
+  // что смена прошла.
   const name = (CHAR_DEF[to] && CHAR_DEF[to].name) || to;
   if (player) dmgNum(player.x, player.y - 30, 'Класс: ' + name, '#98e456');
   if (typeof _marketToast === 'function') {
-    _marketToast('Класс изменён: ' + name, 'ok');
+    _marketToast('Класс изменён: ' + name + ' — перезагружаю', 'ok');
   }
-  const savedSnapshot = player
-    ? { type: player.type, lvl: player.lvl, gold: player.gold }
-    : null;
-  setTimeout(() => { if (typeof csShow === 'function') csShow(savedSnapshot); }, 900);
+  setTimeout(() => { location.reload(); }, 1200);
 }
 
 function _confirmUpgradeReset() {

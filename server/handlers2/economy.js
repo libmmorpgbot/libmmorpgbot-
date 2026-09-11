@@ -135,9 +135,18 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     return rows[0].n;
   };
 
+  // Рунный боец и Ассасин — новые классы. Их разыгрывают только на новом
+  // персонаже (или в пробной версии), а не сменой уже прокачанного — так
+  // решил владелец. Отказ ДО сухого прогона: он ничего не стоит, и это самая
+  // дешёвая проверка из всех — типа не существующего вовсе не бывает здесь.
+  const CLASS_CHANGE_EXCLUDED = ['runefighter', 'assassin'];
+
   safeOn('changeClass', ({ type, pay } = {}) =>
     s.act('changeClass', 'classChangeError', async (t, pid) => {
       if (typeof type !== 'string' || !type) fail('Не выбран класс', 'bad_class');
+      if (CLASS_CHANGE_EXCLUDED.includes(type)) {
+        fail('Этот класс недоступен для смены', 'bad_class');
+      }
 
       // Сухой прогон: он ничего не меняет, кроме случая успеха, — поэтому
       // деньги списываются ПОСЛЕ него. Транзакция общая, так что откат при
