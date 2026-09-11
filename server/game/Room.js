@@ -426,6 +426,21 @@ const PARTY_SHARE_R2 = PARTY_SHARE_R * PARTY_SHARE_R;
 // hub does turn out to sustain crowds this size, 40-60 is where the curve is
 // still cheap — the numbers above are the whole basis for that call.
 const PLAYER_CAP = 100;
+// Every N casts, a player's nearby-player SET is rediscovered by walking the
+// grid cells around them; every cast in between reuses whatever it found
+// last time (still re-checking death/instance/distance live — see the scan
+// site's own comment for why that keeps it safe). That grid walk, not the
+// capped-and-bounded insertion after it, is what profiling measured as the
+// dominant cost of a crowded tick (see PLAYER_CAP's own comment) — it is
+// O(how many other players are within range), so a genuine crowd on one
+// spot (a popular boss, Кровавая Башня's shared boss room once several
+// dozen have converged) makes every one of them pay it every cast, which is
+// O(n²) in local density. Staggering by PLAYER_CAND_REFRESH_CASTS cuts that
+// by roughly this factor at the cost of a newcomer taking up to this many
+// casts (~this × 50ms) longer to appear to someone already nearby — the
+// same order of staleness EKNOWN_FORGET_CASTS already tolerates on the way
+// OUT of range, just applied to the way in.
+const PLAYER_CAND_REFRESH_CASTS = 4;
 // Радиус видимости игроков на этаже гильдийской войны — см. _playerAoiR2.
 const GW_PLAYER_AOI_R2 = 1400 * 1400;
 // Every N casts a PLAYER entry goes out full even if the recipient "knows"
@@ -2363,12 +2378,6 @@ class Room {
       // never grows past the cap, so once it is full the common case is a
       // single compare against the current worst and a skip. Slots come from a
       // pool, so this allocates nothing at all.
-      const pgrid = this._playerGrid;
-      const pcx0 = Math.floor((p.x - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
-      const pcx1 = Math.floor((p.x + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
-      const pcy0 = Math.floor((p.y - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
-      const pcy1 = Math.floor((p.y + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
-      let nCand = 0;
       // The instance a player is standing in, if any — everyone streamed to
       // them has to be in the same one. Distance cannot separate instances
       // on its own: Fear halls sit one lane pitch (800px) apart and are
@@ -2390,50 +2399,116 @@ class Room {
       // anyone legitimate on the other side of one to see in the first place.
       const pLane = this._playerLaneKey(p);
       const pIsRacer = p._raceLane != null;
-      for (let pcx = pcx0; pcx <= pcx1; pcx++) {
-        for (let pcy = pcy0; pcy <= pcy1; pcy++) {
-          const cell = pgrid.get(_gridKey(pcx, pcy));
-          if (!cell) continue;
-          for (let ci = 0; ci < cell.length; ci++) {
-            const op = cell[ci];
-            if (op.socketId === p.socketId) continue;
-            // ── мёртвый пропадает ──────────────────────────────────────────
-            // Труп игрока оставался в потоке навсегда: чужие экраны рисовали
-            // его стоящим с нулём здоровья, пока он не переродится. «Коли
-            // хтось помирає, він має пропадати.»
-            //
-            // Не сразу: пока идёт анимация падения, тело нужно — иначе игрок
-            // не умирает, а мгновенно исчезает, и никто не понимает, что
-            // произошло. После неё запись уходит из каста, и клиент убирает
-            // игрока сам (он удаляет всех, кого в касте нет).
-            if (op.hp <= 0 && op._diedAt && Date.now() - op._diedAt > PLAYER_CORPSE_MS) continue;
-            if (!(pIsRacer && op._raceLane != null) && this._playerLaneKey(op) !== pLane) continue;
-            const dx = op.x - p.x, dy = op.y - p.y;
-            const d2 = dx * dx + dy * dy;
-            if (d2 > this._playerAoiR2()) continue;
-            // Full, and no closer than the furthest one we're keeping — the
-            // branch that takes almost every candidate in a busy hub.
-            if (nCand === PLAYER_CAP && d2 >= cand[PLAYER_CAP - 1].d2) continue;
-            let slot;
-            if (nCand < PLAYER_CAP) {
-              // Pool slots are claimed by index 0..nCand-1, so this index has
-              // not been handed out yet in this player's pass, wherever the
-              // insertion below ends up moving the earlier ones to.
-              slot = this._candPool[nCand];
-              if (!slot) { slot = { op: null, d2: 0 }; this._candPool[nCand] = slot; }
-              cand[nCand] = slot;
-              nCand++;
-            } else {
-              slot = cand[PLAYER_CAP - 1]; // evict the current worst, reuse its slot
+      let nCand = 0;
+      // See PLAYER_CAND_REFRESH_CASTS: the grid walk below only runs every
+      // Nth cast per player (staggered by _seq); every cast in between
+      // reuses the candidate SET it found last time (p._candCache) instead
+      // of re-walking the grid, and the else-branch after it re-validates
+      // every one of those live — death, instance, distance — every single
+      // cast regardless, so a stale cache can only ever shrink the result,
+      // never show someone who has actually died, changed instance, or
+      // walked out of range.
+      const doScan = !p._candCache ||
+        ((castId >> 1) + (p._seq || 0)) % PLAYER_CAND_REFRESH_CASTS === 0;
+      if (doScan) {
+        // Same 3x3-cell interest query the enemies use, for the same reason
+        // — see PLAYER_GRID_CELL.
+        //
+        // Only the PLAYER_CAP nearest survive, and they are selected as we go
+        // rather than collected and sorted afterwards. The old version pushed
+        // every candidate into an array and ran Array.sort on the lot: in a
+        // crowded hub a single 600px radius holds well over a hundred other
+        // players, so that was a ~150-element comparator sort per player per
+        // cast. Profiling a 300-player room measured it at 58% of the entire
+        // tick — comfortably the largest single cost in the whole loop, larger
+        // than the enemy AI and the packet encoding put together.
+        //
+        // Bounded insertion instead: `cand` is kept sorted ascending by d2 and
+        // never grows past the cap, so once it is full the common case is a
+        // single compare against the current worst and a skip. Slots come from a
+        // pool, so this allocates nothing at all.
+        const pgrid = this._playerGrid;
+        const pcx0 = Math.floor((p.x - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+        const pcx1 = Math.floor((p.x + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+        const pcy0 = Math.floor((p.y - PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+        const pcy1 = Math.floor((p.y + PLAYER_GRID_CELL) / PLAYER_GRID_CELL);
+        for (let pcx = pcx0; pcx <= pcx1; pcx++) {
+          for (let pcy = pcy0; pcy <= pcy1; pcy++) {
+            const cell = pgrid.get(_gridKey(pcx, pcy));
+            if (!cell) continue;
+            for (let ci = 0; ci < cell.length; ci++) {
+              const op = cell[ci];
+              if (op.socketId === p.socketId) continue;
+              // ── мёртвый пропадает ──────────────────────────────────────────
+              // Труп игрока оставался в потоке навсегда: чужие экраны рисовали
+              // его стоящим с нулём здоровья, пока он не переродится. «Коли
+              // хтось помирає, він має пропадати.»
+              //
+              // Не сразу: пока идёт анимация падения, тело нужно — иначе игрок
+              // не умирает, а мгновенно исчезает, и никто не понимает, что
+              // произошло. После неё запись уходит из каста, и клиент убирает
+              // игрока сам (он удаляет всех, кого в касте нет).
+              if (op.hp <= 0 && op._diedAt && Date.now() - op._diedAt > PLAYER_CORPSE_MS) continue;
+              if (!(pIsRacer && op._raceLane != null) && this._playerLaneKey(op) !== pLane) continue;
+              const dx = op.x - p.x, dy = op.y - p.y;
+              const d2 = dx * dx + dy * dy;
+              if (d2 > this._playerAoiR2()) continue;
+              // Full, and no closer than the furthest one we're keeping — the
+              // branch that takes almost every candidate in a busy hub.
+              if (nCand === PLAYER_CAP && d2 >= cand[PLAYER_CAP - 1].d2) continue;
+              let slot;
+              if (nCand < PLAYER_CAP) {
+                // Pool slots are claimed by index 0..nCand-1, so this index has
+                // not been handed out yet in this player's pass, wherever the
+                // insertion below ends up moving the earlier ones to.
+                slot = this._candPool[nCand];
+                if (!slot) { slot = { op: null, d2: 0 }; this._candPool[nCand] = slot; }
+                cand[nCand] = slot;
+                nCand++;
+              } else {
+                slot = cand[PLAYER_CAP - 1]; // evict the current worst, reuse its slot
+              }
+              slot.op = op; slot.d2 = d2;
+              let j = nCand - 1;
+              while (j > 0 && cand[j - 1].d2 > d2) { cand[j] = cand[j - 1]; j--; }
+              cand[j] = slot;
             }
-            slot.op = op; slot.d2 = d2;
-            let j = nCand - 1;
-            while (j > 0 && cand[j - 1].d2 > d2) { cand[j] = cand[j - 1]; j--; }
-            cand[j] = slot;
           }
         }
+        cand.length = nCand;
+        // Persist the discovered set (just the refs — d2 is recomputed fresh
+        // every cast either way) so skip casts have something to reuse.
+        if (!p._candCache) p._candCache = [];
+        p._candCache.length = nCand;
+        for (let i = 0; i < nCand; i++) p._candCache[i] = cand[i].op;
+      } else {
+        // Reuse last scan's candidates — no grid walk this cast — but every
+        // one of them is re-checked live (death, instance, distance) exactly
+        // as the scan above would, so this can only omit someone who is
+        // still genuinely valid, never include someone who is not.
+        const cache = p._candCache;
+        for (let i = 0; i < cache.length; i++) {
+          const op = cache[i];
+          if (!this.players.has(op.socketId)) continue; // left the room entirely
+          if (op.hp <= 0 && op._diedAt && Date.now() - op._diedAt > PLAYER_CORPSE_MS) continue;
+          if (!(pIsRacer && op._raceLane != null) && this._playerLaneKey(op) !== pLane) continue;
+          const dx = op.x - p.x, dy = op.y - p.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > this._playerAoiR2()) continue;
+          let slot = this._candPool[nCand];
+          if (!slot) { slot = { op: null, d2: 0 }; this._candPool[nCand] = slot; }
+          slot.op = op; slot.d2 = d2;
+          cand[nCand] = slot;
+          nCand++;
+        }
+        cand.length = nCand;
+        // Shrink the persisted cache to match: anyone who just failed a check
+        // above (died, changed instance, walked out of range) must not
+        // silently pass it again on the NEXT skip cast before the next real
+        // scan has a chance to drop or re-admit them properly.
+        cache.length = nCand;
+        for (let i = 0; i < nCand; i++) cache[i] = cand[i].op;
       }
-      cand.length = nCand;
       for (let i = 0; i < cand.length; i++) {
         const op = cand[i].op;
         const k = p._known.get(op.socketId);
@@ -3130,6 +3205,9 @@ class Room {
       // real by coopDeploy right after this player is placed.
       _coopLane: null,
       _known: new Map(),
+      // Last scan's nearby-player candidates — null until the first cast
+      // scans for real. See PLAYER_CAND_REFRESH_CASTS/the _tick scan site.
+      _candCache: null,
       // Enemies already streamed to this player: id -> last {x,y,hp,aggro}
       // sent, plus the cast it was last in range for. See _collectEnemiesFor.
       _eKnown: new Map(),
