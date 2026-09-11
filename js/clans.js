@@ -831,7 +831,7 @@ function _renderClanHome(el) {
           ? `<button class="clan-btn-sm" onclick="_clanTransferConfirm('${m.telegramId}')">${typeof t === 'function' ? t('clanTransferBtn') : 'Сделать лидером'}</button>`
           : '';
         const kickBtn = isLeader && m.role !== 'leader'
-          ? `<button class="clan-btn-sm clan-btn-danger" onclick="netClanKick('${m.telegramId}')">${typeof t === 'function' ? t('clanKickBtn') : 'Исключить'}</button>`
+          ? `<button class="clan-btn-sm clan-btn-danger" onclick="_clanKickConfirm('${m.telegramId}')">${typeof t === 'function' ? t('clanKickBtn') : 'Исключить'}</button>`
           : '';
         return `<div class="clan-member">
           <span class="clan-member-role">${roleIcon}</span>
@@ -1111,6 +1111,67 @@ function _clanConfirmLeave() {
 }
 function _clanConfirmDisband() {
   if (confirm(typeof t === 'function' ? t('clanConfirmDisband') : 'Расформировать клан? Это нельзя отменить.')) netClanDisband();
+}
+
+// ── Исключение из клана — через модалку, не через window.confirm ───────────
+// Раньше кнопка «Исключить» била netClanKick сразу по клику — единственная
+// destructive-кнопка в этом файле без ЛЮБОГО подтверждения (leave/disband/
+// transfer все спрашивают, пусть даже через нативный confirm()). Один
+// случайный тап по списку участников — и человека выкинули из клана
+// безвозвратно.
+//
+// Просили именно модальное окно, а не confirm(): та же карточка, что
+// использует остальной интерфейс (imod-overlay/imod-box), а не системный
+// диалог браузера, который в Telegram Mini App выглядит чужеродно и на
+// части WebView-обёрток вовсе не показывается поверх мини-приложения.
+//
+// telegramId, не username, идёт через onclick — та же причина, что у
+// _clanTransferConfirm выше: имя достаётся из clanData (уже распарсенной
+// памяти), а не повторно парсится из HTML/JS, так что имя с кавычками не
+// сломает инлайн-обработчик. Экранируется здесь же, при подстановке в текст
+// модалки — это HTML, не JS-атрибут, но то же самое имя.
+function _clanKickConfirm(telegramId) {
+  const member = clanData && (clanData.members || []).find(x => String(x.telegramId) === String(telegramId));
+  const name = _esc(member ? member.username : '');
+  const msg = typeof tVars === 'function' ? tVars('clanKickAsk', { name }) : `Исключить «${name}» из клана?`;
+  _showConfirmModal(msg, () => netClanKick(telegramId), typeof t === 'function' ? t('clanKickBtn') : 'Исключить');
+}
+
+// Generic yes/no modal — one caller today (_clanKickConfirm above), written
+// to take any message/callback rather than hardcoding "kick" so the NEXT
+// destructive one-tap button doesn't have to reinvent this.
+//
+// The callback is held on a plain module-level variable rather than
+// serialized into the confirm button's onclick: a closure re-stringified
+// into an HTML attribute and re-eval'd loses every variable it closed over
+// (telegramId here), throwing a ReferenceError the moment it's tapped.
+let _confirmModalAction = null;
+function _showConfirmModal(text, onConfirm, confirmLbl) {
+  const existing = document.getElementById('confirm-modal-ov');
+  if (existing) existing.remove();
+  _confirmModalAction = onConfirm;
+  const ov = document.createElement('div');
+  ov.id = 'confirm-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closeConfirmModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:300px">
+    <div class="imod-stats" style="text-align:center">${text}</div>
+    <div class="imod-btns">
+      <button class="imod-btn imod-equip" onclick="closeConfirmModal()">${typeof t === 'function' ? t('cancelBtn') : 'Отмена'}</button>
+      <button class="imod-btn imod-sell" onclick="_confirmModalRun()">${confirmLbl}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+}
+function closeConfirmModal() {
+  const el = document.getElementById('confirm-modal-ov');
+  if (el) el.remove();
+  _confirmModalAction = null;
+}
+function _confirmModalRun() {
+  const fn = _confirmModalAction;
+  closeConfirmModal();
+  if (fn) fn();
 }
 
 // ── Notification when clan levels up ─────────────────────

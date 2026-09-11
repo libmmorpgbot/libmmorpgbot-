@@ -659,6 +659,7 @@ const I18N_UI = {
   clanDisbandBtn:  { ru: 'Расформировать', en: 'Disband', uk: 'Розпустити', es: 'Disolver', tr: 'Feshet', pt: 'Dissolver' },
   clanLeaveBtn:    { ru: 'Покинуть клан', en: 'Leave Clan', uk: 'Покинути клан', es: 'Abandonar Clan', tr: 'Klandan Ayrıl', pt: 'Sair do Clã' },
   clanKickBtn:     { ru: 'Исключить', en: 'Kick', uk: 'Виключити', es: 'Expulsar', tr: 'At', pt: 'Expulsar' },
+  clanKickAsk: { ru: 'Исключить «{name}» из клана?', en: 'Kick "{name}" from the clan?', uk: 'Виключити «{name}» з клану?', es: '¿Expulsar a "{name}" del clan?', tr: '"{name}" klandan atılsın mı?', pt: 'Expulsar "{name}" do clã?' },
   clanTransferBtn: { ru: 'Сделать лидером', en: 'Make leader', uk: 'Зробити лідером', es: 'Nombrar líder', tr: 'Lider yap', pt: 'Tornar líder' },
   clanTransferAsk: { ru: 'Сделать «{name}» лидером клана? Вы станете обычным участником.', en: 'Make "{name}" the clan leader? You will become a regular member.', uk: 'Зробити «{name}» лідером клану? Ви станете звичайним учасником.', es: '¿Nombrar a "{name}" líder del clan? Pasarás a ser un miembro normal.', tr: '"{name}" klan lideri yapılsın mı? Siz sıradan bir üye olacaksınız.', pt: 'Tornar "{name}" líder do clã? Você se tornará um membro comum.' },
   clanActivityHdr: { ru: 'Кто сколько внёс Осколков', en: 'Who has contributed how many Shards', uk: 'Хто скільки вніс Осколків', es: 'Quién aportó cuántos Fragmentos', tr: 'Kim kaç Parça bağışladı', pt: 'Quem contribuiu com quantos Fragmentos' },
