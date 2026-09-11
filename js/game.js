@@ -696,10 +696,28 @@ function update(dt, realDt) {
     let closest = null, closestD = Infinity;
     let closestIsPlayer = false;
 
-    // Prefer locked target
+    // Prefer locked target — but only while it's still actually visible. A
+    // lock used to survive losing line of sight (walking behind a wall, or
+    // the target walking behind one), so this kept "preferring" something
+    // the player couldn't see or reach: the LOS check further down (see
+    // `!hasLOS(...)` below) then refused to swing every single cycle, and
+    // because a target was still locked, the fallback scan a few lines down
+    // never ran — the player just stood there instead of engaging a
+    // perfectly visible enemy right next to them. Dropping the lock here,
+    // the same way the room-boundary check just below already does, lets
+    // that fallback scan find a real target instead.
     if (targetId && !targetIsPlayer) {
       const t = serverEnemiesMap.get(targetId);
-      if (t && (t.hp || 0) > 0) { closest = t; closestD = dist(t.x, t.y, player.x, player.y); }
+      if (t && (t.hp || 0) > 0 && hasLOS(player.x, player.y, t.x, t.y)) {
+        closest = t; closestD = dist(t.x, t.y, player.x, player.y);
+      } else {
+        // Not reset here on purpose: like the room-boundary release just
+        // below, this should let the chase carry straight on against
+        // whatever's actually visible next, not stop it outright — dying
+        // is the only thing that should do that (see the network.js/
+        // input.js clear-sites that do reset it, all on an actual kill).
+        targetId = null; targetIsPlayer = false;
+      }
     } else if (targetId && targetIsPlayer && pvpMode) {
       const op = otherPlayers.get(targetId);
       // A locked target can only have become an ally here via a stale lock
@@ -708,11 +726,13 @@ function update(dt, realDt) {
       // hand out an ally as targetId (see _a3Unselectable/_gwUnselectable,
       // js/input.js). Dropping to the fallback search below is simpler than
       // clearing targetId from every place that could invalidate it.
-      if (op && (op.hp || 0) > 0 && op.x != null && !_a3Unselectable(targetId) && !_gwUnselectable(targetId)) {
+      if (op && (op.hp || 0) > 0 && op.x != null && !_a3Unselectable(targetId) && !_gwUnselectable(targetId) && hasLOS(player.x, player.y, op.x, op.y)) {
         _pvpSentinel._socketId = targetId; _pvpSentinel.x = op.x; _pvpSentinel.y = op.y;
         closest = _pvpSentinel;
         closestD = dist(op.x, op.y, player.x, player.y);
         closestIsPlayer = true;
+      } else {
+        targetId = null; targetIsPlayer = false; // see the enemy branch's comment above
       }
     }
 

@@ -563,23 +563,39 @@ function toggleAutoBuffPotion(btype) {
   netSaveProgress();
 }
 
+// The locked (tapped/cycled, js/input.js) non-player target — but only if
+// it's still alive AND actually visible. A stale lock (the target walked
+// behind a wall, or far off since it was picked) must not be usable by
+// anything that reads targetId; every dash-skill's target-fallback below,
+// and nearestEnemyDir just after it, go through this instead of reading
+// targetId directly, same reasoning as the auto-attack fix in js/game.js.
+function _lockedEnemy() {
+  if (!targetId || targetIsPlayer) return null;
+  const t = serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
+  if (!t || !hasLOS(player.x, player.y, t.x, t.y)) return null;
+  return t;
+}
+
 // Return direction toward locked target or nearest enemy; fall back to joystick if active
 function nearestEnemyDir() {
   const jl = Math.hypot(joy.dx, joy.dy);
   if (jl > 0.25) return { dx: joy.dx / jl, dy: joy.dy / jl };
+  // A locked target still out of line of sight is not something to aim at —
+  // same reasoning as the auto-attack "prefer locked target" fix in
+  // js/game.js: without this check a stale lock (target walked behind a
+  // wall or far off) kept getting aimed at instead of falling through to
+  // the nearest actually-visible enemy below.
   if (pvpMode && targetIsPlayer && targetId) {
     const op = otherPlayers.get(targetId);
-    if (op && (op.hp || 0) > 0 && op.x != null) {
+    if (op && (op.hp || 0) > 0 && op.x != null && hasLOS(player.x, player.y, op.x, op.y)) {
       const len = Math.max(1, dist(op.x, op.y, player.x, player.y));
       return { dx: (op.x - player.x) / len, dy: (op.y - player.y) / len };
     }
   }
-  if (targetId && !targetIsPlayer) {
-    const t = serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
-    if (t) {
-      const len = Math.max(1, dist(t.x, t.y, player.x, player.y));
-      return { dx: (t.x - player.x) / len, dy: (t.y - player.y) / len };
-    }
+  const _lt = _lockedEnemy();
+  if (_lt) {
+    const len = Math.max(1, dist(_lt.x, _lt.y, player.x, player.y));
+    return { dx: (_lt.x - player.x) / len, dy: (_lt.y - player.y) / len };
   }
   let closest = null, closestD = Infinity;
   serverEnemies.forEach(e => {
@@ -591,6 +607,7 @@ function nearestEnemyDir() {
   if (pvpMode) {
     otherPlayers.forEach((op) => {
       if ((op.hp || 0) <= 0 || op.x == null) return;
+      if (!hasLOS(player.x, player.y, op.x, op.y)) return;
       const d = dist(op.x, op.y, player.x, player.y);
       if (d < closestD) { closestD = d; closest = op; }
     });
@@ -754,9 +771,7 @@ function useSkill(idx) {
         _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y;
         _chargePvpTarget = _pvpR;
       } else {
-        _chargeTarget = (targetId && !targetIsPlayer)
-          ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
-          : nearestEnemy();
+        _chargeTarget = _lockedEnemy() || nearestEnemy();
         if (_chargeTarget) { _rdx = _chargeTarget.x - player.x; _rdy = _chargeTarget.y - player.y; }
         else if (joy.dx || joy.dy) { _rdx = joy.dx; _rdy = joy.dy; }
         else { const fv = _facingVec(); _rdx = fv.dx; _rdy = fv.dy; }
@@ -1047,9 +1062,7 @@ function useSkill(idx) {
         _rdx = _pvpR.op.x - player.x; _rdy = _pvpR.op.y - player.y;
         _chargePvpTarget = _pvpR;
       } else {
-        _chargeTarget = (targetId && !targetIsPlayer)
-          ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
-          : nearestEnemy();
+        _chargeTarget = _lockedEnemy() || nearestEnemy();
         if (_chargeTarget) { _rdx = _chargeTarget.x - player.x; _rdy = _chargeTarget.y - player.y; }
         else if (joy.dx || joy.dy) { _rdx = joy.dx; _rdy = joy.dy; }
         else { const fv = _facingVec(); _rdx = fv.dx; _rdy = fv.dy; }
@@ -1131,9 +1144,7 @@ function useSkill(idx) {
         let _rdx2, _rdy2, _chargeTarget2 = null, _chargePvpTarget2 = null;
         if (pvpTgt2) { _rdx2 = pvpTgt2.op.x - player.x; _rdy2 = pvpTgt2.op.y - player.y; _chargePvpTarget2 = pvpTgt2; }
         else {
-          _chargeTarget2 = (targetId && !targetIsPlayer)
-            ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
-            : nearestEnemy();
+          _chargeTarget2 = _lockedEnemy() || nearestEnemy();
           if (_chargeTarget2) { _rdx2 = _chargeTarget2.x - player.x; _rdy2 = _chargeTarget2.y - player.y; }
           else if (joy.dx || joy.dy) { _rdx2 = joy.dx; _rdy2 = joy.dy; }
           else { const fv = _facingVec(); _rdx2 = fv.dx; _rdy2 = fv.dy; }
@@ -1208,9 +1219,7 @@ function useSkill(idx) {
         let _rdx3, _rdy3, _chargeTarget3 = null, _chargePvpTarget3 = null;
         if (pvpTgt4) { _rdx3 = pvpTgt4.op.x - player.x; _rdy3 = pvpTgt4.op.y - player.y; _chargePvpTarget3 = pvpTgt4; }
         else {
-          _chargeTarget3 = (targetId && !targetIsPlayer)
-            ? serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0)
-            : nearestEnemy();
+          _chargeTarget3 = _lockedEnemy() || nearestEnemy();
           if (_chargeTarget3) { _rdx3 = _chargeTarget3.x - player.x; _rdy3 = _chargeTarget3.y - player.y; }
           else if (joy.dx || joy.dy) { _rdx3 = joy.dx; _rdy3 = joy.dy; }
           else { const fv = _facingVec(); _rdx3 = fv.dx; _rdy3 = fv.dy; }
