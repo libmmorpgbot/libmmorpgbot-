@@ -10,6 +10,9 @@ const {
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
 } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
+// Временная диагностика деплоя — см. её использование ниже, у [DIAG-RACE10].
+const playerlog = require('../db/repos/playerlog');
+const { idByTelegram } = require('../db/repos/players');
 
 module.exports = function createRace10(deps) {
   const {
@@ -338,6 +341,15 @@ module.exports = function createRace10(deps) {
     console.log('[DIAG-RACE10] deploy', JSON.stringify(
       placed.map(p => ({ sid: p.socketId, lane: p.lane, x: p.x, y: p.y }))
     ));
+    // Тот же снимок, но в player_logs — доступно через SQL, а не только
+    // grep по логам процесса. Best-effort и не блокирует деплой: ошибка
+    // резолва id или записи тут не должна портить сам забег.
+    Promise.all(placed.map(async ({ socketId, lane, x, y }) => {
+      const tid = _socketTid(socketId);
+      if (!tid) return;
+      const pid = await idByTelegram(null, tid);
+      if (pid) playerlog.log(pid, 'diag_race10_deploy', { lane, x, y, socketId });
+    })).catch(err => console.error('[DIAG-RACE10] db log failed:', err.message));
 
     placed.forEach(({ socketId, lane }) => {
       const name = _race10.queue.get(socketId)?.name || '?';
