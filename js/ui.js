@@ -5222,6 +5222,7 @@ function _seasonTasksHTML() {
         <b>${t('seasonFarmQuestsHdr')}</b>
         ${_seasonFarmQuestHTML(t('farmZoneLbl'), st.farm, 'farm')}
         ${_seasonFarmQuestHTML(t('farm2Lbl'), st.farm2, 'farm2')}
+        ${_seasonFarmQuestHTML(t('farmHighLbl'), st.farmHigh, 'farmHigh')}
       </div>
       ${ended ? '' : `<div class="db-rules">
         ${t('seasonBurnHdr')}

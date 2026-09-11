@@ -699,6 +699,18 @@ const SEASON_FARM_KILL_TARGET = 5000;
 const SEASON_FARM_KILL_POINTS = 10;
 const SEASON_FARM2_KILL_TARGET = 5000;
 const SEASON_FARM2_KILL_POINTS = 15;
+// "Фарм зона 2" as players see it (hub teleport label farmHighLbl) — NOT the
+// same zone as farm2 just above, which is actually the Элитная фарм-зона
+// under an old internal name (see the "ВНИМАНИЕ ПРО ИМЕНА" comment at this
+// zone's own tuning block further down). This zone's kills were never
+// credited toward season points at all — world.js's onKill only recognized
+// `result.farmZone`/`result.farmZone2`, with no branch for `result.farmHigh`
+// even though Room.js already returns it on every kill — so the points
+// scale from the same 10/15 (regular/elite) progression: elite already
+// costs the same 5000 kills as regular for +5 more per cycle, and this zone
+// is higher-level than both, so it continues that at +5 again.
+const SEASON_FARM_HIGH_KILL_TARGET = 5000;
+const SEASON_FARM_HIGH_KILL_POINTS = 20;
 
 // ── Рейтинг ───────────────────────────────────────────────────────────────
 // Season 2's floor (5000) was sized against a much bigger economy — a single
@@ -3050,6 +3062,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM, seasonMarketPoints,
   SEASON_TOURNAMENT_WIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
+  SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
   SEASON_RATING_MIN_POINTS, SEASON_PRIZES,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,

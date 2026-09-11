@@ -29,7 +29,8 @@ const {
   SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS, SEASON_EMPOWER_POINTS,
   SEASON_SHOP_POINTS_PER_GRAM, SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM,
   SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
-  SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS, CRAFT_MATS,
+  SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
+  SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS, CRAFT_MATS,
 } = require('../../../shared/definitions');
 
 class ProgressionError extends Error {
@@ -726,6 +727,10 @@ async function seasonState(db, playerId) {
     farm2: {
       target: SEASON_FARM2_KILL_TARGET, points: SEASON_FARM2_KILL_POINTS,
       progress: Number((mine.quests || {}).farm2Kills || 0),
+    },
+    farmHigh: {
+      target: SEASON_FARM_HIGH_KILL_TARGET, points: SEASON_FARM_HIGH_KILL_POINTS,
+      progress: Number((mine.quests || {}).farmHighKills || 0),
     },
   };
 }

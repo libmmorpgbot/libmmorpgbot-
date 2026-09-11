@@ -560,6 +560,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // and never checks seasonActive() itself.
       if (result.farmZone) await progression.bumpFarmKill(t, pid, 'farmKills');
       else if (result.farmZone2) await progression.bumpFarmKill(t, pid, 'farm2Kills');
+      // "Фарм зона 2" as players see it — a THIRD, separate zone from
+      // farmZone2 just above (which, despite the name, is the Элитная
+      // фарм-зона — see shared/definitions.js's "ВНИМАНИЕ ПРО ИМЕНА"
+      // comment). Room.js already returned this flag on every kill; nothing
+      // ever read it here, so every kill in this zone paid zero season
+      // points no matter how many were farmed.
+      else if (result.farmHigh) await progression.bumpFarmKill(t, pid, 'farmHighKills');
       let refBonus = null;
       // The stats.refreshBm that used to be here has moved into
       // players.grantXp. It was the only refresh in the build, and it sat on

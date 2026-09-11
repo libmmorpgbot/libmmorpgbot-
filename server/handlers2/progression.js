@@ -25,6 +25,7 @@ const {
   SEASON_RATING_MIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
+  SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
 } = require('../../shared/definitions');
 const shop = require('../shop');
 
@@ -317,13 +318,22 @@ module.exports = function registerProgression(s, safeOn) {
   // ── season ───────────────────────────────────────────────────────────────
   // The farm-zone kill quests' claim button. Kills only ever bump a counter
   // (world.js's onKill); this is the one place they become season points,
-  // converting every complete 5000-kill (or 5000-kill, farm zone 2) cycle
-  // the counter currently covers and leaving any partial progress toward the
-  // next one — see claimFarmKillPoints's own comment for why it can pay more
-  // than one cycle in a single press.
+  // converting every complete 5000-kill cycle the counter currently covers
+  // (each zone's own target/points below) and leaving any partial progress
+  // toward the next one — see claimFarmKillPoints's own comment for why it
+  // can pay more than one cycle in a single press.
+  //
+  // Three zones, and the `zone` query key each maps to is NOT the same as
+  // its in-game name — see the "ВНИМАНИЕ ПРО ИМЕНА" comment in
+  // shared/definitions.js: 'farm2' here is the Элитная фарм-зона, and the
+  // player-facing "Фарм зона 2" is 'farmHigh'. Its own branch (and
+  // world.js's onKill check for result.farmHigh) didn't exist before this
+  // zone was wired in — Room.js already returned the flag on every kill,
+  // nothing ever read it, so every kill there paid zero season points.
   const _FARM_ZONES = {
-    farm:  { key: 'farmKills',  target: SEASON_FARM_KILL_TARGET,  points: SEASON_FARM_KILL_POINTS },
-    farm2: { key: 'farm2Kills', target: SEASON_FARM2_KILL_TARGET, points: SEASON_FARM2_KILL_POINTS },
+    farm:     { key: 'farmKills',     target: SEASON_FARM_KILL_TARGET,      points: SEASON_FARM_KILL_POINTS },
+    farm2:    { key: 'farm2Kills',    target: SEASON_FARM2_KILL_TARGET,     points: SEASON_FARM2_KILL_POINTS },
+    farmHigh: { key: 'farmHighKills', target: SEASON_FARM_HIGH_KILL_TARGET, points: SEASON_FARM_HIGH_KILL_POINTS },
   };
   safeOn('seasonClaimFarmKills', ({ zone } = {}) =>
     s.act('seasonClaimFarmKills', 'seasonError', async (t, pid) => {
