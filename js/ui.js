@@ -4558,20 +4558,6 @@ function _enhStoneQty(stoneId) {
   const s = player.inventory.find(i => i.id === stoneId);
   return s ? (s.qty || 1) : 0;
 }
-function _enhStonesBlock(actionFn, param) {
-  const normQty  = _enhStoneQty('norm_stone');
-  const blessQty = _enhStoneQty('bless_stone');
-  const p = JSON.stringify(param);
-  return `<div class="imod-enh-stones">
-    <button class="imod-enh-stone-btn${normQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'norm')" title="${t('enhFailBurnHint')}">
-      <img src="/images/norm.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">${tVars('normalStoneBtnFmt', { n: normQty })}
-    </button>
-    <button class="imod-enh-stone-btn imod-enh-stone-bless${blessQty > 0 ? '' : ' disabled'}" onclick="${actionFn}(${p},'bless')" title="${t('enhFailKeepHint')}">
-      <img src="/images/bless.png" width="16" height="16" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">${tVars('safeStoneBtnFmt', { n: blessQty })}
-    </button>
-  </div>
-  <div class="imod-enh-warn">${t('enhBurnWarn')}</div>`;
-}
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
 // ── все бонусы предмета, одной функцией ─────────────────────────────────────
 // Карточка предмета собирала этот список ДВАЖДЫ — для инвентаря и для
@@ -4663,28 +4649,9 @@ function openInvItemModal(idx) {
   const rc    = RARITY_COLOR[it.rarity] || '#aea599';
   const enh   = it.enhance || 0;
   const eb    = _enhBonus(it);
-  const next1 = _enhBonusAt(it, 1);
 
   // Stats display with enhance bonus highlighted
   const statRows = _itemStatRows(it, eb);
-
-  // Next enhance preview
-  const canEnh = enh < _ENH_MAX;
-  const nextParts = [];
-  if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
-  if (next1.def) nextParts.push(`+${next1.def} DEF`);
-  if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
-
-  const rate = _enhSuccessRate(enh);
-  const rateColor = rate >= 80 ? '#98e456' : rate >= 50 ? '#e6ac19' : rate >= 30 ? '#e69419' : '#eb4e61';
-  const enhBlock = canEnh
-    ? `<div class="imod-enh-block">
-        <div class="imod-enh-title">${tVars('enhanceTitleFmt', { cur: enh > 0 ? '+' + enh : '0', next: '<span style="color:#e69419">+' + (enh+1) + '</span>' })}</div>
-        ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
-        <div class="imod-enh-chance">${tVars('enhChanceFmt', { rate: `<b style="color:${rateColor}">${rate}</b>` })}</div>
-        ${_enhStonesBlock('enhanceItem', idx)}
-      </div>`
-    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">${t('maxEnhanceLbl')}</div></div>`;
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -4701,9 +4668,11 @@ function openInvItemModal(idx) {
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
-    ${enhBlock}
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">${t('equipBtn')}</button>
+      <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('inv',${idx})">${t('enhanceBtnLbl')}</button>
+    </div>
+    <div class="imod-btns">
       ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
       ${_seasonBurnPts(it) ? `<button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0" onclick="burnItemForSeason(${idx})">${tVars('seasonBurnBtn', { n: _seasonBurnPts(it) })}</button>` : ''}
     </div>
@@ -4714,6 +4683,12 @@ function openInvItemModal(idx) {
 function closeInvItemModal() {
   const el = document.getElementById('inv-item-modal-ov');
   if (el) el.remove();
+  // The reveal below can still be pending when the player dismisses the
+  // panel mid-animation (see _ENH_ANIM_MS) — it checks whether the overlay
+  // still exists before reopening anything, so a close here is enough to
+  // stop it; this just also retires the (now-destroyed) continue button's
+  // handle so nothing stale can be invoked through it.
+  _enhResultContinue = null;
 }
 
 function equipFromModal(idx) {
@@ -4838,6 +4813,121 @@ function onOpenBoxError(msg) {
   _marketToast(msg || t('purchaseErrorLbl'), 'err');
 }
 
+// ── Заточка: отдельная панель, а не всегда открытый блок ───────────────────
+// Раньше выбор камня сидел прямо под статами предмета, разница между
+// «обычным» и «безопасным» была только в title= (тултип, которого на
+// сенсорном экране никто не видит — см. .imod-enh-warn выше), а нажатие
+// применяло результат мгновенно: без паузы, без какого-либо признака
+// попытки кроме летящей цифры над персонажем. Кнопка «Заточка» на самом
+// предмете открывает отдельный шаг — выбор с текстовым объяснением обоих
+// камней, затем анимация попытки, и только потом явный ✅/❌/💥 — прежде чем
+// панель вернётся к предмету.
+let _enhAnim = null;            // { kind:'inv'|'eq', key, at } — set while a request is in flight
+let _enhResultContinue = null;  // the one function the result view's button/timeout may call
+const _ENH_ANIM_MS = 1100;      // minimum time the "in progress" view stays up
+const _ENH_RESULT_HOLD_MS = 1600; // how long the result auto-advances after, if not tapped
+
+function openEnhancePanel(kind, key) {
+  if (!player) return;
+  const it = kind === 'inv' ? player.inventory[key] : player.equipment[key];
+  const ov = document.getElementById('inv-item-modal-ov');
+  const box = ov && ov.querySelector('.imod-box');
+  if (!it || !box) return;
+  const enh = it.enhance || 0;
+  const canEnh = enh < _ENH_MAX;
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
+  const backFn = kind === 'inv' ? `openInvItemModal(${key})` : `openEqItemModal('${key}')`;
+
+  let body;
+  if (canEnh) {
+    const next1 = _enhBonusAt(it, 1);
+    const nextParts = [];
+    if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
+    if (next1.def) nextParts.push(`+${next1.def} DEF`);
+    if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
+    const rate = _enhSuccessRate(enh);
+    const rateColor = rate >= 80 ? '#98e456' : rate >= 50 ? '#e6ac19' : rate >= 30 ? '#e69419' : '#eb4e61';
+    const normQty  = _enhStoneQty('norm_stone');
+    const blessQty = _enhStoneQty('bless_stone');
+    // Single-quoted, not JSON.stringify: this whole thing lands inside a
+    // double-quoted onclick="...", and JSON.stringify('weapon') comes out
+    // itself double-quoted — closing that attribute early. That was the
+    // exact reason enhancing an EQUIPPED item's stone buttons silently did
+    // nothing at all: the onclick the browser actually parsed was the
+    // truncated `enhanceEqItem(`, an incomplete call it can't compile, so
+    // clicking through never even reached netEnhanceItem. Slot names are
+    // plain identifiers (weapon, helmet, ring, …), so a bare single-quoted
+    // literal is safe here the way it already was for unequipFromModal.
+    const keyLit = kind === 'inv' ? String(key) : `'${key}'`;
+    body = `
+      <div class="imod-enh-block">
+        <div class="imod-enh-title">${tVars('enhanceTitleFmt', { cur: enh > 0 ? '+' + enh : '0', next: '<span style="color:#e69419">+' + (enh + 1) + '</span>' })}</div>
+        ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
+        <div class="imod-enh-chance">${tVars('enhChanceFmt', { rate: `<b style="color:${rateColor}">${rate}</b>` })}</div>
+      </div>
+      <div class="enh-opt-card">
+        <div class="enh-opt-hdr">
+          <img src="/images/norm.png" width="20" height="20" style="image-rendering:pixelated">
+          <span class="enh-opt-title">${t('enhNormalCardTitle')}</span>
+          <span class="enh-opt-qty">×${normQty}</span>
+        </div>
+        <div class="enh-opt-desc">${t('enhNormalCardDesc')}</div>
+        <button class="imod-btn enh-opt-btn${normQty > 0 ? '' : ' disabled'}" onclick="_beginEnhance('${kind}',${keyLit},'norm')">${t('enhTryBtnLbl')}</button>
+      </div>
+      <div class="enh-opt-card enh-opt-safe">
+        <div class="enh-opt-hdr">
+          <img src="/images/bless.png" width="20" height="20" style="image-rendering:pixelated">
+          <span class="enh-opt-title">${t('enhSafeCardTitle')}</span>
+          <span class="enh-opt-qty">×${blessQty}</span>
+        </div>
+        <div class="enh-opt-desc">${t('enhSafeCardDesc')}</div>
+        <button class="imod-btn enh-opt-btn${blessQty > 0 ? '' : ' disabled'}" onclick="_beginEnhance('${kind}',${keyLit},'bless')">${t('enhTryBtnLbl')}</button>
+      </div>`;
+  } else {
+    body = `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">${t('maxEnhanceLbl')}</div></div>`;
+  }
+
+  box.innerHTML = `
+    <div class="imod-hdr">
+      <button class="npc-close" onclick="${backFn}" style="touch-action:manipulation">←</button>
+      <span class="imod-big-icon">${_itemIcon(it, 44)}</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${it.name}${enh ? ` <span style="color:#e69419">+${enh}</span>` : ''}</div>
+      </div>
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    ${body}`;
+}
+
+// Re-validates the stone the same way enhanceItem/enhanceEqItem already did
+// (a stale panel — someone else's window, a slow tap — could still show a
+// button that's no longer affordable), switches the panel to the "in
+// progress" view, and fires the real request. onEnhanceResult holds the
+// reveal back until _ENH_ANIM_MS has visibly passed, so a fast server reply
+// can never skip straight past the animation the player was just shown.
+function _beginEnhance(kind, key, stoneType) {
+  if (!player) return;
+  const it = kind === 'inv' ? player.inventory[key] : player.equipment[key];
+  if (!it) return;
+  const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
+  if (_enhStoneQty(stoneId) <= 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
+  _enhAnim = { kind, key, at: Date.now() };
+  const ov = document.getElementById('inv-item-modal-ov');
+  const box = ov && ov.querySelector('.imod-box');
+  if (box) {
+    box.innerHTML = `
+      <div class="imod-hdr" style="justify-content:flex-end">
+        <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+      </div>
+      <div class="enh-anim-wrap">
+        <div class="enh-anim-ring">${_itemIcon(it, 40)}</div>
+        <div class="enh-anim-lbl">${t('enhInProgressLbl')}</div>
+      </div>`;
+  }
+  if (kind === 'inv') enhanceItem(key, stoneType);
+  else enhanceEqItem(key, stoneType);
+}
+
 // Enhancing used to be resolved entirely here (roll the chance, spend the
 // stone, bump .enhance) and only reach the server on the next autosave —
 // which is exactly how an item could show up already at max enhance without
@@ -4866,26 +4956,8 @@ function openEqItemModal(slot) {
   const rc   = RARITY_COLOR[it.rarity] || '#aea599';
   const enh  = it.enhance || 0;
   const eb   = _enhBonus(it);
-  const next1 = _enhBonusAt(it, 1);
 
   const statRows = _itemStatRows(it, eb);
-
-  const canEnh = enh < _ENH_MAX;
-  const nextParts = [];
-  if (next1.atk) nextParts.push(`+${next1.atk} ATK`);
-  if (next1.def) nextParts.push(`+${next1.def} DEF`);
-  if (next1.hp)  nextParts.push(`+${next1.hp} HP`);
-
-  const rate2 = _enhSuccessRate(enh);
-  const rateColor2 = rate2 >= 80 ? '#98e456' : rate2 >= 50 ? '#e6ac19' : rate2 >= 30 ? '#e69419' : '#eb4e61';
-  const enhBlock = canEnh
-    ? `<div class="imod-enh-block">
-        <div class="imod-enh-title">${tVars('enhanceTitleFmt', { cur: enh > 0 ? '+' + enh : '0', next: '<span style="color:#e69419">+' + (enh+1) + '</span>' })}</div>
-        ${nextParts.length ? `<div class="imod-enh-preview">${nextParts.join(' · ')}</div>` : ''}
-        <div class="imod-enh-chance">${tVars('enhChanceFmt', { rate: `<b style="color:${rateColor2}">${rate2}</b>` })}</div>
-        ${_enhStonesBlock('enhanceEqItem', slot)}
-      </div>`
-    : `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">${t('maxEnhanceLbl')}</div></div>`;
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -4902,9 +4974,9 @@ function openEqItemModal(slot) {
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
     <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
-    ${enhBlock}
     <div class="imod-btns">
       <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#381c1f,#672d34);color:#f28a96" onclick="unequipFromModal('${slot}')">${t('unequipBtn')}</button>
+      <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('eq','${slot}')">${t('enhanceBtnLbl')}</button>
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -4930,23 +5002,45 @@ function enhanceEqItem(slot, stoneType) {
 
 // Applies whatever server/index.js's 'enhanceItem' handler actually rolled.
 // inventorySync (js/network.js) lands first on the same socket and already
-// wrote the new inventory/equipment into `player` — this only handles the
-// user-facing side: toast, and reopening the item modal at its new state (or
-// closing it, on a burn).
+// wrote the new inventory/equipment into `player` — this only decides WHEN
+// and HOW the user finds out. A server reply on a good connection can land
+// well under a second — reopening the item modal instantly, as this used to,
+// made the "in progress" view from _beginEnhance flash for a frame or not
+// show at all, and the only thing marking success vs. failure was a floating
+// number over the character, easy to miss if the modal was covering them.
+// Held back to _ENH_ANIM_MS so the animation always gets to play out, then
+// handed to _revealEnhanceResult for the actual ✅/❌/💥.
 function onEnhanceResult({ id, slot, outcome, newEnhance, rowId } = {}) {
   if (!player) return;
-  if (outcome === 'success') {
-    dmgNum(player.x, player.y - 30, tVars('enhSuccessToast', { n: newEnhance }), '#e69419');
-  } else if (outcome === 'fail') {
-    dmgNum(player.x, player.y - 30, t('enhFailedToast'), '#f17e8b');
-  } else {
-    dmgNum(player.x, player.y - 30, t('itemBurnedToast'), '#eb4e61');
-  }
-  if (outcome === 'burned') {
-    closeInvItemModal();
-  } else if (slot) {
-    openEqItemModal(slot);
-  } else {
+  const startedAt = _enhAnim ? _enhAnim.at : null;
+  _enhAnim = null;
+  const wait = startedAt != null ? Math.max(0, _ENH_ANIM_MS - (Date.now() - startedAt)) : 0;
+  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId }), wait);
+}
+
+function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId }) {
+  if (!player) return;
+  const icon = outcome === 'success' ? '✅' : outcome === 'fail' ? '❌' : '💥';
+  const cls  = outcome === 'success' ? 'success' : outcome === 'fail' ? 'fail' : 'burn';
+  const text = outcome === 'success' ? tVars('enhSuccessToast', { n: newEnhance })
+    : outcome === 'burned' ? t('itemBurnedToast') : t('enhFailedToast');
+  // Kept alongside the in-modal indicator, not replaced by it — a player
+  // who has already closed the panel (see below) still gets the same
+  // floating-number feedback every other reward in the game uses.
+  dmgNum(player.x, player.y - 30, text, outcome === 'success' ? '#e69419' : outcome === 'fail' ? '#f17e8b' : '#eb4e61');
+
+  let done = false;
+  const advance = () => {
+    if (done) return;
+    done = true;
+    _enhResultContinue = null;
+    // The player may have dismissed the panel while the animation/result
+    // were up — closeInvItemModal only clears _enhResultContinue, so this is
+    // the one place that actually has to check: reopening a modal nobody
+    // asked to see again would be worse than saying nothing further.
+    if (!document.getElementById('inv-item-modal-ov')) return;
+    if (outcome === 'burned') { closeInvItemModal(); return; }
+    if (slot) { openEqItemModal(slot); return; }
     // By row when the server named one — the inventory can hold two copies of
     // the same item at the same level, and identity alone reopens whichever
     // comes first. Identity stays as the fallback.
@@ -4956,12 +5050,40 @@ function onEnhanceResult({ id, slot, outcome, newEnhance, rowId } = {}) {
     if (idx < 0) {
       idx = player.inventory.findIndex(i => i && i.id === id && (i.enhance || 0) === newEnhance);
     }
-    if (idx >= 0) openInvItemModal(idx);
-  }
+    if (idx >= 0) openInvItemModal(idx); else closeInvItemModal();
+  };
+  _enhResultContinue = advance;
+
+  const ov = document.getElementById('inv-item-modal-ov');
+  const box = ov && ov.querySelector('.imod-box');
+  if (!box) { advance(); return; }
+  box.innerHTML = `
+    <div class="imod-hdr" style="justify-content:flex-end">
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="enh-result-wrap">
+      <div class="enh-result-icon">${icon}</div>
+      <div class="enh-result-lbl ${cls}">${text}</div>
+      <button class="imod-btn imod-equip" style="width:100%" onclick="_enhResultContinue&&_enhResultContinue()">${t('enhContinueBtnLbl')}</button>
+    </div>`;
+  setTimeout(advance, _ENH_RESULT_HOLD_MS);
 }
 
 function onEnhanceError(msg) {
   _marketToast(msg || t('purchaseErrorLbl'), 'err');
+  // A rejection (stone spent elsewhere first, item gone, whatever else the
+  // server refused) means onEnhanceResult never fires for this attempt — so
+  // without this, a panel _beginEnhance already switched to "Идёт заточка…"
+  // would sit there forever, since nothing else was ever going to move it
+  // on. Back to the choice screen for whichever item was mid-attempt, same
+  // as the animation would have led to on a real reply.
+  if (_enhAnim) {
+    const { kind, key } = _enhAnim;
+    _enhAnim = null;
+    const it = kind === 'inv' ? player?.inventory[key] : player?.equipment[key];
+    if (it) openEnhancePanel(kind, key);
+    else closeInvItemModal();
+  }
 }
 
 

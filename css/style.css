@@ -759,24 +759,6 @@ canvas { display:block; width:100%; height:100%; }
 .imod-enh-title { font-size:12px; font-weight:bold; color:#e69419; }
 .imod-enh-preview { font-size:11px; color:#b1bfcb; }
 .imod-enh-chance { font-size:11px; color:#a1b2c1; }
-.imod-enh-stones { display:flex; gap:6px; margin-top:4px; }
-/* The item-burns warning. It used to be a title= tooltip on the normal-stone
-   button, which on a touch device is never shown at all — so the one thing a
-   player has to know before spending a stone was invisible on the platform
-   the game is actually played on. */
-.imod-enh-warn {
-  margin-top: 7px; padding: 6px 8px; border-radius: 6px;
-  background: rgba(235,78,97,.10); border: 1px solid rgba(235,78,97,.3);
-  color: #f0949f; font-size: 11px; line-height: 1.35; text-align: center;
-}
-.imod-enh-stone-btn {
-  flex:1; padding:7px 6px; border:none; border-radius:8px; font-size:12px;
-  font-weight:bold; cursor:pointer; touch-action:manipulation;
-  background:linear-gradient(135deg,#122031,#1d324d); color:#e69419;
-}
-.imod-enh-stone-btn:active { opacity:0.8; }
-.imod-enh-stone-btn.imod-enh-stone-bless { background:linear-gradient(135deg,#17293f,#294870); color:#efc680; }
-.imod-enh-stone-btn.disabled { background:#17283e; color:#294870; pointer-events:none; }
 .imod-btns { display:flex; gap:8px; }
 .imod-btn {
   flex:1; padding:10px; border:none; border-radius:10px;
@@ -787,6 +769,50 @@ canvas { display:block; width:100%; height:100%; }
 .imod-equip:active { opacity:0.8; }
 .imod-sell { background:linear-gradient(135deg,#3a1f1f,#5e3232); color:#e5a546; }
 .imod-sell:active { opacity:0.8; }
+.imod-enhance-btn { background:linear-gradient(135deg,#3a2a12,#5e4520); color:#e69419; }
+.imod-enhance-btn:active { opacity:0.8; }
+
+/* ── ЗАТОЧКА: выбор камня, анимация попытки, результат ─────────────────── */
+/* Two option cards — обычная/безопасная — replacing what used to be a pair
+   of small buttons whose only difference was a title= tooltip nobody on a
+   touch screen ever sees (see the comment this replaced, git blame). Each
+   card carries its own always-visible explanation instead. */
+.enh-opt-card {
+  background:rgba(209,204,197,0.04); border:1px solid rgba(209,204,197,0.12);
+  border-radius:10px; padding:10px 12px;
+  display:flex; flex-direction:column; gap:6px;
+}
+.enh-opt-card.enh-opt-safe { background:rgba(78,145,193,0.07); border-color:rgba(78,145,193,0.25); }
+.enh-opt-hdr { display:flex; align-items:center; gap:8px; }
+.enh-opt-title { font-size:13px; font-weight:bold; color:#e69419; flex:1; }
+.enh-opt-safe .enh-opt-title { color:#7fb3e0; }
+.enh-opt-qty { font-size:11px; color:#a3957c; }
+.enh-opt-desc { font-size:11px; color:#a3957c; line-height:1.4; }
+.enh-opt-btn { padding:8px; font-size:13px; background:linear-gradient(135deg,#274469,#31658b); color:#eec276; }
+.enh-opt-safe .enh-opt-btn { background:linear-gradient(135deg,#17293f,#294870); color:#efc680; }
+.enh-opt-btn:active { opacity:0.8; }
+.enh-opt-btn.disabled { opacity:0.4; pointer-events:none; }
+
+.enh-anim-wrap { display:flex; flex-direction:column; align-items:center; gap:14px; padding:22px 10px; }
+.enh-anim-ring {
+  position:relative; width:72px; height:72px;
+  display:flex; align-items:center; justify-content:center;
+}
+.enh-anim-ring::before {
+  content:''; position:absolute; inset:-6px; border-radius:50%;
+  border:3px solid rgba(230,148,25,0.2); border-top-color:#e69419;
+  animation: enh-spin 0.9s linear infinite;
+}
+@keyframes enh-spin { to { transform:rotate(360deg); } }
+.enh-anim-lbl { font-size:13px; color:#e69419; font-weight:bold; }
+
+.enh-result-wrap { display:flex; flex-direction:column; align-items:center; gap:10px; padding:18px 10px 6px; }
+.enh-result-icon { font-size:44px; line-height:1; animation:enh-result-pop 0.35s ease; }
+@keyframes enh-result-pop { from { transform:scale(0.4); opacity:0; } to { transform:scale(1); opacity:1; } }
+.enh-result-lbl { font-size:15px; font-weight:800; }
+.enh-result-lbl.success { color:#98e456; }
+.enh-result-lbl.fail { color:#f17e8b; }
+.enh-result-lbl.burn { color:#eb4e61; }
 
 /* ── LOOT BOX ODDS ──────────────────────── */
 .box-odds-list { display:flex; flex-direction:column; gap:8px; }
