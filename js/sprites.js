@@ -292,7 +292,10 @@ function loadPetSprites(petId, onDone) {
     img.src = def.anims[key].src;
     img.onload = () => {
       const raster = () => _queueRaster(() => {
-        cache[key] = _rasterizeSheet(img, def.anims[key], def); tick();
+        // tick() in finally, not after: a bad decode must still let this
+        // pet's gate finish (see _queueRaster's own comment on the queue
+        // itself) — cache[key] just stays the raw Image, same as onerror.
+        try { cache[key] = _rasterizeSheet(img, def.anims[key], def); } finally { tick(); }
       });
       if (img.decode) img.decode().then(raster, raster); else raster();
     };
@@ -641,8 +644,12 @@ function loadEnemySprites(eid, onDone) {
       img.onload = () => {
         const raster = () => _queueRaster(() => {
           // 4 facing rows × sh.cols frames, all in this one sheet image.
-          enemySpriteCache[eid][key] = _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH);
-          tick();
+          // tick() in finally — a bad decode degrades to the raw Image
+          // (same as the onerror branch below) instead of stalling this
+          // enemy's gate forever.
+          try {
+            enemySpriteCache[eid][key] = _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH);
+          } finally { tick(); }
         });
         if (img.decode) img.decode().then(raster, raster); else raster();
       };
@@ -693,8 +700,11 @@ function loadNpcSprites(id, onDone) {
     const raster = () => _queueRaster(() => {
       // Single facing row, def.cols frames — same 1:1 rasterize-to-canvas
       // treatment as loadEnemySprites above (scale 1, Image → Canvas only).
-      npcSpriteCache[id] = _rasterizeSheet(img, { n: def.cols, cols: def.cols }, def, def.frameH);
-      resolveReady();
+      // resolveReady() in finally — a bad decode must still resolve this
+      // NPC's promise, same as the onerror branch below.
+      try {
+        npcSpriteCache[id] = _rasterizeSheet(img, { n: def.cols, cols: def.cols }, def, def.frameH);
+      } finally { resolveReady(); }
     });
     if (img.decode) img.decode().then(raster, raster); else raster();
   };
@@ -751,7 +761,16 @@ function _queueRaster(job) {
   _rasterPumping = true;
   const pump = () => {
     const j = _rasterQueue.shift();
-    if (j) j();
+    // try/catch, not just "let it throw": a job left `j()` to throw (a bad
+    // decode, a canvas over some browser's size cap — whatever the cause) and
+    // the two lines below it — the ones that either schedule the NEXT frame
+    // or clear _rasterPumping — never ran. Nothing after that point ever
+    // pumped again: not the rest of THIS character's sheets, not any other
+    // character's, not an enemy's or an NPC's — every future _queueRaster
+    // call just piled onto _rasterQueue forever, because _rasterPumping was
+    // stuck true. That is a loading bar parked at whatever percentage had
+    // loaded before the bad sheet, permanently, for the rest of the session.
+    if (j) { try { j(); } catch (e) { console.error('[sprites] rasterize job failed', e); } }
     if (_rasterQueue.length) requestAnimationFrame(pump);
     else _rasterPumping = false;
   };
@@ -805,8 +824,8 @@ function loadSpritePreviewFrame(charType, onDone) {
   img.src = def.anims['front-idle'].src;
   img.onload = () => {
     const raster = () => {
-      cache['front-idle'] = _rasterizeSheet(img, def.anims['front-idle'], def);
-      onDone();
+      try { cache['front-idle'] = _rasterizeSheet(img, def.anims['front-idle'], def); }
+      finally { onDone(); }
     };
     if (img.decode) img.decode().then(raster, raster); else raster();
   };
@@ -839,7 +858,12 @@ function loadSprites(charType, onDone, onProgress) {
     if (existing && existing.naturalWidth === undefined) { tick(); return; }
     const applyRaster = (img) => {
       const raster = () => _queueRaster(() => {
-        cache[key] = _rasterizeSheet(img, def.anims[key], def); tick();
+        // tick() in finally — this is the gate csOnSpritesReady waits on
+        // (js/charselect.js): a bad decode that skipped tick() here used to
+        // leave the loading bar parked short of 100% forever, with no error
+        // visible anywhere but the console. Degrades to the raw Image
+        // instead, same as the onerror branch below.
+        try { cache[key] = _rasterizeSheet(img, def.anims[key], def); } finally { tick(); }
       });
       if (img.decode) img.decode().then(raster, raster); else raster();
     };
