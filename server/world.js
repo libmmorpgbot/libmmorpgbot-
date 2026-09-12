@@ -211,6 +211,12 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
     if (_added && _added.staleSocketId) {
       const m = require('./modes').modes;
       if (m && typeof m._race10Rekey === 'function') m._race10Rekey(_added.staleSocketId, session.socket.id);
+      // То же самое для арены 3х3, у которой этого не было вовсе: её очередь и
+      // состав боя тоже ключуются по socket id, а _reclaimQueues/_rekeyQueue,
+      // на которые ссылаются шапки обоих файлов, не пережили распил index.js.
+      // Без этого реконнект в окно регистрации терял запись молча, а мёртвый
+      // socketId висел в очереди и завышал счётчик до ближайшего _a3TryStart.
+      if (m && typeof m._a3Rekey === 'function') m._a3Rekey(_added.staleSocketId, session.socket.id);
     }
     // The CLASS, without which the room has a player record with no `type`:
     // no sprite for anyone else to draw, no class multipliers in combat, and

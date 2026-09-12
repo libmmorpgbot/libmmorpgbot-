@@ -192,9 +192,27 @@ module.exports = function createArena3(deps) {
     _a3.starting = true;
     try {
       await _a3Deploy(ready, room);
+    } catch (err) {
+      // _a3.live встаёт в середине деплоя, до расстановки по базам. Если
+      // оттуда что-то бросит, арена остаётся «идущей» без единого участника и
+      // без таймеров, а каждый следующий запуск отбивается первой же строкой
+      // этой функции (`if (_a3.live ...) return`) — то есть режим не
+      // запустится больше никогда, до перезапуска процесса. Откатываем.
+      console.error('_a3Deploy:', err);
+      if (!_a3.alive.size) _a3Rollback();
     } finally {
       _a3.starting = false;
     }
+  }
+
+  // Снимает признаки идущего боя, не трогая участников — общий хвост для
+  // отката сорвавшегося деплоя и для нормального финиша.
+  function _a3Rollback() {
+    _a3.live = false;
+    _a3.fightAt = 0;
+    _a3.roundEndAt = 0;
+    clearTimeout(_a3.freezeTimer);
+    clearTimeout(_a3.roundTimer);
   }
 
   async function _a3Deploy(ready, room) {
@@ -281,29 +299,44 @@ module.exports = function createArena3(deps) {
       const pid = await idByTelegram(null, tid);
       if (pid) playerlog.log(pid, 'diag_arena3_deploy', { team, x, y, socketId });
     })).catch(err => console.error('[DIAG-ARENA3] db log failed:', err.message));
-    // Someone can vanish between the readiness filter above and the deploy. A
-    // side with nobody on it would never trigger the win check — no one is left
-    // to be killed — and with no match timer that would hold the arena until the
-    // round guard fired. Put everyone back and wait instead.
-    if (placed.filter(p => p.team === 'A').length === 0 ||
-        placed.filter(p => p.team === 'B').length === 0) {
-      placed.forEach(({ socketId }) => _returnToHub(socketId));
-      _a3.live = false;
-      _a3.fightAt = 0;
-      _a3.roundEndAt = 0;
+    // ── попытка списывается ДО старта, и её ответ теперь читают ─────────────
+    // _lockArena3Daily — это takeAttempt (server/modes.js), условный UPDATE
+    // «...WHERE used < cap». Он возвращает false и когда попытки кончились, и
+    // когда база не ответила, — а звали его без await, ответ выбрасывали.
+    // Проверку _arena3AttemptsLeft выше отделяет от него минимум один await,
+    // то есть ровно тот зазор, ради которого она и написана, не закрывался
+    // ничем: гонка с другой сессией или блип базы = бесплатный бой, молча.
+    const charged = await Promise.all(placed.map(p => _lockArena3Daily(p.socketId)));
+    const paid = placed.filter((_, i) => charged[i]);
+    placed.filter((_, i) => !charged[i]).forEach(({ socketId }) => {
+      _a3.queue.delete(socketId);
+      _returnToHub(socketId);
+      io.to(socketId).emit('arena3Registered', { registered: false });
+      io.to(socketId).emit('arena3Error', { msg: 'Не удалось списать попытку — бой не начат' });
+    });
+
+    // Someone can vanish between the readiness filter above and the deploy, and
+    // now a failed charge lands here too. A side with nobody on it would never
+    // trigger the win check — no one is left to be killed — and with no match
+    // timer that would hold the arena until the round guard fired. Put everyone
+    // back and wait instead.
+    if (paid.filter(p => p.team === 'A').length === 0 ||
+        paid.filter(p => p.team === 'B').length === 0) {
+      paid.forEach(({ socketId }) => _returnToHub(socketId));
+      _a3Rollback();
       _a3Broadcast();
+      // Очередь никуда не делась — без этого полный состав мог простоять до
+      // чьей-нибудь следующей регистрации. Так же, как ветка «кончились
+      // попытки» выше; отложено, чтобы _a3.starting успел сняться в finally.
+      setImmediate(_a3TryStartSafe);
       return;
     }
-    placed.forEach(({ socketId, team }) => {
+    paid.forEach(({ socketId, team }) => {
       const name = _a3.queue.get(socketId)?.name || '?';
       _a3.teams.set(socketId, team);
       _a3.alive.set(socketId, { name, team });
       _a3.names.set(socketId, name);
       _a3.queue.delete(socketId);
-      // The attempt is spent the moment the match starts, win or lose. Only
-      // players actually deployed are charged, so a cancelled launch costs
-      // nobody anything.
-      _lockArena3Daily(socketId);
       // ── очков сезона арена 3х3 НЕ даёт ────────────────────────────────────
       // Решение владельца. Здесь начислялись очки «за участие», ниже — «за
       // победу»; оба вызова сняты. Сезон считает вещи, а не бои: заточку,
@@ -313,8 +346,8 @@ module.exports = function createArena3(deps) {
       // что начисление отсюда УБРАЛИ, а не забыли добавить.
     });
     // Rosters are only known once everyone is placed, so this is a second pass.
-    const roster = placed.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
-    placed.forEach(({ socketId, x, y, hp, team }) => {
+    const roster = paid.map(p => ({ id: p.socketId, name: _a3.names.get(p.socketId), team: p.team }));
+    paid.forEach(({ socketId, x, y, hp, team }) => {
       io.to(socketId).emit('arena3Started', {
         x, y, hp, team, fightAt: _a3.fightAt, roundEndAt: _a3.roundEndAt, roster,
       });
@@ -350,6 +383,15 @@ module.exports = function createArena3(deps) {
       if (victimTid) _recordPvpHistory(victimTid, 'death', 'arena3', killerRec?.name || null);
       if (killerTid) _recordPvpHistory(killerTid, 'kill', 'arena3', rec?.name || null);
     }
+    _a3AfterLoss();
+    return true;
+  }
+
+  // Общий хвост выбывания — счёт обеим сторонам и проверка «одну из них
+  // вайпнули». Один на два вызывающих (_a3Eliminate и _a3ReleaseRun), потому
+  // что вторая копия этих двух десятков строк разошлась бы с первой ровно на
+  // том, ради чего её и копировали.
+  function _a3AfterLoss() {
     const aliveA = [..._a3.alive.values()].filter(r => r.team === 'A').length;
     const aliveB = [..._a3.alive.values()].filter(r => r.team === 'B').length;
     // Sent relative to each recipient — "mine" is always their own side, so the
@@ -362,28 +404,84 @@ module.exports = function createArena3(deps) {
       io.to(sid).emit('arena3Score', { mine, enemy });
     });
     if (aliveA === 0 || aliveB === 0) {
-      _a3Finish(aliveA === 0 && aliveB === 0 ? null : (aliveA === 0 ? 'B' : 'A'), false);
+      // Финиш асинхронный (он ждёт выдачу наград), а зовут его отсюда
+      // синхронно — без catch отказ базы в награде дошёл бы до
+      // uncaughtException, то есть уронил бы сервер всем онлайн.
+      _a3Finish(aliveA === 0 && aliveB === 0 ? null : (aliveA === 0 ? 'B' : 'A'), false)
+        .catch(err => console.error('_a3Finish:', err));
     }
+  }
+
+  // Ушёл из боя сам — камнем телепорта или переходом в другую локацию (см.
+  // modes.leaveInstanceFloor, откуда это и зовётся). Такого выхода для арены
+  // не существовало вовсе, и стоил он дороже, чем в башне: ушедший оставался в
+  // _a3.alive, его сторону становилось невозможно вайпнуть, победа по
+  // элиминации — недостижима, и бой обязан был домотать все три минуты до
+  // 'wedged', без награды вообще никому. Один человек камнем телепорта ломал
+  // бой пятерым.
+  //
+  // Уход — это отказ от боя, а не смерть в нём: запись выбрасывается и из
+  // teams с names тоже, так что ни награды за победу своей стороны, ни строки
+  // результата ушедший не получает. Перемещать его отсюда нельзя — функция
+  // работает из середины уже идущего перехода между этажами, и уносит его сам
+  // вызывающий; остальных _a3Finish ниже отправляет домой как обычно.
+  function _a3ReleaseRun(socketId) {
+    if (!_a3.alive.has(socketId)) return false;
+    _a3.alive.delete(socketId);
+    _a3.teams.delete(socketId);
+    _a3.names.delete(socketId);
+    io.to(socketId).emit('arena3Eliminated', {});
+    _a3AfterLoss();
     return true;
+  }
+
+  // Реконнект под новым socket id, пока старая запись ещё не убрана — то же
+  // самое, что _race10Rekey делает для башни. Для арены этого не было вообще
+  // (_reclaimQueues/_rekeyQueue, на которые ссылается шапка этого файла, не
+  // пережили распил index.js и не существуют), поэтому реконнект во время
+  // окна регистрации молча терял запись, а мёртвый socketId висел в очереди и
+  // завышал счётчик «записалось» до ближайшего _a3TryStart — это и есть
+  // «показывает больше чем зарегистрировано» с другой стороны.
+  function _a3Rekey(oldSocketId, newSocketId) {
+    if (oldSocketId === newSocketId) return;
+    if (_a3.queue.has(oldSocketId)) {
+      _a3.queue.set(newSocketId, _a3.queue.get(oldSocketId));
+      _a3.queue.delete(oldSocketId);
+    }
+    const entry = _a3.alive.get(oldSocketId);
+    if (_a3.teams.has(oldSocketId)) {
+      _a3.teams.set(newSocketId, _a3.teams.get(oldSocketId));
+      _a3.teams.delete(oldSocketId);
+    }
+    if (_a3.names.has(oldSocketId)) {
+      _a3.names.set(newSocketId, _a3.names.get(oldSocketId));
+      _a3.names.delete(oldSocketId);
+    }
+    if (!entry) return;
+    _a3.alive.delete(oldSocketId);
+    _a3.alive.set(newSocketId, entry);
   }
 
   async function _a3Finish(winner, wedged) {
     if (!_a3.live) return;
-    clearTimeout(_a3.freezeTimer);
-    clearTimeout(_a3.roundTimer);
-    _a3.live = false;
-    _a3.fightAt = 0;
-    _a3.roundEndAt = 0;
+    _a3Rollback();
     // The match is decided by wiping the other side — there are no guard
     // bosses to knock down as a shortcut any more, so this needs nothing torn
     // down between rounds.
-    // Everyone still standing goes home too — the match is over for them as
-    // well, they just didn't die to get there.
-    _a3.alive.forEach((_, sid) => _returnToHub(sid));
-
+    // ── снимки и очистка ДО расселения, и это обязательный порядок ──────────
+    // _returnToHub уводит игрока через forceFloor, а тот зовёт
+    // modes.leaveInstanceFloor — то есть _a3ReleaseRun, который честно
+    // выбрасывает уходящего из alive/teams/names. Для финиша это не
+    // «ушёл сам»: снимаем копии и чистим карты здесь, а по дороге домой
+    // Release уже ничего не найдёт и станет no-op. Обратный порядок стоил бы
+    // победителям их награды, а всем остальным — экрана результата.
+    const survivors = [..._a3.alive.keys()];
     const teams = new Map(_a3.teams);
     const names = new Map(_a3.names);
     _a3.teams.clear(); _a3.alive.clear(); _a3.names.clear();
+    // Everyone still standing goes home too — the match is over for them as
+    // well, they just didn't die to get there.
+    survivors.forEach(sid => _returnToHub(sid));
 
     for (const [sid, team] of teams) {
       const won = !!winner && team === winner;
@@ -416,5 +514,6 @@ module.exports = function createArena3(deps) {
     ARENA3_TEAM_SIZE, ARENA3_NEEDED, ARENA3_MIN_LEVEL, ARENA3_FREEZE_MS, ARENA3_REWARD, ARENA3_ROUND_MS,
     _a3, _a3NextOpenAt, _a3PublicState, _a3Broadcast, _a3Schedule, _a3OpenWindow, _a3CloseWindow,
     _a3Frozen, _a3Allies, _a3Enemies, _a3TryStartSafe, _a3TryStart, _a3Deploy, _a3Eliminate, _a3Finish,
+    _a3ReleaseRun, _a3Rekey,
   };
 };

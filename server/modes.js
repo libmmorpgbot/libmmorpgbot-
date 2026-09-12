@@ -685,6 +685,23 @@ function init(io) {
         });
         return;
       }
+      // ── уйти из идущего забега/боя больше не бесплатно ───────────────────
+      // Этих двух веток здесь не было вовсе, а выйти есть чем: камень
+      // телепорта (useTeleportStone, handlers2/world.js) не проверяет режимы
+      // совсем, и enterLocation пускает в любой STANDABLE-этаж. Оба перехода
+      // идут через forceFloor → _leaveInstance → сюда, и до сих пор ничего не
+      // чистили.
+      //
+      // Для арены это было прямым срывом чужого боя: ушедший оставался в
+      // _a3.alive, его сторону нельзя было вайпнуть, и бой доматывал все три
+      // минуты до 'wedged' — без награды никому. Для башни мягче: оставался в
+      // _race10.alive, блокируя ранний финиш «никого не осталось», и сохранял
+      // право на награду, ничего не пробежав.
+      //
+      // Оба Release'а ничего не перемещают — игрока уносит вызывающий, мы уже
+      // внутри его перехода.
+      if (oldFloor === FLOOR_IDS.race10) { modes._race10ReleaseRun(socketId); return; }
+      if (oldFloor === FLOOR_IDS.pvpArena) { modes._a3ReleaseRun(socketId); return; }
       if (oldFloor === FLOOR_IDS.farmZone2) {
         const run = modes._farm2.get(socketId);
         if (!run) return;

@@ -96,8 +96,12 @@ module.exports = function createRace10(deps) {
     freezeTimer: null,
     maxTimer: null,
     startTimer: null,
+    sweepTimer: null,
     openTimer: null, notifyTimer: null,
   };
+
+  // Как часто идёт страховочный проход по забегу (_race10Sweep).
+  const RACE10_SWEEP_MS = 2000;
 
   // telegramId -> { socketId, timer } — one racer's disconnect held open for
   // a possible reconnect. See _race10HoldOnDisconnect/_race10ClaimOnReconnect
@@ -252,6 +256,14 @@ module.exports = function createRace10(deps) {
     _race10.starting = true;
     try {
       await _race10Deploy(ready, room);
+    } catch (err) {
+      // _race10.live встаёт в середине деплоя, до раздачи коридоров. Если
+      // оттуда что-то бросит, башня остаётся «идущей» без единого участника и
+      // без таймеров — а следующий старт отобьётся первой же строкой этой
+      // функции (`if (_race10.live ...) return`). То есть событие не
+      // запустится больше НИКОГДА, до перезапуска процесса. Откатываем.
+      console.error('_race10Deploy:', err);
+      if (!_race10.alive.size) _race10Rollback();
     } finally {
       _race10.starting = false;
       // One start per window, successful or not — close registration the
@@ -259,6 +271,17 @@ module.exports = function createRace10(deps) {
       // either way, so this is just phase/reschedule bookkeeping by now).
       _race10CloseWindow();
     }
+  }
+
+  // Снимает признаки идущего забега, не трогая участников — общий хвост для
+  // отката сорвавшегося деплоя и для нормального финиша.
+  function _race10Rollback() {
+    _race10.live = false;
+    _race10.fightAt = 0;
+    clearTimeout(_race10.freezeTimer);
+    clearTimeout(_race10.maxTimer);
+    clearInterval(_race10.sweepTimer);
+    _race10.sweepTimer = null;
   }
 
   async function _race10Deploy(ready, room) {
@@ -367,7 +390,29 @@ module.exports = function createRace10(deps) {
       if (pid) playerlog.log(pid, 'diag_race10_deploy', { lane, x, y, socketId });
     })).catch(err => console.error('[DIAG-RACE10] db log failed:', err.message));
 
-    placed.forEach(({ socketId, lane }) => {
+    // ── попытка списывается ДО старта, и её ответ теперь читают ─────────────
+    // _lockRace10Daily — это takeAttempt (server/modes.js), условный UPDATE
+    // «...WHERE used < cap». Он возвращает false и когда попытки кончились, и
+    // когда база не ответила, — а звали его без await, ответ выбрасывали.
+    // Проверку _race10AttemptsLeft выше отделяет от него минимум один await,
+    // то есть ровно тот зазор, ради которого она и написана, не закрывался
+    // ничем: гонка с другой сессией или блип базы = бесплатный забег, молча.
+    // Кто не оплачен — тот не бежит.
+    const charged = await Promise.all(placed.map(p => _lockRace10Daily(p.socketId)));
+    const paid = placed.filter((_, i) => charged[i]);
+    placed.filter((_, i) => !charged[i]).forEach(({ socketId }) => {
+      _race10.queue.delete(socketId);
+      _returnToHub(socketId);
+      io.to(socketId).emit('race10Registered', { registered: false });
+      io.to(socketId).emit('race10Error', { msg: 'Не удалось списать попытку — забег не начат' });
+    });
+    if (!paid.length) {
+      _race10Rollback();
+      _race10Broadcast();
+      return;
+    }
+
+    paid.forEach(({ socketId, lane }) => {
       const name = _race10.queue.get(socketId)?.name || '?';
       // atBoss: false — flips once in _race10ReachBoss, the instant this
       // lane's monsters are all dead. Guards against teleporting the same
@@ -376,13 +421,10 @@ module.exports = function createRace10(deps) {
       _race10.names.set(socketId, name);
       _race10.dmg.set(socketId, 0);
       _race10.queue.delete(socketId);
-      // Attempt spent the moment the race starts, win or lose — same rule as
-      // the 3v3 arena.
-      _lockRace10Daily(socketId);
     });
 
-    const roster = placed.map(p => ({ id: p.socketId, name: _race10.names.get(p.socketId), lane: p.lane }));
-    placed.forEach(({ socketId, x, y, hp, lane }) => {
+    const roster = paid.map(p => ({ id: p.socketId, name: _race10.names.get(p.socketId), lane: p.lane }));
+    paid.forEach(({ socketId, x, y, hp, lane }) => {
       io.to(socketId).emit('race10Started', { x, y, hp, lane, fightAt: _race10.fightAt, roster });
       logPlayer(_socketTid(socketId), _race10.names.get(socketId), 'race10_start', { lane });
     });
@@ -395,7 +437,52 @@ module.exports = function createRace10(deps) {
 
     clearTimeout(_race10.maxTimer);
     _race10.maxTimer = safeTimeout('race10Max', () => _race10Finish(null, true), RACE10_FREEZE_MS + RACE10_MAX_MS);
+
+    // Страховка, идущая всё время забега — см. _race10Sweep.
+    clearInterval(_race10.sweepTimer);
+    _race10.sweepTimer = setInterval(() => {
+      // Тот же довод, что у safeTimeout: колбэк таймера выполняется на пустом
+      // стеке, и throw отсюда дошёл бы до uncaughtException, то есть уронил бы
+      // весь сервер ради одной дорожки.
+      try { _race10Sweep(); } catch (err) { console.error('[race10 sweep]', err); }
+    }, RACE10_SWEEP_MS);
+    if (_race10.sweepTimer.unref) _race10.sweepTimer.unref();
     _race10Broadcast();
+  }
+
+  // ── страховка от «стою в пустом тупике» ────────────────────────────────────
+  // Коридоров пятьдесят, а комната босса — квадрат в 22 тайла по центру карты
+  // (generateRace10, server/game/dungeon.js): к ней примыкают только четыре
+  // средних коридора, остальные сорок шесть упираются в стену. Единственный
+  // вход туда — _race10ReachBoss, и зовут его ровно из одного места:
+  // _onCombatResult, по убийству, закрывшему дорожку (server/modes.js). Любой
+  // забег, где это последнее убийство случилось НЕ у самого игрока — дорожка
+  // была пуста с самого начала, добил кто-то другой, событие потерялось —
+  // оставлял человека в тупике на все пятнадцать минут: ни монстров, ни
+  // босса, ни награды (она требует урона по боссу).
+  //
+  // Здесь же чинится и вторая половина той же жалобы. Видимость ВСЕГО в этом
+  // режиме висит на p._raceLane (Room._raceVisible) — и коридорных монстров, и
+  // безлейнового босса. Запись игрока, пересозданная без него (реконнект,
+  // любой forceFloor на этот этаж мимо raceDeploy), означает «монстров нет,
+  // босса нет»; клиентские барьеры при этом считаются по ПРИСЛАННОМУ списку
+  // врагов (_raceLaneTierAlive, js/game.js) и на пустом списке просто
+  // открываются, пропуская игрока к тому самому тупику. Раз в
+  // RACE10_SWEEP_MS сверяем запись комнаты с тем, что забег о человеке знает.
+  function _race10Sweep() {
+    if (!_race10.live) return;
+    const room = getRoom(FLOOR_IDS.race10);
+    if (!room) return;
+    const laneHasMonsters = room.raceLanesAlive();
+    _race10.alive.forEach((run, sid) => {
+      const p = room.players.get(sid);
+      // Записи нет — либо человек держится по грейсу реконнекта
+      // (_race10HoldOnDisconnect), либо уже уходит с этажа. У обоих случаев
+      // свой путь, отсюда трогать нечего.
+      if (!p) return;
+      if (p._raceLane !== run.lane) { p._raceLane = run.lane; p._profileRev++; }
+      if (!run.atBoss && !laneHasMonsters.has(run.lane)) _race10ReachBoss(sid, run.lane);
+    });
   }
 
   // Teleports one racer into the shared boss room the instant their own lane
@@ -442,6 +529,34 @@ module.exports = function createRace10(deps) {
     // Nobody left standing anywhere and the boss is still up — no one can ever
     // land another hit, so there's no point riding out RACE10_MAX_MS.
     if (_race10.alive.size === 0) _race10Finish(null, false);
+    return true;
+  }
+
+  // Ушёл из забега сам — камнем телепорта или переходом в другую локацию
+  // (см. modes.leaveInstanceFloor, откуда это и зовётся). До сих пор такого
+  // выхода для этого режима не существовало вовсе: человек оказывался в хабе,
+  // оставаясь в _race10.alive — то есть блокировал ранний финиш «никого не
+  // осталось» и сохранял право на награду, ничего не пробежав.
+  //
+  // От смерти отличается двумя вещами. Во-первых, счёт урона НЕ переживает
+  // уход: смерть в коридоре — часть забега, и «больше всех урона» не требует
+  // дожить до конца, а уход по своей воле — это отказ от забега, и платить за
+  // него не за что. Во-вторых, никаких перемещений отсюда: функция работает
+  // из середины уже идущего перехода между этажами, и второй forceFloor
+  // внутри первого сломал бы оба — игрока уносит сам вызывающий.
+  function _race10ReleaseRun(socketId) {
+    if (!_race10.alive.has(socketId)) return false;
+    _race10.alive.delete(socketId);
+    _race10.names.delete(socketId);
+    _race10.dmg.delete(socketId);
+    io.to(socketId).emit('race10Eliminated', {});
+    // Та же причина, что и в _race10Eliminate: стоять больше некому, боссу
+    // никто уже не нанесёт удара — ждать RACE10_MAX_MS не за чем. Финиш
+    // асинхронный (он ждёт выдачу наград), а зовут его отсюда синхронно —
+    // без catch отказ базы в награде дошёл бы до uncaughtException.
+    if (_race10.live && _race10.alive.size === 0) {
+      _race10Finish(null, false).catch(err => console.error('_race10Finish:', err));
+    }
     return true;
   }
 
@@ -556,22 +671,26 @@ module.exports = function createRace10(deps) {
 
   async function _race10Finish(winnerId, timedOut) {
     if (!_race10.live) return;
-    clearTimeout(_race10.freezeTimer);
-    clearTimeout(_race10.maxTimer);
-    _race10.live = false;
-    _race10.fightAt = 0;
+    _race10Rollback();
     const room = getRoom(FLOOR_IDS.race10);
     if (room) room.despawnRaceBoss();
-    // Everyone still standing goes home too — the race is over for them as
-    // well, they just didn't die to get there. Eliminated racers (already
-    // dropped from _race10.alive by _race10Eliminate) stay put where they
-    // fell until they close the result modal — see the race10Return handler.
-    _race10.alive.forEach((_, sid) => _returnToHub(sid));
-
+    // ── снимки и очистка ДО расселения, и это обязательный порядок ──────────
+    // _returnToHub уводит игрока через forceFloor, а тот зовёт
+    // modes.leaveInstanceFloor — то есть _race10ReleaseRun, который честно
+    // выбрасывает уходящего из alive/names/dmg. Для финиша это не «ушёл сам»,
+    // и платить он мешать не должен: снимаем копии и чистим карты здесь, а по
+    // дороге домой Release уже ничего не найдёт и станет no-op. Обратный
+    // порядок стоил бы каждому выжившему и награды, и экрана результата.
+    const survivors = [..._race10.alive.keys()];
     const names = new Map(_race10.names);
     const dmg = new Map(_race10.dmg);
     const participants = [...names.keys()];
     _race10.alive.clear(); _race10.names.clear(); _race10.dmg.clear(); _race10.bossId = null;
+    // Everyone still standing goes home too — the race is over for them as
+    // well, they just didn't die to get there. Eliminated racers (already
+    // dropped from _race10.alive by _race10Eliminate) stay put where they
+    // fell until they close the result modal — see the race10Return handler.
+    survivors.forEach(sid => _returnToHub(sid));
 
     for (const sid of participants) {
       const won = !!winnerId && sid === winnerId;
@@ -615,6 +734,6 @@ module.exports = function createRace10(deps) {
     _race10, _race10Capacity, _race10NextOpenAt, _race10PublicState, _race10Broadcast, _race10Schedule,
     _race10OpenWindow, _race10CloseWindow, _race10Frozen, _race10StartSafe, _race10Start, _race10Deploy,
     _race10Eliminate, _race10Finish, _race10ReachBoss, _race10Rekey,
-    _race10HoldOnDisconnect, _race10ClaimOnReconnect,
+    _race10HoldOnDisconnect, _race10ClaimOnReconnect, _race10ReleaseRun, _race10Sweep,
   };
 };

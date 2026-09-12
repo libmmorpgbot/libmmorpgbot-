@@ -4305,6 +4305,20 @@ class Room {
     return true;
   }
 
+  // Every lane that still has a live corridor monster, in ONE pass over the
+  // enemy list. raceLaneClear answers the same question for a single lane and
+  // is the right call on a kill; the periodic sweep in race10.js asks it about
+  // every racer at once, and 50 racers × 3600 monsters per sweep is a cost the
+  // tick loop should not be paying to learn something one pass already knows.
+  raceLanesAlive() {
+    const out = new Set();
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      if (e.arm === 'race10' && !e.raceBoss && e.hp > 0 && e.lane != null) out.add(e.lane);
+    }
+    return out;
+  }
+
   // The small ring of arrival points around the shared boss (see
   // generateRace10), validated the same way every other slot getter here is
   // — a map tweak that dropped one onto a wall shrinks the ring instead of

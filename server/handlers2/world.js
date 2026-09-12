@@ -117,7 +117,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Outside the transaction on purpose: this moves the connection between
     // two Rooms and pushes a second gameStart, none of which belongs inside a
     // database transaction, and it must not run at all if the login failed.
-    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); }
+    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); }
   });
 
   // ── a Страх run held across a disconnect ─────────────────────────────────
@@ -225,6 +225,40 @@ module.exports = function registerWorld(s, safeOn, deps) {
       roster: [...m._race10.alive.entries()].map(([id, r]) => ({ id, name: r.name, lane: r.lane })),
     });
     plog.log(s.playerId, 'race10Resume', { lane: run.lane });
+  }
+
+  // ── бой 3х3, переживший реконнект ────────────────────────────────────────
+  // _a3Rekey (server/world.js) переносит состав боя на новый socket id, но сам
+  // никого не ставит: pvpArena, как и race10, не STANDABLE, поэтому
+  // sendGameStart выше уже увёл эту сессию в хаб. Оставить так — получить
+  // участника, который числится живым, стоит в хабе и которого невозможно
+  // убить: его сторону не вайпнуть, бой домотает все три минуты до 'wedged'
+  // без награды никому. Ровно тот срыв, от которого закрывают добровольный
+  // уход (modes.leaveInstanceFloor), только через другую дверь.
+  function _resumeArena3Match() {
+    const m = deps.modes || require('../modes').modes;
+    if (!m || !m._a3 || !m._a3.live) return;
+    const run = m._a3.alive.get(s.socket.id);
+    if (!run) return;
+    const p = s.forceFloor('pvpArena');
+    if (!p) return;
+    // Своя база, а не середина карты: forceFloor без pos оставил бы игрока на
+    // дефолтном спавне этажа — центральной клетке арены, то есть прямо в
+    // коридоре между двумя командами.
+    const slots = typeof s.room.pvpArenaSlots === 'function' ? s.room.pvpArenaSlots() : null;
+    const spots = slots && (run.team === 'A' ? slots.teamA : slots.teamB);
+    if (spots && spots.length) { p.x = spots[0].x; p.y = spots[0].y; }
+    // pvpArenaDeploy включает PvP каждому участнику, а запись, созданную
+    // заново при входе в хаб, никто не включал — без этого вернувшийся не
+    // может ни ударить, ни быть ударенным.
+    p.pvpMode = true;
+    p._profileRev++;
+    s.socket.emit('arena3Started', {
+      x: p.x, y: p.y, hp: p.hp, team: run.team,
+      fightAt: m._a3.fightAt, roundEndAt: m._a3.roundEndAt,
+      roster: [...m._a3.names.entries()].map(([id, name]) => ({ id, name, team: m._a3.teams.get(id) })),
+    });
+    plog.log(s.playerId, 'arena3Resume', { team: run.team });
   }
 
   // Login, a floor change and a respawn are the same event to the client: a
