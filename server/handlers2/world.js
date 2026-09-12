@@ -963,6 +963,16 @@ module.exports = function registerWorld(s, safeOn, deps) {
       s.socket.emit('playerHurt', { id: s.socket.id, hp: me.hp });
       fail('Вы живы — возрождение не требуется', 'not_dead');
     }
+    // ── «после смерти несколько раз появляется окно возродиться» ────────────
+    // Всё, что ниже, идёт через базу, и на это время сокет продолжает
+    // принимать события — в первую очередь playerMove, который клиент шлёт в
+    // том же кадре, что и сам 'respawn' (respawnPlayer меняет и HP, и
+    // координаты, а netSendMove шлёт именно на такое изменение). Комната в
+    // этот момент всё ещё держит hp=0 и в ответ переобъявляет смерть, из-за
+    // чего окно возрождения открывается снова — см. updatePlayerPos,
+    // server/game/Room.js, где эта отметка и читается. Ставится до первого
+    // await: между проверкой выше и этой строкой ничего асинхронного нет.
+    if (me) me._respawnAt = Date.now();
     const st = await stats.of(t, pid);
     // No stat row means no character to bring back. Returning here told act()
     // the respawn succeeded, so the log said the player was revived while the

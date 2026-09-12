@@ -298,6 +298,11 @@ const ATTACK_BURST_MAX = 3;
 // Пока setPlayerStats не отработал, скорость атаки неизвестна — берётся
 // медленнейший класс, чтобы окно не оказалось шире реального.
 const ATTACK_RATE_FALLBACK = 1.2;
+// Как долго после нажатия «Возродиться» сервер не переобъявляет смерть — см.
+// _respawnAt в updatePlayerPos. Длиннее, чем транзакция обработчика respawn
+// (несколько обращений к базе плюс gameStart), и короче, чем терпение игрока,
+// чей клиент смерть проспал: не дождавшись возрождения, объявление вернётся.
+const RESPAWN_ANNOUNCE_GRACE_MS = 3000;
 // Server-side minimum gap between two skill CASTS from the same player. The
 // real cooldowns are seconds long and enforced by the client; this only has to
 // be tight enough that spamming the event isn't worth anything.
@@ -3521,9 +3526,25 @@ class Room {
     // The player kept playing while everyone else saw a frozen corpse until
     // they happened to reconnect. So re-announce the death (throttled, it
     // arrives once per second at most) until their client acts on it.
+    //
+    // ── «после смерти несколько раз появляется окно возродиться» ────────────
+    // Но НЕ тому клиенту, который уже нажал «Возродиться» и ждёт ответа. Его
+    // обработчик (safeOn('respawn'), handlers2/world.js) асинхронный: пока он
+    // идёт по своей транзакции — stats.of, setHp, запись штрафа, gameStart —
+    // сокет продолжает принимать события, а p.hp здесь всё ещё 0.
+    //
+    // И первый же пакет в этом окне приходит гарантированно: respawnPlayer
+    // (js/game.js) ставит себе 10% HP и переносит на точку спавна, а
+    // netSendMove шлёт позицию именно при изменении координат или hp. То есть
+    // playerMove отправляется в том же кадре, что и 'respawn', попадает сюда
+    // раньше, чем транзакция успевает дойти до setPlayerHp, — и переобъявление
+    // смерти прилетает клиенту, который только что закрыл окно. Клиент честно
+    // обнуляет себе HP и показывает окно снова. Нажимает ещё раз — и гонка
+    // повторяется, пока транзакция наконец не обгонит очередной playerMove.
     if (p.hp <= 0) {
       const now = Date.now();
-      if (now - (p._deathResendAt || 0) >= 1000) {
+      const awaitingRespawn = now - (p._respawnAt || 0) < RESPAWN_ANNOUNCE_GRACE_MS;
+      if (!awaitingRespawn && now - (p._deathResendAt || 0) >= 1000) {
         p._deathResendAt = now;
         this.io.to(socketId).emit('playerHurt', { id: socketId, hp: 0 });
       }
