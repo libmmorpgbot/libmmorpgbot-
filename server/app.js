@@ -26,6 +26,7 @@ const bossstate = require('./db/repos/bossstate');
 // tells a connected client whether the code it is running is still current.
 const assets = require('./assets');
 const ops = require('./tg-ops');
+const tgFaq = require('./tg-faq');
 const workers = require('./workers');
 const adminAuth = require('./admin-auth');
 // The game bot's own updates. Required at the top rather than at the mount
@@ -139,6 +140,7 @@ app.get('/health', async (req, res) => {
     },
     workers: workers.status(),
     ops: ops.status(),
+    faq: tgFaq.status(),
     // The player log: how many rows are queued, written, and lost. An empty
     // player_logs table looked exactly like a quiet server until this existed.
     playerLog: plog.stats(),
