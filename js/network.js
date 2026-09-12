@@ -1229,12 +1229,8 @@ function netConnect(onReady) {
       if (typeof onCoopState === 'function') onCoopState();
     }
     // Элитная фарм-зона: same reconnect-resume reasoning as Fear/Coop above.
-    // AUTO forced off here too — a reconnect can restore autoAttackMode from
-    // whatever this device last had it set to, and that could be "on" from
-    // before ever entering this zone.
     if (f2 && f2.inRun) {
       _farm2InRun = true;
-      autoAttackMode = false;
       if (typeof onFarm2State === 'function') onFarm2State();
     } else if (_farm2InRun) {
       _farm2InRun = false;
@@ -3912,14 +3908,7 @@ function _finishOnlineStart() {
   // обработчике gameStart выше). В _applyGameStart то же самое включало бы
   // АВТО обратно на каждом шаге через портал — то есть отменяло бы выключение,
   // сделанное руками, движением по карте.
-  //
-  // Элитная фарм-зона исключена той же оговоркой, что и в трёх других местах,
-  // где АВТО отказывают (farm2Started здесь, _autoPressEnd в js/input.js,
-  // _autoCastSkills в js/game.js): внутри неё оно запрещено целиком. Дойти
-  // сюда, уже будучи в забеге, нельзя — разрыв связи выкидывает из зоны, — но
-  // условие стоит рядом с остальными, а не держится в уме.
-  if ((window._vipData?.level || 0) >= AUTO_ATTACK_VIP_MIN
-      && !(typeof _farm2InRun !== 'undefined' && _farm2InRun)) {
+  if ((window._vipData?.level || 0) >= AUTO_ATTACK_VIP_MIN) {
     autoAttackMode = true;
   }
 
@@ -5139,12 +5128,6 @@ function _initFarm2Handlers(s) {
     if (!player) return;
     _farm2InRun = true;
     _farm2Group = null;
-    // AUTO is switched off for the whole zone (see this file's _applyGameStart
-    // for the reconnect-resume case, and _autoPressEnd/js/input.js and
-    // _autoCastSkills/js/game.js for the toggle/cast refusals while inside) —
-    // forced off here too so entering with it already on doesn't let it keep
-    // running until the player happens to notice and flip it themselves.
-    autoAttackMode = false;
     if (minutesLeft !== undefined) _farm2State = { ..._farm2State, minutesLeft };
     if (hp) player.hp = hp;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('farm2Lbl'));

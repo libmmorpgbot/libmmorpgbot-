@@ -538,14 +538,6 @@ function _autoPressEnd(touchId) {
     if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, `🔒 Авто-атака с VIP ${AUTO_ATTACK_VIP_MIN}`, '#f93');
     return;
   }
-  // Элитная фарм-зона: AUTO is switched off on entry (see the farm2Started
-  // handler, js/network.js) and refused here too — otherwise a player could
-  // just flip it back on the instant they land, defeating the whole point
-  // of forcing it off for that zone.
-  if (player && typeof _farm2InRun !== 'undefined' && _farm2InRun) {
-    if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 38, '🔒 АВТО недоступно в Элитной фарм-зоне', '#f93');
-    return;
-  }
   autoAttackMode = !autoAttackMode;
 }
 

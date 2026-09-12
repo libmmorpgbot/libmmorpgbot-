@@ -403,11 +403,6 @@ let _autoSkillTimer = 0;
 function _autoCastSkills(dt) {
   if (_autoSkillTimer > 0) _autoSkillTimer -= dt;
   if (!autoAttackMode || !player || state !== 'playing') return;
-  // Элитная фарм-зона refuses AUTO entirely — forced off on entry and the
-  // toggle itself is refused there (js/network.js's farm2Started handler,
-  // js/input.js's _autoPressEnd), but this is checked again directly here
-  // too rather than trusted solely from those two call sites.
-  if (typeof _farm2InRun !== 'undefined' && _farm2InRun) return;
   // The player's own master switch (АВТО button, long press → the picker in
   // js/ui.js). Auto-ATTACK is unaffected: this turns off casting only, which
   // is the point — a player who wants the auto to keep hitting but stop
