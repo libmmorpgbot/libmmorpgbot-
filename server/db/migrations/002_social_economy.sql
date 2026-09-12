@@ -11,7 +11,7 @@ CREATE TYPE gram_tx_status_t AS ENUM ('pending', 'confirmed', 'rejected', 'expir
 -- ── clans ──────────────────────────────────────────────────────────────────
 -- Was one document with members/applications/storage/allocations as embedded
 -- arrays, saved via clan.save() — a read-modify-write of the whole document,
--- so two members acting at once lost one of the changes (M8 in AUDIT.md).
+-- so two members acting at once lost one of the changes.
 -- Each array is its own table now, and each operation touches one row.
 CREATE TABLE clans (
   id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

@@ -4,7 +4,7 @@
 // storage and allocations as embedded arrays, written back with clan.save().
 // save() is a read-modify-write of the WHOLE document, so two members acting
 // in the same second each wrote a version composed before the other's — one
-// change simply disappeared (M8 in AUDIT.md). With thirty members that is not
+// change simply disappeared. With thirty members that is not
 // a rare race, it is the normal case during a raid.
 //
 // Each array is its own table now and each operation touches one row, so there

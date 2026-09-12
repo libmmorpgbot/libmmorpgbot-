@@ -89,7 +89,7 @@ async function main() {
   eq(ghost[0].n, 0, 'невдалий spend не залишив запис у леджері');
 
   // ── 5. THE RACE: two spends of the same funds, at the same instant ───────
-  // The exact shape of "двойная покупка" (C3 in AUDIT.md): a player with
+  // The exact shape of "двойная покупка": a player with
   // enough for ONE purchase fires two. Exactly one must win.
   const b = await mkPlayer('b');
   await money.credit(null, b, 'gram', 100, { reason: 'test', idemKey: `${TAG}:b1` });

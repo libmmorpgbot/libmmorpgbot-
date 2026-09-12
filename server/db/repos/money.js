@@ -119,7 +119,7 @@ async function credit(db, playerId, currency, amount, { reason, refType = null, 
 // it" and "take it", because there is no gap for a window to live in.
 //
 // This is what retires the "check, await, deduct" race that let a player buy
-// two things with one balance (C3 in AUDIT.md).
+// two things with one balance.
 async function spend(db, playerId, currency, amount, { reason, refType = null, refId = null, idemKey }) {
   _check(currency, amount, idemKey);
   const { rows } = await query(db, `

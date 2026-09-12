@@ -7,7 +7,7 @@
 //
 //   * a display name is attacker-controlled text. Telegram's first_name is
 //     whatever the player types, and the old client wrote several of these
-//     into innerHTML unescaped (C1 in AUDIT.md). Escaping on OUTPUT is the
+//     into innerHTML unescaped. Escaping on OUTPUT is the
 //     client's job and is scheduled separately, but the server must not make
 //     it harder: names are bounded and stripped of control characters here.
 //   * a chat message is broadcast to everyone. Its rate limit is therefore not

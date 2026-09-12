@@ -30,7 +30,7 @@ const BUFF_POTIONS = new Map(ITEM_DEF.filter(d => d.slot === 'buff_potion').map(
 // The heal amount comes from the catalog, not the request. The old handler
 // took an `amount` from the client and a non-numeric one produced hp = NaN —
 // which compares false against every threshold, so the player became
-// effectively immortal (C2 in AUDIT.md). There is no amount to send here.
+// effectively immortal. There is no amount to send here.
 //
 // maxHp is read through the stats repository so the cap is the same number
 // combat uses; taking it from anywhere else is how a heal ends up able to

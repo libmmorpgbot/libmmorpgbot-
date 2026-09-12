@@ -10,7 +10,7 @@
 //           spread — bots wander over a wide area
 //           far    — one bot every 3000px: nobody in anybody's interest radius
 //
-// Knobs, all env vars, each isolating one cost measured in AUDIT-PERF.md:
+// Knobs, all env vars, each isolating one measured cost:
 //   MOVE_HZ=40   playerMove rate per bot; 0 = never move
 //   MOVE_MODE=legacy|smart   which client generation to imitate (see below)
 //   IDLE_PCT=0   share of bots that stand still for the whole run

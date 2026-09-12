@@ -4,7 +4,7 @@
 //
 //   DATABASE_URL=... PG_CA_FILE=... node dev/consumables-check.js
 //
-// The headline case is C2 from AUDIT.md: usePotion took an `amount` from the
+// The headline case: usePotion took an `amount` from the
 // client, and a non-numeric one produced hp = NaN — which compares false
 // against every threshold, so the player became effectively immortal. There is
 // no amount to send here; the heal is read from the catalog. The test proves
