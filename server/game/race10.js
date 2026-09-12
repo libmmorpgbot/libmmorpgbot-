@@ -59,6 +59,17 @@ module.exports = function createRace10(deps) {
   // race with no winner if the boss just never comes down, so the one shared
   // instance can't be tied up forever.
   const RACE10_MAX_MS    = 15 * 60 * 1000;
+  // ── «жалуются... вылет из игры» ─────────────────────────────────────────
+  // Every OTHER competitive mode (arena3, the death battle) eliminating on
+  // disconnect with no grace is fine — those are short. This one runs up to
+  // RACE10_MAX_MS, so a tunnel blip (Wi-Fi/LTE handover, a backgrounded
+  // WebView) that would be nothing anywhere else cost the whole day's one
+  // attempt here, with no way back in: race10Eliminated fired the instant
+  // socket.io noticed, before the client even had a chance to reconnect.
+  // Kept equal to Fear's own FEAR_RECONNECT_GRACE_MS (server/game/fear.js) —
+  // same client-side watchdog, same reconnect cost, no reason for a
+  // different number.
+  const RACE10_RECONNECT_GRACE_MS = 45000;
 
   // The map's lane count — the hard ceiling on entrants. Read once the world
   // exists; before that (nobody can register yet) it reports 0.
@@ -87,6 +98,11 @@ module.exports = function createRace10(deps) {
     startTimer: null,
     openTimer: null, notifyTimer: null,
   };
+
+  // telegramId -> { socketId, timer } — one racer's disconnect held open for
+  // a possible reconnect. See _race10HoldOnDisconnect/_race10ClaimOnReconnect
+  // below; mirrors Fear's own _fearDisconnectGrace (server/game/fear.js).
+  const _race10Grace = new Map();
 
   // Next scheduled window open, in UTC ms — every day, 20:30 Moscow. Lives in
   // shared/definitions.js (RACE10_DAYS_MSK/HOURS_MSK) so it's computed the
@@ -429,6 +445,68 @@ module.exports = function createRace10(deps) {
     return true;
   }
 
+  // The disconnect-side half of the reconnect grace — called from
+  // modes._pvpEliminate INSTEAD OF _race10Eliminate when the socket closing
+  // is a disconnect (opts.fearGrace), not a real death. Deliberately does not
+  // touch _race10.alive/names/dmg at all: the entry just sits there exactly
+  // as it was, which is what lets a reconnect within the window come straight
+  // back with its lane, its damage tally and its atBoss flag intact, and
+  // what lets _race10Finish still pay out and log this racer normally if the
+  // race ends while they're mid-reconnect (the loop there only reads those
+  // three maps, never socket.io). Only the disconnect ITSELF is delayed —
+  // RACE10_RECONNECT_GRACE_MS later, with no reconnect, it runs the exact
+  // elimination this replaced.
+  //
+  // No telegramId means no account to reconnect against (should be
+  // unreachable for a real login) — eliminate for real rather than hold a
+  // slot nobody can ever reclaim.
+  function _race10HoldOnDisconnect(socketId, telegramId) {
+    if (!_race10.live) return false;
+    if (!_race10.alive.has(socketId)) return false;
+    if (!telegramId) return _race10Eliminate(socketId);
+    // Captured NOW, while the room record still exists (this runs from
+    // modes._pvpEliminate, called BEFORE the disconnect handler's own
+    // room.removePlayer — see server/app.js) — it is gone by the time a
+    // reconnect could ask for it otherwise. Already the exact spot to
+    // resume at whether this racer was mid-corridor or already at the boss:
+    // _race10ReachBoss moves p.x/p.y there the instant it happens, same
+    // field this reads.
+    const room = getRoom(FLOOR_IDS.race10);
+    const p = room && room.players.get(socketId);
+    const pos = p ? { x: p.x, y: p.y, hp: p.hp } : null;
+    const prior = _race10Grace.get(telegramId);
+    if (prior) clearTimeout(prior.timer);
+    const timer = safeTimeout('race10Grace', () => {
+      _race10Grace.delete(telegramId);
+      _race10Eliminate(socketId);
+    }, RACE10_RECONNECT_GRACE_MS);
+    _race10Grace.set(telegramId, { socketId, pos, timer });
+    return true;
+  }
+
+  // The other half — called from the login flow (server/handlers2/world.js)
+  // once a reconnecting socket is authenticated, before it's placed on any
+  // floor. Cancels the pending elimination and rekeys _race10.alive/names/dmg
+  // onto the new socket id (same _race10Rekey the same-tick stale-entry path
+  // already uses), so every later lookup by the new id — dying again, hitting
+  // the boss, the race's own finish — finds this racer exactly as before.
+  // Returns { pos } — pos itself may be null on a legitimate hold that
+  // couldn't capture a position — or null when there was nothing held at
+  // all, which is the caller's "nothing to resume". Wrapped rather than
+  // returning pos bare so those two null cases stay distinguishable. The
+  // caller still has to move the connection onto the race10 floor itself,
+  // which this does not do (it has no socket to move — see
+  // _resumeHeldRace10Run).
+  function _race10ClaimOnReconnect(telegramId, newSocketId) {
+    if (!telegramId) return null;
+    const held = _race10Grace.get(telegramId);
+    if (!held) return null;
+    clearTimeout(held.timer);
+    _race10Grace.delete(telegramId);
+    _race10Rekey(held.socketId, newSocketId);
+    return { pos: held.pos };
+  }
+
   // A network blip (Wi-Fi/LTE handover, a suspended WebView) can reconnect
   // the same account under a NEW socket id while the old one is still
   // sitting around — the exact "a moment longer than its own disconnect
@@ -533,9 +611,10 @@ module.exports = function createRace10(deps) {
 
   return {
     RACE10_MIN_PLAYERS, RACE10_REG_MS, RACE10_ATTEMPTS, RACE10_MIN_LEVEL, RACE10_FREEZE_MS,
-    RACE10_REWARD, RACE10_MAX_MS,
+    RACE10_REWARD, RACE10_MAX_MS, RACE10_RECONNECT_GRACE_MS,
     _race10, _race10Capacity, _race10NextOpenAt, _race10PublicState, _race10Broadcast, _race10Schedule,
     _race10OpenWindow, _race10CloseWindow, _race10Frozen, _race10StartSafe, _race10Start, _race10Deploy,
     _race10Eliminate, _race10Finish, _race10ReachBoss, _race10Rekey,
+    _race10HoldOnDisconnect, _race10ClaimOnReconnect,
   };
 };

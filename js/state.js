@@ -59,6 +59,53 @@ let otherPlayers = new Map();   // socketId → { x, y, type, facing, hp, maxHp,
 // only sends on join and on change. Fed by the 'playerPets'/'playerPet'
 // events (js/network.js).
 let otherPets = new Map();
+
+// ── «Оптимизация» (Профиль → Звук) ──────────────────────────────────────────
+// On a crowded floor (Кровавая Башня, an event boss, guild war) drawing every
+// other player's sprite, HP bar and name tag costs more of a frame than
+// everything else combined, and a player fighting one target has no use for
+// seeing the other forty. This caps how many get drawn to the nearest few —
+// the server still sends the full roster, only rendering is cut.
+//
+// In localStorage, not on the server: same reasoning as joyAlpha below —
+// it's a property of THIS SCREEN (an old phone needs it, a desktop doesn't),
+// and syncing it across devices would be the wrong thing to sync.
+const PERF_MODE_MAX_PLAYERS = 5;
+let _perfMode = null;
+function perfModeOn() {
+  if (_perfMode === null) {
+    let v;
+    try { v = localStorage.getItem('liberty.perfMode'); } catch (e) { v = null; }
+    _perfMode = v === '1';
+  }
+  return _perfMode;
+}
+function setPerfMode(v) {
+  _perfMode = !!v;
+  try { localStorage.setItem('liberty.perfMode', _perfMode ? '1' : '0'); } catch (e) { /* приватный режим */ }
+}
+
+// Which other players get drawn this frame — null means "everyone" (mode
+// off, or already at/under the cap), which both callers below treat as "no
+// filter". Kept as one function so the sprite pass (pixi-world.js
+// _updateOtherPlayers) and the name-tag overlay (game.js
+// _drawOtherPlayerNamesOnUI) always agree on who's visible — otherwise a
+// name would float over a sprite that got skipped, or vice versa.
+function visibleOtherPlayerIds() {
+  if (!perfModeOn() || otherPlayers.size <= PERF_MODE_MAX_PLAYERS) return null;
+  const px = player ? player.x : 0, py = player ? player.y : 0;
+  const ranked = [];
+  otherPlayers.forEach((op, id) => {
+    if (op.x == null) return;
+    const dx = op.x - px, dy = op.y - py;
+    ranked.push([dx * dx + dy * dy, id]);
+  });
+  ranked.sort((a, b) => a[0] - b[0]);
+  const ids = new Set();
+  for (let i = 0; i < Math.min(PERF_MODE_MAX_PLAYERS, ranked.length); i++) ids.add(ranked[i][1]);
+  return ids;
+}
+
 let serverEnemies = [];     // authoritative enemy list (server-driven, near the player only)
 // Flat Int16 [tileX, tileY, ...] of every alive non-boss enemy in the world,
 // for the КАРТА panel — which draws a whole arm, well past the radius

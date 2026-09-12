@@ -1530,7 +1530,11 @@ function _a3NameColor(id) {
 
 function _drawOtherPlayerNamesOnUI() {
   if (!otherPlayers.size) return;
+  // Same cap _updateOtherPlayers (pixi-world.js) applies to sprites — a name
+  // floating over a hidden sprite would be worse than no cap at all.
+  const _visIds = visibleOtherPlayerIds();
   otherPlayers.forEach((p, _pid) => {
+    if (_visIds && !_visIds.has(_pid)) return;
     if (p.x == null || isNaN(p.x) || !_isOnScreen(p.x, p.y)) return;
     const barTop = p._nameBarTop ?? -20;
     const nameY  = p.y + barTop - 3;

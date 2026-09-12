@@ -117,7 +117,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Outside the transaction on purpose: this moves the connection between
     // two Rooms and pushes a second gameStart, none of which belongs inside a
     // database transaction, and it must not run at all if the login failed.
-    if (landed) _resumeHeldFearRun();
+    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); }
   });
 
   // ── a Страх run held across a disconnect ─────────────────────────────────
@@ -168,6 +168,49 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // second wait, so the wave starts now.
     if (run.wave > 0) s.socket.emit('fearWave', { wave: run.wave, maxWave: FEAR_MAX_WAVE });
     else m._fearStartWave(run.room, s.socket.id, run.lane, 1);
+  }
+
+  // ── Кровавая Башня held across a disconnect ─────────────────────────────
+  // Same shape as _resumeHeldFearRun just above: a reconnect inside
+  // RACE10_RECONNECT_GRACE_MS (server/game/race10.js) gets its run back
+  // instead of only finding out it was eliminated. race10 is a normal
+  // registered floor, not an instanced hall like Fear's, but it is
+  // deliberately not STANDABLE (server/world.js) — a live run is not
+  // something a stored floor should silently re-enter on its own — so the
+  // sendGameStart just above already sent this connection to the hub, same
+  // as it would for anyone whose run genuinely ended. This corrects that.
+  function _resumeHeldRace10Run() {
+    const m = deps.modes || require('../modes').modes;
+    if (!m || typeof m._race10ClaimOnReconnect !== 'function') return;
+    const claimed = m._race10ClaimOnReconnect(s.telegramId, s.socket.id);
+    if (!claimed) return;
+    const run = m._race10 && m._race10.alive.get(s.socket.id);
+    // The race itself could have finished in the gap between the hold and
+    // this claim (the boss died, or RACE10_MAX_MS ran out) — _race10Finish
+    // already paid and logged this racer along with everyone else when that
+    // happens (see _race10HoldOnDisconnect's own comment: the hold never
+    // touches _race10.alive/names/dmg), so there is nothing left to resume.
+    if (!run) return;
+    // pos carries the exact spot this racer disconnected from — mid-corridor
+    // or already at the boss, _race10ReachBoss writes the same x/y this was
+    // captured from — so forceFloor needs nothing more than that to land
+    // them back exactly where they left off. Falls back to the floor's
+    // normal spawn (the boss room) only if a position genuinely could not be
+    // captured at hold time.
+    const p = s.forceFloor('race10', { pos: claimed.pos });
+    if (!p) return;
+    // forceFloor carries the HUB record's hp (was.hp), not this racer's —
+    // overwritten here with the hp actually held, so a disconnect is not a
+    // free heal (nor a free wound: it is exactly what they had).
+    if (claimed.pos && typeof s.room.setPlayerHp === 'function') {
+      s.room.setPlayerHp(s.socket.id, claimed.pos.hp);
+    }
+    const at = s.room.players.get(s.socket.id) || p;
+    s.socket.emit('race10Started', {
+      x: at.x, y: at.y, hp: at.hp, lane: run.lane, fightAt: m._race10.fightAt,
+      roster: [...m._race10.alive.entries()].map(([id, r]) => ({ id, name: r.name, lane: r.lane })),
+    });
+    plog.log(s.playerId, 'race10Resume', { lane: run.lane });
   }
 
   // Login, a floor change and a respawn are the same event to the client: a

@@ -507,7 +507,14 @@ function init(io) {
   modes._pvpEliminate = (socketId, killerSocketId, room, opts) => {
     const dbHandled   = modes._dbEliminate(socketId, killerSocketId);
     const a3Handled   = modes._a3Eliminate(socketId, killerSocketId);
-    const r10Handled  = modes._race10Eliminate(socketId);
+    // Кровавая Башня runs up to RACE10_MAX_MS — long enough that a disconnect
+    // ending it on the spot (as arena3/the death battle still do; those are
+    // short) cost a tunnel blip the whole day's one attempt, with no way
+    // back in. On a genuine disconnect this holds the run instead, same
+    // opts.fearGrace Fear and coop already read below.
+    const r10Handled  = (opts && opts.fearGrace)
+      ? modes._race10HoldOnDisconnect(socketId, opts.telegramId)
+      : modes._race10Eliminate(socketId);
     const trHandled   = modes._trEliminate(socketId);
     const fearHandled = (opts && opts.fearGrace)
       ? modes._fearHoldOnDisconnect(socketId, opts.telegramId)

@@ -88,6 +88,10 @@ const I18N_UI = {
   sfxOffLbl:         { ru: 'Выключены', en: 'Off', uk: 'Вимкнено', es: 'Desactivados', tr: 'Kapalı', pt: 'Desativados' },
   sfxHint:           { ru: 'Удары, смерть врагов, лут и появление босса', en: 'Hits, enemy deaths, loot and boss spawns', uk: 'Удари, смерть ворогів, лут і поява боса', es: 'Golpes, muertes de enemigos, botín y aparición del jefe', tr: 'Vuruşlar, düşman ölümleri, ganimet ve boss belirmesi', pt: 'Acertos, mortes de inimigos, saque e aparição do chefe' },
   bgmSectionTitle:   { ru: 'Фоновая музыка', en: 'Background music', uk: 'Фонова музика', es: 'Música de fondo', tr: 'Arka plan müziği', pt: 'Música de fundo' },
+  perfModeTitle:     { ru: 'Оптимизация', en: 'Optimization', uk: 'Оптимізація', es: 'Optimización', tr: 'Optimizasyon', pt: 'Otimização' },
+  perfModeOnLbl:     { ru: 'Включена', en: 'On', uk: 'Увімкнена', es: 'Activada', tr: 'Açık', pt: 'Ativada' },
+  perfModeOffLbl:    { ru: 'Выключена', en: 'Off', uk: 'Вимкнена', es: 'Desactivada', tr: 'Kapalı', pt: 'Desativada' },
+  perfModeHint:      { ru: 'На переполненной локации показывает только 5 ближайших игроков — меньше лагов на слабых устройствах', en: 'On a crowded floor, shows only the 5 nearest players — fewer lags on weaker devices', uk: 'На переповненій локації показує лише 5 найближчих гравців — менше лагів на слабких пристроях', es: 'En una zona con mucha gente, muestra solo a los 5 jugadores más cercanos — menos lag en dispositivos débiles', tr: 'Kalabalık bir bölgede sadece en yakın 5 oyuncuyu gösterir — zayıf cihazlarda daha az gecikme', pt: 'Em uma área cheia, mostra apenas os 5 jogadores mais próximos — menos lag em dispositivos fracos' },
 
   // ── Death Battle (Битва на смерть) ──────────────────────
   // ── Events panel (События) ──────────────────────────────────────────────

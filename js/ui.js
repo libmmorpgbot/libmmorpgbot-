@@ -8793,7 +8793,27 @@ function _renderSoundPicker() {
       <span id="joy-alpha-val" class="joy-alpha-val">${Math.round(joyAlpha() * 100)}%</span>
     </div>
     <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('joyAlphaHint')}</div>
+
+    <div class="gram-section-title" style="margin:18px 0 10px">${t('perfModeTitle')}</div>
+    <div class="lang-card-grid">
+      <button class="lang-card${perfModeOn() ? ' active' : ''}" onclick="_setPerfMode(true)">
+        <span class="lang-card-flag">⚡</span>
+        <span class="lang-card-name">${t('perfModeOnLbl')}</span>
+        ${perfModeOn() ? '<span class="lang-card-check">✓</span>' : ''}
+      </button>
+      <button class="lang-card${perfModeOn() ? '' : ' active'}" onclick="_setPerfMode(false)">
+        <span class="lang-card-flag">👥</span>
+        <span class="lang-card-name">${t('perfModeOffLbl')}</span>
+        ${perfModeOn() ? '' : '<span class="lang-card-check">✓</span>'}
+      </button>
+    </div>
+    <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('perfModeHint')}</div>
   `;
+}
+
+function _setPerfMode(v) {
+  setPerfMode(v);
+  _renderSoundPicker();
 }
 
 // Только число рядом с ползунком, без перерисовки вкладки: перерисовка
