@@ -199,6 +199,20 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // captured at hold time.
     const p = s.forceFloor('race10', { pos: claimed.pos });
     if (!p) return;
+    // ── «не было монстров ничего, и босса тоже не было» ─────────────────────
+    // forceFloor's addPlayer creates a BRAND-NEW room record with
+    // _raceLane: null (its own same-tick stale-entry check finds nothing —
+    // the real disconnect already ran removePlayer, same as every reconnect
+    // this grace exists for). Room._raceVisible gates EVERY race10 entity,
+    // corridor monster AND the laneless boss alike, on p._raceLane != null —
+    // so without this line the racer lands back exactly where they left off,
+    // fully able to fight, and sees nothing at all to fight: no monsters, and
+    // the boss room (once they reach it) as empty as the corridor. Position
+    // alone was never the whole state; this is the other half of it.
+    if (typeof run.lane === 'number') {
+      const rec = s.room.players.get(s.socket.id);
+      if (rec) { rec._raceLane = run.lane; rec._profileRev++; }
+    }
     // forceFloor carries the HUB record's hp (was.hp), not this racer's —
     // overwritten here with the hp actually held, so a disconnect is not a
     // free heal (nor a free wound: it is exactly what they had).
