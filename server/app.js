@@ -432,7 +432,7 @@ function mountAdmin() {
 const HEAVY = new Set([
   'marketBrowse', 'marketMyListings', 'marketHistory', 'marketList', 'marketBuy', 'marketCancel',
   'gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'gramShopBuy',
-  'craftGear', 'craftClassGear', 'craftBox', 'craftPet', 'craftMatUpgrade', 'craftAdvSkillBook',
+  'craftGear', 'craftClassGear', 'craftBox', 'craftPet', 'craftBuffPotion', 'craftMatUpgrade', 'craftAdvSkillBook',
   'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'buyTeleportStone', 'useTeleportStone',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
@@ -506,6 +506,7 @@ for (const [channel, events] of Object.entries({
   craftBoxError: ['craftBox'],
   craftMatUpgradeError: ['craftMatUpgrade'],
   petCraftError: ['craftPet'],
+  craftBuffPotionError: ['craftBuffPotion'],
   teleportStoneError: ['buyTeleportStone'],
   enhanceError: ['enhanceItem'],
   openBoxError: ['openLootBox'],

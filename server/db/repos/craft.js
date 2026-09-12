@@ -36,7 +36,7 @@ const {
   ENHANCE_MAX, ENHANCEABLE_SLOTS, ITEM_DEF, BOX_DEF, CRAFT_MATS,
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
-  ADV_SKILL_BOOK_CRAFT, craftResultEnhance,
+  ADV_SKILL_BOOK_CRAFT, craftResultEnhance, BUFF_POTION_CRAFT_RECIPES,
   CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES, boxLootPool,
 } = require('../../../shared/definitions');
 
@@ -402,6 +402,32 @@ async function craftPet(db, playerId, rarity) {
   return { outcome: 'success', rarity, chance, cost: rec.nexumCost, itemId: pet.id, rowId };
 }
 
+// ── buff potions ────────────────────────────────────────────────────────────
+// Liberty in, a fixed ×qty stack of the chosen buff jar out — no roll, no
+// materials. Each buff type is its own recipe (BUFF_POTION_CRAFT_RECIPES,
+// shared/definitions.js) rather than a shared pool: the player picks exactly
+// which jar they're paying for.
+async function craftBuffPotion(db, playerId, itemId) {
+  await items.lockPlayer(db, playerId);
+  const rec = BUFF_POTION_CRAFT_RECIPES.find(r => r.itemId === itemId);
+  if (!rec) err('bad_recipe', 'Неизвестное зелье');
+
+  if (!await items.hasRoomFor(db, playerId, itemId)) err('no_room', 'Инвентарь полон');
+
+  if (rec.nexumCost > 0) {
+    const paid = await money.spend(db, playerId, 'nexum', rec.nexumCost, {
+      reason: 'craft_buff_potion', refType: 'buff_potion', refId: itemId,
+      idemKey: `craft_bp:${playerId}:${itemId}:${crypto.randomUUID()}`,
+    });
+    if (!paid) err('no_nexum', 'Недостаточно Liberty');
+  }
+
+  const qty = rec.qty || 1;
+  const rowId = await items.add(db, playerId, itemId, { qty, source: 'craft', sourceRef: 'buff_potion:' + itemId });
+  if (rowId === null) err('no_room', 'Инвентарь полон');
+  return { outcome: 'success', itemId, qty, cost: rec.nexumCost, rowId };
+}
+
 // ── material upgrade ────────────────────────────────────────────────────────
 // Twenty of one tier for one of the next, at 80%.
 async function upgradeMat(db, playerId, from) {
@@ -599,6 +625,6 @@ async function sellItem(db, playerId, rowId, qty = 1) {
 
 module.exports = {
   enhance, enhanceRate, craft, craftAdvSkillBook, openBox,
-  craftPet, upgradeMat, craftClassGear, craftBox, gearRecipeByItemId,
+  craftPet, craftBuffPotion, upgradeMat, craftClassGear, craftBox, gearRecipeByItemId,
   sellItem, recipeOf, rand, CraftError,
 };

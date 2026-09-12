@@ -102,6 +102,16 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     return res;
   }, craftMeta));
 
+  safeOn('craftBuffPotion', ({ itemId } = {}) => s.act('craftBuffPotion', 'craftBuffPotionError', async (t, pid) => {
+    if (typeof itemId !== 'string' || !itemId) fail('Не выбрано зелье', 'bad_item');
+    const res = await craft.craftBuffPotion(t, pid, itemId);
+    await pushAll(t);
+    s.socket.emit('buffPotionCrafted', {
+      itemId, qty: res.qty, newNexumBalance: await nexumOf(t, pid),
+    });
+    return res;
+  }, r => r && { outcome: r.outcome, itemId: r.itemId, qty: r.qty, cost: r.cost }));
+
   safeOn('craftClassGear', ({ slot, rarity } = {}) =>
     s.act('craftClassGear', 'craftClassGearError', async (t, pid) => {
       if (typeof slot !== 'string' || typeof rarity !== 'string') {

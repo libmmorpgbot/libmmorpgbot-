@@ -4224,6 +4224,10 @@ function netCraftPet(rarity) {
   if (socket?.connected) socket.emit('craftPet', { rarity });
 }
 
+function netCraftBuffPotion(itemId) {
+  if (socket?.connected) socket.emit('craftBuffPotion', { itemId });
+}
+
 function netBuyTeleportStone(qty) {
   if (socket?.connected) socket.emit('buyTeleportStone', { qty });
 }
@@ -5414,6 +5418,17 @@ function _initPetCraftHandlers(s) {
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
+  });
+
+  // Buff potions — same Liberty-only round-trip shape as a pet craft: the
+  // item is stackable and the qty is fixed by the recipe, so this only
+  // carries which jar and how many landed plus the fresh balance.
+  s.on('buffPotionCrafted', ({ itemId, qty, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (typeof onBuffPotionCrafted === 'function') onBuffPotionCrafted(itemId, qty);
+  });
+  s.on('craftBuffPotionError', ({ msg }) => {
+    if (typeof onBuffPotionCraftError === 'function') onBuffPotionCraftError(msg);
   });
 
   // Teleport stones — bought from the merchant for Liberty (buyTeleportStone,

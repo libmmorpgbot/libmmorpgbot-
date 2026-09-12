@@ -58,7 +58,7 @@ const ops = require('./tg-ops');
 // "where did this go" or "where did this come from", the answer has to exist.
 const WRITE_ACTIONS = new Set([
   'marketList', 'marketBuy', 'marketCancel',
-  'craftGear', 'craftPet', 'craftClassGear', 'craftMatUpgrade', 'craftBox', 'craftStone',
+  'craftGear', 'craftPet', 'craftBuffPotion', 'craftClassGear', 'craftMatUpgrade', 'craftBox', 'craftStone',
   'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
   'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',

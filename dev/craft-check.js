@@ -19,7 +19,7 @@ const craft = require('../server/db/repos/craft');
 const { wipeItemsAll } = require('./fixtures');
 const {
   GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES, craftResultEnhance,
-  CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
+  CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
   BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
   QUEST_DEF, questComplete,
 } = require('../shared/definitions');
@@ -390,6 +390,30 @@ async function main() {
   eq((await money.balancesOf(null, pc)).nexum, 0, 'Liberty списано рівно за рецептом');
   eq(await caught(() => tx(t => craft.craftPet(t, pc, 'вигадана'))), 'bad_recipe',
     'вигадана рідкість — відмова');
+
+  // ── buff potion ──────────────────────────────────────────────────────────
+  console.log('  ── банка баффа ──');
+  const bpRec = BUFF_POTION_CRAFT_RECIPES[0];
+  const bp = await mk('bp');
+  eq(await caught(() => tx(t => craft.craftBuffPotion(t, bp, bpRec.itemId))), 'no_nexum',
+    'без Liberty банку не створити');
+  eq(await countOf(bp, bpRec.itemId), 0, 'нічого не з’явилось');
+
+  await money.credit(null, bp, 'nexum', bpRec.nexumCost, { reason: 'seed', idemKey: `${TAG}:bp1` });
+  const bpRes = await tx(t => craft.craftBuffPotion(t, bp, bpRec.itemId));
+  eq(bpRes.outcome, 'success', 'банку створено');
+  eq(await countOf(bp, bpRec.itemId), bpRec.qty, `видано рівно ${bpRec.qty} банок за рецептом`);
+  eq((await money.balancesOf(null, bp)).nexum, 0, 'Liberty списано рівно за рецептом');
+
+  // Second craft merges into the same stack rather than creating a second row.
+  await money.credit(null, bp, 'nexum', bpRec.nexumCost, { reason: 'seed', idemKey: `${TAG}:bp2` });
+  await tx(t => craft.craftBuffPotion(t, bp, bpRec.itemId));
+  eq(await countOf(bp, bpRec.itemId), bpRec.qty * 2, 'другий крафт додався до того ж стеку');
+  eq((await invOf(bp)).filter(i => i.id === bpRec.itemId).length, 1,
+    'це один рядок інвентарю, а не два');
+
+  eq(await caught(() => tx(t => craft.craftBuffPotion(t, bp, 'вигадане'))), 'bad_recipe',
+    'вигадане зілля — відмова');
 
   // ── material upgrade ─────────────────────────────────────────────────────
   console.log('  ── апгрейд матеріалів ──');

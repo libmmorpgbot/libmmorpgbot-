@@ -175,7 +175,7 @@ function buyTeleportStone(qty) {
 }
 
 // ── Craftsman ───────────────────────────────────────────
-let _craftsmanTab = 'items'; // 'items' | 'mats'
+let _craftsmanTab = 'items'; // 'items' | 'mats' | 'consumables'
 
 function _matIcon(mat, size) {
   if (!mat) return '?';
@@ -209,12 +209,15 @@ function _craftsmanBody() {
   const tabs = `<div class="craft-tabs">
     <button class="craft-tab${_craftsmanTab==='items'?' active':''}" onclick="_setCraftsmanTab('items')">${typeof t === 'function' ? t('craftTabItems') : 'Предметы'}</button>
     <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftTabMats') : 'Материалы'}</button>
+    <button class="craft-tab${_craftsmanTab==='consumables'?' active':''}" onclick="_setCraftsmanTab('consumables')">${typeof t === 'function' ? t('craftTabConsumables') : 'Расходники'}</button>
   </div>`;
 
   let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${Math.floor(p.gold)}</b>
     &nbsp;·&nbsp; ${_nexumIconHtml(16)} Liberty: <b>${window._nexumBalance || 0}</b></div>`;
   html += tabs;
-  html += _craftsmanTab === 'items' ? _craftsmanItemsTab() : _craftsmanMatsTab();
+  html += _craftsmanTab === 'items' ? _craftsmanItemsTab()
+    : _craftsmanTab === 'consumables' ? _craftsmanConsumablesTab()
+    : _craftsmanMatsTab();
   return html;
 }
 
@@ -285,6 +288,93 @@ function _uniqueCraftGroupHTML() {
   });
   html += '</div>';
   return html;
+}
+
+// ── Расходники: банки баффов ────────────────────────────────────────────
+// Liberty-only, one recipe per jar (BUFF_POTION_CRAFT_RECIPES,
+// shared/definitions.js) — each jar type crafted separately, a fixed ×10
+// stack per craft, no roll. Same server-round-trip shape as pet crafting:
+// Liberty is server-authoritative, so this only asks and waits for
+// buffPotionCrafted/craftBuffPotionError (js/network.js).
+function _craftsmanConsumablesTab() {
+  if (typeof BUFF_POTION_CRAFT_RECIPES === 'undefined' || !BUFF_POTION_CRAFT_RECIPES.length) return '';
+  const nexumBal = window._nexumBalance || 0;
+  let html = `<div class="craft-group-hdr" style="color:#7ee0c0">${typeof t === 'function' ? t('craftBuffPotionsHdr') : 'Банки баффов'}</div><div class="craft-items-grid">`;
+  BUFF_POTION_CRAFT_RECIPES.forEach((rec, idx) => {
+    const def = ITEM_DEF.find(d => d.id === rec.itemId);
+    if (!def) return;
+    const rc = RARITY_COLOR[def.rarity] || '#aea599';
+    const canCraft = invHasSpace() && nexumBal >= (rec.nexumCost || 0);
+    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBuffPotionCraftModal(${idx})" style="border-color:${rc}66">
+      <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
+      <div class="craft-item-cell-name" style="color:${rc}">${def.name}</div>
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+let _pendingBuffPotionCraftIdx = null; // recipe idx awaiting a server response
+
+function openBuffPotionCraftModal(idx) {
+  const rec = BUFF_POTION_CRAFT_RECIPES[idx];
+  if (!rec || !player) return;
+  const def = ITEM_DEF.find(d => d.id === rec.itemId);
+  if (!def) return;
+  const rc = RARITY_COLOR[def.rarity] || '#aea599';
+  const nexumBal = window._nexumBalance || 0;
+  const pending = _pendingBuffPotionCraftIdx === idx;
+
+  const costRow = `<div class="craft-req-row">
+    <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
+    <span class="craft-req-name">Liberty</span>
+    <span class="craft-req-count" style="color:${nexumBal >= rec.nexumCost ? '#98e456' : '#eb4e61'}">${nexumBal}/${rec.nexumCost}</span>
+  </div>`;
+
+  const canCraft = !pending && invHasSpace() && nexumBal >= (rec.nexumCost || 0);
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('consumables')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-icon">${_itemIcon(def, 52)}</div>
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${def.name}</div>
+        <div class="craft-detail-stats">${def.buffDesc || ''}</div>
+      </div>
+    </div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
+    <div class="craft-reqs-list">${costRow}</div>
+    <div class="craft-chance-row">${typeof tVars === 'function' ? tVars('craftBuffPotionYieldFmt', { n: rec.qty || 1 }) : ''}</div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftBuffPotion(${idx})">${pending ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
+  `;
+}
+
+function craftBuffPotion(idx) {
+  const rec = BUFF_POTION_CRAFT_RECIPES[idx];
+  if (!rec || !player || _pendingBuffPotionCraftIdx !== null) return;
+  if (!netIsLive()) { _shopMsg(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером'); return; }
+  if ((window._nexumBalance || 0) < (rec.nexumCost || 0)) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughLiberty') : 'Мало Liberty!'); return; }
+  if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+
+  _pendingBuffPotionCraftIdx = idx;
+  openBuffPotionCraftModal(idx); // re-render with the button disabled/busy
+  netCraftBuffPotion(rec.itemId);
+}
+
+function onBuffPotionCrafted(itemId, qty) {
+  const idx = _pendingBuffPotionCraftIdx;
+  _pendingBuffPotionCraftIdx = null;
+  const def = ITEM_DEF.find(d => d.id === itemId);
+  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (def ? def.name : itemId) + ' ×' + (qty || 1));
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (idx !== null) openBuffPotionCraftModal(idx);
+}
+
+function onBuffPotionCraftError(msg) {
+  const idx = _pendingBuffPotionCraftIdx;
+  _pendingBuffPotionCraftIdx = null;
+  _shopMsg(msg || (typeof t === 'function' ? t('genericErrorLbl') : 'Ошибка'));
+  if (idx !== null) openBuffPotionCraftModal(idx);
 }
 
 // Crafting consumes 2 items enhanced to the recipe's minEnhance (e.g. +8) —

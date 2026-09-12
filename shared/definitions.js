@@ -1808,6 +1808,20 @@ const PET_CRAFT_RECIPES = [
   { rarity:'epic',     nexumCost:30000, chance:1.0 },
 ];
 
+// Buff potions: Liberty (Nexum)-only, one recipe per jar (ITEM_DEF entries
+// with slot:'buff_potion' above) — no materials, no roll, a fixed ×10 stack
+// per craft. Each jar is its own recipe rather than a shared pool: the player
+// pays for exactly the buff they want. Same "lives here, not js/definitions.js"
+// reasoning as PET_CRAFT_RECIPES — Liberty is server-authoritative.
+const BUFF_POTION_CRAFT_RECIPES = [
+  { itemId:'bp_hp',       nexumCost:100, qty:10, chance:1.0 },
+  { itemId:'bp_exp',      nexumCost:100, qty:10, chance:1.0 },
+  { itemId:'bp_gold',     nexumCost:100, qty:10, chance:1.0 },
+  { itemId:'bp_regen',    nexumCost:100, qty:10, chance:1.0 },
+  { itemId:'bp_atkspeed', nexumCost:100, qty:10, chance:1.0 },
+  { itemId:'bp_atk',      nexumCost:100, qty:10, chance:1.0 },
+];
+
 // Class cloaks & artifacts: salvage junk gear of a rarity into one random
 // class-flavored cloak/artifact of that same rarity (ITEM_DEF entries with
 // `classItem:true` above), plus a flat Liberty cost. Priced in Liberty, which
@@ -3085,7 +3099,7 @@ if (typeof module !== 'undefined') module.exports = {
   levelUniversalPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
-  PET_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   ADV_SKILL_BOOK_CRAFT,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
