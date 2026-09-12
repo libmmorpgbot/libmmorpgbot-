@@ -3074,6 +3074,26 @@ document.addEventListener('visibilitychange', () => {
   if (_doResize) _doResize(true);
   if (typeof netResyncWorld === 'function') netResyncWorld();
   if (dungeon) clampCamera();
+  // ── и четвёртое: сам рендерер ────────────────────────────────────────────
+  // Фон — это ровно тот момент, когда WebView забирает контекст WebGL, и
+  // возвращать его он не обязан: webglcontextrestored в Telegram на Android
+  // приходит не всегда. Сторож это в итоге подберёт, но не раньше чем через
+  // восемь секунд (четыре на появление причины, четыре на подтверждение), и
+  // всё это время игрок смотрит в чёрный экран сразу после того, как открыл
+  // игру. Здесь мы уже знаем, что страница видима, — а значит контекст есть
+  // кому выдать.
+  //
+  // Через _pixiRetry, с его выдержкой и пределом попыток; null — чтобы не слать
+  // отчёт о том, что чинится само. _pixiRetryTimer означает, что попытка уже
+  // идёт, и торопить её нечем.
+  //
+  // `canvas` в условии — не перестраховка. Событие видимости прилетает и ДО
+  // window.load (игру открыли, свернули и вернули, пока грузился бандл), а там
+  // canvas ещё не найден и pixiInit не вызывался: pixiAlive() честно скажет
+  // «нет», pixiRecover не найдёт элемент, и пять попыток сгорят впустую, чтобы
+  // показать баннер «графика не запустилась» игре, которая просто ещё
+  // грузилась.
+  if (canvas && !pixiAlive() && !_pixiRetryTimer) _pixiRetry(canvas, null);
   // Coming back to the foreground: requestAnimationFrame (and with it,
   // update()/render()) is paused for the entire time the tab is hidden, but
   // socket messages still get processed as they arrive, so a fatal

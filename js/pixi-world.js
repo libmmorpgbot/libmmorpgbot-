@@ -399,6 +399,12 @@ function _hookGpuCounters(gl) {
 let _pixiLastRender = 0;
 let _ctxLost = false;
 let _ctxLostN = 0, _ctxRestoredN = 0;
+// Сколько ждать webglcontextrestored, прежде чем восстанавливать мир самим —
+// см. обработчик webglcontextlost. Меньше секунды означало бы перестраивать
+// контекст, который браузер и так собирался вернуть; больше двух — держать
+// игрока перед чёрным экраном дольше, чем нужно.
+const CTX_RESTORE_WAIT_MS = 1500;
+let _ctxRestoreWait = null;
 function pixiCtxCounts() { return { lost: _ctxLostN, restored: _ctxRestoredN }; }
 function pixiAlive() { return !!_pixiApp && !_ctxLost; }
 function pixiLastRenderTs() { return _pixiLastRender; }
@@ -608,8 +614,33 @@ function pixiInit(canvasEl) {
       // loss that does NOT come back, and that is what the retry path and
       // 'pixi-dead' report.
       console.warn('[pixi] контекст WebGL потерян — восстанавливаем');
+      // ── а если он не вернётся сам ─────────────────────────────────────────
+      // webglcontextrestored ниже было единственным, что возвращало мир, и в
+      // Telegram WebView на Android оно приходит не всегда. Тогда мир оставался
+      // чёрным, пока его не подберёт сторож (_worldWatchdog, js/game.js), — а
+      // он ждёт свои четыре секунды на появление причины и ещё четыре на её
+      // подтверждение. Отсюда «чёрный экран при входе» и отчёты «пустой мир:
+      // no-renderer» с устройства, на котором webgl исправен: контекст к тому
+      // моменту действительно мёртв, но восстановить его можно было восемью
+      // секундами раньше.
+      //
+      // Через _pixiRetry, а не прямым _pixiRebuild: там уже есть и защита от
+      // одновременных попыток, и выдержка между ними, и предел, после которого
+      // игроку говорят словами. null вторым аргументом — чтобы не слать отчёт:
+      // сам по себе потерянный контекст не новость.
+      clearTimeout(_ctxRestoreWait);
+      _ctxRestoreWait = setTimeout(() => {
+        _ctxRestoreWait = null;
+        // Вернулся сам, пока ждали, — или страница ушла в фон, и тогда новый
+        // контекст всё равно не дадут: этот случай подбирает visibilitychange
+        // (js/game.js), когда игрок вернётся.
+        if (!_ctxLost || document.hidden) return;
+        if (typeof _pixiRetry === 'function') _pixiRetry(canvas, null);
+      }, CTX_RESTORE_WAIT_MS);
     });
     canvasEl.addEventListener('webglcontextrestored', () => {
+      clearTimeout(_ctxRestoreWait);
+      _ctxRestoreWait = null;
       // Rebuilt from scratch rather than resumed: every texture and buffer
       // uploaded to the old context is gone, and the pools still hold handles
       // to them.
