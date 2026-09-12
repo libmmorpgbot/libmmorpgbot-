@@ -1,18 +1,17 @@
 'use strict';
 // Кровавая Башня (Bloody Tower corridor race), moved out of server/index.js
 // verbatim as a factory (createRace10(deps)), same pattern as the other
-// game-mode managers. _race10Frozen and _race10Eliminate are also called
-// from index.js's own cross-mode glue (_pvpFrozen/_pvpEliminate) and from
-// _reclaimQueues/_rekeyQueue, which stay in index.js since they reach into
-// more than one manager's state.
+// game-mode managers. _race10Frozen and _race10Eliminate are also called from
+// the cross-mode glue in server/modes.js (_pvpFrozen/_pvpEliminate), which
+// reaches into more than one manager's state. The reconnect glue that header
+// used to name here (_reclaimQueues/_rekeyQueue) did not survive the split of
+// index.js and no longer exists; _race10Rekey/_race10ClaimOnReconnect below
+// are what cover this mode now.
 const {
   RACE10_DAYS_MSK, RACE10_HOURS_MSK, RACE10_LIBERTY, RACE10_LIBERTY_WINNER,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
 } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
-// Временная диагностика деплоя — см. её использование ниже, у [DIAG-RACE10].
-const playerlog = require('../db/repos/playerlog');
-const { idByTelegram } = require('../db/repos/players');
 
 module.exports = function createRace10(deps) {
   const {
@@ -372,23 +371,6 @@ module.exports = function createRace10(deps) {
     });
     const placed = room.raceDeploy(joined);
     _race10.bossId = room.spawnRaceBoss();
-    // ── ВРЕМЕННАЯ ДИАГНОСТИКА: «жалуются, что двое оказались на одной дорожке» ──
-    // Один снимок фактически назначенных дорожек и координат сразу после
-    // raceDeploy, на каждый забег. Ищите по тегу [DIAG-RACE10] в логах
-    // процесса (journalctl/pm2, смотря чем запущен). Убрать после того, как
-    // разберёмся — постоянно эта строка не нужна.
-    console.log('[DIAG-RACE10] deploy', JSON.stringify(
-      placed.map(p => ({ sid: p.socketId, lane: p.lane, x: p.x, y: p.y }))
-    ));
-    // Тот же снимок, но в player_logs — доступно через SQL, а не только
-    // grep по логам процесса. Best-effort и не блокирует деплой: ошибка
-    // резолва id или записи тут не должна портить сам забег.
-    Promise.all(placed.map(async ({ socketId, lane, x, y }) => {
-      const tid = _socketTid(socketId);
-      if (!tid) return;
-      const pid = await idByTelegram(null, tid);
-      if (pid) playerlog.log(pid, 'diag_race10_deploy', { lane, x, y, socketId });
-    })).catch(err => console.error('[DIAG-RACE10] db log failed:', err.message));
 
     // ── попытка списывается ДО старта, и её ответ теперь читают ─────────────
     // _lockRace10Daily — это takeAttempt (server/modes.js), условный UPDATE

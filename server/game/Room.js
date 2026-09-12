@@ -174,7 +174,7 @@ function _statsFinite(s, who, where) {
 // definitions.js's clanAtkBonusPct(level), already resolved by server/
 // index.js since Room.js has no access to clan state) — recompute()
 // (js/player.js) applies the identical multiplier, and it was missing here
-// entirely until now: setPlayerChar/updatePlayerStats/publicProfile all
+// entirely until now: setPlayerChar and updatePlayerStats both
 // route through this function, so every one of them silently dropped a
 // clan's attack bonus, and setPlayerChar in particular re-runs on every
 // selectChar — including the one a reconnect (background tab, brief network
@@ -885,8 +885,8 @@ class Room {
   // record is gone (removePlayer already ran), which is exactly the "owner
   // is gone" case above, but the whole point of the grace window is that
   // "gone" isn't final yet. Reconciling it away the moment anyone else calls
-  // fearDeploy/fearFreeLaneCount (i.e. within milliseconds, every time
-  // someone else opens the panel) would silently undo the hold.
+  // fearDeploy (i.e. within milliseconds, every time someone else enters)
+  // would silently undo the hold.
   _fearReconcile() {
     if (!this._fearOwner.size) return;
     for (const [lane, sid] of [...this._fearOwner]) {
@@ -943,16 +943,6 @@ class Room {
       return { lane, x: g.x, y: g.y, hp: g.hp };
     }
     return null;
-  }
-
-  // How many halls are free right now, for the caller's own capacity check /
-  // player-facing message. Reconciles first so it never reports a leak as
-  // genuine occupancy.
-  fearFreeLaneCount() {
-    this._fearReconcile();
-    const occupied = new Set(this._fearOwner.keys());
-    this.players.forEach(op => { if (op._fearLane != null) occupied.add(op._fearLane); });
-    return this._dungeon.fear.lanes.length - occupied.size;
   }
 
   fearLaneCount() { return this._dungeon.fear.lanes.length; }
@@ -1427,10 +1417,9 @@ class Room {
   }
 
   // Releases lane `lane` and clears out whatever is left of its current
-  // stage (dead or still standing) — the per-lane building block
-  // coopReleaseRoom (a clean end, both lanes) calls, and what server/
-  // index.js's _coopReleaseRun/_coopEjectOnDisconnect call per-lane whenever
-  // a single participant's own half of a run ends. Idempotent. Also clears
+  // stage (dead or still standing) — what _coopReleaseRun and
+  // _coopEjectOnDisconnect (server/game/coop.js) call whenever a single
+  // participant's own half of a run ends. Idempotent. Also clears
   // the owner's own p._coopLane, for the identical reason fearReleaseLane
   // does — _raceVisible keys isolation off it.
   coopReleaseLane(lane) {
@@ -1453,31 +1442,14 @@ class Room {
     if (ownerSid && removedIds.length) this.io.to(ownerSid).emit('enemiesRemoved', { ids: removedIds });
   }
 
-  // Full teardown — both lanes AND the shared (laneless) boss if it was up.
-  // Called once, by server/index.js, whenever the whole run ends for both
-  // participants: cleared, a death, or a disconnect hold lapsing for good.
-  coopReleaseRoom() {
-    this.coopReleaseLane(0);
-    this.coopReleaseLane(1);
-    const bossRemoved = [];
-    this.enemies = this.enemies.filter(e => {
-      if (e.arm !== 'coop' || !e.coopBoss) return true;
-      this._enemyMap.delete(e.id);
-      this._forgetEnemy(e.id);
-      this._releaseIdx(e);
-      bossRemoved.push(e.id);
-      return false;
-    });
-    this._coopStage = 0;
-  }
 
   // ── Элитная фарм-зона (Elite Farm Zone 2) ──────────────────────────────
   // Unlike Coop's per-player lanes, all FARM2_PARTY_SIZE participants share
   // this one instance and its baked-in monsters (generateFarmZone2, server/
   // game/dungeon.js) — so deploy only needs to place the player at the
-  // zone's shared entrance and record them as a current member, for
-  // server/index.js's threshold-eject cascade (_farm2CascadeCheck) to read
-  // via farm2MemberCount/farm2Members.
+  // zone's shared entrance and record them as a current member. The
+  // threshold-eject cascade itself (_farm2CascadeCheck, server/game/farm2.js)
+  // tracks its own participant list and does not read this one.
   farm2Deploy(socketId) {
     const p = this.players.get(socketId);
     if (!p) return null;
@@ -1494,10 +1466,6 @@ class Room {
   // idempotent, safe on a socket that was never a member.
   farm2Release(socketId) {
     if (this._farm2Members) this._farm2Members.delete(socketId);
-  }
-
-  farm2MemberCount() {
-    return this._farm2Members ? this._farm2Members.size : 0;
   }
 
   // Scatters `items` on the floor around (cx, cy) as individually claimable
@@ -3096,11 +3064,6 @@ class Room {
     });
   }
 
-  setMapOpen(socketId, open) {
-    const p = this.players.get(socketId);
-    if (p) p._mapOpen = !!open;
-  }
-
   // Called when an enemy leaves the world for good (event boss looted, arena
   // guards despawned). Its per-player entries would be swept a second later
   // anyway once they stopped being refreshed, but dropping them here keeps
@@ -3454,9 +3417,10 @@ class Room {
       // through the save blob instead of through the class table.
       p.hp    = Number.isFinite(savedStats.hp) ? Math.max(0, Math.min(savedStats.hp, p.maxHp)) : p.maxHp;
       p.lvl   = savedStats.lvl || 1;
-      // Kept fresh via updatePlayerSavedData() (called on every saveProgress)
-      // so statsUpdate can always re-derive a true base from up-to-date
-      // equipment/upgrades instead of trusting the client's own numbers.
+      // The basis for statsUpdate's true-base recomputation, so it can
+      // re-derive from stored equipment/upgrades instead of trusting the
+      // client's own numbers. Written here, on every (re)selection; the
+      // authoritative per-change path is setPlayerStats/setPlayerPet.
       p._sd = savedStats;
       p.petId = _petIdOf(savedStats);
     } else {
@@ -3466,22 +3430,6 @@ class Room {
       p._sd = {};
       p.petId = null;
     }
-  }
-
-  // Called on every saveProgress — keeps p._sd (the basis for statsUpdate's
-  // true-base recomputation) in sync with the player's actual equipment/
-  // upgrades/level without waiting for the next character (re)selection.
-  // Returns true when the equipped pet changed, so the caller knows to tell
-  // the other clients (pets are broadcast as their own small event rather
-  // than as a gameState field — see the playerPet handler in server/index.js).
-  updatePlayerSavedData(socketId, sd) {
-    const p = this.players.get(socketId);
-    if (!p) return false;
-    p._sd = sd || {};
-    const petId = _petIdOf(p._sd);
-    if (petId === p.petId) return false;
-    p.petId = petId;
-    return true;
   }
 
   // The pet, set directly rather than derived from a save blob. The blob is
@@ -4600,47 +4548,6 @@ class Room {
     return true;
   }
 
-  // Answers the "view profile" (Инфо button) request entirely server-side —
-  // see requestPlayerProfile, server/index.js. Deriving straight from this
-  // player's own already-validated p._sd (kept in sync by
-  // updatePlayerSavedData on every saveProgress) means it never depends on
-  // the target's own client being responsive, unlike an earlier version that
-  // asked their client to answer and could go unanswered indefinitely. Both
-  // players are guaranteed to be in this same Room already — the requester
-  // can only ever target someone currently rendered in their own AOI.
-  publicProfile(socketId) {
-    const p = this.players.get(socketId);
-    if (!p) return null;
-    // _charDef, for the same reason setPlayerChar uses it. setPlayerChar is
-    // the only writer of p.type and now refuses anything that is not a real
-    // class, so this is defence in depth rather than a live hole — but the
-    // fallback here is `|| {}`, which is genuinely safe, and the direct lookup
-    // was not: `CHAR_DEF['constructor']` is the Object constructor, whose
-    // `.name` is the string 'Object', so a profile opened on such a player
-    // would have shown their class as "Object" instead of falling back to
-    // p.type. One lookup, one rule.
-    const cd = _charDef(p.type) || {};
-    const sd = p._sd || {};
-    const stats = computeStats(sd, cd, p.type, p.clanAtkBonus);
-    const equipment = {};
-    Object.entries(sd.equipment || {}).forEach(([slot, it]) => {
-      if (!it) return;
-      equipment[slot] = {
-        name: it.name, img: it.img || null, icon: it.icon || null, rarity: it.rarity || null,
-        enhance: it.enhance || 0,
-        atk: it.atk || 0, def: it.def || 0, hp: it.hp || 0,
-        critChance: it.critChance || 0, atkSpeed: it.atkSpeed || 0, hpPct: it.hpPct || 0,
-      };
-    });
-    return {
-      name: p.username, charIcon: cd.icon || null, charColor: cd.color || null, className: cd.name || p.type,
-      lvl: p.lvl, upgrades: sd.upgrades || {},
-      hp: Math.ceil(p.hp), maxHp: stats.maxHp,
-      atk: stats.atk, def: stats.def, atkSpeed: stats.atkSpeed,
-      critChance: stats.critChance, critPower: stats.critPower, hpRegen: stats.hpRegen,
-      equipment,
-    };
-  }
 
   // Отказ, который называет себя. Причина кладётся на игрока, а не
   // возвращается наружу: attackEnemy отдаёт null в семи местах, и менять её

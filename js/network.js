@@ -1998,8 +1998,8 @@ function netConnect(onReady) {
   });
 
   // Answer to the Инфо button next to Пати+ (getPartyInfoBtnPos, js/input.js
-  // / drawPartyButton, js/ui.js) — the server computes this straight from
-  // its own record of the target (Room.publicProfile), so unlike an earlier
+  // / drawPartyButton, js/ui.js) — the server answers it from the database
+  // (requestPlayerProfile, server/handlers2/social.js), so unlike an earlier
   // version this never depends on the target's own client being around to
   // answer. profile is only ever null if they disconnected in the instant
   // between being targeted and the tap landing — too rare and too late to
@@ -2736,8 +2736,8 @@ function netPartyLeave() {
   partyMembers = [];
 }
 
-// The server answers this synchronously from its own record of the target
-// (Room.publicProfile, server/game/Room.js) — see playerProfileResult above.
+// The server answers this from the database (requestPlayerProfile,
+// server/handlers2/social.js) — see playerProfileResult above.
 function netRequestPlayerProfile(targetId) {
   if (socket?.connected) socket.emit('requestPlayerProfile', { targetId });
 }

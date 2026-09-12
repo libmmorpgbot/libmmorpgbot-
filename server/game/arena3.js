@@ -2,17 +2,16 @@
 // 3v3 Arena (Арена 3х3) queue/deploy/eliminate, moved out of server/index.js
 // verbatim as a factory (createArena3(deps)) — same pattern as death-battle.js.
 // The cross-mode glue that reaches into this module's `_a3` state from outside
-// — _socketTid, _reclaimQueues, _pvpFrozen, _pvpEliminate — stays in index.js,
-// since it also reaches into Death Battle/race10/Fear/Coop state the same way;
-// see index.js's own comment where those are still defined.
+// — _socketTid, _pvpFrozen, _pvpEliminate — lives in server/modes.js, since it
+// also reaches into Death Battle/race10/Fear/Coop state the same way. The
+// reconnect glue this header used to name (_reclaimQueues/_rekeyQueue) did not
+// survive the split of index.js and no longer exists; _a3Rekey below is what
+// covers this mode now.
 const {
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
 } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
-// Временная диагностика деплоя — см. её использование ниже, у [DIAG-ARENA3].
-const playerlog = require('../db/repos/playerlog');
-const { idByTelegram } = require('../db/repos/players');
 
 module.exports = function createArena3(deps) {
   const {
@@ -283,22 +282,6 @@ module.exports = function createArena3(deps) {
     const joinedB = _joinTeam(teamB, _ar.teamB);
 
     const placed = room.pvpArenaDeploy(joinedA, joinedB);
-    // ── ВРЕМЕННАЯ ДИАГНОСТИКА: «кто-то не на своей базе, не рядом с союзниками» ──
-    // Снимок фактически назначенных команд и координат сразу после
-    // pvpArenaDeploy, на каждый бой. Ищите по тегу [DIAG-ARENA3] в логах
-    // процесса. Убрать после того, как разберёмся.
-    console.log('[DIAG-ARENA3] deploy', JSON.stringify(
-      placed.map(p => ({ sid: p.socketId, team: p.team, x: p.x, y: p.y }))
-    ));
-    // Тот же снимок, но в player_logs — доступно через SQL, а не только
-    // grep по логам процесса. Best-effort и не блокирует деплой: ошибка
-    // резолва id или записи тут не должна портить сам бой.
-    Promise.all(placed.map(async ({ socketId, team, x, y }) => {
-      const tid = _socketTid(socketId);
-      if (!tid) return;
-      const pid = await idByTelegram(null, tid);
-      if (pid) playerlog.log(pid, 'diag_arena3_deploy', { team, x, y, socketId });
-    })).catch(err => console.error('[DIAG-ARENA3] db log failed:', err.message));
     // ── попытка списывается ДО старта, и её ответ теперь читают ─────────────
     // _lockArena3Daily — это takeAttempt (server/modes.js), условный UPDATE
     // «...WHERE used < cap». Он возвращает false и когда попытки кончились, и

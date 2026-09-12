@@ -939,8 +939,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // js/game.js's respawnPlayer hides the modal and writes that client's own
     // hp down to 10% of maxHp before it ever emits — and nothing on the server
     // reads a client's hp back to correct it: the packed 'mv' form carries one
-    // and this file does not even destructure it, and Room.syncPlayerHp, which
-    // exists for exactly that, has no caller anywhere. So the client keeps the
+    // and this file does not even destructure it, and the Room-side setter
+    // written for exactly that (syncPlayerHp) was deleted for want of a single
+    // caller — see the note where it stood. So the client keeps the
     // 10% as its base, every later playerHurt subtracts the monster's damage
     // FROM IT rather than from the server's number (js/network.js), it reaches
     // zero while the server still has them at half health, playerDie runs

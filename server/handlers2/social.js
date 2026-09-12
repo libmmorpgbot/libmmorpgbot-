@@ -662,10 +662,11 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // rewrite read it as one, so the profile button answered "no such player"
   // every time.
   //
-  // The numbers come from the database rather than from Room.publicProfile,
-  // which builds them out of `p._sd` — the client's own last save blob. That
-  // blob is exactly what this rewrite removed, so a profile read from it would
-  // be a profile a player can write.
+  // The numbers come from the database rather than from the Room's own player
+  // record, which builds them out of `p._sd` — the client's own last save
+  // blob. That blob is exactly what this rewrite removed, so a profile read
+  // from it would be a profile a player can write. (The Room-side builder that
+  // did exactly that, publicProfile, has been deleted along with its callers.)
   safeOn('requestPlayerProfile', ({ targetId } = {}) =>
     s.act('requestPlayerProfile', 'profileError', async (t) => {
       const empty = { fromId: targetId, fromName: null, profile: null };
