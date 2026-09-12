@@ -1310,7 +1310,7 @@ const CLAN_STORAGE_MIN_DAYS = 10;
 const CLAN_STORAGE_UNLOCK_GOLD = 1000000;
 
 const UNIQUE_SHARD_MIN_LEVEL = 15;        // monsters below this level never drop one
-const UNIQUE_SHARD_CHANCE    = 0.000001;  // per SHARD KIND, rolled independently on every kill
+const UNIQUE_SHARD_CHANCE    = 0.000002;  // per SHARD KIND, rolled independently on every kill — doubled per owner request
 const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can yield
 
 // Фарм-зона ("Фарм зона", server/game/dungeon.js): its monsters skip the
