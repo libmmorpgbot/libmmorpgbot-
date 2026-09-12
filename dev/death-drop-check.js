@@ -179,20 +179,27 @@ console.log('\n  ── дроп ──');
 
   // Сколько это на самом деле. Не утверждение о том, что так ПРАВИЛЬНО, а
   // измерение того, что так ЕСТЬ.
+  //
+  // Разрыв уровней игрок/моб больше не участвует: dropLevelGapDivisor
+  // (шанс ÷2 за каждые 5 уровней сверху) убран из _rollMobLoot целиком —
+  // «в коде есть ограничения... уберите это полностью». Раньше здесь
+  // сравнивались [15,15]/[30,15]/[35,35] именно чтобы показать, что второй
+  // случай режется; теперь монстр — единственная переменная, которая вообще
+  // на что-то влияет.
   const N = 200000;
-  for (const [plvl, mlvl] of [[15, 15], [30, 15], [35, 35]]) {
+  for (const mlvl of [15, 35]) {
     let gear = 0;
     for (let i = 0; i < N; i++) {
-      for (const it of loot._rollMobLoot([], 'imp', mlvl, plvl) || []) {
+      for (const it of loot._rollMobLoot([], 'imp', mlvl) || []) {
         if (D.ITEM_DEF.some(d => d.id === it.id && SLOTS.includes(d.slot))) gear++;
       }
     }
     const per = gear ? Math.round(N / gear) : Infinity;
-    console.log(`      игрок ${plvl} лвл на мобе ${mlvl}: снаряжение раз в ` +
+    console.log(`      моб ${mlvl} лвл: снаряжение раз в ` +
       (per === Infinity ? '— (ни разу за ' + N + ')' : per + ' убийств'));
   }
-  ok(D.dropLevelGapDivisor(30, 15) > 1,
-    `разрыв уровней режет дроп (делитель ${D.dropLevelGapDivisor(30, 15)})`);
+  ok(D.dropLevelGapDivisor === undefined,
+    'dropLevelGapDivisor убран из shared/definitions.js — разрыв уровней больше не режет дроп');
   ok(D.FARM2_LIBERTY_CHANCE > 0,
     `Liberty в элитной зоне вообще может выпасть (${D.FARM2_LIBERTY_CHANCE * 100}% за убийство)`);
 }

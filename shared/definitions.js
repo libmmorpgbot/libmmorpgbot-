@@ -555,16 +555,6 @@ function itemDropChanceAtLevel(lvl) {
   return Math.min(100, pct * (_ITEM_TIER_EXTRA_MULT[rarity] || 1));
 }
 
-// Anti-farm: a player well above a monster's level gets progressively worse
-// gear odds off it — no penalty inside a 5-level band, then every full
-// 5-level step past that divides the item drop chance by one more: 5-9
-// levels above → ÷2, 10-14 → ÷3, 15-19 → ÷4, and so on. Only gates the
-// equipment roll (itemDropChanceAtLevel above) — recipes/keys/enchant
-// stones/shards run their own flat, room-level-only chances untouched.
-function dropLevelGapDivisor(playerLvl, monsterLvl) {
-  const gap = Math.max(0, (playerLvl || 1) - (monsterLvl || 1));
-  return Math.floor(gap / 5) + 1;
-}
 
 // ── Open-world corridors ──────────────────────────────────────────────────────
 // The world is one continuous map: a central hub room (spawn + NPCs) with 4
@@ -3122,7 +3112,6 @@ if (typeof module !== 'undefined') module.exports = {
   CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES,
   xpAfterDeathPenalty,
   ITEM_DROP_GROWTH_PCT, BOSS_ITEM_DROP_MULT, COMMON_ITEM_MAX_LEVEL, itemDropChanceAtLevel, itemRarityForLevel,
-  dropLevelGapDivisor,
   ROOM_DROP_GROWTH, ROOM_KEY_GROWTH, ROOM_KEY_BASE,
   ROOM_ENCHANT_STONE_BASE, ROOM_ENCHANT_STONE_GROWTH,
   roomDropMult, roomKeyChance, roomEnchantStoneChance,

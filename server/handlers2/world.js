@@ -307,7 +307,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
   //   the killer   everything — reward, damage, loot
   //   the party    their share of the same kill
   //   bystanders   the id and the position, so the body disappears for them too
-  function rollLoot(result, playerLevel) {
+  function rollLoot(result) {
     // The roll happens against a SCRATCH inventory: the loot tables were
     // written to add straight into the player's array, and the array is not
     // the player's any more. What comes back is a list, and the repository
@@ -320,7 +320,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (result.farmZone) out.items = loot._rollFarmZoneLoot(scratch, result.eid) || [];
     else if (result.farmHigh) out.items = loot._rollFarmHighLoot(scratch, result.eid) || [];
     else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
-    else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl, playerLevel) || [];
+    else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl) || [];
 
     // VIP and the season ticket buy a second roll, not a better one — the same
     // table, one more chance at it.
@@ -332,7 +332,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
     const extra = bonus + ticket;
     if (!result.farmZone && !result.farmHigh && !result.farmZone2 && extra > 0 && rand() * 100 < extra) {
-      out.items.push(...(loot._rollMobLoot([], result.eid, result.rlvl, playerLevel) || []));
+      out.items.push(...(loot._rollMobLoot([], result.eid, result.rlvl) || []));
     }
 
     if (result.isBoss && !result.farmZone2) {
@@ -527,7 +527,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // appear and then revert on the next push is describing exactly that.
     const done = await s.act('killReward', 'itemError', async (t, pid) => {
       const prog = await players.progressOf(t, pid);
-      const drops = rollLoot(result, prog.lvl);
+      const drops = rollLoot(result);
 
       // ── the two buff potions that did nothing ──────────────────────────────
       // Six buff potions exist; three were written into player_progress.buffs

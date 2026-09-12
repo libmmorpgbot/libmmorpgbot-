@@ -8,7 +8,7 @@ const {
   ENEMY_DEF, ITEM_DEF, CRAFT_MATS, BOX_DEF, UNIQUE_SHARDS,
   armIndexForLevel, armLocalLevel, roomDropMult, roomKeyChance, roomEnchantStoneChance,
   EARLY_ZONE_ARMS, EARLY_ZONE_DROP_MULT,
-  itemDropChanceAtLevel, itemRarityForLevel, dropLevelGapDivisor, BOSS_ITEM_DROP_MULT,
+  itemDropChanceAtLevel, itemRarityForLevel, BOSS_ITEM_DROP_MULT,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   levelSkillBookPool, levelClassPassivePool, levelUniversalPassivePool,
   FARM_SPECIES_SHARDS, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE, FARM_SPECIES_BOOKS,
@@ -36,7 +36,7 @@ const { _invAdd } = require('../inventory');
 // since it fires on every kill in the game. Mutates `inv` in place via
 // _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
 // for (loot-winner arbitration among a party) and reports the result back.
-function _rollMobLoot(inv, eid, rlvl, plvl) {
+function _rollMobLoot(inv, eid, rlvl) {
   const eDef = ENEMY_DEF.find(e => e.eid === eid);
   const eType = eDef ? eDef.eType : null;
   const granted = [];
@@ -69,7 +69,7 @@ function _rollMobLoot(inv, eid, rlvl, plvl) {
   // Equipment drop — no cloak/artifact (craft-only), weapons unrestricted by
   // class (same as js/combat.js: any class's weapon can drop for anyone).
   const _itemChance = Math.min(100, itemDropChanceAtLevel(rlvl) * (eType === 'boss' ? BOSS_ITEM_DROP_MULT : 1))
-    / dropLevelGapDivisor(plvl, rlvl) * _zoneMult;
+    * _zoneMult;
   if (Math.random() * 100 < _itemChance) {
     const rarity = itemRarityForLevel(rlvl);
     const _gearSlots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
