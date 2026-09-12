@@ -13,7 +13,6 @@
 
 const ops = require('./tg-ops');
 const tgAdmin = require('./tg-admin');
-const faq = require('./tg-faq');
 const cards = require('./ops-cards');
 const gram = require('./db/repos/gram');
 const money = require('./db/repos/money');
@@ -191,13 +190,7 @@ async function pollOps(opts = {}) {
               // player card instead.
               if (await cards.handleUnmatchedReply(upd.message)) { /* taken */ }
               else if (!await tgAdmin.handle(upd.message)) {
-                if (!await ops.handleTopicIdCommand(upd.message)) {
-                  // Everything above is admin-only and returns false for
-                  // ordinary chat — this is the only thing that answers
-                  // regular players, and only inside its own configured
-                  // group (see server/tg-faq.js).
-                  await faq.maybeAnswer(upd.message);
-                }
+                await ops.handleTopicIdCommand(upd.message);
               }
             }
           } catch (err) {
