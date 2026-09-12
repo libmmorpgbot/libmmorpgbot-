@@ -183,8 +183,7 @@ function staticScan() {
     ['server/db/repos/items.js', 'detachForListing', 1],
     ['server/db/repos/items.js', 'attachFromListing', 1],
     ['server/db/repos/craft.js', 'enhance', 1],
-    ['server/db/repos/progression.js', 'burnItem', 1],
-    ['server/db/repos/progression.js', 'burnAllOfRarity', 1],
+    ['server/db/repos/progression.js', 'disassembleItem', 1],
     ['server/db/repos/consumables.js', 'registerCodexItem', 1],
   ];
   for (const [rel, fnName, least] of named) {

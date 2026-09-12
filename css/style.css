@@ -3189,10 +3189,7 @@ canvas { display:block; width:100%; height:100%; }
 .season-pts { color: #7ee0c0; font-weight: 800; font-size: 12.5px; }
 .season-prize { color: #ffd35c; font-weight: 800; font-size: 12.5px; white-space: nowrap; }
 
-/* "Задания" tab — bulk-burn buttons (gear by rarity, and one row per book
-   stack the player is holding). */
-.season-burn-grid { display: flex; gap: 8px; margin-top: 8px; }
-.season-burn-grid > button { flex: 1; }
+/* "Задания" tab — one row per book stack the player is holding. */
 .season-book-row {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px; border-radius: 8px;

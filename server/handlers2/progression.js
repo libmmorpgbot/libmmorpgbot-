@@ -351,25 +351,24 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('seasonState', await progression.seasonState(t, pid));
   }
 
-  // By identity, resolved against the DATABASE's list. The old version took an
-  // index into the array the client itself had last written and spliced it —
-  // and burning is irreversible, so addressing the wrong slot destroys the
-  // wrong item. It carried a 'season_burn_desync' log line for exactly that.
-  safeOn('seasonBurn', ({ idx, id, enhance } = {}) => s.act('seasonBurn', 'seasonBurnError', async (t, pid) => {
-    await items.lockPlayer(t, pid);
-    const row = await items.resolveRow(t, pid, { idx, id, enhance }, 'inventory');
-    if (!row) fail('Предмет не найден — список обновлён', 'not_found');
-    await afterBurn(t, pid, await progression.burnItem(t, pid, row));
-  }));
-
-  safeOn('seasonBurnAll', ({ rarity } = {}) => s.act('seasonBurnAll', 'seasonBurnError', async (t, pid) => {
-    if (typeof rarity !== 'string' || !rarity) fail('Не выбрана редкость', 'bad_rarity');
-    await afterBurn(t, pid, await progression.burnAllOfRarity(t, pid, rarity));
-  }));
-
   safeOn('seasonBurnBook', ({ id, qty } = {}) => s.act('seasonBurnBook', 'seasonBurnError', async (t, pid) => {
     if (typeof id !== 'string' || !id) fail('Не выбрана книга', 'bad_book');
     await afterBurn(t, pid, await progression.burnBooks(t, pid, id, qty));
+  }));
+
+  // ── разбор снаряжения ────────────────────────────────────────────────────
+  // By identity, resolved against the DATABASE's list — the same guard the old
+  // burn-for-points handler used, and for the same reason: disassembling is
+  // irreversible, so addressing the wrong slot destroys the wrong item.
+  safeOn('itemDisassemble', ({ idx, id, enhance } = {}) => s.act('itemDisassemble', 'itemDisassembleError', async (t, pid) => {
+    await items.lockPlayer(t, pid);
+    const row = await items.resolveRow(t, pid, { idx, id, enhance }, 'inventory');
+    if (!row) fail('Предмет не найден — список обновлён', 'not_found');
+    const res = await progression.disassembleItem(t, pid, row);
+    await s.pushItems(t);
+    await s.pushBalances(t);
+    await s.pushStats(t);
+    s.socket.emit('itemDisassembled', { liberty: res.liberty, itemId: res.itemId, rarity: res.rarity });
   }));
 
   // ── the GRAM shop ────────────────────────────────────────────────────────

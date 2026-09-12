@@ -617,13 +617,16 @@ const SEASON_ENHANCE_POINTS = 5;
 const SEASON_ADV_BOOK_POINTS = 300;
 
 // ── Сжигание ──────────────────────────────────────────────────────────────
-// Gear: destroys the item outright — no gold, no materials back, only
-// points. Anything not listed here cannot be burned at all. Unchanged from
-// Season 1.
-const SEASON_BURN_POINTS = { common: 1, uncommon: 5 };
 // Books (skill/passive/advanced-skill — all stackable materials): a flat
 // rate per copy burned, regardless of which book it is.
 const SEASON_BOOK_BURN_POINTS = 60;
+
+// ── Разбор ────────────────────────────────────────────────────────────────
+// Gear disassembly (Персонаж → Разбор): destroys the item outright and pays
+// a random amount of Liberty (nexum) from an inclusive [min, max] range that
+// depends only on rarity. Common and legendary are not listed — neither can
+// be disassembled, same as gear burning never covered them either.
+const DISASSEMBLE_LIBERTY = { uncommon: [1, 2], rare: [5, 10], epic: [10, 20] };
 
 // ── Приведи друга ─────────────────────────────────────────────────────────
 // Bringing in a player who then reaches SEASON_REF_LEVEL. Paid to the
@@ -3050,7 +3053,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_END_AT, seasonActive,
   SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
-  SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS,
+  SEASON_BOOK_BURN_POINTS, DISASSEMBLE_LIBERTY,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_REF_POINTS, SEASON_REF_LEVEL,
   SEASON_EMPOWER_POINTS,

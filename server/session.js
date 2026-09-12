@@ -73,7 +73,7 @@ const WRITE_ACTIONS = new Set([
   // player-log row at all.
   'pickupWorldDrop',
   'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'buyTeleportStone', 'useTeleportStone',
-  'seasonBurn', 'seasonBurnAll', 'seasonBurnBook',
+  'seasonBurnBook', 'itemDisassemble',
   'enterLocation',
 ]);
 

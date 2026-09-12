@@ -2252,6 +2252,7 @@ function netConnect(onReady) {
     }
     if (typeof recompute === 'function') recompute();
     if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof updateDisassembleUI === 'function') updateDisassembleUI();
     // The storage NPC panel indexes straight into the arrays just replaced —
     // see refreshStorageNpc (js/npc.js). No-op when it isn't open.
     if (typeof refreshStorageNpc === 'function') refreshStorageNpc();
@@ -2272,6 +2273,18 @@ function netConnect(onReady) {
       dmgNum(player.x, player.y - 36, '+' + gold + 'g', '#ffd23f');
     }
     if (typeof updateInvUI === 'function') updateInvUI();
+  });
+
+  // Item removal and the disassemble tab's own refresh already arrived via
+  // the inventorySync that preceded this (see the handler above); the new
+  // Liberty balance arrives separately via 'nexumBalanceUpdate' (pushBalances)
+  // — this event only carries what to show for the disassembly that just
+  // happened.
+  socket.on('itemDisassembled', ({ liberty } = {}) => {
+    if (!player) return;
+    if (liberty && typeof dmgNum === 'function') {
+      dmgNum(player.x, player.y - 36, '+' + liberty, '#7ee0c0');
+    }
   });
 
   socket.on('sellItemError', ({ msg } = {}) => {
@@ -2561,6 +2574,10 @@ function netConnect(onReady) {
   });
 
   socket.on('seasonBurnError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  socket.on('itemDisassembleError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
@@ -5188,16 +5205,14 @@ function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'
 function netSeasonClaimFarmKills(zone) {
   if (socket?.connected) socket.emit('seasonClaimFarmKills', { zone });
 }
-// Burning destroys the item/stack for season points — the server owns both
-// halves, nothing is applied locally.
-// Same identity check as netSellItem, and it matters more here: burning
-// accepts any burnable rarity, so a stale index could destroy a legendary the
-// player never picked.
-function netSeasonBurn(idx, id, enhance) { if (socket?.connected) socket.emit('seasonBurn', { idx, id, enhance }); }
-function netSeasonBurnAll(rarity) { if (socket?.connected) socket.emit('seasonBurnAll', { rarity }); }
 // Books are stackable, so they're addressed by id + how many to burn rather
 // than by index/enhance identity.
 function netSeasonBurnBook(id, qty) { if (socket?.connected) socket.emit('seasonBurnBook', { id, qty }); }
+// Disassembling destroys the item for Liberty (nexum) — the server owns both
+// halves, nothing is applied locally.
+// Same identity check as netSellItem: a stale index could destroy the wrong
+// (possibly much more valuable) item.
+function netItemDisassemble(idx, id, enhance) { if (socket?.connected) socket.emit('itemDisassemble', { idx, id, enhance }); }
 
 // ── every address the server sends is normalised HERE ───────────────────────
 // The rule for the whole wallet: an address is converted to the `UQ…`/`EQ…`

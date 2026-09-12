@@ -26,7 +26,7 @@ const {
   SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
   SEASON_PRIZES, SEASON_ENHANCE_POINTS, SEASON_ADV_BOOK_POINTS,
-  SEASON_BURN_POINTS, SEASON_BOOK_BURN_POINTS, SEASON_EMPOWER_POINTS,
+  SEASON_BOOK_BURN_POINTS, SEASON_EMPOWER_POINTS, DISASSEMBLE_LIBERTY,
   SEASON_SHOP_POINTS_PER_GRAM, SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM,
   SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
@@ -540,29 +540,19 @@ async function seasonWinners(db, season = CURRENT_SEASON) {
 // means "take an attempt if one is left" is a single decision. Zero rows back
 // means none was left, and nothing was spent.
 
-// ── burning for season points ───────────────────────────────────────────────
-// Gear is destroyed outright: no gold, no materials back, only points. So the
-// two writes — the item gone, the points added — have to be one thing. The old
-// handler could not make them one, and its comment says exactly what it chose
-// instead:
+// ── разбор снаряжения ────────────────────────────────────────────────────────
+// Gear is destroyed outright: no gold, no materials back, only Liberty
+// (nexum) — a random amount inside the rarity's [min, max] from
+// DISASSEMBLE_LIBERTY. The two writes — the item gone, the currency credited
+// — happen in one transaction, either both happen or neither does.
 //
-//     "Points FIRST. The destruction used to be committed before this await,
-//      so a failed points write burned the item for nothing. Awarding first
-//      means the worst case is points credited for a burn that then didn't
-//      happen, which the player can simply redo."
-//
-// That is a well-reasoned choice between two bad outcomes, and inside a
-// transaction there is no choice to make: either both happen or neither does.
-// The re-resolution after the await, the index re-check, the desync branch that
-// pushed the whole inventory back and logged 'season_burn_desync' — all of it
-// was scaffolding for a gap that no longer exists.
-//
-// The VALUE comes from item_catalog, never from the request. A crafted burn
-// claiming a common is an uncommon is the difference between 1 point and 5.
+// The VALUE comes from item_catalog, never from the request. A crafted call
+// claiming a common is an epic is the difference between "cannot disassemble"
+// and 10-20 Liberty.
 
 // What one row is worth. Non-stackable only: books have their own flat rate,
 // and materials are worth nothing.
-async function burnValueOf(db, playerId, rowId) {
+async function disassembleValueOf(db, playerId, rowId) {
   const { rows } = await query(db, `
     SELECT pi.id, pi.item_id, c.rarity, c.stackable
       FROM player_items pi JOIN item_catalog c ON c.item_id = pi.item_id
@@ -571,20 +561,23 @@ async function burnValueOf(db, playerId, rowId) {
   if (!rows.length) return null;
   const r = rows[0];
   if (r.stackable) return null;
-  return { itemId: r.item_id, rarity: r.rarity, points: SEASON_BURN_POINTS[r.rarity] || 0 };
+  const range = DISASSEMBLE_LIBERTY[r.rarity];
+  if (!range) return null;
+  return { itemId: r.item_id, rarity: r.rarity, range };
 }
 
-async function burnItem(db, playerId, rowId) {
-  if (!seasonActive()) err('season_over', 'Сезон завершён');
+async function disassembleItem(db, playerId, rowId) {
   await items.lockPlayer(db, playerId);
 
-  const v = await burnValueOf(db, playerId, rowId);
+  const v = await disassembleValueOf(db, playerId, rowId);
   if (!v) err('not_found', 'Предмет не найден — список обновлён');
-  if (!v.points) err('cannot_burn', 'Этот предмет нельзя сжечь');
 
   // Refused here rather than by the foreign key three statements later, where
-  // the rollback would take the season points back out with it.
+  // the rollback would take the credited Liberty back out with it.
   await items.assertDestroyable(db, rowId);
+
+  const [min, max] = v.range;
+  const liberty = min + Math.floor(Math.random() * (max - min + 1));
 
   // RETURNING, so the ledger is told what was destroyed by the statement that
   // destroyed it. One of the five paths that delete an item without going
@@ -593,63 +586,12 @@ async function burnItem(db, playerId, rowId) {
     'DELETE FROM player_items WHERE id = $1 AND player_id = $2 RETURNING item_id, qty', [rowId, playerId]);
   if (!gone.length) err('not_found', 'Предмет не найден — список обновлён');
   await items.ledger(db, playerId, gone[0].item_id, -Number(gone[0].qty),
-    { rowId, reason: 'season_burn', refType: 'season', refId: v.rarity });
+    { rowId, reason: 'disassemble', refType: 'disassemble', refId: v.rarity });
 
-  const total = await addSeasonPoints(db, playerId, v.points);
-  return { burned: 1, points: v.points, total: total == null ? 0 : total, itemId: v.itemId };
-}
+  await money.credit(db, playerId, 'nexum', liberty,
+    { reason: 'disassemble', refType: 'disassemble', refId: v.rarity, idemKey: `disassemble:${rowId}` });
 
-// Everything of one rarity, in one statement. The old version collected the
-// indices, awaited the points write, then re-checked each index on the way back
-// because the array could have moved — a loop that could half-finish. This
-// deletes exactly the rows it counted, because it counts and deletes in the
-// same statement.
-async function burnAllOfRarity(db, playerId, rarity) {
-  if (!seasonActive()) err('season_over', 'Сезон завершён');
-  const per = SEASON_BURN_POINTS[rarity];
-  if (!per) err('cannot_burn', 'Эту редкость нельзя сжечь');
-  await items.lockPlayer(db, playerId);
-
-  // The delete is wrapped in a CTE and its result GROUPED BY item id, because
-  // this is the only path that destroys an unbounded number of rows in one
-  // statement and the ledger has to record it as one movement per item rather
-  // than one per row. Per row would be wrong arithmetic, not merely verbose:
-  // qty_after is read after the statement has finished, so three rows of the
-  // same item would each claim the same final quantity and the running-sum
-  // check would disagree with every one of them. Grouped, a burn of three
-  // commons is what it actually was — one operation that took three.
-  const { rows } = await query(db, `
-    WITH gone AS (
-      DELETE FROM player_items pi
-       USING item_catalog c
-       WHERE c.item_id = pi.item_id
-         AND pi.player_id = $1 AND pi.container = 'inventory'
-         AND NOT c.stackable AND c.rarity = $2
-         -- Anything a past trade still names cannot be deleted while the
-         -- reference blocks (see items.assertDestroyable). Skipping those rows
-         -- burns everything else instead of failing the whole batch — and once
-         -- migration 010 makes the reference releasable, the sub-select is
-         -- simply never true.
-         AND ($3::bool = false OR NOT EXISTS (
-               SELECT 1 FROM market_listings m WHERE m.item_id = pi.id))
-      RETURNING pi.item_id, pi.qty
-    )
-    SELECT item_id, count(*)::int AS rows_gone, sum(qty)::int AS qty_gone
-      FROM gone GROUP BY item_id`, [playerId, rarity, await items.marketRefBlocksDelete(db)]);
-  if (!rows.length) err('nothing', 'Нечего сжигать');
-
-  // Rows destroyed, not stacks: these are all non-stackable (`NOT c.stackable`
-  // above), so the two agree today — counted properly anyway, because the day
-  // that filter changes is not the day anyone re-derives the points.
-  const burned = rows.reduce((n, r) => n + Number(r.rows_gone), 0);
-  for (const r of rows) {
-    await items.ledger(db, playerId, r.item_id, -Number(r.qty_gone),
-      { reason: 'season_burn', refType: 'season', refId: rarity });
-  }
-
-  const points = burned * per;
-  const total = await addSeasonPoints(db, playerId, points);
-  return { burned, points, total: total == null ? 0 : total };
+  return { disassembled: 1, liberty, itemId: v.itemId, rarity: v.rarity };
 }
 
 // Books are stackable, so they are addressed by id and count rather than by
@@ -705,7 +647,6 @@ async function seasonState(db, playerId) {
     prizes: SEASON_PRIZES,
     enhancePoints: SEASON_ENHANCE_POINTS,
     advBookPoints: SEASON_ADV_BOOK_POINTS,
-    burn: SEASON_BURN_POINTS,
     bookBurnPoints: SEASON_BOOK_BURN_POINTS,
     ref: { points: SEASON_REF_POINTS, level: SEASON_REF_LEVEL },
     eventPoints: SEASON_EVENT_POINTS,
@@ -781,7 +722,7 @@ async function secondsLeft(db, playerId, mode, budgetSeconds) {
 }
 
 module.exports = {
-  burnItem, burnAllOfRarity, burnBooks, burnValueOf, seasonState,
+  disassembleItem, burnBooks, seasonState,
   claimSpecialQuest, claimedSpecialQuests,
   bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,

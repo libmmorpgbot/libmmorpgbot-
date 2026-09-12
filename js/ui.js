@@ -2589,10 +2589,12 @@ function setInvTab(n) {
   document.getElementById('inv-tab-content-1').style.display = n === 1 ? '' : 'none';
   document.getElementById('inv-tab-content-2').style.display = n === 2 ? '' : 'none';
   document.getElementById('inv-tab-content-3').style.display = n === 3 ? '' : 'none';
+  document.getElementById('inv-tab-content-4').style.display = n === 4 ? '' : 'none';
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
   if (n === 2) switchSkillTab(_activeSkillSubTab);
   if (n === 3) updateEmpowerUI();
+  if (n === 4) updateDisassembleUI();
 }
 
 // Chat floats above the world canvas and only makes sense while actually
@@ -4674,7 +4676,6 @@ function openInvItemModal(idx) {
     </div>
     <div class="imod-btns">
       ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
-      ${_seasonBurnPts(it) ? `<button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0" onclick="burnItemForSeason(${idx})">${tVars('seasonBurnBtn', { n: _seasonBurnPts(it) })}</button>` : ''}
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -4712,25 +4713,56 @@ function sellCommonItem(idx) {
   closeInvItemModal();
 }
 
-// Season points this item is worth if burned, or 0 when it cannot be burned.
-// Mirrors the server's own rule (SEASON_BURN_POINTS, and non-stackable only)
-// — the server re-checks it anyway, this just decides whether to offer it.
-function _seasonBurnPts(it) {
-  if (!it || typeof _seasonState === 'undefined') return 0;
-  if (!_seasonState.active) return 0;
-  if (typeof _isStackable === 'function' && _isStackable(it)) return 0;
-  return (_seasonState.burn || {})[it.rarity] || 0;
+// ── Разбор (Персонаж → Разбор) ──────────────────────────────
+// Disassembling is server-side, same shape as selling: the item is destroyed
+// and Liberty (nexum) credited in one server transaction, nothing applied
+// locally. DISASSEMBLE_LIBERTY (shared/definitions.js) is the single source
+// of truth for which rarities qualify and their [min, max] payout — mirrored
+// here only to decide what to show; the server re-checks it regardless.
+function updateDisassembleUI() {
+  if (!player) return;
+  const body = document.getElementById('disassemble-body');
+  if (!body) return;
+  const ranges = (typeof DISASSEMBLE_LIBERTY !== 'undefined') ? DISASSEMBLE_LIBERTY : {};
+  const rows = (player.inventory || []).map((it, idx) => ({ it, idx }))
+    .filter(({ it }) => it && !(typeof _isStackable === 'function' && _isStackable(it)) && ranges[it.rarity])
+    .map(({ it, idx }) => {
+      const range = ranges[it.rarity];
+      const rc = RARITY_COLOR[it.rarity] || '#aea599';
+      const enh = it.enhance ? ` <span style="color:#e69419">+${it.enhance}</span>` : '';
+      return `<div class="season-book-row">
+        <div style="display:flex;align-items:center;justify-content:center">${_itemIcon(it, 24)}</div>
+        <span class="season-book-name" style="color:${rc}">${_esc(it.name)}${enh}</span>
+        <button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0"
+                onclick="_disassembleConfirm(${idx})">${tVars('disassembleBtnFmt', { min: range[0], max: range[1] })}</button>
+      </div>`;
+    }).join('');
+  body.innerHTML = `
+    <div style="padding:16px">
+      <div class="db-rules">
+        <b>${t('disassembleHdr')}</b>
+        <ul>
+          <li>${tVars('disassembleRangeFmt', { r: _RARITY_NAMES.uncommon, min: (ranges.uncommon||[1,2])[0], max: (ranges.uncommon||[1,2])[1] })}</li>
+          <li>${tVars('disassembleRangeFmt', { r: _RARITY_NAMES.rare, min: (ranges.rare||[5,10])[0], max: (ranges.rare||[5,10])[1] })}</li>
+          <li>${tVars('disassembleRangeFmt', { r: _RARITY_NAMES.epic, min: (ranges.epic||[10,20])[0], max: (ranges.epic||[10,20])[1] })}</li>
+        </ul>
+        <div class="imod-enh-chance">${t('seasonBurnNote')}</div>
+      </div>
+      ${rows || `<div class="db-phase">${t('disassembleEmptyLbl')}</div>`}
+    </div>`;
 }
 
-// The server destroys the item and adds the points — nothing local.
-function burnItemForSeason(idx) {
+// Disassembling is irreversible, so it asks first and says exactly what the
+// item is and the range it could pay.
+function _disassembleConfirm(idx) {
   if (!player) return;
   const it = player.inventory[idx];
-  if (!_seasonBurnPts(it)) return;
-  // The item's own identity goes with the index — the server verifies the two
-  // agree before destroying anything (see netSeasonBurn).
-  if (typeof netSeasonBurn === 'function') netSeasonBurn(idx, it.id, it.enhance || 0);
-  closeInvItemModal();
+  if (!it) return;
+  const ranges = (typeof DISASSEMBLE_LIBERTY !== 'undefined') ? DISASSEMBLE_LIBERTY : {};
+  const range = ranges[it.rarity];
+  if (!range) return;
+  if (!confirm(tVars('disassembleConfirmFmt', { name: it.name, min: range[0], max: range[1] }))) return;
+  if (typeof netItemDisassemble === 'function') netItemDisassemble(idx, it.id, it.enhance || 0);
 }
 
 // ── Loot boxes ────────────────────────────────────────────
@@ -5316,7 +5348,6 @@ function _seasonClaimFarm(zone) {
 function _seasonTasksHTML() {
   const st = _seasonState || {};
   const ended = !st.active;
-  const bp = st.burn || { common: 1, uncommon: 5 };
 
   const bookStacks = _seasonBookStacks();
   const bookRows = bookStacks.map(s => `
@@ -5348,35 +5379,18 @@ function _seasonTasksHTML() {
         ${_seasonFarmQuestHTML(t('farm2Lbl'), st.farm2, 'farm2')}
         ${_seasonFarmQuestHTML(t('farmHighLbl'), st.farmHigh, 'farmHigh')}
       </div>
-      ${ended ? '' : `<div class="db-rules">
+      ${ended || !bookRows ? '' : `<div class="db-rules">
         ${t('seasonBurnHdr')}
         <ul>
-          <li>${tVars('seasonBurnCommon', { n: bp.common })}</li>
-          <li>${tVars('seasonBurnUncommon', { n: bp.uncommon })}</li>
           <li>${tVars('season2BurnBookFmt', { n: st.bookBurnPoints || 60 })}</li>
           <li>${t('seasonBurnNote')}</li>
         </ul>
-        <div class="season-burn-grid">
-          <button class="db-action" onclick="_seasonBurnAllConfirm('common')">${t('seasonBurnAllCommon')}</button>
-          <button class="db-action" onclick="_seasonBurnAllConfirm('uncommon')">${t('seasonBurnAllUncommon')}</button>
-        </div>
-        ${bookRows ? `<div style="margin-top:10px">${bookRows}</div>` : ''}
+        <div style="margin-top:10px">${bookRows}</div>
       </div>`}
     </div>`;
 }
 
-// Bulk burn is destructive and irreversible, so it asks first and says
-// exactly how many items are about to go.
-function _seasonBurnAllConfirm(rarity) {
-  if (!player) return;
-  const n = (player.inventory || []).filter(i => i && i.rarity === rarity && !_isStackable(i)).length;
-  if (!n) { _marketToast(t('seasonNothingToBurn'), 'err'); return; }
-  const pts = n * ((_seasonState.burn || {})[rarity] || 0);
-  if (!confirm(tVars('seasonBurnAllConfirm', { n, p: pts }))) return;
-  if (typeof netSeasonBurnAll === 'function') netSeasonBurnAll(rarity);
-}
-
-// Same "ask, then send the whole stack" shape as the bulk gear burn above.
+// Same "ask, then send the whole stack" shape as bulk actions elsewhere.
 function _seasonBurnBookConfirm(id) {
   const s = _seasonBookStacks().find(x => x.id === id);
   if (!s) return;
