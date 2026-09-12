@@ -798,8 +798,15 @@ function update(dt, realDt) {
           // all — AUTO mode could lock onto and swing at your own 3v3
           // teammate or Guild War clanmate (server refuses the hit, so it
           // just wasted the swing and blocked a real target from being
-          // picked instead).
-          if ((op.hp || 0) <= 0 || op.x == null || _a3Unselectable(id) || _gwUnselectable(id)) return;
+          // picked instead). _openWorldAllyUnselectable extends this to the
+          // general open-world case — a clanmate or partymate anywhere else
+          // — same reasoning: «в ПК режиме берёт асист на соклановца/того
+          // кто в пати». Deliberately only here, not on the locked-target
+          // check above: a target the player picked THEMSELVES (manual tap,
+          // js/input.js — which never excluded plain clan/party ties, only
+          // a3/gw) stays picked; this only keeps AUTO from choosing one on
+          // its own.
+          if ((op.hp || 0) <= 0 || op.x == null || _a3Unselectable(id) || _gwUnselectable(id) || _openWorldAllyUnselectable(id)) return;
           const dx = op.x - player.x, dy = op.y - player.y;
           const d2 = dx * dx + dy * dy;
           if (d2 < closestD2) { closestD2 = d2; _pvpSentinel._socketId = id; _pvpSentinel.x = op.x; _pvpSentinel.y = op.y; closest = _pvpSentinel; closestIsPlayer = true; }

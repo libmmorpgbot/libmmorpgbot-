@@ -209,6 +209,38 @@ function _gwUnselectable(id) {
   return !!op && op.clanName === myClan;
 }
 
+// ── open-world PK: the general case the two exclusions above don't cover ──
+// «В ПК режиме берёт асист на авто на соклановца или того кто в пати» —
+// _a3Unselectable/_gwUnselectable only ever protect an ALLY inside their own
+// mode (an arena3 teammate, a clanmate standing in the GW zone); outside
+// both of those, AUTO's proximity scan had no ally check at all, even though
+// the server's own party/clan immunity (_isPvpImmune, server/handlers2/
+// modes.js) refuses a hit on a partymate or clanmate everywhere by default.
+// Same class of bug the two functions above exist to prevent: AUTO locking
+// onto — and wasting a swing on — someone it can never actually hit, instead
+// of picking a real target. Deliberately does NOT run inside arena3/
+// tournament/death battle or the GW zone: those suspend the ordinary party/
+// clan rule and decide ally-vs-enemy by team assignment instead (already
+// handled above, or by design not protected at all), so re-applying it here
+// would wrongly shield an assigned OPPONENT who happens to share a party or
+// clan with the attacker.
+//
+// Manual target selection (clicking a player directly, js/input.js's own
+// click handler) is untouched — a player can still tap a clanmate/partymate
+// on purpose; this only keeps AUTO from doing it for them.
+function _openWorldAllyUnselectable(id) {
+  if (typeof _a3InMatch !== 'undefined' && _a3InMatch) return false;
+  if (typeof _trInMatch !== 'undefined' && _trInMatch) return false;
+  if (typeof _dbInFight !== 'undefined' && _dbInFight) return false;
+  if (player && typeof _isGuildWarTile === 'function' &&
+      _isGuildWarTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE))) return false;
+  if (typeof partyMembers !== 'undefined' && partyMembers.some(m => m.id === id)) return true;
+  const myClan = (typeof clanData !== 'undefined' && clanData && clanData.name) || null;
+  if (!myClan) return false;
+  const op = otherPlayers.get(id);
+  return !!op && op.clanName === myClan;
+}
+
 // Same reasoning as _gwUnselectable just above, for the castle itself rather
 // than a clanmate: the server refuses a hit on your own currently-held tower
 // outright ('own_tower', Room.js), so offering it as a target/assist
