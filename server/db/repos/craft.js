@@ -534,19 +534,30 @@ async function craftBox(db, playerId, boxId) {
   const box = BOX_DEF.find(b => b.id === boxId);
   if (!box) err('bad_recipe', 'Неизвестный бокс');
 
-  const have = await items.countMatching(db, playerId, { itemIds: [box.keyId] });
-  if (have < box.keyCost) {
-    const keyName = (CRAFT_MATS.find(m => m.id === box.keyId) || {}).name || box.keyId;
-    err('no_mats', `Нужно ${box.keyCost} × ${keyName} (есть ${have})`);
-  }
   if (!await items.hasRoomFor(db, playerId, box.id)) err('no_room', 'Инвентарь полон');
 
-  if (!await items.removeQty(db, playerId, box.keyId, box.keyCost)) {
-    err('no_mats', `Нужно ${box.keyCost} × ${box.keyId}`);
+  // Liberty-priced boxes (nexumCost set — the Liberty bag) pay in Liberty
+  // instead of a key material; everything else keeps the original key path.
+  if (box.nexumCost) {
+    const paid = await money.spend(db, playerId, 'nexum', box.nexumCost, {
+      reason: 'craft_box', refType: 'box', refId: box.id,
+      idemKey: `craft_box:${playerId}:${box.id}:${crypto.randomUUID()}`,
+    });
+    if (!paid) err('no_nexum', 'Недостаточно Liberty');
+  } else {
+    const have = await items.countMatching(db, playerId, { itemIds: [box.keyId] });
+    if (have < box.keyCost) {
+      const keyName = (CRAFT_MATS.find(m => m.id === box.keyId) || {}).name || box.keyId;
+      err('no_mats', `Нужно ${box.keyCost} × ${keyName} (есть ${have})`);
+    }
+    if (!await items.removeQty(db, playerId, box.keyId, box.keyCost)) {
+      err('no_mats', `Нужно ${box.keyCost} × ${box.keyId}`);
+    }
   }
+
   const rowId = await items.add(db, playerId, box.id, { source: 'craft', sourceRef: 'box:' + box.id });
   if (rowId === null) err('no_room', 'Инвентарь полон');
-  return { outcome: 'success', boxId: box.id, spent: box.keyCost, rowId };
+  return { outcome: 'success', boxId: box.id, spent: box.nexumCost || box.keyCost, rowId };
 }
 
 
@@ -559,6 +570,17 @@ async function openBox(db, playerId, boxId) {
   if (!await items.removeQty(db, playerId, box.id, 1)) err('no_box', 'Бокса нет в инвентаре');
   if (box.keyId && !await items.removeQty(db, playerId, box.keyId, 1)) {
     err('no_key', 'Нет ключа от бокса');
+  }
+
+  // Fixed-payout bag (nexumReward set — no key, no odds): the bag itself is
+  // already gone (removeQty above), so this can only ever credit once per
+  // bag — there is no separate idempotency concern to solve here.
+  if (box.nexumReward) {
+    await money.credit(db, playerId, 'nexum', box.nexumReward, {
+      reason: 'box_open', refType: 'box', refId: box.id,
+      idemKey: `box_open:${playerId}:${boxId}:${crypto.randomUUID()}`,
+    });
+    return { boxId, nexumReward: box.nexumReward };
   }
 
   // Rarity first, then a uniform pick inside it — the same two-step the live

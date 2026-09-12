@@ -32,6 +32,7 @@ const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
 const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
 const MARKET_MIN_PRICE_BOX_UNCOMMON = 1;   // box_uncommon (green, BOX_DEF), per box
 const MARKET_MIN_PRICE_BOX_RARE     = 2;   // box_rare (blue, BOX_DEF), per box
+const MARKET_MIN_PRICE_LIBERTY_BAG  = 5;   // liberty_bag (BOX_DEF), per bag
 const MARKET_MIN_PRICE_EPIC_GEAR   = 30;   // rarity:'epic' weapon/armor/wings/pet, flat
 const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' weapon/armor, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
@@ -99,6 +100,7 @@ function _marketMinPriceRaw(item) {
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'buff_potion') return MARKET_MIN_PRICE_BUFF_POTION * qty;
   if (item.slot === 'box') {
+    if (item.id === 'liberty_bag') return MARKET_MIN_PRICE_LIBERTY_BAG * qty;
     return (item.id === 'box_rare' ? MARKET_MIN_PRICE_BOX_RARE : MARKET_MIN_PRICE_BOX_UNCOMMON) * qty;
   }
   // Rare pet/wings/artifact share their own floor, above rare weapon/armor's

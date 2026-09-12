@@ -340,7 +340,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // A box is the commonest way a rare item enters an account, so this is the
     // row that answers "откуда у него это" — which is the same question as
     // "куда делось моё", asked from the other side.
-  }, r => r && { boxId: r.boxId, rarity: r.rarity, itemId: r.itemId }));
+  }, r => r && { boxId: r.boxId, rarity: r.rarity, itemId: r.itemId, nexumReward: r.nexumReward }));
 
   // ── merchant ─────────────────────────────────────────────────────────────
   // `idx` counts into MERCHANT_SHOP, the table the client renders — not into

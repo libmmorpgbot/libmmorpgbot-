@@ -4788,15 +4788,21 @@ function openBoxModal(idx) {
   const qty = it.qty || 1;
   const rc = RARITY_COLOR[boxDef.rarity] || '#aea599';
 
-  const oddsHtml = boxDef.odds.map(o => {
-    const rcO = RARITY_COLOR[o.rarity] || '#aea599';
-    const cands = _boxCandidates(o.rarity);
-    const icons = cands.map(c => `<span title="${c.name}" style="display:inline-block;margin:2px">${_itemIcon(c, 26)}</span>`).join('');
-    return `<div class="box-odds-row">
-      <div class="box-odds-hdr" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity} · <b>${Math.round(o.chance * 100)}%</b></div>
-      <div class="box-odds-icons">${icons || '—'}</div>
-    </div>`;
-  }).join('');
+  // Fixed-payout bag (nexumReward, no odds): there's nothing to roll, so the
+  // "contents" line just names the Liberty amount instead of a rarity table.
+  const contentsHtml = boxDef.nexumReward
+    ? `<div class="box-odds-row">
+        <div class="box-odds-hdr" style="color:#7ee0c0">${_nexumIconHtml(18)} ${boxDef.nexumReward} Liberty</div>
+      </div>`
+    : boxDef.odds.map(o => {
+        const rcO = RARITY_COLOR[o.rarity] || '#aea599';
+        const cands = _boxCandidates(o.rarity);
+        const icons = cands.map(c => `<span title="${c.name}" style="display:inline-block;margin:2px">${_itemIcon(c, 26)}</span>`).join('');
+        return `<div class="box-odds-row">
+          <div class="box-odds-hdr" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity} · <b>${Math.round(o.chance * 100)}%</b></div>
+          <div class="box-odds-icons">${icons || '—'}</div>
+        </div>`;
+      }).join('');
 
   closeInvItemModal();
   const ov = document.createElement('div');
@@ -4812,8 +4818,8 @@ function openBoxModal(idx) {
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
-    <div style="font-size:11px;color:#968a7a">${t('boxOpensRandomHint')}</div>
-    <div class="box-odds-list">${oddsHtml}</div>
+    <div style="font-size:11px;color:#968a7a">${boxDef.nexumReward ? '' : t('boxOpensRandomHint')}</div>
+    <div class="box-odds-list">${contentsHtml}</div>
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="openLootBox(${idx})">${t('openBtn')}</button>
     </div>
@@ -4836,8 +4842,19 @@ function openLootBox(idx) {
   closeInvItemModal();
 }
 
-function onBoxOpened({ item } = {}) {
-  if (!player || !item) return;
+// The payload is the server's raw craft.openBox() return (server/db/repos/
+// craft.js) — {boxId, nexumReward} for a fixed-payout bag, {boxId, rarity,
+// itemId, rowId} for an ordinary roll. Resolved to a full item def here
+// rather than trusting a pre-built one, same "server names it, client looks
+// it up" rule as everywhere else items are granted.
+function onBoxOpened({ itemId, nexumReward } = {}) {
+  if (!player) return;
+  if (nexumReward) {
+    dmgNum(player.x, player.y - 30, '+' + nexumReward + ' Liberty', '#7ee0c0');
+    return;
+  }
+  const item = itemId ? ITEM_DEF.find(d => d.id === itemId) : null;
+  if (!item) return;
   dmgNum(player.x, player.y - 30, '+ ' + item.name, RARITY_COLOR[item.rarity] || '#c4a276');
 }
 
@@ -5864,7 +5881,7 @@ function _marketMinPriceForRaw(it, qty) {
   if (it.id && it.id.startsWith('key_')) return 0.003 * n;
   if (it.slot === 'recipe') return 0.01 * n;
   if (it.slot === 'buff_potion') return 0.3 * n;
-  if (it.slot === 'box') return (it.id === 'box_rare' ? 2 : 1) * n;
+  if (it.slot === 'box') return (it.id === 'liberty_bag' ? 5 : it.id === 'box_rare' ? 2 : 1) * n;
   // Rare pet/wings/artifact share their own floor, above rare weapon/armor's
   // — has to win over both the flat cloak/artifact floor right below (an
   // artifact IS 'rare' at this rarity, unlike cloak) and the generic

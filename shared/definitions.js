@@ -1057,6 +1057,14 @@ const BOX_DEF = [
     keyId: 'key_rare', keyCost: 500,
     odds: [ { rarity: 'common', chance: 0.30 }, { rarity: 'uncommon', chance: 0.60 }, { rarity: 'rare', chance: 0.10 } ],
   },
+  // Liberty-priced, no key, no roll — crafting spends nexumCost, opening
+  // always credits exactly nexumReward. A box with neither `keyId` nor `odds`,
+  // which is exactly what tells craftBox/openBox (server/db/repos/craft.js)
+  // to take the Liberty branch instead of the key/roll one.
+  {
+    id: 'liberty_bag', name: 'Мешок Либерти', img: '/images/material/libertybag.png', slot: 'box', rarity: 'epic',
+    nexumCost: 600, nexumReward: 500,
+  },
 ];
 
 const ITEM_DEF = [

@@ -208,6 +208,26 @@ async function main() {
   const validRarities = box.odds.map(o => o.rarity);
   ok(validRarities.includes(opened.rarity), `рідкість із таблиці боксу (${validRarities.join('/')})`);
 
+  // ── мешок Liberty (Liberty-priced box, fixed-payout open) ────────────────
+  console.log('  ── мішок Liberty ──');
+  const bag = BOX_DEF.find(x => x.id === 'liberty_bag');
+  const lb = await mk('libertybag');
+  eq(await caught(() => tx(t => craft.craftBox(t, lb, bag.id))), 'no_nexum',
+    'без Liberty бокс не скрафтити');
+  eq(await countOf(lb, bag.id), 0, 'нічого не з’явилось');
+
+  await money.credit(null, lb, 'nexum', bag.nexumCost, { reason: 'seed', idemKey: `${TAG}:bag` });
+  const craftedBag = await tx(t => craft.craftBox(t, lb, bag.id));
+  eq(craftedBag.outcome, 'success', 'мішок скрафтено');
+  eq(await countOf(lb, bag.id), 1, 'мішок отримано');
+  eq((await money.balancesOf(null, lb)).nexum, 0, 'Liberty списано рівно за рецептом');
+
+  const openedBag = await tx(t => craft.openBox(t, lb, bag.id));
+  eq(openedBag.nexumReward, bag.nexumReward, 'відкриття повідомляє правильну суму');
+  eq(await countOf(lb, bag.id), 0, 'мішок витрачено при відкритті');
+  eq((await money.balancesOf(null, lb)).nexum, bag.nexumReward,
+    `нараховано рівно ${bag.nexumReward} Liberty`);
+
   // The merchant moved to repos/consumables.js with the potion bag it fills —
   // it sold nothing but potions, and those are not inventory rows. Its tests
   // moved with it (dev/consumables-check.js), rather than being left here to

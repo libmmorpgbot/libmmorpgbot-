@@ -533,8 +533,8 @@ function _craftsmanMatsTab() {
   if (typeof BOX_DEF !== 'undefined' && BOX_DEF.length) {
     html += `<div class="craft-group-hdr" style="color:#e5a546">${typeof t === 'function' ? t('craftBoxesHdr') : 'Боксы'}</div><div class="craft-items-grid">`;
     BOX_DEF.forEach(box => {
-      const have = countMaterial(box.keyId);
-      const canCraft = have >= box.keyCost && invHasSpace();
+      const canCraft = (box.nexumCost ? (window._nexumBalance || 0) >= box.nexumCost : countMaterial(box.keyId) >= box.keyCost)
+        && invHasSpace();
       const rc = RARITY_COLOR[box.rarity] || '#aea599';
       html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBoxCraftModal('${box.id}')" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(box, 32)}</div>
@@ -985,19 +985,42 @@ function onPetCraftError(msg) {
 function openBoxCraftModal(boxId) {
   const box = BOX_DEF.find(b => b.id === boxId);
   if (!box || !player) return;
-  const keyDef = CRAFT_MATS.find(m => m.id === box.keyId);
-  const have = countMaterial(box.keyId);
-  const ok = have >= box.keyCost;
-  const canCraft = ok && invHasSpace();
   const rc = RARITY_COLOR[box.rarity] || '#aea599';
 
-  const oddsHtml = box.odds.map(o => {
-    const rcO = RARITY_COLOR[o.rarity] || '#aea599';
-    return `<div class="craft-req-row">
-      <span class="craft-req-name" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity}</span>
-      <span class="craft-req-count" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
-    </div>`;
-  }).join('');
+  // Liberty-priced bag: pays Liberty, not a key material — the cost row and
+  // the "contents" row are both different shapes from an ordinary box.
+  const nexumBal = window._nexumBalance || 0;
+  const ok = box.nexumCost ? nexumBal >= box.nexumCost : countMaterial(box.keyId) >= box.keyCost;
+  const canCraft = ok && invHasSpace();
+
+  const costRow = box.nexumCost
+    ? `<div class="craft-req-row">
+        <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
+        <span class="craft-req-name">Liberty</span>
+        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${nexumBal}/${box.nexumCost}</span>
+      </div>`
+    : (() => {
+        const keyDef = CRAFT_MATS.find(m => m.id === box.keyId);
+        const have = countMaterial(box.keyId);
+        return `<div class="craft-req-row">
+          <span class="craft-req-icon">${keyDef ? _matIcon(keyDef, 20) : box.keyId}</span>
+          <span class="craft-req-name">${keyDef ? keyDef.name : box.keyId}</span>
+          <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${box.keyCost}</span>
+        </div>`;
+      })();
+
+  const contentsHtml = box.nexumReward
+    ? `<div class="craft-req-row">
+        <span class="craft-req-name" style="color:#7ee0c0">Liberty</span>
+        <span class="craft-req-count" style="color:#7ee0c0">${box.nexumReward}</span>
+      </div>`
+    : box.odds.map(o => {
+        const rcO = RARITY_COLOR[o.rarity] || '#aea599';
+        return `<div class="craft-req-row">
+          <span class="craft-req-name" style="color:${rcO}">${_RARITY_NAMES[o.rarity] || o.rarity}</span>
+          <span class="craft-req-count" style="color:${rcO}">${Math.round(o.chance * 100)}%</span>
+        </div>`;
+      }).join('');
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
@@ -1008,15 +1031,9 @@ function openBoxCraftModal(boxId) {
       </div>
     </div>
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
-    <div class="craft-reqs-list">
-      <div class="craft-req-row">
-        <span class="craft-req-icon">${keyDef ? _matIcon(keyDef, 20) : box.keyId}</span>
-        <span class="craft-req-name">${keyDef ? keyDef.name : box.keyId}</span>
-        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${box.keyCost}</span>
-      </div>
-    </div>
+    <div class="craft-reqs-list">${costRow}</div>
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftBoxContentsLbl') : 'Содержимое (1 предмет из бокса):'}</div>
-    <div class="craft-reqs-list">${oddsHtml}</div>
+    <div class="craft-reqs-list">${contentsHtml}</div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftBox('${box.id}')">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
 }
@@ -1027,9 +1044,13 @@ function openBoxCraftModal(boxId) {
 function craftBox(boxId) {
   const box = BOX_DEF.find(b => b.id === boxId);
   if (!box || !player) return;
-  const have = countMaterial(box.keyId);
-  if (have < box.keyCost) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughKeys') : 'Недостаточно ключей!'); return; }
-  if (!invHasSpace())     { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  if (box.nexumCost) {
+    if ((window._nexumBalance || 0) < box.nexumCost) { _shopMsg(tVars('craftNeedLiberty', { n: box.nexumCost })); return; }
+  } else {
+    const have = countMaterial(box.keyId);
+    if (have < box.keyCost) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughKeys') : 'Недостаточно ключей!'); return; }
+  }
+  if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
   _pendingBoxCraftId = boxId;
   if (typeof netCraftBox === 'function') netCraftBox(boxId);
 }
