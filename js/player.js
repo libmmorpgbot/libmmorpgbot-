@@ -245,6 +245,7 @@ function recompute() {
   // Проценты с предметов. Считаются так же, как на сервере, и применяются
   // после всех плоских прибавок — иначе порядок слагаемых решал бы результат.
   let speedPct = 0, atkPct = 0, critPowerAdd = 0;
+  let _runeDefPct = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
     const eb = _enhBonus(it);
@@ -265,6 +266,27 @@ function recompute() {
     if (it.atkPct)     atkPct    += it.atkPct;
     if (it.critPower)  critPowerAdd += it.critPower;
   });
+  // ── руны надетого ───────────────────────────────────────────────────────
+  // Те же слагаемые, что считает сервер (repos/stats.js), и по той же общей
+  // таблице: панель обязана показывать числа, по которым уже идёт бой.
+  // Проценты делятся на сто здесь, на входе, — дальше всё в долях.
+  if (typeof runeBonusTotals === 'function') {
+    const rt = runeBonusTotals([].concat(...Object.values(player.equipment)
+      .map(it => (it && it.runes) || [])));
+    const rn = k => (rt[k] || 0) / 100;
+    hpPct += rn('hpPct');
+    speedPct += rn('speedPct');
+    critPowerAdd += rn('critPowerPct');
+    atkPct += rn('atkPct');
+    extraCrit += rn('critChancePct');
+    extraAS += (player.charDef.atkSpeed || 0) * rn('atkSpeedPct');
+    // Защита процентом — своей переменной: плоская def уже сложена выше, а
+    // множитель применяется вместе с пассивным, ниже по функции.
+    _runeDefPct = rn('defPct');
+  } else {
+    _runeDefPct = 0;
+  }
+
   // Read by _skillDmgMult/_skillHealMult below. Stored on the player rather
   // than recomputed at cast time so it follows the same rebuild-from-scratch
   // rule as atk/def/maxHp — every equip, unequip and enhance already calls
@@ -285,9 +307,13 @@ function recompute() {
 
   // Процент атаки с предмета (Вилорд) — вместе с пассивным, одним множителем.
   if (atkPct) a = Math.floor(a * (1 + atkPct));
+  // Защита процентом — из двух источников (пассивки и руны), но ОДНИМ
+  // множителем: +10% от пассивки и +10% от руны это +20%, а не 1.1×1.1.
+  // Считается снаружи `if (pt)`, иначе без пассивок руна не давала бы ничего.
+  const _defPct = (pt ? pt.defPct : 0) + _runeDefPct;
+  if (_defPct) d = Math.floor(d * (1 + _defPct));
   if (pt) {
     a = Math.floor(a * (1 + pt.atkPct));
-    d = Math.floor(d * (1 + pt.defPct));
     extraAS += (player.charDef.atkSpeed || 0) * pt.atkSpeedPct;
   }
 
@@ -1333,6 +1359,14 @@ function _rebuildFromCatalog(it) {
   // climbed. Six item types on one live account are sitting in exact pairs
   // because of it.
   if (it.rowId != null) item.rowId = it.rowId;
+  // ── и то, чего в каталоге нет вовсе ──────────────────────────────────────
+  // `rune` — выпавшие характеристики ЭТОЙ руны, `runes` — руны, стоящие в
+  // этом предмете. У обоих нет и не может быть каталожного соответствия: руна
+  // на то и руна, что две одинаковые с виду дают разное. Без этих двух строк
+  // пересборка стирала бы содержимое при каждом обновлении инвентаря — руна
+  // приезжала бы с сервера полной и становилась пустой оболочкой на экране.
+  if (it.rune) item.rune = it.rune;
+  if (it.runes) item.runes = it.runes;
   return item;
 }
 

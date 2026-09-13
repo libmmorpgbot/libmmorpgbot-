@@ -1151,6 +1151,10 @@ Object.assign(I18N_UI, {
   // after a channelled cast, from anywhere.
   teleportBtnTitle: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
   teleportStoneNoneMsg: { ru: 'Нет камня телепортации — купите у торговца', en: 'No teleport stone — buy one from the merchant', uk: 'Немає каменя телепортації — купіть у торговця', es: 'Sin piedra de teletransporte — cómprala al mercader', tr: 'Işınlanma taşı yok — tüccardan satın al', pt: 'Sem pedra de teleporte — compre com o mercador' },
+  // Вкладка кузнеца с рунами. Остальные подписи рун (названия
+  // характеристик, цвета) живут в shared/definitions.js — там же, где
+  // числа, по которым сервер считает бой.
+  craftTabRunes: { ru: 'Руны', en: 'Runes', uk: 'Руни', es: 'Runas', tr: 'Rünler', pt: 'Runas' },
   teleportStoneMerchantHdr: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
   teleportStoneMerchantSub: { ru: 'Телепорт в центральный зал (каст 7 сек)', en: 'Teleports to the central hall (7s cast)', uk: 'Телепорт у центральний зал (каст 7 сек)', es: 'Teletransporta al salón central (canalización de 7s)', tr: 'Merkez salona ışınlanma (7sn kanal)', pt: 'Teleporta para o salão central (canalização de 7s)' },
   // Подтверждение покупки. Liberty — валюта, за которую платят реальными

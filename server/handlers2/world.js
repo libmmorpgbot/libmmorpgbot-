@@ -581,7 +581,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
       : result.farmZone ? (FARM_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : result.farmHigh ? (FARM_HIGH_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : 0;
-    const myNexum = (result.nexum || 0) || (rand() < libertyChance ? 1 : 0);
+    // Руны оружия со строкой «Шанс Liberty» — множитель к шансу, как
+    // сезонный билет выше. Множитель, а не прибавка: +10% к шансу 0.1% — это
+    // 0.11%, а прибавка десяти процентов сделала бы из него 10.1% и обрушила
+    // бы весь курс валюты одной руной.
+    const runeNexumMult = 1 + ((gearB.gearNexumPct || 0) / 100);
+    const myNexum = (result.nexum || 0) || (rand() < libertyChance * runeNexumMult ? 1 : 0);
 
     // GRAM, the real-money currency. Not from the farm zones and not from the
     // co-op run — those pay their own fixed rewards — and, like Liberty, its

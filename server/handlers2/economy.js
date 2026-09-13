@@ -11,6 +11,7 @@
 // left is: check what the client may name, call the repository, push the truth.
 
 const craft = require('../db/repos/craft');
+const runes = require('../db/repos/runes');
 const items = require('../db/repos/items');
 const market = require('../db/repos/market');
 const gram = require('../db/repos/gram');
@@ -98,6 +99,23 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const pet = res.outcome === 'success' ? ITEM_DEF.find(d => d.id === res.itemId) : null;
     s.socket.emit('petCrafted', {
       pet, newNexumBalance: await nexumOf(t, pid), delivered: res.outcome === 'success',
+    });
+    return res;
+  }, craftMeta));
+
+  // Ковка руны. 30% успеха, при неудаче вложенное сгорает — как и сказано в
+  // окне кузнеца перед подтверждением. Содержимое выпавшей руны бросается на
+  // сервере (repos/runes.js) и уезжает клиенту вместе с ответом: карточку
+  // «что выковалось» рисовать больше нечем, руны в каталоге нет — есть только
+  // оболочка и её выпавшие строки.
+  safeOn('craftRune', ({ kind, rarity } = {}) => s.act('craftRune', 'runeCraftError', async (t, pid) => {
+    if (typeof kind !== 'string' || typeof rarity !== 'string') fail('Не выбран рецепт руны', 'bad_recipe');
+    const res = await runes.craftRune(t, pid, kind, rarity);
+    await pushAll(t);
+    s.socket.emit('runeCrafted', {
+      delivered: res.outcome === 'success',
+      itemId: res.itemId || null, rowId: res.rowId || null, stats: res.stats || null,
+      newNexumBalance: await nexumOf(t, pid),
     });
     return res;
   }, craftMeta));

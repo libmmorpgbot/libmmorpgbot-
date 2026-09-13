@@ -1239,6 +1239,31 @@ const ITEM_DEF = [
   { id:'wing_r', name:'Крылья',           slot:'wings', img:'/images/wings/rare.png',      atk:20,  def:20,  speedPct:0.40, rarity:'rare'      },
   { id:'wing_e', name:'Крылья',           slot:'wings', img:'/images/wings/epic.png',      atk:40,  def:40,  hp:500,  speedPct:0.50, xpPct:0.10, rarity:'epic' },
   { id:'wing_l', name:'Крылья',           slot:'wings', img:'/images/wings/legendary.png', atk:100, def:100, hp:1000, speedPct:0.70, xpPct:0.20, dropPct:0.20, rarity:'legendary' },
+  // ── Руны ────────────────────────────────────────────────────────────────
+  // Вещь с ИНДИВИДУАЛЬНЫМ содержимым: характеристики каждой руны бросаются
+  // при создании и живут в своей строке (player_items.rune, миграция 029), а
+  // не в каталоге. Поэтому здесь только оболочка — вид (доспех/оружие) и
+  // редкость, от которой зависит, СКОЛЬКО характеристик выпадет (см.
+  // RUNE_STAT_COUNT ниже). Слот 'rune' не в ENHANCEABLE_SLOTS и не
+  // стакается — две руны одной редкости почти наверняка разные вещи, и
+  // сложить их в стопку значило бы потерять одну из них.
+  //
+  // noDrop: руны не падают с монстров (их источник — кузнец и рынок), а без
+  // этой метки они попали бы в общий пул выпадения снаряжения.
+  //
+  // Картинка у рун доспеха здесь — только запасная: настоящая выбирается по
+  // выпавшим характеристикам (runeIconOf ниже), потому что художник нарисовал
+  // три разных руны на редкость, а не одну.
+  { id:'rune_armor_common',     name:'Руна доспеха', slot:'rune', runeKind:'armor',  noDrop:true, img:'/images/rune/armor/chp.png', rarity:'common'    },
+  { id:'rune_armor_uncommon',   name:'Руна доспеха', slot:'rune', runeKind:'armor',  noDrop:true, img:'/images/rune/armor/uhp.png', rarity:'uncommon'  },
+  { id:'rune_armor_rare',       name:'Руна доспеха', slot:'rune', runeKind:'armor',  noDrop:true, img:'/images/rune/armor/rhp.png', rarity:'rare'      },
+  { id:'rune_armor_epic',       name:'Руна доспеха', slot:'rune', runeKind:'armor',  noDrop:true, img:'/images/rune/armor/ehp.png', rarity:'epic'      },
+  { id:'rune_armor_legendary',  name:'Руна доспеха', slot:'rune', runeKind:'armor',  noDrop:true, img:'/images/rune/armor/lhp.png', rarity:'legendary' },
+  { id:'rune_weapon_common',    name:'Руна оружия',  slot:'rune', runeKind:'weapon', noDrop:true, img:'/images/rune/weapon/wcommon.png',    rarity:'common'    },
+  { id:'rune_weapon_uncommon',  name:'Руна оружия',  slot:'rune', runeKind:'weapon', noDrop:true, img:'/images/rune/weapon/wuncommon.png',  rarity:'uncommon'  },
+  { id:'rune_weapon_rare',      name:'Руна оружия',  slot:'rune', runeKind:'weapon', noDrop:true, img:'/images/rune/weapon/wrare.png',      rarity:'rare'      },
+  { id:'rune_weapon_epic',      name:'Руна оружия',  slot:'rune', runeKind:'weapon', noDrop:true, img:'/images/rune/weapon/wepic.png',      rarity:'epic'      },
+  { id:'rune_weapon_legendary', name:'Руна оружия',  slot:'rune', runeKind:'weapon', noDrop:true, img:'/images/rune/weapon/wlegendary.png', rarity:'legendary' },
   // ── HP Potions ────────────────────────────────────────────
   { id:'pt1', name:'Малое зелье',      slot:'use', img:'/images/potion/smallhp.png', hp:20, rarity:'common'   },
   { id:'pt2', name:'Большое зелье',    slot:'use', img:'/images/potion/bighp.png',   hp:500, rarity:'uncommon' },
@@ -1864,6 +1889,209 @@ const PET_SKILLS = {
 // приходит из сохранения, то есть из данных.
 function petSkillOf(petId) {
   return (petId && Object.hasOwn(PET_SKILLS, petId)) ? PET_SKILLS[petId] : null;
+}
+
+// ── Руны ────────────────────────────────────────────────────────────────────
+// Первая вещь в игре, у которой содержимое СВОЁ у каждого экземпляра: две
+// эпические руны доспеха — это два разных набора характеристик. Каталог
+// (ITEM_DEF выше) описывает только оболочку, а выпавшие характеристики живут
+// в строке предмета (player_items.rune, миграция 029). Всё, что решает, ЧТО
+// именно выпадет и сколько это даёт, — здесь, в одном файле на клиент и
+// сервер: карточка руны и расчёт характеристик обязаны говорить одно и то же.
+//
+// Редкость решает ОДНО — сколько характеристик на руне. Сколько даёт каждая,
+// решает её собственный цвет (RUNE_STAT_PCT ниже): руна — это набор строк, и
+// плохая оранжевая строка на обычной руне ценнее хорошей серой на редкой.
+const RUNE_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+const RUNE_STAT_COUNT = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
+
+// Гнёзда. Броня носит три руны на предмет, оружие — одну: у оружия слот один
+// на персонажа, у брони их девять, и одинаковое число гнёзд означало бы, что
+// оружейные руны в девять раз реже нужны.
+const RUNE_ARMOR_SOCKETS  = 3;
+const RUNE_WEAPON_SOCKETS = 1;
+
+// Крафт. 30% — по прямому заданию владельца; при неудаче вложенное сгорает.
+const RUNE_CRAFT_CHANCE = 0.30;
+
+// Перебор цвета одной характеристики. Именно ПЕРЕБОР, а не повышение: цвет
+// бросается заново и может выпасть хуже прежнего. Поэтому цена одна на любой
+// цвет — платят за бросок, а не за шаг.
+const RUNE_REROLL_PRICE = 100;   // Liberty (Nexum)
+
+// Цвета характеристик, от худшего к лучшему.
+const RUNE_QUALITIES = ['grey', 'green', 'blue', 'purple', 'orange'];
+const RUNE_QUALITY_COLOR = {
+  grey: '#9aa3ab', green: '#6bbf59', blue: '#4b8fd6', purple: '#a86bd6', orange: '#e08a2e',
+};
+const RUNE_QUALITY_NAME = {
+  grey: 'Серый', green: 'Зелёный', blue: 'Синий', purple: 'Фиолетовый', orange: 'Оранжевый',
+};
+// Веса броска цвета. Оранжевый редок намеренно: это и есть то, ради чего
+// существует перебор за Liberty. Нормируются на сумму, поэтому у легендарной
+// руны (где серого нет вовсе) остальные цвета просто делят его долю.
+const RUNE_QUALITY_WEIGHT = { grey: 40, green: 30, blue: 18, purple: 9, orange: 3 };
+
+// Сколько процентов даёт характеристика: строка — редкость руны, столбец —
+// цвет характеристики. Числа ровно те, что задал владелец.
+//
+// У легендарной руны серого цвета НЕТ — это не пропуск: её худшая строка
+// (+25%) начинается там, где у эпической кончается лучшая (+20%).
+const RUNE_STAT_PCT = {
+  common:    { grey: 1,  green: 2,  blue: 3,  purple: 4,  orange: 5  },
+  uncommon:  { grey: 6,  green: 7,  blue: 8,  purple: 9,  orange: 10 },
+  rare:      { grey: 11, green: 12, blue: 13, purple: 14, orange: 15 },
+  epic:      { grey: 16, green: 17, blue: 18, purple: 19, orange: 20 },
+  legendary: {           green: 25, blue: 30, purple: 40, orange: 50 },
+};
+
+// Какие характеристики бывают у руны какого вида. Руну доспеха нельзя
+// вставить в оружие и наоборот — наборы не пересекаются по смыслу, и именно
+// поэтому вид руны это не украшение, а правило.
+//
+// Ключи — СОБСТВЕННЫЕ имена рун, а не поля предметов из ITEM_DEF: руна всегда
+// даёт ПРОЦЕНТ, а одноимённое поле предмета иногда значит плоскую прибавку
+// (atkSpeed у оружия — удары в секунду, не проценты). Разные имена не дают
+// им слиться в одно при следующем чтении кода.
+const RUNE_ARMOR_STATS  = ['hpPct', 'defPct', 'speedPct', 'critPowerPct', 'xpPct', 'dropPct'];
+const RUNE_WEAPON_STATS = ['atkPct', 'atkSpeedPct', 'critChancePct', 'critPowerPct', 'nexumPct'];
+const RUNE_STAT_NAME = {
+  hpPct: 'Здоровье', defPct: 'Защита', speedPct: 'Скорость бега',
+  critPowerPct: 'Сила крита', xpPct: 'Опыт', dropPct: 'Шанс дропа',
+  atkPct: 'Атака', atkSpeedPct: 'Скорость атаки', critChancePct: 'Шанс крита',
+  nexumPct: 'Шанс Liberty',
+};
+
+// Вид и редкость руны читаются из id каталога, а не дублируются в строке
+// предмета: два источника правды о том, эпическая руна или нет, разошлись бы
+// на первом же изменении каталога.
+function runeKindOf(itemId) {
+  const def = ITEM_DEF.find(d => d.id === itemId);
+  return (def && def.runeKind) || null;
+}
+function runeRarityOf(itemId) {
+  const def = ITEM_DEF.find(d => d.id === itemId);
+  return (def && def.slot === 'rune') ? def.rarity : null;
+}
+function runeCatalogId(kind, rarity) { return `rune_${kind}_${rarity}`; }
+
+// Сколько процентов даёт эта строка руны. Возвращает 0 для невозможного
+// сочетания (серый на легендарной) — а не undefined, который дальше по пути
+// превратился бы в NaN и съел бы весь расчёт характеристик.
+function runeStatPct(rarity, quality) {
+  const row = Object.hasOwn(RUNE_STAT_PCT, rarity) ? RUNE_STAT_PCT[rarity] : null;
+  if (!row) return 0;
+  return Object.hasOwn(row, quality) ? row[quality] : 0;
+}
+
+// Цвета, которые вообще может принимать характеристика на руне этой редкости.
+function runeQualityPool(rarity) {
+  const row = Object.hasOwn(RUNE_STAT_PCT, rarity) ? RUNE_STAT_PCT[rarity] : null;
+  if (!row) return [];
+  return RUNE_QUALITIES.filter(q => Object.hasOwn(row, q));
+}
+
+// Бросок цвета. `rand` передаётся снаружи, потому что на сервере это должен
+// быть криптографический источник (руна стоит настоящих денег), а на клиенте
+// бросков нет вовсе — он только показывает то, что прислал сервер.
+function rollRuneQuality(rarity, rand = Math.random) {
+  const pool = runeQualityPool(rarity);
+  if (!pool.length) return null;
+  const total = pool.reduce((n, q) => n + (RUNE_QUALITY_WEIGHT[q] || 0), 0);
+  let roll = rand() * total;
+  for (const q of pool) {
+    roll -= (RUNE_QUALITY_WEIGHT[q] || 0);
+    if (roll < 0) return q;
+  }
+  return pool[pool.length - 1];
+}
+
+// Содержимое новой руны: сколько строк — по редкости, какие именно — без
+// повторов (две строки «Здоровье» на одной руне читались бы как ошибка, а
+// складывать их пришлось бы отдельным правилом).
+function rollRuneStats(kind, rarity, rand = Math.random) {
+  const pool = (kind === 'weapon' ? RUNE_WEAPON_STATS : RUNE_ARMOR_STATS).slice();
+  const n = Math.min(pool.length, RUNE_STAT_COUNT[rarity] || 0);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const pick = Math.floor(rand() * pool.length);
+    const stat = pool.splice(pick, 1)[0];
+    out.push({ stat, q: rollRuneQuality(rarity, rand) });
+  }
+  return out;
+}
+
+// Суммарная прибавка от набора рун — в ПРОЦЕНТАХ, по ключам RUNE_*_STATS.
+// Одна функция на сервер (repos/stats.js) и на панель клиента: разойтись
+// показанному и посчитанному тут негде.
+//
+// Каждая руна приходит как { itemId, stats:[{stat,q}] } — ровно в том виде, в
+// каком лежит в строке предмета рядом со своим item_id.
+function runeBonusTotals(runes) {
+  const out = {};
+  for (const r of (runes || [])) {
+    const rarity = runeRarityOf(r.itemId);
+    if (!rarity) continue;
+    for (const st of (r.stats || [])) {
+      const pct = runeStatPct(rarity, st.q);
+      if (!pct) continue;
+      out[st.stat] = (out[st.stat] || 0) + pct;
+    }
+  }
+  return out;
+}
+
+// Картинка руны. У оружейных она одна на редкость, у рун доспеха художник
+// нарисовал три — по ним и выбираем, отдав каждой из шести характеристик свою
+// из трёх. Берётся ПЕРВАЯ характеристика руны, потому что порядок строк — это
+// порядок броска и он не меняется за жизнь руны.
+const _RUNE_ART = {
+  hpPct: 'hp', xpPct: 'hp',
+  defPct: 'def', critPowerPct: 'def',
+  speedPct: 'speed', dropPct: 'speed',
+};
+const _RUNE_RARITY_LETTER = { common: 'c', uncommon: 'u', rare: 'r', epic: 'e', legendary: 'l' };
+function runeIconOf(itemId, stats) {
+  const kind = runeKindOf(itemId), rarity = runeRarityOf(itemId);
+  if (!kind || !rarity) return null;
+  if (kind === 'weapon') return `/images/rune/weapon/w${rarity}.png`;
+  const first = (stats && stats[0] && stats[0].stat) || 'hpPct';
+  const art = Object.hasOwn(_RUNE_ART, first) ? _RUNE_ART[first] : 'hp';
+  return `/images/rune/armor/${_RUNE_RARITY_LETTER[rarity]}${art}.png`;
+}
+
+// ── Рецепты рун ─────────────────────────────────────────────────────────────
+// ВНИМАНИЕ: материалы владелец пришлёт отдельно — до тех пор здесь только
+// цена в Liberty, лесенкой по редкости, и пустой список материалов. Крафт
+// читает `mats` как есть, поэтому заполнить их потом — это правка ЭТОЙ
+// таблицы и больше ничего: ни обработчик, ни окно кузнеца не знают, из чего
+// именно куётся руна.
+//
+// mats — [{ id, n }], те же id, что у остальных рецептов (CRAFT_MATS).
+const RUNE_CRAFT_RECIPES = [
+  { kind: 'armor',  rarity: 'common',    nexumCost: 500,   mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'armor',  rarity: 'uncommon',  nexumCost: 1500,  mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'armor',  rarity: 'rare',      nexumCost: 5000,  mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'armor',  rarity: 'epic',      nexumCost: 15000, mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'armor',  rarity: 'legendary', nexumCost: 50000, mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'weapon', rarity: 'common',    nexumCost: 500,   mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'weapon', rarity: 'uncommon',  nexumCost: 1500,  mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'weapon', rarity: 'rare',      nexumCost: 5000,  mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'weapon', rarity: 'epic',      nexumCost: 15000, mats: [], chance: RUNE_CRAFT_CHANCE },
+  { kind: 'weapon', rarity: 'legendary', nexumCost: 50000, mats: [], chance: RUNE_CRAFT_CHANCE },
+];
+
+// Сколько гнёзд у предмета этого слота. Ноль — «руны сюда не вставляются»:
+// плащи, артефакты, крылья, питомцы и расходники гнёзд не имеют.
+const _RUNE_ARMOR_SLOTS = new Set(['helmet', 'body', 'gloves', 'boots', 'ring', 'belt']);
+function runeSocketsOf(slot) {
+  if (slot === 'weapon') return RUNE_WEAPON_SOCKETS;
+  return _RUNE_ARMOR_SLOTS.has(slot) ? RUNE_ARMOR_SOCKETS : 0;
+}
+// Какой вид руны принимает этот слот предмета.
+function runeKindForSlot(slot) {
+  if (slot === 'weapon') return 'weapon';
+  return _RUNE_ARMOR_SLOTS.has(slot) ? 'armor' : null;
 }
 
 // Buff potions: Liberty (Nexum)-only, one recipe per jar (ITEM_DEF entries
@@ -3157,6 +3385,13 @@ if (typeof module !== 'undefined') module.exports = {
   levelUniversalPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
   PET_SKILLS, petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, PET_SKILL_FLASH_SEC,
+  RUNE_RARITIES, RUNE_STAT_COUNT, RUNE_ARMOR_SOCKETS, RUNE_WEAPON_SOCKETS,
+  RUNE_CRAFT_CHANCE, RUNE_REROLL_PRICE, RUNE_QUALITIES, RUNE_QUALITY_COLOR,
+  RUNE_QUALITY_NAME, RUNE_QUALITY_WEIGHT, RUNE_STAT_PCT, RUNE_ARMOR_STATS,
+  RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,
+  runeKindOf, runeRarityOf, runeCatalogId, runeStatPct, runeQualityPool,
+  rollRuneQuality, rollRuneStats, runeBonusTotals, runeIconOf,
+  runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   ADV_SKILL_BOOK_CRAFT,

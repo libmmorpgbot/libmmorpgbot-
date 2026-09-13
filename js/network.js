@@ -4261,6 +4261,23 @@ function netCraftBuffPotion(itemId) {
   if (socket?.connected) socket.emit('craftBuffPotion', { itemId });
 }
 
+// ── руны ────────────────────────────────────────────────────────────────────
+// Всё четыре запроса называют СТРОКИ (rowId), а не предметы: две руны одной
+// редкости внешне одинаковы, а внутри разные, и «вставь такую-то руну» не
+// имеет однозначного ответа.
+function netCraftRune(kind, rarity) {
+  if (socket?.connected) socket.emit('craftRune', { kind, rarity });
+}
+function netRuneSocket(hostRowId, runeRowId, socketIdx) {
+  if (socket?.connected) socket.emit('runeSocket', { hostRowId, runeRowId, socketIdx });
+}
+function netRuneUnsocket(runeRowId) {
+  if (socket?.connected) socket.emit('runeUnsocket', { runeRowId });
+}
+function netRuneReroll(runeRowId, statIdx) {
+  if (socket?.connected) socket.emit('runeReroll', { runeRowId, statIdx });
+}
+
 function netBuyTeleportStone(qty) {
   if (socket?.connected) socket.emit('buyTeleportStone', { qty });
 }
@@ -5451,6 +5468,25 @@ function _initPetCraftHandlers(s) {
   });
   s.on('petCraftError', ({ msg }) => {
     if (typeof onPetCraftError === 'function') onPetCraftError(msg);
+  });
+
+  // ── руны ──────────────────────────────────────────────────────────────────
+  // Сама руна приезжает обычным inventorySync — это вещь как вещь. Здесь
+  // только то, чего в инвентаре не видно: удалась ли ковка (70% попыток не
+  // дают ничего, и молчание в ответ читалось бы как поломка) и во что
+  // обернулся перебор цвета.
+  s.on('runeCrafted', ({ itemId, stats, delivered, newNexumBalance }) => {
+    window._nexumBalance = newNexumBalance;
+    if (typeof onRuneCrafted === 'function') onRuneCrafted(itemId, stats, delivered);
+  });
+  s.on('runeCraftError', ({ msg }) => {
+    if (typeof onRuneCraftError === 'function') onRuneCraftError(msg);
+  });
+  s.on('runeRerolled', (res) => {
+    if (typeof onRuneRerolled === 'function') onRuneRerolled(res);
+  });
+  s.on('runeError', ({ msg }) => {
+    if (typeof onRuneError === 'function') onRuneError(msg);
   });
 
   // Buff potions — same Liberty-only round-trip shape as a pet craft: the

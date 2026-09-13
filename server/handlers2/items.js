@@ -16,6 +16,7 @@
 // owns the conversation.
 
 const items = require('../db/repos/items');
+const runes = require('../db/repos/runes');
 const consumables = require('../db/repos/consumables');
 const players = require('../db/repos/players');
 const { CODEX_SETS, ITEM_DEF } = require('../../shared/definitions');
@@ -105,6 +106,39 @@ module.exports = function registerItems(s, safeOn) {
     }
     await push(t);
   }));
+
+  // ── руны ─────────────────────────────────────────────────────────────────
+  // Три действия с гнёздами, и у всех трёх одна форма: клиент называет СТРОКИ
+  // (свою руну, свой предмет) и номер гнезда, а правило — чья это вещь, лезет
+  // ли руна доспеха в оружие, свободно ли гнездо — целиком в repos/runes.js.
+  //
+  // Ни одно из них не создаёт предмет: руна уже есть, меняются две колонки.
+  // Поэтому здесь нет ни платы, ни бросков — только разговор.
+  safeOn('runeSocket', ({ hostRowId, runeRowId, socketIdx } = {}) =>
+    s.act('runeSocket', 'runeError', async (t, pid) => {
+      const res = await runes.socketRune(t, pid, hostRowId, runeRowId, socketIdx);
+      await push(t);
+      return res;
+    }));
+
+  safeOn('runeUnsocket', ({ runeRowId } = {}) =>
+    s.act('runeUnsocket', 'runeError', async (t, pid) => {
+      const res = await runes.unsocketRune(t, pid, runeRowId);
+      await push(t);
+      return res;
+    }));
+
+  // Перебор цвета одной строки руны. Стоит Liberty, поэтому — в отличие от
+  // двух соседей — баланс после него тоже уезжает клиенту: иначе кнопка
+  // показывала бы старую сумму до следующего обновления панели.
+  safeOn('runeReroll', ({ runeRowId, statIdx } = {}) =>
+    s.act('runeReroll', 'runeError', async (t, pid) => {
+      const res = await runes.rerollRuneStat(t, pid, runeRowId, statIdx);
+      await push(t);
+      await s.pushBalances(t);
+      s.socket.emit('runeRerolled', res);
+      return res;
+    }));
 
   // ── storage ──────────────────────────────────────────────────────────────
   safeOn('storageDeposit', (ref = {}) => s.act('storageDeposit', 'itemError', async (t, pid) => {

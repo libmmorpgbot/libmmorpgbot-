@@ -42,7 +42,7 @@
 const { query } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext,
+  clanAtkBonusPct, xpToNext, runeBonusTotals,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -55,7 +55,15 @@ const LOAD_SQL = `
     pr.upg_crit_chance, pr.upg_crit_power, pr.upg_hp_regen,
     COALESCE((
       SELECT json_agg(json_build_object(
-               'id', i.item_id, 'slot', i.slot, 'enhance', i.enhance))
+               'id', i.item_id, 'slot', i.slot, 'enhance', i.enhance,
+               -- Руны, стоящие в этой вещи. Подзапросом здесь, а не вторым
+               -- round trip: между чтением снаряжения и чтением его рун
+               -- игрок успевает вынуть руну, и характеристики посчитались бы
+               -- по набору, которого уже нет.
+               'runes', COALESCE((
+                  SELECT json_agg(json_build_object('itemId', r.item_id, 'stats', r.rune->'stats')
+                                  ORDER BY r.socket_idx)
+                    FROM player_items r WHERE r.socket_of = i.id), '[]'::json)))
         FROM player_items i
        WHERE i.player_id = pr.player_id AND i.container = 'equipment'
     ), '[]'::json) AS equipped,
@@ -96,8 +104,35 @@ const LOAD_SQL = `
 const { ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../../../shared/definitions');
 const _byId = new Map([...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF].map(d => [d.id, d]));
 
+// ── запрос без рун ──────────────────────────────────────────────────────────
+// Порядок выкатки: код уезжает на сервер раньше, чем применяется миграция —
+// так устроен деплой (dev/server-deploy.sh перезапускает сервис, миграции
+// гоняются отдельно). Запрос, который спрашивает колонку socket_of до
+// миграции 029, падает — а падает он на ЗАГРУЗКЕ ХАРАКТЕРИСТИК, то есть у
+// каждого входящего игрока. Поэтому колонка спрашивается у схемы один раз за
+// процесс, ровно как это делает _hasSourceCols в repos/items.js, и до
+// миграции работает прежний запрос без рун.
+const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
+  /,\n               -- Руны[\s\S]*?'\[\]'::json\)\)\)/,
+  '))');
+
+let _runeCols = null;
+async function _hasRuneCols(db) {
+  if (_runeCols !== null) return _runeCols;
+  try {
+    const { rows } = await query(db, `
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'player_items' AND column_name = 'socket_of' LIMIT 1`);
+    _runeCols = rows.length > 0;
+  } catch {
+    _runeCols = false;
+  }
+  return _runeCols;
+}
+
 async function load(db, playerId) {
-  const { rows } = await query(db, LOAD_SQL, [playerId]);
+  const sql = await _hasRuneCols(db) ? LOAD_SQL : LOAD_SQL_NO_RUNES;
+  const { rows } = await query(db, sql, [playerId]);
   return rows.length ? rows[0] : null;
 }
 
@@ -199,6 +234,39 @@ function compute(row) {
     if (base.xpPct)      xpPct     += base.xpPct;
     if (base.dropPct)    dropPct   += base.dropPct;
   }
+
+  // ── руны ────────────────────────────────────────────────────────────────
+  // Складываются со СВОИМИ же полями снаряжения, а не отдельным множителем:
+  // руна на +10% здоровья и вещь на +10% здоровья — это одна и та же
+  // характеристика из двух источников, и считать их по отдельности значило
+  // бы давать 1.1×1.1 там, где обещано +20%.
+  //
+  // Таблица процентов одна на клиент и сервер (runeBonusTotals,
+  // shared/definitions.js) и отдаёт ПРОЦЕНТЫ — здесь они делятся на сто ровно
+  // один раз, на входе, чтобы дальше по функции всё считалось в долях, как и
+  // всё остальное.
+  const runeTot = runeBonusTotals(
+    [].concat(...(row.equipped || []).map(it => it.runes || [])));
+  const rune = k => (runeTot[k] || 0) / 100;
+  hpPct        += rune('hpPct');
+  speedPct     += rune('speedPct');
+  critPowerAdd += rune('critPowerPct');
+  xpPct        += rune('xpPct');
+  dropPct      += rune('dropPct');
+  atkPct       += rune('atkPct');
+  extraCrit    += rune('critChancePct');
+  // Скорость атаки — доля от БАЗОВОЙ скорости класса, как у пассивок и у
+  // зелья скорости ниже. Плоская прибавка (поле atkSpeed у предметов) значит
+  // другое, и смешивать их в одном слагаемом нельзя: +10% у мага и у егеря —
+  // это разные числа ударов, и в этом весь смысл процента.
+  extraAS      += (cd.atkSpeed || 0) * rune('atkSpeedPct');
+  // Защита процентом — первый такой источник среди вещей: у предметов есть
+  // только плоская def. Множитель применяется вместе с пассивным, ниже.
+  const runeDefPct = rune('defPct');
+  // Шанс выпадения Liberty. В силу не идёт вовсе — уезжает в путь награды
+  // (handlers2/world.js) рядом с gearXpPct/gearDropPct.
+  const runeNexumPct = rune('nexumPct');
+
   // Проценты — после всех плоских прибавок и после кодекса.
   if (atkPct) a = Math.floor(a * (1 + atkPct));
 
@@ -230,7 +298,7 @@ function compute(row) {
   const regenBuff = buffOn('regen') ? 2 : 0;
 
   a = Math.floor(a * (1 + pt.atkPct));
-  d = Math.floor(d * (1 + pt.defPct));
+  d = Math.floor(d * (1 + pt.defPct + runeDefPct));
   extraAS += (cd.atkSpeed || 0) * pt.atkSpeedPct;
 
   const clanPct = clanAtkBonusPct(row.clan_level || 0);
@@ -258,6 +326,10 @@ function compute(row) {
     // награды: 0.20 здесь становится 20 там, и складывается с прочими.
     gearXpPct:   Math.round(xpPct * 100),
     gearDropPct: Math.round(dropPct * 100),
+    // Проценты к шансу Liberty — только с рун (оружейная строка «Шанс
+    // Liberty»). В процентах, как два поля выше, и складывается там же, где
+    // с ними: путь награды за убийство.
+    gearNexumPct: Math.round(runeNexumPct * 100),
     // Not stats — but they ride with them, because everything that refreshes a
     // player's numbers is also the moment their skills should reach the Room.
     skillLevels: row.skill_levels || {},

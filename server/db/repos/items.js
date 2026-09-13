@@ -85,7 +85,7 @@ async function lockPlayer(db, playerId) {
 // ── reads ───────────────────────────────────────────────────────────────────
 
 function _row(r) {
-  return {
+  const out = {
     rowId: Number(r.id),
     id: r.item_id,
     enhance: r.enhance,
@@ -93,6 +93,12 @@ function _row(r) {
     slot: r.slot || undefined,
     container: r.container,
   };
+  // Содержимое руны — единственное, что у строки есть СВОЕГО, помимо
+  // каталожного id: без него две эпические руны неразличимы (см. миграцию
+  // 029). Едет как есть, читается через runeBonusTotals/runeIconOf
+  // (shared/definitions.js) и на сервере, и на клиенте.
+  if (r.rune) out.rune = r.rune;
+  return out;
 }
 
 // Everything the account holds, split the way the client expects it. One query
@@ -100,14 +106,51 @@ function _row(r) {
 // to answer one question is three chances for them to disagree.
 async function inventoryOf(db, playerId) {
   const { rows } = await query(db, `
-    SELECT id, container, slot, item_id, enhance, qty
+    SELECT id, container, slot, item_id, enhance, qty, rune, socket_of, socket_idx
       FROM player_items
      WHERE player_id = $1
      ORDER BY sort_seq`, [playerId]);
   const out = { inventory: [], equipment: {}, storage: [] };
+  // Руна в гнезде — не отдельная строка сумки, а часть предмета, в котором
+  // сидит. Поэтому собирается по хозяину и приезжает внутри него: карточке
+  // предмета нужны его руны, а инвентарю — ровно то, что игрок может взять
+  // в руки. Один проход, а не второй запрос: обе половины уже здесь.
+  const socketed = new Map();   // id хозяина -> [{ idx, ...руна }]
   for (const r of rows) {
-    if (r.container === 'equipment') out.equipment[r.slot] = _row(r);
-    else out[r.container].push(_row(r));
+    if (r.socket_of == null) continue;
+    const host = Number(r.socket_of);
+    if (!socketed.has(host)) socketed.set(host, []);
+    socketed.get(host).push({ idx: r.socket_idx, ..._row(r) });
+  }
+  for (const r of rows) {
+    if (r.socket_of != null) continue;
+    const row = _row(r);
+    const rs = socketed.get(row.rowId);
+    if (rs) { rs.sort((a, b) => a.idx - b.idx); row.runes = rs; }
+    if (r.container === 'equipment') out.equipment[r.slot] = row;
+    else out[r.container].push(row);
+  }
+  return out;
+}
+
+// Руны, сидящие в предметах этого игрока, по хозяевам. Отдельно от
+// inventoryOf, потому что пересчёту характеристик (repos/stats.js) нужны
+// только они и только у надетого — тащить ради этого всю сумку было бы
+// лишним запросом на каждую смену снаряжения.
+async function socketedRunesOf(db, playerId, hostIds = null) {
+  if (hostIds && !hostIds.length) return new Map();
+  const { rows } = await query(db, `
+    SELECT socket_of, socket_idx, item_id, rune
+      FROM player_items
+     WHERE player_id = $1 AND socket_of IS NOT NULL
+       ${hostIds ? 'AND socket_of = ANY($2::bigint[])' : ''}
+     ORDER BY socket_of, socket_idx`,
+    hostIds ? [playerId, hostIds] : [playerId]);
+  const out = new Map();
+  for (const r of rows) {
+    const host = Number(r.socket_of);
+    if (!out.has(host)) out.set(host, []);
+    out.get(host).push({ itemId: r.item_id, stats: (r.rune && r.rune.stats) || [], idx: r.socket_idx });
   }
   return out;
 }
@@ -120,7 +163,8 @@ async function inventoryOf(db, playerId) {
 async function usedSlots(db, playerId) {
   const { rows } = await query(db,
     `SELECT count(*)::int n FROM player_items
-      WHERE player_id = $1 AND container = 'inventory'`, [playerId]);
+      WHERE player_id = $1 AND container = 'inventory'
+        AND socket_of IS NULL`, [playerId]);
   return rows[0].n;
 }
 
@@ -136,9 +180,11 @@ async function hasRoomFor(db, playerId, itemId) {
     SELECT
       (SELECT stackable FROM item_catalog WHERE item_id = $2) AS stackable,
       EXISTS (SELECT 1 FROM player_items
-               WHERE player_id = $1 AND container = 'inventory' AND item_id = $2) AS has_stack,
+               WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
+                 AND socket_of IS NULL) AS has_stack,
       (SELECT count(*) FROM player_items
-        WHERE player_id = $1 AND container = 'inventory') AS used`,
+        WHERE player_id = $1 AND container = 'inventory'
+          AND socket_of IS NULL) AS used`,
     [playerId, itemId]);
   const r = rows[0];
   if (r.stackable === null) return false;              // not a real item
@@ -158,7 +204,11 @@ async function hasRoomFor(db, playerId, itemId) {
 // That trade only existed because delivery could not be part of the same
 // transaction as the payment. It can be now, so the caller can refuse the
 // whole trade instead and nobody is left over the cap.
-async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, sourceRef = null } = {}) {
+// `rune` — содержимое руны ({ stats: [...] }, см. миграцию 029). Идёт через
+// ЭТУ функцию, а не своим INSERT, по той же причине, что и всё остальное:
+// это единственная вставка предмета в игре, и значит единственное место,
+// которое может записать в журнал, откуда предмет взялся.
+async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, sourceRef = null, rune = null } = {}) {
   const { rows: cat } = await query(db,
     'SELECT stackable, enhanceable FROM item_catalog WHERE item_id = $1 AND active', [itemId]);
   if (!cat.length) throw new Error(`items: unknown or retired item id ${itemId}`);
@@ -171,6 +221,7 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
       UPDATE player_items SET qty = qty + $3
        WHERE id = (SELECT id FROM player_items
                     WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
+                      AND socket_of IS NULL
                     ORDER BY id LIMIT 1)
       RETURNING id`, [playerId, itemId, qty]);
     if (merged.length) {
@@ -198,11 +249,17 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
   let rowId;
   if (await _hasSourceCols(db)) {
     const { rows } = await query(db, `
-      INSERT INTO player_items (player_id, container, item_id, enhance, qty, source, source_ref)
-      VALUES ($1, 'inventory', $2, $3, $4, $5, $6) RETURNING id`,
-      [playerId, itemId, enh, qty, source || null, sourceRef == null ? null : String(sourceRef).slice(0, 80)]);
+      INSERT INTO player_items (player_id, container, item_id, enhance, qty, source, source_ref, rune)
+      VALUES ($1, 'inventory', $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [playerId, itemId, enh, qty, source || null,
+        sourceRef == null ? null : String(sourceRef).slice(0, 80),
+        rune ? JSON.stringify(rune) : null]);
     rowId = Number(rows[0].id);
   } else {
+    // До миграции 011 (колонки провенанса) — а значит и до 029 — содержимому
+    // руны просто негде лежать. Руна, выкованная на такой базе, была бы пустой
+    // оболочкой, поэтому ковка на ней отказывает (см. repos/runes.js), а не
+    // выдаёт вещь без характеристик.
     const { rows } = await query(db, `
       INSERT INTO player_items (player_id, container, item_id, enhance, qty)
       VALUES ($1, 'inventory', $2, $3, $4) RETURNING id`,
@@ -365,6 +422,7 @@ async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnh
     WITH pool AS (
       SELECT id, qty, enhance FROM player_items pi
        WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
+         AND socket_of IS NULL
          AND ($4::int IS NULL OR enhance = $4::int)
          AND ($5::int IS NULL OR enhance >= $5::int)
          AND ($6::bool = false OR NOT EXISTS (
@@ -431,6 +489,7 @@ async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null,
         FROM player_items pi
         JOIN item_catalog c ON c.item_id = pi.item_id
        WHERE pi.player_id = $1 AND pi.container = 'inventory'
+         AND pi.socket_of IS NULL
          AND ($3::text[] IS NULL OR pi.item_id = ANY($3::text[]))
          AND ($4::text   IS NULL OR c.rarity = $4::text)
          AND ($5::bool   IS NULL OR c.stackable = $5::bool)
@@ -522,7 +581,8 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
   const direct = Math.floor(Number(ref.rowId));
   if (Number.isSafeInteger(direct) && direct > 0) {
     const { rows } = await query(db,
-      `SELECT id FROM player_items WHERE id = $1 AND player_id = $2 AND container = $3`,
+      `SELECT id FROM player_items
+        WHERE id = $1 AND player_id = $2 AND container = $3 AND socket_of IS NULL`,
       [direct, playerId, container]);
     if (rows.length) return Number(rows[0].id);
     // Falls THROUGH rather than refusing. A row id can go stale honestly — the
@@ -546,7 +606,8 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
   // different ordering than the one the player actually clicked in.
   const { rows } = await query(db,
     `SELECT id, item_id, enhance FROM player_items
-      WHERE player_id = $1 AND container = $2 ORDER BY sort_seq`, [playerId, container]);
+      WHERE player_id = $1 AND container = $2 AND socket_of IS NULL
+      ORDER BY sort_seq`, [playerId, container]);
   if (!rows.length) return null;
 
   const wantId = typeof ref.id === 'string' && ref.id ? ref.id : null;
@@ -578,6 +639,7 @@ async function countMatching(db, playerId, { itemIds = null, rarity = null, stac
       FROM player_items pi
       JOIN item_catalog c ON c.item_id = pi.item_id
      WHERE pi.player_id = $1 AND pi.container = 'inventory'
+       AND pi.socket_of IS NULL
        AND ($2::text[] IS NULL OR pi.item_id = ANY($2::text[]))
        AND ($3::text   IS NULL OR c.rarity = $3::text)
        AND ($4::bool   IS NULL OR c.stackable = $4::bool)`,
@@ -627,9 +689,46 @@ async function marketRefBlocksDelete(db) {
   return _fkBlocks;
 }
 
+// ── руны в предмете ─────────────────────────────────────────────────────────
+// Схема сносит руны вместе с предметом (ON DELETE CASCADE, миграция 029) —
+// это защита от висящей ссылки, а НЕ способ расстаться с рунами. Поэтому
+// предмет с рунами не продаётся, не разбирается и не выставляется на рынок,
+// пока руны не вынуты: иначе легендарная руна исчезала бы вместе с шлемом,
+// проданным за восемь золотых, и никакого «ой» после этого не бывает.
+//
+// Колонка спрашивается у схемы один раз за процесс — тем же приёмом, что и
+// _hasSourceCols выше: код уезжает на сервер раньше миграции, и запрос про
+// socket_of до неё падал бы на каждой продаже.
+let _socketCols = null;
+async function _hasSocketCols(db) {
+  if (_socketCols !== null) return _socketCols;
+  try {
+    const { rows } = await query(db, `
+      SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'player_items' AND column_name = 'socket_of' LIMIT 1`);
+    _socketCols = rows.length > 0;
+  } catch {
+    _socketCols = false;
+  }
+  return _socketCols;
+}
+
+async function assertNoRunes(db, rowId) {
+  if (!await _hasSocketCols(db)) return;
+  const { rows } = await query(db,
+    'SELECT 1 FROM player_items WHERE socket_of = $1 LIMIT 1', [rowId]);
+  if (rows.length) {
+    throw Object.assign(new Error('has runes'), {
+      code: 'has_runes',
+      userMessage: 'Сначала выньте руны из предмета',
+    });
+  }
+}
+
 // Throws when this row cannot be destroyed because a past trade still names
 // it. Called BEFORE anything is spent — that ordering is the whole point.
 async function assertDestroyable(db, rowId) {
+  await assertNoRunes(db, rowId);
   if (!await marketRefBlocksDelete(db)) return;
   const { rows } = await query(db,
     'SELECT 1 FROM market_listings WHERE item_id = $1 LIMIT 1', [rowId]);
@@ -903,6 +1002,11 @@ async function _bumpToEnd(db, rowId, playerId) {
 // listing would read as an item the seller still owes the ledger, and every
 // seller with something for sale would show as drift.
 async function detachForListing(db, rowId, playerId, { reason = 'market_list', refType = 'listing', refId = null } = {}) {
+  // Предмет с рунами на рынок не уходит. Лот — это строка с player_id = NULL,
+  // а руна в гнезде по-прежнему принадлежит продавцу: вещь уехала бы к
+  // покупателю, а её руны остались бы висеть на чужом аккаунте. Вынуть руны
+  // сперва — единственный порядок, при котором обе половины на месте.
+  await assertNoRunes(db, rowId);
   const { rows } = await query(db, `
     UPDATE player_items SET player_id = NULL, container = NULL, slot = NULL
      WHERE id = $1 AND player_id = $2 AND container = 'inventory'
@@ -1024,7 +1128,7 @@ async function reconcile(db) {
 module.exports = {
   consumeMatching, countMatching, resolveRow,
   syncCatalog, lockPlayer, mergeStacks,
-  inventoryOf, usedSlots, hasRoomFor,
+  inventoryOf, socketedRunesOf, usedSlots, hasRoomFor, assertNoRunes,
   add, removeQty, removeRow, moveTo,
   assertDestroyable, marketRefBlocksDelete,
   detachForListing, attachFromListing,

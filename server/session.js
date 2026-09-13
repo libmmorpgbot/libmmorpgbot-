@@ -60,6 +60,10 @@ const WRITE_ACTIONS = new Set([
   'marketList', 'marketBuy', 'marketCancel',
   'craftGear', 'craftPet', 'craftBuffPotion', 'craftClassGear', 'craftMatUpgrade', 'craftBox', 'craftStone',
   'craftAdvSkillBook', 'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
+  // Руны: ковка тратит Liberty, перебор тратит Liberty, а вставка и
+  // извлечение двигают вещь между сумкой и предметом — на любой из
+  // четырёх игрок потом может спросить «а где моя руна».
+  'craftRune', 'runeReroll', 'runeSocket', 'runeUnsocket',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
   'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',
   'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',

@@ -299,7 +299,7 @@ async function _splitOffForListing(db, playerId, it, want) {
 // One listing, in the shape every other read answers with.
 async function byId(db, listingId) {
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}
+    SELECT ${await listingCols()}${await runeCol()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       LEFT JOIN player_items i ON i.id = l.item_id
@@ -527,6 +527,13 @@ const COLS_HIST = `
   c.name AS item_name, c.rarity, c.slot`;
 const listingCols = async () =>
   (await hasColumn('market_listings', 'snap_item_id')) ? COLS_SNAP : COLS_PLAIN;
+// Содержимое руны. У лота оно обязано ехать вместе с предметом: две руны
+// одной редкости внешне одинаковы, и покупатель без этой колонки не видит, за
+// что платит. NULL до миграции 029 — тот же приём, что и со снимком лота
+// строкой выше: код уезжает раньше миграции, и запрос про несуществующую
+// колонку уронил бы весь рынок.
+const runeCol = async () =>
+  (await hasColumn('player_items', 'rune')) ? ', i.rune' : ', NULL::jsonb AS rune';
 const historyCols = async () =>
   (await hasColumn('market_listings', 'snap_item_id')) ? COLS_HIST : COLS_PLAIN;
 const catalogJoin = async () =>
@@ -546,7 +553,13 @@ function _lot(r) {
     sellerUsername: r.seller_username,
     createdAt: r.created_at,
     status: r.status,
-    item: { id: r.item_id, enhance: r.enhance, qty: r.qty, name: r.item_name, rarity: r.rarity, slot: r.slot },
+    item: {
+      id: r.item_id, enhance: r.enhance, qty: r.qty, name: r.item_name,
+      rarity: r.rarity, slot: r.slot,
+      // Только у рун и только когда есть что показывать: лишний null в каждом
+      // лоте — это лишний байт на каждой строке самого частого запроса игры.
+      ...(r.rune ? { rune: r.rune } : {}),
+    },
   };
 }
 
@@ -583,7 +596,7 @@ async function browse(db, { limit = MARKET_BROWSE_MAX, offset = 0, slot = null }
   const n = Math.floor(Number(limit));
   const take = Number.isSafeInteger(n) && n > 0 ? Math.min(n, MARKET_BROWSE_MAX) : MARKET_BROWSE_MAX;
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}
+    SELECT ${await listingCols()}${await runeCol()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       JOIN player_items i ON i.id = l.item_id
@@ -596,7 +609,7 @@ async function browse(db, { limit = MARKET_BROWSE_MAX, offset = 0, slot = null }
 
 async function mine(db, playerId) {
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}
+    SELECT ${await listingCols()}${await runeCol()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       JOIN player_items i ON i.id = l.item_id
@@ -629,7 +642,7 @@ async function mine(db, playerId) {
 async function history(db, playerId, limit = 30) {
   const me = Number(playerId);
   const { rows } = await query(db, `
-    SELECT ${await historyCols()}, l.buyer_id, l.closed_at,
+    SELECT ${await historyCols()}${await runeCol()}, l.buyer_id, l.closed_at,
            b.username AS buyer_username
       FROM market_listings l
       JOIN players       s ON s.id = l.seller_id

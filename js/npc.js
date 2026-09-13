@@ -191,7 +191,7 @@ function buyTeleportStone(qty) {
 }
 
 // ── Craftsman ───────────────────────────────────────────
-let _craftsmanTab = 'items'; // 'items' | 'mats' | 'consumables'
+let _craftsmanTab = 'items'; // 'items' | 'mats' | 'consumables' | 'runes'
 
 function _matIcon(mat, size) {
   if (!mat) return '?';
@@ -226,6 +226,7 @@ function _craftsmanBody() {
     <button class="craft-tab${_craftsmanTab==='items'?' active':''}" onclick="_setCraftsmanTab('items')">${typeof t === 'function' ? t('craftTabItems') : 'Предметы'}</button>
     <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftTabMats') : 'Материалы'}</button>
     <button class="craft-tab${_craftsmanTab==='consumables'?' active':''}" onclick="_setCraftsmanTab('consumables')">${typeof t === 'function' ? t('craftTabConsumables') : 'Расходники'}</button>
+    <button class="craft-tab${_craftsmanTab==='runes'?' active':''}" onclick="_setCraftsmanTab('runes')">${typeof t === 'function' ? t('craftTabRunes') : 'Руны'}</button>
   </div>`;
 
   let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${Math.floor(p.gold)}</b>
@@ -233,8 +234,72 @@ function _craftsmanBody() {
   html += tabs;
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab()
     : _craftsmanTab === 'consumables' ? _craftsmanConsumablesTab()
+    : _craftsmanTab === 'runes' ? _craftsmanRunesTab()
     : _craftsmanMatsTab();
   return html;
+}
+
+// ── вкладка «Руны» ──────────────────────────────────────────────────────────
+// Десять рецептов: два вида (доспех/оружие) на пять редкостей. Редкость
+// решает ОДНО — сколько характеристик будет у руны; какие именно и какого
+// цвета, решает бросок на сервере, и заранее этого не знает никто.
+//
+// Шанс пишется на кнопке, а не прячется в подсказке: 30% значит, что семь
+// попыток из десяти не дадут ничего, и узнать об этом игрок должен до того,
+// как заплатит, а не после.
+function _craftsmanRunesTab() {
+  const recipes = typeof RUNE_CRAFT_RECIPES !== 'undefined' ? RUNE_CRAFT_RECIPES : [];
+  if (!recipes.length) return '<div class="craft-empty">Рецепты рун недоступны</div>';
+  const bal = window._nexumBalance || 0;
+  let html = '';
+  for (const kind of ['armor', 'weapon']) {
+    const hdr = kind === 'armor' ? 'Руны доспеха' : 'Руны оружия';
+    const color = kind === 'armor' ? '#7fb0d8' : '#d8907f';
+    html += `<div class="craft-group-hdr" style="color:${color}">${hdr}</div><div class="craft-items-grid">`;
+    recipes.filter(r => r.kind === kind).forEach(rec => {
+      const id = runeCatalogId(kind, rec.rarity);
+      const def = itemCatalogBase(id);
+      if (!def) return;
+      const rc = RARITY_COLOR[rec.rarity] || '#aea599';
+      const can = invHasSpace() && bal >= (rec.nexumCost || 0);
+      const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rec.rarity]) || 0;
+      html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="_runeCraftConfirm('${kind}','${rec.rarity}')" style="border-color:${rc}66">
+        <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
+        <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${n} хар. · ${rec.nexumCost} Lib</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  html += `<div class="pet-preview-hint">Шанс успеха ${Math.round((RUNE_CRAFT_CHANCE || 0) * 100)}% — при неудаче вложенное сгорает.
+    Цвет характеристики можно перебрать за ${RUNE_REROLL_PRICE} Liberty в карточке руны.</div>`;
+  return html;
+}
+
+// Платное и с шансом — значит спрашивается. Ровно как покупка камня
+// телепортации: Liberty покупают за настоящие деньги, а здесь она ещё и
+// сгорает в семи попытках из десяти.
+function _runeCraftConfirm(kind, rarity) {
+  const rec = (typeof RUNE_CRAFT_RECIPES !== 'undefined' ? RUNE_CRAFT_RECIPES : [])
+    .find(r => r.kind === kind && r.rarity === rarity);
+  if (!rec || !player) return;
+  if (!invHasSpace()) { _shopMsg('Инвентарь полон'); return; }
+  if ((window._nexumBalance || 0) < rec.nexumCost) {
+    _shopMsg(typeof t === 'function' ? t('npcNotEnoughLiberty') : 'Мало Liberty!');
+    return;
+  }
+  const what = kind === 'armor' ? 'руну доспеха' : 'руну оружия';
+  const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rarity]) || 0;
+  _showConfirmModal(
+    `Выковать ${_RARITY_NAMES[rarity] ? _RARITY_NAMES[rarity].toLowerCase() + ' ' : ''}${what} за ${rec.nexumCost} Liberty?` +
+    `<br><span style="opacity:.75;font-size:11px">Успех ${Math.round(rec.chance * 100)}% · характеристик: ${n}` +
+    `<br>При неудаче Liberty сгорает.</span>`,
+    () => netCraftRune(kind, rarity), 'Ковать');
+}
+
+// Перерисовка вкладки после ответа сервера — баланс и «хватает ли» меняются.
+function _refreshRuneTab() {
+  if (_craftsmanTab === 'runes' && document.getElementById('npc-body')) _setCraftsmanTab('runes');
 }
 
 function _craftsmanItemsTab() {

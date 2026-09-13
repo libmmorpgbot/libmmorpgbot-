@@ -2,6 +2,14 @@
 //  PANEL UIs
 // ─────────────────────────────────────────────────────────
 function _itemIcon(it, size) {
+  // Руна. Картинка зависит от того, ЧТО у неё выпало (у рун доспеха их три на
+  // редкость), поэтому берётся не из каталога, а из содержимого строки —
+  // см. runeIconOf, shared/definitions.js. Без этого все руны одной редкости
+  // выглядели бы одинаково, хотя дают разное.
+  if (it && it.slot === 'rune' && typeof runeIconOf === 'function') {
+    const img = runeIconOf(it.id, (it.rune && it.rune.stats) || []);
+    if (img) return `<img src="${img}" width="${size}" height="${size}" style="image-rendering:pixelated;vertical-align:middle">`;
+  }
   // Skill books: the book glyph framed around that skill's own icon/art, so
   // each one is identifiable at a glance instead of all looking identical.
   if (it && it.skillKey && it.forClass) {
@@ -4706,6 +4714,196 @@ function _itemStatRows(it, eb) {
 
 const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', wings:'Крылья', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
 
+// ─────────────────────────────────────────────────────────
+//  РУНЫ — карточка руны, гнёзда предмета, выбор руны
+// ─────────────────────────────────────────────────────────
+// Руна — единственная вещь, у которой содержимое своё у каждого экземпляра
+// (см. миграцию 029). Поэтому и рисуется она не из каталога, а из того, что
+// приехало в строке: каталог знает только «руна доспеха, эпическая».
+//
+// Проценты берутся из общей таблицы (runeStatPct, shared/definitions.js) —
+// той же, по которой сервер считает бой. Никаких чисел здесь нет намеренно.
+function _runeStatRows(it, opts = {}) {
+  const stats = (it.rune && it.rune.stats) || [];
+  if (!stats.length) return '<div style="opacity:.6">Характеристик нет</div>';
+  return stats.map((st, i) => {
+    const pct = runeStatPct(it.rarity, st.q);
+    const col = RUNE_QUALITY_COLOR[st.q] || '#aea599';
+    const name = RUNE_STAT_NAME[st.stat] || st.stat;
+    // Кнопка перебора — только там, где руну можно трогать: в сумке. У руны,
+    // стоящей в предмете, её нет: перебор изменил бы характеристики надетой
+    // вещи мимо пересчёта, и кнопка обещала бы то, чего не произойдёт.
+    const btn = opts.canReroll
+      ? `<button class="imod-btn imod-enhance-btn" style="padding:3px 8px;font-size:11px;margin-left:auto"
+                 onclick="_runeRerollConfirm(${it.rowId},${i})">${RUNE_REROLL_PRICE} Liberty</button>`
+      : '';
+    return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0">
+      <span style="width:9px;height:9px;border-radius:50%;background:${col};flex:0 0 auto"></span>
+      <span>${name}</span><b style="color:${col}">+${pct}%</b>${btn}
+    </div>`;
+  }).join('');
+}
+
+// Полоска гнёзд под характеристиками предмета. Пустое гнездо — кнопка
+// «вставить», занятое — иконка руны, по которой её можно вынуть.
+function _runeSocketsHtml(it) {
+  const n = typeof runeSocketsOf === 'function' ? runeSocketsOf(it.slot) : 0;
+  if (!n) return '';
+  const inSock = {};
+  ((it.runes) || []).forEach(r => { inSock[r.idx] = r; });
+  const cells = [];
+  for (let i = 0; i < n; i++) {
+    const r = inSock[i];
+    if (r) {
+      const img = runeIconOf(r.id, (r.rune && r.rune.stats) || []);
+      const rc = RARITY_COLOR[(itemCatalogBase(r.id) || {}).rarity] || '#aea599';
+      cells.push(`<div onclick="_runeSocketTap(${it.rowId},${i})" title="Вынуть"
+        style="width:34px;height:34px;border:1px solid ${rc};border-radius:7px;display:flex;
+               align-items:center;justify-content:center;cursor:pointer;background:rgba(0,0,0,.25)">
+        <img src="${img}" width="26" height="26" style="image-rendering:pixelated">
+      </div>`);
+    } else {
+      cells.push(`<div onclick="_runeSocketTap(${it.rowId},${i})" title="Вставить руну"
+        style="width:34px;height:34px;border:1px dashed rgba(203,161,89,.5);border-radius:7px;
+               display:flex;align-items:center;justify-content:center;cursor:pointer;
+               color:rgba(203,161,89,.7);font-size:18px">+</div>`);
+    }
+  }
+  return `<div style="margin-top:8px">
+    <div style="font-size:11px;opacity:.7;margin-bottom:4px">Гнёзда рун</div>
+    <div style="display:flex;gap:6px">${cells.join('')}</div>
+  </div>`;
+}
+
+// Тап по гнезду: занятое — вынуть, пустое — показать подходящие руны из
+// сумки. «Подходящие» решает общая функция (runeKindForSlot): руна доспеха в
+// оружие не лезет, и наоборот.
+function _runeSocketTap(hostRowId, idx) {
+  if (!player) return;
+  const host = _findRowById(hostRowId);
+  if (!host) return;
+  const filled = ((host.runes) || []).find(r => r.idx === idx);
+  if (filled) {
+    _showConfirmModal(`Вынуть руну из гнезда ${idx + 1}?`,
+      () => { netRuneUnsocket(filled.rowId); closeInvItemModal(); }, 'Вынуть');
+    return;
+  }
+  const want = runeKindForSlot(host.slot);
+  const list = (player.inventory || [])
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r && r.slot === 'rune' && runeKindOf(r.id) === want);
+  if (!list.length) {
+    _shopMsgOrToast(want === 'weapon' ? 'Нет рун оружия' : 'Нет рун доспеха');
+    return;
+  }
+  const rows = list.map(({ r }) => {
+    const rc = RARITY_COLOR[r.rarity] || '#aea599';
+    const img = runeIconOf(r.id, (r.rune && r.rune.stats) || []);
+    const stats = ((r.rune && r.rune.stats) || []).map(st =>
+      `<span style="color:${RUNE_QUALITY_COLOR[st.q] || '#aea599'}">${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(r.rarity, st.q)}%</span>`).join(' · ');
+    return `<div class="season-book-row" onclick="_runePick(${hostRowId},${idx},${r.rowId})" style="cursor:pointer">
+      <div style="display:flex;align-items:center;justify-content:center"><img src="${img}" width="24" height="24" style="image-rendering:pixelated"></div>
+      <span class="season-book-name" style="color:${rc}">${r.name}<br><span style="font-size:10px">${stats}</span></span>
+    </div>`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.id = 'rune-pick-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
+    <div class="imod-hdr"><div class="imod-title-block">
+      <div class="imod-name" style="color:#cba159">Выберите руну</div>
+      <div class="imod-sub">гнездо ${idx + 1}</div>
+    </div><button class="npc-close" onclick="document.getElementById('rune-pick-ov').remove()">✕</button></div>
+    <div style="max-height:50vh;overflow:auto">${rows}</div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function _runePick(hostRowId, idx, runeRowId) {
+  const ov = document.getElementById('rune-pick-ov');
+  if (ov) ov.remove();
+  netRuneSocket(hostRowId, runeRowId, idx);
+  closeInvItemModal();
+}
+
+// Строка предмета по её id — и в сумке, и в надетом. Руна живёт в предмете, а
+// открыт может быть любой из двух списков.
+function _findRowById(rowId) {
+  if (!player) return null;
+  const inv = (player.inventory || []).find(i => i && i.rowId === rowId);
+  if (inv) return inv;
+  return Object.values(player.equipment || {}).find(i => i && i.rowId === rowId) || null;
+}
+
+// Перебор цвета стоит Liberty и может сделать ХУЖЕ — поэтому спрашивается,
+// как и покупка камня телепортации.
+function _runeRerollConfirm(rowId, statIdx) {
+  const it = _findRowById(rowId);
+  if (!it) return;
+  const st = ((it.rune && it.rune.stats) || [])[statIdx];
+  if (!st) return;
+  const name = RUNE_STAT_NAME[st.stat] || st.stat;
+  _showConfirmModal(
+    `Перебросить цвет «${name}» за ${RUNE_REROLL_PRICE} Liberty?<br>` +
+    `<span style="opacity:.75;font-size:11px">Цвет бросается заново — может выпасть хуже нынешнего.</span>`,
+    () => netRuneReroll(rowId, statIdx), 'Перебрать');
+}
+
+// Карточка самой руны. Ни надеть, ни заточить её нельзя — руна попадает в
+// предмет через его гнёзда, поэтому кнопок здесь нет вовсе.
+function openRuneModal(it) {
+  if (!it) return;
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
+  const img = runeIconOf(it.id, (it.rune && it.rune.stats) || []);
+  closeInvItemModal();
+  const ov = document.createElement('div');
+  ov.id = 'inv-item-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closeInvItemModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()" style="max-width:340px">
+    <div class="imod-hdr">
+      <span class="imod-big-icon"><img src="${img}" width="46" height="46" style="image-rendering:pixelated"></span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${it.name}</div>
+        <div class="imod-sub"><span style="color:${rc}">${_RARITY_NAMES[it.rarity] || it.rarity}</span> · ${runeKindOf(it.id) === 'weapon' ? 'для оружия' : 'для доспеха'}</div>
+      </div>
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="imod-stats">${_runeStatRows(it, { canReroll: true })}</div>
+    <div style="font-size:11px;opacity:.7;padding:0 4px 4px">
+      Вставляется через гнёзда предмета: откройте вещь и нажмите на гнездо.
+    </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+// Короткое сообщение поверх экрана — там, где панели лавки нет (карточка
+// предмета открыта из инвентаря, а не у торговца).
+function _shopMsgOrToast(msg) {
+  if (typeof _shopMsg === 'function' && document.getElementById('npc-body')) { _shopMsg(msg); return; }
+  if (player && typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, msg, '#f2b46b');
+}
+
+// ── ответы сервера ──────────────────────────────────────────────────────────
+function onRuneCrafted(itemId, stats, delivered) {
+  if (typeof updateInvUI === 'function') updateInvUI();
+  if (!delivered) { _shopMsgOrToast('Ковка не удалась — вложенное сгорело'); return; }
+  const base = itemCatalogBase(itemId) || {};
+  const line = (stats || []).map(st =>
+    `${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(base.rarity, st.q)}%`).join(', ');
+  _shopMsgOrToast(`✓ ${base.name || 'Руна'}: ${line}`);
+  if (typeof _refreshRuneTab === 'function') _refreshRuneTab();
+}
+function onRuneCraftError(msg) { _shopMsgOrToast(msg || 'Ошибка'); }
+function onRuneError(msg) { _shopMsgOrToast(msg || 'Ошибка'); }
+function onRuneRerolled(res) {
+  if (!res) return;
+  const q = res.after;
+  _shopMsgOrToast(`Новый цвет: ${RUNE_QUALITY_NAME[q] || q}`);
+  if (typeof updateInvUI === 'function') updateInvUI();
+}
+
 function openInvItemModal(idx) {
   if (!player) return;
   const it = player.inventory[idx];
@@ -4760,6 +4958,10 @@ function openInvItemModal(idx) {
   const enh   = it.enhance || 0;
   const eb    = _enhBonus(it);
 
+  // Руна открывается своей карточкой: у неё нет ни заточки, ни надевания, а
+  // есть содержимое, которого нет в каталоге.
+  if (it.slot === 'rune') { openRuneModal(it); return; }
+
   // Stats display with enhance bonus highlighted
   const statRows = _itemStatRows(it, eb);
 
@@ -4777,7 +4979,7 @@ function openInvItemModal(idx) {
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
-    <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
+    <div class="imod-stats">${statRows.join('<br>') || '—'}${_runeSocketsHtml(it)}</div>
     <div class="imod-btns">
       <button class="imod-btn imod-equip" onclick="equipFromModal(${idx})">${t('equipBtn')}</button>
       <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('inv',${idx})">${iconHTML('hammer',16,'currentColor')} ${t('enhanceBtnLbl')}</button>
@@ -5130,7 +5332,7 @@ function openEqItemModal(slot) {
       </div>
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
-    <div class="imod-stats">${statRows.join('<br>') || '—'}</div>
+    <div class="imod-stats">${statRows.join('<br>') || '—'}${_runeSocketsHtml(it)}</div>
     <div class="imod-btns">
       <button class="imod-btn imod-equip" style="background:linear-gradient(135deg,#381c1f,#672d34);color:#f28a96" onclick="unequipFromModal('${slot}')">${t('unequipBtn')}</button>
       <button class="imod-btn imod-enhance-btn" onclick="openEnhancePanel('eq','${slot}')">${iconHTML('hammer',16,'currentColor')} ${t('enhanceBtnLbl')}</button>
@@ -7442,7 +7644,16 @@ function _marketRowHtml(l, mode) {
   // falls back to first_name when no @handle is set — arbitrary text, and
   // this string is written straight into innerHTML below. Same reasoning as
   // _escAttr's comment in js/network.js.
-  const sub = mode === 'buy' ? `@${_escHtml(l.sellerUsername || '?')}` : (statStr(it) || '');
+  // Руна в лоте описывается СВОИМ содержимым: имя и редкость у двух эпических
+  // рун доспеха одинаковые, а дают они разное, и без этой строки покупатель
+  // не видит, за что платит. Для остальных вещей строка прежняя.
+  const runeLine = (it.slot === 'rune' && it.rune && it.rune.stats)
+    ? it.rune.stats.map(st =>
+        `<span style="color:${RUNE_QUALITY_COLOR[st.q] || '#aea599'}">` +
+        `${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(it.rarity, st.q)}%</span>`).join(' · ')
+    : '';
+  const sub = runeLine
+    || (mode === 'buy' ? `@${_escHtml(l.sellerUsername || '?')}` : (statStr(it) || ''));
   // Свой лот купить нельзя, и сервер это отказывает (market.js: own_lot). Но
   // до сих пор кнопка выглядела рабочей: игрок жал «Купить», ждал, и получал
   // отказ — на действие, которое ни при каких условиях не могло состояться.
