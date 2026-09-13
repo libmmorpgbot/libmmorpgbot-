@@ -328,7 +328,8 @@ async function main() {
   // returns null at the cap and NOBODY LOOKED. The three together made the cap
   // apply to leaders and to nobody else: burn both of your runs, then only ever
   // JOIN groups other people broadcast, forever. Each Coop boss pays 100
-  // Liberty plus a bless_stone; a teleport stone costs 20.
+  // Liberty plus a bless_stone; a teleport stone costs a few Liberty
+  // (TELEPORT_STONE_PRICE, shared/definitions.js).
   //
   // Driven through real sockets rather than by calling the repo, because the
   // repo was never the broken part — takeAttempt has always refused correctly,
@@ -398,8 +399,9 @@ async function main() {
   // three lines each with no check that the caller was ever in that mode: every
   // one of them called _returnToHub and every one of them sat in the loose
   // 1500-per-5s bucket. So any of the five, sent from any floor in the game, was
-  // the teleport home that useTeleportStone destroys a 20-Liberty item to
-  // perform — and which useTeleportStone refuses outright to a dead player.
+  // the teleport home that useTeleportStone destroys a bought item to perform
+  // (TELEPORT_STONE_PRICE, shared/definitions.js) — and which useTeleportStone
+  // refuses outright to a dead player.
   // deathBattleReturn was the only one of the six that was gated, and its own
   // line says why in as many words: "not a free teleport home".
   //

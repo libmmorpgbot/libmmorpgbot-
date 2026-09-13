@@ -916,8 +916,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // it is the whole fight.
     //
     // It also obsoleted the sanctioned way home. useTeleportStone (below)
-    // burns an item that costs 20 Liberty, refuses when already in the hall,
-    // refuses while dead, and holds the player still for a cast timer.
+    // burns an item bought for Liberty (TELEPORT_STONE_PRICE, shared/
+    // definitions.js), refuses when already in the hall, refuses while dead,
+    // and holds the player still for a cast timer.
     // 'respawn' did the same journey for free, instantly, with a heal on top,
     // and the stone's whole price is the fact that there is no other way.
     //

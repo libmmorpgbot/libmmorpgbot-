@@ -171,7 +171,23 @@ function buyTeleportStone(qty) {
   const n = Math.max(1, Math.floor(qty) || 1);
   const cost = TELEPORT_STONE_PRICE * n;
   if ((window._nexumBalance || 0) < cost) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughLiberty') : 'Мало Liberty!'); return; }
-  netBuyTeleportStone(n);
+  // ── спрашиваем, прежде чем списать ──────────────────────────────────────
+  // Единственная строка лавки, которая тратит Liberty, — а Liberty покупают
+  // за настоящие деньги. Соседние ряды (зелья) стоят золото и списываются по
+  // одному касанию; тот же жест в тесном списке промахом по этой кнопке
+  // снимал валюту без единого вопроса, и вернуть её нечем. Причём с ×max
+  // одно касание могло увести весь баланс сразу.
+  //
+  // Модалка общая (_showConfirmModal, js/clans.js) — она и написана для
+  // «следующей кнопки, которую жалко нажать случайно».
+  const mat = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'teleport_stone') : null;
+  const name = (mat && mat.name) || 'Камень телепортации';
+  const text = typeof tVars === 'function'
+    ? tVars('teleportStoneBuyConfirm', { name, n, cost })
+    : `Купить ${name} ×${n} за ${cost} Liberty?`;
+  const okLbl = typeof t === 'function' ? t('buyBtn') : 'Купить';
+  if (typeof _showConfirmModal !== 'function') { netBuyTeleportStone(n); return; }
+  _showConfirmModal(text, () => netBuyTeleportStone(n), okLbl);
 }
 
 // ── Craftsman ───────────────────────────────────────────

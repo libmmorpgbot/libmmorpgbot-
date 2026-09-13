@@ -1358,7 +1358,7 @@ const FARM_SPECIES = ['zombie_guard', 'zombie_warrior', 'lizardman_guard', 'liza
 // above is gold-only) that recalls the player to the hub from any floor,
 // after a channelled cast (see TELEPORT_CAST_MS) that holds them still —
 // useTeleportStone, server/index.js.
-const TELEPORT_STONE_PRICE = 20; // Liberty (Nexum) per stone
+const TELEPORT_STONE_PRICE = 5;  // Liberty (Nexum) per stone
 const TELEPORT_CAST_MS = 7000;   // channel time before the recall lands
 
 // Advanced-skill book roll (_rollFarmZoneLoot, server/index.js): one flat

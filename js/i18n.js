@@ -1153,6 +1153,9 @@ Object.assign(I18N_UI, {
   teleportStoneNoneMsg: { ru: 'Нет камня телепортации — купите у торговца', en: 'No teleport stone — buy one from the merchant', uk: 'Немає каменя телепортації — купіть у торговця', es: 'Sin piedra de teletransporte — cómprala al mercader', tr: 'Işınlanma taşı yok — tüccardan satın al', pt: 'Sem pedra de teleporte — compre com o mercador' },
   teleportStoneMerchantHdr: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
   teleportStoneMerchantSub: { ru: 'Телепорт в центральный зал (каст 7 сек)', en: 'Teleports to the central hall (7s cast)', uk: 'Телепорт у центральний зал (каст 7 сек)', es: 'Teletransporta al salón central (canalización de 7s)', tr: 'Merkez salona ışınlanma (7sn kanal)', pt: 'Teleporta para o salão central (canalização de 7s)' },
+  // Подтверждение покупки. Liberty — валюта, за которую платят реальными
+  // деньгами, и промах по кнопке в тесном ряду лавки списывал её молча.
+  teleportStoneBuyConfirm: { ru: 'Купить {name} ×{n} за {cost} Liberty?', en: 'Buy {name} ×{n} for {cost} Liberty?', uk: 'Купити {name} ×{n} за {cost} Liberty?', es: '¿Comprar {name} ×{n} por {cost} Liberty?', tr: '{name} ×{n} {cost} Liberty karşılığında alınsın mı?', pt: 'Comprar {name} ×{n} por {cost} Liberty?' },
   npcNotEnoughLiberty: { ru: 'Мало Liberty!', en: 'Not enough Liberty!', uk: 'Мало Liberty!', es: '¡Falta Liberty!', tr: 'Yetersiz Liberty!', pt: 'Liberty insuficiente!' },
   // Map panel's monster reference list, Фарм-зона variant — see
   // updateFloorUI/_farmZoneMonsterListHtml, js/ui.js.

@@ -176,8 +176,9 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
   // every one of them used to be three unguarded lines ending in
   // _returnToHub — a teleport home from anywhere on the map, in the loose
   // 1500-per-5s bucket, while the sanctioned way home (useTeleportStone)
-  // destroys an item worth 20 Liberty and refuses outright if the caller is
-  // dead or already in the hub. deathBattleReturn was the only one of the six
+  // destroys a bought item (TELEPORT_STONE_PRICE, shared/definitions.js) and
+  // refuses outright if the caller is dead or already in the hub.
+  // deathBattleReturn was the only one of the six
   // that was gated, and it says so in as many words: "not a free teleport
   // home".
   //
@@ -791,7 +792,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     // gated on being mid-match)" because _returnToHub only ever re-lands the
     // caller on the hub. That was true and beside the point: re-landing someone
     // on the hub FROM FLOOR 12 is the free teleport home this event was being
-    // used as, and it is what useTeleportStone charges 20 Liberty for. So the
+    // used as, and it is what useTeleportStone charges a bought stone for
+    // (TELEPORT_STONE_PRICE, shared/definitions.js). So the
     // claim has been removed rather than kept as a false comment. "Finished" is
     // not being in _a3.alive — _a3Eliminate deletes the entry before it sends
     // the loser home, and _a3Finish sends the survivors home before clearing
