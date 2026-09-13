@@ -2473,7 +2473,9 @@ function initNpcs() {
 const _CHUNK_T  = 8;                 // tiles per chunk side
 const _CHUNK_PX = _CHUNK_T * TILE;   // 320 world px
 const _CHUNK_G  = 2;                 // gutter so bilinear edges sample real content
-const _CHUNK_MAX = 96;               // cache cap (~38MB worst case, oldest evicted)
+// Не const: на устройстве, которое столько холстов не тянет, потолок
+// опускается — см. _chunkCanvasStarved.
+let _CHUNK_MAX = 96;                 // cache cap (~38MB worst case, oldest evicted)
 const _tileChunks = new Map();       // "cx,cy" -> canvas
 const _chunkTorches = new Map();     // "cx,cy" -> [{x,y}] wall-torch flame anchor points
 
@@ -2482,6 +2484,32 @@ function buildTileCanvas() {
   _chunkTorches.clear();
   if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
   _mmTileCv = null; // minimap floor-tile buffer (js/ui.js) — new dungeon grid
+}
+
+// ── устройство не тянет столько холстов ─────────────────────────────────────
+// Зовётся из _updateTiles (js/pixi-world.js), когда _buildChunk сообщил, что
+// браузер отказал в 2D-контексте. Существующая починка «чёрного мира»
+// (_recoverNoTiles) до этого случая не доходит: она ждёт, когда НИ ОДНОГО
+// чанка не останется, а здесь их построено много — просто новые перестали
+// строиться. Игрок видит дыры в полу там, куда дошёл, и они не зарастают.
+//
+// Освобождаем оба кэша разом — buildTileCanvas умеет ровно это: чистит
+// холсты и через pixiInvalidateChunks уничтожает спрайты вместе с их
+// текстурами. Это возвращает системе десятки мегабайт, и следующий кадр
+// строит заново только то, что видно.
+//
+// И опускаем потолок: вернуться к прежнему на этом устройстве значит упереться
+// в ту же стену через минуту ходьбы. Половина за раз, но не ниже видимого
+// окна с запасом — кэш меньше него означал бы, что чанк выбрасывается раньше,
+// чем игрок успевает на него посмотреть.
+const _CHUNK_MIN_CAP = 24;
+function _chunkCanvasStarved() {
+  const was = _CHUNK_MAX;
+  _CHUNK_MAX = Math.max(_CHUNK_MIN_CAP, Math.floor(_CHUNK_MAX / 2));
+  if (typeof pixiSetChunkSpriteCap === 'function') pixiSetChunkSpriteCap(_CHUNK_MAX);
+  buildTileCanvas();
+  console.warn('[tiles] память под холсты кончилась — кэш сброшен, потолок '
+    + was + ' → ' + _CHUNK_MAX);
 }
 
 // Deterministic per-tile pseudo-random in [0,1) — stable across chunk
@@ -2604,6 +2632,24 @@ function _buildChunk(cx, cy) {
   const cv = document.createElement('canvas');
   cv.width = cv.height = _CHUNK_PX + _CHUNK_G * 2;
   const c = cv.getContext('2d');
+  // ── отказ в контексте — это не «что-то пошло не так», это кончилась память ─
+  // getContext('2d') возвращает null, когда браузер не может выделить буфер
+  // под холст. У iOS есть общий потолок на память ВСЕХ холстов страницы, и
+  // этот кэш — самое крупное, что игра держит: 96 чанков по 324×324×4 байта
+  // это около сорока мегабайт, плюс столько же в текстурах, плюс холсты HUD,
+  // миникарты и растеризованных спрайтов. На старом айфоне потолок ниже, и
+  // упираются в него именно здесь.
+  //
+  // Без этой проверки следующая же строка падала на c.translate, и в отчёт
+  // уходило «null is not an object (evaluating 'i.translate')» — сообщение, по
+  // которому причину не угадать. Теперь падение названо своим именем и
+  // помечено, чтобы вызывающий (_updateTiles, js/pixi-world.js) мог отличить
+  // нехватку памяти от обычной ошибки построения и освободить кэш.
+  if (!c) {
+    const err = new Error('браузер отказал в 2D-контексте — кончилась память под холсты');
+    err.canvasStarved = true;
+    throw err;
+  }
   c.translate(_CHUNK_G - x0, _CHUNK_G - y0);
 
   function isFloor(tx, ty) {

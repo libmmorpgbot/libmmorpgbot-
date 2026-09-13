@@ -107,7 +107,14 @@ function _dmgSpellable(str) {
 // _tileChunks is, oldest evicted first — see the eviction pass at the end of
 // _updateTiles, which skips anything on screen this frame so eviction can
 // never pop a visible chunk.
-const _CHUNK_SPR_MAX = 96;
+// Не const по той же причине, что и _CHUNK_MAX (js/game.js): на устройстве,
+// которому не хватает памяти под холсты, оба потолка опускаются вместе —
+// держать 96 спрайтов поверх урезанного кэша холстов незачем, текстуры под
+// ними живут на той же памяти.
+let _CHUNK_SPR_MAX = 96;
+function pixiSetChunkSpriteCap(n) {
+  _CHUNK_SPR_MAX = Math.max(8, n | 0);
+}
 const _chunkSprCache = new Map(); // "cx,cy" → PIXI.Sprite
 
 // Texture caches
@@ -1123,6 +1130,15 @@ function _updateTiles(camX, camY) {
             // renderer, and the count is what tells it apart from one chunk
             // that failed once at startup and was never tried again.
             _chunkBuildFails++;
+            // Отказ в памяти под холст лечится не повтором, а освобождением:
+            // пока кэш держит свои десятки мегабайт, следующая попытка
+            // упрётся в тот же потолок. Один раз на эпизод — _chunkBuildFailed
+            // ниже уже служит этой же цели для отчёта, и сбрасывается там же,
+            // где он (pixiResetFaults).
+            if (err && err.canvasStarved && !_chunkBuildFailed
+                && typeof _chunkCanvasStarved === 'function') {
+              _chunkCanvasStarved();
+            }
             if (!_chunkBuildFailed) {
               _chunkBuildFailed = true;
               _chunkBuildErr = 'чанк ' + key + ': ' + ((err && err.message) || String(err));
