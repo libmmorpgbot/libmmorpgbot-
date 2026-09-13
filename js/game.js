@@ -3306,7 +3306,26 @@ function _worldBlankWhy() {
   if (!(W > 8) || !(H > 8)) return 'zero-viewport';
   if (canvas.clientWidth < 8 || canvas.clientHeight < 8) return 'zero-canvas';
   if (!pixiAlive()) return 'no-renderer';
-  if (performance.now() - pixiLastRenderTs() > _WD_GRACE_MS) return 'not-rendering';
+  // ── «кадров нет» и «кадров не дают» — разные вещи ─────────────────────────
+  // _pixiLastRender ставится в начале pixiWorldRender, то есть просрочка здесь
+  // означает, что его не ВЫЗЫВАЛИ. Причин ровно две, и лечатся они
+  // противоположно.
+  //
+  // Если цикл кадров при этом идёт (_loopTs свежий) — застрял именно мир, и
+  // пересборка рендерера уместна: это то, ради чего сторож написан.
+  //
+  // А если не идёт — кадров не даёт браузер. На iOS requestAnimationFrame
+  // придушивают у вкладки, которую система считает неактивной, хотя
+  // document.hidden при этом остаётся false: свёрнутый наполовину Mini App,
+  // энергосбережение, долгий жест. pixiWorldRender в такие секунды не мог быть
+  // вызван ПО ПОСТРОЕНИЮ, и «мир пуст» про него — неправда: пересборка
+  // рендерера кадров не вернёт (их выдаёт не он), а отчёт в алерты уходит про
+  // исправное устройство. Отсюда «пустой мир: not-rendering» с айфонов, у
+  // которых и webgl жив, и холст нормального размера.
+  if (performance.now() - pixiLastRenderTs() > _WD_GRACE_MS) {
+    if (performance.now() - _loopTs > _WD_GRACE_MS) return null;
+    return 'not-rendering';
+  }
   // No map means the server never told us about a floor (or told us and the
   // world-map fetch behind it failed). Nothing local can conjure one.
   if (!dungeon || !dungeon.grid) return 'no-map';
@@ -3374,6 +3393,11 @@ function _worldFacts() {
       : '?'),
     'сокет ' + (socket && socket.connected ? 'на связи' : 'НЕТ'),
     'кадр ' + Math.round(performance.now() - pixiLastRenderTs()) + 'мс назад',
+    // Рядом с «кадром» и ради него: два этих числа вместе отвечают на вопрос,
+    // который иначе решается чтением кода — мир не рисуется или его не о чем
+    // просить. Свежий цикл при старом кадре — застрял мир; старые оба —
+    // браузер не даёт кадров (см. _worldBlankWhy).
+    'цикл ' + Math.round(performance.now() - _loopTs) + 'мс назад',
   ].join(' · ');
 }
 
