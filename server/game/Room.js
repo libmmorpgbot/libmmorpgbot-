@@ -3882,7 +3882,15 @@ class Room {
     // надетый начинал отсчёт заново, а не доедал чужой.
     if (!sk) { p._petSkillAt = 0; return; }
     if (p.hp <= 0) return;                       // мёртвый питомца не зовёт
-    if (!p._petSkillAt) { p._petSkillAt = now; return; }
+    if (!p._petSkillAt) {
+      p._petSkillAt = now;
+      // Часы завелись — клиенту сообщается, через сколько ждать первое
+      // применение. Без этого кружок в углу первые тридцать секунд после
+      // входа (и после каждого переподключения) показывал бы пустоту: сам
+      // он фазу знать не может, а следующий раз узнал бы только с выстрелом.
+      this.io.to(p.socketId).emit('petSkillCd', { petId: p.petId, nextIn: PET_SKILL_PERIOD_MS });
+      return;
+    }
     if (now - p._petSkillAt < PET_SKILL_PERIOD_MS) return;
     p._petSkillAt = now;
 

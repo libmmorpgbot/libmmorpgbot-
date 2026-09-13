@@ -1589,6 +1589,7 @@ function _renderUI() {
   if (activeTab === 0) {
     drawActionFan();
     drawSkillButtons();
+    drawPetSkillButton();
     drawPotionButton();
     drawTargetButton();
     drawAttackButton();

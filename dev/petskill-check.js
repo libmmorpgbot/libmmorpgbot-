@@ -216,6 +216,64 @@ console.log('\n  ── карточка предмета ──');
   ok(/socket\.on\('petSkill'/.test(netSrc), 'клиент слушает событие навыка');
 }
 
+// ── кружок отката в углу ───────────────────────────────────────────────────
+// Геометрия берётся из js/input.js как есть — вместе с hud(), потому что
+// уменьшается весь веер целиком и проверять надо посчитанные числа, а не
+// написанные. Угол правого нижнего угла тесный: кружок обязан уместиться в
+// отступы хаба и не налезть ни на атаку, ни на навыки.
+console.log('\n  ── кружок навыка в углу ──');
+{
+  const inputSrc = fs.readFileSync(path.join(ROOT, 'js/input.js'), 'utf8');
+  const head = inputSrc.slice(0, inputSrc.indexOf('function getPvpBtnPos'));
+  ok(head.includes('function getPetBtnPos'), 'геометрия кружка живёт на веере, а не в своих координатах');
+  const HUD_SCALE = 0.87;
+  const hud = (n) => Math.round(n * HUD_SCALE);
+  const mk = new Function('hud', 'hudF', 'W', 'H', 'NAV_H', 'JOY_R', 'HEADER_H',
+    head + '\n return { fanCenter, getPetBtnPos, getAttackBtnPos, getSkillBtnPos, FAN_MX, FAN_MY };');
+  // Три экрана: узкий телефон, обычный и тот, со скриншота владельца.
+  for (const [W, H] of [[360, 640], [430, 932], [900, 1900]]) {
+    const g = mk(hud, (n) => n, W, H, 50, hud(58), hud(100));
+    const c = g.fanCenter(), a = g.getAttackBtnPos(), b = g.getPetBtnPos();
+    const tag = `${W}x${H}`;
+    ok(b.x + b.r <= W, `${tag}: не вылезает за правый край`, `${(b.x + b.r).toFixed(1)} > ${W}`);
+    ok(b.y + b.r <= H - 50, `${tag}: не заезжает под навигацию`, `${(b.y + b.r).toFixed(1)} > ${H - 50}`);
+    ok(b.y > c.y && b.x > c.x, `${tag}: стоит ПОД атакой и правее неё`);
+    const gapAtk = Math.hypot(b.x - c.x, b.y - c.y) - (a.r + b.r);
+    ok(gapAtk >= 0, `${tag}: не налезает на кнопку атаки`, `перекрытие ${(-gapAtk).toFixed(1)}px`);
+    let minSkill = Infinity;
+    for (let i = 0; i < 4; i++) {
+      const sb = g.getSkillBtnPos(i);
+      minSkill = Math.min(minSkill, Math.hypot(b.x - sb.cx, b.y - sb.cy) - (sb.r + b.r));
+    }
+    ok(minSkill > 0, `${tag}: не задевает навыки игрока`, `перекрытие ${(-minSkill).toFixed(1)}px`);
+  }
+
+  // Само рисование: иконка не гасится (иначе её не видно никогда — откат
+  // начинается в ту же секунду, в которую навык сработал), сектор не
+  // накрывает работающий навык, число обведено.
+  const uiSrc2 = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');
+  const fn = uiSrc2.match(/function drawPetSkillButton\(\) \{[\s\S]*?\n\}\n/);
+  ok(!!fn, 'функция отрисовки кружка на месте');
+  if (fn) {
+    const body = fn[0];
+    ok(!/globalAlpha = ready \? 1 : 0\.45/.test(body), 'иконка не гасится на откате');
+    ok(body.includes('if (!ready && !active && period > 0)'), 'работающий навык сектором не затеняется');
+    ok(body.includes('ctx.strokeText(txt, cx, cy)'), 'число обведено — оно лежит на яркой картинке');
+    ok(body.includes('const num = active ? petSkillTimer : left;'),
+      'во время действия показывается остаток БАФА, а не отката');
+    ok(body.includes('player.equipment && player.equipment.pet'),
+      'иконка берётся с надетого питомца, а не с того, чей баф висит');
+  }
+  const gameSrc2 = fs.readFileSync(path.join(ROOT, 'js/game.js'), 'utf8');
+  ok(/drawPetSkillButton\(\);/.test(gameSrc2), 'кружок рисуется в общем проходе HUD');
+  const roomSrc = fs.readFileSync(path.join(ROOT, 'server/game/Room.js'), 'utf8');
+  ok(roomSrc.includes("emit('petSkillCd'"), 'сервер сообщает фазу отсчёта, когда заводит часы');
+  const netSrc2 = fs.readFileSync(path.join(ROOT, 'js/network.js'), 'utf8');
+  ok(/socket\.on\('petSkillCd'/.test(netSrc2), 'клиент её принимает');
+  ok(netSrc2.includes('petSkillNextAt = Date.now() + (typeof PET_SKILL_PERIOD_MS'),
+    'и заводит свои часы от выстрела');
+}
+
 console.log('');
 console.log(fail === 0
   ? `  \x1b[32m${pass} прошло, 0 упало\x1b[0m\n`

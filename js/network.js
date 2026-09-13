@@ -1772,11 +1772,21 @@ function netConnect(onReady) {
     // sec = 0 у разового навыка (лечение Нёрба): держать нечего, значок
     // висит ровно столько, чтобы его успели заметить.
     petSkillTimer = sec > 0 ? sec : (typeof PET_SKILL_FLASH_SEC !== 'undefined' ? PET_SKILL_FLASH_SEC : 3);
+    // Следующее применение — ровно период спустя: сервер отсчитывает его от
+    // этого же мгновения (Room._petSkillTick ставит часы в момент выстрела).
+    petSkillNextAt = Date.now() + (typeof PET_SKILL_PERIOD_MS !== 'undefined' ? PET_SKILL_PERIOD_MS : 30000);
     if (typeof recompute === 'function') recompute();
     // Цифру лечения рисует 'skillHealTick' — здесь только имя навыка, иначе
     // над головой встали бы две надписи об одном и том же.
     if (!(healed > 0)) dmgNum(player.x, player.y - 44, '✦ ' + sk.name, sk.color);
     spawnBurst(player.x, player.y, sk.color, 6);
+  });
+
+  // Фаза отсчёта при входе, переподключении и надевании питомца — сам клиент
+  // её знать не может (часы ведёт комната), а кружок в углу без неё пуст.
+  socket.on('petSkillCd', ({ nextIn } = {}) => {
+    if (!(nextIn > 0)) { petSkillNextAt = 0; return; }
+    petSkillNextAt = Date.now() + nextIn;
   });
 
   socket.on('faithShieldBuff', ({ duration }) => {
