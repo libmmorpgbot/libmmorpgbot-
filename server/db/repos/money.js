@@ -32,7 +32,7 @@
 //   3. A spend that returns null is not an error to log and swallow. It means
 //      the player could not afford it, and the caller must tell them.
 
-const { query } = require('../index');
+const { query, queryWithTimeout, RECONCILE_STATEMENT_TIMEOUT_MS } = require('../index');
 
 // ── Idempotency ─────────────────────────────────────────────────────────────
 // idemKey is a UNIQUE column on `ledger`, and it is what makes a retried
@@ -213,7 +213,7 @@ async function history(db, playerId, currency, limit = 30) {
 // Meant to run nightly. It is a full aggregate over the ledger, so it is not
 // something to call from a request path.
 async function reconcile(db) {
-  const { rows } = await query(db, `
+  const { rows } = await queryWithTimeout(db, RECONCILE_STATEMENT_TIMEOUT_MS, `
     SELECT b.player_id, b.currency,
            b.amount                    AS balance,
            COALESCE(SUM(l.delta), 0)   AS ledger_total,
