@@ -105,6 +105,17 @@ const STATEMENT_TIMEOUT_MS = Number(process.env.PG_STATEMENT_TIMEOUT_MS || 5000)
 // rows until the connection died. This is the backstop under `tx()` below.
 const IDLE_TX_TIMEOUT_MS = Number(process.env.PG_IDLE_TX_TIMEOUT_MS || 10000);
 
+// The reconcile() aggregates (money and items) are the one deliberate
+// exception to the 5s rule above: full scans over `balances`/`ledger` and
+// `player_items`/`item_ledger`, meant to run nightly off the request path,
+// and the tables they scan only grow. Held to the same connection-level
+// timeout as a single-row lookup, they were bound to start losing that race
+// as the ledger grew — which is exactly what "canceling statement due to
+// statement timeout" from reconcile() means. This is their own, longer
+// budget, applied per-query via queryWithTimeout() rather than raised for
+// every connection in the pool.
+const RECONCILE_STATEMENT_TIMEOUT_MS = Number(process.env.PG_RECONCILE_TIMEOUT_MS || 60_000);
+
 // Log any query slower than this. Not an error — a signal. The whole class of
 // "иногда тупит" report is unanswerable without knowing whether the database
 // was involved, and this is the cheapest way to have that answer already
@@ -186,6 +197,40 @@ async function query(db, text, params) {
     if (ms >= SLOW_QUERY_MS) {
       // First line only — a full multi-line query in the log is unreadable and
       // the first line is enough to identify it.
+      console.warn(`[db] slow query ${ms.toFixed(0)}ms: ${String(text).trim().split('\n')[0]}`);
+    }
+  }
+}
+
+// ── queryWithTimeout ───────────────────────────────────────────────────────
+// query(), but for the handful of statements that are meant to run longer
+// than the pool's connection-level statement_timeout — currently just the
+// two reconcile() aggregates. `options` sets statement_timeout once at
+// connection handshake, and every connection in the pool shares that same
+// setting, so there is no per-query override on `db || pool()` directly:
+// raising it there would raise it for every OTHER query that happens to land
+// on the same pooled connection afterwards, including the single-row
+// lookups the tight default exists to protect.
+//
+// Scoped instead with SET LOCAL inside a short READ ONLY transaction: LOCAL
+// makes the relaxed timeout expire at COMMIT/ROLLBACK, so it can never leak
+// onto that connection's next, unrelated query once it goes back to the
+// pool. Only used standalone (db is falsy) — a caller already inside its own
+// transaction keeps that transaction's timeout, on the same connection it is
+// already holding.
+async function queryWithTimeout(db, timeoutMs, text, params) {
+  if (db) return query(db, text, params);
+  const client = await pool().connect();
+  const started = process.hrtime.bigint();
+  try {
+    await client.query('BEGIN READ ONLY');
+    await client.query(`SET LOCAL statement_timeout = ${Number(timeoutMs)}`);
+    return await client.query(text, params);
+  } finally {
+    try { await client.query('ROLLBACK'); } catch { /* connection is gone */ }
+    client.release();
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    if (ms >= SLOW_QUERY_MS) {
       console.warn(`[db] slow query ${ms.toFixed(0)}ms: ${String(text).trim().split('\n')[0]}`);
     }
   }
@@ -310,4 +355,7 @@ async function hasColumn(table, column) {
 }
 function _forgetSchemaCache() { _cols.clear(); }
 
-module.exports = { pool, query, tx, txRetry, stats, close, POOL_MAX, hasColumn, _forgetSchemaCache };
+module.exports = {
+  pool, query, queryWithTimeout, tx, txRetry, stats, close, POOL_MAX, hasColumn,
+  _forgetSchemaCache, RECONCILE_STATEMENT_TIMEOUT_MS,
+};
