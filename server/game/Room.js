@@ -7,7 +7,8 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, skillDefIgnoreOf, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
-        SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT } = require('../../shared/definitions');
+        SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT,
+        petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
@@ -1952,6 +1953,10 @@ class Room {
     armPresent.clear();
     const gw = this._dungeon.guildWar;
     this.players.forEach(p => {
+      // Раньше регенерации намеренно: лечение Нёрба помечает _hpDirty, а
+      // отправляет полосу здоровья именно _regenTick — в обратном порядке
+      // синхронизация уехала бы тиком позже.
+      this._petSkillTick(p, now);
       this._regenTick(p, dt, now);
       const nowIn = this._inSafeZone(p.x, p.y);
       if (nowIn && !p._wasInSafeZone) (entered || (entered = new Set())).add(p.socketId);
@@ -3447,6 +3452,10 @@ class Room {
     const id = petId || null;
     if (p.petId === id) return false;
     p.petId = id;
+    // Баф снятого питомца уходит вместе с ним. Иначе десять секунд после
+    // снятия игрок держал бы прибавку от того, кого на нём уже нет — а
+    // снять и надеть можно в любой момент.
+    p._petBuffUntil = 0;
     return true;
   }
 
@@ -3851,6 +3860,71 @@ class Room {
     attacker._hpDirty = true;
   }
 
+  // ── навыки эпических питомцев ──────────────────────────────────────────────
+  // Единственный навык в игре, который никто не нажимает: питомец применяет
+  // его сам раз в PET_SKILL_PERIOD_MS. Поэтому и живёт он здесь, в тике
+  // комнаты, а не в обработчике — нажатия, которое можно было бы проверить,
+  // просто нет.
+  //
+  // Окно у него СВОЁ (_petBuff*), а не общее с навыками игрока (_buff*), и
+  // это не дублирование: общее окно одно на игрока и перезаписывается
+  // целиком (см. setSkillWindow). Питомец, срабатывающий каждые тридцать
+  // секунд, затирал бы им чужой баф — игрок нажал «Щит», а через мгновение
+  // от щита осталась запись питомца. Два окна складываются, как и должны
+  // складываться два разных источника.
+  //
+  // Часы отсчитываются от ПОЯВЛЕНИЯ записи, а не от нуля: иначе первый же
+  // тик после входа в комнату выдал бы навык сразу, и дверь туда-обратно
+  // стала бы способом применять его без ожидания.
+  _petSkillTick(p, now) {
+    const sk = petSkillOf(p.petId);
+    // Питомца нет или он не эпический — часы сбрасываются, чтобы следующий
+    // надетый начинал отсчёт заново, а не доедал чужой.
+    if (!sk) { p._petSkillAt = 0; return; }
+    if (p.hp <= 0) return;                       // мёртвый питомца не зовёт
+    if (!p._petSkillAt) { p._petSkillAt = now; return; }
+    if (now - p._petSkillAt < PET_SKILL_PERIOD_MS) return;
+    p._petSkillAt = now;
+
+    // Разовое лечение (Нёрб). Доля от максимума С УЧЁТОМ бафов — _maxHpOf, а
+    // не p.maxHp: под «Пульсом» потолок выше, и лечение процентом должно
+    // считаться от того же числа, к которому потом прижимается.
+    let healed = 0;
+    if (sk.healPct) {
+      const cap = this._maxHpOf(p);
+      if (p.hp < cap) {
+        const before = p.hp;
+        p.hp = Math.min(cap, p.hp + Math.max(1, Math.round(cap * sk.healPct)));
+        healed = Math.round(p.hp - before);
+        // Полосу отправит _regenTick следующей же строкой цикла — своего
+        // пакета на здоровье здесь нет по той же причине, что и у
+        // вампиризма (см. _vampGain).
+        p._hpDirty = true;
+        this.io.to(p.socketId).emit('skillHealTick', { amount: healed, kind: 'pet' });
+      }
+    }
+
+    // Боевое окно (Грут, Вилорд). Пустое у лечащего навыка — открывать окно
+    // с единичными множителями значило бы рисовать баф там, где его нет.
+    const buffs = !!(sk.atk || sk.def || sk.critPower || sk.haste);
+    if (buffs) {
+      p._petBuffUntil = now + PET_SKILL_DUR_MS;
+      p._petBuffAtk = sk.atk || 1;
+      p._petBuffDef = sk.def || 1;
+      p._petBuffCritPower = sk.critPower || 0;
+      p._petBuffHaste = sk.haste || 1;
+    }
+
+    // Клиенту — чтобы значок встал среди бафов и панель показала те же
+    // числа, по которым уже считается бой. sec = 0 у разового навыка: клиент
+    // по нему и понимает, что держать нечего.
+    this.io.to(p.socketId).emit('petSkill', {
+      petId: p.petId,
+      sec: buffs ? PET_SKILL_DUR_MS / 1000 : 0,
+      healed,
+    });
+  }
+
   // Окно вампиризма, «Бабочек» и ускорения. Ставится из обработчика навыка
   // ПОСЛЕ того, как сервер проверил класс, изученность и уровень — здесь
   // только запись.
@@ -3911,8 +3985,16 @@ class Room {
       buffAtk: p._buffAtk || 1, buffDef: p._buffDef || 1,
       buffCritChance: p._buffCritChance || 0, buffCritPower: p._buffCritPower || 0,
       buffHp: p._buffHp || 1,
+      // Питомец переносит ДВЕ вещи: своё окно и свои часы. Без вторых дверь
+      // стала бы сбросом отсчёта — а этажи здесь переходят постоянно, и
+      // навык «раз в тридцать секунд» у ходока не срабатывал бы вовсе.
+      petBuffUntil: live(p._petBuffUntil || 0),
+      petBuffAtk: p._petBuffAtk || 1, petBuffDef: p._petBuffDef || 1,
+      petBuffCritPower: p._petBuffCritPower || 0, petBuffHaste: p._petBuffHaste || 1,
+      petSkillAt: p._petSkillAt || 0,
     };
-    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.regenHotUntil || w.buffUntil) ? w : null;
+    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.regenHotUntil || w.buffUntil ||
+            w.petBuffUntil || w.petSkillAt) ? w : null;
   }
 
   restoreSkillWindows(socketId, w) {
@@ -3933,6 +4015,12 @@ class Room {
       p._buffCritChance = w.buffCritChance; p._buffCritPower = w.buffCritPower;
       p._buffHp = w.buffHp;
     }
+    if (w.petBuffUntil) {
+      p._petBuffUntil = w.petBuffUntil;
+      p._petBuffAtk = w.petBuffAtk; p._petBuffDef = w.petBuffDef;
+      p._petBuffCritPower = w.petBuffCritPower; p._petBuffHaste = w.petBuffHaste;
+    }
+    if (w.petSkillAt) p._petSkillAt = w.petSkillAt;
   }
 
   // ── атака и защита С УЧЁТОМ бафов ─────────────────────────────────────────
@@ -3950,8 +4038,20 @@ class Room {
   // присылает только клавишу. Множители — из общей таблицы (SKILL_BUFFS), той
   // же, по которой рисует клиент, так что разойтись им негде.
   _buffOn(p) { return !!(p && p._buffUntil > Date.now()); }
-  _atkOf(p) { return this._buffOn(p) ? (p.atk || 0) * p._buffAtk : (p.atk || 0); }
-  _defOf(p) { return this._buffOn(p) ? (p.def || 0) * p._buffDef : (p.def || 0); }
+  // Окно питомца — отдельное от навычного (см. _petSkillTick), поэтому и
+  // читается отдельно, и МНОЖИТСЯ поверх: это два разных источника, а не две
+  // записи одного.
+  _petBuffOn(p) { return !!(p && p._petBuffUntil > Date.now()); }
+  _atkOf(p) {
+    let a = this._buffOn(p) ? (p.atk || 0) * p._buffAtk : (p.atk || 0);
+    if (this._petBuffOn(p)) a *= (p._petBuffAtk || 1);
+    return a;
+  }
+  _defOf(p) {
+    let d = this._buffOn(p) ? (p.def || 0) * p._buffDef : (p.def || 0);
+    if (this._petBuffOn(p)) d *= (p._petBuffDef || 1);
+    return d;
+  }
   // «Пульс» (Rune Fighter R adv) — the one skill buffing maxHP. p.maxHp
   // itself is never touched: it's rebuilt wholesale by setPlayerStats on
   // every level-up/gear-change/floor-transition (repos/stats.js), the same
@@ -3968,8 +4068,10 @@ class Room {
     return Math.min(0.80, this._buffOn(p) ? c + p._buffCritChance : c);
   }
   _critPowerOf(p) {
-    const c = (p && p.critPower) || 1.5;
-    return this._buffOn(p) ? c + p._buffCritPower : c;
+    let c = (p && p.critPower) || 1.5;
+    if (this._buffOn(p)) c += p._buffCritPower;
+    if (this._petBuffOn(p)) c += (p._petBuffCritPower || 0);
+    return c;
   }
 
   // Ударов в секунду, на которые этот игрок имеет право. Считает сервер, из
@@ -3979,7 +4081,12 @@ class Room {
   _attackRate(p) {
     let as = Number(p && p.atkSpeed);
     if (!Number.isFinite(as) || as <= 0) as = ATTACK_RATE_FALLBACK;
-    if (p._hasteUntil > Date.now() && p._hasteMult > 1) as *= p._hasteMult;
+    const now = Date.now();
+    if (p._hasteUntil > now && p._hasteMult > 1) as *= p._hasteMult;
+    // Ускорение питомца (Вилорд) — своим окном и своим множителем, поверх
+    // навычного: два источника ускорения складываются, как и два источника
+    // атаки выше.
+    if (p._petBuffUntil > now && p._petBuffHaste > 1) as *= p._petBuffHaste;
     return as;
   }
 

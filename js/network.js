@@ -1756,6 +1756,29 @@ function netConnect(onReady) {
       kind === 'vampirism' ? '#e0708a' : '#c9a0ff');
   });
 
+  // ── навык питомца ─────────────────────────────────────────────────────────
+  // Приходит сам, без нажатия: питомца тикает комната (Room._petSkillTick), и
+  // она же решает, когда навык срабатывает. Клиенту остаётся показать —
+  // значок среди бафов, всплывающее имя и те же множители в панели.
+  //
+  // Длительность берётся ИЗ ПАКЕТА, а не из PET_SKILLS: сервер уже знает,
+  // сколько держит окно, и два независимых представления о длительности —
+  // это ровно та трещина, через которую значок переживает баф.
+  socket.on('petSkill', ({ petId, sec, healed } = {}) => {
+    if (!player) return;
+    const sk = typeof petSkillOf === 'function' ? petSkillOf(petId) : null;
+    if (!sk) return;
+    petSkillId = petId;
+    // sec = 0 у разового навыка (лечение Нёрба): держать нечего, значок
+    // висит ровно столько, чтобы его успели заметить.
+    petSkillTimer = sec > 0 ? sec : (typeof PET_SKILL_FLASH_SEC !== 'undefined' ? PET_SKILL_FLASH_SEC : 3);
+    if (typeof recompute === 'function') recompute();
+    // Цифру лечения рисует 'skillHealTick' — здесь только имя навыка, иначе
+    // над головой встали бы две надписи об одном и том же.
+    if (!(healed > 0)) dmgNum(player.x, player.y - 44, '✦ ' + sk.name, sk.color);
+    spawnBurst(player.x, player.y, sk.color, 6);
+  });
+
   socket.on('faithShieldBuff', ({ duration }) => {
     if (!player) return;
     faithShieldTimer = duration;

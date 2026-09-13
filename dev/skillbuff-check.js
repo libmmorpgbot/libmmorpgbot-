@@ -30,7 +30,10 @@ const eq = (a, b, n) => ok(a === b, n, `ожидал ${JSON.stringify(b)}, по�
 const Room = require(path.join(ROOT, 'server/game/Room.js'));
 const R = (Room.Room || Room).prototype;
 const room = {
-  _buffOn: R._buffOn, _atkOf: R._atkOf, _defOf: R._defOf,
+  // _petBuffOn — окно навыка питомца (dev/petskill-check.js): _atkOf/_defOf/
+  // _critPowerOf читают оба окна, и заглушка без него роняет проверку на
+  // ровном месте, хотя проверяет она совсем другое.
+  _buffOn: R._buffOn, _petBuffOn: R._petBuffOn, _atkOf: R._atkOf, _defOf: R._defOf,
   _critChanceOf: R._critChanceOf, _critPowerOf: R._critPowerOf,
   players: new Map(),
 };

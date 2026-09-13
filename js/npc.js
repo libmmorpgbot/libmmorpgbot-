@@ -872,13 +872,12 @@ function openPetStatsModal(petId) {
   if (!p) return;
   const rc = RARITY_COLOR[p.rarity] || '#aea599';
 
-  const statRows = [];
-  if (p.atk) statRows.push(`ATK <b>+${p.atk}</b>`);
-  if (p.def) statRows.push(`DEF <b>+${p.def}</b>`);
-  if (p.hp)  statRows.push(`HP <b>+${p.hp}</b>`);
-  if (p.critChance) statRows.push(`${t('statCritInline')} <b>${(p.critChance * 100).toFixed(0)}%</b>`);
-  if (p.atkSpeed)   statRows.push(`${t('statSpeedInline')} <b>${(p.atkSpeed * 100).toFixed(0)}%</b>`);
-  if (p.hpPct)      statRows.push(`HP% <b>+${(p.hpPct * 100).toFixed(0)}%</b>`);
+  // Через общую _itemStatRows (js/ui.js), а не своим списком. Свой список
+  // здесь знал пять полей из десяти: бонус к опыту эпических питомцев не
+  // показывался вовсе, а навык — то, ради чего эту карточку и открывают
+  // перед покупкой, — не показался бы тоже. Одна функция на все карточки
+  // предметов именно для этого и заведена.
+  const statRows = typeof _itemStatRows === 'function' ? _itemStatRows(p) : [];
 
   closePetStatsModal();
   const ov = document.createElement('div');

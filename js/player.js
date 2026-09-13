@@ -324,6 +324,17 @@ function recompute() {
   // than atk/def/crit. Same active-skill-buff treatment as the others here:
   // rebuilt from the timer every recompute() rather than mutated at cast time.
   if (typeof pulseTimer !== 'undefined' && pulseTimer > 0) h = Math.floor(h * 1.30);
+  // ── навык питомца ───────────────────────────────────────────────────────
+  // Считается здесь ровно потому же, почему и навыки игрока: панель обязана
+  // показывать те числа, по которым УЖЕ считает бой сервер (Room._atkOf/
+  // _defOf/_critPowerOf/_attackRate). Множители берутся из общей таблицы
+  // PET_SKILLS, а не повторяются здесь числами.
+  const _petSk = (typeof petSkillTimer !== 'undefined' && petSkillTimer > 0 &&
+                  typeof petSkillOf === 'function') ? petSkillOf(petSkillId) : null;
+  if (_petSk) {
+    if (_petSk.atk) a = Math.floor(a * _petSk.atk);
+    if (_petSk.def) d = Math.floor(d * _petSk.def);
+  }
 
   player.atk = a; player.def = d; player.maxHp = h;
   if (player.hp > player.maxHp) player.hp = player.maxHp;
@@ -340,6 +351,8 @@ function recompute() {
     if (player.type === 'warlock') _asMult = 2;
     player.atkSpeed *= _asMult;
   }
+  // Ускорение от навыка питомца (Вилорд) — множителем, как и навычное выше.
+  if (_petSk && _petSk.haste > 1) player.atkSpeed *= _petSk.haste;
   const _critChanceBuff = (typeof critChanceBuffTimer !== 'undefined' && critChanceBuffTimer > 0) ? 0.05 : 0; // "Баф Крит" (adv ranger E)
   const _critDmgBuff    = (typeof critDmgBuffTimer    !== 'undefined' && critDmgBuffTimer    > 0) ? 0.05 : 0; // "Жадность" (adv DK W)
   // "Пронзание" / "Убийца" (assassin E base/adv) — +50% crit chance either
@@ -349,7 +362,8 @@ function recompute() {
   const _killerCritChance = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
   const _killerCritPower  = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
   player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff + _pierceCritChance + _killerCritChance);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower;
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower
+    + ((_petSk && _petSk.critPower) || 0);
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
   player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;

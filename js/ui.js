@@ -3608,6 +3608,15 @@ function drawBuffStrip() {
     if (b.t > 0) chips.push({ kind:'icon', icon: b.icon, label: Math.ceil(b.t) + t('secAbbrev'), color: b.color });
   }
 
+  // Навык питомца. Своя картинка, а не вектор из drawIconCtx: иконку рисовал
+  // художник под конкретного питомца, и подменять её общим значком значило бы
+  // показывать не тот навык. kind:'img' — квадратная отрисовка (у 'pot'
+  // пропорции склянки, 16x13, и квадратная иконка в них плющится).
+  if (typeof petSkillTimer !== 'undefined' && petSkillTimer > 0 && typeof petSkillOf === 'function') {
+    const _psk = petSkillOf(typeof petSkillId !== 'undefined' ? petSkillId : null);
+    if (_psk) chips.push({ kind:'img', img: _psk.img, label: Math.ceil(petSkillTimer) + t('secAbbrev'), color: _psk.color });
+  }
+
   // Debuffs
   if ((p.slowTimer   || 0) > 0) chips.push({ kind:'icon', icon:'wind',      label: Math.ceil(p.slowTimer)   + t('secAbbrev'), color:'#efc680', debuff:true });
   if ((p.stunTimer   || 0) > 0) chips.push({ kind:'icon', icon:'holyLight', label: Math.ceil(p.stunTimer)   + t('secAbbrev'), color:'#ebad4e', debuff:true });
@@ -3661,10 +3670,13 @@ function drawBuffStrip() {
 
     // Icon (upper portion of cell)
     const iconCX = cx + SZ / 2, iconCY = cy + SZ / 2 - 3;
-    if (chip.kind === 'pot' && chip.img) {
+    if ((chip.kind === 'pot' || chip.kind === 'img') && chip.img) {
       const img = _getPotImg(chip.img);
-      if (img && img.complete && img.naturalWidth > 0)
-        ctx.drawImage(img, cx + 3, cy + 2, 16, 13);
+      if (img && img.complete && img.naturalWidth > 0) {
+        // Склянка рисуется своими пропорциями, квадратная иконка — своими.
+        if (chip.kind === 'img') ctx.drawImage(img, cx + 3, cy + 1, SZ - 6, SZ - 6);
+        else ctx.drawImage(img, cx + 3, cy + 2, 16, 13);
+      }
     } else {
       drawIconCtx(ctx, chip.icon, iconCX, iconCY, hud(11), chip.color);
     }
@@ -4593,6 +4605,17 @@ function _itemStatRows(it, eb) {
   if (it.critPower)  rows.push(`Сила крита <b>+${pct(it.critPower)}%</b>`);
   if (it.xpPct)      rows.push(`Опыт <b>+${pct(it.xpPct)}%</b>`);
   if (it.dropPct)    rows.push(`Шанс дропа <b>+${pct(it.dropPct)}%</b>`);
+  // Навык питомца — последней строкой и с картинкой: он не прибавка к
+  // характеристике, а отдельное действие, и читается как отдельная строка.
+  // Текст берётся из PET_SKILLS (shared/definitions.js) — там же, откуда его
+  // берёт сервер, поэтому описание не может разойтись с тем, что навык
+  // действительно делает.
+  const psk = typeof petSkillOf === 'function' ? petSkillOf(it.id) : null;
+  if (psk) {
+    rows.push(`<span style="display:inline-flex;align-items:center;gap:5px">` +
+      `<img src="${psk.img}" alt="" style="width:18px;height:18px;image-rendering:pixelated;vertical-align:middle">` +
+      `<b style="color:${psk.color}">${psk.name}</b></span> — ${psk.desc}`);
+  }
   return rows;
 }
 

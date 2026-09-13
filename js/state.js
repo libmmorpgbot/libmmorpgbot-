@@ -153,6 +153,16 @@ let pierceTimer = 0;         // Assassin E base "Пронзание" — +50% cr
 let killerTimer = 0;         // Assassin E adv "Убийца" — +50% crit chance + 50% crit power, 5s
 let sprintTimer = 0;         // Assassin R base "Бегство" — ×2 run speed, 5s
 
+// ── навык питомца ───────────────────────────────────────────────────────────
+// Его никто не нажимает: питомец применяет навык сам раз в 30 секунд, а
+// сервер присылает 'petSkill' (см. Room._petSkillTick). Таймер здесь нужен
+// ровно для двух вещей — значок среди бафов и та же прибавка в панели, по
+// которой сервер уже считает бой. petSkillId помнит, ЧЕЙ это навык: иконка и
+// множители берутся из PET_SKILLS по нему, а не угадываются по надетому
+// питомцу (его можно снять, пока баф ещё идёт).
+let petSkillTimer = 0;
+let petSkillId = null;
+
 // Target & PK mode
 let targetId = null;
 let targetIsPlayer = false;

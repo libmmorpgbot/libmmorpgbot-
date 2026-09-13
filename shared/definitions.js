@@ -1216,13 +1216,16 @@ const ITEM_DEF = [
   { id:'pet_cyclops', name:'Циклоп',   slot:'pet', img:'/images/pet/pet_cyclops/icon.png', hp:550, atk:45, def:35, hpPct:0.40,      rarity:'rare'     },
   { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:550, atk:45, def:35, atkSpeed:0.25,   rarity:'rare'     },
   // ── эпические ───────────────────────────────────────────────────────────
-  // Одинаковая основа (100/100/1200 и +10% опыта) и по одному собственному
-  // бонусу на каждого — тот же принцип, что у трёх предыдущих ярусов, только
-  // бонус крупнее. atkPct у Вилорда МНОЖИТ атаку, а не прибавляет к ней:
-  // «Атака 30%» из задания.
-  { id:'pet_groot',   name:'Грут',     slot:'pet', img:'/images/pet/pet_groot/icon.png',   hp:1200, atk:100, def:100, xpPct:0.10, critPower:0.30, rarity:'epic' },
-  { id:'pet_nerb',    name:'Нёрб',     slot:'pet', img:'/images/pet/pet_nerb/icon.png',    hp:1200, atk:100, def:100, xpPct:0.10, atkSpeed:0.30,  rarity:'epic' },
-  { id:'pet_vilord',  name:'Вилорд',   slot:'pet', img:'/images/pet/pet_vilord/icon.png',  hp:1200, atk:100, def:100, xpPct:0.10, atkPct:0.30,    rarity:'epic' },
+  // Одинаковая основа (100/100/1200 и +10% опыта) и по НАВЫКУ на каждого
+  // вместо постоянной прибавки, которая была здесь раньше (у Грута — сила
+  // крита, у Нёрба — скорость атаки, у Вилорда — процент атаки). Навык сам
+  // срабатывает раз в PET_SKILL_PERIOD_MS; что именно он делает, описано в
+  // PET_SKILLS ниже, а тикает его комната (_petSkillTick, server/game/
+  // Room.js). Полей бонуса здесь больше нет намеренно: постоянная прибавка и
+  // навык складывались бы в двойную выплату за одно и то же.
+  { id:'pet_groot',   name:'Грут',     slot:'pet', img:'/images/pet/pet_groot/icon.png',   hp:1200, atk:100, def:100, xpPct:0.10, rarity:'epic' },
+  { id:'pet_nerb',    name:'Нёрб',     slot:'pet', img:'/images/pet/pet_nerb/icon.png',    hp:1200, atk:100, def:100, xpPct:0.10, rarity:'epic' },
+  { id:'pet_vilord',  name:'Вилорд',   slot:'pet', img:'/images/pet/pet_vilord/icon.png',  hp:1200, atk:100, def:100, xpPct:0.10, rarity:'epic' },
 
   // ── Крылья ──────────────────────────────────────────────────────────────
   // Новый слот, одиннадцатый. Единственный, где растёт СКОРОСТЬ БЕГА, и
@@ -1815,6 +1818,53 @@ const PET_CRAFT_RECIPES = [
   { rarity:'rare',     nexumCost:5000, chance:1.0 },
   { rarity:'epic',     nexumCost:30000, chance:1.0 },
 ];
+
+// ── Навыки эпических питомцев ───────────────────────────────────────────────
+// У трёх эпических питомцев вместо постоянной прибавки — навык, который они
+// применяют САМИ: раз в PET_SKILL_PERIOD_MS, без нажатия и без кулдауна в
+// руках игрока. Считает его комната (_petSkillTick, server/game/Room.js) —
+// там же, где живут окна обычных навыков, и по тем же правилам: множители
+// применяются в _atkOf/_defOf/_critPowerOf/_attackRate, то есть в бою, а не
+// только в панели. Ровно этим отличается рабочий баф от нарисованного —
+// см. длинный разбор у SKILL_BUFFS выше.
+//
+// Формат множителей общий с SKILL_BUFFS и SKILL_HASTE намеренно: atk/def и
+// haste — во сколько раз, critPower — прибавка к силе крита (её база 1.5),
+// healPct — доля максимума здоровья, которую навык возвращает СРАЗУ (окна у
+// такого навыка нет, лечить нечего каждую секунду). Разойтись описанию и
+// расчёту негде: и то и другое читается отсюда.
+const PET_SKILL_PERIOD_MS = 30000;  // как часто питомец применяет навык
+const PET_SKILL_DUR_MS    = 10000;  // сколько держится баф (у лечения его нет)
+// Сколько секунд значок разового навыка (Нёрб) висит среди бафов. Само
+// лечение мгновенное, держать «бафф» десять секунд значило бы рисовать
+// действующим то, что уже кончилось, — значок живёт ровно столько, чтобы
+// игрок успел увидеть, что навык сработал.
+const PET_SKILL_FLASH_SEC = 3;
+const _PS_SEC = PET_SKILL_DUR_MS / 1000, _PS_CD = PET_SKILL_PERIOD_MS / 1000;
+const PET_SKILLS = {
+  pet_groot: {
+    name: 'Каменная кора', img: '/images/pet/pet_groot/skill.png', color: '#8fd17a',
+    atk: 1.30, def: 1.20,
+    desc: `+30% к атаке и +20% к защите на ${_PS_SEC} с, каждые ${_PS_CD} с`,
+  },
+  pet_nerb: {
+    name: 'Споры жизни', img: '/images/pet/pet_nerb/skill.png', color: '#6fd0c4',
+    healPct: 0.30,
+    desc: `восстанавливает 30% здоровья, каждые ${_PS_CD} с`,
+  },
+  pet_vilord: {
+    name: 'Жажда крови', img: '/images/pet/pet_vilord/skill.png', color: '#e08a4a',
+    critPower: 0.30, haste: 1.10,
+    desc: `+30% к силе крита и +10% к скорости атаки на ${_PS_SEC} с, каждые ${_PS_CD} с`,
+  },
+};
+
+// Навык этого питомца, или null. Object.hasOwn по той же причине, что и у
+// skillBuffOf выше: 'constructor' у обычного объекта ИСТИНЕН, и petId
+// приходит из сохранения, то есть из данных.
+function petSkillOf(petId) {
+  return (petId && Object.hasOwn(PET_SKILLS, petId)) ? PET_SKILLS[petId] : null;
+}
 
 // Buff potions: Liberty (Nexum)-only, one recipe per jar (ITEM_DEF entries
 // with slot:'buff_potion' above) — no materials, no roll, a fixed ×10 stack
@@ -3106,6 +3156,7 @@ if (typeof module !== 'undefined') module.exports = {
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
+  PET_SKILLS, petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, PET_SKILL_FLASH_SEC,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   ADV_SKILL_BOOK_CRAFT,

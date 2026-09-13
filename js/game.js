@@ -1044,6 +1044,13 @@ function update(dt, realDt) {
   if (madnessTimer > 0) { madnessTimer -= realDt; if (madnessTimer <= 0) { madnessTimer = 0; recompute(); } }
   if (critChanceBuffTimer > 0) { critChanceBuffTimer -= realDt; if (critChanceBuffTimer <= 0) { critChanceBuffTimer = 0; recompute(); } }
   if (levShieldAtkTimer > 0) { levShieldAtkTimer -= realDt; if (levShieldAtkTimer <= 0) { levShieldAtkTimer = 0; recompute(); } }
+  // Навык питомца — тот же realDt и тот же recompute() на истечении, что и у
+  // навыков игрока выше. petSkillId гасится вместе с таймером, иначе панель
+  // держала бы множители кончившегося бафа.
+  if (petSkillTimer > 0) {
+    petSkillTimer -= realDt;
+    if (petSkillTimer <= 0) { petSkillTimer = 0; petSkillId = null; recompute(); }
+  }
   // Бабочки (adv warlock Q) — periodic 1s self-heal tick while active, not
   // just a flat stat multiplier, so it's driven here instead of recompute().
   // Таймер — только для иконки на панели навыков. Лечение тикает на СЕРВЕРЕ
