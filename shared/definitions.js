@@ -892,6 +892,19 @@ const CRAFT_MATS = [
   { id:'recr',  name:'Рецепт редкий',     img:'/images/material/recr.png',  slot:'recipe',   rarity:'rare'      },
   { id:'rece',  name:'Рецепт эпичный',    img:'/images/material/rece.png',  slot:'recipe',   rarity:'epic'      },
   { id:'recl',  name:'Рецепт легенд.',    img:'/images/material/recl.png',  slot:'recipe',   rarity:'legendary' },
+  // ── Руда (сырьё для рун) ────────────────────────────────
+  // Обычная падает с КАЖДОГО убитого монстра (ORE_DROP_BASE ниже), остальные
+  // четыре не падают вовсе — их переплавляют по лесенке 10 к 1 (см. ту же
+  // таблицу MAT_UPGRADE_RECIPES, где живут рецепты).
+  //
+  // Картинки пока нет — рисуется значок, окрашенный по редкости (_matIcon,
+  // js/ui.js). Появится арт — здесь меняется одно поле на строку, как у
+  // рецептов выше.
+  { id:'ore_common',    name:'Обычная руда',      icon:'burst', slot:'material', rarity:'common'    },
+  { id:'ore_uncommon',  name:'Необычная руда',    icon:'burst', slot:'material', rarity:'uncommon'  },
+  { id:'ore_rare',      name:'Редкая руда',       icon:'burst', slot:'material', rarity:'rare'      },
+  { id:'ore_epic',      name:'Эпическая руда',    icon:'burst', slot:'material', rarity:'epic'      },
+  { id:'ore_legendary', name:'Легендарная руда',  icon:'burst', slot:'material', rarity:'legendary' },
   // ── Enchant stones ──────────────────────────────────────
   { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
@@ -1798,6 +1811,14 @@ const MAT_UPGRADE_RECIPES = [
   { from:'recu', to:'recr', count:20, chance:0.80 },
   { from:'recr', to:'rece', count:20, chance:0.80 },
   { from:'rece', to:'recl', count:20, chance:0.80 },
+  // Руда. Десять к одному, половина попыток впустую — по заданию владельца.
+  // Своего кода у лесенки нет: и переплавка (upgradeMat, repos/craft.js), и
+  // вкладка «Материалы» у кузнеца читают ЭТУ таблицу, так что четыре строки
+  // ниже — это весь рецепт целиком.
+  { from:'ore_common',   to:'ore_uncommon',  count:10, chance:0.50 },
+  { from:'ore_uncommon', to:'ore_rare',      count:10, chance:0.50 },
+  { from:'ore_rare',     to:'ore_epic',      count:10, chance:0.50 },
+  { from:'ore_epic',     to:'ore_legendary', count:10, chance:0.50 },
 ];
 
 // Recycle any 5 regular skill books (any class/skill, mixed) into one random
@@ -2068,18 +2089,41 @@ function runeIconOf(itemId, stats) {
 // именно куётся руна.
 //
 // mats — [{ id, n }], те же id, что у остальных рецептов (CRAFT_MATS).
-const RUNE_CRAFT_RECIPES = [
-  { kind: 'armor',  rarity: 'common',    nexumCost: 500,   mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'armor',  rarity: 'uncommon',  nexumCost: 1500,  mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'armor',  rarity: 'rare',      nexumCost: 5000,  mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'armor',  rarity: 'epic',      nexumCost: 15000, mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'armor',  rarity: 'legendary', nexumCost: 50000, mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'weapon', rarity: 'common',    nexumCost: 500,   mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'weapon', rarity: 'uncommon',  nexumCost: 1500,  mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'weapon', rarity: 'rare',      nexumCost: 5000,  mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'weapon', rarity: 'epic',      nexumCost: 15000, mats: [], chance: RUNE_CRAFT_CHANCE },
-  { kind: 'weapon', rarity: 'legendary', nexumCost: 50000, mats: [], chance: RUNE_CRAFT_CHANCE },
-];
+// ── руда: откуда она берётся ────────────────────────────────────────────────
+// Обычная руда падает с КАЖДОГО убитого монстра — единственная вещь в игре с
+// таким правилом. Шанс растёт с уровнем монстра: 0.1% на первом и ещё по
+// 0.01% за каждый следующий, то есть 0.87% на семьдесят восьмом.
+//
+// От уровня МОНСТРА, а не игрока: так устроены все остальные таблицы дропа в
+// игре (_rollMobLoot, server/game/loot.js), и правило «что даёт эта тварь»
+// должно зависеть от твари, иначе один и тот же моб платит соседям по группе
+// по-разному.
+const ORE_DROP_BASE = 0.001;        // 0.1% на первом уровне
+const ORE_DROP_PER_LEVEL = 0.0001;  // +0.01% за уровень
+function oreDropChance(rlvl) {
+  const lvl = Math.max(1, Math.floor(Number(rlvl) || 1));
+  return ORE_DROP_BASE + (lvl - 1) * ORE_DROP_PER_LEVEL;
+}
+
+// Какая руда нужна на руну этой редкости. Своя на каждую — ради легендарной
+// руны надо пройти всю лесенку переплавки.
+const RUNE_ORE_OF = {
+  common: 'ore_common', uncommon: 'ore_uncommon', rare: 'ore_rare',
+  epic: 'ore_epic', legendary: 'ore_legendary',
+};
+// Сколько руды на одну руну. Оружейная дороже впятеро — гнездо под неё одно
+// на персонажа, а под доспешные девять.
+const RUNE_ORE_COST = { armor: 1000, weapon: 5000 };
+
+const RUNE_CRAFT_RECIPES = RUNE_RARITIES.flatMap(rarity =>
+  ['armor', 'weapon'].map(kind => ({
+    kind, rarity,
+    // Liberty здесь больше нет: цена в ней была заглушкой, пока владелец не
+    // прислал состав. Прислал — значит руна стоит руду и только руду.
+    nexumCost: 0,
+    mats: [{ id: RUNE_ORE_OF[rarity], n: RUNE_ORE_COST[kind] }],
+    chance: RUNE_CRAFT_CHANCE,
+  })));
 
 // Сколько гнёзд у предмета этого слота. Ноль — «руны сюда не вставляются»:
 // плащи, артефакты, крылья, питомцы и расходники гнёзд не имеют.
@@ -3389,6 +3433,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNE_CRAFT_CHANCE, RUNE_REROLL_PRICE, RUNE_QUALITIES, RUNE_QUALITY_COLOR,
   RUNE_QUALITY_NAME, RUNE_QUALITY_WEIGHT, RUNE_STAT_PCT, RUNE_ARMOR_STATS,
   RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,
+  ORE_DROP_BASE, ORE_DROP_PER_LEVEL, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,
   runeKindOf, runeRarityOf, runeCatalogId, runeStatPct, runeQualityPool,
   rollRuneQuality, rollRuneStats, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,

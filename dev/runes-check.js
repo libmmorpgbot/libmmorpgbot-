@@ -142,6 +142,57 @@ console.log('\n  ── каталог и иконки ──');
   eq(missing, 0, 'у каждой руны есть файл иконки');
 }
 
+// ── 6б. руда: дроп, переплавка, цена руны ──────────────────────────────────
+console.log('\n  ── руда ──');
+{
+  const ores = ['ore_common', 'ore_uncommon', 'ore_rare', 'ore_epic', 'ore_legendary'];
+  for (const id of ores) {
+    const m = D.CRAFT_MATS.find(x => x.id === id);
+    ok(!!m, `${id} есть в каталоге материалов`);
+    ok(m && D.isStackableItem(m), `${id} стакается — иначе 1000 штук это 1000 слотов`);
+  }
+  ok(!D.ITEM_DEF.some(d => String(d.id).startsWith('ore_')),
+    'руда не снаряжение — в таблицу выпадения вещей не попадает');
+
+  // Шанс: 0.1% на первом уровне, +0.01% за каждый следующий.
+  near(D.oreDropChance(1), 0.001, 'уровень 1 — 0.1%');
+  near(D.oreDropChance(2), 0.0011, 'уровень 2 — 0.11%');
+  near(D.oreDropChance(30), 0.001 + 29 * 0.0001, 'уровень 30 — 0.39%');
+  near(D.oreDropChance(78), 0.001 + 77 * 0.0001, 'уровень 78 — 0.87%');
+  near(D.oreDropChance(0), 0.001, 'нулевой уровень не уводит шанс ниже базового');
+
+  // Лесенка переплавки: 10 к 1, половина попыток впустую.
+  const ladder = D.MAT_UPGRADE_RECIPES.filter(r => String(r.from).startsWith('ore_'));
+  eq(ladder.length, 4, 'четыре ступени переплавки');
+  for (const step of ladder) {
+    eq(step.count, 10, `${step.from} → ${step.to}: десять к одному`);
+    eq(step.chance, 0.50, `${step.from} → ${step.to}: шанс 50%`);
+  }
+  eq(ladder.map(r => r.to).join(','), 'ore_uncommon,ore_rare,ore_epic,ore_legendary',
+    'ступени идут подряд по редкостям');
+
+  // Цена руны — руда своей редкости, и только она.
+  for (const rec of D.RUNE_CRAFT_RECIPES) {
+    eq(rec.nexumCost, 0, `${rec.kind}/${rec.rarity}: Liberty за ковку не берётся`);
+    eq(rec.mats.length, 1, `${rec.kind}/${rec.rarity}: ровно один материал`);
+    eq(rec.mats[0].id, D.RUNE_ORE_OF[rec.rarity], `${rec.kind}/${rec.rarity}: руда своей редкости`);
+    eq(rec.mats[0].n, rec.kind === 'armor' ? 1000 : 5000,
+      `${rec.kind}/${rec.rarity}: ${rec.kind === 'armor' ? 1000 : 5000} руды`);
+    eq(rec.chance, 0.30, `${rec.kind}/${rec.rarity}: шанс ковки 30%`);
+  }
+
+  // Бросок руды стоит в общем пути награды, а не в каждой таблице по копии.
+  const wSrc = fs.readFileSync(path.join(ROOT, 'server/handlers2/world.js'), 'utf8');
+  const lootFn = wSrc.slice(wSrc.indexOf('function rollLoot(result)'),
+    wSrc.indexOf('// ── what a clan point means'));
+  ok(/rand\(\) < oreDropChance\(result\.rlvl\)/.test(lootFn),
+    'руда бросается по уровню монстра');
+  ok(lootFn.indexOf("result.arm === 'coop'") < lootFn.indexOf('oreDropChance'),
+    'сотрудничество выходит раньше — у него добычи нет по построению');
+  ok(lootFn.indexOf('_rollMobLoot') < lootFn.indexOf('oreDropChance'),
+    'руда падает поверх любой из четырёх таблиц, а не внутри одной');
+}
+
 // ── 7. доходит ли до боя ───────────────────────────────────────────────────
 // Зовётся НАСТОЯЩАЯ compute() из repos/stats.js — та, по которой сервер
 // считает урон, здоровье и скорость атаки.

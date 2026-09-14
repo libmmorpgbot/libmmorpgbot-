@@ -198,7 +198,11 @@ function _matIcon(mat, size) {
   if (mat.img) {
     return `<img src="${mat.img}" width="${size}" height="${size}" style="image-rendering:pixelated;vertical-align:middle;border-radius:2px;">`;
   }
-  return iconHTML(mat.icon || '', size);
+  // Значок без картинки красится по редкости материала. Пока у руды нет
+  // своего арта, это единственное, что отличает обычную от легендарной в
+  // списке: пять одинаковых серых значков читались бы как один материал,
+  // выведенный пять раз.
+  return iconHTML(mat.icon || '', size, RARITY_COLOR[mat.rarity] || '#aea599');
 }
 
 function _listMats() {
@@ -250,7 +254,6 @@ function _craftsmanBody() {
 function _craftsmanRunesTab() {
   const recipes = typeof RUNE_CRAFT_RECIPES !== 'undefined' ? RUNE_CRAFT_RECIPES : [];
   if (!recipes.length) return '<div class="craft-empty">Рецепты рун недоступны</div>';
-  const bal = window._nexumBalance || 0;
   let html = '';
   for (const kind of ['armor', 'weapon']) {
     const hdr = kind === 'armor' ? 'Руны доспеха' : 'Руны оружия';
@@ -261,17 +264,25 @@ function _craftsmanRunesTab() {
       const def = itemCatalogBase(id);
       if (!def) return;
       const rc = RARITY_COLOR[rec.rarity] || '#aea599';
-      const can = invHasSpace() && bal >= (rec.nexumCost || 0);
+      // Цена руны — руда, и видно её сразу: «есть/нужно». Иначе единственный
+      // способ узнать, хватает ли, — нажать и получить отказ.
+      const need = (rec.mats || [])[0];
+      const have = need ? countMaterial(need.id) : 0;
+      const enough = !need || have >= need.n;
+      const can = invHasSpace() && enough;
       const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rec.rarity]) || 0;
       html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="_runeCraftConfirm('${kind}','${rec.rarity}')" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
-        <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${n} хар. · ${rec.nexumCost} Lib</div>
+        <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${n} хар.</div>
+        <div class="craft-item-cell-name" style="font-size:10px;color:${enough ? '#98e456' : '#eb4e61'}">
+          ${have}/${need ? need.n : 0}</div>
       </div>`;
     });
     html += '</div>';
   }
-  html += `<div class="pet-preview-hint">Шанс успеха ${Math.round((RUNE_CRAFT_CHANCE || 0) * 100)}% — при неудаче вложенное сгорает.
+  html += `<div class="pet-preview-hint">Шанс успеха ${Math.round((RUNE_CRAFT_CHANCE || 0) * 100)}% — при неудаче руда сгорает.
+    Руда падает со всех монстров; переплавка 10 к 1 — во вкладке «Материалы».
     Цвет характеристики можно перебрать за ${RUNE_REROLL_PRICE} Liberty в карточке руны.</div>`;
   return html;
 }
@@ -284,16 +295,20 @@ function _runeCraftConfirm(kind, rarity) {
     .find(r => r.kind === kind && r.rarity === rarity);
   if (!rec || !player) return;
   if (!invHasSpace()) { _shopMsg('Инвентарь полон'); return; }
-  if ((window._nexumBalance || 0) < rec.nexumCost) {
-    _shopMsg(typeof t === 'function' ? t('npcNotEnoughLiberty') : 'Мало Liberty!');
+  const need = (rec.mats || [])[0];
+  const oreDef = need ? CRAFT_MATS.find(m => m.id === need.id) : null;
+  const have = need ? countMaterial(need.id) : 0;
+  if (need && have < need.n) {
+    _shopMsg(`Нужно ${need.n} × ${oreDef ? oreDef.name : need.id} (есть ${have})`);
     return;
   }
   const what = kind === 'armor' ? 'руну доспеха' : 'руну оружия';
   const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rarity]) || 0;
+  const price = need ? `${need.n} × ${oreDef ? oreDef.name : need.id}` : 'бесплатно';
   _showConfirmModal(
-    `Выковать ${_RARITY_NAMES[rarity] ? _RARITY_NAMES[rarity].toLowerCase() + ' ' : ''}${what} за ${rec.nexumCost} Liberty?` +
+    `Выковать ${_RARITY_NAMES[rarity] ? _RARITY_NAMES[rarity].toLowerCase() + ' ' : ''}${what} за ${price}?` +
     `<br><span style="opacity:.75;font-size:11px">Успех ${Math.round(rec.chance * 100)}% · характеристик: ${n}` +
-    `<br>При неудаче Liberty сгорает.</span>`,
+    `<br>При неудаче руда сгорает.</span>`,
     () => netCraftRune(kind, rarity), 'Ковать');
 }
 

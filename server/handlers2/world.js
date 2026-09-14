@@ -41,6 +41,7 @@ const {
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
+  oreDropChance, CRAFT_MATS,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -412,6 +413,24 @@ module.exports = function registerWorld(s, safeOn, deps) {
     else if (result.farmHigh) out.items = loot._rollFarmHighLoot(scratch, result.eid) || [];
     else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
     else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl) || [];
+
+    // ── руда ────────────────────────────────────────────────────────────────
+    // Единственная вещь, которая падает со ВСЕХ монстров сразу, — поэтому и
+    // бросается здесь, над таблицами, а не внутри каждой из четырёх. Иначе
+    // «со всех» означало бы четыре одинаковых куска кода, и первый же новый
+    // режим тихо остался бы без руды.
+    //
+    // Шанс растёт с уровнем монстра (oreDropChance, shared/definitions.js).
+    // Сотрудничество сюда не доходит вовсе — оно вышло парой строк выше со
+    // своей фиксированной наградой, и это не оплошность: у режима нет добычи
+    // по построению.
+    if (rand() < oreDropChance(result.rlvl)) {
+      const ore = CRAFT_MATS.find(m => m.id === 'ore_common');
+      // Через ту же scratch-корзину и тот же список, что и остальная добыча:
+      // дальше её разбирает репозиторий, и руда обязана проходить те же
+      // проверки места, что и всё прочее.
+      if (ore) out.items.push({ id: ore.id, name: ore.name, rarity: ore.rarity, qty: 1 });
+    }
 
     // VIP and the season ticket buy a second roll, not a better one — the same
     // table, one more chance at it.
