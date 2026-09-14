@@ -61,6 +61,23 @@ module.exports = function registerWorld(s, safeOn, deps) {
   let teleportTimer = null;
   const { io, enterFloor, floorIdOf, resolveFloor, floorCtxOf, ticketOnlyFloor } = deps;
 
+  // ── как локация называется в журнале ────────────────────────────────────
+  // Числовой этаж в ленте админки не говорит ничего: «этаж 14» надо ещё
+  // расшифровать. Имя берётся из того же ключа, который прислал клиент, а
+  // номер остаётся рядом — по нему ищут в коде.
+  const FLOOR_RU = {
+    hub: 'Центральный зал', left: 'Левый коридор', top: 'Верхний коридор',
+    bottom: 'Нижний коридор', right: 'Правый коридор',
+    guildWar: 'Война гильдий', farmZone: 'Фарм-зона', farmHigh: 'Фарм зона 2',
+    farmZone2: 'Элитная фарм-зона', farmSeason: 'Сезонное крыло',
+    arena: 'Арена мирового босса', pvpArena: 'Арена 3×3', race10: 'Кровавая Башня',
+    fear: 'Страх', coop: 'Сотрудничество', tournament: 'Турнир', trial: 'Испытание',
+  };
+  const _floorName = (target, landed) => {
+    const key = String(target || '');
+    return (Object.hasOwn(FLOOR_RU, key) ? FLOOR_RU[key] : key) || ('этаж ' + landed);
+  };
+
   // ── character selection ──────────────────────────────────────────────────
   // The class is written once and never again: setClass has `AND char_class IS
   // NULL` in its WHERE, so a second selectChar cannot re-roll a character into
@@ -1100,7 +1117,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // inside the right corridor — this one has a real event to hang off.
     const q = await progression.questOnEvent(t, pid, 'enter_zone', `_zone_${target}`, 1);
     if (q) s.socket.emit('questSync', q);
-  }));
+    return { куда: _floorName(target, landed), этаж: landed };
+    // КУДА зашёл, а не только что зашёл. Без этого строка «enterLocation»
+    // отвечала «игрок куда-то перешёл» — и на вопрос «где он был, когда
+    // пропала вещь» не отвечала вовсе.
+  }, r => r));
 
   // ── streaming repair ─────────────────────────────────────────────────────
   // The world cast is `volatile`, so a client on a bad link legitimately misses

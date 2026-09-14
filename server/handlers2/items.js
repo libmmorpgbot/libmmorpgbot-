@@ -52,6 +52,28 @@ const EQ_SLOTS = new Set(
 // the button it disabled comes back.
 const fail = (msg, code) => { throw Object.assign(new Error(code || msg), { userMessage: msg, code }); };
 
+// ── как предмет выглядит в журнале ──────────────────────────────────────────
+// Ключи по-русски: админка рисует мету парами «ключ: значение» и читают её
+// живые люди, а не парсер. Название берётся из каталога, а не из клиента —
+// клиент называет предмет как ему удобно, каталог знает, что это на самом деле.
+async function _describeRow(t, pid, rowId, container) {
+  try {
+    const inv = await items.inventoryOf(t, pid);
+    const list = container === 'storage' ? inv.storage : inv.inventory;
+    const row = (list || []).find(i => i.rowId === rowId);
+    if (!row) return null;
+    const base = ITEM_DEF.find(d => d.id === row.id);
+    const out = { предмет: (base && base.name) || row.id, id: row.id };
+    if (row.qty > 1) out.штук = row.qty;
+    if (row.enhance) out.заточка = '+' + row.enhance;
+    return out;
+  } catch {
+    // Журнал не имеет права ломать действие: не смогли описать — пишем строку
+    // без описания, а не отменяем перенос.
+    return null;
+  }
+}
+
 module.exports = function registerItems(s, safeOn) {
   const push = async (t) => { await s.pushItems(t); await s.pushStats(t); };
 
@@ -141,15 +163,21 @@ module.exports = function registerItems(s, safeOn) {
     }));
 
   // ── storage ──────────────────────────────────────────────────────────────
+  // ЧТО положили — а не только что положили. Строка «storageDeposit» без
+  // предмета отвечает на вопрос «было ли действие» и не отвечает на «куда
+  // делся мой меч», ради которого журнал и читают. Предмет читается ДО
+  // переноса: после него строка уже в другом контейнере.
   safeOn('storageDeposit', (ref = {}) => s.act('storageDeposit', 'itemError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, ref, 'inventory');
     if (!row) fail('Предмет не найден — список обновлён', 'not_found');
+    const moved = await _describeRow(t, pid, row, 'inventory');
     if (!await items.moveTo(t, row, pid, 'storage')) {
       throw Object.assign(new Error('no'), { userMessage: 'Предмет не найден' });
     }
     await push(t);
-  }));
+    return moved;
+  }, r => r));
 
   // The index here counts into the STORAGE list, not the inventory — the two
   // panels are separate and the client numbers each from zero.
@@ -157,11 +185,13 @@ module.exports = function registerItems(s, safeOn) {
     await items.lockPlayer(t, pid);
     const row = await items.resolveRow(t, pid, ref, 'storage');
     if (!row) fail('Предмет не найден — список обновлён', 'not_found');
+    const moved = await _describeRow(t, pid, row, 'storage');
     if (!await items.moveTo(t, row, pid, 'inventory')) {
       throw Object.assign(new Error('full'), { userMessage: 'Инвентарь полон' });
     }
     await push(t);
-  }));
+    return moved;
+  }, r => r));
 
   // ── consumables ──────────────────────────────────────────────────────────
   // No `amount` parameter anywhere. That is the C2 fix stated as an API: the

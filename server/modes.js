@@ -26,6 +26,8 @@
 // knows both.
 
 const progression = require('./db/repos/progression');
+const players = require('./db/repos/players');
+const plog = require('./db/repos/playerlog');
 const money = require('./db/repos/money');
 const { tx } = require('./db');
 const { activeSessions } = require('./session');
@@ -37,6 +39,18 @@ const {
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   FEAR_MAX_WAVE, COOP_STAGE_LEVELS, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE,
 } = require('../shared/definitions');
+
+// telegram-id → player_id, с памятью на процесс. Пара «id в базе — id в
+// телеграме» не меняется за жизнь аккаунта, так что кеш не может протухнуть;
+// без него каждый старт забега стоил бы десяти одинаковых запросов подряд.
+const _pidCache = new Map();
+async function _pidOf(telegramId) {
+  const key = String(telegramId);
+  if (_pidCache.has(key)) return _pidCache.get(key);
+  const pid = await players.idByTelegram(null, key).catch(() => null);
+  if (pid) _pidCache.set(key, pid);
+  return pid;
+}
 
 const createArena3 = require('./game/arena3');
 const createRace10 = require('./game/race10');
@@ -370,7 +384,26 @@ function init(io) {
         }
       },
     },
-    logPlayer: () => {},                       // player_logs is written by the session
+    // ── событие в журнале игрока ────────────────────────────────────────
+    // Здесь стояла ЗАГЛУШКА с припиской «пишет сессия» — а сессия не писала:
+    // старт и конец Кровавой Башни и Арены 3×3 зовут эту функцию четырьмя
+    // местами (arena3.js, race10.js), и все четыре уходили в никуда. Ровно
+    // поэтому прошлый разбор «кого выкинуло из башни» пришлось вести
+    // временными диагностическими строками, хотя штатные вызовы уже стояли.
+    //
+    // Режимы знают игрока по telegram-id (сокет живёт им), а журнал — по
+    // player_id. Перевод идёт через тот же репозиторий, что и везде, и
+    // кешируется: за забег эта функция зовётся десятки раз с одними и теми
+    // же id.
+    //
+    // Асинхронность проглатывается намеренно: журнал не имеет права ни
+    // задержать бой, ни уронить его.
+    logPlayer: (telegramId, name, event, meta) => {
+      if (!telegramId) return;
+      _pidOf(telegramId)
+        .then(pid => { if (pid) plog.log(pid, event, { ...(meta || {}), ник: name || undefined }); })
+        .catch(() => {});
+    },
     _recordPvpHistory: recordPvpHistory,
     _returnToHub: returnToHub,
     _findPlayerAnyFloor: findPlayerAnyFloor,

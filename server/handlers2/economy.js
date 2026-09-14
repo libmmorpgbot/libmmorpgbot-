@@ -11,6 +11,7 @@
 // left is: check what the client may name, call the repository, push the truth.
 
 const craft = require('../db/repos/craft');
+const plog = require('../db/repos/playerlog');
 const runes = require('../db/repos/runes');
 const items = require('../db/repos/items');
 const market = require('../db/repos/market');
@@ -23,7 +24,7 @@ const crypto = require('crypto');
 const consumables = require('../db/repos/consumables');
 const cards = require('../ops-cards');
 const {
-  GRAM_MIN_WITHDRAW, ITEM_DEF, MERCHANT_SHOP, SEASON_ENHANCE_POINTS,
+  GRAM_MIN_WITHDRAW, ITEM_DEF, CRAFT_MATS, MERCHANT_SHOP, SEASON_ENHANCE_POINTS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
 } = require('../../shared/definitions');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('../shop');
@@ -65,6 +66,26 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // what the client's handlers read. `pushBalances` already sent the truth a
   // line earlier; this is the same number in the shape the UI expects.
   const nexumOf = async (t, pid) => (await money.balancesOf(t, pid)).nexum;
+
+  // ── как сделка выглядит в журнале ───────────────────────────────────────
+  // Ключи по-русски: админка рисует мету парами «ключ: значение», и читает её
+  // человек, которому звонит игрок, а не парсер.
+  const _itemName = (it) => {
+    if (!it) return '—';
+    const base = ITEM_DEF.find(d => d.id === it.id) || CRAFT_MATS.find(d => d.id === it.id);
+    const name = (base && base.name) || it.name || it.id || '—';
+    const enh = it.enhance ? ' +' + it.enhance : '';
+    const qty = it.qty > 1 ? ' ×' + it.qty : '';
+    return name + enh + qty;
+  };
+  // Ники обеих сторон одним запросом. id в ленте бесполезен: чтобы позвонить
+  // второму участнику сделки, нужно имя.
+  const _twoSides = async (t, meId, otherId) => {
+    const { rows } = await query(t,
+      'SELECT id, username FROM players WHERE id = ANY($1::bigint[])', [[meId, otherId]]);
+    const byId = new Map(rows.map(r => [Number(r.id), r.username || ('#' + r.id)]));
+    return { self: byId.get(Number(meId)) || ('#' + meId), other: byId.get(Number(otherId)) || ('#' + otherId) };
+  };
 
   // Gear, named by the item it produces. Three recipe lists can make gear and
   // the resolver searches them in the order the old handler did, so an id that
@@ -421,7 +442,9 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // The three market rows are the ones an admin reads back most often, because
     // a lot is the only way an item legitimately crosses accounts. Which lot,
     // which item, what price — none of it was recorded.
-  }, r => r && { listingId: r.listingId || r.id, price: r.price, item: r.item }));
+  }, r => r && {
+    предмет: _itemName(r.item), цена: r.price, лот: r.listingId || r.id,
+  }));
 
   safeOn('marketCancel', ({ listingId } = {}) => s.act('marketCancel', 'marketError', async (t, pid) => {
     const id = rowId(listingId);
@@ -470,13 +493,26 @@ module.exports = function registerEconomy(s, safeOn, deps) {
           console.error('[marketBuy] seller balance:', err.message));
       }
     }
+    // ── вторая половина сделки ────────────────────────────────────────────
+    // Покупка происходит в транзакции ПОКУПАТЕЛЯ, поэтому у продавца в ленте
+    // не было ни строки: вещь ушла с аккаунта, и в его собственном журнале
+    // этого не видно. Здесь пишется его строка — что продал, кому и за
+    // сколько. Имена обеих сторон, а не только id: в ленте админки читают
+    // ники, а не числа.
+    try {
+      const who = await _twoSides(t, pid, res.sellerId);
+      plog.log(res.sellerId, 'marketSold', {
+        предмет: _itemName(res.item), покупатель: who.other, цена: res.price,
+        комиссия: res.fee, получено: res.payout, лот: res.listingId,
+      });
+      res._sellerName = who.self;
+    } catch { /* журнал не имеет права сорвать покупку */ }
     return res;
-    // sellerId rides along: this is the one row that records an item leaving
-    // one account and arriving on another, and both halves of that are the
-    // question when somebody asks how a lot ended up where it did.
+    // Обе стороны в одной строке: это единственная запись, где вещь уходит с
+    // одного аккаунта и приходит на другой, и вопрос всегда про обе половины.
   }, r => r && {
-    listingId: r.listingId, price: r.price, fee: r.fee,
-    item: r.item, sellerId: r.sellerId,
+    предмет: _itemName(r.item), продавец: r._sellerName || r.sellerId,
+    цена: r.price, комиссия: r.fee, лот: r.listingId,
   }));
 
   safeOn('marketBrowse', ({ slot = null, offset = 0 } = {}) => s.act('marketBrowse', 'marketError', async (t) => {
@@ -548,6 +584,13 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       await s.pushBalances(t);
       s.socket.emit('gramTxCreated', { tx: req, newBalance: (await money.balancesOf(t, pid)).gram });
       return req;
+      // Вывод реальных денег — строка, к которой вернутся при любом споре.
+      // Адрес обрезан: в ленте он нужен, чтобы узнать кошелёк, а не чтобы
+      // копировать его оттуда.
+    }, r => r && {
+      сумма: r.amount, комиссия: r.fee, ксебе: r.payout,
+      адрес: address ? String(address).slice(0, 12) + '…' : undefined,
+      заявка: r.id,
     }).then(async (req) => {
       // Posted AFTER the transaction commits. Sending the admin card from
       // inside would announce a request that a later rollback un-made.

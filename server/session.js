@@ -65,7 +65,11 @@ const WRITE_ACTIONS = new Set([
   // четырёх игрок потом может спросить «а где моя руна».
   'craftRune', 'runeReroll', 'runeSocket', 'runeUnsocket',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
-  'usePotion', 'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',
+  // usePotion здесь БОЛЬШЕ НЕТ: зелье здоровья пьют в бою десятками за
+  // минуту, и лента превращалась в одно это слово подряд. Зелья
+  // бафа остаются — их покупают и крафтят, и вопрос «куда делось» к ним
+  // возникает, а к лечилке нет.
+  'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',
   'learnSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'claimQuest', 'completeSpecialQuest', 'claimVipRewards',
   'gramDepositRequest', 'gramWithdrawRequest',
@@ -104,10 +108,15 @@ const WRITE_ACTIONS = new Set([
 // которую можно потерять. Он попал сюда механически, когда заменил собой
 // healParty.
 //
-// usePotion ОСТАЁТСЯ, хотя это ещё 2%: расход зелья не записан больше нигде —
-// сумка это счётчик в jsonb, а не строки с реестром, — и «куда делись мои
-// банки» спрашивают. Без трёх верхних он стоит 55 тысяч строк в сутки вместо
-// двух с половиной миллионов.
+// usePotion ТОЖЕ УБРАН — по прямому указанию владельца, и с известной ценой.
+// Раньше он тут оставался ради одного вопроса: расход зелья не записан больше
+// НИГДЕ (сумка — счётчик в jsonb, а не строки с реестром), так что «куда
+// делись мои банки» отвечать теперь нечем. Взамен лента перестала быть
+// сплошным usePotion: в бою их пьют десятками за минуту, и полторы сотни
+// последних строк карточки были одним и тем же словом.
+//
+// Зелья БАФА остались: их покупают, крафтят и продают, и вопрос к ним
+// возникает совсем другой.
 //
 // ОТКАЗЫ по всем этим действиям пишутся по-прежнему: они редки, и именно их
 // спрашивают.
@@ -337,6 +346,25 @@ function _statsFromRoomRecord(p) {
 // players stay out of the `floor_N` broadcast group, because two simultaneous
 // runs on the same floor id would otherwise see each other's traffic.
 const INSTANCED_FLOORS = new Set([11, 12, 13, 16]);   // fear, coop, farmZone2, tournament
+
+// Имена этажей берутся из общей таблицы, а не переписываются числами рядом:
+// соседний INSTANCED_FLOORS выше как раз показывает, чем кончается второй
+// список — его четыре числа надо сверять с floors.js глазами.
+const { FLOOR_IDS } = require('./game/floors');
+
+// Какие этажи считаются СОБЫТИЕМ для журнала — и как они называются
+// по-русски. Хаб и коридоры сюда не входят: переход в них это просто ходьба,
+// и записывать её значило бы утопить ленту в возвратах из подземелья.
+const EVENT_FLOOR_RU = {
+  [FLOOR_IDS.race10]: 'Кровавая Башня',
+  [FLOOR_IDS.pvpArena]: 'Арена 3×3',
+  [FLOOR_IDS.fear]: 'Страх',
+  [FLOOR_IDS.coop]: 'Сотрудничество',
+  [FLOOR_IDS.farmZone2]: 'Элитная фарм-зона',
+  [FLOOR_IDS.arena]: 'Арена мирового босса',
+  [FLOOR_IDS.guildWar]: 'Война гильдий',
+  [FLOOR_IDS.tournament]: 'Турнир',
+};
 
 class Session {
   constructor(socket, io = null) {
@@ -1092,6 +1120,19 @@ class Session {
 
     this.floor = target;
     this.room = dest;
+    // ── «в какое событие зашёл» ─────────────────────────────────────────────
+    // Игрока сюда переносит СЕРВЕР — мода разворачивает участников, забег
+    // начинается, окно войны открывается. Ни одно из этих перемещений не
+    // проходит через enterLocation, поэтому в ленте их не было вовсе, и
+    // «когда он попал в башню» отвечать было нечем.
+    //
+    // Одно место на все режимы: любой вход в событие — это forceFloor, и
+    // добавлять запись в каждый режим отдельно значило бы забыть её в
+    // следующем. Обычные этажи сюда тоже попадают (возврат в хаб), поэтому
+    // пишутся только событийные.
+    if (EVENT_FLOOR_RU[target] && this.playerId) {
+      plog.log(this.playerId, 'eventEnter', { событие: EVENT_FLOOR_RU[target], этаж: target });
+    }
     // Which move this is. The asynchronous half below reads it back to find out
     // whether it is still describing where the player is.
     const seq = ++this._moveSeq;
