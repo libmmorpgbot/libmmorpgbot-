@@ -278,11 +278,13 @@ function _craftsmanRunesTab() {
       const have = need ? countMaterial(need.id) : 0;
       const enough = !need || have >= need.n;
       const can = invHasSpace() && enough;
-      const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rec.rarity]) || 0;
+      // «N хар.» под названием редкости убрана по просьбе владельца — та же
+      // цифра уже стоит в описании карточки рецепта (openRuneCraftModal),
+      // открывающейся по клику на эту же ячейку, и в сетке она была голой
+      // строкой без объяснения, что за характеристики.
       html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openRuneCraftModal('${kind}','${rec.rarity}')" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
-        <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${n} хар.</div>
         <div class="craft-item-cell-name" style="font-size:10px;color:${enough ? '#98e456' : '#eb4e61'}">
           ${have}/${need ? need.n : 0}</div>
       </div>`;
@@ -368,8 +370,11 @@ function openRuneCraftModal(kind, rarity) {
   </div>` : '';
 
   const canCraft = !pending && invHasSpace() && enough;
-  const rerollPrice = typeof RUNE_REROLL_PRICE !== 'undefined' ? RUNE_REROLL_PRICE : 100;
 
+  // Подсказка под шансом («при неудаче руда сгорает…») убрана по просьбе
+  // владельца — карточка заканчивается сразу кнопкой, без пояснительного
+  // абзаца снизу, как и у остальных рецептов (openCraftModal рядом не имеет
+  // такого блока вовсе).
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('runes')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
     <div class="craft-detail-header">
@@ -382,9 +387,6 @@ function openRuneCraftModal(kind, rarity) {
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">${matsHtml}</div>
     <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
-    <div class="pet-preview-hint">При неудаче руда сгорает без возврата. Цвет каждой выпавшей
-      характеристики — отдельный бросок, от серого до оранжевого; перебросить его позже можно за
-      ${rerollPrice} Liberty в карточке готовой руны.</div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftRune('${kind}','${rarity}')">${pending ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
   `;
 }
