@@ -280,22 +280,13 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
   return rowId;
 }
 
-// Does player_items carry the provenance columns yet? Asked once per process.
-// A failure here means "no" rather than an exception: a logging column must
-// never be able to refuse a grant.
-let _srcCols = null;
-async function _hasSourceCols(db) {
-  if (_srcCols !== null) return _srcCols;
-  try {
-    const { rows } = await query(db, `
-      SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'player_items' AND column_name = 'source' LIMIT 1`);
-    _srcCols = rows.length > 0;
-  } catch {
-    _srcCols = false;
-  }
-  return _srcCols;
-}
+// Does player_items carry the provenance columns yet?
+//
+// Через ОБЩУЮ функцию (db/index.js hasColumn), а не через свой кеш. Своих
+// кешей здесь было два, и оба запоминали «нет» навсегда — а миграция
+// применяется на живом сервисе, который migrate-now.sh перезапускает не
+// всегда. Процесс, спросивший до миграции, отвечал себе «нет» до конца жизни.
+async function _hasSourceCols() { return hasColumn('player_items', 'source'); }
 
 // ── the item ledger ─────────────────────────────────────────────────────────
 // The append-only record of every quantity movement, and the item half of what
@@ -703,8 +694,6 @@ async function marketRefBlocksDelete(db) {
 // Колонка спрашивается у схемы один раз за процесс — тем же приёмом, что и
 // _hasSourceCols выше: код уезжает на сервер раньше миграции, и запрос про
 // socket_of до неё падал бы на каждой продаже.
-let _socketCols = null;
-
 // Куски SQL, которых на базе без миграции 029 просто не существует. Пока
 // колонок нет, фрагмент пустой — и запрос получается ровно тот, что работал
 // до рун. Это не «на всякий случай»: порядок выкладки в этом проекте такой,
@@ -719,18 +708,7 @@ async function _noSocket(db, a = '') {
   return await _hasSocketCols(db) ? `AND ${a}socket_of IS NULL` : '';
 }
 
-async function _hasSocketCols(db) {
-  if (_socketCols !== null) return _socketCols;
-  try {
-    const { rows } = await query(db, `
-      SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'player_items' AND column_name = 'socket_of' LIMIT 1`);
-    _socketCols = rows.length > 0;
-  } catch {
-    _socketCols = false;
-  }
-  return _socketCols;
-}
+async function _hasSocketCols() { return hasColumn('player_items', 'socket_of'); }
 
 async function assertNoRunes(db, rowId) {
   if (!await _hasSocketCols(db)) return;

@@ -21,14 +21,30 @@ const ROOT = path.join(__dirname, '..');
 
 // repos/stats.js тянет пул Postgres ради одной чистой функции. Заглушка
 // 'pg' — чтобы проверка оставалась в группе PURE и запускалась без базы.
+//
+// query() у заглушки управляемый (_pgQueryImpl), а не всегда пустой: раздел
+// про перечитывание схемы ниже должен провести hasColumn() через настоящий
+// db.query(null, ...) → pool().query(...), а не подменять что-то в обход —
+// иначе проверка доказывала бы поведение своей подмены, а не функции.
+let _pgQueryImpl = async () => ({ rows: [] });
 const _realRequire = Module.prototype.require;
 Module.prototype.require = function (id) {
-  if (id === 'pg') return { Pool: class { on() {} connect() {} query() {} end() {} } };
+  if (id === 'pg') {
+    return { Pool: class { on() {} connect() {} query(...a) { return _pgQueryImpl(...a); } end() {} } };
+  }
   return _realRequire.apply(this, arguments);
 };
+// pool() отказывает без DATABASE_URL, а _ssl() без PG_CA_FILE — оба до
+// первого запроса, ещё до того, как заглушка Pool вступит в дело. Второе
+// снимается ТЕМ ЖЕ путём, что и в CI (см. комментарий у _ssl в
+// server/db/index.js): loopback-адрес плюс явный флаг. Ни один запрос
+// никуда не стучится — сам Pool выше подменён на класс без сети.
+process.env.DATABASE_URL = 'postgresql://stub@127.0.0.1:1/stub';
+process.env.PG_ALLOW_PLAINTEXT = '1';
 
 const D = require(path.join(ROOT, 'shared/definitions'));
 const stats = require(path.join(ROOT, 'server/db/repos/stats.js'));
+const db = require(path.join(ROOT, 'server/db/index.js'));
 
 let pass = 0, fail = 0;
 const ok = (c, n, got) => {
@@ -327,7 +343,11 @@ console.log('\n  ── защиты ──');
     'провенанс (011) и руна (029) больше не связаны одним if');
 
   const stSrc = fs.readFileSync(path.join(ROOT, 'server/db/repos/stats.js'), 'utf8');
-  ok(/LOAD_SQL_NO_RUNES/.test(stSrc) && /column_name = 'socket_of'/.test(stSrc),
+  // Буквальный SQL-запрос про socket_of здесь больше не стоит — колонку
+  // спрашивает общая hasColumn (db/index.js), она же проверяется поведением
+  // ниже, в разделе «схема перечитывается без перезапуска». Здесь важно
+  // только то, что load() всё ещё умеет выбрать запрос без рун.
+  ok(/LOAD_SQL_NO_RUNES/.test(stSrc) && /hasColumn\('player_items', 'socket_of'\)/.test(stSrc),
     'до миграции характеристики грузятся прежним запросом, а не падают');
   const m = stSrc.match(/const LOAD_SQL = `([\s\S]*?)`;/);
   const stripped = m[1].replace(/,\n {15}-- Руны[\s\S]*?'\[\]'::json\)\)\)/, '))');
@@ -415,8 +435,67 @@ console.log('\n  ── защиты ──');
     'пояснение под руной больше не рисуется без цвета');
 }
 
-console.log('');
-console.log(fail === 0
-  ? `  \x1b[32m${pass} прошло, 0 упало\x1b[0m\n`
-  : `  \x1b[31m${pass} прошло, ${fail} упало\x1b[0m\n`);
-process.exit(fail === 0 ? 0 : 1);
+// ═══ СХЕМА: «КОЛОНКИ НЕТ» НЕ ЗАПОМИНАЕТСЯ НАВСЕГДА ═════════════════════════
+// Регрессия, которая уже случилась и которую искали не там. Миграцию 029
+// применили на живом сервере; migrate-now.sh перезапускает сервис только под
+// root, а в тот раз не смог. Процесс, однажды ответивший себе «колонок рун
+// нет», отвечал так до конца жизни: руны вставлялись, показывались, занимали
+// гнёзда — и не давали НИ ОДНОЙ характеристики, потому что stats.load брал
+// запрос без рун. Снаружи это «руна не работает», а не «сервер не перечитал
+// схему».
+//
+// Проверяется ПОВЕДЕНИЕМ, а не текстом: сколько раз функция реально сходила
+// в базу и что ответила, когда колонка появилась под ней.
+console.log('\n  ── схема перечитывается без перезапуска ──');
+{
+  // Подменяется _pgQueryImpl — то, что дёргает САМА заглушка 'pg' (см. её
+  // определение наверху файла), а не db.query: hasColumn зовёт локальную
+  // query() этого же модуля (замыкание на pool().query), и переписать
+  // экспортированное db.query значило бы подменить то, на что hasColumn
+  // вообще не смотрит — проверка тогда доказывала бы сама себя.
+  let asked = 0, present = false;
+  _pgQueryImpl = async () => { asked++; return { rows: present ? [{ '?column?': 1 }] : [] }; };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  (async () => {
+    db._forgetSchemaCache();
+    eq(await db.hasColumn('player_items', 'socket_of'), false, 'колонки нет — отвечает «нет»');
+    const afterFirst = asked;
+    await db.hasColumn('player_items', 'socket_of');
+    eq(asked, afterFirst, 'подряд не переспрашивает: окно защищает горячий путь');
+
+    // Миграция применилась под работающим процессом.
+    present = true;
+    await wait(1100);
+    eq(await db.hasColumn('player_items', 'socket_of'), true,
+      'колонка появилась — узнал сам, без перезапуска');
+
+    // А «да» запоминается насовсем: колонка, которая есть, не исчезает.
+    const afterYes = asked;
+    for (let i = 0; i < 50; i++) await db.hasColumn('player_items', 'socket_of');
+    eq(asked, afterYes, '«да» запомнено навсегда — 50 вызовов, ни одного запроса');
+
+    db._forgetSchemaCache();
+
+    // И ни один репозиторий не заводит свою копию этого кеша заново.
+    const repos = fs.readdirSync(path.join(ROOT, 'server/db/repos'));
+    const own = repos.filter(f => {
+      if (!f.endsWith('.js')) return false;
+      const src = fs.readFileSync(path.join(ROOT, 'server/db/repos', f), 'utf8');
+      if (!/information_schema\.columns/.test(src)) return false;
+      // gram.js спрашивает про несколько колонок сразу и уже переспрашивает
+      // по таймеру (OPS_PROBE_RETRY_MS) — это тот же приём, а не копия бага.
+      if (f === 'gram.js') return false;
+      return true;
+    });
+    ok(own.length === 0,
+      `репозитории спрашивают схему общей функцией, а не своей копией (${own.join(', ') || 'ни одной'})`);
+
+    console.log('');
+    console.log(fail === 0
+      ? `  \x1b[32m${pass} прошло, 0 упало\x1b[0m\n`
+      : `  \x1b[31m${pass} прошло, ${fail} упало\x1b[0m\n`);
+    process.exit(fail === 0 ? 0 : 1);
+  })();
+}
+

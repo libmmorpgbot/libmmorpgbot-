@@ -26,7 +26,7 @@
 // friction is the point: fail-CLOSED means the default for anything new is
 // "the client cannot touch it".
 
-const { query } = require('../index');
+const { query, hasColumn } = require('../index');
 // The address normaliser and validator, shared with the chain reader. Its
 // client twin is tcFriendlyAddress in js/tonconnect.js — same tag, same
 // polynomial, same 48 characters — because what the player is shown is what
@@ -200,19 +200,11 @@ async function setUsername(db, playerId, username) {
 // server that crash-loops on a missing column between those two moments is
 // worse than one that forgets a grant for an hour — and this is the LOGIN
 // path, so the crash would be every player, not one screen.
-let _waCols = null;
-async function _hasWriteAccessCols(db) {
-  if (_waCols !== null) return _waCols;
-  try {
-    const { rows } = await query(db, `
-      SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'players' AND column_name = 'can_message' LIMIT 1`);
-    _waCols = rows.length > 0;
-  } catch {
-    _waCols = false;
-  }
-  return _waCols;
-}
+// Через ОБЩУЮ функцию (db/index.js hasColumn): свой кеш запоминал «нет»
+// навсегда, а миграция применяется на живом сервисе, который перезапускается
+// не всегда. Тот же кеш в repos/stats.js стоил игрокам рун, не дававших
+// характеристик, — здесь ценой был бы вечный вопрос про личку.
+async function _hasWriteAccessCols() { return hasColumn('players', 'can_message'); }
 
 // false before the migration, and false is the SAFE answer here: it makes the
 // client show the gate to somebody who has already granted, and Telegram
@@ -284,19 +276,11 @@ async function setWriteAccess(db, playerId, granted) {
 // deploy does not carry, so this code lands first and the columns follow.
 // tonAddressOf is on the LOGIN path, so a server that crash-loops on a missing
 // column between those two moments is every player, not one panel.
-let _tonCols = null;
-async function _hasTonAddressCols(db) {
-  if (_tonCols !== null) return _tonCols;
-  try {
-    const { rows } = await query(db, `
-      SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'players' AND column_name = 'ton_address' LIMIT 1`);
-    _tonCols = rows.length > 0;
-  } catch {
-    _tonCols = false;
-  }
-  return _tonCols;
-}
+// Через ОБЩУЮ функцию (db/index.js hasColumn): свой кеш запоминал «нет»
+// навсегда, а миграция применяется на живом сервисе, который перезапускается
+// не всегда. Тот же кеш в repos/stats.js стоил игрокам рун, не дававших
+// характеристик, — здесь ценой был бы вечный вопрос про личку.
+async function _hasTonAddressCols() { return hasColumn('players', 'ton_address'); }
 
 // The pair, as the client needs to read it. `everLinked` is ton_address_at
 // being set at all, and it is not a statistic: it is what tells a device with a

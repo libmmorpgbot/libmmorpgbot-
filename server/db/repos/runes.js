@@ -22,7 +22,7 @@
 //    уничтожение и создание заново, и руна не теряет ни провенанс, ни место в
 //    журнале предметов.
 const crypto = require('crypto');
-const { query } = require('../index');
+const { query, hasColumn } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
@@ -47,12 +47,7 @@ function rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
 // делают эти четыре функции, писать НЕКУДА. Отказ здесь честнее запроса,
 // который упадёт ошибкой Postgres: игрок видит «руны ещё не включены», а не
 // «внутренняя ошибка», и не теряет вложенное.
-async function _runesReady(db) {
-  const { rows } = await query(db, `
-    SELECT 1 FROM information_schema.columns
-     WHERE table_name = 'player_items' AND column_name = 'socket_of' LIMIT 1`);
-  return rows.length > 0;
-}
+async function _runesReady() { return hasColumn('player_items', 'socket_of'); }
 function _needRunes(ready) {
   if (!ready) err('runes_off', 'Руны ещё не включены на сервере');
 }

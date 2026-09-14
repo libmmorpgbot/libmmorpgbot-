@@ -39,7 +39,7 @@
 // bonus above the passives changes the result by a point or two, and the client
 // and server disagreeing about a damage number is immediately visible in play.
 
-const { query } = require('../index');
+const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
   clanAtkBonusPct, xpToNext, runeBonusTotals,
@@ -116,22 +116,13 @@ const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
   /,\n               -- Руны[\s\S]*?'\[\]'::json\)\)\)/,
   '))');
 
-let _runeCols = null;
-async function _hasRuneCols(db) {
-  if (_runeCols !== null) return _runeCols;
-  try {
-    const { rows } = await query(db, `
-      SELECT 1 FROM information_schema.columns
-       WHERE table_name = 'player_items' AND column_name = 'socket_of' LIMIT 1`);
-    _runeCols = rows.length > 0;
-  } catch {
-    _runeCols = false;
-  }
-  return _runeCols;
-}
-
+// Спрашивается ОБЩЕЙ функцией (db/index.js hasColumn), а не своей копией.
+// Копия здесь и стояла — и запоминала «нет» навсегда, из-за чего процесс,
+// переживший применение миграции 029 без перезапуска, до конца своей жизни
+// грузил характеристики запросом без рун: руны стояли в гнёздах и не давали
+// ничего. Общая функция запоминает только «да» и переспрашивает «нет».
 async function load(db, playerId) {
-  const sql = await _hasRuneCols(db) ? LOAD_SQL : LOAD_SQL_NO_RUNES;
+  const sql = await hasColumn('player_items', 'socket_of') ? LOAD_SQL : LOAD_SQL_NO_RUNES;
   const { rows } = await query(db, sql, [playerId]);
   return rows.length ? rows[0] : null;
 }

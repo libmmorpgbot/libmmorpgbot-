@@ -339,21 +339,49 @@ async function close() {
 // the schema is not, and a build that simply assumed the newer one would take
 // the game down rather than improve it.
 //
-// This lets a module ask, once, and branch. Cached because the answer cannot
-// change without a restart — a migration is applied while the service is
-// stopped — and because it is read on paths as hot as consuming an item.
-const _cols = new Map();
+// This lets a module ask, once, and branch.
+//
+// ── ПОЧЕМУ «НЕТ» НЕ ЗАПОМИНАЕТСЯ ───────────────────────────────────────────
+// Здесь стояло: «ответ не может измениться без перезапуска — миграция
+// применяется на остановленном сервисе». Это оказалось неправдой, и неправдой
+// дорогой. migrate-now.sh накатывает миграцию на ЖИВОЙ базе и лишь ПЫТАЕТСЯ
+// перезапустить сервис — под root или с sudo без пароля; иначе он честно
+// печатает «отсюда не перезапустить» и уходит. Процесс остаётся тот же, а
+// схема под ним уже другая.
+//
+// Что из этого вышло на самом деле: миграцию рун применили без перезапуска,
+// и процесс, однажды ответивший себе «колонок рун нет», отвечал так до конца
+// своей жизни. Руны вставлялись, показывались в карточке, занимали гнёзда — и
+// не давали НИ ЕДИНОЙ характеристики, потому что расчёт брал запрос без рун.
+// Снаружи это выглядело как «руна не работает», а не как «сервер не перечитал
+// схему», и искать это пришлось в коде рун, где ошибки не было.
+//
+// Поэтому запоминается только «ДА». Колонка, которая есть, не исчезнет: её
+// никто не удаляет, а откат миграции — событие с перезапуском. Колонка,
+// которой нет, появится в любой момент, и узнать об этом сервер обязан сам.
+//
+// «Нет» переспрашивается не чаще раза в _MISS_TTL_MS, иначе запрос к
+// information_schema уехал бы на каждую загрузку характеристик — то есть на
+// каждый удар. Секунда задержки после миграции никому не видна; час работы с
+// мёртвыми рунами виден всем.
+const _cols = new Map();          // table.column -> true (только положительные)
+const _miss = new Map();          // table.column -> когда спрашивали в последний раз
+const _MISS_TTL_MS = 1000;
+
 async function hasColumn(table, column) {
   const key = `${table}.${column}`;
-  if (_cols.has(key)) return _cols.get(key);
+  if (_cols.get(key)) return true;
+  const last = _miss.get(key) || 0;
+  if (Date.now() - last < _MISS_TTL_MS) return false;
+  _miss.set(key, Date.now());
   const { rows } = await query(null, `
     SELECT 1 FROM information_schema.columns
      WHERE table_name = $1 AND column_name = $2`, [table, column]);
   const has = rows.length > 0;
-  _cols.set(key, has);
+  if (has) { _cols.set(key, true); _miss.delete(key); }
   return has;
 }
-function _forgetSchemaCache() { _cols.clear(); }
+function _forgetSchemaCache() { _cols.clear(); _miss.clear(); }
 
 module.exports = {
   pool, query, queryWithTimeout, tx, txRetry, stats, close, POOL_MAX, hasColumn,
