@@ -282,17 +282,18 @@ function _craftsmanRunesTab() {
       // цифра уже стоит в описании карточки рецепта (openRuneCraftModal),
       // открывающейся по клику на эту же ячейку, и в сетке она была голой
       // строкой без объяснения, что за характеристики.
+      //
+      // Счётчик «есть/нужно» и подсказка про шанс под сеткой — тоже убраны
+      // по просьбе владельца. Зелёная подсветка ячейки (класс .craftable,
+      // css/style.css) никуда не делась и по-прежнему честно показывает,
+      // хватает ли руды, — без самих цифр.
       html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openRuneCraftModal('${kind}','${rec.rarity}')" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
-        <div class="craft-item-cell-name" style="font-size:10px;color:${enough ? '#98e456' : '#eb4e61'}">
-          ${have}/${need ? need.n : 0}</div>
       </div>`;
     });
     html += '</div>';
   }
-  html += `<div class="pet-preview-hint">Шанс успеха ${Math.round((RUNE_CRAFT_CHANCE || 0) * 100)}% — при неудаче руда сгорает.
-    Характеристики можно переработать в карточке руны.</div>`;
 
   // ── переплавка руды ─────────────────────────────────────────────────────
   // Рецепты те же и в той же таблице (MAT_UPGRADE_RECIPES), что у свитков, —
@@ -309,20 +310,19 @@ function _craftsmanRunesTab() {
     const enough = have >= recipe.count;
     const can = enough && invHasSpace();
     const rc = RARITY_COLOR[toMat.rarity] || '#aea599';
+    // Соотношение «10 → 1», счётчик «есть/нужно» и подсказка про шанс дропа
+    // под сеткой — убраны по просьбе владельца. Переплавка теперь всегда
+    // стопроцентная (см. MAT_UPGRADE_RECIPES), так что «· 100%» в подписи
+    // всё равно ничего не решала; зелёная подсветка ячейки (.craftable)
+    // по-прежнему честно показывает, хватает ли руды.
     ladder.push(`<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
       <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
       <div class="craft-item-cell-name" style="color:${rc}">${toMat.name}</div>
-      <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${recipe.count} → 1 · ${Math.round(recipe.chance * 100)}%</div>
-      <div class="craft-item-cell-name" style="font-size:10px;color:${enough ? '#98e456' : '#eb4e61'}">${have}/${recipe.count}</div>
     </div>`);
   });
   if (ladder.length) {
-    const oreHave = countMaterial('ore_common');
     html += `<div class="craft-group-hdr" style="color:#c9a24b">Переплавка руды</div>`
-      + `<div class="craft-items-grid">${ladder.join('')}</div>`
-      + `<div class="pet-preview-hint">Обычная руда падает с монстров ${typeof ORE_MIN_LEVEL !== 'undefined' ? ORE_MIN_LEVEL : 20}+ уровня
-         с шансом ${Math.round((typeof ORE_DROP_CHANCE !== 'undefined' ? ORE_DROP_CHANCE : 0) * 100)}%.
-         Сейчас обычной руды: <b>${oreHave}</b>.</div>`;
+      + `<div class="craft-items-grid">${ladder.join('')}</div>`;
   }
   return html;
 }

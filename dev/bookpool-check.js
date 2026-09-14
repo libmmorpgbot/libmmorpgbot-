@@ -91,6 +91,32 @@ for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
 }
 eq([...shapes].join(' '), '5/5/1', 'на кожному рівні 5 навичкових + 5 класових пасивок + 1 універсальна');
 
+// ── руда в карточке монстра ──────────────────────────────────────────────
+// Владелец: «на карте в карточках монстров добавь руду». _monsterDropBodyHtml
+// (js/ui.js) собрана из независимых секций (recipeSection, keySection,
+// gearSection...) — этой проверке не нужна DOM-песочница, чтобы убедиться,
+// что руда ЕСТЬ среди них и ЗАВИСИТ от порога по уровню (ORE_MIN_LEVEL,
+// shared/definitions.js) так же, как и настоящий бросок на сервере
+// (rollLoot, server/handlers2/world.js).
+console.log('\n  ── руда в карточке монстра ──');
+{
+  const fs = require('fs');
+  const path = require('path');
+  const uiSrc = fs.readFileSync(path.join(__dirname, '..', 'js/ui.js'), 'utf8');
+  const fnAt = uiSrc.indexOf('function _monsterDropBodyHtml');
+  ok(fnAt > -1, '_monsterDropBodyHtml существует');
+  const fnSrc = uiSrc.slice(fnAt, uiSrc.indexOf('\nfunction ', fnAt + 10));
+  ok(/lvl >= ORE_MIN_LEVEL/.test(fnSrc),
+    'секция руды проверяет ТОТ ЖЕ порог, что и сервер (ORE_MIN_LEVEL), а не свой');
+  ok(/oreDropChance\(lvl\)/.test(fnSrc),
+    'процент — той же функцией, что считает сервер (oreDropChance), не переписан вручную');
+  ok(/\$\{oreSection\}/.test(fnSrc), 'секция действительно попадает в итоговый HTML карточки');
+  // Ноль — то же самое, что "строки нет": молчание честнее нуля, который
+  // читался бы как «может выпасть, просто редко».
+  ok(/if \(ore && oreChance > 0\)/.test(fnSrc),
+    'нулевой шанс не рисует строку с "0%" — секция просто пустая');
+}
+
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (failures.length) console.log(`  впали: ${failures.join(', ')}`);
 process.exit(fail ? 1 : 0);

@@ -2470,6 +2470,22 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     keySection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('keysStonesHdr')}</div><div class="fi-drops">${rows}</div>`;
   }
 
+  // Руда — как и на сервере (rollLoot, server/handlers2/world.js): один
+  // бросок поверх любой из таблиц, по уровню ИМЕННО этого монстра (lvl), не
+  // ограничен боссами/обычными. Ниже порога (ORE_MIN_LEVEL) строка не
+  // показывается вовсе, а не показывается с 0% — ноль читался бы как «может
+  // выпасть, просто редко», а до порога не может вообще.
+  let oreSection = '';
+  if (typeof ORE_MIN_LEVEL !== 'undefined' && lvl >= ORE_MIN_LEVEL) {
+    const ore = CRAFT_MATS.find(m => m.id === 'ore_common');
+    const oreChance = (typeof oreDropChance === 'function' ? oreDropChance(lvl) : 0) * 100;
+    if (ore && oreChance > 0) {
+      const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[ore.rarity] : null) || '#aea599';
+      const rows = _dropRow(_mi(ore, 16), ore.name, `&times;1 · <b style="color:${rc}">${_pctText(oreChance)}</b>`, rc);
+      oreSection = `<div class="fi-drops-hdr" style="margin-top:8px">Руда</div><div class="fi-drops">${rows}</div>`;
+    }
+  }
+
   // Equipment drop: one continuous chance (+0.1%/level, never resets across
   // zones) picks a single rarity by the level's arm (itemDropChanceAtLevel/
   // itemRarityForLevel) then one item uniformly among ALL candidates at that
@@ -2575,6 +2591,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
     </div>
     ${recipeSection}
     ${keySection}
+    ${oreSection}
     ${gearSection}
     ${bookSection}
     ${passiveBookSection}
