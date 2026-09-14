@@ -176,8 +176,13 @@ console.log('\n  ── руда ──');
     eq(rec.nexumCost, 0, `${rec.kind}/${rec.rarity}: Liberty за ковку не берётся`);
     eq(rec.mats.length, 1, `${rec.kind}/${rec.rarity}: ровно один материал`);
     eq(rec.mats[0].id, D.RUNE_ORE_OF[rec.rarity], `${rec.kind}/${rec.rarity}: руда своей редкости`);
-    eq(rec.mats[0].n, rec.kind === 'armor' ? 1000 : 5000,
-      `${rec.kind}/${rec.rarity}: ${rec.kind === 'armor' ? 1000 : 5000} руды`);
+    // Числа владельца, переписанные сюда отдельно от таблицы: если кто-то
+    // поправит RUNE_ORE_COST «заодно», проверка это покажет.
+    const want = {
+      armor:  { common: 1000, uncommon: 800, rare: 500, epic: 300, legendary: 100 },
+      weapon: { common: 5000, uncommon: 3000, rare: 1500, epic: 1000, legendary: 500 },
+    }[rec.kind][rec.rarity];
+    eq(rec.mats[0].n, want, `${rec.kind}/${rec.rarity}: ${want} руды`);
     eq(rec.chance, 0.30, `${rec.kind}/${rec.rarity}: шанс ковки 30%`);
   }
 
@@ -200,6 +205,14 @@ console.log('\n  ── руда ──');
   ok(/Переплавка руды/.test(runesTab), 'и показана во вкладке «Руны»');
   ok(/openMatModal\(\$\{idx\}\)/.test(runesTab),
     'открывается по настоящему индексу в общей таблице рецептов');
+
+  // Счёт падает вверх по редкости — иначе лесенка (×20 за ступень) унесла бы
+  // цену верхних рун в сотни миллионов убийств.
+  for (const kind of ['armor', 'weapon']) {
+    const row = D.RUNE_RARITIES.map(r => D.RUNE_ORE_COST[kind][r]);
+    ok(row.every((n, i) => i === 0 || n < row[i - 1]),
+      `${kind}: чем выше редкость, тем меньше руды нужно`, row.join(' → '));
+  }
 
   // Бросок руды стоит в общем пути награды, а не в каждой таблице по копии.
   const wSrc = fs.readFileSync(path.join(ROOT, 'server/handlers2/world.js'), 'utf8');

@@ -2109,9 +2109,21 @@ const RUNE_ORE_OF = {
   common: 'ore_common', uncommon: 'ore_uncommon', rare: 'ore_rare',
   epic: 'ore_epic', legendary: 'ore_legendary',
 };
-// Сколько руды на одну руну. Оружейная дороже впятеро — гнездо под неё одно
-// на персонажа, а под доспешные девять.
-const RUNE_ORE_COST = { armor: 1000, weapon: 5000 };
+// Сколько руды на одну руну: строка — вид, столбец — редкость. Числа заданы
+// владельцем.
+//
+// Вверх по редкости количество ПАДАЕТ, и это не опечатка. Руда каждого яруса
+// сама стоит двадцати руд предыдущего (десять штук при шансе 50%, см.
+// MAT_UPGRADE_RECIPES), так что одинаковое количество на всех ярусах
+// означало бы рост цены в двадцать раз на каждом шаге — легендарная руна
+// вышла бы в сотни миллионов убийств. Уменьшающийся счёт этот рост гасит.
+//
+// Оружейные дороже впятеро: гнездо под них одно на персонажа, а под
+// доспешные девять.
+const RUNE_ORE_COST = {
+  armor:  { common: 1000, uncommon: 800, rare: 500, epic: 300, legendary: 100 },
+  weapon: { common: 5000, uncommon: 3000, rare: 1500, epic: 1000, legendary: 500 },
+};
 
 const RUNE_CRAFT_RECIPES = RUNE_RARITIES.flatMap(rarity =>
   ['armor', 'weapon'].map(kind => ({
@@ -2119,7 +2131,7 @@ const RUNE_CRAFT_RECIPES = RUNE_RARITIES.flatMap(rarity =>
     // Liberty здесь больше нет: цена в ней была заглушкой, пока владелец не
     // прислал состав. Прислал — значит руна стоит руду и только руду.
     nexumCost: 0,
-    mats: [{ id: RUNE_ORE_OF[rarity], n: RUNE_ORE_COST[kind] }],
+    mats: [{ id: RUNE_ORE_OF[rarity], n: RUNE_ORE_COST[kind][rarity] }],
     chance: RUNE_CRAFT_CHANCE,
   })));
 
