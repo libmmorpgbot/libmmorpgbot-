@@ -24,6 +24,8 @@
     --c-ranger: #8fbf5a;
     --c-mage: #66aaff;
     --c-heal: #c47a92;
+    --c-rune: #a86b3f;
+    --c-assassin: #7d6f96;
 
     --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -510,13 +512,15 @@
     <h2>Оглавление</h2>
     <p class="sec-dek">Каждый раздел живёт своей жизнью — переходи сразу к тому, что нужно.</p>
     <div class="toc">
-      <a href="#classes">Классы <span>кто есть кто</span></a>
+      <a href="#classes">Классы <span>семь судеб</span></a>
       <a href="#progress">Прогресс <span>уровни и очки</span></a>
       <a href="#baseskills">Навыки <span>Q/W/E/R</span></a>
-      <a href="#advskills">Вторая профессия <span>20 навыков</span></a>
+      <a href="#advskills">Вторая профессия <span>28 навыков</span></a>
       <a href="#world">Мир Liberty <span>коридоры и фарм-зона</span></a>
       <a href="#quests">Квесты <span>сюжет и сезон</span></a>
       <a href="#gear">Снаряжение <span>редкость и крафт</span></a>
+      <a href="#runes">Руны <span>гнёзда и руда</span></a>
+      <a href="#pets">Питомцы <span>12 спутников</span></a>
       <a href="#itemcodex">Кодекс наборов <span>984 набора, точёный шмот</span></a>
       <a href="#economy">Экономика <span>золото, GRAM, Liberty</span></a>
       <a href="#clans">Кланы <span>война гильдий</span></a>
@@ -527,10 +531,14 @@
 
   <!-- ── CLASSES ───────────────────────────────────── -->
   <section class="doc" id="classes">
-    <div class="sec-eyebrow">Пять судеб</div>
+    <div class="sec-eyebrow">Семь судеб</div>
     <h2>Выбери класс</h2>
     <p class="sec-dek">Класс задаёт характеристики, дальность атаки и набор из четырёх навыков в слотах
-      Q/W/E/R. Сменить его на уже созданном персонаже нельзя — но ничто не мешает завести другого.</p>
+      Q/W/E/R. Класс можно <b>сменить</b> на уже созданном персонаже: первая смена стоит
+      <b style="color:var(--arcane-bright)">2 000 Liberty</b> (или 3 GRAM), каждая следующая —
+      <b style="color:var(--arcane-bright)">3 GRAM</b>. Уровень, опыт, вещи и валюта остаются;
+      снаряжение чужого класса снимается в инвентарь, изученные навыки сбрасываются, а очки
+      возвращаются.</p>
     <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:10px 0 0">На компьютере ходить можно
       <b class="inline">WASD</b> или стрелками, а навыки кастуются цифрами <b class="inline">1</b>–<b class="inline">4</b>
       либо клавишами <b class="inline">Q</b>, <b class="inline">E</b>, <b class="inline">R</b> — W занят
@@ -596,6 +604,30 @@
           <div>Защита <b>7</b></div>
           <div>Скорость <b>148</b></div>
           <div>Атак/сек <b>1.20</b></div>
+        </div>
+      </div>
+      <div class="classcard" style="--cc:var(--c-rune)">
+        <div class="classcard-portrait" style="background-image:url('/images/RuneFighter/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Рунный боец</div>
+        <div class="classcard-role">Ближний бой · выносливый</div>
+        <div class="classcard-stats">
+          <div>HP <b>230</b></div>
+          <div>Атака <b>3</b></div>
+          <div>Защита <b>8</b></div>
+          <div>Скорость <b>160</b></div>
+          <div>Атак/сек <b>1.10</b></div>
+        </div>
+      </div>
+      <div class="classcard" style="--cc:var(--c-assassin)">
+        <div class="classcard-portrait" style="background-image:url('/images/Assassin/Front%20-%20Idle.png')"></div>
+        <div class="classcard-name">Ассасин</div>
+        <div class="classcard-role">Ближний бой · крит и скорость</div>
+        <div class="classcard-stats">
+          <div>HP <b>95</b></div>
+          <div>Атака <b>4</b></div>
+          <div>Защита <b>2</b></div>
+          <div>Скорость <b>165</b></div>
+          <div>Атак/сек <b>1.35</b></div>
         </div>
       </div>
     </div>
@@ -855,6 +887,82 @@
       </div>
     </div>
 
+    <!-- Rune Fighter -->
+    <div class="class-section" style="--cc:var(--c-rune)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-rune)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v10l8 5 8-5V7l-8-5Z"/><path d="M9 9h6M12 9v7"/></svg></div>
+        <div><div class="class-section-title">Рунный боец</div><div class="class-section-role">Ближний бой · выносливый</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/rf_stronghit.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Сильный удар</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">Три удара подряд по цели</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/rf_shake.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Встряска</span><span class="bsk-cd">кд 16с</span></div>
+            <p class="bsk-desc">АОЕ ×3 урона, радиус 150</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/rf_regen.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Регенерация</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">+5 HP в секунду на 10 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/rf_slam.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Замедление</span><span class="bsk-cd">кд 10с</span></div>
+            <p class="bsk-desc">Прыжок с ×2 уроном и замедлением цели на 50% на 3 сек</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assassin -->
+    <div class="class-section" style="--cc:var(--c-assassin)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-assassin)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 14 6l4 3-10 13H4v-2Z"/><path d="M14 6 18 4l2 4-2 1"/></svg></div>
+        <div><div class="class-section-title">Ассасин</div><div class="class-section-role">Ближний бой · крит и скорость</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/as_whisper.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">Q</span><span class="bsk-name">Шепот смерти</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">Удар с тройным уроном</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/as_rampage.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">W</span><span class="bsk-name">Буйство</span><span class="bsk-cd">кд 8с</span></div>
+            <p class="bsk-desc">АОЕ ×2 урона, радиус 120</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/as_pierce.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">E</span><span class="bsk-name">Пронзание</span><span class="bsk-cd">кд 30с</span></div>
+            <p class="bsk-desc">+50% к шансу крита на 5 сек</p>
+          </div>
+        </div>
+        <div class="bsk-card">
+          <div class="bsk-icon"><img src="images/skill/as_flee.png" alt=""></div>
+          <div class="bsk-body">
+            <div class="bsk-head"><span class="adv-skill-key">R</span><span class="bsk-name">Бегство</span><span class="bsk-cd">кд 20с</span></div>
+            <p class="bsk-desc">×2 скорость бега на 5 сек</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <p class="sec-dek" style="margin-top:6px;margin-bottom:0">Кроме Q/W/E/R, у каждого класса есть 2 уникальные пассивки и ещё 6 общих для всех
       (скорость атаки, здоровье, крит. урон, скорость передвижения, кулдаун навыков, реген) —
       качаются отдельными книгами до 5 уровня и работают постоянно, без переключения.</p>
@@ -937,7 +1045,7 @@
 
   <!-- ── ADVANCED SKILLS ───────────────────────────── -->
   <section class="doc" id="advskills">
-    <div class="sec-eyebrow">Все 20 продвинутых навыков</div>
+    <div class="sec-eyebrow">Все 28 продвинутых навыков</div>
     <h2>Второе лицо каждого класса</h2>
     <p class="sec-dek">По одному продвинутому навыку на каждый слот — сильнее, зрелищнее, и полностью меняет ритм боя.</p>
 
@@ -1170,6 +1278,98 @@
         </div>
       </div>
     </div>
+
+    <!-- Rune Fighter -->
+    <div class="class-section" style="--cc:var(--c-rune)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-rune)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v10l8 5 8-5V7l-8-5Z"/><path d="M9 9h6M12 9v7"/></svg></div>
+        <div><div class="class-section-title">Рунный боец</div><div class="class-section-role">Ближний бой · выносливый</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="adv-skill-card">
+          <div class="fx fx-flash" style="--fx:#d09a5a"><img class="fx-icon" src="images/skill/adv/adv_rf_skullhit.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">Q</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Сильный удар</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Удар в череп</span></div>
+            <p class="adv-skill-desc">Уже не три удара, а пять подряд — серия, которую мало кто достаивает до конца.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#d09a5a"><span class="dot"></span>Вспышка</span>
+          </div>
+        </div>
+        <div class="adv-skill-card">
+          <div class="fx fx-shockwave" style="--fx:#c98a4a"><img class="fx-icon" src="images/skill/adv/adv_rf_crush.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">W</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Встряска</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Сокрушение</span></div>
+            <p class="adv-skill-desc">Четырёхкратный урон по всем в радиусе 220 и кулдаун втрое короче базового — 6 секунд.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#c98a4a"><span class="dot"></span>Взрывная волна</span>
+          </div>
+        </div>
+        <div class="adv-skill-card">
+          <div class="fx fx-pulse" style="--fx:#7fd0a0"><img class="fx-icon" src="images/skill/adv/adv_rf_return.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">E</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Регенерация</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Возврат</span></div>
+            <p class="adv-skill-desc">Вместо капель по 5 HP — полное восстановление здоровья одним нажатием.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#7fd0a0"><span class="dot"></span>Пульс маны</span>
+          </div>
+        </div>
+        <div class="adv-skill-card">
+          <div class="fx fx-classic" style="--fx:#e0b060"><img class="fx-icon" src="images/skill/adv/adv_rf_pulse.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">R</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Замедление</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Пульс</span></div>
+            <p class="adv-skill-desc">+30% к максимуму здоровья на десять минут — единственный навык в игре, который поднимает сам потолок HP.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#e0b060"><span class="dot"></span>Импульс</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Assassin -->
+    <div class="class-section" style="--cc:var(--c-assassin)">
+      <div class="class-section-head">
+        <div class="class-badge"><svg viewBox="0 0 24 24" fill="none" stroke="var(--c-assassin)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 14 6l4 3-10 13H4v-2Z"/><path d="M14 6 18 4l2 4-2 1"/></svg></div>
+        <div><div class="class-section-title">Ассасин</div><div class="class-section-role">Ближний бой · крит и скорость</div></div>
+      </div>
+      <div class="adv-skill-grid">
+        <div class="adv-skill-card">
+          <div class="fx fx-flash" style="--fx:#9a86c4"><img class="fx-icon" src="images/skill/adv/adv_as_deadly.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">Q</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Шепот смерти</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Смертоносность</span></div>
+            <p class="adv-skill-desc">Тот же тройной урон, но мимо половины защиты цели — броня перестаёт быть ответом.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#9a86c4"><span class="dot"></span>Вспышка</span>
+          </div>
+        </div>
+        <div class="adv-skill-card">
+          <div class="fx fx-shockwave" style="--fx:#8f7fb8"><img class="fx-icon" src="images/skill/adv/adv_as_scream.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">W</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Буйство</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Крик</span></div>
+            <p class="adv-skill-desc">Тройной урон в радиусе 250 вместо двойного в 120 — полкомнаты разом.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#8f7fb8"><span class="dot"></span>Взрывная волна</span>
+          </div>
+        </div>
+        <div class="adv-skill-card">
+          <div class="fx fx-pulse" style="--fx:#c9b06a"><img class="fx-icon" src="images/skill/adv/adv_as_killer.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">E</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Пронзание</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Убийца</span></div>
+            <p class="adv-skill-desc">К +50% шанса крита добавляется +50% его силы: пять секунд, ради которых копят кулдаун.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#c9b06a"><span class="dot"></span>Пульс маны</span>
+          </div>
+        </div>
+        <div class="adv-skill-card">
+          <div class="fx fx-classic" style="--fx:#7d6f96"><img class="fx-icon" src="images/skill/adv/adv_as_backstab.png" alt=""></div>
+          <div class="adv-skill-body">
+            <div class="adv-skill-key">R</div>
+            <div class="adv-skill-names"><span class="adv-skill-base">Бегство</span><span class="adv-skill-arrow">→</span><span class="adv-skill-name">Прыжок за спину</span></div>
+            <p class="adv-skill-desc">Вместо разгона — прыжок врагу за спину с двойным уроном и возвратом 30% здоровья.</p>
+            <span class="adv-skill-fx-tag" style="--fxtag:#7d6f96"><span class="dot"></span>Импульс</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- ── WORLD ─────────────────────────────────────── -->
@@ -1248,6 +1448,32 @@
         </div>
       </div>
     </div>
+
+    <h3 class="sub-h">Остальные зоны</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Кроме первой Фарм-зоны есть ещё три места, куда ходят не за опытом, а за конкретной
+      добычей. Во всех, как и в первой, монстры не нападают первыми, обычный дроп с них не
+      падает, а GRAM не выпадает вовсе.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Зона</th><th>Вход</th><th>Монстры</th><th>Чем интересна</th></tr>
+        <tr>
+          <td><b>Фарм-зона</b></td><td class="mut">с 20 ур.</td><td class="mut">21–30</td>
+          <td class="mut">Осколки, камни заточки, рецепты, книги второй профессии, Liberty 0.1%. Опыт ×3</td>
+        </tr>
+        <tr>
+          <td><b>Фарм зона 2</b></td><td class="mut">с 40 ур.</td><td class="mut">40–53</td>
+          <td class="mut">Всё то же плюс <b>снаряжение</b> — четыре отдельных броска от обычного до эпического. Осколки чаще в 1.3 раза</td>
+        </tr>
+        <tr>
+          <td><b>Элитная фарм-зона</b></td><td class="mut">с 25 ур., пати до 3</td><td class="mut">30–40</td>
+          <td class="mut">Ходят группой. Монстры стоят пачками и вдвое крепче, зато 1000 опыта с каждого и Liberty 0.3%</td>
+        </tr>
+        <tr>
+          <td><b>Сезонное крыло</b></td><td class="mut">по сезонному билету</td><td class="mut">21–30</td>
+          <td class="mut">Ещё четыре комнаты первой Фарм-зоны — та же добыча, просто больше места</td>
+        </tr>
+      </table>
+    </div>
   </section>
 
   <!-- ── QUESTS ────────────────────────────────────── -->
@@ -1285,7 +1511,7 @@
   <section class="doc" id="gear">
     <div class="sec-eyebrow">Кузница и трофеи</div>
     <h2>Снаряжение и крафт</h2>
-    <p class="sec-dek">10 слотов экипировки, 5 ступеней редкости и полная цепочка заточки и крафта —
+    <p class="sec-dek">11 слотов экипировки, 5 ступеней редкости и полная цепочка заточки и крафта —
       от обычного дропа до сборного уникального оружия.</p>
 
     <h3 class="sub-h">Слоты</h3>
@@ -1293,8 +1519,12 @@
       <span class="pill">Оружие</span><span class="pill">Шлем</span><span class="pill">Тело</span>
       <span class="pill">Перчатки</span><span class="pill">Плащ</span><span class="pill">Обувь</span>
       <span class="pill">Кольцо</span><span class="pill">Пояс</span><span class="pill">Питомец</span>
-      <span class="pill">Артефакт</span>
+      <span class="pill">Артефакт</span><span class="pill">Крылья</span>
     </div>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:10px 0 0"><b>Крылья</b> — единственный слот, который ускоряет <b>бег</b>: от +10% у обычных до
+      +70% у легендарных, а с эпических ещё и бонус к опыту. Одни на все классы, куются у кузнеца.
+      В броню и оружие вставляются <a href="#runes">руны</a> — у них своя вкладка у кузнеца и
+      свой раздел ниже.</p>
 
     <h3 class="sub-h">Редкость</h3>
     <div class="table-wrap">
@@ -1310,7 +1540,8 @@
 
     <h3 class="sub-h">Заточка</h3>
     <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0">Камнями заточки любой предмет усиливается до <b style="color:var(--arcane-bright)">+15</b> — каждый
-      уровень добавляет около 10% от базовых атаки/защиты/HP предмета.</p>
+      уровень добавляет около 10% от базовых атаки/защиты/HP предмета. Точатся и питомцы, и крылья,
+      и плащ с артефактом — всё, кроме рун: у руны свои строки, и заточка их не трогает.</p>
 
     <h3 class="sub-h">Крафт</h3>
     <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 6px">Нижние тиры (обычный → необычный → редкий) собираются у кузнеца за золото и материалы.
@@ -1375,6 +1606,133 @@
       так что не нужно листать все 984, чтобы найти, что уже почти собрано.</p>
   </section>
 
+  <!-- ── RUNES ─────────────────────────────────────── -->
+  <section class="doc" id="runes">
+    <div class="sec-eyebrow">Камни в гнёздах</div>
+    <h2>Руны</h2>
+    <p class="sec-dek">Единственная вещь в игре, у которой содержимое своё у каждого экземпляра:
+      две одинаковые с виду эпические руны дают разное. Куются у кузнеца на вкладке
+      <b class="inline">Руны</b>.</p>
+
+    <h3 class="sub-h">Как читать руну</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Редкость руны решает <b>одно</b> — сколько у неё строк характеристик. Сколько даёт каждая
+      строка, решает её собственный цвет. Поэтому оранжевая строка на обычной руне бывает ценнее
+      серой на редкой, и поэтому цвет можно перебрасывать.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Редкость руны</th><th>Строк</th><th><span class="rdot" style="color:#9aa3ab"></span>Серый</th><th><span class="rdot" style="color:#6bbf59"></span>Зелёный</th><th><span class="rdot" style="color:#4b8fd6"></span>Синий</th><th><span class="rdot" style="color:#a86bd6"></span>Фиолет.</th><th><span class="rdot" style="color:#e08a2e"></span>Оранж.</th></tr>
+        <tr><td><b>Обычная</b></td><td class="mut">1</td><td class="mut">+1%</td><td class="mut">+2%</td><td class="mut">+3%</td><td class="mut">+4%</td><td class="mut">+5%</td></tr>
+        <tr><td><b>Необычная</b></td><td class="mut">2</td><td class="mut">+6%</td><td class="mut">+7%</td><td class="mut">+8%</td><td class="mut">+9%</td><td class="mut">+10%</td></tr>
+        <tr><td><b>Редкая</b></td><td class="mut">3</td><td class="mut">+11%</td><td class="mut">+12%</td><td class="mut">+13%</td><td class="mut">+14%</td><td class="mut">+15%</td></tr>
+        <tr><td><b>Эпическая</b></td><td class="mut">4</td><td class="mut">+16%</td><td class="mut">+17%</td><td class="mut">+18%</td><td class="mut">+19%</td><td class="mut">+20%</td></tr>
+        <tr><td><b>Легендарная</b></td><td class="mut">5</td><td class="mut">—</td><td class="mut">+25%</td><td class="mut">+30%</td><td class="mut">+40%</td><td class="mut">+50%</td></tr>
+      </table>
+    </div>
+    <p class="sec-dek" style="margin-top:12px;margin-bottom:0">У легендарной руны серых строк не бывает вовсе: её худшая строка начинается там, где
+      кончается лучшая эпическая.</p>
+
+    <h3 class="sub-h">Два вида и гнёзда</h3>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Вид</th><th>Куда вставляется</th><th>Гнёзд</th><th>Что может дать</th></tr>
+        <tr>
+          <td><b>Руна доспеха</b></td><td class="mut">шлем, тело, перчатки, обувь, кольцо, пояс</td>
+          <td class="mut">по 3 в каждой вещи</td>
+          <td class="mut">HP, защита, бег,<br>сила крита, опыт, дроп</td>
+        </tr>
+        <tr>
+          <td><b>Руна оружия</b></td><td class="mut">только оружие</td><td class="mut">1</td>
+          <td class="mut">атака, скор. атаки,<br>шанс и сила крита, шанс Liberty</td>
+        </tr>
+      </table>
+    </div>
+    <p class="sec-dek" style="margin-top:12px;margin-bottom:0">Руна доспеха не лезет в оружие и наоборот. Вставка и извлечение — через карточку предмета:
+      открой вещь и нажми на гнездо. Вынуть можно в любой момент и бесплатно, руна вернётся в сумку
+      целой. В гнезде она не занимает места в инвентаре.</p>
+    <p class="sec-dek" style="margin-top:10px;margin-bottom:0"><b>Пока руны в предмете, его нельзя продать, разобрать или выставить на рынок</b> — сначала
+      вынь. Это защита: иначе легендарная руна ушла бы вместе со шлемом, проданным за восемь золотых.
+      Сами руны на рынке продаются свободно, и в лоте видно все их строки.</p>
+
+    <h3 class="sub-h">Ковка и перебор цвета</h3>
+    <div class="pillrow" style="margin-top:0">
+      <span class="pill">Шанс ковки <b>30%</b></span>
+      <span class="pill">При неудаче руда <b>сгорает</b></span>
+      <span class="pill">Перебор цвета <b>100 Liberty</b></span>
+    </div>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:12px 0 0">Что именно выпадет — решает бросок на сервере: какие строки и какого цвета, заранее не
+      знает никто. Цвет любой строки можно <b>перебросить</b> за 100 Liberty прямо в карточке руны.
+      Это именно перебор, а не повышение: цвет бросается заново и <b>может выйти хуже</b> нынешнего —
+      окно об этом честно предупреждает перед списанием.</p>
+
+    <h3 class="sub-h">Руда</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Руны куются из руды. <b>Обычная руда падает с любого монстра в игре с шансом 70%</b> —
+      это единственная вещь с таким правилом. Остальные четыре руды не падают нигде: их
+      переплавляют, десять штук в одну следующую, с шансом <b>50%</b>. Переплавка — там же, во
+      вкладке <b class="inline">Руны</b>.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Руна</th><th>Нужна руда</th><th>для доспеха</th><th>для оружия</th></tr>
+        <tr><td><span class="rdot" style="color:#9c9086"></span>Обычная</td><td class="mut">обычная</td><td class="mut">1000</td><td class="mut">5000</td></tr>
+        <tr><td><span class="rdot" style="color:#6f9c4a"></span>Необычная</td><td class="mut">необычная</td><td class="mut">800</td><td class="mut">3000</td></tr>
+        <tr><td><span class="rdot" style="color:#4a7bab"></span>Редкая</td><td class="mut">редкая</td><td class="mut">500</td><td class="mut">1500</td></tr>
+        <tr><td><span class="rdot" style="color:#8a5cc2"></span>Эпическая</td><td class="mut">эпическая</td><td class="mut">300</td><td class="mut">1000</td></tr>
+        <tr><td><span class="rdot" style="color:#e8b93e"></span>Легендарная</td><td class="mut">легендарная</td><td class="mut">100</td><td class="mut">500</td></tr>
+      </table>
+    </div>
+    <p class="sec-dek" style="margin-top:12px;margin-bottom:0">Чем выше ярус, тем меньше руды нужно на руну — и это не щедрость: руда каждого яруса сама
+      стоит двадцати руд предыдущего, так что дороже всё равно выходит каждая следующая.</p>
+  </section>
+
+  <!-- ── PETS ──────────────────────────────────────── -->
+  <section class="doc" id="pets">
+    <div class="sec-eyebrow">Спутники</div>
+    <h2>Питомцы</h2>
+    <p class="sec-dek">Двенадцать питомцев в четырёх ярусах. Занимают свой слот экипировки, бегают
+      рядом и видны другим игрокам. В бою не участвуют — вся польза в характеристиках, а у эпических
+      ещё и в навыке.</p>
+
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Ярус</th><th>Питомцы</th><th>HP / Атака / Защита</th><th>Свой бонус</th><th>Ковка</th></tr>
+        <tr>
+          <td><span class="rdot" style="color:#9c9086"></span><b>Обычные</b></td>
+          <td class="mut">Ацтек · Майя · Медведь</td><td class="mut">150 / 10 / 10</td>
+          <td class="mut">скорость атаки, крит или +15% HP</td><td class="mut">500 Liberty</td>
+        </tr>
+        <tr>
+          <td><span class="rdot" style="color:#6f9c4a"></span><b>Необычные</b></td>
+          <td class="mut">Медуза · Костяк · Огр</td><td class="mut">300 / 25 / 20</td>
+          <td class="mut">то же, но сильнее (до +25% HP)</td><td class="mut">2 000 Liberty</td>
+        </tr>
+        <tr>
+          <td><span class="rdot" style="color:#4a7bab"></span><b>Редкие</b></td>
+          <td class="mut">Бонесса · Циклоп · Йети</td><td class="mut">550 / 45 / 35</td>
+          <td class="mut">до +40% HP или +25% крита</td><td class="mut">5 000 Liberty</td>
+        </tr>
+        <tr>
+          <td><span class="rdot" style="color:#8a5cc2"></span><b>Эпические</b></td>
+          <td class="mut">Грут · Нёрб · Вилорд</td><td class="mut">1200 / 100 / 100</td>
+          <td class="mut">+10% опыта <b>и навык</b></td><td class="mut">30 000 Liberty</td>
+        </tr>
+      </table>
+    </div>
+    <p class="sec-dek" style="margin-top:12px;margin-bottom:0">Куются у кузнеца за Liberty, ярус выбирается — но какой из трёх питомцев яруса достанется,
+      решает случай. Питомцы затачиваются, как обычное снаряжение: каждый уровень даёт +10% к его
+      базовым HP, атаке и защите. Свой бонус и навык заточкой не растут.</p>
+
+    <h3 class="sub-h">Навыки эпических питомцев</h3>
+    <p style="font-size:13.5px;color:var(--text);max-width:68ch;margin:0 0 12px">Эпический питомец применяет навык <b>сам, раз в 30 секунд</b> — нажимать нечего. Пока навык
+      действует, в углу под кнопкой атаки светится его кружок, а сам значок встаёт в ряд бафов.</p>
+    <div class="table-wrap">
+      <table class="dtable">
+        <tr><th>Питомец</th><th>Навык</th><th>Что делает</th></tr>
+        <tr><td><b>Грут</b></td><td class="mut">Каменная кора</td><td class="mut">+30% к атаке и +20% к защите на 10 секунд</td></tr>
+        <tr><td><b>Нёрб</b></td><td class="mut">Споры жизни</td><td class="mut">восстанавливает 30% здоровья сразу</td></tr>
+        <tr><td><b>Вилорд</b></td><td class="mut">Жажда крови</td><td class="mut">+30% к силе крита и +10% к скорости атаки на 10 секунд</td></tr>
+      </table>
+    </div>
+  </section>
+
   <!-- ── ECONOMY ───────────────────────────────────── -->
   <section class="doc" id="economy">
     <div class="sec-eyebrow">Три монеты</div>
@@ -1403,7 +1761,9 @@
         <p>Вторая премиум-валюта — не покупается напрямую, только выдаётся сервером за игровые
         достижения.</p>
         <p>Нужна для крафта эпической и легендарной экипировки (7 000 / 20 000), питомцев
-        (500–5 000 по редкости) и крафта классовых плащей и артефактов.</p>
+        (500–30 000 по ярусу), классовых плащей и артефактов, крыльев, а также для
+        <a href="#runes">перебора цвета руны</a> (100 за бросок). За 5 Liberty у торговца
+        продаётся камень телепортации — возврат в центральный зал из любой точки.</p>
       </div>
     </div>
 
@@ -1514,7 +1874,7 @@
         </tr>
         <tr>
           <td><b>Мировой босс</b></td><td class="mut">Пн / Ср / Пт / Вс, 20:00</td>
-          <td class="mut">«Владыка Демонов», 1 000 000 HP, закрытая арена</td>
+          <td class="mut">«Владыка Демонов», 5 000 000 HP, закрытая арена</td>
           <td class="mut">эпическая/легендарная экипировка</td>
         </tr>
         <tr>
