@@ -297,10 +297,34 @@ console.log('\n  ── защиты ──');
     'продажа и разбор отказывают, пока руны в предмете');
   ok(/async function detachForListing[\s\S]{0,600}await assertNoRunes/.test(src),
     'и рынок тоже');
-  const socketFilters = (src.match(/socket_of IS NULL/g) || []).length;
-  ok(socketFilters >= 6, `руна в гнезде исключена из всех запросов инвентаря (${socketFilters} мест)`);
-  ok(/INSERT INTO player_items \(player_id, container, item_id, enhance, qty, source, source_ref, rune\)/.test(src),
-    'содержимое руны пишется единственной вставкой предметов');
+  const socketFilters = (src.match(/\$\{await _noSocket\(db/g) || []).length;
+  ok(socketFilters >= 9, `руна в гнезде исключена из всех запросов инвентаря (${socketFilters} мест)`);
+
+  // ── ВХОД В ИГРУ НА БАЗЕ БЕЗ МИГРАЦИИ 029 ─────────────────────────────────
+  // Это регрессия, которая уже случилась: колонки rune/socket_of стояли в
+  // запросах items.js напрямую, а миграция на сервере ещё не была применена.
+  // inventoryOf читается при каждом логине — и вход перестал работать вообще,
+  // для всех. Порядок выкладки в проекте такой, что код приезжает раньше
+  // миграции, поэтому «колонка есть в запросе» здесь означает «сервер лежит».
+  //
+  // Проверяется буквально: ни одного упоминания колонок рун в SQL мимо
+  // хелперов, которые сами спрашивают схему.
+  const sqlLits = [...src.matchAll(/`([^`]*)`/g)].map(m => m[1])
+    .filter(t => /\bFROM player_items\b|\bINTO player_items\b|\bplayer_items\b/.test(t));
+  const bare = sqlLits.filter(t => /\bsocket_of\b|\brune\b/.test(t)
+    // socketedRunesOf и assertNoRunes целиком за проверкой схемы — их запросы
+    // до миграции просто не выполняются.
+    && !/socket_of IS NOT NULL/.test(t)
+    && !/SELECT 1 FROM player_items WHERE socket_of = \$1/.test(t)
+    && !/information_schema/.test(t));
+  ok(bare.length === 0,
+    `в items.js нет запроса с колонками рун мимо проверки схемы (${bare.length} шт.)`);
+  ok(new RegExp('SELECT id, container, slot, item_id, enhance, qty\\$\\{await _runeCols\\(db\\)\\}').test(src),
+    'инвентарь логина берёт колонки рун только когда они есть');
+  ok(/if \(await _hasSocketCols\(db\)\) \{\s*\n\s*cols\.push\('rune'\);/.test(src),
+    'содержимое руны пишется единственной вставкой предметов — и только при наличии колонки');
+  ok(/if \(await _hasSourceCols\(db\)\) \{\s*\n\s*cols\.push\('source', 'source_ref'\);/.test(src),
+    'провенанс (011) и руна (029) больше не связаны одним if');
 
   const stSrc = fs.readFileSync(path.join(ROOT, 'server/db/repos/stats.js'), 'utf8');
   ok(/LOAD_SQL_NO_RUNES/.test(stSrc) && /column_name = 'socket_of'/.test(stSrc),

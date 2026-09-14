@@ -41,6 +41,22 @@ const err = (code, msg) => { throw new RuneError(code, msg); };
 const RAND_MAX = 2 ** 30;
 function rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
 
+// ── база ещё без миграции 029 ───────────────────────────────────────────────
+// Код выкладывается раньше миграции — это порядок, а не случайность. В окне
+// между выкладкой и `migrate-now.sh` колонок rune/socket_of нет, и всё, что
+// делают эти четыре функции, писать НЕКУДА. Отказ здесь честнее запроса,
+// который упадёт ошибкой Postgres: игрок видит «руны ещё не включены», а не
+// «внутренняя ошибка», и не теряет вложенное.
+async function _runesReady(db) {
+  const { rows } = await query(db, `
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'player_items' AND column_name = 'socket_of' LIMIT 1`);
+  return rows.length > 0;
+}
+function _needRunes(ready) {
+  if (!ready) err('runes_off', 'Руны ещё не включены на сервере');
+}
+
 // ── ковка ───────────────────────────────────────────────────────────────────
 // Порядок: сперва отказы, которые ничего не стоят, потом плата, потом бросок.
 // Отказ, за который уже заплачено, — худший вид отказа; ровно этот порядок
@@ -49,6 +65,7 @@ function rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
 // При неудаче (70% по RUNE_CRAFT_CHANCE) вложенное сгорает и руны не
 // появляется — это и есть цена попытки.
 async function craftRune(db, playerId, kind, rarity) {
+  _needRunes(await _runesReady(db));
   await items.lockPlayer(db, playerId);
   const rec = RUNE_CRAFT_RECIPES.find(r => r.kind === kind && r.rarity === rarity);
   if (!rec) err('bad_recipe', 'Неизвестный рецепт руны');
@@ -115,6 +132,7 @@ async function craftRune(db, playerId, kind, rarity) {
 // характеристики у необычной руны — это правило ковки, а не свойство строки,
 // и руна, доставшаяся из более старой версии, может не совпасть с таблицей.
 async function rerollRuneStat(db, playerId, rowId, statIdx) {
+  _needRunes(await _runesReady(db));
   await items.lockPlayer(db, playerId);
   const id = Math.floor(Number(rowId));
   if (!Number.isSafeInteger(id) || id <= 0) err('bad_rune', 'Руна не найдена');
@@ -149,6 +167,7 @@ async function rerollRuneStat(db, playerId, rowId, statIdx) {
 // доспешных — здоровье и бег), и позволить перепутать значит отдать оружию
 // прибавку, придуманную для брони.
 async function socketRune(db, playerId, hostRowId, runeRowId, socketIdx) {
+  _needRunes(await _runesReady(db));
   await items.lockPlayer(db, playerId);
   const host = Math.floor(Number(hostRowId));
   const rune = Math.floor(Number(runeRowId));
@@ -190,6 +209,7 @@ async function socketRune(db, playerId, hostRowId, runeRowId, socketIdx) {
 // Вынуть. Руна возвращается в сумку — значит нужно место, и проверяется оно
 // ДО того, как гнездо освободится: иначе руна оказалась бы нигде.
 async function unsocketRune(db, playerId, runeRowId) {
+  _needRunes(await _runesReady(db));
   await items.lockPlayer(db, playerId);
   const rune = Math.floor(Number(runeRowId));
   if (!Number.isSafeInteger(rune) || rune <= 0) err('bad_rune', 'Руна не найдена');

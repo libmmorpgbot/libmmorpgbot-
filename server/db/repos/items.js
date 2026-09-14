@@ -3,7 +3,7 @@
 // An item is a ROW WITH AN OWNER. That single change is what closes the whole
 // family of "предмет пропал" reports, so it is worth being precise about what
 // it replaces.
-//
+  //
 // In the Mongo version an item was an element of an array inside the player
 // document, and every operation rewrote the whole array. Two consequences, and
 // both of them shipped as bugs:
@@ -106,7 +106,7 @@ function _row(r) {
 // to answer one question is three chances for them to disagree.
 async function inventoryOf(db, playerId) {
   const { rows } = await query(db, `
-    SELECT id, container, slot, item_id, enhance, qty, rune, socket_of, socket_idx
+    SELECT id, container, slot, item_id, enhance, qty${await _runeCols(db)}
       FROM player_items
      WHERE player_id = $1
      ORDER BY sort_seq`, [playerId]);
@@ -139,6 +139,7 @@ async function inventoryOf(db, playerId) {
 // лишним запросом на каждую смену снаряжения.
 async function socketedRunesOf(db, playerId, hostIds = null) {
   if (hostIds && !hostIds.length) return new Map();
+  if (!await _hasSocketCols(db)) return new Map();
   const { rows } = await query(db, `
     SELECT socket_of, socket_idx, item_id, rune
       FROM player_items
@@ -164,7 +165,7 @@ async function usedSlots(db, playerId) {
   const { rows } = await query(db,
     `SELECT count(*)::int n FROM player_items
       WHERE player_id = $1 AND container = 'inventory'
-        AND socket_of IS NULL`, [playerId]);
+        ${await _noSocket(db)}`, [playerId]);
   return rows[0].n;
 }
 
@@ -181,10 +182,10 @@ async function hasRoomFor(db, playerId, itemId) {
       (SELECT stackable FROM item_catalog WHERE item_id = $2) AS stackable,
       EXISTS (SELECT 1 FROM player_items
                WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
-                 AND socket_of IS NULL) AS has_stack,
+                 ${await _noSocket(db)}) AS has_stack,
       (SELECT count(*) FROM player_items
         WHERE player_id = $1 AND container = 'inventory'
-          AND socket_of IS NULL) AS used`,
+          ${await _noSocket(db)}) AS used`,
     [playerId, itemId]);
   const r = rows[0];
   if (r.stackable === null) return false;              // not a real item
@@ -221,7 +222,7 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
       UPDATE player_items SET qty = qty + $3
        WHERE id = (SELECT id FROM player_items
                     WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
-                      AND socket_of IS NULL
+                      ${await _noSocket(db)}
                     ORDER BY id LIMIT 1)
       RETURNING id`, [playerId, itemId, qty]);
     if (merged.length) {
@@ -246,26 +247,29 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
   // Asked of the schema once rather than assumed, so the deploy order between
   // this code and its migration cannot break a grant. Before the migration the
   // old statement runs and nothing is recorded; after it, everything is.
-  let rowId;
+  // ── две миграции здесь независимы ────────────────────────────────────────
+  // Колонка `rune` (029) вставлялась в ветке, которую выбирала проверка на
+  // `source` (011). На базе, где 011 применена, а 029 ещё нет — то есть на
+  // любом сервере сразу после выкладки рун и до `migrate-now.sh` — этот
+  // INSERT падал на каждой выдаче предмета. Поэтому список колонок собирается
+  // по факту: чего в схеме нет, того нет и в запросе.
+  //
+  // Руна, выкованная до 029, была бы пустой оболочкой — но до этого не
+  // доходит: ковка на такой базе отказывает (см. repos/runes.js).
+  const cols = ['player_id', 'container', 'item_id', 'enhance', 'qty'];
+  const vals = [playerId, 'inventory', itemId, enh, qty];
   if (await _hasSourceCols(db)) {
-    const { rows } = await query(db, `
-      INSERT INTO player_items (player_id, container, item_id, enhance, qty, source, source_ref, rune)
-      VALUES ($1, 'inventory', $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [playerId, itemId, enh, qty, source || null,
-        sourceRef == null ? null : String(sourceRef).slice(0, 80),
-        rune ? JSON.stringify(rune) : null]);
-    rowId = Number(rows[0].id);
-  } else {
-    // До миграции 011 (колонки провенанса) — а значит и до 029 — содержимому
-    // руны просто негде лежать. Руна, выкованная на такой базе, была бы пустой
-    // оболочкой, поэтому ковка на ней отказывает (см. repos/runes.js), а не
-    // выдаёт вещь без характеристик.
-    const { rows } = await query(db, `
-      INSERT INTO player_items (player_id, container, item_id, enhance, qty)
-      VALUES ($1, 'inventory', $2, $3, $4) RETURNING id`,
-      [playerId, itemId, enh, qty]);
-    rowId = Number(rows[0].id);
+    cols.push('source', 'source_ref');
+    vals.push(source || null, sourceRef == null ? null : String(sourceRef).slice(0, 80));
   }
+  if (await _hasSocketCols(db)) {
+    cols.push('rune');
+    vals.push(rune ? JSON.stringify(rune) : null);
+  }
+  const { rows: ins } = await query(db,
+    `INSERT INTO player_items (${cols.join(', ')})
+     VALUES (${vals.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`, vals);
+  const rowId = Number(ins[0].id);
   // The reason IS the provenance label 011 already defined ('kill', 'craft',
   // 'box', …) rather than a second vocabulary meaning the same things. Every
   // one of the seventeen call sites already passes it, so the creation half of
@@ -422,7 +426,7 @@ async function removeQty(db, playerId, itemId, qty = 1, { enhance = null, minEnh
     WITH pool AS (
       SELECT id, qty, enhance FROM player_items pi
        WHERE player_id = $1 AND container = 'inventory' AND item_id = $2
-         AND socket_of IS NULL
+         ${await _noSocket(db)}
          AND ($4::int IS NULL OR enhance = $4::int)
          AND ($5::int IS NULL OR enhance >= $5::int)
          AND ($6::bool = false OR NOT EXISTS (
@@ -489,7 +493,7 @@ async function consumeMatching(db, playerId, n, { itemIds = null, rarity = null,
         FROM player_items pi
         JOIN item_catalog c ON c.item_id = pi.item_id
        WHERE pi.player_id = $1 AND pi.container = 'inventory'
-         AND pi.socket_of IS NULL
+         ${await _noSocket(db, 'pi.')}
          AND ($3::text[] IS NULL OR pi.item_id = ANY($3::text[]))
          AND ($4::text   IS NULL OR c.rarity = $4::text)
          AND ($5::bool   IS NULL OR c.stackable = $5::bool)
@@ -582,7 +586,7 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
   if (Number.isSafeInteger(direct) && direct > 0) {
     const { rows } = await query(db,
       `SELECT id FROM player_items
-        WHERE id = $1 AND player_id = $2 AND container = $3 AND socket_of IS NULL`,
+        WHERE id = $1 AND player_id = $2 AND container = $3 ${await _noSocket(db)}`,
       [direct, playerId, container]);
     if (rows.length) return Number(rows[0].id);
     // Falls THROUGH rather than refusing. A row id can go stale honestly — the
@@ -606,7 +610,7 @@ async function resolveRow(db, playerId, ref = {}, container = 'inventory') {
   // different ordering than the one the player actually clicked in.
   const { rows } = await query(db,
     `SELECT id, item_id, enhance FROM player_items
-      WHERE player_id = $1 AND container = $2 AND socket_of IS NULL
+      WHERE player_id = $1 AND container = $2 ${await _noSocket(db)}
       ORDER BY sort_seq`, [playerId, container]);
   if (!rows.length) return null;
 
@@ -639,7 +643,7 @@ async function countMatching(db, playerId, { itemIds = null, rarity = null, stac
       FROM player_items pi
       JOIN item_catalog c ON c.item_id = pi.item_id
      WHERE pi.player_id = $1 AND pi.container = 'inventory'
-       AND pi.socket_of IS NULL
+       ${await _noSocket(db, 'pi.')}
        AND ($2::text[] IS NULL OR pi.item_id = ANY($2::text[]))
        AND ($3::text   IS NULL OR c.rarity = $3::text)
        AND ($4::bool   IS NULL OR c.stackable = $4::bool)`,
@@ -700,6 +704,21 @@ async function marketRefBlocksDelete(db) {
 // _hasSourceCols выше: код уезжает на сервер раньше миграции, и запрос про
 // socket_of до неё падал бы на каждой продаже.
 let _socketCols = null;
+
+// Куски SQL, которых на базе без миграции 029 просто не существует. Пока
+// колонок нет, фрагмент пустой — и запрос получается ровно тот, что работал
+// до рун. Это не «на всякий случай»: порядок выкладки в этом проекте такой,
+// что код приезжает на сервер раньше миграции, и между двумя этими моментами
+// сервер обязан работать целиком, а не «кроме входа в игру».
+async function _runeCols(db, a = '') {
+  return await _hasSocketCols(db) ? `, ${a}rune, ${a}socket_of, ${a}socket_idx` : '';
+}
+// Отсечь руны в гнёздах от того, что игрок держит в руках. Без колонки
+// отсекать нечего: рун в базе ещё нет вовсе.
+async function _noSocket(db, a = '') {
+  return await _hasSocketCols(db) ? `AND ${a}socket_of IS NULL` : '';
+}
+
 async function _hasSocketCols(db) {
   if (_socketCols !== null) return _socketCols;
   try {
