@@ -120,6 +120,7 @@ node /srv/liberty/next/dev/env-quote.js /srv/liberty/env
 |---|---|---|
 | `PG_POOL_MAX` | `12` | размер пула |
 | `PG_STATEMENT_TIMEOUT_MS` | `5000` | тот самый таймаут, в который упирался вход |
+| `PG_RECONCILE_TIMEOUT_MS` | `60000` | отдельный, более длинный таймаут для ночной сверки (`reconcile`/`reconcileItems`) — полного скана `ledger`/`item_ledger`, которому `PG_STATEMENT_TIMEOUT_MS` тесен |
 | `PG_IDLE_TX_TIMEOUT_MS` | `10000` | брошенная открытая транзакция держит блокировки |
 | `PG_SLOW_QUERY_MS` | `200` | с какого времени запрос попадает в лог |
 | `PG_ALLOW_PLAINTEXT` | — | `1` разрешает соединение без TLS и **только на loopback** |

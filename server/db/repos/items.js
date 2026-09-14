@@ -27,7 +27,7 @@
 // insert; without a transaction those are two statements a concurrent grant
 // can land between, and the 150-slot cap becomes a suggestion.
 
-const { query, hasColumn } = require('../index');
+const { query, queryWithTimeout, RECONCILE_STATEMENT_TIMEOUT_MS, hasColumn } = require('../index');
 const { SERVER_INV_MAX } = require('../../anticheat');
 const { ITEM_DEF, CRAFT_MATS, BOX_DEF, ENHANCEABLE_SLOTS, isStackableItem } =
   require('../../../shared/definitions');
@@ -1099,7 +1099,7 @@ async function historyOfRow(db, rowId, limit = 50) {
 // something to call from a request path.
 async function reconcile(db) {
   if (!await _hasLedger()) return null;
-  const { rows } = await query(db, `
+  const { rows } = await queryWithTimeout(db, RECONCILE_STATEMENT_TIMEOUT_MS, `
     SELECT COALESCE(h.player_id, l.player_id) AS player_id,
            COALESCE(h.item_id,   l.item_id)   AS item_id,
            COALESCE(h.held, 0)                AS held,
