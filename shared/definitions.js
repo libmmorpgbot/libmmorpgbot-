@@ -1929,10 +1929,12 @@ function petSkillOf(petId) {
 const RUNE_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 const RUNE_STAT_COUNT = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5 };
 
-// Гнёзда. Броня носит три руны на предмет, оружие — одну: у оружия слот один
-// на персонажа, у брони их девять, и одинаковое число гнёзд означало бы, что
-// оружейные руны в девять раз реже нужны.
-const RUNE_ARMOR_SOCKETS  = 3;
+// Гнёзда. Было три на предмет брони — по прямому указанию владельца сведено
+// к одной, как и у оружия. Существующие руны во втором и третьем гнезде
+// (если кто-то успел вставить их, пока лимит был три) никуда не денутся и
+// продолжат считаться — ограничение проверяется только при ВСТАВКЕ новой
+// (socketRune, repos/runes.js), не задним числом.
+const RUNE_ARMOR_SOCKETS  = 1;
 const RUNE_WEAPON_SOCKETS = 1;
 
 // Крафт. 30% — по прямому заданию владельца; при неудаче вложенное сгорает.
@@ -2179,7 +2181,22 @@ function runeIconOf(itemId, stats) {
 // так что редкость сдвинута в само падение, а не в шанс потерять уже
 // добытую руду на полпути к следующему ярусу.
 const ORE_DROP_CHANCE = 0.05;
-function oreDropChance() { return ORE_DROP_CHANCE; }
+
+// Третье указание: руда падает только с монстров 20 уровня и выше — не
+// «падает у всех, но реже у младших», а буквально нет броска ниже порога.
+// Резкая граница, а не плавная кривая: игрок либо ещё не дорос до фарма
+// руды, либо уже там, и нет промежуточного «почти не падает», которое
+// выглядело бы как поломка.
+const ORE_MIN_LEVEL = 20;
+
+// monsterLevel не задан (undefined/NaN) — значит вызвавший код не знает
+// уровня монстра вовсе, а не то, что монстр нулевого уровня. В этом случае
+// шанс всё равно 0: молчаливое «пусть будет полный шанс» было бы куда хуже
+// молчаливого «пусть будет ноль» — переплатить руды никто не пожалуется, а
+// вот дать её там, где не должно, испортит экономику тихо.
+function oreDropChance(monsterLevel) {
+  return Number(monsterLevel) >= ORE_MIN_LEVEL ? ORE_DROP_CHANCE : 0;
+}
 
 // Какая руда нужна на руну этой редкости. Своя на каждую — ради легендарной
 // руны надо пройти всю лесенку переплавки.
@@ -3522,7 +3539,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNE_QUALITIES, RUNE_QUALITY_COLOR,
   RUNE_QUALITY_NAME, RUNE_QUALITY_WEIGHT, RUNE_STAT_PCT, RUNE_ARMOR_STATS,
   RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,
-  ORE_DROP_CHANCE, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,
+  ORE_DROP_CHANCE, ORE_MIN_LEVEL, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,
   runeKindOf, runeRarityOf, runeCatalogId, runeStatPct, runeQualityPool,
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,

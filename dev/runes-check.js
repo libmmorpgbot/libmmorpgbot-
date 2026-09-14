@@ -196,8 +196,9 @@ console.log('\n  ── обе формы одного массива дают �
 // ── 5. гнёзда и совместимость ──────────────────────────────────────────────
 console.log('\n  ── гнёзда ──');
 {
+  // Было три; владелец свёл к одному, как и у оружия.
   for (const sl of ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt']) {
-    eq(D.runeSocketsOf(sl), 3, `${sl}: три гнезда`);
+    eq(D.runeSocketsOf(sl), 1, `${sl}: одно гнездо`);
     eq(D.runeKindForSlot(sl), 'armor', `${sl} принимает руны доспеха`);
   }
   eq(D.runeSocketsOf('weapon'), 1, 'оружие: одно гнездо');
@@ -242,15 +243,24 @@ console.log('\n  ── руда ──');
   ok(!D.ITEM_DEF.some(d => String(d.id).startsWith('ore_')),
     'руда не снаряжение — в таблицу выпадения вещей не попадает');
 
-  // Шанс — ровные 5% с любого монстра, без роста по уровню. Было 70%;
-  // снижено вторым указанием владельца вместе с тем, что переплавка стала
-  // стопроцентной — редкость теперь целиком в дропе, а не поделена между
-  // дропом и лесенкой.
-  near(D.oreDropChance(), 0.05, 'шанс выпадения руды — 5%');
-  eq(D.ORE_DROP_CHANCE, 0.05, 'и он же в константе');
-  for (const lvl of [1, 2, 30, 78]) {
-    near(D.oreDropChance(lvl), 0.05, `уровень ${lvl} ничего не меняет`);
+  // Шанс — ровные 5% с монстра 20+ уровня, ниже — вообще ноль. Было 70% и
+  // без порога по уровню; порог — третье указание владельца, шанс — второе.
+  eq(D.ORE_MIN_LEVEL, 20, 'порог по уровню — 20');
+  eq(D.ORE_DROP_CHANCE, 0.05, 'шанс на монстре выше порога — 5%');
+  for (const lvl of [1, 5, 19]) {
+    eq(D.oreDropChance(lvl), 0, `уровень ${lvl} (ниже порога): шанса нет вовсе`);
   }
+  for (const lvl of [20, 21, 30, 78]) {
+    near(D.oreDropChance(lvl), 0.05, `уровень ${lvl} (порог и выше): обычный шанс`);
+  }
+  // Ровно на границе — тоже «уже можно», а не «ещё нельзя»: >= , а не >.
+  eq(D.oreDropChance(D.ORE_MIN_LEVEL), D.ORE_DROP_CHANCE, 'граница включена: 20 — уже можно');
+  eq(D.oreDropChance(D.ORE_MIN_LEVEL - 1), 0, 'на единицу ниже границы — уже нельзя');
+  // Не задан уровень вовсе (вызывающий код не знает) — ноль, а не полный
+  // шанс: тихая переплата рудой хуже тихой недодачи.
+  eq(D.oreDropChance(), 0, 'уровень не передан — шанс ноль, а не по умолчанию есть');
+  eq(D.oreDropChance(undefined), 0, 'и явный undefined — тоже ноль');
+  eq(D.oreDropChance(NaN), 0, 'и NaN — тоже ноль, а не NaN-сравнение с непредсказуемым исходом');
 
   // Лесенка переплавки: 10 к 1, без потерь.
   const ladder = D.MAT_UPGRADE_RECIPES.filter(r => String(r.from).startsWith('ore_'));
@@ -309,8 +319,8 @@ console.log('\n  ── руда ──');
   const wSrc = fs.readFileSync(path.join(ROOT, 'server/handlers2/world.js'), 'utf8');
   const lootFn = wSrc.slice(wSrc.indexOf('function rollLoot(result)'),
     wSrc.indexOf('// ── what a clan point means'));
-  ok(/rand\(\) < oreDropChance\(\)/.test(lootFn),
-    'руда бросается одной ставкой, без уровня');
+  ok(/rand\(\) < oreDropChance\(result\.rlvl\)/.test(lootFn),
+    'руда бросается одной ставкой, с уровнем ИМЕННО этого монстра (result.rlvl)');
   ok(lootFn.indexOf("result.arm === 'coop'") < lootFn.indexOf('oreDropChance'),
     'сотрудничество выходит раньше — у него добычи нет по построению');
   ok(lootFn.indexOf('_rollMobLoot') < lootFn.indexOf('oreDropChance'),

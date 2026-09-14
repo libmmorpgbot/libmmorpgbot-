@@ -320,8 +320,8 @@ function _craftsmanRunesTab() {
     const oreHave = countMaterial('ore_common');
     html += `<div class="craft-group-hdr" style="color:#c9a24b">Переплавка руды</div>`
       + `<div class="craft-items-grid">${ladder.join('')}</div>`
-      + `<div class="pet-preview-hint">Обычная руда падает со всех монстров с шансом
-         ${Math.round((typeof ORE_DROP_CHANCE !== 'undefined' ? ORE_DROP_CHANCE : 0) * 100)}%.
+      + `<div class="pet-preview-hint">Обычная руда падает с монстров ${typeof ORE_MIN_LEVEL !== 'undefined' ? ORE_MIN_LEVEL : 20}+ уровня
+         с шансом ${Math.round((typeof ORE_DROP_CHANCE !== 'undefined' ? ORE_DROP_CHANCE : 0) * 100)}%.
          Сейчас обычной руды: <b>${oreHave}</b>.</div>`;
   }
   return html;

@@ -8381,8 +8381,13 @@ function _renderMarketPickGrid() {
     const rc  = RARITY_COLOR[it.rarity] || '#aea599';
     const sel = _marketSellPick === idx ? ' selected' : '';
     const cnt = it.qty > 1 ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${it.qty}</span>` : '';
-    return `<div class="market-pick-cell${sel}" style="border-color:${rc}55" onclick="_pickMarketSellItem(${idx})" title="${it.name}">
-      ${_itemIcon(it, 26)}${cnt}
+    // Заточка — тем же значком, что и в инвентаре/хранилище (правый верхний
+    // угол, оранжевым). Без неё в сетке две одинаковые вещи разной заточки
+    // неотличимы до клика, и выставить на продажу можно было не ту копию —
+    // владелец сообщил, что при выборе предмета для лота заточку не видно.
+    const enh = it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
+    return `<div class="market-pick-cell${sel}" style="border-color:${rc}55" onclick="_pickMarketSellItem(${idx})" title="${it.name}${it.enhance ? ' +' + it.enhance : ''}">
+      ${_itemIcon(it, 26)}${cnt}${enh}
     </div>`;
   }).join('');
 }
