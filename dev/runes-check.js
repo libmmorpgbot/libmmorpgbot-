@@ -454,10 +454,24 @@ console.log('\n  ── защиты ──');
     uiSrc.indexOf('function closeInvItemModal') + 700)),
     'закрытая карточка забывает себя: следующий inventorySync её не воскресит');
   ok(/onclick="_runeToggleLock\(/.test(uiSrc), 'у характеристики есть замочек');
-  ok(/canReroll && !locked/.test(uiSrc),
-    'у строки под замком нет одиночной кнопки: замок и «тронуть» противоречат друг другу');
-  ok(/runeRerollAllPrice\(locks\)/.test(uiSrc),
-    'кнопка рисует цену той же функцией, по которой её посчитает сервер');
+  // Кнопка перед каждой характеристикой убрана по просьбе владельца — общая
+  // кнопка под списком делает то же самое. Проверяется буквально: ни строка
+  // характеристики (_runeStatRows), ни сама функция-обработчик одиночного
+  // перебора больше не существуют.
+  const statRowsSrc = uiSrc.slice(uiSrc.indexOf('function _runeStatRows'),
+    uiSrc.indexOf('function _runeToggleLock'));
+  ok(!/_runeRerollConfirm\(/.test(statRowsSrc),
+    'у строки характеристики нет кнопки одиночного перебора');
+  ok(!/function _runeRerollConfirm\(/.test(uiSrc),
+    'функция-обработчик одиночного перебора убрана целиком — вызывать её больше неоткуда');
+  // Цена больше не дублируется в подписи кнопки — только в подтверждении
+  // перед списанием (_runeRerollAllConfirm), той же общей функцией.
+  const confirmAllSrc = uiSrc.slice(uiSrc.indexOf('function _runeRerollAllConfirm'),
+    uiSrc.indexOf('function openRuneModal'));
+  ok(/runeRerollAllPrice\(locked\.length\)/.test(confirmAllSrc),
+    'подтверждение перед списанием всё ещё считает цену той же функцией, что и сервер');
+  ok(/>Переработать</.test(uiSrc), 'кнопка называется просто «Переработать»');
+  ok(!/Перебрать всё/.test(uiSrc), 'старая подпись с «всё» и ценой в кнопке убрана');
 
   // ── ЧЁРНЫЙ ТЕКСТ В КАРТОЧКАХ ───────────────────────────────────────────────
   // Ни body, ни #app не задают color, поэтому всё непокрашенное в модалке

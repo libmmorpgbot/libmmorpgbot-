@@ -4279,6 +4279,11 @@ function netRuneSocket(hostRowId, runeRowId, socketIdx) {
 function netRuneUnsocket(runeRowId) {
   if (socket?.connected) socket.emit('runeUnsocket', { runeRowId });
 }
+// Одиночный перебор одной строки. С уходом кнопки перед характеристикой
+// (js/ui.js, по просьбе владельца) у этой функции в клиенте не осталось
+// вызывающих — общая кнопка карточки делает то же самое через
+// netRuneRerollAll. Протокол ('runeReroll', server/handlers2/items.js)
+// не трогали: убрать его значило бы менять больше, чем просили.
 function netRuneReroll(runeRowId, statIdx) {
   if (socket?.connected) socket.emit('runeReroll', { runeRowId, statIdx });
 }

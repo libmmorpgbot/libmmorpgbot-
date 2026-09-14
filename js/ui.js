@@ -4740,29 +4740,22 @@ function _runeStatRows(it, opts = {}) {
     const col = RUNE_QUALITY_COLOR[st.q] || '#aea599';
     const name = RUNE_STAT_NAME[st.stat] || st.stat;
     const locked = opts.canReroll && _runeLocks.has(i);
-    // Замочек — слева от строки, чтобы читалось как отметка на ней, а не как
-    // ещё одна кнопка в ряду с переброском. Закрытый подсвечен: игрок должен
-    // видеть, за что платит вдвое, не наводя курсор.
+    // Замочек — слева от строки, чтобы читалось как отметка на ней. Закрытый
+    // подсвечен: игрок должен видеть, что не будет тронуто, не наводя курсор.
     const lock = opts.canReroll
       ? `<span onclick="_runeToggleLock(${i})" title="${locked ? 'Снять замок' : 'Не менять эту характеристику'}"
               style="cursor:pointer;font-size:13px;line-height:1;flex:0 0 auto;
                      opacity:${locked ? 1 : 0.35}">${locked ? '🔒' : '🔓'}</span>`
       : '';
-    // Кнопка перебора — только там, где руну можно трогать: в сумке. У руны,
-    // стоящей в предмете, её нет: перебор изменил бы характеристики надетой
-    // вещи мимо пересчёта, и кнопка обещала бы то, чего не произойдёт.
-    //
-    // У строки под замком её тоже нет: замок значит «не трогать», и оставить
-    // рядом кнопку «тронуть за 100» значило бы противоречить самому себе.
-    const btn = opts.canReroll && !locked
-      ? `<button class="imod-btn imod-enhance-btn" style="padding:3px 8px;font-size:11px;margin-left:auto"
-                 onclick="_runeRerollConfirm(${it.rowId},${i})">${RUNE_REROLL_PRICE} Liberty</button>`
-      : '';
+    // Кнопка одиночного перебора в строке была здесь — по просьбе владельца
+    // убрана: одна общая кнопка под списком (_runeRerollAllBar) делает то же
+    // самое, а замочки решают, какие строки она не тронет. Цена всё ещё
+    // видна — в подтверждении перед списанием (_runeRerollAllConfirm).
     return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;
                         opacity:${locked ? 0.55 : 1}">
       ${lock}
       <span style="width:9px;height:9px;border-radius:50%;background:${col};flex:0 0 auto"></span>
-      <span>${name}</span><b style="color:${col}">+${pct}%</b>${btn}
+      <span>${name}</span><b style="color:${col}">+${pct}%</b>
     </div>`;
   }).join('');
 }
@@ -4774,16 +4767,16 @@ function _runeToggleLock(i) {
   _refreshOpenRuneModal();
 }
 
-// Подвал карточки: общая кнопка со своей ценой. Цена считается ТОЙ ЖЕ
-// функцией, которой её посчитает сервер (runeRerollAllPrice) — иначе игрок
-// нажимает на одно число, а платит другое.
+// Подвал карточки: общая кнопка «Переработать» и строка «меняются N из M».
+// Цену сама не считает и не показывает — та же функция runeRerollAllPrice
+// зовётся один раз, в подтверждении перед списанием (_runeRerollAllConfirm),
+// а не здесь заодно: цифре не нужно жить в двух местах, чтобы разойтись при
+// следующей правке одного из них.
 function _runeRerollAllBar(it) {
   const stats = (it.rune && it.rune.stats) || [];
   if (!stats.length) return '';
   const locks = _runeLocks.size;
   const free = stats.length - locks;
-  const price = typeof runeRerollAllPrice === 'function'
-    ? runeRerollAllPrice(locks) : RUNE_REROLL_PRICE;
   if (free <= 0) {
     return `<div style="font-size:11px;color:#c98d8d;text-align:center;padding:2px 4px">
       Все характеристики под замком — перебирать нечего</div>`;
@@ -4791,9 +4784,14 @@ function _runeRerollAllBar(it) {
   const note = locks
     ? `меняются ${free} из ${stats.length} · ${locks} под замком (×${2 ** locks})`
     : `меняются все ${stats.length}`;
+  // Кнопка называется просто «Переработать» — по просьбе владельца, без
+  // «всё» и без цены в подписи: сумма меняется от замочков, и честно её
+  // показывает только подтверждение перед списанием
+  // (_runeRerollAllConfirm) — раньше это же число дублировалось здесь и
+  // могло разойтись с ним при следующей правке цены.
   return `<div style="display:flex;flex-direction:column;gap:4px">
     <button class="imod-btn imod-enhance-btn" style="padding:9px;font-size:13px"
-            onclick="_runeRerollAllConfirm(${it.rowId})">Перебрать всё — ${price} Liberty</button>
+            onclick="_runeRerollAllConfirm(${it.rowId})">Переработать</button>
     <div style="font-size:11px;color:#8197ab;text-align:center">${note}</div>
   </div>`;
 }
@@ -4933,22 +4931,16 @@ function _runeRerollAllConfirm(rowId) {
   _showConfirmModal(
     `Перебросить ${free} ${free === 1 ? 'характеристику' : 'характеристики'} за ${price} Liberty?${kept}<br>` +
     `<span style="opacity:.75;font-size:11px">Цвета бросаются заново — могут выпасть хуже нынешних.</span>`,
-    () => netRuneRerollAll(rowId, locked), 'Перебрать всё');
+    () => netRuneRerollAll(rowId, locked), 'Переработать');
 }
 
-// Перебор цвета стоит Liberty и может сделать ХУЖЕ — поэтому спрашивается,
-// как и покупка камня телепортации.
-function _runeRerollConfirm(rowId, statIdx) {
-  const it = _findRowById(rowId);
-  if (!it) return;
-  const st = ((it.rune && it.rune.stats) || [])[statIdx];
-  if (!st) return;
-  const name = RUNE_STAT_NAME[st.stat] || st.stat;
-  _showConfirmModal(
-    `Перебросить цвет «${name}» за ${RUNE_REROLL_PRICE} Liberty?<br>` +
-    `<span style="opacity:.75;font-size:11px">Цвет бросается заново — может выпасть хуже нынешнего.</span>`,
-    () => netRuneReroll(rowId, statIdx), 'Перебрать');
-}
+// Одиночный перебор одной строки — _runeRerollConfirm — убран отсюда вместе
+// с кнопкой перед характеристикой (по просьбе владельца): общая кнопка
+// внизу карточки (_runeRerollAllConfirm) делает то же самое, а замочки
+// решают, какие строки она не тронет, так что второй способ добраться до
+// того же действия был лишним. netRuneReroll/'runeReroll' на сервере
+// остались нетронутыми — эта функция была их единственным клиентским
+// вызывающим, но менять протокол никто не просил.
 
 // Карточка самой руны. Ни надеть, ни заточить её нельзя — руна попадает в
 // предмет через его гнёзда, поэтому кнопок здесь нет вовсе.
