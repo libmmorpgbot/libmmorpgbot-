@@ -201,8 +201,14 @@ async function mk(nick) {
     for (const noisy of ['killReward', 'killRewardShare', 'skillHeal']) {
       ok(!new RegExp(`'${noisy}'`).test(list), `${noisy} больше не пишет строку на успех`);
     }
+    // usePotion УБРАН отдельно и по прямому указанию владельца: зелье
+    // здоровья пьют в бою десятками за минуту, и лента превращалась в одно
+    // это слово подряд. Цена решения записана в комментарии у WRITE_ACTIONS
+    // и стоит того, чтобы её помнили: расход зелий не записан больше НИГДЕ —
+    // сумка это счётчик в jsonb, а не строки реестра.
+    ok(!/'usePotion'/.test(list), 'usePotion в журнал не пишется — так просил владелец');
     // Контроль: то, что действительно двигает ценность, осталось.
-    for (const keep of ['marketBuy', 'gramShopBuy', 'usePotion', 'pickupWorldDrop']) {
+    for (const keep of ['marketBuy', 'gramShopBuy', 'pickupWorldDrop', 'useBuffPotion']) {
       ok(new RegExp(`'${keep}'`).test(list), `контроль: ${keep} по-прежнему пишется`);
     }
 
@@ -239,18 +245,12 @@ async function mk(nick) {
     for (let i = 0; i < 5; i++) plog.log(pid, 'pickupWorldDrop', { n: i });
     eq(plog.stats().queued - b3, 5, 'подобранные предметы не сворачиваются');
 
-    // И строка про зелье теперь что-то говорит — раньше в журнале стояло голое
-    // «usePotion» без единой подробности.
-    const it = fs.readFileSync(path.join(ROOT, 'server/handlers2/items.js'), 'utf8');
-    // До СЛЕДУЮЩЕГО обработчика, а не первые 1400 байт. Счётчик байтов
-    // означает, что достаточно дописать комментарий выше — и проверка
-    // объявит пропавшим то, что на месте: правка лечения сдвинула строку
-    // записи в журнал за границу окна, и проверка упала на работающем коде.
-    const _st = it.indexOf("safeOn('usePotion'");
-    const _nx = it.indexOf("safeOn(", _st + 10);
-    const h = it.slice(_st, _nx > 0 ? _nx : it.length);
-    ok(/зелье: r\.potionId/.test(h) && /вылечено: r\.healed/.test(h),
-      'в журнал пишется какое зелье и на сколько вылечило');
+    // Строка про зелье БОЛЬШЕ НЕ ПРОВЕРЯЕТСЯ. Подробности (какое зелье, на
+    // сколько вылечило) в обработчике остались, но раз usePotion выпал из
+    // WRITE_ACTIONS, писать их некуда: meta считается, и её выбрасывают.
+    // Утверждать, что «в журнал пишется какое зелье», значило бы проверять
+    // код, который ничего не пишет. Оставлено в обработчике намеренно — если
+    // решение отменят, строка вернётся одним словом в списке.
 
     const wrk = fs.readFileSync(path.join(ROOT, 'server/workers.js'), 'utf8');
     ok(/drop_old_log_partitions\(2\)/.test(wrk), 'хранится два месяца, а не шесть');
@@ -266,8 +266,23 @@ async function mk(nick) {
   console.log('\n  ── лента в админке ──');
   {
     const adm = fs.readFileSync(path.join(ROOT, 'server/routes/admin2.js'), 'utf8');
-    ok(adm.includes('NOT (reason = ANY($2))'), 'награда за убийство не попадает в ленту');
-    ok(adm.includes("const NOISE = ['mob_kill', 'mob_drop']"), 'и это именно она, а не что попало');
+    // Проверяется СМЫСЛ, а не буквальная форма запроса: фильтр переписали с
+    // параметра-массива на два сравнения, поведение осталось прежним, а
+    // проверка упала на работающем коде. Условие может быть записано как
+    // угодно — важно, что лента отсекает mob_kill и mob_drop, а отдельный
+    // запрос их считает.
+    // Условие вынесено в константу и подставляется в запрос, поэтому рядом с
+    // самим SELECT никакого mob_kill не видно. Проверяются обе половины:
+    // что условие отсекает именно награду за убийство, и что лента им
+    // пользуется.
+    const noiseOut = (adm.match(/const NOISE_OUT = "([^"]+)"/) || [])[1] || '';
+    const noiseIn  = (adm.match(/const NOISE_IN = "([^"]+)"/) || [])[1] || '';
+    ok(/mob_kill/.test(noiseOut) && /mob_drop/.test(noiseOut) && /<>|NOT|!=/.test(noiseOut)
+       && /FROM ledger WHERE player_id = \$1 AND \$\{NOISE_OUT\}/.test(adm),
+      'награда за убийство не попадает в ленту');
+    ok(/mob_kill/.test(noiseIn) && /mob_drop/.test(noiseIn) && !/<>|NOT|!=/.test(noiseIn)
+       && /\$\{NOISE_IN\}/.test(adm),
+      'и это именно она, а не что попало: отсечённое считается отдельно');
     // Молча урезанная лента читается как «ничего не было».
     ok(adm.includes('fromMobs'), 'сколько скрыто — сказано отдельной строкой');
     // Из самого реестра ничего не удаляется: он остаётся полным.

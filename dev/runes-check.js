@@ -351,6 +351,68 @@ console.log('\n  ── защиты ──');
   ok(/if \(it\.rune\) item\.rune = it\.rune;/.test(cliSrc),
     'пересборка по каталогу не стирает содержимое руны');
   ok(/runeBonusTotals\(\[\]\.concat/.test(cliSrc), 'панель считает руны той же общей функцией');
+
+  // ── общий перебор с замочками ──────────────────────────────────────────────
+  ok(typeof D.runeRerollAllPrice === 'function', 'цена общего перебора живёт в общей таблице');
+  const priceRow = [0, 1, 2, 3, 4].map(n => D.runeRerollAllPrice(n));
+  ok(priceRow.join(',') === '100,200,400,800,1600',
+    `каждый замочек удваивает цену (${priceRow.join(' → ')})`);
+  ok(D.runeRerollAllPrice(0) === D.RUNE_REROLL_PRICE,
+    'без замочков общий перебор стоит столько же, сколько одиночный');
+  // Мусор от клиента не должен превращаться в скидку или в NaN.
+  ok(D.runeRerollAllPrice(-5) === D.RUNE_REROLL_PRICE && D.runeRerollAllPrice('нет') === D.RUNE_REROLL_PRICE,
+    'отрицательное и нечисловое число замочков считается нулём');
+
+  const bulk = runeSrc.slice(runeSrc.indexOf('async function rerollRuneStats'),
+    runeSrc.indexOf('// ── боевая мощь после смены гнёзд'));
+  ok(bulk.length > 200, 'общий перебор есть на сервере');
+  ok(bulk.indexOf("err('all_locked'") < bulk.indexOf('money.spend'),
+    'все строки под замком — отказ ДО оплаты, а не платный ноль');
+  ok(bulk.indexOf('money.spend') < bulk.indexOf('rollRuneQuality'),
+    'оплата — до бросков');
+  ok(/const locks = new Set\(\)/.test(bulk),
+    'замочки складываются в Set: повтор от клиента не удваивает цену дважды');
+  ok(/i >= 0 && i < stats\.length/.test(bulk),
+    'замочек вне диапазона отбрасывается, а не считается в цену');
+  ok(/runeRerollAllPrice\(locks\.size\)/.test(bulk),
+    'цена считается по вычищенным замочкам, а не по длине присланного массива');
+  ok(/locks\.has\(i\) \? \{ \.\.\.st \} : \{ \.\.\.st, q: rollRuneQuality/.test(bulk),
+    'строка под замком не перебрасывается');
+
+  // ── БМ от рун ──────────────────────────────────────────────────────────────
+  // Регрессия, о которой сообщил владелец: бой уже шёл по рунам, а хранимая
+  // колонка bm (рейтинг, карточка игрока, список клана) не переписывалась.
+  ok(/async function _bmAfterSockets/.test(runeSrc), 'смена гнёзд пересчитывает БМ');
+  const sock = runeSrc.slice(runeSrc.indexOf('async function socketRune'));
+  const socketBody = sock.slice(0, sock.indexOf('// Вынуть.'));
+  ok(/_bmAfterSockets\(db, playerId\)/.test(socketBody), 'вставка руны — пересчёт БМ');
+  const unsockBody = runeSrc.slice(runeSrc.indexOf('async function unsocketRune'));
+  ok(/_bmAfterSockets\(db, playerId\)/.test(unsockBody.slice(0, 900)), 'снятие руны — пересчёт БМ');
+
+  // ── карточка руны ──────────────────────────────────────────────────────────
+  const uiSrc = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');
+  ok(/function _refreshOpenRuneModal/.test(uiSrc), 'открытая карточка умеет перерисовываться');
+  const netSrc = fs.readFileSync(path.join(ROOT, 'js/network.js'), 'utf8');
+  ok(/_refreshOpenRuneModal === 'function'\) _refreshOpenRuneModal\(\)/.test(netSrc),
+    'inventorySync перерисовывает открытую карточку — иначе перебор не виден без закрытия');
+  ok(/_openRuneRow = null;/.test(uiSrc.slice(uiSrc.indexOf('function closeInvItemModal'),
+    uiSrc.indexOf('function closeInvItemModal') + 700)),
+    'закрытая карточка забывает себя: следующий inventorySync её не воскресит');
+  ok(/onclick="_runeToggleLock\(/.test(uiSrc), 'у характеристики есть замочек');
+  ok(/canReroll && !locked/.test(uiSrc),
+    'у строки под замком нет одиночной кнопки: замок и «тронуть» противоречат друг другу');
+  ok(/runeRerollAllPrice\(locks\)/.test(uiSrc),
+    'кнопка рисует цену той же функцией, по которой её посчитает сервер');
+
+  // ── ЧЁРНЫЙ ТЕКСТ В КАРТОЧКАХ ───────────────────────────────────────────────
+  // Ни body, ни #app не задают color, поэтому всё непокрашенное в модалке
+  // было чёрным на #0e1927 — то есть невидимым. Замечено на пояснении под
+  // характеристиками руны, но касалось любой карточки.
+  const cssSrc = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
+  const imodBox = cssSrc.slice(cssSrc.indexOf('.imod-box {'), cssSrc.indexOf('.imod-hdr'));
+  ok(/color:#[0-9a-fA-F]{3,6};/.test(imodBox), 'у .imod-box задан цвет текста по умолчанию');
+  ok(!/font-size:11px;opacity:\.7;padding:0 4px 4px/.test(uiSrc),
+    'пояснение под руной больше не рисуется без цвета');
 }
 
 console.log('');

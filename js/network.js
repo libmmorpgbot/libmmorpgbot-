@@ -2294,6 +2294,11 @@ function netConnect(onReady) {
     // the highlight live rather than only on the next codex-specific event.
     // No-op when the panel isn't open.
     if (typeof _refreshCodexPanelIfOpen === 'function') _refreshCodexPanelIfOpen();
+    // Открытая карточка руны — отдельный оверлей, до которого updateInvUI()
+    // не доходит. После перебора цвета руна в базе уже другая, а на экране
+    // оставался прежний текст, и «поменялось ли что-нибудь» можно было
+    // узнать только закрыв и открыв карточку заново. No-op, если не открыта.
+    if (typeof _refreshOpenRuneModal === 'function') _refreshOpenRuneModal();
   });
 
   // Merchant sale confirmed — the item is already gone via the
@@ -4277,6 +4282,12 @@ function netRuneUnsocket(runeRowId) {
 function netRuneReroll(runeRowId, statIdx) {
   if (socket?.connected) socket.emit('runeReroll', { runeRowId, statIdx });
 }
+// Общий перебор. `locked` — номера строк под замочком; цену по ним считает
+// сервер по общей таблице (runeRerollAllPrice), клиент ту же цену только
+// рисует. Присылать сюда саму цену было бы приглашением её подделать.
+function netRuneRerollAll(runeRowId, locked) {
+  if (socket?.connected) socket.emit('runeRerollAll', { runeRowId, locked: locked || [] });
+}
 
 function netBuyTeleportStone(qty) {
   if (socket?.connected) socket.emit('buyTeleportStone', { qty });
@@ -5484,6 +5495,9 @@ function _initPetCraftHandlers(s) {
   });
   s.on('runeRerolled', (res) => {
     if (typeof onRuneRerolled === 'function') onRuneRerolled(res);
+  });
+  s.on('runeRerolledAll', (res) => {
+    if (typeof onRuneRerolledAll === 'function') onRuneRerolledAll(res);
   });
   s.on('runeError', ({ msg }) => {
     if (typeof onRuneError === 'function') onRuneError(msg);

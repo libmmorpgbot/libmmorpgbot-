@@ -4725,6 +4725,13 @@ const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Брон
 //
 // Проценты берутся из общей таблицы (runeStatPct, shared/definitions.js) —
 // той же, по которой сервер считает бой. Никаких чисел здесь нет намеренно.
+//
+// ЗАМОЧКИ живут здесь, в UI, и никуда не сохраняются намеренно: это не
+// свойство руны, а отметка «в этот раз не трогай», и переживать закрытие
+// карточки ей незачем. Сервер получает их списком на один запрос.
+let _runeLocks = new Set();
+let _runeLocksRow = null;
+
 function _runeStatRows(it, opts = {}) {
   const stats = (it.rune && it.rune.stats) || [];
   if (!stats.length) return '<div style="opacity:.6">Характеристик нет</div>';
@@ -4732,18 +4739,63 @@ function _runeStatRows(it, opts = {}) {
     const pct = runeStatPct(it.rarity, st.q);
     const col = RUNE_QUALITY_COLOR[st.q] || '#aea599';
     const name = RUNE_STAT_NAME[st.stat] || st.stat;
+    const locked = opts.canReroll && _runeLocks.has(i);
+    // Замочек — слева от строки, чтобы читалось как отметка на ней, а не как
+    // ещё одна кнопка в ряду с переброском. Закрытый подсвечен: игрок должен
+    // видеть, за что платит вдвое, не наводя курсор.
+    const lock = opts.canReroll
+      ? `<span onclick="_runeToggleLock(${i})" title="${locked ? 'Снять замок' : 'Не менять эту характеристику'}"
+              style="cursor:pointer;font-size:13px;line-height:1;flex:0 0 auto;
+                     opacity:${locked ? 1 : 0.35}">${locked ? '🔒' : '🔓'}</span>`
+      : '';
     // Кнопка перебора — только там, где руну можно трогать: в сумке. У руны,
     // стоящей в предмете, её нет: перебор изменил бы характеристики надетой
     // вещи мимо пересчёта, и кнопка обещала бы то, чего не произойдёт.
-    const btn = opts.canReroll
+    //
+    // У строки под замком её тоже нет: замок значит «не трогать», и оставить
+    // рядом кнопку «тронуть за 100» значило бы противоречить самому себе.
+    const btn = opts.canReroll && !locked
       ? `<button class="imod-btn imod-enhance-btn" style="padding:3px 8px;font-size:11px;margin-left:auto"
                  onclick="_runeRerollConfirm(${it.rowId},${i})">${RUNE_REROLL_PRICE} Liberty</button>`
       : '';
-    return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0">
+    return `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;
+                        opacity:${locked ? 0.55 : 1}">
+      ${lock}
       <span style="width:9px;height:9px;border-radius:50%;background:${col};flex:0 0 auto"></span>
       <span>${name}</span><b style="color:${col}">+${pct}%</b>${btn}
     </div>`;
   }).join('');
+}
+
+// Переключить замочек и перерисовать карточку. Перерисовка обязательна: от
+// замочка зависит и цена общей кнопки, и наличие одиночной в строке.
+function _runeToggleLock(i) {
+  if (_runeLocks.has(i)) _runeLocks.delete(i); else _runeLocks.add(i);
+  _refreshOpenRuneModal();
+}
+
+// Подвал карточки: общая кнопка со своей ценой. Цена считается ТОЙ ЖЕ
+// функцией, которой её посчитает сервер (runeRerollAllPrice) — иначе игрок
+// нажимает на одно число, а платит другое.
+function _runeRerollAllBar(it) {
+  const stats = (it.rune && it.rune.stats) || [];
+  if (!stats.length) return '';
+  const locks = _runeLocks.size;
+  const free = stats.length - locks;
+  const price = typeof runeRerollAllPrice === 'function'
+    ? runeRerollAllPrice(locks) : RUNE_REROLL_PRICE;
+  if (free <= 0) {
+    return `<div style="font-size:11px;color:#c98d8d;text-align:center;padding:2px 4px">
+      Все характеристики под замком — перебирать нечего</div>`;
+  }
+  const note = locks
+    ? `меняются ${free} из ${stats.length} · ${locks} под замком (×${2 ** locks})`
+    : `меняются все ${stats.length}`;
+  return `<div style="display:flex;flex-direction:column;gap:4px">
+    <button class="imod-btn imod-enhance-btn" style="padding:9px;font-size:13px"
+            onclick="_runeRerollAllConfirm(${it.rowId})">Перебрать всё — ${price} Liberty</button>
+    <div style="font-size:11px;color:#8197ab;text-align:center">${note}</div>
+  </div>`;
 }
 
 // Полоска гнёзд под характеристиками предмета. Пустое гнездо — кнопка
@@ -4838,6 +4890,52 @@ function _findRowById(rowId) {
   return Object.values(player.equipment || {}).find(i => i && i.rowId === rowId) || null;
 }
 
+// ── ЖИВОЕ ОБНОВЛЕНИЕ ОТКРЫТОЙ КАРТОЧКИ ──────────────────────────────────────
+// Перебор менял руну в базе, инвентарь приезжал заново — а на экране остаться
+// мог прежний текст: карточка это отдельный оверлей, и updateInvUI() до неё
+// не доходит. Игроку приходилось закрывать и открывать заново, чтобы увидеть,
+// за что он заплатил.
+//
+// Перерисовывается по rowId из СВЕЖЕГО инвентаря, а не из того, что было в
+// руках при открытии: после inventorySync старый объект — это копия, которую
+// уже заменили, и рисовать по ней значило бы показывать вчерашнее.
+//
+// Зовётся из inventorySync, а не только из ответа на перебор: так же
+// обновляется карточка, если руну изменило что-то ещё.
+let _openRuneRow = null;
+
+function _refreshOpenRuneModal() {
+  if (_openRuneRow == null) return;
+  if (!document.getElementById('inv-item-modal-ov')) { _openRuneRow = null; return; }
+  const it = _findRowById(_openRuneRow);
+  // Руны больше нет там, где она была — вставили в предмет, продали, потеряли.
+  // Закрыть честнее, чем оставить карточку того, чего у игрока уже нет.
+  if (!it || it.slot !== 'rune') { closeInvItemModal(); _openRuneRow = null; return; }
+  openRuneModal(it);
+}
+
+// Общий перебор спрашивается отдельно от одиночного: цена другая, и она
+// зависит от замочков, которые игрок мог поставить пять минут назад и забыть.
+// Поэтому в вопросе — и сумма, и сколько строк она тронет.
+function _runeRerollAllConfirm(rowId) {
+  const it = _findRowById(rowId);
+  if (!it) return;
+  const stats = (it.rune && it.rune.stats) || [];
+  const locked = [..._runeLocks].filter(i => i >= 0 && i < stats.length).sort((a, b) => a - b);
+  const free = stats.length - locked.length;
+  if (free <= 0) { _shopMsgOrToast('Все характеристики под замком'); return; }
+  const price = typeof runeRerollAllPrice === 'function'
+    ? runeRerollAllPrice(locked.length) : RUNE_REROLL_PRICE;
+  const kept = locked.length
+    ? `<br><span style="opacity:.75;font-size:11px">Под замком остаются: ` +
+      locked.map(i => RUNE_STAT_NAME[stats[i].stat] || stats[i].stat).join(', ') + '</span>'
+    : '';
+  _showConfirmModal(
+    `Перебросить ${free} ${free === 1 ? 'характеристику' : 'характеристики'} за ${price} Liberty?${kept}<br>` +
+    `<span style="opacity:.75;font-size:11px">Цвета бросаются заново — могут выпасть хуже нынешних.</span>`,
+    () => netRuneRerollAll(rowId, locked), 'Перебрать всё');
+}
+
 // Перебор цвета стоит Liberty и может сделать ХУЖЕ — поэтому спрашивается,
 // как и покупка камня телепортации.
 function _runeRerollConfirm(rowId, statIdx) {
@@ -4859,6 +4957,11 @@ function openRuneModal(it) {
   const rc = RARITY_COLOR[it.rarity] || '#aea599';
   const img = runeIconOf(it.id, (it.rune && it.rune.stats) || []);
   closeInvItemModal();
+  // Замочки принадлежат ОТКРЫТОЙ руне. Открыли другую — старые отметки к ней
+  // не относятся, и перенести их значило бы удвоить цену за то, чего игрок не
+  // отмечал. Перерисовка той же руны (после перебора) их сохраняет.
+  if (_runeLocksRow !== it.rowId) { _runeLocks = new Set(); _runeLocksRow = it.rowId; }
+  _openRuneRow = it.rowId;
   const ov = document.createElement('div');
   ov.id = 'inv-item-modal-ov';
   ov.className = 'imod-overlay';
@@ -4873,8 +4976,10 @@ function openRuneModal(it) {
       <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
     </div>
     <div class="imod-stats">${_runeStatRows(it, { canReroll: true })}</div>
-    <div style="font-size:11px;opacity:.7;padding:0 4px 4px">
+    ${_runeRerollAllBar(it)}
+    <div style="font-size:11px;color:#8197ab;padding:0 4px 4px">
       Вставляется через гнёзда предмета: откройте вещь и нажмите на гнездо.
+      Замочек оставляет характеристику нетронутой и удваивает цену общего перебора.
     </div>
   </div>`;
   document.getElementById('app').appendChild(ov);
@@ -4904,6 +5009,24 @@ function onRuneRerolled(res) {
   const q = res.after;
   _shopMsgOrToast(`Новый цвет: ${RUNE_QUALITY_NAME[q] || q}`);
   if (typeof updateInvUI === 'function') updateInvUI();
+  _refreshOpenRuneModal();
+}
+
+// Общий перебор. Показывается, ЧТО изменилось, а не только итог: игрок
+// заплатил за несколько бросков сразу и имеет право увидеть каждый. Строки
+// под замком в отчёт не попадают — они и не бросались.
+function onRuneRerolledAll(res) {
+  if (!res) return;
+  const locked = new Set(res.locked || []);
+  const parts = (res.after || []).map((q, i) => {
+    if (locked.has(i)) return null;
+    const was = (res.before || [])[i];
+    const nm = RUNE_QUALITY_NAME[q] || q;
+    return was === q ? `${nm} (без изменений)` : `${RUNE_QUALITY_NAME[was] || was} → ${nm}`;
+  }).filter(Boolean);
+  _shopMsgOrToast(parts.join(', ') || 'Перебор выполнен');
+  if (typeof updateInvUI === 'function') updateInvUI();
+  _refreshOpenRuneModal();
 }
 
 function openInvItemModal(idx) {
@@ -4996,6 +5119,9 @@ function openInvItemModal(idx) {
 function closeInvItemModal() {
   const el = document.getElementById('inv-item-modal-ov');
   if (el) el.remove();
+  // Карточки больше нет — значит и обновлять нечего. Без этого следующий
+  // inventorySync открыл бы её заново поверх закрытого экрана.
+  _openRuneRow = null;
   // The reveal below can still be pending when the player dismisses the
   // panel mid-animation (see _ENH_ANIM_MS) — it checks whether the overlay
   // still exists before reopening anything, so a close here is enough to

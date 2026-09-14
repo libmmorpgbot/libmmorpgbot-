@@ -63,7 +63,7 @@ const WRITE_ACTIONS = new Set([
   // Руны: ковка тратит Liberty, перебор тратит Liberty, а вставка и
   // извлечение двигают вещь между сумкой и предметом — на любой из
   // четырёх игрок потом может спросить «а где моя руна».
-  'craftRune', 'runeReroll', 'runeSocket', 'runeUnsocket',
+  'craftRune', 'runeReroll', 'runeRerollAll', 'runeSocket', 'runeUnsocket',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
   // usePotion здесь БОЛЬШЕ НЕТ: зелье здоровья пьют в бою десятками за
   // минуту, и лента превращалась в одно это слово подряд. Зелья

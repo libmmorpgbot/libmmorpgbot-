@@ -1941,6 +1941,24 @@ const RUNE_CRAFT_CHANCE = 0.30;
 // цвет — платят за бросок, а не за шаг.
 const RUNE_REROLL_PRICE = 100;   // Liberty (Nexum)
 
+// Общий перебор — одной кнопкой по всей руне сразу. Базовая цена та же сотня:
+// платят по-прежнему за бросок, а не за количество строк.
+//
+// ЗАМОЧЕК НЕ ПРОПУСКАЕТ ХАРАКТЕРИСТИКУ, А ПОКУПАЕТ ЕЙ НЕПРИКОСНОВЕННОСТЬ —
+// и потому удваивает цену. Без этого общий перебор с четырьмя замочками был
+// бы просто одиночным переброском за ту же сотню, только удобнее, и одиночная
+// кнопка перестала бы иметь смысл. С удвоением выбор настоящий: перебрать всё
+// дёшево и рискнуть оранжевым, или сохранить его и заплатить.
+//
+// Пять строк легендарной с четырьмя замочками — 1600 Liberty за перебор одной
+// оставшейся, против 100 за тот же бросок одиночной кнопкой. Это намеренно:
+// общий перебор удобен, когда переделывают руну целиком, а не когда точечно
+// правят одну строку.
+function runeRerollAllPrice(lockCount) {
+  const n = Math.max(0, Math.floor(Number(lockCount) || 0));
+  return RUNE_REROLL_PRICE * (2 ** n);
+}
+
 // Цвета характеристик, от худшего к лучшему.
 const RUNE_QUALITIES = ['grey', 'green', 'blue', 'purple', 'orange'];
 const RUNE_QUALITY_COLOR = {
@@ -3440,7 +3458,8 @@ if (typeof module !== 'undefined') module.exports = {
   itemCatalogBase, CODEX_BONUS_BY_RARITY,
   PET_SKILLS, petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, PET_SKILL_FLASH_SEC,
   RUNE_RARITIES, RUNE_STAT_COUNT, RUNE_ARMOR_SOCKETS, RUNE_WEAPON_SOCKETS,
-  RUNE_CRAFT_CHANCE, RUNE_REROLL_PRICE, RUNE_QUALITIES, RUNE_QUALITY_COLOR,
+  RUNE_CRAFT_CHANCE, RUNE_REROLL_PRICE, runeRerollAllPrice,
+  RUNE_QUALITIES, RUNE_QUALITY_COLOR,
   RUNE_QUALITY_NAME, RUNE_QUALITY_WEIGHT, RUNE_STAT_PCT, RUNE_ARMOR_STATS,
   RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,
   ORE_DROP_CHANCE, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,

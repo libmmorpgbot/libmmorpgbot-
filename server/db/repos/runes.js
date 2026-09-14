@@ -26,7 +26,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ITEM_DEF, RUNE_CRAFT_RECIPES, RUNE_REROLL_PRICE,
+  ITEM_DEF, RUNE_CRAFT_RECIPES, RUNE_REROLL_PRICE, runeRerollAllPrice,
   rollRuneStats, rollRuneQuality, runeKindOf, runeRarityOf, runeCatalogId,
   runeSocketsOf, runeKindForSlot,
 } = require('../../../shared/definitions');
@@ -161,6 +161,83 @@ async function rerollRuneStat(db, playerId, rowId, statIdx) {
   return { rowId: id, statIdx: idx, before, after: next[idx].q, cost: RUNE_REROLL_PRICE, stats: next };
 }
 
+
+// ── общий перебор: вся руна одной кнопкой ───────────────────────────────────
+// Одиночный перебор выше остаётся: он дешевле и точнее. Этот — для случая,
+// когда руну переделывают целиком и жать пять раз подряд бессмысленно.
+//
+// ЗАМОЧКИ. Игрок отмечает строки, которые трогать нельзя; остальные бросаются
+// заново. Цена считается ОБЩЕЙ таблицей (runeRerollAllPrice), а не здесь: то
+// же число рисует кнопка, и разойтись им нельзя — иначе игрок нажимает на
+// «200 Liberty» и платит 400.
+//
+// Порядок тот же, что у ковки: сперва отказы, которые ничего не стоят, потом
+// плата, потом броски. Отказ, за который уже заплачено, — худший вид отказа.
+//
+// Замочки на ВСЕХ строках — это отказ, а не бесплатная покупка: перебирать
+// нечего, и списывать за это Liberty было бы воровством. Проверяется до
+// оплаты.
+async function rerollRuneStats(db, playerId, rowId, lockedIdx = []) {
+  _needRunes(await _runesReady(db));
+  await items.lockPlayer(db, playerId);
+  const id = Math.floor(Number(rowId));
+  if (!Number.isSafeInteger(id) || id <= 0) err('bad_rune', 'Руна не найдена');
+
+  const { rows } = await query(db,
+    'SELECT item_id, rune FROM player_items WHERE id = $1 AND player_id = $2', [id, playerId]);
+  if (!rows.length) err('bad_rune', 'Руна не найдена');
+  const rarity = runeRarityOf(rows[0].item_id);
+  if (!rarity) err('bad_rune', 'Это не руна');
+  const stats = (rows[0].rune && rows[0].rune.stats) || [];
+  if (!stats.length) err('bad_rune', 'У руны нет характеристик');
+
+  // Замочки приезжают от клиента, поэтому чистятся полностью: Set убирает
+  // повторы (иначе один и тот же замочек удваивал бы цену дважды), а фильтр
+  // — всё, что не указывает на существующую строку. Цена считается по тому,
+  // что ОСТАЛОСЬ после чистки, а не по длине присланного массива.
+  const locks = new Set();
+  for (const v of (Array.isArray(lockedIdx) ? lockedIdx : [])) {
+    const i = Math.floor(Number(v));
+    if (Number.isSafeInteger(i) && i >= 0 && i < stats.length) locks.add(i);
+  }
+  if (locks.size >= stats.length) {
+    err('all_locked', 'Все характеристики под замком — перебирать нечего');
+  }
+
+  const price = runeRerollAllPrice(locks.size);
+  const paid = await money.spend(db, playerId, 'nexum', price, {
+    reason: 'rune_reroll_all', refType: 'rune', refId: String(id),
+    idemKey: `rune_reroll_all:${playerId}:${id}:${crypto.randomUUID()}`,
+  });
+  if (!paid) err('no_nexum', 'Недостаточно Liberty');
+
+  const before = stats.map(st => st.q);
+  const next = stats.map((st, i) =>
+    (locks.has(i) ? { ...st } : { ...st, q: rollRuneQuality(rarity, rand) }));
+  await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
+    [id, playerId, JSON.stringify({ stats: next })]);
+  return {
+    rowId: id, locked: [...locks].sort((a, b) => a - b),
+    before, after: next.map(st => st.q), cost: price, stats: next,
+  };
+}
+
+// ── боевая мощь после смены гнёзд ───────────────────────────────────────────
+// players.bm — хранимая колонка, по которой сортируется рейтинг и которую
+// показывают карточка игрока и список клана. Её переписывает items.move() на
+// каждой смене надетого, и там же стоит объяснение почему («чтобы шестое
+// место вызова не забыло»). Руны — ровно то шестое место: они меняют не
+// СТРОКУ в слоте, а содержимое надетой вещи, мимо move() целиком.
+//
+// Поэтому БМ и не росла от рун: бой уже шёл по новым числам (repos/stats.js
+// складывает руны в atk/def/hp), а колонка оставалась той, что была записана
+// при последней смене снаряжения.
+//
+// Здесь, а не в обработчиках, по той же причине, что и у move().
+async function _bmAfterSockets(db, playerId) {
+  await require('./stats').refreshBm(db, playerId);
+}
+
 // ── гнёзда ──────────────────────────────────────────────────────────────────
 // Руна доспеха не лезет в оружие и наоборот. Это не украшение правил: наборы
 // характеристик у них разные (у оружейных есть шанс крита и шанс Liberty, у
@@ -203,6 +280,7 @@ async function socketRune(db, playerId, hostRowId, runeRowId, socketIdx) {
   await query(db,
     `UPDATE player_items SET socket_of = $3, socket_idx = $4, container = 'inventory', slot = NULL
       WHERE id = $1 AND player_id = $2`, [rune, playerId, host, idx]);
+  await _bmAfterSockets(db, playerId);
   return { hostRowId: host, runeRowId: rune, socketIdx: idx };
 }
 
@@ -223,6 +301,7 @@ async function unsocketRune(db, playerId, runeRowId) {
   await query(db,
     `UPDATE player_items SET socket_of = NULL, socket_idx = NULL, container = 'inventory'
       WHERE id = $1 AND player_id = $2`, [rune, playerId]);
+  await _bmAfterSockets(db, playerId);
   return { runeRowId: rune, hostRowId: Number(rows[0].socket_of) };
 }
 
@@ -231,4 +310,4 @@ async function unsocketRune(db, playerId, runeRowId) {
 // которые об руны ничего не знают и знать не должны. Две функции с одним
 // ответом разошлись бы на первом же изменении правила.
 
-module.exports = { craftRune, rerollRuneStat, socketRune, unsocketRune };
+module.exports = { craftRune, rerollRuneStat, rerollRuneStats, socketRune, unsocketRune };

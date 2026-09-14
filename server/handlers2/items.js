@@ -162,6 +162,21 @@ module.exports = function registerItems(s, safeOn) {
       return res;
     }));
 
+  // Общий перебор — вся руна одной кнопкой, с замочками на том, что трогать
+  // нельзя. Отдельное событие, а не флаг у соседнего: ответ другой формы (что
+  // стало с КАЖДОЙ строкой, а не с одной), и цена тут считается от замочков.
+  //
+  // Массив замочков не проверяется здесь намеренно — чистка живёт в
+  // repos/runes.js рядом с ценой, которую она определяет.
+  safeOn('runeRerollAll', ({ runeRowId, locked } = {}) =>
+    s.act('runeRerollAll', 'runeError', async (t, pid) => {
+      const res = await runes.rerollRuneStats(t, pid, runeRowId, locked);
+      await push(t);
+      await s.pushBalances(t);
+      s.socket.emit('runeRerolledAll', res);
+      return res;
+    }, { перебор: 'вся руна' }));
+
   // ── storage ──────────────────────────────────────────────────────────────
   // ЧТО положили — а не только что положили. Строка «storageDeposit» без
   // предмета отвечает на вопрос «было ли действие» и не отвечает на «куда
