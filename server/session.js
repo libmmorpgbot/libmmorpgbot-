@@ -839,9 +839,23 @@ class Session {
 
     // Equipment as a slot map of catalog-shaped items, which is what
     // _rebuildFromCatalog expects on the other side.
+    //
+    // `runes` едет вместе с id/enhance, а не только они. inv.equipment[slot]
+    // уже несёт .runes — items.inventoryOf() кладёт его туда, — и эта
+    // проекция его молча роняла: строка написана раньше рун и просто не
+    // знала о них. Итог был не в бою (pushStats всегда читает stats.of()
+    // заново) и не в базе (players.bm чинится через refreshBm отдельно), а
+    // ровно на этом экране: игрок заходил в игру, розетки в карточке
+    // предмета стояли пустыми, а characteristics руны не прибавлялись НИ К
+    // ЧЕМУ на его собственном экране — до первого equip/unequip, который
+    // проходит через items.move() и присылает inventorySync с полным
+    // набором заново. «Руны не работают, пока не наденешь что-нибудь» — это
+    // была не метафора, а точное описание бага.
     const equipment = {};
     for (const [slot, it] of Object.entries(inv.equipment || {})) {
-      if (it) equipment[slot] = { id: it.id, enhance: it.enhance || 0 };
+      if (!it) continue;
+      equipment[slot] = { id: it.id, enhance: it.enhance || 0 };
+      if (it.runes) equipment[slot].runes = it.runes;
     }
 
     return {
