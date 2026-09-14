@@ -121,6 +121,41 @@ console.log('\n  ── сумма по набору рун ──');
   eq(tot.speedPct, undefined, 'то, чего не выпало, не появляется');
 }
 
+// ═══ ДВЕ ФОРМЫ ОДНОГО МАССИВА ═══════════════════════════════════════════════
+// Регрессия, которую уже поймал владелец в игре: «руна надета, а атака и
+// защита не растут». У runeBonusTotals ДВА производителя, и они расходятся
+// формой одной и той же вещи — руны в гнезде.
+//
+//   stats.js (бой, players.bm)     — плоско:    {itemId, stats}
+//   items.js → inventorySync       — вложенно:  {id, rune:{stats}}
+//                                     (_row(): та же форма, что у руны-
+//                                     предмета в сумке, — так собрана мимо
+//                                     этой функции вовсе)
+//
+// Сервер в бою кормит функцию первой формой — там всё было верно всегда.
+// Клиентский recompute() (js/player.js) получает от сервера ВТОРУЮ форму
+// (ровно то, что шлёт inventorySync) и кормит той же функцией — читал
+// itemId/stats там, где их нет, и получал ноль. Бой видел руны, игрок на
+// своём экране — никогда: тот самый «руны как будто не работают вообще».
+console.log('\n  ── обе формы одного массива дают одинаковый результат ──');
+{
+  const armorRune = { stat: 'hpPct', q: 'orange' };
+  const flat   = [{ itemId: 'rune_armor_epic', stats: [armorRune] }];
+  const nested = [{ idx: 0, rowId: 1, id: 'rune_armor_epic', enhance: 0,
+                     qty: 1, slot: null, container: 'inventory', rune: { stats: [armorRune] } }];
+  const totFlat = D.runeBonusTotals(flat);
+  const totNested = D.runeBonusTotals(nested);
+  eq(totFlat.hpPct, 20, 'форма stats.js (itemId/stats) считает как раньше');
+  eq(totNested.hpPct, 20,
+    'форма items.js/клиента (id/rune.stats) — РОВНО ТО ЖЕ ЧИСЛО, а не 0');
+  eq(JSON.stringify(totFlat), JSON.stringify(totNested), 'и они не просто похожи — идентичны');
+
+  // Мусор ни в одной форме нет — пустой массив, объект без стата.
+  eq(Object.keys(D.runeBonusTotals([{}])).length, 0, 'объект без обоих полей не считается за руну');
+  eq(Object.keys(D.runeBonusTotals([{ id: 'rune_armor_epic' }])).length, 0,
+    'id есть, а stats и rune — нет: ноль, а не падение');
+}
+
 // ── 5. гнёзда и совместимость ──────────────────────────────────────────────
 console.log('\n  ── гнёзда ──');
 {

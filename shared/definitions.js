@@ -2067,12 +2067,44 @@ function rollRuneStats(kind, rarity, rand = Math.random) {
 //
 // Каждая руна приходит как { itemId, stats:[{stat,q}] } — ровно в том виде, в
 // каком лежит в строке предмета рядом со своим item_id.
+// ── ДВА ПРОИЗВОДИТЕЛЯ ЭТОГО МАССИВА, И ОНИ НЕ СОГЛАСНЫ О ФОРМЕ ─────────────
+// stats.js собирает его сам, прямо в SQL: json_build_object('itemId',
+// r.item_id, 'stats', r.rune->'stats') — плоско, {itemId, stats}.
+//
+// items.js (_row(), inventoryOf) строит гнёзда предмета общей функцией _row,
+// той же, что рисует руну-предмет в сумке — а у НЕЁ id и rune.stats
+// (миграция 029: «содержимое руны едет как есть»). Гнездо получает
+// {idx, ..._row(r)} = {idx, id, rune:{stats}, ...} — ВЛОЖЕННО, другими
+// именами.
+//
+// Сервер шлёт клиенту ровно то, что построил items.js — то есть вторую
+// форму. recompute() (js/player.js) кормит ею эту функцию, а функция ждала
+// только первую. r.itemId был undefined, r.stats — тоже, characterRarity
+// не находился, и цикл по characteristics не делал ни одного оборота.
+//
+// Итог: сервер в бою считал руны верно (stats.js — своя форма, свой
+// потребитель), players.bm в базе — верно (тот же stats.js), а ВСЁ, что
+// считает клиент сам — HUD «БМ», числа атаки/защиты на экране персонажа,
+// «мой БМ» в панели клана (calcBM(player), js/definitions.js) — не менялось
+// НИКОГДА, потому что recompute() был вторым потребителем с другим
+// ожиданием формы. Отсюда и жалоба «руны как будто не работают вообще»:
+// бой их видел, игрок — нет.
+//
+// Чинится здесь, а не переписыванием одного производителя под другого: обе
+// формы уже используются каждая в своём коде (socketedRunesOf отдаёт первую
+// и её единственный потребитель — окно гнёзд предмета — эту форму и хочет;
+// _runeSocketsHtml/openRuneModal читают вторую и её тоже трогать нельзя, не
+// сломав карточку). Единственное безопасное место развязать две формы —
+// функция, которую вызывают оба конца, а не переделка того, что каждый
+// конец уже показывает на экране.
 function runeBonusTotals(runes) {
   const out = {};
   for (const r of (runes || [])) {
-    const rarity = runeRarityOf(r.itemId);
+    const itemId = r.itemId || r.id;
+    const stats = r.stats || (r.rune && r.rune.stats) || [];
+    const rarity = runeRarityOf(itemId);
     if (!rarity) continue;
-    for (const st of (r.stats || [])) {
+    for (const st of stats) {
       const pct = runeStatPct(rarity, st.q);
       if (!pct) continue;
       out[st.stat] = (out[st.stat] || 0) + pct;
