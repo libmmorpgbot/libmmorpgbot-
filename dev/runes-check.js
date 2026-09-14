@@ -217,7 +217,7 @@ console.log('\n  ── руда ──');
   const matsTab = npcSrc.slice(matsAt, npcSrc.indexOf('\nfunction ', matsAt + 10));
   ok(/if \(_isOreRecipe\(recipe\)\) return;/.test(matsTab), 'из «Материалов» руда убрана');
   const runesTab = npcSrc.slice(npcSrc.indexOf('function _craftsmanRunesTab'),
-    npcSrc.indexOf('function _runeCraftConfirm'));
+    npcSrc.indexOf('function openRuneCraftModal'));
   ok(/Переплавка руды/.test(runesTab), 'и показана во вкладке «Руны»');
   ok(/openMatModal\(\$\{idx\}\)/.test(runesTab),
     'открывается по настоящему индексу в общей таблице рецептов');
@@ -433,6 +433,45 @@ console.log('\n  ── защиты ──');
   ok(/color:#[0-9a-fA-F]{3,6};/.test(imodBox), 'у .imod-box задан цвет текста по умолчанию');
   ok(!/font-size:11px;opacity:\.7;padding:0 4px 4px/.test(uiSrc),
     'пояснение под руной больше не рисуется без цвета');
+
+  // ── карточка рецепта — тем же экраном, что у «Предметов» и «Расходников» ───
+  // Было: клик по ячейке сразу спрашивал «Выковать?» во всплывающем окне —
+  // без описания и списка требований, не как у остальных вкладок кузнеца.
+  // Владелец попросил привести к общему виду.
+  const npcSrc = fs.readFileSync(path.join(ROOT, 'js/npc.js'), 'utf8');
+  ok(!/_runeCraftConfirm/.test(npcSrc), 'старое всплывающее окно ковки убрано целиком');
+  ok(/onclick="openRuneCraftModal\('\$\{kind\}','\$\{rec\.rarity\}'\)"/.test(npcSrc),
+    'ячейка открывает карточку рецепта, а не окно подтверждения');
+
+  const modalAt = npcSrc.indexOf('function openRuneCraftModal');
+  const craftAt = npcSrc.indexOf('function craftRune(');
+  const refreshAt = npcSrc.indexOf('function _refreshRuneTab');
+  ok(modalAt > -1 && craftAt > modalAt && refreshAt > craftAt,
+    'три части рецепта идут по порядку: карточка → ковка → перерисовка');
+  const craftModalSrc = npcSrc.slice(modalAt, craftAt);
+  ok(/craft-back-btn/.test(craftModalSrc) && /craft-detail-header/.test(craftModalSrc),
+    'карточка — тот же экран (шапка + «назад»), что у openCraftModal / openBuffPotionCraftModal');
+  ok(/craft-reqs-list/.test(craftModalSrc) && /craft-req-count/.test(craftModalSrc),
+    'список требований с «есть/нужно», как у остальных рецептов');
+  ok(/poolNames/.test(craftModalSrc) && /RUNE_STAT_COUNT\[rarity\]/.test(craftModalSrc),
+    'описание — что вообще может выпасть и сколько строк: точных чисел до броска ещё нет');
+  ok(/onclick="craftRune\('\$\{kind\}','\$\{rarity\}'\)"/.test(craftModalSrc),
+    'кнопка в карточке зовёт ковку напрямую, без второго окна поверх');
+
+  const craftRuneBody = npcSrc.slice(craftAt, refreshAt);
+  ok(/_pendingRuneCraft = \{ kind, rarity \}/.test(craftRuneBody),
+    'ковка помечает себя занятой — вторая заявка не уходит поверх первой');
+  ok(/openRuneCraftModal\(kind, rarity\);.*\n.*netCraftRune\(kind, rarity\)/.test(craftRuneBody),
+    'занятость видна СРАЗУ (перерисовка до ответа сервера), а не только после него');
+
+  const refreshBody = npcSrc.slice(refreshAt);
+  ok(/openRuneCraftModal\(_openRuneRecipe\.kind, _openRuneRecipe\.rarity\)/.test(refreshBody.slice(0, 400)),
+    'ответ сервера обновляет ТУ ЖЕ карточку, а не возвращает в сетку — ковка проваливается в 7 случаях из 10');
+
+  const errBody = uiSrc.slice(uiSrc.indexOf('function onRuneCraftError'),
+    uiSrc.indexOf('function onRuneError'));
+  ok(/_pendingRuneCraft = null/.test(errBody) && /_refreshRuneTab\(\)/.test(errBody),
+    'отказ сервера тоже снимает занятость кнопки — иначе «Крафтить» осталась бы недоступной навсегда');
 }
 
 // ═══ СХЕМА: «КОЛОНКИ НЕТ» НЕ ЗАПОМИНАЕТСЯ НАВСЕГДА ═════════════════════════

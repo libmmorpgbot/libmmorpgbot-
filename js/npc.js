@@ -255,6 +255,11 @@ function _craftsmanBody() {
 // попыток из десяти не дадут ничего, и узнать об этом игрок должен до того,
 // как заплатит, а не после.
 function _craftsmanRunesTab() {
+  // Сетка — значит карточка рецепта закрыта. Без этого сброса ответ сервера,
+  // пришедший после того, как игрок уже вернулся в сетку (или ушёл в другую
+  // вкладку и обратно), попытался бы перерисовать карточку, которой на
+  // экране больше нет — см. _refreshRuneTab ниже.
+  _openRuneRecipe = null;
   const recipes = typeof RUNE_CRAFT_RECIPES !== 'undefined' ? RUNE_CRAFT_RECIPES : [];
   if (!recipes.length) return '<div class="craft-empty">Рецепты рун недоступны</div>';
   let html = '';
@@ -274,7 +279,7 @@ function _craftsmanRunesTab() {
       const enough = !need || have >= need.n;
       const can = invHasSpace() && enough;
       const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rec.rarity]) || 0;
-      html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="_runeCraftConfirm('${kind}','${rec.rarity}')" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openRuneCraftModal('${kind}','${rec.rarity}')" style="border-color:${rc}66">
         <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
         <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${n} хар.</div>
@@ -320,34 +325,102 @@ function _craftsmanRunesTab() {
   return html;
 }
 
-// Платное и с шансом — значит спрашивается. Ровно как покупка камня
-// телепортации: Liberty покупают за настоящие деньги, а здесь она ещё и
-// сгорает в семи попытках из десяти.
-function _runeCraftConfirm(kind, rarity) {
+// ── карточка рецепта — тем же экраном, что у «Предметов» и «Расходников» ───
+// Раньше клик по ячейке сразу спрашивал «Выковать?» во всплывающем окне: ни
+// описания, ни списка того, что нужно — просто вопрос. У остальных вкладок
+// клик открывает карточку рецепта (openCraftModal, openBuffPotionCraftModal)
+// — иконку, что это, список требований с «есть/нужно» и уже там кнопку
+// «Крафтить». Здесь та же карточка. Точного процента характеристик она
+// показать не может: цвет каждой строки решает бросок при ковке, а до неё
+// известно только СКОЛЬКО строк выпадет и ИЗ КАКОГО набора.
+let _pendingRuneCraft = null;   // {kind,rarity} — запрос в пути, кнопка занята
+let _openRuneRecipe = null;     // {kind,rarity} какая карточка открыта; null — сетка
+
+function openRuneCraftModal(kind, rarity) {
   const rec = (typeof RUNE_CRAFT_RECIPES !== 'undefined' ? RUNE_CRAFT_RECIPES : [])
     .find(r => r.kind === kind && r.rarity === rarity);
   if (!rec || !player) return;
-  if (!invHasSpace()) { _shopMsg('Инвентарь полон'); return; }
-  const need = (rec.mats || [])[0];
-  const oreDef = need ? CRAFT_MATS.find(m => m.id === need.id) : null;
-  const have = need ? countMaterial(need.id) : 0;
-  if (need && have < need.n) {
-    _shopMsg(`Нужно ${need.n} × ${oreDef ? oreDef.name : need.id} (есть ${have})`);
-    return;
-  }
-  const what = kind === 'armor' ? 'руну доспеха' : 'руну оружия';
+  const id = runeCatalogId(kind, rarity);
+  const def = itemCatalogBase(id);
+  if (!def) return;
+  _openRuneRecipe = { kind, rarity };
+
+  const rc = RARITY_COLOR[rarity] || '#aea599';
+  const pending = !!(_pendingRuneCraft && _pendingRuneCraft.kind === kind && _pendingRuneCraft.rarity === rarity);
+
+  // Набор характеристик, из которого бросает ковка, — тот же список и те же
+  // имена (RUNE_STAT_NAME), какими подписана уже готовая руна: разойтись
+  // описанию и результату негде.
+  const pool = kind === 'weapon'
+    ? (typeof RUNE_WEAPON_STATS !== 'undefined' ? RUNE_WEAPON_STATS : [])
+    : (typeof RUNE_ARMOR_STATS !== 'undefined' ? RUNE_ARMOR_STATS : []);
+  const poolNames = pool.map(s => (typeof RUNE_STAT_NAME !== 'undefined' && RUNE_STAT_NAME[s]) || s).join(', ');
   const n = (typeof RUNE_STAT_COUNT !== 'undefined' && RUNE_STAT_COUNT[rarity]) || 0;
-  const price = need ? `${need.n} × ${oreDef ? oreDef.name : need.id}` : 'бесплатно';
-  _showConfirmModal(
-    `Выковать ${_RARITY_NAMES[rarity] ? _RARITY_NAMES[rarity].toLowerCase() + ' ' : ''}${what} за ${price}?` +
-    `<br><span style="opacity:.75;font-size:11px">Успех ${Math.round(rec.chance * 100)}% · характеристик: ${n}` +
-    `<br>При неудаче руда сгорает.</span>`,
-    () => netCraftRune(kind, rarity), 'Ковать');
+
+  const need = (rec.mats || [])[0];
+  const matDef = need ? CRAFT_MATS.find(m => m.id === need.id) : null;
+  const have = need ? countMaterial(need.id) : 0;
+  const enough = !need || have >= need.n;
+  const matsHtml = need ? `<div class="craft-req-row">
+    <span class="craft-req-icon">${matDef ? _matIcon(matDef, 20) : need.id}</span>
+    <span class="craft-req-name">${matDef ? matDef.name : need.id}</span>
+    <span class="craft-req-count" style="color:${enough ? '#98e456' : '#eb4e61'}">${have}/${need.n}</span>
+  </div>` : '';
+
+  const canCraft = !pending && invHasSpace() && enough;
+  const rerollPrice = typeof RUNE_REROLL_PRICE !== 'undefined' ? RUNE_REROLL_PRICE : 100;
+
+  document.getElementById('npc-body').innerHTML = `
+    <button class="craft-back-btn" onclick="_setCraftsmanTab('runes')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
+    <div class="craft-detail-header">
+      <div class="craft-detail-icon">${_itemIcon(def, 52)}</div>
+      <div class="craft-detail-info">
+        <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${def.name}</div>
+        <div class="craft-detail-stats">${n} случайных характеристик из: ${poolNames}</div>
+      </div>
+    </div>
+    <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
+    <div class="craft-reqs-list">${matsHtml}</div>
+    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
+    <div class="pet-preview-hint">При неудаче руда сгорает без возврата. Цвет каждой выпавшей
+      характеристики — отдельный бросок, от серого до оранжевого; перебросить его позже можно за
+      ${rerollPrice} Liberty в карточке готовой руны.</div>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftRune('${kind}','${rarity}')">${pending ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
+  `;
 }
 
-// Перерисовка вкладки после ответа сервера — баланс и «хватает ли» меняются.
+// Сама ковка. Платное и с шансом, но вопрос уже задан самой карточкой — всё,
+// что нужно знать («хватает ли руды», «какой шанс», «что сгорит»), на экране
+// с момента клика по ячейке, и второе всплывающее окно с тем же текстом было
+// бы лишним нажатием, а не защитой от ошибки.
+function craftRune(kind, rarity) {
+  const rec = (typeof RUNE_CRAFT_RECIPES !== 'undefined' ? RUNE_CRAFT_RECIPES : [])
+    .find(r => r.kind === kind && r.rarity === rarity);
+  if (!rec || !player || _pendingRuneCraft) return;
+  if (!netIsLive()) { _shopMsg(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером'); return; }
+  if (!invHasSpace()) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  const need = (rec.mats || [])[0];
+  const have = need ? countMaterial(need.id) : 0;
+  if (need && have < need.n) {
+    const matDef = CRAFT_MATS.find(m => m.id === need.id);
+    _shopMsg(`Нужно ${need.n} × ${matDef ? matDef.name : need.id} (есть ${have})`);
+    return;
+  }
+  _pendingRuneCraft = { kind, rarity };
+  openRuneCraftModal(kind, rarity);   // перерисовать с занятой кнопкой
+  netCraftRune(kind, rarity);
+}
+
+// Перерисовка после ответа сервера. Открытая карточка рецепта обновляется НА
+// МЕСТЕ, тем же экраном, а не возвратом в сетку: ковка проваливается в семи
+// случаях из десяти, и «нажал — вернулся в список — ищи ту же ячейку заново»
+// было бы наказанием за обычный исход, а не за ошибку. Возврат в сетку
+// остаётся только тогда, когда карточка и не была открыта (перерисовка
+// баланса на самой сетке).
 function _refreshRuneTab() {
-  if (_craftsmanTab === 'runes' && document.getElementById('npc-body')) _setCraftsmanTab('runes');
+  if (!document.getElementById('npc-body')) return;
+  if (_openRuneRecipe) { openRuneCraftModal(_openRuneRecipe.kind, _openRuneRecipe.rarity); return; }
+  if (_craftsmanTab === 'runes') _setCraftsmanTab('runes');
 }
 
 function _craftsmanItemsTab() {

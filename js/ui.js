@@ -4994,15 +4994,29 @@ function _shopMsgOrToast(msg) {
 
 // ── ответы сервера ──────────────────────────────────────────────────────────
 function onRuneCrafted(itemId, stats, delivered) {
+  // Снимается ДО перерисовки: карточка рецепта (openRuneCraftModal) читает
+  // _pendingRuneCraft, чтобы решить, занята кнопка или нет, а перерисовывает
+  // её как раз _refreshRuneTab() ниже.
+  if (typeof _pendingRuneCraft !== 'undefined') _pendingRuneCraft = null;
   if (typeof updateInvUI === 'function') updateInvUI();
-  if (!delivered) { _shopMsgOrToast('Ковка не удалась — вложенное сгорело'); return; }
-  const base = itemCatalogBase(itemId) || {};
-  const line = (stats || []).map(st =>
-    `${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(base.rarity, st.q)}%`).join(', ');
-  _shopMsgOrToast(`✓ ${base.name || 'Руна'}: ${line}`);
+  if (!delivered) {
+    _shopMsgOrToast('Ковка не удалась — вложенное сгорело');
+  } else {
+    const base = itemCatalogBase(itemId) || {};
+    const line = (stats || []).map(st =>
+      `${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(base.rarity, st.q)}%`).join(', ');
+    _shopMsgOrToast(`✓ ${base.name || 'Руна'}: ${line}`);
+  }
   if (typeof _refreshRuneTab === 'function') _refreshRuneTab();
 }
-function onRuneCraftError(msg) { _shopMsgOrToast(msg || 'Ошибка'); }
+function onRuneCraftError(msg) {
+  if (typeof _pendingRuneCraft !== 'undefined') _pendingRuneCraft = null;
+  _shopMsgOrToast(msg || 'Ошибка');
+  // Раньше карточки не было — ошибка просто всплывала текстом. Теперь на
+  // экране могла остаться занятая кнопка (сетевой сбой, отказ сервера), и её
+  // нужно разблокировать, иначе «Крафтить» так и останется недоступной.
+  if (typeof _refreshRuneTab === 'function') _refreshRuneTab();
+}
 function onRuneError(msg) { _shopMsgOrToast(msg || 'Ошибка'); }
 function onRuneRerolled(res) {
   if (!res) return;
