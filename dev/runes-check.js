@@ -154,12 +154,12 @@ console.log('\n  ── руда ──');
   ok(!D.ITEM_DEF.some(d => String(d.id).startsWith('ore_')),
     'руда не снаряжение — в таблицу выпадения вещей не попадает');
 
-  // Шанс: 0.1% на первом уровне, +0.01% за каждый следующий.
-  near(D.oreDropChance(1), 0.001, 'уровень 1 — 0.1%');
-  near(D.oreDropChance(2), 0.0011, 'уровень 2 — 0.11%');
-  near(D.oreDropChance(30), 0.001 + 29 * 0.0001, 'уровень 30 — 0.39%');
-  near(D.oreDropChance(78), 0.001 + 77 * 0.0001, 'уровень 78 — 0.87%');
-  near(D.oreDropChance(0), 0.001, 'нулевой уровень не уводит шанс ниже базового');
+  // Шанс — ровные 70% с любого монстра, без роста по уровню.
+  near(D.oreDropChance(), 0.70, 'шанс выпадения руды — 70%');
+  eq(D.ORE_DROP_CHANCE, 0.70, 'и он же в константе');
+  for (const lvl of [1, 2, 30, 78]) {
+    near(D.oreDropChance(lvl), 0.70, `уровень ${lvl} ничего не меняет`);
+  }
 
   // Лесенка переплавки: 10 к 1, половина попыток впустую.
   const ladder = D.MAT_UPGRADE_RECIPES.filter(r => String(r.from).startsWith('ore_'));
@@ -181,12 +181,32 @@ console.log('\n  ── руда ──');
     eq(rec.chance, 0.30, `${rec.kind}/${rec.rarity}: шанс ковки 30%`);
   }
 
+  // Арт руды: свои файлы, не пиксель-арт.
+  for (const id of ores) {
+    const m = D.CRAFT_MATS.find(x => x.id === id);
+    ok(m && !!m.img && fs.existsSync(path.join(ROOT, m.img)), `${id}: картинка на месте`);
+    ok(m && m.smooth === true, `${id}: помечена как рисованная — уменьшается сглаженно`);
+  }
+
+  // Руда живёт во вкладке «Руны», а не в «Материалах».
+  const npcSrc = fs.readFileSync(path.join(ROOT, 'js/npc.js'), 'utf8');
+  // Вкладка «Материалы» объявлена в файле ПОЗЖЕ «Расходников», так что резать
+  // надо по следующей за ней функции, а не по соседней по смыслу.
+  const matsAt = npcSrc.indexOf('function _craftsmanMatsTab');
+  const matsTab = npcSrc.slice(matsAt, npcSrc.indexOf('\nfunction ', matsAt + 10));
+  ok(/if \(_isOreRecipe\(recipe\)\) return;/.test(matsTab), 'из «Материалов» руда убрана');
+  const runesTab = npcSrc.slice(npcSrc.indexOf('function _craftsmanRunesTab'),
+    npcSrc.indexOf('function _runeCraftConfirm'));
+  ok(/Переплавка руды/.test(runesTab), 'и показана во вкладке «Руны»');
+  ok(/openMatModal\(\$\{idx\}\)/.test(runesTab),
+    'открывается по настоящему индексу в общей таблице рецептов');
+
   // Бросок руды стоит в общем пути награды, а не в каждой таблице по копии.
   const wSrc = fs.readFileSync(path.join(ROOT, 'server/handlers2/world.js'), 'utf8');
   const lootFn = wSrc.slice(wSrc.indexOf('function rollLoot(result)'),
     wSrc.indexOf('// ── what a clan point means'));
-  ok(/rand\(\) < oreDropChance\(result\.rlvl\)/.test(lootFn),
-    'руда бросается по уровню монстра');
+  ok(/rand\(\) < oreDropChance\(\)/.test(lootFn),
+    'руда бросается одной ставкой, без уровня');
   ok(lootFn.indexOf("result.arm === 'coop'") < lootFn.indexOf('oreDropChance'),
     'сотрудничество выходит раньше — у него добычи нет по построению');
   ok(lootFn.indexOf('_rollMobLoot') < lootFn.indexOf('oreDropChance'),

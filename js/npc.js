@@ -196,7 +196,10 @@ let _craftsmanTab = 'items'; // 'items' | 'mats' | 'consumables' | 'runes'
 function _matIcon(mat, size) {
   if (!mat) return '?';
   if (mat.img) {
-    return `<img src="${mat.img}" width="${size}" height="${size}" style="image-rendering:pixelated;vertical-align:middle;border-radius:2px;">`;
+    // pixelated нужен пиксель-арту и вредит рисованному: руда приходит
+    // картинкой в 64 px и на 22 px с ним идёт рваными ступеньками.
+    const rend = mat.smooth ? 'auto' : 'pixelated';
+    return `<img src="${mat.img}" width="${size}" height="${size}" style="image-rendering:${rend};vertical-align:middle;border-radius:2px;">`;
   }
   // Значок без картинки красится по редкости материала. Пока у руды нет
   // своего арта, это единственное, что отличает обычную от легендарной в
@@ -282,8 +285,38 @@ function _craftsmanRunesTab() {
     html += '</div>';
   }
   html += `<div class="pet-preview-hint">Шанс успеха ${Math.round((RUNE_CRAFT_CHANCE || 0) * 100)}% — при неудаче руда сгорает.
-    Руда падает со всех монстров; переплавка 10 к 1 — во вкладке «Материалы».
     Цвет характеристики можно перебрать за ${RUNE_REROLL_PRICE} Liberty в карточке руны.</div>`;
+
+  // ── переплавка руды ─────────────────────────────────────────────────────
+  // Рецепты те же и в той же таблице (MAT_UPGRADE_RECIPES), что у свитков, —
+  // и открываются тем же окном openMatModal по НАСТОЯЩЕМУ индексу в ней.
+  // Перенумеровать их под эту вкладку значило бы завести второй порядок и
+  // однажды открыть не тот рецепт.
+  const ladder = [];
+  MAT_UPGRADE_RECIPES.forEach((recipe, idx) => {
+    if (!_isOreRecipe(recipe)) return;
+    const fromMat = CRAFT_MATS.find(m => m.id === recipe.from);
+    const toMat = CRAFT_MATS.find(m => m.id === recipe.to);
+    if (!fromMat || !toMat) return;
+    const have = countMaterial(recipe.from);
+    const enough = have >= recipe.count;
+    const can = enough && invHasSpace();
+    const rc = RARITY_COLOR[toMat.rarity] || '#aea599';
+    ladder.push(`<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
+      <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
+      <div class="craft-item-cell-name" style="color:${rc}">${toMat.name}</div>
+      <div class="craft-item-cell-name" style="font-size:10px;opacity:.75">${recipe.count} → 1 · ${Math.round(recipe.chance * 100)}%</div>
+      <div class="craft-item-cell-name" style="font-size:10px;color:${enough ? '#98e456' : '#eb4e61'}">${have}/${recipe.count}</div>
+    </div>`);
+  });
+  if (ladder.length) {
+    const oreHave = countMaterial('ore_common');
+    html += `<div class="craft-group-hdr" style="color:#c9a24b">Переплавка руды</div>`
+      + `<div class="craft-items-grid">${ladder.join('')}</div>`
+      + `<div class="pet-preview-hint">Обычная руда падает со всех монстров с шансом
+         ${Math.round((typeof ORE_DROP_CHANCE !== 'undefined' ? ORE_DROP_CHANCE : 0) * 100)}%.
+         Сейчас обычной руды: <b>${oreHave}</b>.</div>`;
+  }
   return html;
 }
 
@@ -590,9 +623,15 @@ function craftSpecificItem(idx) {
   }
 }
 
+// Руда живёт во вкладке «Руны» — там же, где всё, ради чего она нужна. Здесь
+// она бы стояла между рецептами свитков, с которыми у неё нет ничего общего,
+// кроме способа переплавки.
+function _isOreRecipe(recipe) { return String(recipe.from).startsWith('ore_'); }
+
 function _craftsmanMatsTab() {
   let html = '<div class="craft-group-hdr">' + (typeof t === 'function' ? t('craftRecipesHdr') : 'Рецепты') + '</div><div class="craft-items-grid">';
   MAT_UPGRADE_RECIPES.forEach((recipe, idx) => {
+    if (_isOreRecipe(recipe)) return;
     const fromMat = CRAFT_MATS.find(m => m.id === recipe.from);
     const toMat   = CRAFT_MATS.find(m => m.id === recipe.to);
     if (!fromMat || !toMat) return;

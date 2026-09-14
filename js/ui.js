@@ -53,8 +53,10 @@ function _itemIcon(it, size) {
     </div>`;
   }
   if (it && it.img) {
+    // `smooth` — рисованный арт (руда), которому пиксельное уменьшение только
+    // рвёт края; у всего остального в игре пиксель-арт, и ему pixelated нужен.
     return `<img src="${it.img}" width="${size}" height="${size}"
-      style="image-rendering:pixelated;border-radius:3px;"
+      style="image-rendering:${it.smooth ? 'auto' : 'pixelated'};border-radius:3px;"
       onerror="this.style.display='none'">`;
   }
   const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '#6c6354';

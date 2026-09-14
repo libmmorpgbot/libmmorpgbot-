@@ -897,14 +897,15 @@ const CRAFT_MATS = [
   // четыре не падают вовсе — их переплавляют по лесенке 10 к 1 (см. ту же
   // таблицу MAT_UPGRADE_RECIPES, где живут рецепты).
   //
-  // Картинки пока нет — рисуется значок, окрашенный по редкости (_matIcon,
-  // js/ui.js). Появится арт — здесь меняется одно поле на строку, как у
-  // рецептов выше.
-  { id:'ore_common',    name:'Обычная руда',      icon:'burst', slot:'material', rarity:'common'    },
-  { id:'ore_uncommon',  name:'Необычная руда',    icon:'burst', slot:'material', rarity:'uncommon'  },
-  { id:'ore_rare',      name:'Редкая руда',       icon:'burst', slot:'material', rarity:'rare'      },
-  { id:'ore_epic',      name:'Эпическая руда',    icon:'burst', slot:'material', rarity:'epic'      },
-  { id:'ore_legendary', name:'Легендарная руда',  icon:'burst', slot:'material', rarity:'legendary' },
+  // smooth: арт руды рисованный, а не пиксельный, и уменьшать его
+  // «по пикселям» нельзя — на 22 px выходит рваный край. Единственные
+  // картинки в игре с этой меткой; остальные — пиксель-арт, которому
+  // pixelated как раз нужен (см. _matIcon, js/npc.js).
+  { id:'ore_common',    name:'Обычная руда',      img:'/images/ore/cres.png', smooth:true, slot:'material', rarity:'common'    },
+  { id:'ore_uncommon',  name:'Необычная руда',    img:'/images/ore/ures.png', smooth:true, slot:'material', rarity:'uncommon'  },
+  { id:'ore_rare',      name:'Редкая руда',       img:'/images/ore/rres.png', smooth:true, slot:'material', rarity:'rare'      },
+  { id:'ore_epic',      name:'Эпическая руда',    img:'/images/ore/eres.png', smooth:true, slot:'material', rarity:'epic'      },
+  { id:'ore_legendary', name:'Легендарная руда',  img:'/images/ore/lres.png', smooth:true, slot:'material', rarity:'legendary' },
   // ── Enchant stones ──────────────────────────────────────
   { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
@@ -2091,19 +2092,16 @@ function runeIconOf(itemId, stats) {
 // mats — [{ id, n }], те же id, что у остальных рецептов (CRAFT_MATS).
 // ── руда: откуда она берётся ────────────────────────────────────────────────
 // Обычная руда падает с КАЖДОГО убитого монстра — единственная вещь в игре с
-// таким правилом. Шанс растёт с уровнем монстра: 0.1% на первом и ещё по
-// 0.01% за каждый следующий, то есть 0.87% на семьдесят восьмом.
+// таким правилом, и падает часто: 70% с любого убийства.
 //
-// От уровня МОНСТРА, а не игрока: так устроены все остальные таблицы дропа в
-// игре (_rollMobLoot, server/game/loot.js), и правило «что даёт эта тварь»
-// должно зависеть от твари, иначе один и тот же моб платит соседям по группе
-// по-разному.
-const ORE_DROP_BASE = 0.001;        // 0.1% на первом уровне
-const ORE_DROP_PER_LEVEL = 0.0001;  // +0.01% за уровень
-function oreDropChance(rlvl) {
-  const lvl = Math.max(1, Math.floor(Number(rlvl) || 1));
-  return ORE_DROP_BASE + (lvl - 1) * ORE_DROP_PER_LEVEL;
-}
+// Роста с уровнем здесь больше нет. Сперва было 0.1% плюс 0.01% за уровень —
+// при такой ставке одна руна стоила десятки тысяч убийств, а руна верхнего
+// яруса не набиралась в принципе (одна легендарная руда — это 160 000
+// обычных, см. лесенку в MAT_UPGRADE_RECIPES). Ровные 70% по прямому
+// указанию владельца; прибавка за уровень к ним и не нужна — за полсотни
+// уровней она упёрлась бы в потолок и перестала что-либо значить.
+const ORE_DROP_CHANCE = 0.70;
+function oreDropChance() { return ORE_DROP_CHANCE; }
 
 // Какая руда нужна на руну этой редкости. Своя на каждую — ради легендарной
 // руны надо пройти всю лесенку переплавки.
@@ -3433,7 +3431,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNE_CRAFT_CHANCE, RUNE_REROLL_PRICE, RUNE_QUALITIES, RUNE_QUALITY_COLOR,
   RUNE_QUALITY_NAME, RUNE_QUALITY_WEIGHT, RUNE_STAT_PCT, RUNE_ARMOR_STATS,
   RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,
-  ORE_DROP_BASE, ORE_DROP_PER_LEVEL, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,
+  ORE_DROP_CHANCE, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,
   runeKindOf, runeRarityOf, runeCatalogId, runeStatPct, runeQualityPool,
   rollRuneQuality, rollRuneStats, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
