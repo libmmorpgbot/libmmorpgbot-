@@ -837,25 +837,39 @@ class Session {
     if (!state.progress) return null;
     const { progress: p, prefs, skills, items: inv, balances, stats: st } = state;
 
-    // Equipment as a slot map of catalog-shaped items, which is what
-    // _rebuildFromCatalog expects on the other side.
+    // ── ЦЕЛИКОМ, А НЕ РУЧНЫМ СПИСКОМ ПОЛЕЙ ────────────────────────────────
+    // На все три (inventory, storage, equipment чуть ниже) раньше стоял
+    // ручной набор { id, enhance, qty } — написанный до рун и до rowId как
+    // публичного поля, и с тех пор молча резавший из каждой строки всё, что
+    // в него не вписали заранее. Это уже стоило игрокам двух отдельных
+    // жалоб на один и тот же корень:
     //
-    // `runes` едет вместе с id/enhance, а не только они. inv.equipment[slot]
-    // уже несёт .runes — items.inventoryOf() кладёт его туда, — и эта
-    // проекция его молча роняла: строка написана раньше рун и просто не
-    // знала о них. Итог был не в бою (pushStats всегда читает stats.of()
-    // заново) и не в базе (players.bm чинится через refreshBm отдельно), а
-    // ровно на этом экране: игрок заходил в игру, розетки в карточке
-    // предмета стояли пустыми, а characteristics руны не прибавлялись НИ К
-    // ЧЕМУ на его собственном экране — до первого equip/unequip, который
-    // проходит через items.move() и присылает inventorySync с полным
-    // набором заново. «Руны не работают, пока не наденешь что-нибудь» — это
-    // была не метафора, а точное описание бага.
+    //   .runes отсутствовал — руна в гнезде не давала ХАРАКТЕРИСТИК на
+    //   экране игрока (бой был в порядке: pushStats() всегда читает
+    //   stats.of() заново, этой проекции он не касается вовсе);
+    //
+    //   .rowId отсутствовал — и это опаснее, чем «поле пустое». Клик по
+    //   гнезду руны (_runeSocketTap(${it.rowId}, i), js/ui.js) уходил с
+    //   hostRowId === undefined, а _findRowById сравнивает `i.rowId ===
+    //   rowId` без проверки на существование — так что он НЕ «ничего не
+    //   находил», а совпадал с ПЕРВЫМ попавшимся предметом, у которого
+    //   rowId тоже оказался undefined (то есть с любым другим, до первого
+    //   надевания ничего не тронутым). Один слот молча путался с другим.
+    //
+    // Оба раза чинить ОДНО поле было бы латкой до следующей такой жалобы —
+    // третьей будет qty у стака, или что-то новое, чего эта строка опять не
+    // будет знать. items.inventoryOf() уже решил, что можно показать
+    // игроку, — тот же объект летит по inventorySync на каждом обычном
+    // действии, — и здесь его незачем пересобирать заново вручную.
+    // _rebuildFromCatalog (js/player.js) сама читает из него только то, что
+    // знает (enhance, qty, rowId, rune, runes), и молча игнорирует
+    // остальное (slot, container), так что лишние поля не вредят.
+    //
+    // Equipment — как слот-карта, чего ждёт _rebuildFromCatalog на той
+    // стороне.
     const equipment = {};
     for (const [slot, it] of Object.entries(inv.equipment || {})) {
-      if (!it) continue;
-      equipment[slot] = { id: it.id, enhance: it.enhance || 0 };
-      if (it.runes) equipment[slot].runes = it.runes;
+      if (it) equipment[slot] = it;
     }
 
     return {
@@ -892,8 +906,14 @@ class Session {
       // own copy every frame to animate the bar.
       buffs: require('./db/repos/consumables').buffsRemaining(p.buffs),
 
-      inventory: (inv.inventory || []).map(i => ({ id: i.id, enhance: i.enhance || 0, qty: i.qty || 1 })),
-      storage: (inv.storage || []).map(i => ({ id: i.id, enhance: i.enhance || 0, qty: i.qty || 1 })),
+      // ЦЕЛИКОМ, той же причиной, что и equipment выше: items.inventoryOf()
+      // уже приложил rowId (клик по строке — enhance, продажа, гнездо руны)
+      // и, где есть, rune/runes — этот же id-enhance-qty список однажды уже
+      // резал их молча. Инвентарь и хранилище идут через ТОТ ЖЕ
+      // _migrateInventory/_rebuildFromCatalog (js/player.js), что и
+      // inventorySync на любом другом действии, и ждут ту же форму строки.
+      inventory: inv.inventory || [],
+      storage: inv.storage || [],
       equipment,
 
       upgrades: p.upgrades || {},
