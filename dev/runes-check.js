@@ -109,6 +109,43 @@ console.log('\n  ── что выпадает ──');
     'легендарная оружейная забирает весь набор оружейных характеристик');
 }
 
+// ── 3б. переработка: характеристика И цвет, не только цвет ─────────────────
+// По прямому указанию владельца: «если опыт, может выпасть защита» —
+// переработка обязана менять саму характеристику, а не перекрашивать ту же.
+console.log('\n  ── переработка меняет и характеристику ──');
+{
+  const rarity = 'epic'; // 4 строки — есть где ошибиться на повторе
+  let changedStat = 0, staySame = 0, dup = 0, lockedTouched = 0, badPool = 0;
+  const N = 3000;
+  for (let i = 0; i < N; i++) {
+    const before = D.rollRuneStats('armor', rarity, Math.random);
+    const lockedIdx = [0]; // первая строка — под замком
+    const after = D.rerollRuneLine('armor', rarity, before, lockedIdx, Math.random);
+    if (after[0].stat !== before[0].stat || after[0].q !== before[0].q) lockedTouched++;
+    if (new Set(after.map(x => x.stat)).size !== after.length) dup++;
+    if (after.some(x => !D.RUNE_ARMOR_STATS.includes(x.stat))) badPool++;
+    if (after[1].stat !== before[1].stat) changedStat++; else staySame++;
+  }
+  eq(lockedTouched, 0, 'строка под замком не меняется НИ характеристикой, ни цветом');
+  eq(dup, 0, 'новая характеристика никогда не повторяет уже занятую на этой же руне');
+  eq(badPool, 0, 'новая характеристика всегда из пула своего вида');
+  ok(changedStat > N * 0.5, `характеристика меняется в большинстве бросков (${changedStat}/${N})`,
+    changedStat);
+  ok(staySame > 0 && staySame < N * 0.5,
+    `иногда честно выпадает та же самая — это не гарантия перемены (${staySame}/${N})`, staySame);
+
+  // Замочки исключают свою характеристику из пула — иначе после переработки
+  // могли бы стоять две одинаковые строки: одна под замком, другая заново
+  // выбравшая ту же самую.
+  const fixed = [{ stat: 'hpPct', q: 'orange' }, { stat: 'defPct', q: 'grey' }];
+  let everCollided = false;
+  for (let i = 0; i < 500; i++) {
+    const r = D.rerollRuneLine('armor', rarity, fixed, [0], Math.random);
+    if (r[1].stat === 'hpPct') everCollided = true;
+  }
+  ok(!everCollided, 'незапечатанная строка никогда не выбирает характеристику запечатанной');
+}
+
 // ── 4. сложение ────────────────────────────────────────────────────────────
 console.log('\n  ── сумма по набору рун ──');
 {
@@ -426,7 +463,7 @@ console.log('\n  ── защиты ──');
   ok(bulk.length > 200, 'общий перебор есть на сервере');
   ok(bulk.indexOf("err('all_locked'") < bulk.indexOf('money.spend'),
     'все строки под замком — отказ ДО оплаты, а не платный ноль');
-  ok(bulk.indexOf('money.spend') < bulk.indexOf('rollRuneQuality'),
+  ok(bulk.indexOf('money.spend') < bulk.indexOf('rerollRuneLine('),
     'оплата — до бросков');
   ok(/const locks = new Set\(\)/.test(bulk),
     'замочки складываются в Set: повтор от клиента не удваивает цену дважды');
@@ -434,8 +471,8 @@ console.log('\n  ── защиты ──');
     'замочек вне диапазона отбрасывается, а не считается в цену');
   ok(/runeRerollAllPrice\(locks\.size\)/.test(bulk),
     'цена считается по вычищенным замочкам, а не по длине присланного массива');
-  ok(/locks\.has\(i\) \? \{ \.\.\.st \} : \{ \.\.\.st, q: rollRuneQuality/.test(bulk),
-    'строка под замком не перебрасывается');
+  ok(/rerollRuneLine\(kind, rarity, stats, \[\.\.\.locks\], rand\)/.test(bulk),
+    'и характеристика, и цвет бросаются заново — не только цвет');
 
   // ── БМ от рун ──────────────────────────────────────────────────────────────
   // Регрессия, о которой сообщил владелец: бой уже шёл по рунам, а хранимая

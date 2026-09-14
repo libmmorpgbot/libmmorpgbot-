@@ -27,7 +27,7 @@ const items = require('./items');
 const money = require('./money');
 const {
   ITEM_DEF, RUNE_CRAFT_RECIPES, RUNE_REROLL_PRICE, runeRerollAllPrice,
-  rollRuneStats, rollRuneQuality, runeKindOf, runeRarityOf, runeCatalogId,
+  rollRuneStats, rerollRuneLine, runeKindOf, runeRarityOf, runeCatalogId,
   runeSocketsOf, runeKindForSlot,
 } = require('../../../shared/definitions');
 
@@ -119,9 +119,14 @@ async function craftRune(db, playerId, kind, rarity) {
   return { outcome: 'success', kind, rarity, chance, cost: rec.nexumCost, itemId, rowId, stats };
 }
 
-// ── перебор цвета одной характеристики ──────────────────────────────────────
-// Именно перебор, а не повышение: цвет бросается заново и может выйти хуже.
-// Поэтому и цена одна на любой цвет — платят за бросок.
+// ── переработка одной характеристики ────────────────────────────────────────
+// Именно переработка, а не повышение: бросается заново И характеристика, И
+// её цвет — по прямому указанию владельца («если опыт, может выпасть
+// защита»). Раньше менялся только цвет; теперь строка целиком, кроме тех,
+// что под замком у соседей (см. rerollRuneLine, shared/definitions.js) —
+// повторно получить ту же характеристику, что уже стоит на другой строке
+// этой руны, нельзя, а вот совпасть с СОБСТВЕННОЙ прежней — можно, это
+// честный бросок, а не гарантия перемены.
 //
 // Номер строки проверяется по НАСТОЯЩЕЙ длине набора, а не по редкости: две
 // характеристики у необычной руны — это правило ковки, а не свойство строки,
@@ -137,7 +142,8 @@ async function rerollRuneStat(db, playerId, rowId, statIdx) {
     'SELECT item_id, rune FROM player_items WHERE id = $1 AND player_id = $2', [id, playerId]);
   if (!rows.length) err('bad_rune', 'Руна не найдена');
   const rarity = runeRarityOf(rows[0].item_id);
-  if (!rarity) err('bad_rune', 'Это не руна');
+  const kind = runeKindOf(rows[0].item_id);
+  if (!rarity || !kind) err('bad_rune', 'Это не руна');
   const stats = (rows[0].rune && rows[0].rune.stats) || [];
   if (!Number.isSafeInteger(idx) || idx < 0 || idx >= stats.length) {
     err('bad_stat', 'У руны нет такой характеристики');
@@ -149,11 +155,13 @@ async function rerollRuneStat(db, playerId, rowId, statIdx) {
   });
   if (!paid) err('no_nexum', 'Недостаточно Liberty');
 
-  const before = stats[idx].q;
-  const next = stats.map((st, i) => (i === idx ? { ...st, q: rollRuneQuality(rarity, rand) } : st));
+  const before = { stat: stats[idx].stat, q: stats[idx].q };
+  const lockedIdx = stats.map((_, i) => i).filter(i => i !== idx);
+  const next = rerollRuneLine(kind, rarity, stats, lockedIdx, rand);
   await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
     [id, playerId, JSON.stringify({ stats: next })]);
-  return { rowId: id, statIdx: idx, before, after: next[idx].q, cost: RUNE_REROLL_PRICE, stats: next };
+  const after = { stat: next[idx].stat, q: next[idx].q };
+  return { rowId: id, statIdx: idx, before, after, cost: RUNE_REROLL_PRICE, stats: next };
 }
 
 
@@ -182,7 +190,8 @@ async function rerollRuneStats(db, playerId, rowId, lockedIdx = []) {
     'SELECT item_id, rune FROM player_items WHERE id = $1 AND player_id = $2', [id, playerId]);
   if (!rows.length) err('bad_rune', 'Руна не найдена');
   const rarity = runeRarityOf(rows[0].item_id);
-  if (!rarity) err('bad_rune', 'Это не руна');
+  const kind = runeKindOf(rows[0].item_id);
+  if (!rarity || !kind) err('bad_rune', 'Это не руна');
   const stats = (rows[0].rune && rows[0].rune.stats) || [];
   if (!stats.length) err('bad_rune', 'У руны нет характеристик');
 
@@ -206,14 +215,17 @@ async function rerollRuneStats(db, playerId, rowId, lockedIdx = []) {
   });
   if (!paid) err('no_nexum', 'Недостаточно Liberty');
 
-  const before = stats.map(st => st.q);
-  const next = stats.map((st, i) =>
-    (locks.has(i) ? { ...st } : { ...st, q: rollRuneQuality(rarity, rand) }));
+  // И характеристика, И цвет — не только цвет (см. rerollRuneLine). Строки
+  // под замком в before/after тоже присутствуют (не только незапечатанные):
+  // клиенту нужно показать «без изменений» рядом с тем, что реально
+  // изменилось, а не гадать по одному только locked-списку.
+  const before = stats.map(st => ({ stat: st.stat, q: st.q }));
+  const next = rerollRuneLine(kind, rarity, stats, [...locks], rand);
   await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
     [id, playerId, JSON.stringify({ stats: next })]);
   return {
     rowId: id, locked: [...locks].sort((a, b) => a - b),
-    before, after: next.map(st => st.q), cost: price, stats: next,
+    before, after: next.map(st => ({ stat: st.stat, q: st.q })), cost: price, stats: next,
   };
 }
 

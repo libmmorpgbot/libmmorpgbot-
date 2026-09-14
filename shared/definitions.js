@@ -2063,6 +2063,36 @@ function rollRuneStats(kind, rarity, rand = Math.random) {
   return out;
 }
 
+// Переработка. Раньше «перебор» менял только ЦВЕТ строки, оставляя саму
+// характеристику как есть — по прямому указанию владельца это неверно:
+// «если опыт, может выпасть защита» — переработка обязана бросать И
+// характеристику, И её цвет заново, не только один из двух.
+//
+// Строки под замком (lockedIdx) не трогаются вообще — ни характеристика,
+// ни цвет. Остальные получают НОВУЮ характеристику из пула вида (kind) БЕЗ
+// повторов — ни с тем, что под замком, ни друг с другом на этой же руне:
+// то же правило уникальности, что и при ковке (rollRuneStats), иначе руна
+// получила бы две строки «Здоровье» после одной переработки.
+//
+// Новая характеристика МОЖЕТ совпасть с той, что была на этой же строке до
+// переработки — пул исключает только чужие строки, не свою прежнюю. Это не
+// баг: переработка честно бросает заново, и «осталось как было» такой же
+// законный исход, как и у цвета.
+function rerollRuneLine(kind, rarity, currentStats, lockedIdx, rand = Math.random) {
+  const locked = new Set(lockedIdx || []);
+  const keep = new Set(currentStats
+    .filter((_, i) => locked.has(i))
+    .map(st => st.stat));
+  const pool = (kind === 'weapon' ? RUNE_WEAPON_STATS : RUNE_ARMOR_STATS)
+    .filter(s => !keep.has(s));
+  return currentStats.map((st, i) => {
+    if (locked.has(i)) return { ...st };
+    const pick = Math.floor(rand() * pool.length);
+    const stat = pool.splice(pick, 1)[0];
+    return { stat, q: rollRuneQuality(rarity, rand) };
+  });
+}
+
 // Суммарная прибавка от набора рун — в ПРОЦЕНТАХ, по ключам RUNE_*_STATS.
 // Одна функция на сервер (repos/stats.js) и на панель клиента: разойтись
 // показанному и посчитанному тут негде.
@@ -3494,7 +3524,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,
   ORE_DROP_CHANCE, oreDropChance, RUNE_ORE_OF, RUNE_ORE_COST,
   runeKindOf, runeRarityOf, runeCatalogId, runeStatPct, runeQualityPool,
-  rollRuneQuality, rollRuneStats, runeBonusTotals, runeIconOf,
+  rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,

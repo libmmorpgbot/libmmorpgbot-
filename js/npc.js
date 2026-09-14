@@ -292,7 +292,7 @@ function _craftsmanRunesTab() {
     html += '</div>';
   }
   html += `<div class="pet-preview-hint">Шанс успеха ${Math.round((RUNE_CRAFT_CHANCE || 0) * 100)}% — при неудаче руда сгорает.
-    Цвет характеристики можно перебрать за ${RUNE_REROLL_PRICE} Liberty в карточке руны.</div>`;
+    Характеристики можно переработать в карточке руны.</div>`;
 
   // ── переплавка руды ─────────────────────────────────────────────────────
   // Рецепты те же и в той же таблице (MAT_UPGRADE_RECIPES), что у свитков, —
@@ -569,7 +569,11 @@ function onBuffPotionCrafted(itemId, qty) {
   const idx = _pendingBuffPotionCraftIdx;
   _pendingBuffPotionCraftIdx = null;
   const def = ITEM_DEF.find(d => d.id === itemId);
-  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (def ? def.name : itemId) + ' ×' + (qty || 1));
+  // Без броска — как и было (10 банок за раз, без шанса), поэтому это
+  // всегда успех: зелёным, той же _shopMsgOk, что уже красит покупку в
+  // лавке. Обычный _shopMsg по умолчанию КРАСНЫЙ (см. .shop-msg в
+  // css/style.css) — раньше успех и провал крафта выглядели одинаково.
+  _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (def ? def.name : itemId) + ' ×' + (qty || 1));
   if (typeof updateInvUI === 'function') updateInvUI();
   if (idx !== null) openBuffPotionCraftModal(idx);
 }
@@ -998,7 +1002,7 @@ function onClassGearCrafted(item, delivered) {
     // duplicated it when the server HAD delivered and forged one when it
     // hadn't; the save path now rejects the latter outright.
     if (delivered) {
-      _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name);
+      _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name);
     } else {
       _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
     }
@@ -1060,9 +1064,13 @@ function onGearCrafted(itemId, success) {
   if (_pendingWingsCraft === itemId) { _pendingWingsCraft = null; openWingsCraftModal(itemId); }
   const item = ITEM_DEF.find(i => i.id === itemId);
   if (typeof updateInvUI === 'function') updateInvUI();
-  _shopMsg(success
-    ? (typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (item ? item.name : itemId)
-    : (typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.'));
+  // Единственный крафт, где исход и правда неясен без броска (chance<1) —
+  // зелёное «Создано» либо красный «Провал», а не один и тот же цвет на оба.
+  if (success) {
+    _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (item ? item.name : itemId));
+  } else {
+    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
+  }
   if (idx !== null) openCraftModal(idx);
 }
 function onGearCraftError(msg) {
@@ -1173,7 +1181,7 @@ function onPetCrafted(pet, delivered) {
     // Same rule as onClassGearCrafted above — the server owns the grant, and
     // delivered:false means it had no room to hand the pet over.
     if (delivered) {
-      _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
+      _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
     } else {
       _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
     }
@@ -1272,7 +1280,8 @@ function onBoxCrafted(boxId) {
   _pendingBoxCraftId = null;
   const box = BOX_DEF.find(b => b.id === boxId);
   if (typeof updateInvUI === 'function') updateInvUI();
-  _shopMsg((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (box ? box.name : boxId));
+  // Ключи → бокс, 100% — как и у зелий, без броска, значит всегда успех.
+  _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (box ? box.name : boxId));
   if (id !== null) openBoxCraftModal(id);
 }
 function onBoxCraftError(msg) {
@@ -1337,9 +1346,14 @@ function onMatUpgraded(from, to, success) {
   _pendingMatUpgradeIdx = null;
   const mat = CRAFT_MATS.find(m => m.id === to);
   if (typeof updateInvUI === 'function') updateInvUI();
-  _shopMsg(success
-    ? (typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (mat ? mat.name : to)
-    : (typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.'));
+  // Тот же путь и у свитков (80%), и у переплавки руды (100% — тогда success
+  // всегда true, и кнопка всегда зелёная, что и честно для стопроцентного
+  // рецепта).
+  if (success) {
+    _shopMsgOk((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (mat ? mat.name : to));
+  } else {
+    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
+  }
   if (idx !== null) openMatModal(idx);
 }
 function onMatUpgradeError(msg) {
@@ -1394,9 +1408,11 @@ function craftAdvSkillBook() {
 function onAdvSkillBookCrafted(success, id) {
   const book = CRAFT_MATS.find(m => m.id === id);
   if (typeof updateInvUI === 'function') updateInvUI();
-  _shopMsg(success
-    ? (typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (book ? book.name : '')
-    : (typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.'));
+  if (success) {
+    _shopMsgOk((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (book ? book.name : ''));
+  } else {
+    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
+  }
   openAdvBookCraftModal();
 }
 function onAdvSkillBookCraftError(msg) {

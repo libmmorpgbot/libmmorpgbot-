@@ -4930,7 +4930,7 @@ function _runeRerollAllConfirm(rowId) {
     : '';
   _showConfirmModal(
     `Перебросить ${free} ${free === 1 ? 'характеристику' : 'характеристики'} за ${price} Liberty?${kept}<br>` +
-    `<span style="opacity:.75;font-size:11px">Цвета бросаются заново — могут выпасть хуже нынешних.</span>`,
+    `<span style="opacity:.75;font-size:11px">Характеристика и цвет бросаются заново — может выпасть и хуже нынешнего.</span>`,
     () => netRuneRerollAll(rowId, locked), 'Переработать');
 }
 
@@ -4979,9 +4979,19 @@ function openRuneModal(it) {
 
 // Короткое сообщение поверх экрана — там, где панели лавки нет (карточка
 // предмета открыта из инвентаря, а не у торговца).
-function _shopMsgOrToast(msg) {
+// `ok` — необязательный: true красит зелёным (успех, _shopMsgOk), false
+// красным (провал — _shopMsg и без него уже красный, см. .shop-msg в
+// css/style.css, но toast-заглушка ниже по умолчанию красит всё одним
+// оранжевым и без явного false осталась бы им же), undefined сохраняет
+// прежнее поведение для всего, что не исход крафта (перебор, отказы).
+function _shopMsgOrToast(msg, ok) {
+  if (ok === true && typeof _shopMsgOk === 'function' && document.getElementById('npc-body')) {
+    _shopMsgOk(msg); return;
+  }
   if (typeof _shopMsg === 'function' && document.getElementById('npc-body')) { _shopMsg(msg); return; }
-  if (player && typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, msg, '#f2b46b');
+  if (player && typeof dmgNum === 'function') {
+    dmgNum(player.x, player.y - 40, msg, ok === true ? '#90d653' : ok === false ? '#eb4e61' : '#f2b46b');
+  }
 }
 
 // ── ответы сервера ──────────────────────────────────────────────────────────
@@ -4992,12 +5002,12 @@ function onRuneCrafted(itemId, stats, delivered) {
   if (typeof _pendingRuneCraft !== 'undefined') _pendingRuneCraft = null;
   if (typeof updateInvUI === 'function') updateInvUI();
   if (!delivered) {
-    _shopMsgOrToast('Ковка не удалась — вложенное сгорело');
+    _shopMsgOrToast('Ковка не удалась — вложенное сгорело', false);
   } else {
     const base = itemCatalogBase(itemId) || {};
     const line = (stats || []).map(st =>
       `${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(base.rarity, st.q)}%`).join(', ');
-    _shopMsgOrToast(`✓ ${base.name || 'Руна'}: ${line}`);
+    _shopMsgOrToast(`✓ ${base.name || 'Руна'}: ${line}`, true);
   }
   if (typeof _refreshRuneTab === 'function') _refreshRuneTab();
 }
@@ -5010,10 +5020,15 @@ function onRuneCraftError(msg) {
   if (typeof _refreshRuneTab === 'function') _refreshRuneTab();
 }
 function onRuneError(msg) { _shopMsgOrToast(msg || 'Ошибка'); }
+// before/after — {stat, q}, не голый цвет: переработка бросает и
+// характеристику, и цвет вместе (см. rerollRuneLine, shared/definitions.js).
+function _runeLineLabel(o) {
+  return `${RUNE_STAT_NAME[o.stat] || o.stat} (${RUNE_QUALITY_NAME[o.q] || o.q})`;
+}
+
 function onRuneRerolled(res) {
-  if (!res) return;
-  const q = res.after;
-  _shopMsgOrToast(`Новый цвет: ${RUNE_QUALITY_NAME[q] || q}`);
+  if (!res || !res.after) return;
+  _shopMsgOrToast(`Новый вид: ${_runeLineLabel(res.after)}`);
   if (typeof updateInvUI === 'function') updateInvUI();
   _refreshOpenRuneModal();
 }
@@ -5024,13 +5039,13 @@ function onRuneRerolled(res) {
 function onRuneRerolledAll(res) {
   if (!res) return;
   const locked = new Set(res.locked || []);
-  const parts = (res.after || []).map((q, i) => {
+  const parts = (res.after || []).map((a, i) => {
     if (locked.has(i)) return null;
-    const was = (res.before || [])[i];
-    const nm = RUNE_QUALITY_NAME[q] || q;
-    return was === q ? `${nm} (без изменений)` : `${RUNE_QUALITY_NAME[was] || was} → ${nm}`;
+    const b = (res.before || [])[i];
+    const same = b && b.stat === a.stat && b.q === a.q;
+    return same ? `${_runeLineLabel(a)} (без изменений)` : `${b ? _runeLineLabel(b) : '?'} → ${_runeLineLabel(a)}`;
   }).filter(Boolean);
-  _shopMsgOrToast(parts.join(', ') || 'Перебор выполнен');
+  _shopMsgOrToast(parts.join(', ') || 'Переработка выполнена');
   if (typeof updateInvUI === 'function') updateInvUI();
   _refreshOpenRuneModal();
 }
