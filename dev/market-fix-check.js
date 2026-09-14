@@ -308,6 +308,50 @@ function clientChecks() {
   ctx._renderMarketLots(body);
   ok(!body.innerHTML.includes('market-truncated'),
     'а коли ринок поміщається — жодного попередження');
+
+  // ── мінімальна ціна руди й рун ────────────────────────────────────────────
+  head('мінімальна ціна лота: руда 0.01/шт, руна — по рідкості');
+  // Владелец: «Сделай чтоб минимальную цену руду за штуку 0.01 на все
+  // редкости [...] Минимальная цена руны Обычная 1 тон Необычная 5 тон
+  // Редкая 20 тон Эпическая 50 Легендарная 100». Руна не в ENHANCEABLE_SLOTS
+  // (её нельзя точить), поэтому до этой правки любая её редкость проваливалась
+  // в общий MARKET_MIN_PRICE (0.1) — легендарная руна стоила бы столько же,
+  // сколько мусорный ключ. Здесь — клиентское зеркало (_marketMinPriceFor,
+  // js/ui.js); серверная сторона (_marketMinPrice, server/inventory.js)
+  // проверяется отдельно, без DOM-песочницы, дальше по файлу.
+  const minPriceFor = evalIn('_marketMinPriceFor');
+  for (const rarity of ['common', 'uncommon', 'rare', 'epic', 'legendary']) {
+    for (const qty of [1, 3]) {
+      eq(minPriceFor({ id: `ore_${rarity}` }, qty), 0.01 * qty,
+        `руда ${rarity} × ${qty}: floor = 0.01/шт`);
+    }
+  }
+  const runeFloor = { common: 1, uncommon: 5, rare: 20, epic: 50, legendary: 100 };
+  for (const rarity of Object.keys(runeFloor)) {
+    eq(minPriceFor({ slot: 'rune', rarity }, 1), runeFloor[rarity],
+      `руна ${rarity}: floor = ${runeFloor[rarity]} GRAM (кількість не множить — руни не стакуються)`);
+  }
+}
+
+// server/inventory.js вимагає лише shared/definitions і ./anticheat — жоден з
+// них не чіпає БД, тож _marketMinPrice можна викликати напряму, без сокета,
+// без БД і без VM-пісочниці клієнта. Це серверна сторона зеркала, перевіреного
+// вище в clientChecks(): якщо два числа колись розійдуться, підказка під
+// полем ціни називатиме одне число, а сервер вимагатиме інше.
+function serverMinPriceChecks() {
+  head('серверна сторона того самого мінімуму (server/inventory.js)');
+  const inv = require('../server/inventory');
+  for (const rarity of ['common', 'uncommon', 'rare', 'epic', 'legendary']) {
+    for (const qty of [1, 3]) {
+      eq(inv._marketMinPrice({ id: `ore_${rarity}`, qty }), 0.01 * qty,
+        `сервер: руда ${rarity} × ${qty}: floor = 0.01/шт`);
+    }
+  }
+  const runeFloor = { common: 1, uncommon: 5, rare: 20, epic: 50, legendary: 100 };
+  for (const rarity of Object.keys(runeFloor)) {
+    eq(inv._marketMinPrice({ slot: 'rune', rarity, qty: 1 }), runeFloor[rarity],
+      `сервер: руна ${rarity}: floor = ${runeFloor[rarity]} GRAM`);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -672,6 +716,7 @@ async function cleanup() {
 (async () => {
   console.log(`\nmarket-fix-check  (${TAG})`);
   clientChecks();
+  serverMinPriceChecks();
   await dbChecks();
   await historyChecks();
 })()

@@ -6358,6 +6358,15 @@ function _marketMinPriceForRaw(it, qty) {
   if (it.slot === 'recipe') return 0.01 * n;
   if (it.slot === 'buff_potion') return 0.3 * n;
   if (it.slot === 'box') return (it.id === 'liberty_bag' ? 5 : it.id === 'box_rare' ? 2 : 1) * n;
+  // Руда — одна цена на все пять редкостей, за штуку.
+  if (it.id && it.id.startsWith('ore_')) return 0.01 * n;
+  // Руна — своя цена по редкости, flat (руны не стакаются). Без этой строки
+  // все пять проваливались в MARKET_MIN_PRICE ниже: руна не в
+  // ENHANCEABLE_SLOTS, ни один rarity-чек для снаряжения её не ловит.
+  if (it.slot === 'rune') {
+    const runeFloor = { common: 1, uncommon: 5, rare: 20, epic: 50, legendary: 100 };
+    return runeFloor[it.rarity] || MARKET_MIN_PRICE;
+  }
   // Rare pet/wings/artifact share their own floor, above rare weapon/armor's
   // — has to win over both the flat cloak/artifact floor right below (an
   // artifact IS 'rare' at this rarity, unlike cloak) and the generic

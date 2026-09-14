@@ -41,6 +41,15 @@ const MARKET_MIN_PRICE_CLOAK_ARTIFACT = 2; // slot:'cloak'/'artifact', flat, any
 const MARKET_MIN_PRICE_SKILL_BOOK  = 0.4;  // book_<cls>_<key> (has skillKey), flat, per book
 const MARKET_MIN_PRICE_ADV_SKILL_BOOK = 10; // book_adv_<cls>_<key> ("вторая профессия", has advSkillKey), flat, per book
 const MARKET_MIN_PRICE_BUFF_POTION = 0.3;  // slot:'buff_potion', per potion
+// Руда — id начинается на 'ore_' (ore_common..ore_legendary), per unit, ОДНА
+// цена на все пять редкостей: редкость руды и так упирается в цену самой
+// переплавки (RUNE_ORE_COST), второй раз множить её здесь незачем.
+const MARKET_MIN_PRICE_ORE = 0.01;
+// Руна — slot:'rune', flat (руны не стакаются). Своя цена на каждую
+// редкость: без неё все пять проваливались в общий MARKET_MIN_PRICE (0.1) —
+// руна не в ENHANCEABLE_SLOTS (её нельзя точить), поэтому ни один из
+// rarity-чеков для снаряжения ниже её не ловит вообще.
+const MARKET_MIN_PRICE_RUNE = { common: 1, uncommon: 5, rare: 20, epic: 50, legendary: 100 };
 
 function _round2(n) { return Math.round(n * 100) / 100; }
 
@@ -99,6 +108,12 @@ function _marketMinPriceRaw(item) {
   if (item.id && item.id.startsWith('key_')) return MARKET_MIN_PRICE_KEY_UNCOMMON * qty;
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'buff_potion') return MARKET_MIN_PRICE_BUFF_POTION * qty;
+  if (item.id && item.id.startsWith('ore_')) return MARKET_MIN_PRICE_ORE * qty;
+  // Своя таблица по редкости, не общий rarity-чек ниже: руна не в
+  // ENHANCEABLE_SLOTS, и без этой строки любая её редкость падала бы в
+  // MARKET_MIN_PRICE — легендарная руна продавалась бы за те же 0.1 GRAM,
+  // что и мусорный ключ.
+  if (item.slot === 'rune') return MARKET_MIN_PRICE_RUNE[item.rarity] || MARKET_MIN_PRICE;
   if (item.slot === 'box') {
     if (item.id === 'liberty_bag') return MARKET_MIN_PRICE_LIBERTY_BAG * qty;
     return (item.id === 'box_rare' ? MARKET_MIN_PRICE_BOX_RARE : MARKET_MIN_PRICE_BOX_UNCOMMON) * qty;
