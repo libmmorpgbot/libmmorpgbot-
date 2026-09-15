@@ -2757,7 +2757,12 @@ canvas { display:block; width:100%; height:100%; }
 /* ── Market: item compare modal (two cards — the equipped item vs the lot) ─── */
 .compare-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, 1fr), not bare 1fr: a grid item's default min-width is auto,
+     i.e. its content's min-content size — so the two cards would size
+     unevenly by name length and, when both names were long enough, overflow
+     the sheet, clipping the losing card's stat values off the right edge
+     of the screen with no scrollbar to reveal them. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
 @media (max-width: 420px) {
