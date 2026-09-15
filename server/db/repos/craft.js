@@ -629,7 +629,13 @@ async function sellItem(db, playerId, rowId, qty = 1) {
   await items.assertDestroyable(db, rowId);
 
   const def = ITEM_DEF.find(d => d.id === it.item_id);
-  const unit = def && def.price ? Math.floor(def.price / 2) : 1;
+  // ITEM_DEF entries carry no `price` field at all (that's only ever set on
+  // the potion list in CRAFT_MATS) — so every sale fell through to the "no
+  // price" branch and paid out a flat 1 gold, whatever the item. Common gear
+  // is by far the most frequently sold junk, so give it a real payout; other
+  // tiers keep the old fallback until they get one too.
+  const unit = def && def.price ? Math.floor(def.price / 2)
+    : (def && def.rarity === 'common') ? 3000 : 1;
   const n = Math.max(1, Math.min(it.qty, Math.floor(Number(qty) || 1)));
 
   if (!await items.removeQty(db, playerId, it.item_id, n, { enhance: it.enhance })) {
