@@ -4338,6 +4338,23 @@ class Room {
     return out;
   }
 
+  // One lane's own spawn point, validated the same way raceUsableLanes()
+  // validates all of them. Used by the reconnect grace
+  // (_resumeHeldRace10Run, server/handlers2/world.js) to put a racer back in
+  // THEIR OWN corridor when the disconnect happened too abruptly for
+  // _race10HoldOnDisconnect to capture an exact x/y: forceFloor's own
+  // fallback for a missing pos is this floor's default spawn, which is the
+  // shared boss room (generateRace10), not this racer's lane — so without
+  // this a racer whose position was lost came back logically in lane N
+  // (_raceLane is restored separately) but physically in the boss room,
+  // nowhere near their own monsters, and possibly standing next to whoever
+  // else was legitimately there. «появился не на своей линии».
+  raceLaneSpot(lane) {
+    const race = this._dungeon.race10;
+    const spot = race && race.lanes && race.lanes[lane];
+    return spot && this.canStandAt(spot.x, spot.y) ? spot : null;
+  }
+
   raceDeploy(socketIds) {
     const race = this._dungeon.race10;
     if (!race) return [];

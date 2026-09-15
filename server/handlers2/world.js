@@ -212,10 +212,23 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // pos carries the exact spot this racer disconnected from — mid-corridor
     // or already at the boss, _race10ReachBoss writes the same x/y this was
     // captured from — so forceFloor needs nothing more than that to land
-    // them back exactly where they left off. Falls back to the floor's
-    // normal spawn (the boss room) only if a position genuinely could not be
-    // captured at hold time.
-    const p = s.forceFloor('race10', { pos: claimed.pos });
+    // them back exactly where they left off.
+    //
+    // claimed.pos is only null on the rare hold that could not capture a
+    // spot at all (see _race10HoldOnDisconnect). forceFloor's OWN fallback
+    // for a missing pos is this floor's default spawn — the shared boss
+    // room — which is not this racer's lane: they'd come back logically in
+    // lane N (the assignment below still runs) but physically on the other
+    // side of the map from their own monsters, and possibly right next to
+    // whoever else is legitimately at the boss. «появился не на своей
+    // линии». raceLaneSpot(run.lane) is this floor's OWN idea of where lane
+    // N starts, so fall back to that instead.
+    let pos = claimed.pos;
+    if (!pos && typeof run.lane === 'number') {
+      const raceRoom = deps.floorRooms && deps.floorRooms.get(floorIdOf('race10'));
+      pos = (raceRoom && typeof raceRoom.raceLaneSpot === 'function' && raceRoom.raceLaneSpot(run.lane)) || null;
+    }
+    const p = s.forceFloor('race10', { pos });
     if (!p) return;
     // ── «не было монстров ничего, и босса тоже не было» ─────────────────────
     // forceFloor's addPlayer creates a BRAND-NEW room record with
