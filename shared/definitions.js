@@ -3278,7 +3278,7 @@ const COOP_LIBERTY_CHANCE = 0.1;
 const GRAM_DROP_CHANCE = 0.075;
 const GRAM_PER_LEVEL = 0.0000001;
 
-const SEASON_TICKET_GRAM_PRICE = 15;
+const SEASON_TICKET_GRAM_PRICE = 10.5; // was 15 — 30% off by request
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
 const SEASON_TICKET_DROP_PCT = 60;     // +60 to the bonus loot re-roll chance
 const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop chance — x2

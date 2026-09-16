@@ -8909,7 +8909,12 @@ const _GRAM_SHOP_PKGS_UI = [
   // for as long as the current season is running. Own reward-row rendering
   // in _shopExtraRewardRows (pkg.seasonTicket branch) since none of the
   // usual reward kinds (armor/weapon/potions/...) apply.
-  { id:'season_ticket', gram:15, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
+  // gram reads the shared constant rather than repeating the number: this
+  // array only exists to draw the card, and a price change to
+  // SEASON_TICKET_GRAM_PRICE (shared/definitions.js) — what the server
+  // actually charges — used to need a second, easy-to-forget edit here to
+  // keep the card from quoting a stale price.
+  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
   { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
   { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
   { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
