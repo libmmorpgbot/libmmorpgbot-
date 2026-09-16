@@ -690,6 +690,123 @@ function updateUpgradeUI() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ВСЕ БОНУСЫ — Улучшения → второй суб-таб. Один общий процент per stat
+//  (опыт/золото/доп. шанс дропа/шанс Liberty), по клику разворачивается в
+//  разбивку по источникам (VIP/клан/билет/снаряжение+руны).
+// ─────────────────────────────────────────────────────────
+let _charStatsTab = 'stats';
+function switchCharStatsTab(which) {
+  _charStatsTab = which;
+  const statsBtn  = document.getElementById('chartab-stats');
+  const bonusBtn  = document.getElementById('chartab-bonuses');
+  const statsPane = document.getElementById('char-stats-pane');
+  const bonusPane = document.getElementById('all-bonuses-pane');
+  if (statsBtn)  statsBtn.classList.toggle('active', which === 'stats');
+  if (bonusBtn)  bonusBtn.classList.toggle('active', which === 'bonuses');
+  if (statsPane) statsPane.style.display = which === 'stats' ? '' : 'none';
+  if (bonusPane) bonusPane.style.display = which === 'bonuses' ? '' : 'none';
+  if (which === 'bonuses') updateAllBonusesUI();
+}
+
+// Снаряжение + руны, той же арифметикой, что и сервер (stats.compute(),
+// server/db/repos/stats.js): проценты предметов складываются как доли
+// (0.2 = 20%), руны отдают уже готовые проценты (runeBonusTotals) и делятся
+// на 100 один раз при сложении — тем же порядком, той же таблицей
+// (shared/definitions.js), просто на клиенте, потому что эти три числа
+// нужны только здесь, для показа, и на сервер никогда не едут обратно.
+function _gearBonusTotals() {
+  let xpPct = 0, dropPct = 0;
+  const eq = (player && player.equipment) || {};
+  const runes = [];
+  Object.values(eq).forEach(it => {
+    if (!it) return;
+    if (it.xpPct)   xpPct   += it.xpPct;
+    if (it.dropPct) dropPct += it.dropPct;
+    if (it.runes && it.runes.length) runes.push(...it.runes);
+  });
+  const runeTot = typeof runeBonusTotals === 'function' ? runeBonusTotals(runes) : {};
+  xpPct   += (runeTot.xpPct    || 0) / 100;
+  dropPct += (runeTot.dropPct  || 0) / 100;
+  const nexumPct = (runeTot.nexumPct || 0) / 100;
+  return {
+    xpPct:    Math.round(xpPct    * 100),
+    dropPct:  Math.round(dropPct  * 100),
+    nexumPct: Math.round(nexumPct * 100),
+  };
+}
+
+// Which row is expanded — one at a time, module-level so a re-render (a gear
+// change, a fresh VIP purchase) doesn't collapse it back closed.
+let _bonusRowOpen = null;
+function _toggleBonusRow(key) {
+  _bonusRowOpen = _bonusRowOpen === key ? null : key;
+  updateAllBonusesUI();
+}
+
+function updateAllBonusesUI() {
+  const el = document.getElementById('all-bonuses-body');
+  if (!el || !player) return;
+
+  const vipLevel  = (window._vipData && window._vipData.level) || 0;
+  const vipB      = (typeof VIP_BONUSES !== 'undefined' && (VIP_BONUSES[vipLevel] || VIP_BONUSES[0])) || {};
+  const clanLevel = (typeof clanData !== 'undefined' && clanData) ? clanData.level : 0;
+  const clanB     = typeof clanBonusOf === 'function' ? clanBonusOf(clanLevel) : { xp: 0, gold: 0 };
+  const ticketOn  = typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive;
+  const gear      = _gearBonusTotals();
+
+  // Exactly the sources each total is actually built from server-side
+  // (handlers2/world.js's kill-reward path) — a source that cannot affect a
+  // given stat (clan has no drop bonus, VIP has no Liberty bonus) is left
+  // out of that row rather than padded in at a permanent 0%.
+  const rows = [
+    { key: 'xp', icon: 'star', label: t('allBonusXpLbl'), sources: [
+      { label: t('allBonusFromVip'),   value: vipB.xp || 0 },
+      { label: t('allBonusFromClan'),  value: clanB.xp || 0 },
+      { label: t('allBonusFromTicket'), value: ticketOn ? (typeof SEASON_TICKET_XP_PCT !== 'undefined' ? SEASON_TICKET_XP_PCT : 0) : 0 },
+      { label: t('allBonusFromGear'),  value: gear.xpPct },
+    ] },
+    { key: 'gold', icon: 'coin', label: t('allBonusGoldLbl'), sources: [
+      { label: t('allBonusFromVip'),  value: vipB.gold || 0 },
+      { label: t('allBonusFromClan'), value: clanB.gold || 0 },
+    ] },
+    { key: 'drop', icon: 'inventory', label: t('allBonusDropLbl'), sources: [
+      { label: t('allBonusFromVip'),   value: vipB.drop || 0 },
+      { label: t('allBonusFromTicket'), value: ticketOn ? (typeof SEASON_TICKET_DROP_PCT !== 'undefined' ? SEASON_TICKET_DROP_PCT : 0) : 0 },
+      { label: t('allBonusFromGear'),  value: gear.dropPct },
+    ] },
+    // Liberty — the one row that is a RELATIVE multiplier in the farm zones
+    // only (ticketLibertyMult/runeNexumMult, handlers2/world.js), not an
+    // additive share of a kill's reward the way the three above are. Shown
+    // the same way regardless, since it is still "this many % more chance,
+    // from these sources" to the player — allBonusNexumHint spells out the
+    // "farm zones only, multiplies rather than adds" difference underneath.
+    { key: 'nexum', label: t('allBonusNexumLbl'), hint: t('allBonusNexumHint'), sources: [
+      { label: t('allBonusFromTicket'), value: ticketOn ? (typeof SEASON_TICKET_LIBERTY_PCT !== 'undefined' ? SEASON_TICKET_LIBERTY_PCT : 0) : 0 },
+      { label: t('allBonusFromGear'),   value: gear.nexumPct },
+    ] },
+  ];
+
+  el.innerHTML = rows.map(r => {
+    const total = r.sources.reduce((s, x) => s + (x.value || 0), 0);
+    const open = _bonusRowOpen === r.key;
+    const icon = r.key === 'nexum' ? _nexumIconHtml(14) : iconHTML(r.icon, 14, '#b2a58e');
+    const sourceRows = r.sources.map(s => `
+      <div style="display:flex;justify-content:space-between;padding:4px 0 4px 26px;font-size:12px;color:#a3957c">
+        <span>${s.label}</span>
+        <span style="font-weight:700;color:${s.value > 0 ? '#98e456' : '#6b6255'}">+${s.value}%</span>
+      </div>`).join('');
+    return `<div class="upg-row" style="flex-direction:column;align-items:stretch;cursor:pointer" onclick="_toggleBonusRow('${r.key}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%">
+        <span class="upg-label">${icon} ${r.label}</span>
+        <span style="font-weight:700;color:#90d653">+${total}% ${open ? '▲' : '▼'}</span>
+      </div>
+      ${open ? sourceRows : ''}
+      ${open && r.hint ? `<div style="padding:2px 0 4px 26px;font-size:11px;color:#72685a">${r.hint}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────────────────
 //  UPGRADE RESET  (Улучшения → Сбросить, стоит Liberty)
 // ─────────────────────────────────────────────────────────
 function openUpgradeResetModal() {
@@ -2665,6 +2782,7 @@ function setInvTab(n) {
   document.getElementById('inv-tab-content-4').style.display = n === 4 ? '' : 'none';
   if (n === 0) updateInvUI();
   if (n === 1) updateProfileUI();
+  if (n === 1 && _charStatsTab === 'bonuses') updateAllBonusesUI();
   if (n === 2) switchSkillTab(_activeSkillSubTab);
   if (n === 3) updateEmpowerUI();
   if (n === 4) updateDisassembleUI();

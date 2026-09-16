@@ -527,11 +527,20 @@
   </div>
   <!-- Upgrades sub-tab -->
   <div id="inv-tab-content-1" style="display:none">
-    <div class="panel-body" id="profile-body"></div>
-    <div class="upg-section-hdr"><span data-i18n="upgradesTabLbl">Улучшения</span> · <span id="upg-gold-lbl"></span></div>
-    <div id="upg-sp-lbl" style="padding:4px 12px 8px;font-size:12px;color:#a0f0a0;"></div>
-    <div id="upgrade-grid" class="upg-grid"></div>
-    <div id="upg-reset-wrap" style="padding:10px 12px 18px"></div>
+    <div class="profile-tabs" style="margin:10px 12px 0">
+      <button class="profile-tab active" id="chartab-stats" onclick="switchCharStatsTab('stats')" data-i18n="charStatsSubTab">Характеристики</button>
+      <button class="profile-tab" id="chartab-bonuses" onclick="switchCharStatsTab('bonuses')" data-i18n="allBonusesSubTab">Все бонусы</button>
+    </div>
+    <div id="char-stats-pane">
+      <div class="panel-body" id="profile-body"></div>
+      <div class="upg-section-hdr"><span data-i18n="upgradesTabLbl">Улучшения</span> · <span id="upg-gold-lbl"></span></div>
+      <div id="upg-sp-lbl" style="padding:4px 12px 8px;font-size:12px;color:#a0f0a0;"></div>
+      <div id="upgrade-grid" class="upg-grid"></div>
+      <div id="upg-reset-wrap" style="padding:10px 12px 18px"></div>
+    </div>
+    <div id="all-bonuses-pane" style="display:none">
+      <div class="panel-body" id="all-bonuses-body"></div>
+    </div>
   </div>
   <!-- Skills sub-tab -->
   <div id="inv-tab-content-2" style="display:none">
