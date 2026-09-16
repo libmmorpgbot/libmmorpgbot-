@@ -1291,6 +1291,14 @@ function onBoxCraftError(msg) {
   if (id !== null) openBoxCraftModal(id);
 }
 
+// How many upgrades this screen has queued — one shared value, not per
+// recipe: the player is only ever looking at one of these at a time, and
+// carrying it across a re-render (a fresh craft result, a +/- tap) is the
+// whole point. Reset to 1 whenever a DIFFERENT recipe is opened — an amount
+// that made sense for one material rarely does for another.
+let _matUpgradeQty = 1;
+let _matUpgradeQtyIdx = null;
+
 function openMatModal(idx) {
   const recipe = MAT_UPGRADE_RECIPES[idx];
   if (!recipe || !player) return;
@@ -1298,10 +1306,24 @@ function openMatModal(idx) {
   const toMat   = CRAFT_MATS.find(m => m.id === recipe.to);
   if (!fromMat || !toMat) return;
 
+  if (_matUpgradeQtyIdx !== idx) { _matUpgradeQty = 1; _matUpgradeQtyIdx = idx; }
   const have = countMaterial(recipe.from);
-  const ok = have >= recipe.count;
+  // At least 1 even when there isn't enough for a single craft — the field
+  // still has to show SOMETHING, and 0 would fight the "min=1" on the input.
+  const maxQty = Math.max(1, Math.min(Math.floor(have / recipe.count),
+    typeof MAT_UPGRADE_MAX_BATCH === 'number' ? MAT_UPGRADE_MAX_BATCH : 999));
+  _matUpgradeQty = Math.min(Math.max(Math.floor(_matUpgradeQty) || 1, 1), maxQty);
+  const need = recipe.count * _matUpgradeQty;
+  const ok = have >= need;
   const canCraft = ok && invHasSpace();
   const rcTo = RARITY_COLOR[toMat.rarity] || '#aea599';
+  // Below one full craft's worth, there's nothing to pick a quantity OF —
+  // the stepper would just offer "1" next to a row already showing "не
+  // хватает" in red.
+  const showQtyPicker = have >= recipe.count;
+  const btnLbl = _matUpgradeQty > 1
+    ? (typeof tVars === 'function' ? tVars('craftDoBtnQtyFmt', { n: _matUpgradeQty }) : `Крафтить ×${_matUpgradeQty}`)
+    : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить');
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
@@ -1311,17 +1333,48 @@ function openMatModal(idx) {
         <div class="craft-detail-name" style="color:${rcTo};text-shadow:0 0 8px ${rcTo}66">${toMat.name}</div>
       </div>
     </div>
+    ${showQtyPicker ? `
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 0">
+      <span style="font-size:11px;color:#a3957c">${typeof t === 'function' ? t('craftQtyLbl') : 'Количество'}</span>
+      <button onclick="_stepMatUpgradeQty(${idx},-1)"
+        style="width:30px;height:30px;border-radius:8px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:16px;font-weight:700">−</button>
+      <input type="number" id="mat-upgrade-qty-input" min="1" max="${maxQty}" step="1" value="${_matUpgradeQty}"
+        style="width:64px;text-align:center;padding:6px 4px;border-radius:8px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:14px;font-weight:700;box-sizing:border-box"
+        onchange="_setMatUpgradeQty(${idx})">
+      <button onclick="_stepMatUpgradeQty(${idx},1)"
+        style="width:30px;height:30px;border-radius:8px;border:1px solid rgba(209,204,197,.15);background:rgba(209,204,197,.05);color:#d1ccc5;font-size:16px;font-weight:700">+</button>
+      <button onclick="_maxMatUpgradeQty(${idx})"
+        style="margin-left:auto;padding:6px 10px;border-radius:8px;border:1px solid rgba(230,148,25,.3);background:rgba(230,148,25,.08);color:#e69419;font-size:11px;font-weight:700">${typeof t === 'function' ? t('craftQtyMaxBtn') : 'МАКС'}</button>
+    </div>` : ''}
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">
       <div class="craft-req-row">
         <span class="craft-req-icon">${_matIcon(fromMat, 20)}</span>
         <span class="craft-req-name">${fromMat.name}</span>
-        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${recipe.count}</span>
+        <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${need}</span>
       </div>
     </div>
     <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(recipe.chance * 100)}%</b></div>
-    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
+    <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">${btnLbl}</button>
   `;
+}
+
+// +/- and the raw input all funnel through here so the three stay in sync
+// and share the same clamp — openMatModal itself re-derives maxQty from
+// current materials, so a full re-render is also how a stale value (e.g.
+// after spending some of the stack elsewhere) gets pulled back in range.
+function _stepMatUpgradeQty(idx, delta) {
+  _matUpgradeQty = (Number(_matUpgradeQty) || 1) + delta;
+  openMatModal(idx);
+}
+function _setMatUpgradeQty(idx) {
+  const el = document.getElementById('mat-upgrade-qty-input');
+  _matUpgradeQty = el ? Number(el.value) : 1;
+  openMatModal(idx);
+}
+function _maxMatUpgradeQty(idx) {
+  _matUpgradeQty = Infinity; // openMatModal clamps this down to the real max
+  openMatModal(idx);
 }
 
 // Settled server-side (craftMatUpgrade, server/index.js) — same reasoning as
@@ -1330,27 +1383,36 @@ function openMatModal(idx) {
 function craftMatUpgrade(idx) {
   const recipe = MAT_UPGRADE_RECIPES[idx];
   if (!recipe || !player) return;
+  const qty = Math.max(1, Math.floor(_matUpgradeQty) || 1);
   const fromHave = countMaterial(recipe.from);
-  if (fromHave < recipe.count)  { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
-  if (!invHasSpace())           { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  if (fromHave < recipe.count * qty) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
+  if (!invHasSpace())                { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
   _pendingMatUpgradeIdx = idx;
-  if (typeof netCraftMatUpgrade === 'function') netCraftMatUpgrade(recipe.from);
+  if (typeof netCraftMatUpgrade === 'function') netCraftMatUpgrade(recipe.from, qty);
 }
 
 // The server took the lower-tier scrolls and, on success, added the higher
 // tier itself; its inventorySync has already landed — nothing to add here,
 // only the panel to refresh with the right message for the roll's outcome.
+// count/succeeded only mean anything above 1 craft — a single one keeps
+// reading exactly as it always did ("✓ Получено: …" / "Провал!").
 let _pendingMatUpgradeIdx = null;
-function onMatUpgraded(from, to, success) {
+function onMatUpgraded(from, to, success, count, succeeded) {
   const idx = _pendingMatUpgradeIdx;
   _pendingMatUpgradeIdx = null;
   const mat = CRAFT_MATS.find(m => m.id === to);
   if (typeof updateInvUI === 'function') updateInvUI();
-  // Тот же путь и у свитков (80%), и у переплавки руды (100% — тогда success
-  // всегда true, и кнопка всегда зелёная, что и честно для стопроцентного
-  // рецепта).
-  if (success) {
-    _shopMsgOk((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (mat ? mat.name : to));
+  const matName = mat ? mat.name : to;
+  if (count > 1) {
+    if (succeeded > 0) {
+      _shopMsgOk(typeof tVars === 'function'
+        ? tVars('craftReceivedQtyFmt', { n: succeeded, of: count, name: matName })
+        : `✓ Получено: ${matName} ×${succeeded} из ${count}`);
+    } else {
+      _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
+    }
+  } else if (success) {
+    _shopMsgOk((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + matName);
   } else {
     _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }

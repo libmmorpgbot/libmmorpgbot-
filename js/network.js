@@ -4328,8 +4328,8 @@ function netCraftBox(boxId) {
   if (socket?.connected) socket.emit('craftBox', { boxId });
 }
 
-function netCraftMatUpgrade(from) {
-  if (socket?.connected) socket.emit('craftMatUpgrade', { from });
+function netCraftMatUpgrade(from, qty) {
+  if (socket?.connected) socket.emit('craftMatUpgrade', { from, qty });
 }
 
 function netCraftAdvSkillBook() {
@@ -5628,8 +5628,8 @@ function _initPetCraftHandlers(s) {
   s.on('craftBoxError', ({ msg }) => {
     if (typeof onBoxCraftError === 'function') onBoxCraftError(msg);
   });
-  s.on('matUpgraded', ({ from, to, success }) => {
-    if (typeof onMatUpgraded === 'function') onMatUpgraded(from, to, success);
+  s.on('matUpgraded', ({ from, to, success, count, succeeded }) => {
+    if (typeof onMatUpgraded === 'function') onMatUpgraded(from, to, success, count, succeeded);
   });
   s.on('craftMatUpgradeError', ({ msg }) => {
     if (typeof onMatUpgradeError === 'function') onMatUpgradeError(msg);

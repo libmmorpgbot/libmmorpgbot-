@@ -244,14 +244,20 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       return { ...probe, currency, amount, nth: done + 1 };
     }, r => r && { from: r.from, to: r.to, currency: r.currency, amount: r.amount, nth: r.nth }));
 
-  safeOn('craftMatUpgrade', ({ from } = {}) =>
+  safeOn('craftMatUpgrade', ({ from, qty } = {}) =>
     s.act('craftMatUpgrade', 'craftMatUpgradeError', async (t, pid) => {
       if (typeof from !== 'string' || !from) fail('Не выбран материал', 'bad_material');
-      const res = await craft.upgradeMat(t, pid, from);
+      const res = await craft.upgradeMat(t, pid, from, qty);
       await pushAll(t);
-      s.socket.emit('matUpgraded', { from: res.from, to: res.to, success: res.outcome === 'success' });
+      // success: at least one of the batch came back — outcome carries the
+      // exact 'success'/'partial'/'fail' for anything that wants finer detail
+      // than the boolean (onMatUpgraded, js/npc.js).
+      s.socket.emit('matUpgraded', {
+        from: res.from, to: res.to, success: res.outcome !== 'fail',
+        count: res.count, succeeded: res.succeeded,
+      });
       return res;
-    }, r => r && { outcome: r.outcome, from: r.from, to: r.to, spent: r.spent, chance: r.chance }));
+    }, r => r && { outcome: r.outcome, from: r.from, to: r.to, spent: r.spent, chance: r.chance, count: r.count, succeeded: r.succeeded }));
 
   safeOn('craftBox', ({ boxId } = {}) => s.act('craftBox', 'craftBoxError', async (t, pid) => {
     if (typeof boxId !== 'string' || !boxId) fail('Не выбран сундук', 'bad_box');

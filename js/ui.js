@@ -285,9 +285,13 @@ function openHpPicker() {
 
   const bag = player.potionBag || {};
   const hudPt = player.hudPotion || 'pt1';
-  const autoThresholds = [0, 0.3, 0.5, 0.7];
-  const autoLabels = [t('offLbl'), '30%', '50%', '70%'];
   const curAuto = player.autoHpPct || 0;
+  // autoHpPct doubles as its own on/off flag, same convention the server
+  // already validated (0-1 inclusive, players.js/anticheat.js) before this
+  // was four fixed buttons — 0 is "off", anything else is "on at this
+  // threshold", so the slider needs no separate flag of its own.
+  const autoOn = curAuto > 0;
+  const autoPctInt = Math.round((autoOn ? curAuto : 0.5) * 100);
 
   const hpPots = ITEM_DEF.filter(d => d.slot === 'use');
   const potCells = hpPots.map(def => {
@@ -309,28 +313,60 @@ function openHpPicker() {
     </div>`;
   }).join('');
 
-  const autoRows = autoThresholds.map((v, i) => {
-    const isActive = Math.abs(curAuto - v) < 0.01;
-    return `<button onclick="setAutoHpPct(${v})" style="
-      flex:1;padding:8px 4px;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
-      background:${isActive ? '#29361e' : 'rgba(209,204,197,0.06)'};
-      color:${isActive ? '#90d653' : '#968a7a'};
-      border:1px solid ${isActive ? '#90d65344' : 'transparent'};
-    ">${autoLabels[i]}</button>`;
+  // Was four fixed buttons (откл/30/50/70) — replaced by a 1-99 slider per
+  // request, so any threshold in between is reachable instead of just those
+  // three. The on/off half is its own pill (toggleAutoHp), since a slider
+  // has no natural "off" position at its own minimum.
+  const autoToggleBtn = `<button onclick="toggleAutoHp()" style="
+      padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
+      background:${autoOn ? '#29361e' : 'rgba(209,204,197,0.06)'};
+      color:${autoOn ? '#90d653' : '#968a7a'};
+      border:1px solid ${autoOn ? '#90d65344' : 'transparent'};
+    ">${autoOn ? t('onLbl') : t('offLbl')}</button>`;
+  const autoSlider = autoOn ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <input type="range" id="auto-hp-slider" min="1" max="99" step="1" value="${autoPctInt}"
+        oninput="document.getElementById('auto-hp-pct-label').textContent=this.value+'%'"
+        onchange="setAutoHpPct(Number(this.value)/100)"
+        style="flex:1;accent-color:#90d653">
+      <span id="auto-hp-pct-label" style="min-width:40px;text-align:right;font-weight:700;color:#90d653">${autoPctInt}%</span>
+    </div>` : '';
+
+  // Same toggle every buff potion's own card already has (toggleAutoBuffPotion,
+  // js/player.js) — gathered here so switching all of them doesn't mean
+  // opening six separate item cards one at a time. ITEM_DEF, not the bag: the
+  // list is what CAN be auto-used, not what happens to be in stock right now.
+  const buffDefs = ITEM_DEF.filter(d => d.slot === 'buff_potion');
+  const autoBuffRows = buffDefs.map(def => {
+    const on = !!((player.autoBuffTypes || {})[def.buffType]);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+      <img src="${def.img}" width="20" height="20" style="image-rendering:pixelated;flex:0 0 auto">
+      <span style="flex:1;font-size:12px;color:#c5bfb7">${def.name}</span>
+      <button onclick="toggleAutoBuffPotion('${def.buffType}');openHpPicker()" style="
+          padding:4px 12px;border-radius:8px;cursor:pointer;font-size:11px;font-weight:700;
+          background:${on ? '#29361e' : 'rgba(209,204,197,0.06)'};
+          color:${on ? '#90d653' : '#968a7a'};
+          border:1px solid ${on ? '#90d65344' : 'transparent'};
+        ">${on ? t('onLbl') : t('offLbl')}</button>
+    </div>`;
   }).join('');
 
   const ov = document.createElement('div');
   ov.id = 'hp-picker-ov';
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-height:88vh;overflow-y:auto;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div style="font-size:15px;font-weight:800;color:#90d653">${t('npcHealPotionsHdr')}</div>
       <button onclick="document.getElementById('hp-picker-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex;gap:10px;margin-bottom:16px">${potCells}</div>
-    <div style="font-size:11px;color:#72685a;margin-bottom:8px">${t('autoUseHint')}</div>
-    <div style="display:flex;gap:8px">${autoRows}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:11px;color:#72685a">${t('autoUseHint')}</span>
+      ${autoToggleBtn}
+    </div>
+    ${autoSlider}
+    <div style="font-size:11px;font-weight:700;color:#a3957c;margin:18px 0 4px">${t('autoBuffsHdr')}</div>
+    ${autoBuffRows}
     <button onclick="usePotion();document.getElementById('hp-picker-ov').remove()" style="
       width:100%;margin-top:14px;padding:12px;border:none;border-radius:12px;
       background:linear-gradient(135deg,#29361e,#415331);color:#90d653;font-size:15px;font-weight:700;cursor:pointer;
@@ -344,6 +380,16 @@ function setAutoHpPct(pct) {
   player.autoHpPct = pct;
   netSaveProgress();
   openHpPicker();
+}
+
+// The slider's own on/off pill — 0 stays "off" (game.js's `_autoPct > 0`
+// gate, unchanged), anything else is "on at that threshold", so turning it
+// back on needs SOME nonzero value to land on rather than reopening at 0
+// and reading as still off. 50% is the same default the old fixed buttons
+// used to sit closest to.
+function toggleAutoHp() {
+  if (!player) return;
+  setAutoHpPct((player.autoHpPct || 0) > 0 ? 0 : 0.5);
 }
 
 // ─────────────────────────────────────────────────────────

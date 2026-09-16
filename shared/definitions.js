@@ -795,7 +795,7 @@ const QUEST_DEF = [
   { id:'f3q7',  floor:3, title:'Охотник на вампиров', desc:'Убей 50 Вампир воин',        type:'kill',         enemies:['Вампир воин'],      count:50,  reward:{ xp:8000, gold:4000 } },
   { id:'f3q8',  floor:3, title:'Взгляд бездны',       desc:'Убей 50 Бехолдер воин',      type:'kill',         enemies:['Бехолдер воин'],    count:50,  reward:{ xp:8000, gold:4000 } },
   { id:'f3q10', floor:3, title:'Ветеран III',         desc:'Достигни 20 уровня',         type:'level',        level:20,                     reward:{ xp:14000, gold:7000 } },
-  { id:'f3q11', floor:3, title:'Покоритель III',      desc:'Дойди до конца нижнего коридора', type:'dungeon_clear', count:3,         reward:{ xp:16000, gold:8000, items:_BUFF_POTION_IDS } },
+  { id:'f3q11', floor:3, title:'Покоритель III',      desc:'Убей 75 Лоза страж',         type:'kill',         enemies:['Лоза страж'],       count:75,  reward:{ xp:16000, gold:8000, items:_BUFF_POTION_IDS } },
   { id:'f3q12', floor:3, title:'Мясник III',          desc:'Убей 100 Бехолдер воин',     type:'kill',         enemies:['Бехолдер воин'],    count:100, reward:{ xp:18000, gold:9000 } },
   { id:'f3q13', floor:3, title:'Берсерк III',         desc:'Убей 100 Бехолдер страж',    type:'kill',         enemies:['Бехолдер страж'],   count:100, reward:{ xp:18000, gold:9000 } },
   { id:'f3q14', floor:3, title:'Столп гильдии',       desc:'Повысь ранг в гильдии',      type:'join_guild',                                 reward:{ xp:20000, gold:10000 } },
@@ -812,7 +812,7 @@ const QUEST_DEF = [
   { id:'f4q7',  floor:4, title:'Изгоняющий демонов',  desc:'Убей 50 Демон страж',        type:'kill',         enemies:['Демон страж'],      count:50,  reward:{ xp:16000, gold:8000 } },
   { id:'f4q8',  floor:4, title:'Пламя преисподней',   desc:'Убей 50 Демон воин',         type:'kill',         enemies:['Демон воин'],       count:50,  reward:{ xp:16000, gold:8000 } },
   { id:'f4q10', floor:4, title:'Ветеран IV',          desc:'Достигни 30 уровня',         type:'level',        level:30,                     reward:{ xp:28000, gold:14000 } },
-  { id:'f4q11', floor:4, title:'Покоритель IV',       desc:'Дойди до конца правого коридора', type:'dungeon_clear', count:4,         reward:{ xp:32000, gold:16000, items:_BUFF_POTION_IDS } },
+  { id:'f4q11', floor:4, title:'Покоритель IV',       desc:'Убей 75 Древень воин',       type:'kill',         enemies:['Древень воин'],     count:75,  reward:{ xp:32000, gold:16000, items:_BUFF_POTION_IDS } },
   { id:'f4q12', floor:4, title:'Мясник IV',           desc:'Убей 100 Демон воин',        type:'kill',         enemies:['Демон воин'],       count:100, reward:{ xp:36000, gold:18000 } },
   { id:'f4q13', floor:4, title:'Берсерк IV',          desc:'Убей 100 Демон страж',       type:'kill',         enemies:['Демон страж'],      count:100, reward:{ xp:36000, gold:18000 } },
   { id:'f4q14', floor:4, title:'Легенда гильдии',     desc:'Повысь ранг в гильдии',      type:'join_guild',                                 reward:{ xp:40000, gold:20000 } },
@@ -1827,6 +1827,13 @@ const MAT_UPGRADE_RECIPES = [
   { from:'ore_rare',     to:'ore_epic',      count:10, chance:1.0 },
   { from:'ore_epic',     to:'ore_legendary', count:10, chance:1.0 },
 ];
+
+// How many upgrades openMatModal's quantity picker (js/npc.js) can queue in
+// one craftMatUpgrade — server-enforced ceiling, not just a UI cap: a batch
+// still costs one removeQty and one items.add (upgradeMat, server/db/repos/
+// craft.js) regardless of size, so this is a sanity limit on the in-memory
+// roll loop and the reported count, not a performance one.
+const MAT_UPGRADE_MAX_BATCH = 999;
 
 // Recycle any 5 regular skill books (any class/skill, mixed) into one random
 // advanced ("2 профессия") skill book — any of the 20 book_adv_<cls>_<key>
@@ -3549,6 +3556,7 @@ if (typeof module !== 'undefined') module.exports = {
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,

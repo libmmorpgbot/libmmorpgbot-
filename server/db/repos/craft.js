@@ -35,7 +35,7 @@ const money = require('./money');
 const {
   ENHANCE_MAX, ENHANCEABLE_SLOTS, ITEM_DEF, BOX_DEF, CRAFT_MATS,
   GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
-  MAT_UPGRADE_RECIPES, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
+  MAT_UPGRADE_RECIPES, MAT_UPGRADE_MAX_BATCH, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
   ADV_SKILL_BOOK_CRAFT, craftResultEnhance, BUFF_POTION_CRAFT_RECIPES,
   CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES, boxLootPool,
 } = require('../../../shared/definitions');
@@ -430,27 +430,44 @@ async function craftBuffPotion(db, playerId, itemId) {
 
 // ── material upgrade ────────────────────────────────────────────────────────
 // Twenty of one tier for one of the next, at 80%.
-async function upgradeMat(db, playerId, from) {
+// `n` batches the same craft: `n` independent rolls at `rec.chance`, one
+// removeQty for all of them up front and one items.add for however many
+// came back — not `n` round trips through the DB, which is what a client
+// loop calling this once per craft would cost. Requested by the owner for
+// ore specifically (chance 1.0, so every batch just succeeds outright), but
+// the recipe-scroll ladder (chance 0.80) shares this same function and gets
+// the same batching for free — n=1 keeps every existing caller's contract
+// (outcome is exactly 'success'/'fail', never 'partial').
+async function upgradeMat(db, playerId, from, n = 1) {
   await items.lockPlayer(db, playerId);
   const rec = MAT_UPGRADE_RECIPES.find(r => r.from === from);
   if (!rec) err('bad_recipe', 'Неизвестный рецепт');
+  const count = Math.max(1, Math.min(Math.floor(Number(n) || 1), MAT_UPGRADE_MAX_BATCH));
 
+  const need = rec.count * count;
   const have = await items.countMatching(db, playerId, { itemIds: [rec.from] });
-  if (have < rec.count) {
+  if (have < need) {
     const def = CRAFT_MATS.find(m => m.id === rec.from);
-    err('no_mats', `Нужно ${rec.count} × ${def ? def.name : rec.from} (есть ${have})`);
+    err('no_mats', `Нужно ${need} × ${def ? def.name : rec.from} (есть ${have})`);
   }
   if (!await items.hasRoomFor(db, playerId, rec.to)) err('no_room', 'Инвентарь полон');
 
-  if (!await items.removeQty(db, playerId, rec.from, rec.count)) {
-    err('no_mats', `Нужно ${rec.count} × ${rec.from}`);
+  if (!await items.removeQty(db, playerId, rec.from, need)) {
+    err('no_mats', `Нужно ${need} × ${rec.from}`);
   }
-  if (rand() >= rec.chance) {
-    return { outcome: 'fail', from: rec.from, to: rec.to, chance: rec.chance, spent: rec.count };
+  let succeeded = 0;
+  for (let i = 0; i < count; i++) if (rand() < rec.chance) succeeded++;
+  if (!succeeded) {
+    return { outcome: 'fail', from: rec.from, to: rec.to, chance: rec.chance, spent: need, count, succeeded };
   }
-  const rowId = await items.add(db, playerId, rec.to, { source: 'craft', sourceRef: 'upgrade:' + rec.to });
+  const rowId = await items.add(db, playerId, rec.to,
+    { qty: succeeded, source: 'craft', sourceRef: 'upgrade:' + rec.to });
   if (rowId === null) err('no_room', 'Инвентарь полон');
-  return { outcome: 'success', from: rec.from, to: rec.to, chance: rec.chance, itemId: rec.to, rowId };
+  return {
+    outcome: succeeded === count ? 'success' : 'partial',
+    from: rec.from, to: rec.to, chance: rec.chance, itemId: rec.to, rowId,
+    spent: need, count, succeeded,
+  };
 }
 
 // ── class cloaks and artifacts ──────────────────────────────────────────────
