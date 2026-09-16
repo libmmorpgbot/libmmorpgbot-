@@ -1418,12 +1418,13 @@ const FARM_NORM_STONE_CHANCE  = 0.00002 / 100 * 5 * 100; // book(orig)×5, ×100
 const FARM_BLESS_STONE_CHANCE = 0.00002 / 100 * 3 * 50;  // book(orig)×3, ×50  = 0.00003
 
 // Epic/legendary recipe scrolls, Фарм-зона's other kill-loot roll — flat
-// rates given directly (0.05%/0.005%), not derived from the book chance the
-// way the enchant stones above are. Independent rolls, not split per
-// species like the shards/books: a recipe isn't tied to any class or unique
-// weapon, so every species in the zone drops both at the same rate.
-const FARM_EPIC_RECIPE_CHANCE      = 0.05 / 100;
-const FARM_LEGENDARY_RECIPE_CHANCE = 0.005 / 100;
+// rates given directly (0.01%/0.001%, swapped with Фарм зона 2's own pair
+// below by request), not derived from the book chance the way the enchant
+// stones above are. Independent rolls, not split per species like the
+// shards/books: a recipe isn't tied to any class or unique weapon, so every
+// species in the zone drops both at the same rate.
+const FARM_EPIC_RECIPE_CHANCE      = 0.01 / 100;
+const FARM_LEGENDARY_RECIPE_CHANCE = 0.001 / 100;
 
 // ── «раскидать дроп по разным монстрам» ───────────────────────
 // Деление пула по видам монстров зоны — round-robin по списку в его
@@ -1566,10 +1567,11 @@ const FARM_HIGH_PASSIVE_BOOK_CHANCE   = 0.0009 / 100;
 const FARM_HIGH_SHARD_CHANCE = FARM_SHARD_CHANCE * 1.3;
 
 // Общее для всей зоны, без деления по видам: камень заточки — один предмет,
-// а рецепт не привязан ни к классу, ни к слоту.
+// а рецепт не привязан ни к классу, ни к слоту. Epic/legendary — 0.05%/0.005%,
+// поменяны местами с обычной Фарм-зоной по запросу.
 const FARM_HIGH_NORM_STONE_CHANCE       = 0.05  / 100;
-const FARM_HIGH_EPIC_RECIPE_CHANCE      = 0.01  / 100;
-const FARM_HIGH_LEGENDARY_RECIPE_CHANCE = 0.001 / 100;
+const FARM_HIGH_EPIC_RECIPE_CHANCE      = 0.05  / 100;
+const FARM_HIGH_LEGENDARY_RECIPE_CHANCE = 0.005 / 100;
 // Камень БЕЗОПАСНОЙ заточки — добавлен позже, той же ставкой, что и в обычной
 // Фарм-зоне (FARM_BLESS_STONE_CHANCE), без ×1.3: тот множитель просили только
 // для осколков, здесь — «шанс тот же, как и в фарм зоне».

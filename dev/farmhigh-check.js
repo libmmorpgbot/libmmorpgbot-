@@ -139,8 +139,8 @@ eq(pct(FARM_HIGH_GEAR_CHANCE.common), 0.005, 'снаряжение common 0.005%
 eq(pct(FARM_HIGH_GEAR_CHANCE.uncommon), 0.005, 'uncommon 0.005%');
 eq(pct(FARM_HIGH_GEAR_CHANCE.rare), 0.005, 'rare 0.005%');
 eq(pct(FARM_HIGH_GEAR_CHANCE.epic), 0.0003, 'epic 0.0003%');
-eq(pct(FARM_HIGH_LEGENDARY_RECIPE_CHANCE), 0.001, 'легендарный рецепт 0.001%');
-eq(pct(FARM_HIGH_EPIC_RECIPE_CHANCE), 0.01, 'эпический рецепт 0.01%');
+eq(pct(FARM_HIGH_LEGENDARY_RECIPE_CHANCE), 0.005, 'легендарный рецепт 0.005% (поменян с обычной Фарм-зоной)');
+eq(pct(FARM_HIGH_EPIC_RECIPE_CHANCE), 0.05, 'эпический рецепт 0.05% (поменян с обычной Фарм-зоной)');
 eq(pct(FARM_HIGH_SKILL_BOOK_CHANCE), 0.0009, 'книги 1-й профессии 0.0009%');
 eq(pct(FARM_HIGH_ADV_SKILL_BOOK_CHANCE), 0.0007, 'книги 2-й профессии 0.0007%');
 eq(pct(FARM_HIGH_PASSIVE_BOOK_CHANCE), 0.0009, 'книги пассивок 0.0009%');
