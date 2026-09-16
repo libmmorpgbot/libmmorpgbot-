@@ -2806,7 +2806,15 @@ canvas { display:block; width:100%; height:100%; }
 }
 .compare-stat-row:first-of-type { border-top: none; margin-top: 8px; }
 .compare-stat-lbl { color: #a3957c; }
-.compare-stat-val { font-weight: 700; white-space: nowrap; }
+/* Base color, overridden by .better/.worse below when there's something to
+   diff against (the two-card compare modal). openPeerItemModal — a single
+   card, nothing to compare — never adds either class, and neither this rule
+   nor any ancestor set a color before this: the value fell through to the
+   browser default (black) on the dark sheet, unreadable — "характеристики
+   питомца написаны чёрным" (reported on a peer's equipped pet, but this hits
+   every stat value shown through this one-card path, pets included only
+   because that's the equipment slot that was open when it was noticed). */
+.compare-stat-val { font-weight: 700; white-space: nowrap; color: #b1bfcb; }
 .compare-stat-val.better { color: #90d653; }
 .compare-stat-val.worse  { color: #ee6676; }
 
