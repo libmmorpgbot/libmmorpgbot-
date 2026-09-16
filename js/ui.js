@@ -4825,11 +4825,21 @@ function _runeSocketsHtml(it) {
     const r = inSock[i];
     if (r) {
       const img = runeIconOf(r.id, (r.rune && r.rune.stats) || []);
-      const rc = RARITY_COLOR[(itemCatalogBase(r.id) || {}).rarity] || '#aea599';
-      cells.push(`<div onclick="_runeSocketTap(${it.rowId},${i})" title="Вынуть"
-        style="width:34px;height:34px;border:1px solid ${rc};border-radius:7px;display:flex;
-               align-items:center;justify-content:center;cursor:pointer;background:rgba(0,0,0,.25)">
-        <img src="${img}" width="26" height="26" style="image-rendering:pixelated">
+      const rBase = itemCatalogBase(r.id) || {};
+      const rc = RARITY_COLOR[rBase.rarity] || '#aea599';
+      // Что эта руна даёт — раньше гнездо показывало только иконку, и чтобы
+      // узнать, что в него вставлено, приходилось вынимать руну обратно в
+      // сумку. Тот же формат «характеристика +N%», что и в списке подбора
+      // руны (_runeSocketTap ниже) и в строке лота (_marketRowHtml).
+      const desc = ((r.rune && r.rune.stats) || []).map(st =>
+        `<span style="color:${RUNE_QUALITY_COLOR[st.q] || '#aea599'}">${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(rBase.rarity, st.q)}%</span>`).join(' · ');
+      cells.push(`<div style="display:flex;align-items:center;gap:8px">
+        <div onclick="_runeSocketTap(${it.rowId},${i})" title="Вынуть"
+          style="width:34px;height:34px;flex:0 0 auto;border:1px solid ${rc};border-radius:7px;display:flex;
+                 align-items:center;justify-content:center;cursor:pointer;background:rgba(0,0,0,.25)">
+          <img src="${img}" width="26" height="26" style="image-rendering:pixelated">
+        </div>
+        ${desc ? `<span style="font-size:11px;line-height:1.4">${desc}</span>` : ''}
       </div>`);
     } else {
       cells.push(`<div onclick="_runeSocketTap(${it.rowId},${i})" title="Вставить руну"
@@ -4840,7 +4850,7 @@ function _runeSocketsHtml(it) {
   }
   return `<div style="margin-top:8px">
     <div style="font-size:11px;opacity:.7;margin-bottom:4px">Гнёзда рун</div>
-    <div style="display:flex;gap:6px">${cells.join('')}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px">${cells.join('')}</div>
   </div>`;
 }
 

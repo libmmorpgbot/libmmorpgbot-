@@ -992,6 +992,12 @@ function _clanStorageHTML() {
           <button class="clan-btn-sm" onclick="_clanStorageDepositPrompt('${_esc(i.id)}','${_esc(i.name)}',${i.qty || 1})">${t('clanStorageDepositBtn')}</button>
         </div>`).join('')
     : `<div class="clan-empty">${t('clanStorageNoShards')}</div>`);
+  // Only worth its own row once there's more than one kind to gather up —
+  // with a single kind the per-row button above already does the same
+  // thing in the same one tap.
+  const depositAllBtn = (s.canUse && held.length > 1)
+    ? `<button class="clan-btn-sm" style="margin-top:6px" onclick="netClanStorageDepositAll()">${t('clanStorageDepositAllBtn')}</button>`
+    : '';
 
   return `
     ${gate}
@@ -1001,7 +1007,8 @@ function _clanStorageHTML() {
     <div class="clan-storage-list">${allocRows}</div>
     ${claimBtn}
     ${s.canUse ? `<div class="clan-section-hdr">${t('clanStorageDepositHdr')}</div>
-    <div class="clan-storage-list">${depositRows}</div>` : ''}`;
+    <div class="clan-storage-list">${depositRows}</div>
+    ${depositAllBtn}` : ''}`;
 }
 
 // ── Активность клана ──────────────────────────────────────

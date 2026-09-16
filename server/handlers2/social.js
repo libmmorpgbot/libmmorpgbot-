@@ -217,6 +217,22 @@ module.exports = function registerSocial(s, safeOn, deps) {
       });
     }));
 
+  // No payload: same "take everything the button can see" shape as
+  // clanStorageClaim below, for the deposit side — five kinds of shard used
+  // to mean five prompts and five clanStorageDeposit round trips.
+  safeOn('clanStorageDepositAll', () =>
+    s.act('clanStorageDepositAll', 'clanError', async (t, pid) => {
+      const m = await clans.clanOf(t, pid);
+      if (!m) fail('Вы не состоите в клане', 'no_clan');
+      const res = await clans.depositAll(t, pid, m.clanId);
+      await s.pushItems(t);
+      await pushClanStorage(t);
+      await pushClanActivity(t);
+      s.socket.emit('clanStorageOk', {
+        msg: `Передано в хранилище: ${(res && res.total) || 0}`,
+      });
+    }));
+
   safeOn('clanStorageGive', ({ telegramId, id: itemId, qty } = {}) =>
     s.act('clanStorageGive', 'clanError', async (t, pid) => {
       const target = await byTg(t, telegramId);

@@ -324,6 +324,30 @@ async function addXp(db, clanId, amount) {
 // Deposit is an upsert on (clan_id, item_id), so "find the entry or push a new
 // one" is one statement that cannot produce two rows for the same shard.
 
+// Shared tail for deposit()/depositAll() below: takes `n` of one shard kind
+// out of the bag and into the pool. Returns 0 (never throws) when the bag
+// didn't actually have that many — depositAll relies on that to skip one
+// kind and keep going rather than losing the whole batch to one stale row.
+async function _depositOne(db, playerId, clanId, itemId, n) {
+  if (!await items.removeQty(db, playerId, itemId, n)) return 0;
+  await query(db, `
+    INSERT INTO clan_storage (clan_id, item_id, qty) VALUES ($1, $2, $3)
+    ON CONFLICT (clan_id, item_id) DO UPDATE SET qty = clan_storage.qty + EXCLUDED.qty`,
+    [clanId, itemId, n]);
+  return n;
+}
+
+// Who put it in, kept separately from clan_storage (the shared pool, which
+// forgets whose it was the moment it lands). This is the running total the
+// Activity tab reads — append-only in effect, since it only ever grows.
+async function _recordContribution(db, clanId, playerId, n) {
+  await query(db, `
+    INSERT INTO clan_contributions (clan_id, player_id, qty, updated_at) VALUES ($1, $2, $3, now())
+    ON CONFLICT (clan_id, player_id) DO UPDATE
+      SET qty = clan_contributions.qty + EXCLUDED.qty, updated_at = now()`,
+    [clanId, playerId, n]);
+}
+
 async function deposit(db, playerId, clanId, itemId, qty) {
   if (!SHARD_IDS.has(itemId)) err('not_shard', 'У сховище можна класти лише Осколки');
   const n = Math.max(1, Math.floor(Number(qty) || 0));
@@ -336,25 +360,49 @@ async function deposit(db, playerId, clanId, itemId, qty) {
     err('too_new', `Сховище доступне з ${CLAN_STORAGE_MIN_DAYS} днів у клані`);
   }
 
-  if (!await items.removeQty(db, playerId, itemId, n)) {
-    err('not_enough', 'У вас стільки немає');
-  }
-  await query(db, `
-    INSERT INTO clan_storage (clan_id, item_id, qty) VALUES ($1, $2, $3)
-    ON CONFLICT (clan_id, item_id) DO UPDATE SET qty = clan_storage.qty + EXCLUDED.qty`,
-    [clanId, itemId, n]);
-  // Who put it in, kept separately from clan_storage (the shared pool, which
-  // forgets whose it was the moment it lands). This is the running total the
-  // Activity tab reads — append-only in effect, since it only ever grows.
-  await query(db, `
-    INSERT INTO clan_contributions (clan_id, player_id, qty, updated_at) VALUES ($1, $2, $3, now())
-    ON CONFLICT (clan_id, player_id) DO UPDATE
-      SET qty = clan_contributions.qty + EXCLUDED.qty, updated_at = now()`,
-    [clanId, playerId, n]);
+  const took = await _depositOne(db, playerId, clanId, itemId, n);
+  if (!took) err('not_enough', 'У вас стільки немає');
+  await _recordContribution(db, clanId, playerId, took);
   // The NORMALISED count, not what was asked for — the caller confirms this
   // number to the player, and `qty` from the wire has already been floored and
   // clamped by the time it gets here.
-  return { qty: n };
+  return { qty: took };
+}
+
+// Deposits every shard kind currently in the bag at once — same "no
+// payload, take everything" shape as claimAll below, just for the opposite
+// direction: putting in five different kinds used to be five prompts and
+// five round trips, one per kind, via deposit() above.
+//
+// Reads the bag through inventoryOf rather than a bespoke sum query so this
+// stays in step with whatever inventoryOf already considers "held" (it's
+// the same read pushItems/fullState use); _depositOne's own removeQty is
+// still what actually decides what can be taken, so a stale count here can
+// only skip a kind, never over-take one.
+async function depositAll(db, playerId, clanId) {
+  await items.lockPlayer(db, playerId);
+  await _requireMember(db, playerId, clanId);
+  if (!await canUseStorage(db, clanId, playerId)) {
+    err('too_new', `Сховище доступне з ${CLAN_STORAGE_MIN_DAYS} днів у клані`);
+  }
+
+  const inv = await items.inventoryOf(db, playerId);
+  const held = new Map(); // itemId -> qty
+  for (const row of inv.inventory) {
+    if (!SHARD_IDS.has(row.id)) continue;
+    held.set(row.id, (held.get(row.id) || 0) + row.qty);
+  }
+  if (!held.size) err('not_enough', 'У вас немає Осколків');
+
+  const deposited = [];
+  for (const [itemId, qty] of held) {
+    const took = await _depositOne(db, playerId, clanId, itemId, qty);
+    if (took) deposited.push({ itemId, qty: took });
+  }
+  if (!deposited.length) err('not_enough', 'У вас немає Осколків');
+  const total = deposited.reduce((s, d) => s + d.qty, 0);
+  await _recordContribution(db, clanId, playerId, total);
+  return { items: deposited, total };
 }
 
 // The leader earmarks shards for a member. Taken out of the shared pool in the
@@ -745,7 +793,7 @@ module.exports = {
   claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
   transferLeadership,
-  addXp, deposit, allocate, claim, cancelAllocation, unlockStorage,
+  addXp, deposit, depositAll, allocate, claim, cancelAllocation, unlockStorage,
   fullView, clanOf, badgeOf, search, levelFor, ClanError,
   CLAN_XP_PER_KILL,
 };

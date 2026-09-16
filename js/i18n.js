@@ -641,6 +641,7 @@ const I18N_UI = {
   clanStorageDepositHdr:{ ru: 'Положить в хранилище', en: 'Deposit', uk: 'Покласти в сховище', es: 'Depositar', tr: 'Yatır', pt: 'Depositar' },
   clanStorageNoShards:{ ru: 'У вас нет Осколков', en: 'You have no Shards', uk: 'У вас немає Осколків', es: 'No tienes Fragmentos', tr: 'Parçanız yok', pt: 'Você não tem Fragmentos' },
   clanStorageDepositBtn:{ ru: 'Положить', en: 'Deposit', uk: 'Покласти', es: 'Depositar', tr: 'Yatır', pt: 'Depositar' },
+  clanStorageDepositAllBtn:{ ru: 'Положить всё', en: 'Deposit all', uk: 'Покласти все', es: 'Depositar todo', tr: 'Hepsini yatır', pt: 'Depositar tudo' },
   clanStorageGiveBtn:{ ru: 'Выдать', en: 'Give', uk: 'Видати', es: 'Dar', tr: 'Ver', pt: 'Dar' },
   clanStorageCancelBtn:{ ru: 'Вернуть', en: 'Return', uk: 'Повернути', es: 'Devolver', tr: 'Geri al', pt: 'Devolver' },
   clanStorageClaimBtn:{ ru: 'Забрать всё', en: 'Collect all', uk: 'Забрати все', es: 'Recoger todo', tr: 'Hepsini al', pt: 'Coletar tudo' },
