@@ -12,7 +12,6 @@
 
 const plog = require('../db/repos/playerlog');
 const { FLOOR_IDS } = require('../game/floors');
-const tgGame = require('../tg-game');
 
 // leaderId currently mid-coopGroupStart. Exactly _farm2Starting's job for
 // exactly _farm2Starting's reason (server/game/farm2.js — read its comment):
@@ -455,9 +454,6 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         // awaits out of the gap between the deploy and the timer below.
         io.to(partnerSid).emit('coopStarted', { x: spot1.x, y: spot1.y, hp: p1?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: left[1] - 1, readyAt });
         s.socket.emit('coopStarted', { x: spot2.x, y: spot2.y, hp: p2?.maxHp, maxStage: COOP_STAGE_LEVELS.length, attemptsLeft: left[0] - 1, readyAt });
-        // Fire-and-forget, by request — a chat announcement is not part of
-        // either player's own run and must never hold up or fail it.
-        tgGame.notifyPartyFormed('coop', allNames).catch(() => {});
         safeTimeout('coopStage1', () => {
           // Still exactly the run this timer was scheduled for? A disconnect
           // during the countdown ends the run for both right away (see
@@ -771,9 +767,6 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           const p = farm2Room.players.get(allIds[i]);
           s.emit('farm2Started', { x: spots[i].x, y: spots[i].y, hp: p?.maxHp, minutesLeft: minutesLeft[i] });
         });
-        // Fire-and-forget, by request — a chat announcement is not part of
-        // any participant's own run and must never hold up or fail it.
-        tgGame.notifyPartyFormed('farm2', allNames).catch(() => {});
       } finally {
         _farm2Starting.delete(s.socket.id);
       }

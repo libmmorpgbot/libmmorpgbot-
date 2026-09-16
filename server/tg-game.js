@@ -147,35 +147,11 @@ async function notifyFriendJoined(referrerId, referrerTelegramId, friendUsername
   await send(referrerTelegramId, `👥 ${name} зашёл в игру по вашей ссылке!`);
 }
 
-// ── «в игре собралась пати» ──────────────────────────────────────────────
-// A public chat the owner wants co-op/elite-farm-zone party formations
-// announced in, by request. Not a player DM: players.canMessage (a
-// PLAYER's own consent to be messaged) does not apply — this is the bot
-// posting into a group it is already a member of, exactly like any other
-// group message it could send there.
-//
-// TG_PARTY_CHAT_ID is that chat's numeric id (negative for a group/
-// supergroup). A bot cannot resolve an invite link (t.me/+hash) into a
-// chat id by itself — there is no Bot API call for that — so this needs a
-// one-time manual step: add the bot to the chat as a member (able to post),
-// then read the numeric id off the first update that reaches it (any
-// message posted after that shows up via getUpdates with its chat.id).
-// Unset: skipped and logged, same shape as every other gate in this file.
-function partyChatId() { return process.env.TG_PARTY_CHAT_ID || ''; }
-
-async function notifyPartyFormed(kind, names) {
-  const chatId = partyChatId();
-  if (!chatId) return { ok: false, skipped: true, description: 'нет чата' };
-  const label = kind === 'coop' ? 'Сотрудничество' : 'Элитная фарм-зона';
-  const who = names.filter(Boolean).map(n => _tgEsc(n)).join(' + ') || '?';
-  return send(chatId, `🤝 Собрана пати в «${label}»: ${who}`);
-}
-
 // Surfaced on /health beside the ops feed's own numbers: "the bot stopped
 // answering" and "the bot was never asked to answer" look identical from
 // outside and have completely different causes.
 function status() {
-  return { configured: !!token(), live: isLive(), partyChat: !!partyChatId(), ..._stats };
+  return { configured: !!token(), live: isLive(), ..._stats };
 }
 
-module.exports = { send, isLive, status, notifyFriendJoined, notifyPartyFormed };
+module.exports = { send, isLive, status, notifyFriendJoined };
