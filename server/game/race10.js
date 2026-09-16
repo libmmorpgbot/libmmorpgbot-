@@ -504,8 +504,14 @@ module.exports = function createRace10(deps) {
   // same standard full-heal-at-spawn every other death in the game gets.
   function _race10Eliminate(socketId) {
     if (!_race10.live) return false;
-    if (!_race10.alive.has(socketId)) return false;
+    const run = _race10.alive.get(socketId);
+    if (!run) return false;
     _race10.alive.delete(socketId);
+    // Nobody else can ever stand in this lane this race (one racer per lane —
+    // raceDeploy) — its remaining monsters have no possible target for
+    // whatever's left of RACE10_MAX_MS. See raceReleaseLane's own comment.
+    const room = getRoom(FLOOR_IDS.race10);
+    if (room) room.raceReleaseLane(run.lane);
     _returnToHub(socketId);
     io.to(socketId).emit('race10Eliminated', {});
     // Nobody left standing anywhere and the boss is still up — no one can ever
@@ -527,10 +533,15 @@ module.exports = function createRace10(deps) {
   // из середины уже идущего перехода между этажами, и второй forceFloor
   // внутри первого сломал бы оба — игрока уносит сам вызывающий.
   function _race10ReleaseRun(socketId) {
-    if (!_race10.alive.has(socketId)) return false;
+    const run = _race10.alive.get(socketId);
+    if (!run) return false;
     _race10.alive.delete(socketId);
     _race10.names.delete(socketId);
     _race10.dmg.delete(socketId);
+    // Same reasoning as _race10Eliminate's own release: this lane is nobody's
+    // any more, for the rest of the race.
+    const room = getRoom(FLOOR_IDS.race10);
+    if (room) room.raceReleaseLane(run.lane);
     io.to(socketId).emit('race10Eliminated', {});
     // Та же причина, что и в _race10Eliminate: стоять больше некому, боссу
     // никто уже не нанесёт удара — ждать RACE10_MAX_MS не за чем. Финиш

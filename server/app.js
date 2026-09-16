@@ -54,7 +54,18 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: process.env.CORS_ORIGIN || '*' },
   transports: ['websocket'],
-  pingTimeout: 25000,
+  // Was 25000. Кровавая Башня can put up to 50 lanes × 120 monsters live at
+  // once (server/game/dungeon.js) — by far the most enemy-dense floor in the
+  // game — and a tick that runs long there delays this same process's pong
+  // for every OTHER socket too (one event loop). 25s left very little room
+  // for that plus an ordinary mobile network blip before socket.io decided
+  // the connection was dead — «выкидывает с башни, с босса, даже с
+  // оптимизацией». Raised, not removed: still comfortably under
+  // RACE10_RECONNECT_GRACE_MS (45000, server/game/race10.js), which is the
+  // window a race10 slot is actually held open for once a disconnect is
+  // detected — pushing this past that would eat into the time a player
+  // has left to reconnect rather than give them more of it.
+  pingTimeout: 40000,
   pingInterval: 15000,
   maxHttpBufferSize: 512 * 1024,
 });

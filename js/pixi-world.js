@@ -1861,8 +1861,14 @@ let _enemyVisGen = 0;
 function _updateEnemies(dt, pulse, bossGlow) {
   _visEnm = 0;
   const gen = ++_enemyVisGen;
+  // See visibleEnemyIds() (js/state.js) for why this exists: perf mode used
+  // to cap other players' sprites only, leaving a packed race10 corridor (or
+  // a crowded boss pull) just as expensive with the setting on. Bosses are
+  // never filtered by it.
+  const visIds = typeof visibleEnemyIds === 'function' ? visibleEnemyIds() : null;
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return;
+    if (visIds && !e.isBoss && !visIds.has(e.id)) return;
     // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
     if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
     _visEnm++;

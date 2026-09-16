@@ -106,6 +106,39 @@ function visibleOtherPlayerIds() {
   return ids;
 }
 
+// Same idea as visibleOtherPlayerIds() above, for enemies. Кровавая Башня
+// packs up to 120 monsters into one corridor (RACE10_MOB_SPACING, server/
+// game/dungeon.js) — far more than any hub ever puts within a player's own
+// AOI — and until now "Оптимизация" gave a slow device no relief there at
+// all: it only ever capped OTHER PLAYERS' sprites, never enemies, so a
+// crowded corridor or a boss pull cost just as much with the setting on as
+// off. Bosses are excluded from the cap (and from the ranking below) the
+// same way the server already treats them as always-visible
+// (_collectEnemiesFor, server/game/Room.js) — there's only ever one or two,
+// and losing sight of it is worse than the frames it costs.
+//
+// serverEnemies itself is untouched: barrier checks (_raceLaneTierAlive,
+// js/game.js) and combat need the full authoritative list regardless of what
+// gets drawn. null means "everyone" (mode off, or already at/under the cap),
+// same no-filter convention _updateEnemies (pixi-world.js) already follows
+// for its on-screen check.
+const PERF_MODE_MAX_ENEMIES = 20;
+function visibleEnemyIds() {
+  if (!perfModeOn() || serverEnemies.length <= PERF_MODE_MAX_ENEMIES) return null;
+  const px = player ? player.x : 0, py = player ? player.y : 0;
+  const ranked = [];
+  for (let i = 0; i < serverEnemies.length; i++) {
+    const e = serverEnemies[i];
+    if (e.isBoss) continue;
+    const dx = e.x - px, dy = e.y - py;
+    ranked.push([dx * dx + dy * dy, e.id]);
+  }
+  ranked.sort((a, b) => a[0] - b[0]);
+  const ids = new Set();
+  for (let i = 0; i < Math.min(PERF_MODE_MAX_ENEMIES, ranked.length); i++) ids.add(ranked[i][1]);
+  return ids;
+}
+
 let serverEnemies = [];     // authoritative enemy list (server-driven, near the player only)
 // Flat Int16 [tileX, tileY, ...] of every alive non-boss enemy in the world,
 // for the КАРТА panel — which draws a whole arm, well past the radius

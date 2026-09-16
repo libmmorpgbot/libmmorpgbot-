@@ -743,6 +743,14 @@ class Room {
     // everyone regardless of distance.
     this._enemyGrid = new Map();
     this._bossBuf = [];
+    // Which race10 lanes still have a racer who could still fight through
+    // them — see raceDeploy/raceReleaseLane and the race10 skip in _tick().
+    // A lane an entrant was eliminated out of keeps every un-killed monster
+    // in it "alive" for the rest of the race (up to RACE10_MAX_MS — 15
+    // minutes) with nobody left who could ever reach them again; ticking
+    // their AI for that whole stretch is pure waste, and at up to 50 lanes ×
+    // 120 monsters each it is not a small one.
+    this._raceActiveLanes = new Set();
     // Same idea for players — see PLAYER_GRID_CELL. Rebuilt every tick (the
     // AI reads it too), not just on the casts that broadcast.
     this._playerGrid = new Map();
@@ -2098,7 +2106,7 @@ class Room {
       // lanes free — with RACE10_LANES lanes at 120 monsters each they are a
       // sizeable share of the world's enemies, and every one of them was being
       // walked 40 times a second to answer "is anyone near?" with "no".
-      if (e.arm === 'race10' && !e.raceBoss && !this._raceActive) return;
+      if (e.arm === 'race10' && !e.raceBoss && (!this._raceActive || !this._raceActiveLanes.has(e.lane))) return;
 
       // Same idea, applied to the 4 open-world arms: a regular (non-boss)
       // enemy whose arm currently has zero players can't have anyone to
@@ -4389,7 +4397,22 @@ class Room {
       placed.push({ socketId: sid, x, y, hp: p.hp, lane: spot.lane });
     });
     this._raceActive = placed.length > 0;
+    this._raceActiveLanes.clear();
+    placed.forEach(p => this._raceActiveLanes.add(p.lane));
     return placed;
+  }
+
+  // Called once a lane's racer can never come back to it — eliminated
+  // (_race10Eliminate) or walked out on the run (_race10ReleaseRun), both in
+  // server/game/race10.js — never on reaching the boss, since that already
+  // requires the lane to be fully cleared (raceLaneClear) and its monsters
+  // dead already cost nothing further (see the hp<=0 branch in _tick).
+  // One lane is exclusively one racer's for the run (raceDeploy above), so
+  // once this fires nobody else can ever stand in it again this race — its
+  // remaining monsters have no possible target for however much of
+  // RACE10_MAX_MS is left, and the _tick race10 skip stops paying for them.
+  raceReleaseLane(lane) {
+    this._raceActiveLanes.delete(lane);
   }
 
   // True once every non-boss race10 monster in this lane is dead — the
@@ -4493,6 +4516,7 @@ class Room {
     // _tick). Called from _race10Finish on every ending — win, timeout or
     // nobody left standing.
     this._raceActive = false;
+    this._raceActiveLanes.clear();
     if (!this._raceBossId) return;
     const id = this._raceBossId;
     this.enemies = this.enemies.filter(e => {
