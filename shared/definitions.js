@@ -1370,8 +1370,10 @@ const UNIQUE_SHARD_MAX_QTY   = 1;         // most of one kind a single kill can 
 // normal loot table entirely (see _rollFarmZoneLoot, server/index.js) and
 // instead roll only this — same per-kind-independent shape as
 // UNIQUE_SHARD_CHANCE above, just flat and far higher since farming shards
-// is the zone's whole point.
-const FARM_SHARD_CHANCE = 0.001;
+// is the zone's whole point. Was 0.001 — doubled by request. Фарм зона 2's
+// own rate (FARM_HIGH_SHARD_CHANCE below) is a fixed ×1.3 of this one, so it
+// doubles right along with it.
+const FARM_SHARD_CHANCE = 0.002;
 
 // Фарм-зона content constants — kept here (not server/game/dungeon.js, which
 // only holds its tile geometry) because the client needs them too, to build
