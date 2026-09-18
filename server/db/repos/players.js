@@ -582,53 +582,38 @@ async function prefsOf(db, playerId) {
 }
 
 // Studied skills and passives, in the shape the client already expects.
-// skillClass — Q/W/E/R -> borrowed class, only for slots a foreign-skill
-// jackpot (setForeignSkill below) moved off the player's own class — is read
-// only once migration 031 has landed (hasColumn, same rollout guard as the
-// rune columns elsewhere in this file), so a server one deploy ahead of its
-// migration keeps working without it.
+// foreignSkill — the fifth, independent slot (learnForeignSkill below,
+// migration 032) — is read only once that migration has landed (hasColumn,
+// same rollout guard the rune columns elsewhere in this file use), so a
+// server one deploy ahead of its migration keeps working without it.
 async function skillsOf(db, playerId) {
-  const classOk = await hasColumn('player_skills', 'class_override');
+  const foreignOk = await hasColumn('player_skills', 'foreign_class');
   const { rows } = await query(db,
-    `SELECT kind, key, level${classOk ? ', class_override' : ''} FROM player_skills WHERE player_id = $1`,
+    `SELECT kind, key, level${foreignOk ? ', foreign_class' : ''} FROM player_skills WHERE player_id = $1`,
     [playerId]);
-  const out = { skillLevels: {}, passiveLevels: {}, advSkillLearned: {}, advSkillActive: {}, skillClass: {} };
+  const out = { skillLevels: {}, passiveLevels: {}, advSkillLearned: {}, advSkillActive: {}, foreignSkill: null };
   for (const r of rows) {
-    if (r.kind === 'skill') {
-      out.skillLevels[r.key] = r.level;
-      if (r.class_override) out.skillClass[r.key] = r.class_override;
-    } else if (r.kind === 'passive') out.passiveLevels[r.key] = r.level;
+    if (r.kind === 'skill') out.skillLevels[r.key] = r.level;
+    else if (r.kind === 'passive') out.passiveLevels[r.key] = r.level;
     else if (r.kind === 'adv_learned') out.advSkillLearned[r.key] = r.level > 0;
     else if (r.kind === 'adv_active') out.advSkillActive[r.key] = r.level > 0;
+    else if (r.kind === 'foreign') out.foreignSkill = { cls: r.foreign_class, key: r.key, level: r.level };
   }
   return out;
 }
 
-// ── заимствованная способность ──────────────────────────────────────────────
-// Одна книга — джекпот легендарного перебора руны (RUNE_REROLL_BONUS_SKILL_
-// CHANCE, shared/definitions.js) — переучивает Q/W/E/R слот на способность
-// ДРУГОГО класса: настоящая механика боя этого класса, а не число из своей
-// таблицы под чужим именем (Room.js читает class_override как «эффективный
-// класс» слота — см. _skillMultFor и соседей).
-//
-// Всегда полный пересдвиг слота, а не апгрейд — level всегда возвращается к
-// 1, как и обычное первое studySkill (learnSkill выше по файлу зовёт этот же
-// путь неявно через study(), но с cls=null, что и превращает его в «свою»
-// версию этой же операции — см. вызывающую сторону в handlers2/progression).
-// Вторая профессия этого слота снимается: adv_learned/adv_active хранят
-// «выучена ли», но их СОДЕРЖАНИЕ — книга под старую способность — теряет
-// смысл, когда слот сменил класс в любую сторону.
-async function setForeignSkill(db, playerId, key, cls) {
+// ── пятый слот: заимствованная способность ──────────────────────────────────
+// Учит книгу джекпота (RUNE_REROLL_BONUS_SKILL_CHANCE, shared/definitions.js)
+// в СВОЙ, отдельный слот — никогда не трогает Q/W/E/R. Ровно одна строка
+// kind='foreign' на аккаунт: новая книга ЗАМЕНЯЕТ прежнюю (старая строка
+// удаляется первой), а не складывается рядом — второго такого слота нет.
+// Уровень всегда начинается заново, с 1, как и обычное первое studySkill.
+async function setForeignSkill(db, playerId, foreignClass, foreignKey) {
+  await query(db, `DELETE FROM player_skills WHERE player_id = $1 AND kind = 'foreign'`, [playerId]);
   await query(db, `
-    INSERT INTO player_skills (player_id, kind, key, level, class_override)
-    VALUES ($1, 'skill', $2, 1, $3)
-    ON CONFLICT (player_id, kind, key) DO UPDATE
-      SET level = 1, class_override = EXCLUDED.class_override`,
-    [playerId, key, cls]);
-  await query(db, `
-    DELETE FROM player_skills
-     WHERE player_id = $1 AND key = $2 AND kind IN ('adv_learned', 'adv_active')`,
-    [playerId, key]);
+    INSERT INTO player_skills (player_id, kind, key, level, foreign_class)
+    VALUES ($1, 'foreign', $2, 1, $3)`,
+    [playerId, foreignKey, foreignClass]);
 }
 
 // ── THE allow-list ──────────────────────────────────────────────────────────
@@ -1004,8 +989,11 @@ async function setSkillLevel(db, playerId, kind, key, level) {
 // Returning the fact rather than throwing lets the caller answer "already at
 // max" without treating it as an error.
 async function bumpSkill(db, playerId, kind, key) {
+  // 'foreign' — the fifth slot (learnForeignSkill) — levels 1..10 exactly
+  // like a real skill; only the adv_learned/adv_active bookkeeping kinds
+  // stay capped at the plain one-time flag below.
   const max = kind === 'passive' ? PASSIVE_MAX_LEVEL
-            : kind === 'skill'   ? SKILL_MAX_LEVEL : 1;
+            : (kind === 'skill' || kind === 'foreign') ? SKILL_MAX_LEVEL : 1;
   const { rows } = await query(db, `
     INSERT INTO player_skills (player_id, kind, key, level) VALUES ($1, $2, $3, 1)
     ON CONFLICT (player_id, kind, key) DO UPDATE

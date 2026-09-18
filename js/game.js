@@ -438,22 +438,19 @@ function _autoCastSkills(dt) {
   // it follows the slot rather than the variant — switching a slot to its
   // advanced version does not silently re-enable one that was turned off.
   const offSlots = player.autoSkillOff || {};
+  const bonusTypes = (typeof SKILL_BONUS_TYPE !== 'undefined' && SKILL_BONUS_TYPE[player.type]) || {};
   for (let i = 0; i < baseSkills.length; i++) {
-    // Resolved to whichever version (base/advanced) is actually active — an
-    // advanced skill can flip a slot's auto-eligibility either way (see
-    // ADV_SKILL_DEF, js/definitions.js) — AND to whichever class actually
-    // owns this slot (_activeSkillDefForSlot), since a borrowed skill's own
-    // auto flag/bonus type is what governs it now, not the slot's original
-    // class. Either way this must match useSkill()'s own resolution.
-    const sk = (typeof _activeSkillDefForSlot === 'function') ? _activeSkillDefForSlot(i) : baseSkills[i];
+    // Resolved to whichever version (base/advanced) is actually active —
+    // an advanced skill can flip a slot's auto-eligibility either way (see
+    // ADV_SKILL_DEF, js/definitions.js), so this must match useSkill()'s own
+    // resolution, not just the base skill's auto flag.
+    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : baseSkills[i];
     if (!sk) continue;
     if (sk.auto === false) continue;                       // dash / jump / teleport
     if (offSlots[sk.key]) continue;                        // switched off by the player
     if (_skillLvl(sk.key) <= 0) continue;                  // not learned
     if ((player.skillCooldowns[sk.key] || 0) > 0) continue;
-    const bonusType = (typeof SKILL_BONUS_TYPE !== 'undefined' && typeof _effSkillClass === 'function')
-      ? (SKILL_BONUS_TYPE[_effSkillClass(sk.key)] || {})[sk.key] : null;
-    if (bonusType === 'heal' && hpFrac > AUTO_SKILL_HEAL_BELOW) continue;
+    if (bonusTypes[sk.key] === 'heal' && hpFrac > AUTO_SKILL_HEAL_BELOW) continue;
     useSkill(i);
     _autoSkillTimer = AUTO_SKILL_GAP;
     return;                                                // one per gap
@@ -529,14 +526,17 @@ function update(dt, realDt) {
             faceTowards(_scEnt.x, _scEnt.y);
             player._chasing = true;
           } else {
-            // Close enough now — deliver the cast. useSkill() itself clears
-            // player._skillChase (it re-checks range and this time passes),
-            // so nothing here can loop: cleared eagerly anyway in case that
-            // skill's own state (cooldown/level) changed while approaching
-            // and it bails out early without reaching that point.
+            // Close enough now — deliver the cast. useSkill()/
+            // useForeignSkill() itself clears player._skillChase (it
+            // re-checks range and this time passes), so nothing here can
+            // loop: cleared eagerly anyway in case that skill's own state
+            // (cooldown/level) changed while approaching and it bails out
+            // early without reaching that point. sc.foreign is how the
+            // fifth slot (learnForeignSkill) armed this chase — see
+            // useForeignSkill, js/player.js.
             player._chasing = false;
             player._skillChase = null;
-            useSkill(sc.idx);
+            if (sc.foreign) useForeignSkill(); else useSkill(sc.idx);
           }
         }
       } else if (targetId && (autoAttackMode || _chaseArmed)) {
@@ -1028,6 +1028,9 @@ function update(dt, realDt) {
     if (cds.W > 0) cds.W -= realDt;
     if (cds.E > 0) cds.E -= realDt;
     if (cds.R > 0) cds.R -= realDt;
+    // The fifth, independent slot (learnForeignSkill) — its own cooldown,
+    // keyed by FOREIGN_SKILL_KEY, never one of the four above.
+    if (cds[FOREIGN_SKILL_KEY] > 0) cds[FOREIGN_SKILL_KEY] -= realDt;
   }
   // Buffs, cooldowns and crowd control all run on realDt — see the realDt
   // comment in loop(). On dt they stopped advancing whenever the app was

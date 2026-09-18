@@ -1386,9 +1386,11 @@ function netConnect(onReady) {
       player.advSkillLearned = { Q: false, W: false, E: false, R: false, ...(payload.advSkillLearned || {}) };
       player.advSkillActive = { Q: false, W: false, E: false, R: false, ...(payload.advSkillActive || {}) };
       // Reset rather than left stale: this reuses the same `player` object a
-      // real session may already have set skillClass on, and a trial build
-      // has no borrowed skills of its own.
-      player.skillClass = { ...(payload.skillClass || {}) };
+      // real session may already have set foreignSkill on, and a trial
+      // build has no fifth-slot ability of its own.
+      player.foreignSkill = payload.foreignSkill || null;
+      if (!player.skillCooldowns) player.skillCooldowns = { Q: 0, W: 0, E: 0, R: 0 };
+      player.skillCooldowns[FOREIGN_SKILL_KEY] = 0;
     }
     csOnServerReady();
   }
@@ -2439,11 +2441,11 @@ function netConnect(onReady) {
     if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
     if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
     if (data.advSkillActive)  player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...data.advSkillActive };
-    // Q/W/E/R -> borrowed class, only present for a slot learnForeignSkill
-    // moved off the player's own — see effSkillClass, shared/definitions.js.
-    // No per-key defaults needed: an absent key already means "own class"
-    // everywhere this map is read.
-    if (data.skillClass) player.skillClass = { ...data.skillClass };
+    // 'in', not truthy: unlike the maps above, this field is legitimately
+    // null (no fifth slot learned) — a truthy guard would apply a real null
+    // only sometimes and silently keep a stale non-null value the rest of
+    // the time. See the same split server-side, Room.js's setPlayerStats.
+    if ('foreignSkill' in data) player.foreignSkill = data.foreignSkill;
     // passiveLevels feed the stat bonuses (passiveBonusTotal,
     // shared/definitions.js), so a new level has to reach the live stats and
     // not just the panel.
@@ -3531,14 +3533,15 @@ function netSkillAttack(enemyId, multiplier, key) {
 // inventorySync (the books it spent) and upgradeRolled (so the success/failure
 // text still plays). See the handlers in server/index.js.
 function netLearnSkill(key)      { if (socket?.connected) socket.emit('learnSkill', { key }); }
-// The legendary-rune-reroll jackpot's book — any class, not just the
-// player's own (see RUNE_REROLL_BONUS_SKILL_CHANCE, shared/definitions.js).
-// bookClass equal to the player's own class is how a slot reverts: same
-// event, same reslot, just back to what charClass already means.
-function netLearnForeignSkill(key, bookClass) {
-  if (socket?.connected) socket.emit('learnForeignSkill', { key, bookClass });
-}
 function netUpgradeSkill(key)    { if (socket?.connected) socket.emit('upgradeSkill', { key }); }
+// The fifth, independent slot (RUNE_REROLL_BONUS_SKILL_CHANCE's jackpot
+// book, shared/definitions.js) — bookClass/bookKey name which class's
+// Q/W/E/R the book actually is; the slot itself is never Q/W/E/R and
+// always FOREIGN_SKILL_KEY, so there is no `key` param here to send.
+function netLearnForeignSkill(bookClass, bookKey) {
+  if (socket?.connected) socket.emit('learnForeignSkill', { bookClass, bookKey });
+}
+function netUpgradeForeignSkill() { if (socket?.connected) socket.emit('upgradeForeignSkill', {}); }
 function netLearnPassive(id)     { if (socket?.connected) socket.emit('learnPassive', { id }); }
 function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePassive', { id }); }
 function netLearnAdvSkill(key)   { if (socket?.connected) socket.emit('learnAdvSkill', { key }); }

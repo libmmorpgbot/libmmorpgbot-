@@ -158,12 +158,6 @@ let barrierTimer = 0;
 let battleCryTimer = 0;
 let dodgeTimer = 0;
 let atkSpeedTimer = 0;
-// Which multiplier THIS run of atkSpeedTimer means — captured at cast time
-// (useSkill(), js/player.js) rather than re-derived from player.type in
-// recompute(), because two different slots/classes can set this same timer
-// (ranger R base/adv, warlock E adv) and a borrowed skill (_effSkillClass,
-// same file) can make either one fire from a player of neither class.
-let atkSpeedTimerMult = 1.5;
 let faithShieldTimer = 0;
 let invisTimer = 0;
 let guardTimer = 0;      // Танк (lev) E — +80% DEF buff

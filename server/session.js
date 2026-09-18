@@ -70,7 +70,7 @@ const WRITE_ACTIONS = new Set([
   // бафа остаются — их покупают и крафтят, и вопрос «куда делось» к ним
   // возникает, а к лечилке нет.
   'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',
-  'learnSkill', 'learnForeignSkill', 'upgradeSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
+  'learnSkill', 'upgradeSkill', 'learnForeignSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'claimQuest', 'completeSpecialQuest', 'claimVipRewards',
   'gramDepositRequest', 'gramWithdrawRequest',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
@@ -337,10 +337,10 @@ function _statsFromRoomRecord(p) {
     critChance: p.critChance, critPower: p.critPower,
     atkSpeed: p.atkSpeed, hpRegen: p.hpRegen, skillPct: p.skillPct,
     // Room's own private names for them — _skillMultFor reads p._skillLevels,
-    // p._advLearned, p._advActive and p._skillClass, and setPlayerStats is
+    // p._advLearned, p._advActive and p._foreignSkill, and setPlayerStats is
     // what fills those.
     skillLevels: p._skillLevels, advSkillLearned: p._advLearned, advSkillActive: p._advActive,
-    skillClass: p._skillClass,
+    foreignSkill: p._foreignSkill,
   };
 }
 
@@ -956,10 +956,9 @@ class Session {
       passiveLevels: skills.passiveLevels || {},
       advSkillLearned: skills.advSkillLearned || {},
       advSkillActive: skills.advSkillActive || {},
-      // Q/W/E/R -> borrowed class, only for slots a legendary-rune-reroll
-      // jackpot (learnForeignSkill) moved off the player's own — see
-      // effSkillClass, shared/definitions.js.
-      skillClass: skills.skillClass || {},
+      // The fifth, independent slot (learnForeignSkill) — null when nothing
+      // has been learned into it. See FOREIGN_SKILL_KEY, shared/definitions.js.
+      foreignSkill: skills.foreignSkill || null,
 
       lang: prefs.lang,
       autoHpPct: prefs.autoHpPct,

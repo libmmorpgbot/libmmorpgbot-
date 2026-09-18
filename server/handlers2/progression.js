@@ -22,7 +22,7 @@ const {
   SEASON_EMPOWER_POINTS, seasonActive,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
-  PLAYABLE_CLASSES, effSkillClass,
+  PLAYABLE_CLASSES, FOREIGN_SKILL_KEY,
   SEASON_RATING_MIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
@@ -88,48 +88,15 @@ module.exports = function registerProgression(s, safeOn) {
     await s.pushItems(t); await pushAfterStat(t);
   }));
 
-  // ── заимствованная способность ("любого класса") ─────────────────────────
-  // Джекпот легендарного перебора руны (RUNE_REROLL_BONUS_SKILL_CHANCE,
-  // shared/definitions.js, 3%) выдаёт книгу активного навыка ЛЮБОГО класса,
-  // не обязательно своего. Изучить её здесь — значит НАСТОЯЩИЙ пересдвиг
-  // слота: уровень всегда возвращается к 1 (то же первое studySkill, только
-  // для bookClass вместо своего класса), а не апгрейд поверх того, что уже
-  // стояло — setForeignSkill (repos/players.js) также снимает вторую
-  // профессию этого слота, книга под старую способность больше не подходит.
-  //
-  // bookClass === собственный класс — это и есть способ ВЕРНУТЬ слот
-  // обратно: своя книга того же ключа, тот же пересдвиг, только эффективный
-  // класс после него снова совпадает с charClass.
-  safeOn('learnForeignSkill', ({ key, bookClass } = {}) => s.act('learnForeignSkill', 'progressError', async (t, pid) => {
-    if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
-    if (typeof bookClass !== 'string' || !PLAYABLE_CLASSES.includes(bookClass)) {
-      fail('Неизвестный класс', 'bad_class');
-    }
-    const prog = await players.progressOf(t, pid);
-    if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
-
-    await items.lockPlayer(t, pid);
-    const bookId = skillBookId(bookClass, key);
-    if (!await items.removeQty(t, pid, bookId, SKILL_STUDY_COST)) {
-      fail(`Нужно книг: ${SKILL_STUDY_COST}`, 'no_book');
-    }
-    await players.setForeignSkill(t, pid, key, bookClass === prog.charClass ? null : bookClass);
-    await s.pushItems(t); await pushAfterStat(t);
-  }));
-
   // Upgrading rolls a chance. The roll is the server's — the old client sent
   // whether it succeeded.
   safeOn('upgradeSkill', ({ key } = {}) => s.act('upgradeSkill', 'progressError', async (t, pid) => {
     if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
-    // Upgrading a BORROWED slot spends the borrowed class's book, not the
-    // player's own — see learnForeignSkill above for how a slot gets one.
-    const sk = await players.skillsOf(t, pid);
-    const cls = effSkillClass(prog.charClass, sk.skillClass, key);
 
     await items.lockPlayer(t, pid);
-    const bookId = skillBookId(cls, key);
+    const bookId = skillBookId(prog.charClass, key);
     if (!await items.removeQty(t, pid, bookId, SKILL_UPGRADE_COST)) {
       fail(`Нужно книг: ${SKILL_UPGRADE_COST}`, 'no_book');
     }
@@ -148,6 +115,54 @@ module.exports = function registerProgression(s, safeOn) {
     // The book is spent either way — that is the cost of the attempt, and
     // saying so explicitly is what stops "it ate my book" being a bug report.
     s.socket.emit('upgradeRolled', { kind: key, ok: success, level });
+  }));
+
+  // ── пятый слот: заимствованная способность ──────────────────────────────
+  // Джекпот легендарного перебора руны (RUNE_REROLL_BONUS_SKILL_CHANCE, 3%,
+  // shared/definitions.js) выдаёт книгу активного навыка ЛЮБОГО класса. Она
+  // учится в ОТДЕЛЬНЫЙ, пятый слот — никогда не в Q/W/E/R — и всегда
+  // заменяет то, что там уже было: другая книга джекпота просто переучивает
+  // тот же единственный слот заново (players.setForeignSkill удаляет
+  // прежнюю строку перед вставкой новой). Уровень всегда начинается с 1.
+  safeOn('learnForeignSkill', ({ bookClass, bookKey } = {}) => s.act('learnForeignSkill', 'progressError', async (t, pid) => {
+    if (typeof bookClass !== 'string' || !PLAYABLE_CLASSES.includes(bookClass)) {
+      fail('Неизвестный класс', 'bad_class');
+    }
+    if (!SLOTS.has(bookKey)) fail('Неизвестный навык', 'bad_slot');
+    await items.lockPlayer(t, pid);
+    const bookId = skillBookId(bookClass, bookKey);
+    if (!await items.removeQty(t, pid, bookId, SKILL_STUDY_COST)) {
+      fail(`Нужно книг: ${SKILL_STUDY_COST}`, 'no_book');
+    }
+    await players.setForeignSkill(t, pid, bookClass, bookKey);
+    await s.pushItems(t); await pushAfterStat(t);
+  }));
+
+  // Same roll/cost shape as upgradeSkill above, but always the fifth slot's
+  // own (class, key) — read off what was actually learned, never claimed —
+  // and no `key` param: there is only ever one foreign slot to upgrade.
+  safeOn('upgradeForeignSkill', () => s.act('upgradeForeignSkill', 'progressError', async (t, pid) => {
+    const sk = await players.skillsOf(t, pid);
+    if (!sk.foreignSkill) fail('Навык не изучен', 'not_learned');
+    const { cls, key } = sk.foreignSkill;
+
+    await items.lockPlayer(t, pid);
+    const bookId = skillBookId(cls, key);
+    if (!await items.removeQty(t, pid, bookId, SKILL_UPGRADE_COST)) {
+      fail(`Нужно книг: ${SKILL_UPGRADE_COST}`, 'no_book');
+    }
+
+    // crypto, not Math.random: same reasoning as upgradeSkill above.
+    const chance = typeof SKILL_UPGRADE_CHANCE === 'number' ? SKILL_UPGRADE_CHANCE : 0.5;
+    const success = require('crypto').randomInt(1e6) / 1e6 < chance;
+
+    let level = null;
+    if (success) {
+      const r = await players.bumpSkill(t, pid, 'foreign', key);
+      level = r.level;
+    }
+    await s.pushItems(t); await pushAfterStat(t);
+    s.socket.emit('upgradeRolled', { kind: FOREIGN_SKILL_KEY, ok: success, level });
   }));
 
   safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'progressError', async (t, pid) => {
@@ -171,12 +186,8 @@ module.exports = function registerProgression(s, safeOn) {
     if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
     const prog = await players.progressOf(t, pid);
     if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
-    // A borrowed slot's "second profession" belongs to the borrowed class —
-    // see learnForeignSkill above.
-    const sk = await players.skillsOf(t, pid);
-    const cls = effSkillClass(prog.charClass, sk.skillClass, key);
     await items.lockPlayer(t, pid);
-    if (!await items.removeQty(t, pid, advSkillBookId(cls, key), ADV_SKILL_STUDY_COST)) {
+    if (!await items.removeQty(t, pid, advSkillBookId(prog.charClass, key), ADV_SKILL_STUDY_COST)) {
       fail(`Нужно книг продвинутого навыка: ${ADV_SKILL_STUDY_COST}`, 'no_book');
     }
     await players.setSkillLevel(t, pid, 'adv_learned', key, 1);

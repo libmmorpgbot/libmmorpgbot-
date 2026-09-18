@@ -102,15 +102,16 @@ function makePlayer(type) {
     // everyone who upgraded.
     autoSkillsOn: true,
     autoSkillOff: {},
-    skillCooldowns: { Q:0, W:0, E:0, R:0 },
+    // FOREIGN_SKILL_KEY ('X') is the fifth, independent slot's own cooldown
+    // — see useForeignSkill, shared/definitions.js.
+    skillCooldowns: { Q:0, W:0, E:0, R:0, [FOREIGN_SKILL_KEY]: 0 },
     // 0 = locked/not yet studied (see studySkill/upgradeSkillWithBook in
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
     // book drops and is spent to study one.
     skillLevels: { Q:0, W:0, E:0, R:0 },
-    // Q/W/E/R -> borrowed class, only present for a slot learnForeignSkill
-    // moved off the player's own class — see effSkillClass, shared/
-    // definitions.js. Empty for every fresh/default character.
-    skillClass: {},
+    // The fifth slot's ability — null until a legendary-rune-reroll jackpot
+    // book is learned into it (learnForeignSkill). { cls, key, level }.
+    foreignSkill: null,
     // 0 = locked/not yet studied, 1-10 = level (see PASSIVE_MAX_LEVEL,
     // shared/definitions.js) — keyed by passive id across both the
     // class-exclusive pair and the six universal ones. Studied/upgraded with
@@ -154,16 +155,31 @@ function makePlayer(type) {
 function _enhBonusAt(it, levels) { return enhanceBonus(it, levels); }
 function _enhBonus(it) { return _enhBonusAt(it, it.enhance || 0); }
 
+// ── пятый слот: заимствованная способность ──────────────────────────────
+// Не занимает Q/W/E/R — свой кулдаун (FOREIGN_SKILL_KEY, shared/
+// definitions.js) и свой уровень (player.foreignSkill), независимые от
+// родных четырёх. useForeignSkill() ниже запускает ТОТ ЖЕ класс-диспетчер
+// (_dispatchSkillEffect), написанный для игрока своего класса, подставляя
+// вместо него заимствованный — это единственная причина, по которой
+// _skillLvl/_advActive/_skillMult ниже вообще смотрят на _foreignCastCtx:
+// без него пришлось бы копировать весь диспетчер под каждый занимаемый
+// класс, а не переиспользовать написанную под свой класс механику.
+let _foreignCastCtx = null; // { cls, key } for the duration of one synchronous cast
+
+// A handful of mechanics below override the GENERIC cooldown the header
+// (useSkill/useForeignSkill) already set, by writing player.skillCooldowns
+// directly for a per-level reduction the header doesn't know about — always
+// through this, never the bare letter, or a fifth-slot cast would stomp the
+// player's own real Q/W/E/R cooldown instead of its own ('X').
+function _cooldownKeyFor(key) {
+  return (_foreignCastCtx && _foreignCastCtx.key === key) ? FOREIGN_SKILL_KEY : key;
+}
+
 // ── Skill level helpers ───────────────────────────────────────
-function _skillLvl(key) { return (player && player.skillLevels && player.skillLevels[key]) || 0; }
-// Which class's ability ACTUALLY runs in this slot — the player's own,
-// unless the legendary-rune-reroll jackpot got learned into it
-// (learnForeignSkill, server/db/repos/players.js). player.skillClass is the
-// same Q/W/E/R -> class map the server computed (stats.of) and pushed down;
-// this is the one place useSkill()'s whole class-dispatch and every other
-// class-keyed lookup below reads it from, so the client can never disagree
-// with itself about which ability a slot means.
-function _effSkillClass(key) { return effSkillClass(player && player.type, player && player.skillClass, key); }
+function _skillLvl(key) {
+  if (_foreignCastCtx && _foreignCastCtx.key === key) return (player && player.foreignSkill && player.foreignSkill.level) || 0;
+  return (player && player.skillLevels && player.skillLevels[key]) || 0;
+}
 // Сила навыков from equipment (recompute() above). Multiplies the magnitude
 // of a skill — its damage and its healing — on top of the +1%/level the skill
 // itself already gives. Durations are not touched: those are seconds, and a
@@ -175,7 +191,12 @@ function _skillDmgMult(key)    { return skillScaleMult(_skillLvl(key), (player &
 // (SKILL_DMG_MULT, shared/definitions.js) times the level/gear scaling above.
 // The server derives the identical number from the slot name the cast sends,
 // so these must come from the one table rather than from literals here.
-function _skillMult(key)       { return skillDamageMult(_effSkillClass(key), key, _advActive(key), _skillLvl(key), (player && player.skillPct) || 0); }
+// _foreignCastCtx's class stands in for player.type during a fifth-slot cast
+// — see the block comment above.
+function _skillMult(key) {
+  const cls = (_foreignCastCtx && _foreignCastCtx.key === key) ? _foreignCastCtx.cls : (player && player.type);
+  return skillDamageMult(cls, key, _advActive(key), _skillLvl(key), (player && player.skillPct) || 0);
+}
 function _skillBuffSec(key)    { return _skillLvl(key); }
 function _skillHealMult(key)   { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
@@ -189,6 +210,12 @@ function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 // active:true with no matching learned:true (e.g. a hand-edited save) can
 // never silently activate an unearned skill.
 function _advActive(key) {
+  // The fifth slot never has one (shared/definitions.js's migration 032:
+  // the jackpot only ever grants base skill books) — forced false here
+  // rather than left to fall through, because player.advSkillLearned/Active
+  // are keyed by the bare letter and would otherwise answer with the
+  // player's OWN real slot's adv status for the same key.
+  if (_foreignCastCtx && _foreignCastCtx.key === key) return false;
   return !!(player && player.advSkillLearned && player.advSkillLearned[key] &&
     player.advSkillActive && player.advSkillActive[key]);
 }
@@ -205,18 +232,6 @@ function _activeSkillDef(cls, idx) {
     if (adv) return { ...base, ...adv };
   }
   return base;
-}
-// Same as _activeSkillDef, but resolves which class actually owns THIS
-// SLOT itself (_effSkillClass) instead of leaving every caller to do it —
-// the three screens that draw the skill panel (js/game.js, js/ui.js ×2) and
-// useSkill() below all have to agree on the exact same answer. idx -> key is
-// class-invariant (Q/W/E/R sit at the same index in every class's SKILL_DEF
-// array), so the player's OWN class's array is enough to name the slot.
-function _activeSkillDefForSlot(idx) {
-  const ownKey = (typeof SKILL_DEF !== 'undefined' && player && SKILL_DEF[player.type])
-    ? (SKILL_DEF[player.type][idx] && SKILL_DEF[player.type][idx].key) : null;
-  if (!ownKey) return null;
-  return _activeSkillDef(_effSkillClass(ownKey), idx);
 }
 
 // Вампиризм (deathknight Q) — heals a % of any damage the player deals
@@ -371,11 +386,10 @@ function recompute() {
   let defMult = 1;
   if (typeof guardTimer       !== 'undefined' && guardTimer       > 0) defMult *= 1.80;
   // "Вспышка" (adv mage E) gives +80% def instead of Barrier's own +50% —
-  // barrierTimer is mage-E-only either way (both variants share that slot),
-  // so this reads the slot's EFFECTIVE class (a borrowed mage E fires the
-  // same magnitudes for whoever cast it) rather than the caster's own.
+  // barrierTimer is mage-only either way, so the active-skill check just
+  // picks which magnitude this cast actually meant.
   if (typeof barrierTimer !== 'undefined' && barrierTimer > 0) {
-    defMult *= (_effSkillClass('E') === 'mage' && _advActive('E')) ? 1.80 : 1.50;
+    defMult *= (player.type === 'mage' && _advActive('E')) ? 1.80 : 1.50;
   }
   if (typeof faithShieldTimer !== 'undefined' && faithShieldTimer > 0) defMult *= 1.50;
   if (defMult !== 1) d = Math.floor(d * defMult);
@@ -402,12 +416,13 @@ function recompute() {
   const cd  = player.charDef;
   player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
   if (typeof atkSpeedTimer !== 'undefined' && atkSpeedTimer > 0) {
-    // The multiplier this run of the timer actually means, captured at cast
-    // time (useSkill()) rather than re-derived here from player.type — two
-    // different slots (ranger R, warlock E adv) share this one timer, and a
-    // borrowed skill can make either fire for a player of neither class. See
-    // atkSpeedTimerMult, js/state.js.
-    player.atkSpeed *= (typeof atkSpeedTimerMult === 'number' && atkSpeedTimerMult > 0) ? atkSpeedTimerMult : 1.5;
+    // ×2 instead of ranger's own ×1.5 for "Ускорение" (adv ranger R); warlock
+    // never sets atkSpeedTimer at all except via "Жажда" (adv warlock E), so
+    // it's unconditionally ×2 there.
+    let _asMult = 1.5;
+    if (player.type === 'ranger' && _advActive('R')) _asMult = 2;
+    if (player.type === 'warlock') _asMult = 2;
+    player.atkSpeed *= _asMult;
   }
   // Ускорение от навыка питомца (Вилорд) — множителем, как и навычное выше.
   if (_petSk && _petSk.haste > 1) player.atkSpeed *= _petSk.haste;
@@ -799,14 +814,6 @@ function useSkill(idx) {
   }
   if ((player.skillCooldowns[sk.key] || 0) > 0) return;
 
-  // Which class's ability this cast ACTUALLY runs — the player's own, unless
-  // a legendary-rune-reroll jackpot borrowed a different one into this slot
-  // (see _effSkillClass above). Every class-specific check below this line —
-  // range, then the whole mechanic dispatch — reads this instead of
-  // player.type directly, so a borrowed skill fights with its real class's
-  // behavior, not the caster's.
-  const effCls = _effSkillClass(sk.key);
-
   // From here this press will definitely do something — clear any earlier
   // pending skill-chase (a different press, still approaching its own
   // target) before this one decides whether it needs its own.
@@ -819,7 +826,7 @@ function useSkill(idx) {
   // below) — arm an approach instead, same idea as the existing basic-
   // attack chase (js/game.js's `_chaseArmed`/`player._chasing`). The
   // movement loop there re-runs this exact useSkill(idx) once close enough.
-  if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(effCls, sk.key, _advActive(sk.key))) {
+  if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(player.type, sk.key, _advActive(sk.key))) {
     const _rangeTgt = _lockedEnemy() || nearestEnemy();
     if (_rangeTgt) {
       const _castRange = (player.charDef.atkRange || 60) + SKILL_RANGE_SLACK + (_rangeTgt.size || 0);
@@ -834,15 +841,75 @@ function useSkill(idx) {
   skillFlash = { key: sk.key, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
 
-  // ── таймеры здесь только для панели ───────────────────────────────────
-  // Ниже у каждого бафа остаётся свой таймер: он рисует иконку и её обратный
-  // отсчёт. На БОЙ он больше не влияет — множители применяет сервер, в окне,
-  // которое открывает netSkillBuff (Room._atkOf/_defOf/_critChanceOf).
-  //
-  // Так было не всегда, и это была вся суть жалоб: recompute() пересобирала
-  // player.atk и player.def, панель показывала «574 защиты», а урон считал
-  // сервер по своим 319 — и моб бил ровно как раньше.
-  if (effCls === 'deathknight') {
+  _dispatchSkillEffect(player.type, sk);
+}
+
+// ── пятый слот: заимствованная способность ──────────────────────────────
+// Свой заголовок — свой кулдаун-ключ (FOREIGN_SKILL_KEY, а не sk.key своей
+// реальной пары), свой уровень/наличие (player.foreignSkill, а не player.
+// skillLevels/skillCooldowns[sk.key]) — но тот же _dispatchSkillEffect в
+// конце: с подставленным заимствованным классом способность делает РОВНО
+// то же, что делала бы у игрока этого класса, а не число из своей таблицы
+// под чужим именем. _foreignCastCtx — единственное, что при этом видят
+// _skillLvl/_advActive/_skillMult внутри диспетчера, и он снимается сразу
+// после синхронного вызова, до того как управление вернётся куда-либо ещё.
+function useForeignSkill() {
+  if (!player || state !== 'playing') return;
+  if ((player.stunTimer || 0) > 0) return;
+  if (typeof _dbFrozen === 'function' && _dbFrozen()) return;
+  const fs = player.foreignSkill;
+  if (!fs || !fs.cls || !fs.key) return;
+  const sk = (SKILL_DEF[fs.cls] || []).find(s => s.key === fs.key);
+  if (!sk) return;
+  if ((fs.level || 0) <= 0) {
+    dmgNum(player.x, player.y - 38, '🔒 Навык не изучен', '#f17e8b');
+    return;
+  }
+  if ((player.skillCooldowns[FOREIGN_SKILL_KEY] || 0) > 0) return;
+
+  player._skillChase = null;
+
+  // The fifth slot never has an advanced variant (migration 032) — `false`
+  // rather than _advActive(sk.key), which would read the player's OWN real
+  // slot's adv flags for the same bare letter.
+  if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(fs.cls, sk.key, false)) {
+    const _rangeTgt = _lockedEnemy() || nearestEnemy();
+    if (_rangeTgt) {
+      const _castRange = (player.charDef.atkRange || 60) + SKILL_RANGE_SLACK + (_rangeTgt.size || 0);
+      if (dist(_rangeTgt.x, _rangeTgt.y, player.x, player.y) > _castRange) {
+        player._skillChase = { foreign: true, targetId: _rangeTgt.id };
+        return;
+      }
+    }
+  }
+
+  player.skillCooldowns[FOREIGN_SKILL_KEY] = sk.cd * (1 - (player.cdrPct || 0));
+  skillFlash = { key: FOREIGN_SKILL_KEY, timer: 0.4 };
+  player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
+
+  _foreignCastCtx = { cls: fs.cls, key: sk.key };
+  try {
+    _dispatchSkillEffect(fs.cls, sk);
+  } finally {
+    _foreignCastCtx = null;
+  }
+}
+
+// ── таймеры здесь только для панели ───────────────────────────────────
+// Ниже у каждого бафа остаётся свой таймер: он рисует иконку и её обратный
+// отсчёт. На БОЙ он больше не влияет — множители применяет сервер, в окне,
+// которое открывает netSkillBuff (Room._atkOf/_defOf/_critChanceOf).
+//
+// Так было не всегда, и это была вся суть жалоб: recompute() пересобирала
+// player.atk и player.def, панель показывала «574 защиты», а урон считал
+// сервер по своим 319 — и моб бил ровно как раньше.
+//
+// `cls` — тот класс, чья механика должна сработать: player.type для
+// useSkill() выше, заимствованный класс для useForeignSkill(). Внутри этой
+// функции нет ни одной ссылки на player.type — только на cls и на sk.key —
+// именно поэтому один и тот же диспетчер годится для обоих вызовов.
+function _dispatchSkillEffect(cls, sk) {
+  if (cls === 'deathknight') {
     if (sk.key === 'Q') {
       // Таймер здесь остаётся только для иконки на панели навыков: лечит
       // окно на СЕРВЕРЕ, и открывает его netSkillHeal, а не эта строка.
@@ -915,7 +982,7 @@ function useSkill(idx) {
       if (_advR) dmgNum(player.x, player.y - 40, '🏹 Охота!', '#f5c542');
       spawnBurst(player.x, player.y, _advR ? '#f5c542' : '#a5f', 8);
     }
-  } else if (effCls === 'ranger') {
+  } else if (cls === 'ranger') {
     if (sk.key === 'Q') {
       if (_advActive('Q')) { // Град стрел — AOE ×3, radius 220
         spawnAOE(player.x, player.y, 220, 'pulse', '#8fbf5a');
@@ -990,16 +1057,15 @@ function useSkill(idx) {
       // for 5s (+1s per level); recompute() itself picks the multiplier off
       // _advActive('R'), so this cast is identical either way.
       atkSpeedTimer = 5 + _skillBuffSec('R');
-      const _advR2 = _advActive('R');
-      atkSpeedTimerMult = _advR2 ? 2 : 1.5;
       recompute();
       // Порог между принятыми ударами сервер считает от скорости атаки, а про
       // этот баф он узнаёт только отсюда — см. Room._attackMinGapMs.
       if (typeof netSkillHaste === 'function') netSkillHaste('R');
+      const _advR2 = _advActive('R');
       dmgNum(player.x, player.y - 40, _advR2 ? '⚡ Ускорение!' : '⚡ Скорость!', _advR2 ? '#f5c542' : '#ffd98a');
       spawnBurst(player.x, player.y, _advR2 ? '#f5c542' : '#ffd98a', 8);
     }
-  } else if (effCls === 'mage') {
+  } else if (cls === 'mage') {
     if (sk.key === 'Q') {
       const _advQ = _advActive('Q');
       const dir = nearestEnemyDir();
@@ -1073,7 +1139,7 @@ function useSkill(idx) {
         dmgNum(player.x, player.y - 50, 'Перенесение!', '#f5c542');
       }
     }
-  } else if (effCls === 'warlock') {
+  } else if (cls === 'warlock') {
     if (sk.key === 'Q') {
       if (_advActive('Q')) { // Бабочки — summon for 10s, healing 5% maxHP/sec (+1s per level)
         // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
@@ -1117,7 +1183,7 @@ function useSkill(idx) {
       const _advE3 = _advActive('E');
       faithShieldTimer = 4 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
-      if (_advE3) { atkSpeedTimer = 4 + _skillBuffSec('E'); atkSpeedTimerMult = 2; }
+      if (_advE3) atkSpeedTimer = 4 + _skillBuffSec('E');
       recompute();
       // См. комментарий у «Ускорения» лучника выше.
       if (_advE3 && typeof netSkillHaste === 'function') netSkillHaste('E');
@@ -1136,7 +1202,7 @@ function useSkill(idx) {
       spawnBurst(player.x, player.y, _advR4 ? '#f5c542' : '#a855e0', 14);
       if (typeof netSkillHeal === 'function') netSkillHeal('R');
     }
-  } else if (effCls === 'lev') {
+  } else if (cls === 'lev') {
     if (sk.key === 'Q') { // Пинок / Молот гнева — single target, base ×2 + 3s
       // stun, advanced ×3 + 5s stun (+1s per level either way).
       const _advQ2 = _advActive('Q');
@@ -1207,13 +1273,13 @@ function useSkill(idx) {
       }
       spawnBurst(player.x, player.y, _advR5 ? '#f5c542' : '#e8e0cc', 8);
     }
-  } else if (effCls === 'runefighter') {
+  } else if (cls === 'runefighter') {
     if (sk.key === 'Q') { // Сильный удар / Удар в череп — N hits in a row on
       // the nearest/PvP target. Cooldown improves -1s/level (base only, per
       // the skill's own description) — the generic assignment at the top of
       // useSkill() doesn't know that, so it's overridden here.
       const _advQ5 = _advActive('Q');
-      if (!_advQ5) player.skillCooldowns.Q = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
+      if (!_advQ5) player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
       const hits = _advQ5 ? 5 : 3;
       const dmgMult = _skillMult('Q');
       const pvpTgt = _pvpPlayerTarget();
@@ -1238,7 +1304,7 @@ function useSkill(idx) {
     } else if (sk.key === 'W') { // Встряска / Сокрушение — AOE; base cooldown
       // improves -1s/level.
       const _advW5 = _advActive('W');
-      if (!_advW5) player.skillCooldowns.W = Math.max(6, sk.cd - _skillLvl('W')) * (1 - (player.cdrPct || 0));
+      if (!_advW5) player.skillCooldowns[_cooldownKeyFor('W')] = Math.max(6, sk.cd - _skillLvl('W')) * (1 - (player.cdrPct || 0));
       const r = _advW5 ? 220 : 150;
       spawnAOE(player.x, player.y, r, 'shockwave', '#c98a4a');
       _skillAOEMult(r, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r, 'shockwave', '#c98a4a');
@@ -1291,14 +1357,14 @@ function useSkill(idx) {
         dmgNum(player.x, player.y - 40, '❄ Замедление!', '#c98a4a');
       }
     }
-  } else if (effCls === 'assassin') {
+  } else if (cls === 'assassin') {
     if (sk.key === 'Q') { // Шепот смерти / Смертоносность — single-target
       // hit; adv ignores 50% of the target's defense (SKILL_DEF_IGNORE,
       // shared/definitions.js — applied server-side in the damage formula
       // itself, nothing to send here beyond the slot). Base cooldown
       // improves -1s/level.
       const _advQ6 = _advActive('Q');
-      if (!_advQ6) player.skillCooldowns.Q = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
+      if (!_advQ6) player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
       const dmgMult2 = _skillMult('Q');
       const pvpTgt3 = _pvpPlayerTarget();
       if (pvpTgt3) {
@@ -1328,7 +1394,7 @@ function useSkill(idx) {
       // +50% crit chance and +50% crit power, both 5s (+1s/level). Base
       // cooldown improves -1s/level.
       const _advE6 = _advActive('E');
-      if (!_advE6) player.skillCooldowns.E = Math.max(20, sk.cd - _skillLvl('E')) * (1 - (player.cdrPct || 0));
+      if (!_advE6) player.skillCooldowns[_cooldownKeyFor('E')] = Math.max(20, sk.cd - _skillLvl('E')) * (1 - (player.cdrPct || 0));
       if (_advE6) killerTimer = 5 + _skillBuffSec('E'); else pierceTimer = 5 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
       recompute();
@@ -1338,7 +1404,7 @@ function useSkill(idx) {
       // base cooldown improves -1s/level / Прыжок за спину — leap behind the
       // target, ×2 dmg + heal 30% of own HP on arrival.
       const _advR7 = _advActive('R');
-      if (!_advR7) player.skillCooldowns.R = Math.max(10, sk.cd - _skillLvl('R')) * (1 - (player.cdrPct || 0));
+      if (!_advR7) player.skillCooldowns[_cooldownKeyFor('R')] = Math.max(10, sk.cd - _skillLvl('R')) * (1 - (player.cdrPct || 0));
       if (_advR7) {
         const pvpTgt4 = _pvpPlayerTarget();
         let _rdx3, _rdy3, _chargeTarget3 = null, _chargePvpTarget3 = null;
@@ -1517,9 +1583,11 @@ function restoreFromSave(data) {
   // other loadout choice — see _activeSkillDef, js/player.js.
   player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...(data.advSkillLearned || {}) };
   player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...(data.advSkillActive || {}) };
-  // Q/W/E/R -> borrowed class, only present for a slot learnForeignSkill
-  // moved off the player's own — see effSkillClass, shared/definitions.js.
-  player.skillClass = { ...(data.skillClass || {}) };
+  // The fifth, independent slot (learnForeignSkill) — null when nothing has
+  // been learned into it. See FOREIGN_SKILL_KEY, shared/definitions.js.
+  player.foreignSkill = data.foreignSkill || null;
+  if (!player.skillCooldowns) player.skillCooldowns = { Q:0, W:0, E:0, R:0 };
+  if (player.skillCooldowns[FOREIGN_SKILL_KEY] == null) player.skillCooldowns[FOREIGN_SKILL_KEY] = 0;
   // Server corrects this via codexSync moments after connect
   // (registerCodexSetItem is the only path that ever changes it), same as
   // skillLevels/passiveLevels above — restoring it here just avoids a stat

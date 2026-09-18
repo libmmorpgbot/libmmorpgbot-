@@ -1,0 +1,14 @@
+-- ── skill_kind_t — a fifth kind of row: the borrowed slot ───────────────────
+--
+-- 'foreign' joins 'skill'/'passive'/'adv_learned'/'adv_active' as a row kind
+-- in player_skills. It is the legendary-rune-reroll jackpot's skill book
+-- (RUNE_REROLL_BONUS_SKILL_CHANCE, shared/definitions.js), learned into its
+-- OWN independent slot rather than overwriting one of the player's real
+-- Q/W/E/R — see 032_foreign_skill_slot.sql for the column that names which
+-- class it actually belongs to.
+--
+-- ADD VALUE cannot be used in the same transaction that adds it (a Postgres
+-- rule, not a choice made here — see 027_add_classes.sql for the same note) —
+-- this file only adds the value and never references it, so migrate.sh's
+-- one-transaction-per-file run is safe.
+ALTER TYPE skill_kind_t ADD VALUE IF NOT EXISTS 'foreign';

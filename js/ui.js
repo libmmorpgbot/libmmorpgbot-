@@ -421,7 +421,7 @@ function openAutoSkillsPicker() {
     // The variant actually in play — an advanced skill can be auto-castable
     // where its base version isn't (or the other way round), and this has to
     // agree with what _autoCastSkills (js/game.js) will really do.
-    const sk = (typeof _activeSkillDefForSlot === 'function') ? _activeSkillDefForSlot(i) : base;
+    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : base;
     if (!sk) return '';
     const learned = _skillLvl(sk.key) > 0;
     const neverAuto = sk.auto === false;
@@ -1242,11 +1242,8 @@ function _professionHasReady() {
   if (!skills) return false;
   const sl = player.skillLevels || {};
   const al = player.advSkillLearned || {};
-  return skills.some(sk => {
-    const cls = (typeof _effSkillClass === 'function') ? _effSkillClass(sk.key) : player.type;
-    return (sl[sk.key] || 0) >= 10 && !al[sk.key] &&
-      countMaterial(_advSkillBookId(cls, sk.key)) >= ADV_SKILL_STUDY_COST;
-  });
+  return skills.some(sk => (sl[sk.key] || 0) >= 10 && !al[sk.key] &&
+    countMaterial(_advSkillBookId(player.type, sk.key)) >= ADV_SKILL_STUDY_COST);
 }
 
 function updateSkillsUI() {
@@ -1275,30 +1272,13 @@ function updateSkillsUI() {
       const level = sl[sk.key] || 0;
       const locked = level <= 0;
       const maxed = level >= 10;
-      // Which class's ability actually sits in this slot — own, unless a
-      // legendary-rune-reroll jackpot book (learnForeignSkill) moved it onto
-      // a borrowed one. Every lookup below (name/desc/icon, bonus type, which
-      // book to charge) reads THIS instead of player.type, so the card shows
-      // and costs what's really there. See _effSkillClass, js/player.js.
-      const effCls = (typeof _effSkillClass === 'function') ? _effSkillClass(sk.key) : player.type;
-      const borrowed = effCls !== player.type;
-      const dispSk = borrowed ? ((SKILL_DEF[effCls] || []).find(s => s.key === sk.key) || sk) : sk;
-      const bonusType = ((SKILL_BONUS_TYPE || {})[effCls] || {})[sk.key] || 'damage';
-      const mobilityMult = (effCls === 'mage' && sk.key === 'R') ? 2 : 1;
+      const bonusType = bonusTypes[sk.key] || 'damage';
+      const mobilityMult = (player.type === 'mage' && sk.key === 'R') ? 2 : 1;
       const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level, mobilityMult);
       const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1, mobilityMult);
-      const bookId = _skillBookId(effCls, sk.key);
-      const bookName = (_skillBookDef(effCls, sk.key) || {}).name || t('skillBookFallback');
+      const bookId = _skillBookId(player.type, sk.key);
+      const bookName = (_skillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
       const bookCount = countMaterial(bookId);
-      // ── заимствованная способность: доступные чужие книги ───────────────
-      // Любая ДРУГАЯ книга этого же ключа, что реально лежит в сумке —
-      // джекпот переработки легендарной руны кладёт её как обычный предмет,
-      // без выбора слота заранее. Список, а не одна: в принципе можно
-      // накопить книги нескольких классов на один ключ.
-      const foreignBooks = (typeof PLAYABLE_CLASSES !== 'undefined' ? PLAYABLE_CLASSES : [])
-        .filter(cls => cls !== effCls)
-        .map(cls => ({ cls, name: (_skillBookDef(cls, sk.key) || {}).name, qty: countMaterial(_skillBookId(cls, sk.key)) }))
-        .filter(b => b.qty > 0);
 
       const dots = Array.from({ length: 10 }, (_, i) =>
         `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
@@ -1306,10 +1286,9 @@ function updateSkillsUI() {
 
       // Book-framed icon — the skill's own icon/art nested inside the book
       // glyph, so each skill's book is visually identifiable at a glance.
-      // dispSk, not sk: a borrowed slot shows the ability actually running.
-      const skillGlyph = dispSk.img
-        ? `<img src="${dispSk.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
-        : iconHTML(dispSk.icon, 15, locked ? '#645f57' : '#e3941d');
+      const skillGlyph = sk.img
+        ? `<img src="${sk.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
+        : iconHTML(sk.icon, 15, locked ? '#645f57' : '#e3941d');
       const iconEl = `<div style="position:relative;width:26px;height:26px;opacity:${locked ? 0.4 : 1}">
         ${iconHTML('book', 26, locked ? '#645f57' : '#c48a3a')}
         <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${skillGlyph}</div>
@@ -1336,14 +1315,12 @@ function updateSkillsUI() {
       // learned, advActive is a free toggle — see toggleAdvSkill below.
       let advHtml = '';
       if (maxed) {
-        // effCls, not player.type — a borrowed slot's "second profession" is
-        // the borrowed class's own advanced version of THIS ability.
-        const adv = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[effCls]) || []).find(a => a.key === sk.key);
+        const adv = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || []).find(a => a.key === sk.key);
         if (adv) {
           const advLearned = !!(player.advSkillLearned || {})[sk.key];
           const advActive  = !!(player.advSkillActive  || {})[sk.key];
-          const advBookId  = _advSkillBookId(effCls, sk.key);
-          const advBookName = (_advSkillBookDef(effCls, sk.key) || {}).name || t('skillBookFallback');
+          const advBookId  = _advSkillBookId(player.type, sk.key);
+          const advBookName = (_advSkillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
           const advBookCount = countMaterial(advBookId);
           const advGlyph = adv.img
             ? `<img src="${adv.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
@@ -1380,18 +1357,6 @@ function updateSkillsUI() {
         }
       }
 
-      // Foreign books currently in the bag for this key — offered whatever
-      // the slot's own state (locked, own-leveled, or already borrowed from
-      // a THIRD class): each is its own reslot, so every one gets its own
-      // button and its own confirm.
-      const foreignHtml = foreignBooks.length ? `<div class="sk-foreign-row">
-        <div class="sk-foreign-hdr">${iconHTML('star', 11, '#c084fc')} ${t('foreignSkillAvailableHdr')}</div>
-        ${foreignBooks.map(b => `<button class="skill-upg-btn foreign-btn" onclick="_confirmLearnForeignSkill('${sk.key}','${b.cls}','${(b.name || '').replace(/'/g, "\\'")}')">${tVars('learnForeignBtnFmt', { name: `${b.name} ×${b.qty}` })}</button>`).join('')}
-      </div>` : '';
-      const revertHtml = borrowed
-        ? `<button class="skill-upg-btn revert-btn" onclick="_confirmLearnForeignSkill('${sk.key}','${player.type}','${(_skillBookDef(player.type, sk.key) || {}).name || ''}')">${t('revertSkillBtn')}</button>`
-        : '';
-
       return `<div class="skill-upg-card">
         <div class="skill-upg-top">
           <div class="skill-upg-icon" style="position:relative">
@@ -1399,8 +1364,8 @@ function updateSkillsUI() {
             ${locked ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
           </div>
           <div class="skill-upg-info">
-            <div class="skill-upg-name">${dispSk.name}${borrowed ? `<span class="sk-borrowed-badge">${t('borrowedSkillBadge')}</span>` : ''}<span class="skill-upg-lvl">${locked ? ' 🔒 ' + t('notStudiedLbl') : maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
-            <div class="skill-upg-desc">${dispSk.desc}</div>
+            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${locked ? ' 🔒 ' + t('notStudiedLbl') : maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
+            <div class="skill-upg-desc">${sk.desc}</div>
             <div class="skill-upg-type">${locked ? bookName : _skillBonusTypeLabel(bonusType)}</div>
           </div>
         </div>
@@ -1410,12 +1375,122 @@ function updateSkillsUI() {
           ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
         </div>` : ''}
         <button class="skill-upg-btn${btnDisabled ? ' disabled' : ''}" onclick="${btnAction}">${btnLabel}</button>
-        ${revertHtml}
-        ${foreignHtml}
         ${advHtml}
       </div>`;
     }).join('')}
+    ${_foreignSkillCardHtml()}
   `;
+}
+
+// ── пятый слот: заимствованная способность ──────────────────────────────
+// Джекпот переработки легендарной руны (RUNE_REROLL_BONUS_SKILL_CHANCE,
+// shared/definitions.js, 3%) кладёт в сумку книгу активного навыка ЛЮБОГО
+// класса — обычным предметом, без выбора слота заранее. Эта карточка живёт
+// ОТДЕЛЬНО от четырёх обычных выше: свой уровень (player.foreignSkill),
+// свой кулдаун (FOREIGN_SKILL_KEY) — учить её никогда не трогает Q/W/E/R.
+//
+// Ничего не рисуется вовсе, пока нет ни изученной способности, ни книги в
+// сумке: карточка появляется только когда действительно есть что показать.
+function _foreignSkillBooksHeld() {
+  const out = [];
+  (typeof PLAYABLE_CLASSES !== 'undefined' ? PLAYABLE_CLASSES : []).forEach(cls => {
+    ['Q', 'W', 'E', 'R'].forEach(key => {
+      const id = _skillBookId(cls, key);
+      const qty = countMaterial(id);
+      if (qty > 0) out.push({ cls, key, id, qty, name: (_skillBookDef(cls, key) || {}).name || t('skillBookFallback') });
+    });
+  });
+  return out;
+}
+
+function _foreignSkillCardHtml() {
+  if (!player) return '';
+  const fs = player.foreignSkill;
+  const heldBooks = _foreignSkillBooksHeld();
+  if (!fs && !heldBooks.length) return '';
+
+  let bodyHtml;
+  if (fs) {
+    const skDef = (SKILL_DEF[fs.cls] || []).find(s => s.key === fs.key) || {};
+    const level = fs.level || 0;
+    const maxed = level >= 10;
+    const bonusType = ((SKILL_BONUS_TYPE || {})[fs.cls] || {})[fs.key] || 'damage';
+    const mobilityMult = (fs.cls === 'mage' && fs.key === 'R') ? 2 : 1;
+    const bonusNow  = _skillBonusDesc(bonusType, level, mobilityMult);
+    const bonusNext = maxed ? null : _skillBonusDesc(bonusType, level + 1, mobilityMult);
+    const bookCount = countMaterial(_skillBookId(fs.cls, fs.key));
+    const dots = Array.from({ length: 10 }, (_, i) =>
+      `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
+    ).join('');
+    const skillGlyph = skDef.img
+      ? `<img src="${skDef.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
+      : iconHTML(skDef.icon, 15, '#c084fc');
+    const iconEl = `<div style="position:relative;width:26px;height:26px">
+      ${iconHTML('book', 26, '#c084fc')}
+      <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${skillGlyph}</div>
+    </div>`;
+    const btnHtml = maxed
+      ? `<button class="skill-upg-btn disabled">${t('maxLbl')}</button>`
+      : `<button class="skill-upg-btn foreign-btn${bookCount < SKILL_UPGRADE_COST ? ' disabled' : ''}" onclick="upgradeForeignSkillWithBook()">${iconHTML('book', 12, '#1a1024')} ${SKILL_UPGRADE_COST} · ${tVars('upgradeBtnFmt', { pct: Math.round(SKILL_UPGRADE_CHANCE * 100), n: bookCount })}</button>`;
+    bodyHtml = `
+      <div class="skill-upg-top">
+        <div class="skill-upg-icon" style="position:relative">${iconEl}</div>
+        <div class="skill-upg-info">
+          <div class="skill-upg-name">${skDef.name || ''}<span class="skill-upg-lvl">${maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
+          <div class="skill-upg-desc">${skDef.desc || ''}</div>
+          <div class="skill-upg-type">${_skillBonusTypeLabel(bonusType)}</div>
+        </div>
+      </div>
+      <div class="sk-dots">${dots}</div>
+      <div class="sk-bonus-row">
+        ${bonusNow ? `<span class="sk-bonus-now">${bonusNow}</span>` : ''}
+        ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
+      </div>
+      ${btnHtml}
+    `;
+  } else {
+    bodyHtml = '';
+  }
+
+  // Any OTHER book currently held — offered whether or not a foreign skill
+  // is already active; learning it is always its own choice, never
+  // automatic, since it replaces whatever the fifth slot currently holds.
+  const otherBooks = heldBooks.filter(b => !fs || b.cls !== fs.cls || b.key !== fs.key);
+  const booksHtml = otherBooks.length ? `<div class="sk-foreign-row">
+    <div class="sk-foreign-hdr">${iconHTML('star', 11, '#c084fc')} ${t(fs ? 'foreignSkillReplaceHdr' : 'foreignSkillAvailableHdr')}</div>
+    ${otherBooks.map(b => `<button class="skill-upg-btn foreign-btn" onclick="_confirmLearnForeignSkill('${b.cls}','${b.key}','${(b.name || '').replace(/'/g, "\\'")}')">${tVars('learnForeignBtnFmt', { name: `${b.name} ×${b.qty}` })}</button>`).join('')}
+  </div>` : '';
+
+  return `<div class="skill-upg-card foreign-skill-card">
+    <div class="skill-upg-header" style="border-bottom:none;padding:0 0 6px;margin-bottom:2px">
+      <span style="color:#c084fc">${iconHTML('star', 12, '#c084fc')} ${t('foreignSkillHdr')}</span>
+    </div>
+    ${bodyHtml}
+    ${booksHtml}
+  </div>`;
+}
+
+// bookName is passed through for the confirm text and the toast — not
+// re-derived from bookClass/bookKey — so what the player reads matches the
+// exact book the button they tapped named.
+function _confirmLearnForeignSkill(bookClass, bookKey, bookName) {
+  if (!player) return;
+  const replace = (player.foreignSkill && (player.foreignSkill.cls !== bookClass || player.foreignSkill.key !== bookKey))
+    ? t('learnForeignSkillReplaceNote') : '';
+  const msg = tVars('learnForeignSkillConfirmFmt', { name: bookName || t('skillBookFallback'), replace });
+  if (!confirm(msg)) return;
+  netLearnForeignSkill(bookClass, bookKey);
+}
+
+function upgradeForeignSkillWithBook() {
+  if (!player || !player.foreignSkill) return;
+  const fs = player.foreignSkill;
+  if ((fs.level || 0) >= SKILL_MAX_LEVEL) return;
+  if (countMaterial(_skillBookId(fs.cls, fs.key)) < SKILL_UPGRADE_COST) {
+    dmgNum(player.x, player.y - 30, tVars('needNSkillBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
+    return;
+  }
+  netUpgradeForeignSkill();
 }
 
 // ── Learning and upgrading ──────────────────────────────────────────────────
@@ -1451,28 +1526,11 @@ function upgradeSkillWithBook(key) {
   const lvl = sl[key] || 0;
   if (lvl <= 0) { dmgNum(player.x, player.y - 30, t('studySkillFirstToast'), '#f17e8b'); return; }
   if (lvl >= SKILL_MAX_LEVEL) return;
-  // A borrowed slot upgrades with the BORROWED class's book — see
-  // learnForeignSkill/_effSkillClass.
-  const cls = (typeof _effSkillClass === 'function') ? _effSkillClass(key) : player.type;
-  if (countMaterial(_skillBookId(cls, key)) < SKILL_UPGRADE_COST) {
+  if (countMaterial(_skillBookId(player.type, key)) < SKILL_UPGRADE_COST) {
     dmgNum(player.x, player.y - 30, tVars('needNSkillBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
     return;
   }
   netUpgradeSkill(key);
-}
-
-// ── заимствованная способность ──────────────────────────────────────────
-// bookClass equal to the player's own class is the revert path — same
-// event, same reslot, just back to what charClass already means. Either
-// way this is destructive (resets the slot to level 1, drops its second
-// profession), hence the confirm — same pattern as itemDisassemble/
-// season2BurnBook above.
-function _confirmLearnForeignSkill(key, bookClass, bookName) {
-  if (!player) return;
-  const own = bookClass === player.type;
-  const msg = tVars(own ? 'revertSkillConfirmFmt' : 'learnForeignSkillConfirmFmt', { key, name: bookName || t('skillBookFallback') });
-  if (!confirm(msg)) return;
-  netLearnForeignSkill(key, bookClass);
 }
 
 // ── Advanced skills ("вторая профессия") ─────────────────────────────────
@@ -1481,9 +1539,7 @@ function learnAdvSkill(key) {
   const sl = player.skillLevels || {};
   if ((sl[key] || 0) < SKILL_MAX_LEVEL) return;   // this slot isn't maxed yet
   if ((player.advSkillLearned || {})[key]) return;
-  // A borrowed slot's second profession belongs to the borrowed class.
-  const cls = (typeof _effSkillClass === 'function') ? _effSkillClass(key) : player.type;
-  if (countMaterial(_advSkillBookId(cls, key)) < ADV_SKILL_STUDY_COST) {
+  if (countMaterial(_advSkillBookId(player.type, key)) < ADV_SKILL_STUDY_COST) {
     dmgNum(player.x, player.y - 30, t('needAdvSkillBookToast'), '#f17e8b');
     return;
   }
@@ -1534,37 +1590,28 @@ function renderProfessionPanel() {
   if (!body || !player) return;
   const skills = SKILL_DEF[player.type];
   if (!skills) { body.innerHTML = ''; return; }
+  const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || [];
+  const cc = _FARM_ADV_BOOK_CLASS_COLOR[player.type] || '#cdb8ec';
   const sl = player.skillLevels || {};
   const al = player.advSkillLearned || {};
   const aa = player.advSkillActive || {};
   const cls = (typeof CHAR_DEF !== 'undefined' ? CHAR_DEF[player.type] : null) || {};
-  // The BANNER is the character's own class regardless of any borrowed slot
-  // below — each card computes its own (possibly different) accent colour.
-  const cc = _FARM_ADV_BOOK_CLASS_COLOR[player.type] || '#cdb8ec';
 
   const cards = skills.map(sk => {
-    // Borrowed slot (legendary-rune-reroll jackpot, learnForeignSkill) —
-    // this panel shows and costs the ability actually in play, not the
-    // player's own class's version of this key. See _effSkillClass,
-    // js/player.js, and updateSkillsUI above for the same split.
-    const effCls = (typeof _effSkillClass === 'function') ? _effSkillClass(sk.key) : player.type;
-    const dispSk = effCls !== player.type ? ((SKILL_DEF[effCls] || []).find(s => s.key === sk.key) || sk) : sk;
-    const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[effCls]) || [];
-    const cc = _FARM_ADV_BOOK_CLASS_COLOR[effCls] || '#cdb8ec';
     const level = sl[sk.key] || 0;
     const maxed = level >= 10;
     const adv = advSkills.find(a => a.key === sk.key);
     const learned = !!al[sk.key];
     const active = !!aa[sk.key];
-    const advBookCount = countMaterial(_advSkillBookId(effCls, sk.key));
+    const advBookCount = countMaterial(_advSkillBookId(player.type, sk.key));
 
     // 0 = slot not maxed yet, 1 = maxed but missing books, 2 = maxed & ready
     // to learn, 3 = learned (free toggle from here on).
     const stage = !maxed ? 0 : learned ? 3 : (advBookCount >= ADV_SKILL_STUDY_COST ? 2 : 1);
 
-    const baseGlyph = dispSk.img
-      ? `<img src="${dispSk.img}" class="profp-icon-img" alt="">`
-      : iconHTML(dispSk.icon, 22, '#e3941d');
+    const baseGlyph = sk.img
+      ? `<img src="${sk.img}" class="profp-icon-img" alt="">`
+      : iconHTML(sk.icon, 22, '#e3941d');
     const advGlyph = adv
       ? (adv.img ? `<img src="${adv.img}" class="profp-icon-img" alt="">` : iconHTML(adv.icon, 22, cc))
       : '';
@@ -1578,7 +1625,7 @@ function renderProfessionPanel() {
       stateHtml = `<button class="profp-learn-btn" onclick="learnAdvSkill('${sk.key}')">${iconHTML('star', 12, '#150f08')} ${t('profpLearnBtn')}</button>`;
     } else {
       stateHtml = `<div class="profp-toggle" onclick="toggleAdvSkill('${sk.key}')">
-        <span class="profp-toggle-opt${!active ? ' on' : ''}">${dispSk.name}</span>
+        <span class="profp-toggle-opt${!active ? ' on' : ''}">${sk.name}</span>
         <span class="profp-toggle-switch${active ? ' adv' : ''}" style="--cc:${cc}"><span class="profp-toggle-knob"></span></span>
         <span class="profp-toggle-opt${active ? ' on' : ''}" style="--cc:${cc}">${adv ? adv.name : ''}</span>
       </div>`;
@@ -1590,7 +1637,7 @@ function renderProfessionPanel() {
         <div class="profp-flow">
           <div class="profp-node">
             <div class="profp-node-icon">${baseGlyph}</div>
-            <div class="profp-node-name">${dispSk.name}</div>
+            <div class="profp-node-name">${sk.name}</div>
             <div class="profp-bar"><div class="profp-bar-fill" style="width:${Math.min(100, level * 10)}%"></div></div>
           </div>
           <div class="profp-connector">
@@ -1603,7 +1650,7 @@ function renderProfessionPanel() {
         </div>
         <div class="profp-descs">
           <div class="profp-desc-row${stage === 3 && active ? ' dim' : ''}">
-            <span class="profp-desc-tag">${t('profpNowLbl')}</span>${dispSk.desc}
+            <span class="profp-desc-tag">${t('profpNowLbl')}</span>${sk.desc}
           </div>
           ${adv ? `<div class="profp-desc-row${stage === 3 && active ? ' lit' : ''}" style="--cc:${cc}">
             <span class="profp-desc-tag">${t('profpWillBeLbl')}</span>${adv.desc}
@@ -3485,6 +3532,13 @@ const FAN_TRAY_IN = hud(60), FAN_TRAY_OUT = hud(126);   // skill tray
 // tray is meant to read: as a wheel the screen corner cuts into.
 const FAN_TRAY_A0 = -44, FAN_TRAY_A1 = -210;
 const FAN_COLLAR_IN = hud(46), FAN_COLLAR_OUT = hud(57);
+// How many seats the tray currently has to hold — four, or five once the
+// fifth, independent slot (learnForeignSkill, js/player.js) has an ability
+// in it. Formula reproduces the FAN_TRAY_A1 constant above exactly at
+// seatCount=4 (same ~25° buffer past the last seat as at the near end), so
+// the tray is pixel-identical to before for every player without one.
+function _fanSeatCount() { return (player && player.foreignSkill) ? 5 : 4; }
+function _fanTrayA1(seatCount) { return FAN_A_SKILL + FAN_A_STEP * (seatCount - 1) - 25; }
 
 // Annular sector from a0° to a1°, swept counter-clockwise (a1 < a0)
 function _fanSector(c, rIn, rOut, a0, a1) {
@@ -3509,15 +3563,19 @@ function drawActionFan() {
   ctx.save();
   ctx.beginPath(); ctx.rect(0, 0, W, H - NAV_H); ctx.clip();
 
-  _fanSector(c, FAN_TRAY_IN, FAN_TRAY_OUT, FAN_TRAY_A0, FAN_TRAY_A1);
+  const seatCount = _fanSeatCount();
+  const trayA1 = _fanTrayA1(seatCount);
+
+  _fanSector(c, FAN_TRAY_IN, FAN_TRAY_OUT, FAN_TRAY_A0, trayA1);
   ctx.fillStyle = _uiBtnGrads.fanBg; ctx.fill();
   ctx.strokeStyle = 'rgba(203,161,89,0.34)'; ctx.lineWidth = 1.5; ctx.stroke();
 
-  // A hairline between each pair of seats, so the tray reads as four slots
-  // rather than one band — and a gem on the rim above each one.
-  const rims = [FAN_TRAY_A0, FAN_TRAY_A1];
+  // A hairline between each pair of seats, so the tray reads as four (or,
+  // fifth slot active, five) slots rather than one band — and a gem on the
+  // rim above each one.
+  const rims = [FAN_TRAY_A0, trayA1];
   ctx.strokeStyle = 'rgba(203,161,89,0.16)'; ctx.lineWidth = 1;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < seatCount - 1; i++) {
     const deg = (fanSkillAngle(i) + fanSkillAngle(i + 1)) / 2;
     rims.push(deg);
     const a = deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
@@ -3527,7 +3585,7 @@ function drawActionFan() {
     ctx.stroke();
   }
 
-  _fanSector(c, FAN_COLLAR_IN, FAN_COLLAR_OUT, FAN_TRAY_A0 + 6, FAN_TRAY_A1 - 6);
+  _fanSector(c, FAN_COLLAR_IN, FAN_COLLAR_OUT, FAN_TRAY_A0 + 6, trayA1 - 6);
   ctx.fillStyle = _uiBtnGrads.fanCollar; ctx.fill();
   ctx.strokeStyle = 'rgba(203,161,89,0.30)'; ctx.lineWidth = 1; ctx.stroke();
 
@@ -3545,11 +3603,15 @@ function drawActionFan() {
 // ─────────────────────────────────────────────────────────
 //  SKILL BUTTONS (on the fan's arc — getSkillBtnPos, js/input.js)
 // ─────────────────────────────────────────────────────────
-// Gradient cache: 4 buttons × 3 states (flash / ready / cooldown)
+// Gradient cache: 5 seats (the 4 real slots plus the fifth, independent
+// one — index 4, only ever drawn once player.foreignSkill is set) × 3
+// states (flash / ready / cooldown). Always built for all 5 regardless of
+// whether the fifth is in use today — cheap, and means learning a jackpot
+// skill mid-session needs no cache-busting hook of its own.
 // Invalidated on resize via _skillBtnGradCache = null in game.js
 let _skillBtnGradCache = null;
 function _buildSkillBtnGrads() {
-  _skillBtnGradCache = Array.from({ length: 4 }, (_, i) => {
+  _skillBtnGradCache = Array.from({ length: 5 }, (_, i) => {
     const b = getSkillBtnPos(i);
     const flash = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
     flash.addColorStop(0, 'rgba(31,53,83,0.97)'); flash.addColorStop(1, 'rgba(16,28,43,0.99)');
@@ -3568,17 +3630,36 @@ function drawSkillButtons() {
   if (!skills) return;
   if (!_skillBtnGradCache) _buildSkillBtnGrads();
 
-  for (let i = 0; i < 4; i++) {
+  // The four real slots, plus — once learned — the fifth, independent one
+  // (learnForeignSkill, js/player.js): its own icon/cd (from the borrowed
+  // ability's own definition, not player.type's), its own cooldown key
+  // (FOREIGN_SKILL_KEY, never one of Q/W/E/R), locked by its OWN level
+  // (player.foreignSkill.level), never player.skillLevels.
+  const fs = player.foreignSkill;
+  const seats = [0, 1, 2, 3].map(i => ({
     // Resolved to whichever version (base/advanced) is active — key/cd/level
     // are identical either way (see _activeSkillDef, js/player.js), only the
     // icon/art shown here differs.
-    const sk = (typeof _activeSkillDefForSlot === 'function') ? _activeSkillDefForSlot(i) : skills[i];
+    sk: (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : skills[i],
+    cooldownKey: null, // resolved from sk.key below — real slots only
+  }));
+  if (fs) {
+    seats.push({
+      sk: (SKILL_DEF[fs.cls] || []).find(s => s.key === fs.key) || { key: FOREIGN_SKILL_KEY, cd: 0 },
+      cooldownKey: FOREIGN_SKILL_KEY,
+      locked: (fs.level || 0) <= 0,
+    });
+  }
+
+  for (let i = 0; i < seats.length; i++) {
+    const { sk, locked: seatLocked } = seats[i];
+    const cooldownKey = seats[i].cooldownKey || sk.key;
     const grads = _skillBtnGradCache[i];
     const b = grads; // positions cached inside grads
-    const locked = ((player.skillLevels || {})[sk.key] || 0) <= 0;
-    const cd = player.skillCooldowns[sk.key] || 0;
+    const locked = seatLocked != null ? seatLocked : ((player.skillLevels || {})[sk.key] || 0) <= 0;
+    const cd = player.skillCooldowns[cooldownKey] || 0;
     const ready = !locked && cd <= 0;
-    const isFlash = skillFlash && skillFlash.key === sk.key && skillFlash.timer > 0;
+    const isFlash = skillFlash && skillFlash.key === cooldownKey && skillFlash.timer > 0;
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const r = b.w / 2;
 

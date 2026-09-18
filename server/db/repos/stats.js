@@ -116,22 +116,22 @@ const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
   /,\n               -- Руны[\s\S]*?'\[\]'::json\)\)\)/,
   '))');
 
-// ── заимствованная способность ("любого класса") ───────────────────────────
-// Q/W/E/R -> класс, чья способность реально стоит в этом слоте — только для
-// слотов, которые learnForeignSkill сдвинул с класса игрока (миграция 031).
-// Спаяно в тот же round trip, что skill_levels/adv_learned/adv_active чуть
-// выше — по той же причине: это едет к Room.setPlayerStats, и Room решает по
-// нему, чья механика боя реально сработает (_effClassFor).
-const _SKILL_CLASS_FRAGMENT = `
-    COALESCE((
-      SELECT json_object_agg(s.key, s.class_override)
+// ── пятый слот: заимствованная способность ──────────────────────────────────
+// One row at most (kind='foreign', migration 032) — its own key (that
+// class's Q/W/E/R), level and which class it belongs to, all three needed
+// by Room.setPlayerStats to resolve a cast in the fifth slot exactly like
+// skill_levels/adv_learned/adv_active above resolve the real four.
+const _FOREIGN_SKILL_FRAGMENT = `
+    (
+      SELECT json_build_object('key', s.key, 'level', s.level, 'cls', s.foreign_class)
         FROM player_skills s
-       WHERE s.player_id = pr.player_id AND s.kind = 'skill' AND s.class_override IS NOT NULL
-    ), '{}'::json) AS skill_class,`;
-const LOAD_SQL_WITH_CLASS = LOAD_SQL.replace(
-  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_SKILL_CLASS_FRAGMENT}`);
-const LOAD_SQL_NO_RUNES_WITH_CLASS = LOAD_SQL_NO_RUNES.replace(
-  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_SKILL_CLASS_FRAGMENT}`);
+       WHERE s.player_id = pr.player_id AND s.kind = 'foreign'
+       LIMIT 1
+    ) AS foreign_skill,`;
+const LOAD_SQL_WITH_FOREIGN = LOAD_SQL.replace(
+  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_FOREIGN_SKILL_FRAGMENT}`);
+const LOAD_SQL_NO_RUNES_WITH_FOREIGN = LOAD_SQL_NO_RUNES.replace(
+  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_FOREIGN_SKILL_FRAGMENT}`);
 
 // Спрашивается ОБЩЕЙ функцией (db/index.js hasColumn), а не своей копией.
 // Копия здесь и стояла — и запоминала «нет» навсегда, из-за чего процесс,
@@ -139,16 +139,16 @@ const LOAD_SQL_NO_RUNES_WITH_CLASS = LOAD_SQL_NO_RUNES.replace(
 // грузил характеристики запросом без рун: руны стояли в гнёздах и не давали
 // ничего. Общая функция запоминает только «да» и переспрашивает «нет».
 //
-// Два независимых флага (руны — 029, class_override — 031) дают четыре
+// Два независимых флага (руны — 029, foreign_class — 032) дают четыре
 // варианта запроса, а не два: сервер может пережить выкладку одной миграции
 // без другой, и запрос, спрашивающий отсутствующую колонку, падает на
 // загрузке характеристик — то есть у каждого входящего игрока.
 async function load(db, playerId) {
   const runesOk = await hasColumn('player_items', 'socket_of');
-  const classOk = await hasColumn('player_skills', 'class_override');
+  const foreignOk = await hasColumn('player_skills', 'foreign_class');
   const sql = runesOk
-    ? (classOk ? LOAD_SQL_WITH_CLASS : LOAD_SQL)
-    : (classOk ? LOAD_SQL_NO_RUNES_WITH_CLASS : LOAD_SQL_NO_RUNES);
+    ? (foreignOk ? LOAD_SQL_WITH_FOREIGN : LOAD_SQL)
+    : (foreignOk ? LOAD_SQL_NO_RUNES_WITH_FOREIGN : LOAD_SQL_NO_RUNES);
   const { rows } = await query(db, sql, [playerId]);
   return rows.length ? rows[0] : null;
 }
@@ -361,9 +361,9 @@ function compute(row) {
     skillLevels: row.skill_levels || {},
     advSkillLearned: row.adv_learned || {},
     advSkillActive: row.adv_active || {},
-    // Q/W/E/R -> borrowed class, only present for a slot learnForeignSkill
-    // moved off charClass — see effSkillClass, shared/definitions.js.
-    skillClass: row.skill_class || {},
+    // The fifth, independent slot — null when nothing's been learned into
+    // it. { key, level, cls } names which class's Q/W/E/R it actually is.
+    foreignSkill: row.foreign_skill || null,
     hp: Math.min(row.hp, h),
     clanAtkPct: clanPct,
   };
