@@ -4075,8 +4075,12 @@ function drawClassChangeButton() {
 // js/player.js) и ставится в тот момент, когда награда выдана. Пока он false,
 // кнопка на экране; после — исчезает совсем, вместе со своим слотом нажатий:
 // забрать можно один раз, а мёртвая кнопка в HUD это просто мусор.
+// Тот же сезонный гейт, что и на сервере (seasonActive(), claimMailBonus) —
+// после конца 3-го сезона кнопка обязана исчезнуть сама, а не ждать, пока
+// игрок нажмёт и получит отказ.
 function _mailBonusAvailable() {
-  return !!player && !player.mailBonus;
+  const on = typeof seasonActive !== 'function' || seasonActive();
+  return !!player && !player.mailBonus && on;
 }
 
 // Какая из двух наград причитается ЭТОМУ игроку. Здесь — только чтобы
@@ -4125,9 +4129,9 @@ function drawMailBonusButton() {
   ctx.restore();
 }
 
-// Строки одной награды: баф-зелья всех видов, затем материалы, затем сундуки —
-// в том же порядке, в каком их складывает claimMailBonus, чтобы обещание и
-// выдача читались одним списком.
+// Строки одной награды: баф-зелья всех видов, затем материалы, затем сундуки,
+// затем крылья — в том же порядке, в каком их складывает claimMailBonus,
+// чтобы обещание и выдача читались одним списком.
 function _mailBonusRows(tier) {
   const out = [];
   for (const bp of ITEM_DEF.filter(d => d.slot === 'buff_potion')) {
@@ -4136,6 +4140,10 @@ function _mailBonusRows(tier) {
   for (const [id, qty] of Object.entries({ ...(tier.mats || {}), ...(tier.boxes || {}) })) {
     const def = _anyItemDef(id);
     if (def) out.push(_bonusItemRow(_itemIcon(def, 16), def.name, qty));
+  }
+  if (tier.wing) {
+    const def = _anyItemDef(tier.wing);
+    if (def) out.push(_bonusItemRow(_itemIcon(def, 16), def.name, 1));
   }
   return out.join('');
 }

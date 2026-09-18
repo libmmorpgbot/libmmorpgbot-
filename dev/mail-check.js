@@ -53,8 +53,8 @@ const invOf = async (pid) => {
 };
 const claimedFlag = async (pid) => {
   const { rows } = await query(null,
-    'SELECT mail_bonus_claimed FROM player_progress WHERE player_id = $1', [pid]);
-  return rows[0].mail_bonus_claimed;
+    'SELECT mail_bonus2_claimed FROM player_progress WHERE player_id = $1', [pid]);
+  return rows[0].mail_bonus2_claimed;
 };
 const claim = async (pid) => {
   try { return { ok: true, res: await tx(t => shop.claimMailBonus(t, pid)) }; }
@@ -87,13 +87,11 @@ const claim = async (pid) => {
   ok(missA.length === 0,
     `по ${freeTier.buffPotions} банок каждого из ${_VIP_BP.length} бафов`,
     missA.map(bp => `${bp.id}=${invA[bp.id]}`).join(', '));
-  eq(invA.norm_stone, freeTier.mats.norm_stone,
-    `${freeTier.mats.norm_stone} камня обычной заточки`);
 
   // Вот это и есть правило «первая награда — не для владельцев билета»,
-  // прочитанное с другой стороны: в бесплатной ветке нет ни безопасных
-  // заточек, ни сундуков.
-  ok(!invA.bless_stone, 'безопасных заточек в бесплатной ветке нет', String(invA.bless_stone));
+  // прочитанное с другой стороны: в бесплатной ветке нет ни крыльев, ни
+  // сундуков.
+  ok(!invA.wing_c, 'крыльев в бесплатной ветке нет', String(invA.wing_c));
   ok(!invA.box_uncommon && !invA.box_rare, 'и сундуков тоже',
     `${invA.box_uncommon} / ${invA.box_rare}`);
 
@@ -127,15 +125,11 @@ const claim = async (pid) => {
   ok(missB.length === 0,
     `по ${tk.buffPotions} банок каждого из ${_VIP_BP.length} бафов`,
     missB.map(bp => `${bp.id}=${invB[bp.id]}`).join(', '));
-  eq(invB.bless_stone, tk.mats.bless_stone,
-    `${tk.mats.bless_stone} камня безопасной заточки`);
+  eq(invB[tk.wing], 1, `1 «${tk.wing}» (обычные крылья)`);
   eq(invB.box_uncommon, tk.boxes.box_uncommon,
     `${tk.boxes.box_uncommon} необычных (зелёных) сундука`);
   eq(invB.box_rare, tk.boxes.box_rare,
     `${tk.boxes.box_rare} редких (синих) сундука`);
-  // И зеркало первой ветки: владельцу билета не досталось обычных заточек,
-  // то есть бесплатную награду он не получил.
-  ok(!invB.norm_stone, 'обычных заточек владельцу билета не досталось', String(invB.norm_stone));
 
   console.log('  ── и ему второй раз тоже нельзя ──');
   const againB = await claim(vip);

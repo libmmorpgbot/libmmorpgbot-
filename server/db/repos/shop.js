@@ -268,10 +268,19 @@ async function claimStarterBonus(db, playerId) {
 // доверять ему выдачу значило бы отдать более щедрую награду любому, кто
 // пришлёт mailBonusClaim с подделанным флагом.
 //
+// Действует только пока идёт 3-й сезон — seasonActive() проверяется первым,
+// до блокировки строки: письмо, закрытое сезоном, не должно даже занимать
+// место в очереди на запись.
+//
+// Флаг — player_progress.mail_bonus2_claimed (миграция 030), не старый
+// mail_bonus_claimed: это новый набор наград, не связанный с прошлым
+// письмом, и тот, кто уже забирал старое, должен увидеть кнопку снова.
+//
 // Порядок тот же, что у набора новичка, и по той же причине: флаг ставится
 // условным UPDATE до выдачи, потому что задвоенная награда хуже потерянной, —
 // а потерянной она быть не может, транзакция откатит флаг вместе с выдачей.
 async function claimMailBonus(db, playerId) {
+  if (!seasonActive()) err('season_over', 'Сезон завершён');
   await items.lockPlayer(db, playerId);
   const vip = await progression.vipOf(db, playerId);
   const hasTicket = !!vip.seasonTicket;
@@ -281,6 +290,7 @@ async function claimMailBonus(db, playerId) {
   for (const bp of _VIP_BP) list.push({ itemId: bp.id, qty: tier.buffPotions, enhance: 0 });
   for (const [id, qty] of Object.entries(tier.mats || {})) list.push({ itemId: id, qty, enhance: 0 });
   for (const [id, qty] of Object.entries(tier.boxes || {})) list.push({ itemId: id, qty, enhance: 0 });
+  if (tier.wing) list.push({ itemId: tier.wing, qty: 1, enhance: 0 });
 
   const room = await _roomForAll(db, playerId, list);
   if (!room.fits) {
@@ -289,8 +299,8 @@ async function claimMailBonus(db, playerId) {
   }
 
   const { rowCount } = await query(db, `
-    UPDATE player_progress SET mail_bonus_claimed = true
-     WHERE player_id = $1 AND NOT mail_bonus_claimed`, [playerId]);
+    UPDATE player_progress SET mail_bonus2_claimed = true
+     WHERE player_id = $1 AND NOT mail_bonus2_claimed`, [playerId]);
   if (!rowCount) err('already', 'Письмо уже получено');
 
   const granted = await _grantAll(db, playerId, list);
