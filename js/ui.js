@@ -8995,20 +8995,20 @@ function showGramShopBtn() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  "Питомцы" TAB PACKAGES (GRAM shop) — pet+cloak+artifact bundles. Mirror
-//  of the same-id entries in server/index.js's _GRAM_SHOP_PKGS (that's what
-//  actually validates and grants them — this copy only draws the cards).
-//  Bought through gramShopBuy like any other GRAM package — own render/
-//  picker functions below instead of reusing _gramShopPkgHtml/
+//  "Допы" TAB PACKAGES (GRAM shop) — pet+cloak+artifact+wings+rune bundles.
+//  Mirror of the same-id entries in server/shop.js's _GRAM_SHOP_PKGS (that's
+//  what actually validates and grants them — this copy only draws the
+//  cards). Bought through gramShopBuy like any other GRAM package — own
+//  render/picker functions below instead of reusing _gramShopPkgHtml/
 //  openGramShopConfirm only because the reward kinds (petChoice/classCloak/
-//  classArtifact) don't fit that card's layout.
+//  classArtifact/wings/rune) don't fit that card's layout.
 // ─────────────────────────────────────────────────────────
-function _packNLabel(n) { return tVars('packNFmt', { n }); }
-
 const _SPECIAL_PET_PKGS_UI = [
-  { id:'petpkg1', gram:50,  get label() { return _packNLabel(1); }, petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:8,  color:'#9c9086' },
-  { id:'petpkg2', gram:150, get label() { return _packNLabel(2); }, petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:10, color:'#6f9c4a' },
-  { id:'petpkg3', gram:250, get label() { return _packNLabel(3); }, petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:10, color:'#4a7bab' },
+  { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   enhance:6,  color:'#9c9086' },
+  { id:'extrapkg2', gram:50,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', enhance:8,  color:'#6f9c4a' },
+  { id:'extrapkg3', gram:125, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:10, color:'#4a7bab' },
+  { id:'extrapkg4', gram:225, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:12, color:'#deb568' },
+  { id:'extrapkg5', gram:345, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     enhance:14, color:'#e6af5e' },
 ];
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
@@ -9102,25 +9102,36 @@ function _renderSeasonTicketInfo() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  PET+CLOAK+ARTIFACT PACKAGES (petpkg1/2/3, mirror of server/index.js's
-//  _GRAM_SHOP_PKGS entries of the same id). Bought through gramShopBuy like
-//  any other GRAM package — petChoice/classCloak/classArtifact/enhance are
-//  already fully supported there — but with their own card/picker instead
-//  of reusing _gramShopPkgHtml/openGramShopConfirm (built for a different
-//  reward-row layout).
+//  PET+CLOAK+ARTIFACT+WINGS+RUNE PACKAGES (extrapkg1-5, mirror of
+//  server/shop.js's _GRAM_SHOP_PKGS entries of the same id). Bought through
+//  gramShopBuy like any other GRAM package — petChoice/classCloak/
+//  classArtifact/wings/rune/enhance are already fully supported there — but
+//  with their own card/picker instead of reusing _gramShopPkgHtml/
+//  openGramShopConfirm (built for a different reward-row layout).
 // ─────────────────────────────────────────────────────────
-// petChoice/classCloak/classArtifact all resolve to a single icon each (a
-// sample pet of the right rarity for the picker preview; the buyer's own
-// class's cloak/artifact), all sharing pkg.enhance.
+// petChoice/classCloak/classArtifact/wings/rune all resolve to a single
+// icon each (a sample pet of the right rarity for the picker preview; the
+// buyer's own class's cloak/artifact; a sample wing/rune of the package's
+// rarity — the rune's actual rolled stats are only decided at purchase, same
+// as a crafted one), all sharing pkg.enhance (runes don't use it — they have
+// no +N tier).
 function _petCloakArtifactRows(pkg, ri) {
   const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
   const cls = player?.type;
   const cloak = (cls && pkg.classCloak) ? ITEM_DEF.find(d => d.slot === 'cloak' && d.rarity === pkg.classCloak && d.forClass && d.forClass.includes(cls)) : null;
   const artifact = (cls && pkg.classArtifact) ? ITEM_DEF.find(d => d.slot === 'artifact' && d.rarity === pkg.classArtifact && d.forClass && d.forClass.includes(cls)) : null;
   const petSample = pkg.petChoice ? ITEM_DEF.find(d => d.slot === 'pet' && d.rarity === pkg.petChoice) : null;
+  const wings = pkg.wings ? ITEM_DEF.find(d => d.slot === 'wings' && d.rarity === pkg.wings) : null;
+  // Two runes per package — armor-kind and weapon-kind — mirroring what
+  // _packageContents (server/db/repos/shop.js) actually grants for pkg.rune.
+  const runeArmor = pkg.rune ? ITEM_DEF.find(d => d.slot === 'rune' && d.runeKind === 'armor' && d.rarity === pkg.rune) : null;
+  const runeWeapon = pkg.rune ? ITEM_DEF.find(d => d.slot === 'rune' && d.runeKind === 'weapon' && d.rarity === pkg.rune) : null;
   return (petSample ? ri(petSample.img, `${t('petChoiceLbl')} ${enhLbl}`, pkg.petChoice) : '')
     + (cloak ? ri(cloak.img, enhLbl, pkg.classCloak) : '')
-    + (artifact ? ri(artifact.img, enhLbl, pkg.classArtifact) : '');
+    + (artifact ? ri(artifact.img, enhLbl, pkg.classArtifact) : '')
+    + (wings ? ri(wings.img, enhLbl, pkg.wings) : '')
+    + (runeArmor ? ri(runeArmor.img, '', pkg.rune) : '')
+    + (runeWeapon ? ri(runeWeapon.img, '', pkg.rune) : '');
 }
 
 function _specialPetPkgHtml(pkg, bal) {
@@ -9225,8 +9236,8 @@ function closeGramShopPanel() {
 }
 
 // "Паки" (the regular _GRAM_SHOP_PKGS_UI entries with no shopTab tag —
-// pkg1's "Базовый"/pkg10's "Стандарт" etc.) vs "Питомцы" (pet+cloak+artifact
-// bundles, _SPECIAL_PET_PKGS_UI) vs "Усиление" (rmat1-3 — the same
+// pkg1's "Базовый"/pkg10's "Стандарт" etc.) vs "Допы" (pet+cloak+artifact+
+// wings+rune bundles, _SPECIAL_PET_PKGS_UI) vs "Усиление" (rmat1-3 — the same
 // _GRAM_SHOP_PKGS_UI array, tagged shopTab:'empower' — pure material packs
 // that only grant items; the empowerment itself is still done from the
 // Персонаж → Усиление panel, see updateEmpowerUI above).
@@ -9416,8 +9427,8 @@ function onGramShopResult(data) {
   // подпишется общим «Пакет» из packageFallbackLbl, а не именем позиции,
   // которой в игре уже нет.
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
-  // Pet+cloak+artifact packages (petpkg1/2/3) — bought through this same
-  // handler but shown on the GRAM shop's own Питомцы tab
+  // Pet+cloak+artifact+wings+rune packages (extrapkg1-5) — bought through
+  // this same handler but shown on the GRAM shop's own Допы tab
   // (_SPECIAL_PET_PKGS_UI), so they have no label of their own either.
   const ppkg = pkg ? null : _SPECIAL_PET_PKGS_UI.find(p => p.id === data.pkgId);
   const lbl = pkg ? pkg.label

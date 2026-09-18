@@ -89,19 +89,25 @@ const _GRAM_SHOP_PKGS = [
     skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
     stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
     enhance:8, nexum:20000 },
-  // Pet+cloak+artifact packages (rendered on the GRAM shop's own Питомцы
-  // tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same handler
-  // since petChoice/classCloak/classArtifact/enhance are already fully
-  // supported below, just never previously used by any other package).
-  // classCloak/classArtifact only ever exist at common/uncommon (see
-  // ITEM_DEF) — there is no rare tier, so petpkg3's own pet jump to rare
-  // isn't mirrored there.
-  { id:'petpkg1', gram:50,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'common',   classCloak:'common',   classArtifact:'common',   enhance:8 },
-  { id:'petpkg2', gram:150, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
-  { id:'petpkg3', gram:250, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'rare',     classCloak:'uncommon', classArtifact:'uncommon', enhance:10 },
+  // Pet+cloak+artifact+wings+rune packages (rendered on the GRAM shop's own
+  // Допы tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same
+  // handler since petChoice/classCloak/classArtifact/enhance are already
+  // fully supported below; wings/rune are handled the same way, resolved by
+  // rarity in _packageContents, server/db/repos/shop.js).
+  // classCloak/classArtifact only ever exist at common/uncommon/rare (see
+  // ITEM_DEF) — there is no epic tier, so the top two packages' own jump to
+  // epic (pet, and for extrapkg5 also wings/rune) isn't mirrored there; they
+  // stay at their rare ceiling instead.
+  { id:'extrapkg1', gram:30,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common',   enhance:6 },
+  { id:'extrapkg2', gram:50,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', enhance:8 },
+  { id:'extrapkg3', gram:125, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:10 },
+  { id:'extrapkg4', gram:225, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:12 },
+  { id:'extrapkg5', gram:345, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'epic',     rune:'epic',     enhance:14 },
   // Усиление tab — pure material packs. These only GRANT the listed
   // items (via the same pkg.boxes/pkg.stones handling every other package
   // already uses below — `stones` isn't stone-specific, it resolves any
@@ -142,6 +148,12 @@ const _SHOP_ARMOR_SETS = {
   uncommon: ['hm2','ar2','gl2','bt2','rn2','nd2'],
   rare:     ['hm3','ar3','gl3','bt3','rn3','nd3'],
   epic:     ['hm4','ar4','gl4','bt4','rn4','nd4'],
+};
+// Wings item id per rarity (ITEM_DEF's wing_c..wing_l) — used by the
+// extrapkg1-5 packages' `wings` field, the same way _SHOP_ARMOR_SETS
+// resolves `armor`.
+const _WING_ID = {
+  common: 'wing_c', uncommon: 'wing_u', rare: 'wing_r', epic: 'wing_e', legendary: 'wing_l',
 };
 // How many NEW inventory slots a package needs, given what the player already
 // holds. Mirrors exactly what gramShopBuy grants below — stackables that merge
@@ -223,6 +235,6 @@ function _vipGoldReward(vipLevel) {
 module.exports = {
   _VIP_WEAPONS, _VIP_BP,
   pkgPrice, _GRAM_SHOP_PKGS,
-  _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _shopNewSlots,
+  _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _WING_ID, _shopNewSlots,
   _GRAM_WITHDRAW_FEE_PCT, _STONE_DEFS, _vipLevelItems, _vipGoldReward,
 };

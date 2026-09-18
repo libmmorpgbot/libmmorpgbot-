@@ -32,10 +32,10 @@ const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
-  seasonActive, seasonShopPoints,
+  seasonActive, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
-  _VIP_BP, pkgPrice, _GRAM_SHOP_PKGS, _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _STONE_DEFS,
+  _VIP_BP, pkgPrice, _GRAM_SHOP_PKGS, _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _WING_ID, _STONE_DEFS,
 } = require('../../shop');
 
 class ShopError extends Error {
@@ -44,12 +44,20 @@ class ShopError extends Error {
 const err = (code, msg) => { throw new ShopError(code, msg); };
 const pick = list => list[crypto.randomInt(list.length)];
 
+// Same source and wrapper as repos/runes.js's craftRune — a granted rune is
+// worth real money exactly like a crafted one, so its stats are rolled from
+// crypto here too, never Math.random.
+const RAND_MAX = 2 ** 30;
+function _rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
+
 // ── what a package actually contains ────────────────────────────────────────
 // One list, rolled once. Everything downstream — the room check, the grant,
 // the answer to the client — reads this and only this.
 function _packageContents(pkg, charClass, chosenPet) {
   const out = [];
-  const add = (itemId, qty = 1, enhance = 0) => { if (itemId) out.push({ itemId, qty, enhance }); };
+  const add = (itemId, qty = 1, enhance = 0, rune = null) => {
+    if (itemId) out.push({ itemId, qty, enhance, rune });
+  };
   const enh = pkg.enhance || 0;
 
   if (pkg.potions > 0) for (const bp of _VIP_BP) add(bp.id, pkg.potions);
@@ -72,6 +80,23 @@ function _packageContents(pkg, charClass, chosenPet) {
     if (d) add(d.id, 1, enh);
   }
   if (chosenPet) add(chosenPet.id, 1, enh);
+
+  if (pkg.wings) {
+    const wid = _WING_ID[pkg.wings];
+    if (wid) add(wid, 1, enh);
+  }
+  // A rune needs rolled content (player_items.rune) exactly like a crafted
+  // one — see repos/runes.js's craftRune — so it can't just be an itemId in
+  // this list. One armor-kind and one weapon-kind rune, at the package's
+  // rarity, each rolled independently.
+  if (pkg.rune) {
+    for (const kind of ['armor', 'weapon']) {
+      const itemId = `rune_${kind}_${pkg.rune}`;
+      if (!ITEM_DEF.some(d => d.id === itemId)) continue;
+      const stats = rollRuneStats(kind, pkg.rune, _rand);
+      if (stats.length) add(itemId, 1, 0, { stats });
+    }
+  }
 
   if (pkg.skillBooks) {
     const classBooks = CRAFT_MATS.filter(m => m.forClass === charClass && m.skillKey);
@@ -136,7 +161,7 @@ async function _grantAll(db, playerId, list) {
   const granted = [];
   for (const it of list) {
     const rowId = await items.add(db, playerId, it.itemId,
-      { qty: it.qty, enhance: it.enhance, source: 'shop', sourceRef: it.itemId });
+      { qty: it.qty, enhance: it.enhance, source: 'shop', sourceRef: it.itemId, rune: it.rune || null });
     if (rowId === null) err('no_room', 'Инвентарь полон');
     granted.push({ ...it, rowId });
   }
