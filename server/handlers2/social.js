@@ -21,7 +21,7 @@ const chat = require('../db/repos/chat');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
         SKILL_HASTE, skillHasteOf, skillBuffOf,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
-        RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC } = require('../../shared/definitions');
+        RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, effSkillClass } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
 const party = require('../party');
 const players = require('../db/repos/players');
@@ -471,7 +471,11 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
     const sk = await players.skillsOf(t, pid);
     const adv = !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
-    const b = skillBuffOf(st.charClass, k, adv);
+    // Effective class of THIS slot — its own, unless a legendary-rune-reroll
+    // jackpot (learnForeignSkill) moved it onto a borrowed one. See
+    // effSkillClass, shared/definitions.js.
+    const cls = effSkillClass(st.charClass, sk.skillClass, k);
+    const b = skillBuffOf(cls, k, adv);
     if (!b) fail('Этот навык не даёт бафа', 'not_buff');
     const sec = b.sec + (sk.skillLevels[k] || 0);
     s.room.setSkillWindow(s.socket.id, 'buff', sec * 1000, {
@@ -495,9 +499,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
     const sk = await players.skillsOf(t, pid);
     const adv = !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
-    const mult = skillHasteOf(st.charClass, k, adv);
+    const cls = effSkillClass(st.charClass, sk.skillClass, k);
+    const mult = skillHasteOf(cls, k, adv);
     if (mult == null) fail('Этот навык не ускоряет атаку', 'not_haste');
-    const def = SKILL_HASTE[st.charClass][k];
+    const def = SKILL_HASTE[cls][k];
     const sec = def.sec + (sk.skillLevels[k] || 0);
     s.room.setSkillWindow(s.socket.id, 'haste', sec * 1000, mult);
     return { mult, sec };
@@ -519,18 +524,21 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const sk = await players.skillsOf(t, pid);
     const adv = !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const lvl = sk.skillLevels[k] || 0;
+    // Effective class of THIS slot — see skillBuff above for what this means
+    // and why it isn't just st.charClass.
+    const cls = effSkillClass(st.charClass, sk.skillClass, k);
 
     // ── окна, а не разовое лечение ────────────────────────────────────────
     // «Бабочки» и вампиризм лечат не в момент нажатия, а некоторое время
     // после: первое — раз в секунду, второе — с каждого нанесённого удара.
     // Комната их и тикает (_regenTick / _vampGain); здесь только проверка
     // права и запись окна.
-    if (st.charClass === 'warlock' && k === 'Q' && adv) {
+    if (cls === 'warlock' && k === 'Q' && adv) {
       s.room.setSkillWindow(s.socket.id, 'butterflies', (BUTTERFLIES_SEC + lvl) * 1000);
       lastHealAt.set(k, now);
       return { window: 'butterflies', sec: BUTTERFLIES_SEC + lvl };
     }
-    if (st.charClass === 'deathknight' && k === 'Q') {
+    if (cls === 'deathknight' && k === 'Q') {
       const pct = adv ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT;
       s.room.setSkillWindow(s.socket.id, 'vampirism', (VAMPIRISM_SEC + lvl) * 1000, pct);
       lastHealAt.set(k, now);
@@ -541,7 +549,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // (that function only knows pct-of-maxHp heals). advPct on this same slot
     // ("Возврат") DOES go through the generic path further down — only the
     // base variant needs interception here.
-    if (st.charClass === 'runefighter' && k === 'E' && !adv) {
+    if (cls === 'runefighter' && k === 'E' && !adv) {
       const rate = RUNEFIGHTER_REGEN_RATE + lvl;
       s.room.setSkillWindow(s.socket.id, 'regen', RUNEFIGHTER_REGEN_SEC * 1000, rate);
       lastHealAt.set(k, now);
@@ -552,7 +560,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // Сколько именно — решает общая таблица, а не клиент: он прислал одну
     // букву. Навык, который не лечит, получает отказ, а не молчаливый ноль:
     // молчаливый ноль неотличим от «полечило на 0».
-    const amount = skillSelfHealOf(st.charClass, k, adv, lvl, st.skillPct || 0, st.maxHp);
+    const amount = skillSelfHealOf(cls, k, adv, lvl, st.skillPct || 0, st.maxHp);
     if (amount == null) fail('Этот навык не лечит', 'not_heal');
     lastHealAt.set(k, now);
 
@@ -567,7 +575,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // близости; одиночке она просто не нужна, и отсутствие группы больше не
     // отказ.
     let reached = 0, total = 0;
-    const heals = SKILL_SELF_HEAL[st.charClass];
+    const heals = SKILL_SELF_HEAL[cls];
     const wantsParty = !!(heals && heals[k] && heals[k].party);
     const partyId = wantsParty ? party.playerParty.get(s.socket.id) : null;
     const members = partyId ? party.parties.get(partyId) : null;

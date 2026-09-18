@@ -421,7 +421,7 @@ function openAutoSkillsPicker() {
     // The variant actually in play — an advanced skill can be auto-castable
     // where its base version isn't (or the other way round), and this has to
     // agree with what _autoCastSkills (js/game.js) will really do.
-    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : base;
+    const sk = (typeof _activeSkillDefForSlot === 'function') ? _activeSkillDefForSlot(i) : base;
     if (!sk) return '';
     const learned = _skillLvl(sk.key) > 0;
     const neverAuto = sk.auto === false;
@@ -1242,8 +1242,11 @@ function _professionHasReady() {
   if (!skills) return false;
   const sl = player.skillLevels || {};
   const al = player.advSkillLearned || {};
-  return skills.some(sk => (sl[sk.key] || 0) >= 10 && !al[sk.key] &&
-    countMaterial(_advSkillBookId(player.type, sk.key)) >= ADV_SKILL_STUDY_COST);
+  return skills.some(sk => {
+    const cls = (typeof _effSkillClass === 'function') ? _effSkillClass(sk.key) : player.type;
+    return (sl[sk.key] || 0) >= 10 && !al[sk.key] &&
+      countMaterial(_advSkillBookId(cls, sk.key)) >= ADV_SKILL_STUDY_COST;
+  });
 }
 
 function updateSkillsUI() {
@@ -1272,13 +1275,30 @@ function updateSkillsUI() {
       const level = sl[sk.key] || 0;
       const locked = level <= 0;
       const maxed = level >= 10;
-      const bonusType = bonusTypes[sk.key] || 'damage';
-      const mobilityMult = (player.type === 'mage' && sk.key === 'R') ? 2 : 1;
+      // Which class's ability actually sits in this slot — own, unless a
+      // legendary-rune-reroll jackpot book (learnForeignSkill) moved it onto
+      // a borrowed one. Every lookup below (name/desc/icon, bonus type, which
+      // book to charge) reads THIS instead of player.type, so the card shows
+      // and costs what's really there. See _effSkillClass, js/player.js.
+      const effCls = (typeof _effSkillClass === 'function') ? _effSkillClass(sk.key) : player.type;
+      const borrowed = effCls !== player.type;
+      const dispSk = borrowed ? ((SKILL_DEF[effCls] || []).find(s => s.key === sk.key) || sk) : sk;
+      const bonusType = ((SKILL_BONUS_TYPE || {})[effCls] || {})[sk.key] || 'damage';
+      const mobilityMult = (effCls === 'mage' && sk.key === 'R') ? 2 : 1;
       const bonusNow  = locked ? null : _skillBonusDesc(bonusType, level, mobilityMult);
       const bonusNext = (locked || maxed) ? null : _skillBonusDesc(bonusType, level + 1, mobilityMult);
-      const bookId = _skillBookId(player.type, sk.key);
-      const bookName = (_skillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
+      const bookId = _skillBookId(effCls, sk.key);
+      const bookName = (_skillBookDef(effCls, sk.key) || {}).name || t('skillBookFallback');
       const bookCount = countMaterial(bookId);
+      // ── заимствованная способность: доступные чужие книги ───────────────
+      // Любая ДРУГАЯ книга этого же ключа, что реально лежит в сумке —
+      // джекпот переработки легендарной руны кладёт её как обычный предмет,
+      // без выбора слота заранее. Список, а не одна: в принципе можно
+      // накопить книги нескольких классов на один ключ.
+      const foreignBooks = (typeof PLAYABLE_CLASSES !== 'undefined' ? PLAYABLE_CLASSES : [])
+        .filter(cls => cls !== effCls)
+        .map(cls => ({ cls, name: (_skillBookDef(cls, sk.key) || {}).name, qty: countMaterial(_skillBookId(cls, sk.key)) }))
+        .filter(b => b.qty > 0);
 
       const dots = Array.from({ length: 10 }, (_, i) =>
         `<span class="sk-dot${i < level ? ' filled' : ''}"></span>`
@@ -1286,9 +1306,10 @@ function updateSkillsUI() {
 
       // Book-framed icon — the skill's own icon/art nested inside the book
       // glyph, so each skill's book is visually identifiable at a glance.
-      const skillGlyph = sk.img
-        ? `<img src="${sk.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
-        : iconHTML(sk.icon, 15, locked ? '#645f57' : '#e3941d');
+      // dispSk, not sk: a borrowed slot shows the ability actually running.
+      const skillGlyph = dispSk.img
+        ? `<img src="${dispSk.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
+        : iconHTML(dispSk.icon, 15, locked ? '#645f57' : '#e3941d');
       const iconEl = `<div style="position:relative;width:26px;height:26px;opacity:${locked ? 0.4 : 1}">
         ${iconHTML('book', 26, locked ? '#645f57' : '#c48a3a')}
         <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${skillGlyph}</div>
@@ -1315,12 +1336,14 @@ function updateSkillsUI() {
       // learned, advActive is a free toggle — see toggleAdvSkill below.
       let advHtml = '';
       if (maxed) {
-        const adv = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || []).find(a => a.key === sk.key);
+        // effCls, not player.type — a borrowed slot's "second profession" is
+        // the borrowed class's own advanced version of THIS ability.
+        const adv = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[effCls]) || []).find(a => a.key === sk.key);
         if (adv) {
           const advLearned = !!(player.advSkillLearned || {})[sk.key];
           const advActive  = !!(player.advSkillActive  || {})[sk.key];
-          const advBookId  = _advSkillBookId(player.type, sk.key);
-          const advBookName = (_advSkillBookDef(player.type, sk.key) || {}).name || t('skillBookFallback');
+          const advBookId  = _advSkillBookId(effCls, sk.key);
+          const advBookName = (_advSkillBookDef(effCls, sk.key) || {}).name || t('skillBookFallback');
           const advBookCount = countMaterial(advBookId);
           const advGlyph = adv.img
             ? `<img src="${adv.img}" width="15" height="15" style="image-rendering:pixelated;border-radius:2px">`
@@ -1357,6 +1380,18 @@ function updateSkillsUI() {
         }
       }
 
+      // Foreign books currently in the bag for this key — offered whatever
+      // the slot's own state (locked, own-leveled, or already borrowed from
+      // a THIRD class): each is its own reslot, so every one gets its own
+      // button and its own confirm.
+      const foreignHtml = foreignBooks.length ? `<div class="sk-foreign-row">
+        <div class="sk-foreign-hdr">${iconHTML('star', 11, '#c084fc')} ${t('foreignSkillAvailableHdr')}</div>
+        ${foreignBooks.map(b => `<button class="skill-upg-btn foreign-btn" onclick="_confirmLearnForeignSkill('${sk.key}','${b.cls}','${(b.name || '').replace(/'/g, "\\'")}')">${tVars('learnForeignBtnFmt', { name: `${b.name} ×${b.qty}` })}</button>`).join('')}
+      </div>` : '';
+      const revertHtml = borrowed
+        ? `<button class="skill-upg-btn revert-btn" onclick="_confirmLearnForeignSkill('${sk.key}','${player.type}','${(_skillBookDef(player.type, sk.key) || {}).name || ''}')">${t('revertSkillBtn')}</button>`
+        : '';
+
       return `<div class="skill-upg-card">
         <div class="skill-upg-top">
           <div class="skill-upg-icon" style="position:relative">
@@ -1364,8 +1399,8 @@ function updateSkillsUI() {
             ${locked ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
           </div>
           <div class="skill-upg-info">
-            <div class="skill-upg-name">${sk.name}<span class="skill-upg-lvl">${locked ? ' 🔒 ' + t('notStudiedLbl') : maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
-            <div class="skill-upg-desc">${sk.desc}</div>
+            <div class="skill-upg-name">${dispSk.name}${borrowed ? `<span class="sk-borrowed-badge">${t('borrowedSkillBadge')}</span>` : ''}<span class="skill-upg-lvl">${locked ? ' 🔒 ' + t('notStudiedLbl') : maxed ? ' ' + t('maxAbbrev') : ' ' + t('levelAbbrev') + level}</span></div>
+            <div class="skill-upg-desc">${dispSk.desc}</div>
             <div class="skill-upg-type">${locked ? bookName : _skillBonusTypeLabel(bonusType)}</div>
           </div>
         </div>
@@ -1375,6 +1410,8 @@ function updateSkillsUI() {
           ${bonusNext ? `<span class="sk-bonus-next">→ ${bonusNext}</span>` : ''}
         </div>` : ''}
         <button class="skill-upg-btn${btnDisabled ? ' disabled' : ''}" onclick="${btnAction}">${btnLabel}</button>
+        ${revertHtml}
+        ${foreignHtml}
         ${advHtml}
       </div>`;
     }).join('')}
@@ -1414,11 +1451,28 @@ function upgradeSkillWithBook(key) {
   const lvl = sl[key] || 0;
   if (lvl <= 0) { dmgNum(player.x, player.y - 30, t('studySkillFirstToast'), '#f17e8b'); return; }
   if (lvl >= SKILL_MAX_LEVEL) return;
-  if (countMaterial(_skillBookId(player.type, key)) < SKILL_UPGRADE_COST) {
+  // A borrowed slot upgrades with the BORROWED class's book — see
+  // learnForeignSkill/_effSkillClass.
+  const cls = (typeof _effSkillClass === 'function') ? _effSkillClass(key) : player.type;
+  if (countMaterial(_skillBookId(cls, key)) < SKILL_UPGRADE_COST) {
     dmgNum(player.x, player.y - 30, tVars('needNSkillBooksFmt', { n: SKILL_UPGRADE_COST }), '#f17e8b');
     return;
   }
   netUpgradeSkill(key);
+}
+
+// ── заимствованная способность ──────────────────────────────────────────
+// bookClass equal to the player's own class is the revert path — same
+// event, same reslot, just back to what charClass already means. Either
+// way this is destructive (resets the slot to level 1, drops its second
+// profession), hence the confirm — same pattern as itemDisassemble/
+// season2BurnBook above.
+function _confirmLearnForeignSkill(key, bookClass, bookName) {
+  if (!player) return;
+  const own = bookClass === player.type;
+  const msg = tVars(own ? 'revertSkillConfirmFmt' : 'learnForeignSkillConfirmFmt', { key, name: bookName || t('skillBookFallback') });
+  if (!confirm(msg)) return;
+  netLearnForeignSkill(key, bookClass);
 }
 
 // ── Advanced skills ("вторая профессия") ─────────────────────────────────
@@ -1427,7 +1481,9 @@ function learnAdvSkill(key) {
   const sl = player.skillLevels || {};
   if ((sl[key] || 0) < SKILL_MAX_LEVEL) return;   // this slot isn't maxed yet
   if ((player.advSkillLearned || {})[key]) return;
-  if (countMaterial(_advSkillBookId(player.type, key)) < ADV_SKILL_STUDY_COST) {
+  // A borrowed slot's second profession belongs to the borrowed class.
+  const cls = (typeof _effSkillClass === 'function') ? _effSkillClass(key) : player.type;
+  if (countMaterial(_advSkillBookId(cls, key)) < ADV_SKILL_STUDY_COST) {
     dmgNum(player.x, player.y - 30, t('needAdvSkillBookToast'), '#f17e8b');
     return;
   }
@@ -1478,28 +1534,37 @@ function renderProfessionPanel() {
   if (!body || !player) return;
   const skills = SKILL_DEF[player.type];
   if (!skills) { body.innerHTML = ''; return; }
-  const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[player.type]) || [];
-  const cc = _FARM_ADV_BOOK_CLASS_COLOR[player.type] || '#cdb8ec';
   const sl = player.skillLevels || {};
   const al = player.advSkillLearned || {};
   const aa = player.advSkillActive || {};
   const cls = (typeof CHAR_DEF !== 'undefined' ? CHAR_DEF[player.type] : null) || {};
+  // The BANNER is the character's own class regardless of any borrowed slot
+  // below — each card computes its own (possibly different) accent colour.
+  const cc = _FARM_ADV_BOOK_CLASS_COLOR[player.type] || '#cdb8ec';
 
   const cards = skills.map(sk => {
+    // Borrowed slot (legendary-rune-reroll jackpot, learnForeignSkill) —
+    // this panel shows and costs the ability actually in play, not the
+    // player's own class's version of this key. See _effSkillClass,
+    // js/player.js, and updateSkillsUI above for the same split.
+    const effCls = (typeof _effSkillClass === 'function') ? _effSkillClass(sk.key) : player.type;
+    const dispSk = effCls !== player.type ? ((SKILL_DEF[effCls] || []).find(s => s.key === sk.key) || sk) : sk;
+    const advSkills = (typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[effCls]) || [];
+    const cc = _FARM_ADV_BOOK_CLASS_COLOR[effCls] || '#cdb8ec';
     const level = sl[sk.key] || 0;
     const maxed = level >= 10;
     const adv = advSkills.find(a => a.key === sk.key);
     const learned = !!al[sk.key];
     const active = !!aa[sk.key];
-    const advBookCount = countMaterial(_advSkillBookId(player.type, sk.key));
+    const advBookCount = countMaterial(_advSkillBookId(effCls, sk.key));
 
     // 0 = slot not maxed yet, 1 = maxed but missing books, 2 = maxed & ready
     // to learn, 3 = learned (free toggle from here on).
     const stage = !maxed ? 0 : learned ? 3 : (advBookCount >= ADV_SKILL_STUDY_COST ? 2 : 1);
 
-    const baseGlyph = sk.img
-      ? `<img src="${sk.img}" class="profp-icon-img" alt="">`
-      : iconHTML(sk.icon, 22, '#e3941d');
+    const baseGlyph = dispSk.img
+      ? `<img src="${dispSk.img}" class="profp-icon-img" alt="">`
+      : iconHTML(dispSk.icon, 22, '#e3941d');
     const advGlyph = adv
       ? (adv.img ? `<img src="${adv.img}" class="profp-icon-img" alt="">` : iconHTML(adv.icon, 22, cc))
       : '';
@@ -1513,7 +1578,7 @@ function renderProfessionPanel() {
       stateHtml = `<button class="profp-learn-btn" onclick="learnAdvSkill('${sk.key}')">${iconHTML('star', 12, '#150f08')} ${t('profpLearnBtn')}</button>`;
     } else {
       stateHtml = `<div class="profp-toggle" onclick="toggleAdvSkill('${sk.key}')">
-        <span class="profp-toggle-opt${!active ? ' on' : ''}">${sk.name}</span>
+        <span class="profp-toggle-opt${!active ? ' on' : ''}">${dispSk.name}</span>
         <span class="profp-toggle-switch${active ? ' adv' : ''}" style="--cc:${cc}"><span class="profp-toggle-knob"></span></span>
         <span class="profp-toggle-opt${active ? ' on' : ''}" style="--cc:${cc}">${adv ? adv.name : ''}</span>
       </div>`;
@@ -1525,7 +1590,7 @@ function renderProfessionPanel() {
         <div class="profp-flow">
           <div class="profp-node">
             <div class="profp-node-icon">${baseGlyph}</div>
-            <div class="profp-node-name">${sk.name}</div>
+            <div class="profp-node-name">${dispSk.name}</div>
             <div class="profp-bar"><div class="profp-bar-fill" style="width:${Math.min(100, level * 10)}%"></div></div>
           </div>
           <div class="profp-connector">
@@ -1538,7 +1603,7 @@ function renderProfessionPanel() {
         </div>
         <div class="profp-descs">
           <div class="profp-desc-row${stage === 3 && active ? ' dim' : ''}">
-            <span class="profp-desc-tag">${t('profpNowLbl')}</span>${sk.desc}
+            <span class="profp-desc-tag">${t('profpNowLbl')}</span>${dispSk.desc}
           </div>
           ${adv ? `<div class="profp-desc-row${stage === 3 && active ? ' lit' : ''}" style="--cc:${cc}">
             <span class="profp-desc-tag">${t('profpWillBeLbl')}</span>${adv.desc}
@@ -3507,7 +3572,7 @@ function drawSkillButtons() {
     // Resolved to whichever version (base/advanced) is active — key/cd/level
     // are identical either way (see _activeSkillDef, js/player.js), only the
     // icon/art shown here differs.
-    const sk = (typeof _activeSkillDef === 'function') ? _activeSkillDef(player.type, i) : skills[i];
+    const sk = (typeof _activeSkillDefForSlot === 'function') ? _activeSkillDefForSlot(i) : skills[i];
     const grads = _skillBtnGradCache[i];
     const b = grads; // positions cached inside grads
     const locked = ((player.skillLevels || {})[sk.key] || 0) <= 0;

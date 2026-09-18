@@ -6,7 +6,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
-        skillDamageMult, skillDefIgnoreOf, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
+        skillDamageMult, skillDefIgnoreOf, effSkillClass, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS } = require('../../shared/definitions');
 
@@ -3252,6 +3252,21 @@ class Room {
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
   }
 
+  // Which class's ability ACTUALLY runs in this player's slot `key` — their
+  // own, unless the legendary-rune-reroll jackpot (learnForeignSkill,
+  // repos/players.js) moved it onto a borrowed one. p._skillClass/sd.skillClass
+  // is the class_override map setPlayerStats filled from stats.of(); see
+  // effSkillClass, shared/definitions.js. Every lookup below that decides what
+  // a cast in `key` actually DOES goes through this instead of the player's
+  // own p.type/sd.type, so a borrowed skill fights with its real class's
+  // numbers, not the caster's.
+  _effClassFor(p, key) {
+    const sd = p._sd || {};
+    const cls = p.type || sd.type;
+    const map = p._skillClass || sd.skillClass || {};
+    return effSkillClass(cls, map, key);
+  }
+
   // The multiplier for a cast by this player in slot `key`, derived from what
   // the server already knows about them: class, that slot's studied level, and
   // whether its advanced variant is switched on. The cast used to carry the
@@ -3278,7 +3293,7 @@ class Room {
     const levels = p._skillLevels || sd.skillLevels || {};
     const lvl = Math.max(0, Math.floor(Number(levels[key])) || 0);
     if (lvl <= 0) return 0;
-    return skillDamageMult(p.type || sd.type, key, this._advSlotActive(p, key), lvl, skillPct);
+    return skillDamageMult(this._effClassFor(p, key), key, this._advSlotActive(p, key), lvl, skillPct);
   }
 
   // Is this slot's advanced ("вторая профессия") variant the one that would
@@ -3318,7 +3333,10 @@ class Room {
   // from the ~22x multiplier any class could take before.
   _canSplash(p) {
     const sd = p._sd || {};
-    if ((p.type || sd.type) !== 'deathknight') return false;
+    // The E slot's EFFECTIVE class, not the caster's own — a deathknight who
+    // borrowed a foreign E no longer has Безумие there, and any other class
+    // who borrowed the deathknight's E genuinely does.
+    if (this._effClassFor(p, 'E') !== 'deathknight') return false;
     // studySkill writes level 1, so zero means unstudied and nothing else —
     // same reading as _skillMultFor above.
     const levels = p._skillLevels || sd.skillLevels || {};
@@ -3352,8 +3370,11 @@ class Room {
     if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     // Same per-skill range as skillAttackEnemy — see _isRangedSingleTargetSkill.
+    // Whether THIS SLOT is a ranged single-target skill depends on its
+    // effective (possibly borrowed) class; the caster's own atkRange base
+    // stays theirs regardless — it's a character stat, not this cast's.
     const _advActivePvp = this._advSlotActive(attacker, key);
-    const _rangeLimitPvp = _isRangedSingleTargetSkill(attacker.type, key, _advActivePvp)
+    const _rangeLimitPvp = _isRangedSingleTargetSkill(this._effClassFor(attacker, key), key, _advActivePvp)
       ? ((_charDef(attacker.type)?.atkRange || 210) + SKILL_RANGE_SLACK)
       : 600;
     if (dx * dx + dy * dy > _rangeLimitPvp * _rangeLimitPvp) return null;
@@ -3363,7 +3384,7 @@ class Room {
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
     // Same defense-ignore as skillAttackEnemy — see SKILL_DEF_IGNORE.
-    const _defIgnore2 = skillDefIgnoreOf(attacker.type, key, _advActivePvp);
+    const _defIgnore2 = skillDefIgnoreOf(this._effClassFor(attacker, key), key, _advActivePvp);
     const _targetDef = _defIgnore2 > 0 ? Math.round(this._defOf(target) * (1 - _defIgnore2)) : this._defOf(target);
     const base = Math.max(1, Math.round(this._atkOf(attacker) * mult) - _targetDef + Math.floor(Math.random() * 7) - 3);
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
@@ -4667,6 +4688,7 @@ class Room {
     if (st.skillLevels) p._skillLevels = st.skillLevels;
     if (st.advSkillLearned) p._advLearned = st.advSkillLearned;
     if (st.advSkillActive) p._advActive = st.advSkillActive;
+    if (st.skillClass) p._skillClass = st.skillClass;
     if (st.maxHp > 0 && p.maxHp !== st.maxHp) {
       p.maxHp = st.maxHp;
       // Other clients render this player's health bar from maxHp, so a change
@@ -4957,7 +4979,10 @@ class Room {
     if (!this._raceVisible(attacker, enemy)) return null;
     const rdx = attacker.x - enemy.x, rdy = attacker.y - enemy.y;
     const _advActiveNow = this._advSlotActive(attacker, key);
-    const _rangeLimit = _isRangedSingleTargetSkill(attacker.type, key, _advActiveNow)
+    // This slot's effective (possibly borrowed) class decides whether it's a
+    // ranged single-target skill; atkRange itself stays the caster's own
+    // character stat regardless — see the same split in pvpSkillAttack.
+    const _rangeLimit = _isRangedSingleTargetSkill(this._effClassFor(attacker, key), key, _advActiveNow)
       ? ((_charDef(attacker.type)?.atkRange || 210) + SKILL_RANGE_SLACK + (enemy.size || 0))
       : 600;
     if (rdx * rdx + rdy * rdy > _rangeLimit * _rangeLimit) return null;
@@ -4986,7 +5011,7 @@ class Room {
     // «Смертоносность» (adv assassin Q) — ignores 50% of THIS hit's effective
     // defense. Unlike defDown above, this is a property of the cast, not a
     // debuff left on the enemy for anyone else's next hit — see SKILL_DEF_IGNORE.
-    const _defIgnore = skillDefIgnoreOf(attacker.type, key, _advActiveNow);
+    const _defIgnore = skillDefIgnoreOf(this._effClassFor(attacker, key), key, _advActiveNow);
     if (_defIgnore > 0) _effDef2 = Math.round(_effDef2 * (1 - _defIgnore));
     const base = Math.max(1, Math.floor((this._atkOf(attacker) - _effDef2 + Math.floor(Math.random() * 7) - 3) * mult));
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));

@@ -3200,6 +3200,22 @@ function skillBookId(cls, key)  { return `book_${cls}_${key}`; }
 function advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
 function passiveBookId(id)      { return `book_pas_${id}`; }
 
+// Every playable class, derived from the one place that already lists them
+// all rather than typed out a second time — _SKILL_BOOK_SRC's 7×4 rows.
+// Used to validate a `bookClass` a client claims for a foreign-skill cast
+// (learnForeignSkill) is a real class and not an arbitrary string.
+const PLAYABLE_CLASSES = [...new Set(_SKILL_BOOK_SRC.map(([cls]) => cls))];
+
+// Which class's ability ACTUALLY runs in this Q/W/E/R slot — the player's
+// own class, unless the legendary-rune-reroll jackpot (RUNE_REROLL_BONUS_
+// SKILL_CHANCE above) got learned into it (learnForeignSkill, repos/
+// players.js), in which case player_skills.class_override names the
+// borrowed class. One function so the client (combat prediction, HUD) and
+// the server (Room.js combat resolution) read the same slot the same way.
+function effSkillClass(charClass, skillClassMap, key) {
+  return (skillClassMap && skillClassMap[key]) || charClass;
+}
+
 const PASSIVE_MAX_LEVEL = 10;
 
 const PASSIVE_CLASS_DEF = {
@@ -3596,6 +3612,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
+  PLAYABLE_CLASSES, effSkillClass,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES,

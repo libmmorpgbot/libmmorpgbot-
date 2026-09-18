@@ -1385,6 +1385,10 @@ function netConnect(onReady) {
       player.passiveLevels = { ...(payload.passiveLevels || {}) };
       player.advSkillLearned = { Q: false, W: false, E: false, R: false, ...(payload.advSkillLearned || {}) };
       player.advSkillActive = { Q: false, W: false, E: false, R: false, ...(payload.advSkillActive || {}) };
+      // Reset rather than left stale: this reuses the same `player` object a
+      // real session may already have set skillClass on, and a trial build
+      // has no borrowed skills of its own.
+      player.skillClass = { ...(payload.skillClass || {}) };
     }
     csOnServerReady();
   }
@@ -2435,6 +2439,11 @@ function netConnect(onReady) {
     if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
     if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
     if (data.advSkillActive)  player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...data.advSkillActive };
+    // Q/W/E/R -> borrowed class, only present for a slot learnForeignSkill
+    // moved off the player's own — see effSkillClass, shared/definitions.js.
+    // No per-key defaults needed: an absent key already means "own class"
+    // everywhere this map is read.
+    if (data.skillClass) player.skillClass = { ...data.skillClass };
     // passiveLevels feed the stat bonuses (passiveBonusTotal,
     // shared/definitions.js), so a new level has to reach the live stats and
     // not just the panel.
@@ -3522,6 +3531,13 @@ function netSkillAttack(enemyId, multiplier, key) {
 // inventorySync (the books it spent) and upgradeRolled (so the success/failure
 // text still plays). See the handlers in server/index.js.
 function netLearnSkill(key)      { if (socket?.connected) socket.emit('learnSkill', { key }); }
+// The legendary-rune-reroll jackpot's book — any class, not just the
+// player's own (see RUNE_REROLL_BONUS_SKILL_CHANCE, shared/definitions.js).
+// bookClass equal to the player's own class is how a slot reverts: same
+// event, same reslot, just back to what charClass already means.
+function netLearnForeignSkill(key, bookClass) {
+  if (socket?.connected) socket.emit('learnForeignSkill', { key, bookClass });
+}
 function netUpgradeSkill(key)    { if (socket?.connected) socket.emit('upgradeSkill', { key }); }
 function netLearnPassive(id)     { if (socket?.connected) socket.emit('learnPassive', { id }); }
 function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePassive', { id }); }
