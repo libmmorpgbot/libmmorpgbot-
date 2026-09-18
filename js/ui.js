@@ -5247,9 +5247,16 @@ function _runeLineLabel(o) {
   return `${RUNE_STAT_NAME[o.stat] || o.stat} (${RUNE_QUALITY_NAME[o.q] || o.q})`;
 }
 
+// bonusBook — джекпот легендарного перебора (RUNE_REROLL_BONUS_SKILL_CHANCE,
+// shared/definitions.js): 3% шанс на случайную книгу активного навыка любого
+// класса, один раз за нажатие кнопки. Присутствует только когда выпало.
+function _bonusBookSuffix(res) {
+  return res && res.bonusBook ? ` — бонус: ${res.bonusBook.name}!` : '';
+}
+
 function onRuneRerolled(res) {
   if (!res || !res.after) return;
-  _shopMsgOrToast(`Новый вид: ${_runeLineLabel(res.after)}`);
+  _shopMsgOrToast(`Новый вид: ${_runeLineLabel(res.after)}${_bonusBookSuffix(res)}`);
   if (typeof updateInvUI === 'function') updateInvUI();
   _refreshOpenRuneModal();
 }
@@ -5266,7 +5273,7 @@ function onRuneRerolledAll(res) {
     const same = b && b.stat === a.stat && b.q === a.q;
     return same ? `${_runeLineLabel(a)} (без изменений)` : `${b ? _runeLineLabel(b) : '?'} → ${_runeLineLabel(a)}`;
   }).filter(Boolean);
-  _shopMsgOrToast(parts.join(', ') || 'Переработка выполнена');
+  _shopMsgOrToast((parts.join(', ') || 'Переработка выполнена') + _bonusBookSuffix(res));
   if (typeof updateInvUI === 'function') updateInvUI();
   _refreshOpenRuneModal();
 }

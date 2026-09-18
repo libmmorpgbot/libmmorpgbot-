@@ -1974,6 +1974,23 @@ function runeRerollAllPrice(lockCount) {
   return RUNE_REROLL_PRICE * (2 ** n);
 }
 
+// Джекпот легендарного перебора: 3% шанс, один раз за КНОПКУ (не за строку —
+// общий перебор пяти строк легендарной руны кидает этот шанс один раз, а не
+// пять), получить в довесок случайную активную книгу навыка — ЛЮБОГО класса,
+// не только своего. По прямому заданию владельца. Ниже rare/epic/uncommon/
+// common эта проверка не идёт вовсе — см. вызов в repos/runes.js.
+const RUNE_REROLL_BONUS_SKILL_CHANCE = 0.03;
+
+// Пул — все книги базовых активных навыков (skillKey задан только у них: не
+// у пассивок — passiveId, не у книг второй профессии — advSkillKey), всех
+// классов разом. `rand` передаётся снаружи по той же причине, что и у
+// rollRuneStats выше: на сервере это обязан быть crypto, не Math.random.
+function pickRandomSkillBook(rand = Math.random) {
+  const pool = CRAFT_MATS.filter(m => m.skillKey);
+  if (!pool.length) return null;
+  return pool[Math.floor(rand() * pool.length)];
+}
+
 // Цвета характеристик, от худшего к лучшему.
 const RUNE_QUALITIES = ['grey', 'green', 'blue', 'purple', 'orange'];
 const RUNE_QUALITY_COLOR = {
@@ -3591,6 +3608,7 @@ if (typeof module !== 'undefined') module.exports = {
   PET_SKILLS, petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, PET_SKILL_FLASH_SEC,
   RUNE_RARITIES, RUNE_STAT_COUNT, RUNE_ARMOR_SOCKETS, RUNE_WEAPON_SOCKETS,
   RUNE_CRAFT_CHANCE, RUNE_REROLL_PRICE, runeRerollAllPrice,
+  RUNE_REROLL_BONUS_SKILL_CHANCE, pickRandomSkillBook,
   RUNE_QUALITIES, RUNE_QUALITY_COLOR,
   RUNE_QUALITY_NAME, RUNE_QUALITY_WEIGHT, RUNE_STAT_PCT, RUNE_ARMOR_STATS,
   RUNE_WEAPON_STATS, RUNE_STAT_NAME, RUNE_CRAFT_RECIPES,

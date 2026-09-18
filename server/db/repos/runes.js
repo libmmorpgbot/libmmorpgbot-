@@ -29,6 +29,7 @@ const {
   ITEM_DEF, RUNE_CRAFT_RECIPES, RUNE_REROLL_PRICE, runeRerollAllPrice,
   rollRuneStats, rerollRuneLine, runeKindOf, runeRarityOf, runeCatalogId,
   runeSocketsOf, runeKindForSlot,
+  RUNE_REROLL_BONUS_SKILL_CHANCE, pickRandomSkillBook,
 } = require('../../../shared/definitions');
 
 class RuneError extends Error {
@@ -40,6 +41,26 @@ const err = (code, msg) => { throw new RuneError(code, msg); };
 // (repos/craft.js) — см. пункт 1 в шапке.
 const RAND_MAX = 2 ** 30;
 function rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
+
+// ── джекпот легендарного перебора ───────────────────────────────────────────
+// Один бросок RUNE_REROLL_BONUS_SKILL_CHANCE на КНОПКУ (rerollRuneStat и
+// rerollRuneStats оба зовут это один раз за вызов, не за строку), и только
+// для legendary — вызывающая сторона решает это по rarity, не эта функция.
+// Полный инвентарь не валит переработку: она уже оплачена и уже применена,
+// бонус просто пропадает молча — то же самое правило, что у любой другой
+// «довеском» награды в этой игре (см. FRIENDSHIP_TIERS/MAIL_BONUS), только
+// здесь без единого места, которое их все читало бы.
+async function _maybeGrantBonusSkillBook(db, playerId, rarity) {
+  if (rarity !== 'legendary') return null;
+  if (rand() >= RUNE_REROLL_BONUS_SKILL_CHANCE) return null;
+  const book = pickRandomSkillBook(rand);
+  if (!book) return null;
+  if (!await items.hasRoomFor(db, playerId, book.id)) return null;
+  const rowId = await items.add(db, playerId, book.id,
+    { source: 'rune_reroll_bonus', sourceRef: book.id });
+  if (rowId === null) return null;
+  return { itemId: book.id, name: book.name, rowId };
+}
 
 // ── база ещё без миграции 029 ───────────────────────────────────────────────
 // Код выкладывается раньше миграции — это порядок, а не случайность. В окне
@@ -161,7 +182,8 @@ async function rerollRuneStat(db, playerId, rowId, statIdx) {
   await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
     [id, playerId, JSON.stringify({ stats: next })]);
   const after = { stat: next[idx].stat, q: next[idx].q };
-  return { rowId: id, statIdx: idx, before, after, cost: RUNE_REROLL_PRICE, stats: next };
+  const bonusBook = await _maybeGrantBonusSkillBook(db, playerId, rarity);
+  return { rowId: id, statIdx: idx, before, after, cost: RUNE_REROLL_PRICE, stats: next, bonusBook };
 }
 
 
@@ -223,9 +245,10 @@ async function rerollRuneStats(db, playerId, rowId, lockedIdx = []) {
   const next = rerollRuneLine(kind, rarity, stats, [...locks], rand);
   await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
     [id, playerId, JSON.stringify({ stats: next })]);
+  const bonusBook = await _maybeGrantBonusSkillBook(db, playerId, rarity);
   return {
     rowId: id, locked: [...locks].sort((a, b) => a - b),
-    before, after: next.map(st => ({ stat: st.stat, q: st.q })), cost: price, stats: next,
+    before, after: next.map(st => ({ stat: st.stat, q: st.q })), cost: price, stats: next, bonusBook,
   };
 }
 
