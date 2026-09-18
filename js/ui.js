@@ -4321,10 +4321,15 @@ function openStarterBonusPanel() {
   // Не строка списка, а отдельная строка под ним: это не предмет в
   // инвентаре, а бафф, который активируется сам (см. NEWBIE_BUFF,
   // shared/definitions.js, и claimStarterBonus, server/db/repos/shop.js).
-  const buffLine = tVars('starterBonusBuffFmt', {
+  //
+  // Только для аккаунтов моложе NEWBIE_BUFF_LAUNCH_AT — player.newbieEligible
+  // приходит с сервером (savedView, server/session.js) и отражает ровно то,
+  // что claimStarterBonus решит по created_at. Показать строку старому
+  // аккаунту значило бы обещать бафф, которого сервер не выдаст.
+  const buffLine = player.newbieEligible ? tVars('starterBonusBuffFmt', {
     xp: STARTER_BONUS.buff.xpMult, atk: STARTER_BONUS.buff.atkMult, def: STARTER_BONUS.buff.defMult,
     days: Math.round(STARTER_BONUS.buff.dur / 86400),
-  });
+  }) : '';
 
   const ov = document.createElement('div');
   ov.id = 'starter-bonus-ov';
@@ -4334,7 +4339,7 @@ function openStarterBonusPanel() {
     <div style="font-size:16px;font-weight:800;color:#f0b44a;margin-bottom:6px">${t('starterBonusTitle')}</div>
     <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
     <div class="vip-items-row">${gearRows}${bpRows}${hpRow}</div>
-    <div style="font-size:12.5px;color:#f0b44a;font-weight:700;margin-top:10px">${buffLine}</div>
+    ${buffLine ? `<div style="font-size:12.5px;color:#f0b44a;font-weight:700;margin-top:10px">${buffLine}</div>` : ''}
     <div id="starter-bonus-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button onclick="document.getElementById('starter-bonus-ov').remove()" style="

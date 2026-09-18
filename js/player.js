@@ -1454,6 +1454,12 @@ function restoreFromSave(data) {
   player.empowers = data.empowers || 0;
   player.starterBonus = !!data.starterBonus;
   player.mailBonus = !!data.mailBonus;
+  // Whether the Набор новичка panel may promise the buff line — see
+  // savedView(), server/session.js. Server-decided, not derived on the
+  // client: this account's own registration date never reaches the client
+  // otherwise, and guessing it here is exactly the kind of promise the panel
+  // is not allowed to make without the server backing it.
+  player.newbieEligible = !!data.newbieEligible;
   player.questIdx  = data.questIdx  || 0;
   player.questKills = data.questKills || {};
   player.specialQuestsDone = data.specialQuestsDone || [];

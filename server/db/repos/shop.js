@@ -30,7 +30,7 @@ const players = require('./players');
 const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, MAIL_BONUS,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   seasonActive, seasonShopPoints,
 } = require('../../../shared/definitions');
@@ -261,15 +261,29 @@ async function claimStarterBonus(db, playerId) {
 
   // «Награда новичка» — written straight into buffs, the same column
   // useBuffPotion writes a drunk potion into, just for NEWBIE_BUFF.dur seconds
-  // and with no potion to remove first. Unconditional, unlike useBuffPotion's
-  // own UPDATE: this account cannot already have the buff running, because
-  // the conditional UPDATE two statements up only let it reach here once.
-  await query(db, `
+  // and with no potion to remove first.
+  //
+  // Gated on players.created_at, not just "reached this line": the kit itself
+  // stays available to every account that has not claimed it yet (old players
+  // who simply never pressed «Бонус» included), but the buff is the part that
+  // shipped for NEW players specifically — an account registered before
+  // NEWBIE_BUFF_LAUNCH_AT gets the kit as always and no buff. Same reasoning,
+  // same column, as FRIENDSHIP_LAUNCH_AT's `p.created_at >= $2` a screen up in
+  // this file. The EXISTS makes the UPDATE itself a no-op for an old account
+  // rather than a second query deciding whether to run it — one round trip,
+  // and nothing to race.
+  const { rowCount: buffGranted } = await query(db, `
     UPDATE player_progress
        SET buffs = jsonb_set(buffs, ARRAY[$2], to_jsonb($3::bigint), true)
-     WHERE player_id = $1`, [playerId, NEWBIE_BUFF.type, Date.now() + NEWBIE_BUFF.dur * 1000]);
+     WHERE player_id = $1
+       AND EXISTS (
+         SELECT 1 FROM players WHERE id = $1 AND created_at >= $4::timestamptz
+       )`, [playerId, NEWBIE_BUFF.type, Date.now() + NEWBIE_BUFF.dur * 1000, NEWBIE_BUFF_LAUNCH_AT]);
 
-  return { granted, hpPotions: STARTER_BONUS.hpPotions, charClass, buff: NEWBIE_BUFF };
+  return {
+    granted, hpPotions: STARTER_BONUS.hpPotions, charClass,
+    buff: buffGranted ? NEWBIE_BUFF : null,
+  };
 }
 
 // ── письмо ──────────────────────────────────────────────────────────────────

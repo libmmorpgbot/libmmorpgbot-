@@ -422,13 +422,18 @@ class Session {
       const { id, isNew } = await players.ensure(t, telegramId, username);
       const p = await players.byTelegramId(t, telegramId);
       if (p.username !== username) await players.setUsername(t, id, username);
-      return { id, isNew, banned: p.banned, referredBy: p.referredBy };
+      return { id, isNew, banned: p.banned, referredBy: p.referredBy, createdAt: p.createdAt };
     });
 
     this.playerId = res.id;
     this.telegramId = String(telegramId);
     this.username = username;
     this.banned = res.banned;
+    // Read fresh from `players` on every login, not just isNew's one-shot
+    // moment of registration — savedView() below needs it every time this
+    // account opens the Набор новичка panel, days or months after the account
+    // was actually created.
+    this.createdAt = res.createdAt;
 
     // Single session per account. The previous holder is disconnected rather
     // than refused, because the common case is a page refresh where the old
@@ -872,6 +877,16 @@ class Session {
       if (it) equipment[slot] = it;
     }
 
+    // Whether THIS account is new enough for the starter kit's buff
+    // (NEWBIE_BUFF_LAUNCH_AT, shared/definitions.js). The real gate is
+    // server-side, in claimStarterBonus itself — this only lets the Набор
+    // новичка panel (openStarterBonusPanel, js/ui.js) promise the buff line to
+    // accounts claimStarterBonus will actually grant it to, and stay silent
+    // for accounts it will not.
+    const { NEWBIE_BUFF_LAUNCH_AT } = require('../shared/definitions');
+    const newbieEligible = !!this.createdAt &&
+      new Date(this.createdAt).getTime() >= new Date(NEWBIE_BUFF_LAUNCH_AT).getTime();
+
     return {
       // ── WHICH CLASS THIS ACCOUNT ALREADY IS ──────────────────────────────
       // The column is char_class, the client's whole vocabulary for it is
@@ -920,6 +935,7 @@ class Session {
       bonusSP: p.bonusSP, keptSP: p.keptSP, empowers: p.empowers,
       starterBonus: !!p.starterBonusClaimed,
       mailBonus: !!p.mailBonusClaimed,
+      newbieEligible,
       // Сколько раз этот аккаунт менял класс. Нужно КЛИЕНТУ: за Liberty
       // меняют только первый раз, и предлагать её на второй значит обещать то,
       // в чём сервер откажет. Считается по журналу движения денег — он

@@ -3059,6 +3059,14 @@ const NEWBIE_BUFF = {
   defMult: 2,
 };
 
+// Только для аккаунтов, ЗАРЕГИСТРИРОВАННЫХ не раньше этой даты — тот же приём,
+// что и у FRIENDSHIP_LAUNCH_AT (players.created_at, claimStarterBonus, server/
+// db/repos/shop.js): иначе выкладка среди дня раздала бы бафф каждому, кто
+// просто ещё не нажимал «Бонус», а не только новичкам, ради которых он
+// придуман. Набор новичка при этом получают ВСЕ как и раньше — не хватает
+// только буста, если аккаунт старше этой даты.
+const NEWBIE_BUFF_LAUNCH_AT = '2026-09-18T07:25:00Z';
+
 // ── Набор новичка (starter bonus) ──────────────────────────────────────────
 // The free one-per-account kit behind the HUD's "Бонус" button, directly
 // below "+Pack" (drawStarterBonusButton, js/ui.js). Costs nothing and is
@@ -3563,7 +3571,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
-  UPGRADE_RESET_COST, STARTER_BONUS, NEWBIE_BUFF, MAIL_BONUS,
+  UPGRADE_RESET_COST, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
