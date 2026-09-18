@@ -304,6 +304,14 @@ function recompute() {
   if (buffs.hp        > 0) h = Math.floor(h * 1.10);
   if (buffs.atk       > 0) a = Math.floor(a * 1.20);
   if (buffs.atkspeed  > 0) extraAS += (player.charDef.atkSpeed || 0) * 0.20;
+  // «Награда новичка» — NEWBIE_BUFF (shared/definitions.js), the same buff
+  // block as the potions above and in the same ORDER as its server twin
+  // (server/db/repos/stats.js): must stay step-for-step identical or the two
+  // sides floor() their way to different numbers.
+  if (buffs[NEWBIE_BUFF.type] > 0) {
+    a = Math.floor(a * NEWBIE_BUFF.atkMult);
+    d = Math.floor(d * NEWBIE_BUFF.defMult);
+  }
 
   // Процент атаки с предмета (Вилорд) — вместе с пассивным, одним множителем.
   if (atkPct) a = Math.floor(a * (1 + atkPct));

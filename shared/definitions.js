@@ -3038,6 +3038,27 @@ const MERCHANT_SHOP = [
 const POTION_CAP = 999;          // per kind, in potionBag
 const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
 
+// ── Награда новичка (newbie buff) ───────────────────────────────────────────
+// Активируется САМА, без банки и без нажатия «Выпить», в момент получения
+// Набора новичка (claimStarterBonus, server/db/repos/shop.js) — пишется в
+// player_progress.buffs под своим ключом ('newbie'), тем же способом, что и
+// баф-зелья, только на неделю и без предмета, который держит слот инвентаря.
+//
+// Множители читает recompute() (js/player.js) и её серверный двойник
+// (server/db/repos/stats.js) — оба обязаны применять их в ОДНОМ и том же
+// месте буфф-блока, что и остальные баф-зелья (см. правило "step-for-step
+// identical" в шапке stats.js), иначе клиент и сервер разойдутся в цифре
+// атаки/защиты. xpMult читает killReward (server/handlers2/world.js), там же,
+// где banka «Зелье опыта» (buffType 'exp') даёт свои x2 — этот множитель
+// накопительный, отдельный от неё.
+const NEWBIE_BUFF = {
+  type: 'newbie',
+  dur: 7 * 24 * 3600, // 7 дней, в секундах — тот же формат, что и buffDur у банок
+  xpMult: 5,
+  atkMult: 2,
+  defMult: 2,
+};
+
 // ── Набор новичка (starter bonus) ──────────────────────────────────────────
 // The free one-per-account kit behind the HUD's "Бонус" button, directly
 // below "+Pack" (drawStarterBonusButton, js/ui.js). Costs nothing and is
@@ -3059,6 +3080,11 @@ const STARTER_BONUS = {
   // (that is where pt1/pt2 live — see buyPotion, server/handlers/items.js).
   hpPotionId: 'pt1',
   hpPotions: 300,
+  // ...и «Награда новичка» — свой бафф, не банка: claimStarterBonus (server/
+  // db/repos/shop.js) пишет его в player_progress.buffs НАПРЯМУЮ, тем же
+  // способом, что useBuffPotion пишет банку, только на 7 дней сразу и без
+  // предмета в инвентаре, который для этого пришлось бы выпить.
+  buff: NEWBIE_BUFF,
 };
 
 // ── Письмо (mail bonus) ────────────────────────────────────────────────────
@@ -3537,7 +3563,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
-  UPGRADE_RESET_COST, STARTER_BONUS, MAIL_BONUS,
+  UPGRADE_RESET_COST, STARTER_BONUS, NEWBIE_BUFF, MAIL_BONUS,
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,

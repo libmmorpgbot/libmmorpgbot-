@@ -42,7 +42,7 @@
 const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext, runeBonusTotals,
+  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -282,6 +282,15 @@ function compute(row) {
   if (buffOn('hp'))       h = Math.floor(h * 1.10);
   if (buffOn('atk'))      a = Math.floor(a * 1.20);
   if (buffOn('atkspeed')) extraAS += (cd.atkSpeed || 0) * 0.20;
+  // «Награда новичка» — activated by claimStarterBonus straight into buffs,
+  // no potion involved (shared/definitions.js's NEWBIE_BUFF comment). Same
+  // buff block as the potions above, so it stacks with 'atk' rather than
+  // replacing it, exactly like a player who both drank the potion and holds
+  // this buff would expect.
+  if (buffOn(NEWBIE_BUFF.type)) {
+    a = Math.floor(a * NEWBIE_BUFF.atkMult);
+    d = Math.floor(d * NEWBIE_BUFF.defMult);
+  }
   // Three of the six buff potions were written and never read: exp, gold and
   // regen. exp and gold are applied where a kill pays out (handlers2/world.js);
   // regen belongs here, with every other stat, and is the flat +2 HP/sec the

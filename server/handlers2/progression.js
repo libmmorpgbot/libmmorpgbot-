@@ -409,6 +409,12 @@ module.exports = function registerProgression(s, safeOn) {
     await shopRepo.claimStarterBonus(t, pid);
     await s.pushItems(t); await s.pushStats(t);
     s.socket.emit('potionBag', { potionBag: await consumables.potionBagOf(t, pid) });
+    // «Награда новичка» — the buff claimStarterBonus just wrote straight into
+    // buffs, same as useBuffPotion's own buffSync (server/handlers2/items.js):
+    // without it the HUD chip and the client's own recompute() would not see
+    // the buff until some unrelated action pushed stats again.
+    const prog = await players.progressOf(t, pid);
+    s.socket.emit('buffSync', { buffs: consumables.buffsRemaining(prog.buffs) });
     s.socket.emit('starterBonusDone', {});
   }));
 

@@ -41,7 +41,7 @@ const {
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
-  oreDropChance, CRAFT_MATS,
+  oreDropChance, CRAFT_MATS, NEWBIE_BUFF,
 } = require('../../shared/definitions');
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
@@ -691,7 +691,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const nowMs = Date.now();
       const buffOn = t2 => Number((prog.buffs || {})[t2] || 0) > nowMs;
       const paidGold = buffOn('gold') ? myGold * 2 : myGold;
-      const paidXp = buffOn('exp') ? myXp * 2 : myXp;
+      // «Награда новичка» stacks on top of the exp potion rather than
+      // replacing it — a player who both holds the buff and drinks bp_exp
+      // gets NEWBIE_BUFF.xpMult × 2, same as 'atk' stacking with it in
+      // stats.js above.
+      const paidXp = (buffOn('exp') ? myXp * 2 : myXp) * (buffOn(NEWBIE_BUFF.type) ? NEWBIE_BUFF.xpMult : 1);
 
       const reward = await consumables.grantKillReward(t, pid, {
         gold: paidGold, xp: paidXp, nexum: myNexum, gram: myGram,
@@ -828,7 +832,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
         const mClan = clanBonusOf(mate.clan && mate.clan.level);
         const mXpPct = (mVip.xp || 0) + (mTicket ? (SEASON_TICKET_XP_PCT || 0) : 0) + mClan.xp;
         const mGold = Math.round(baseGold * (1 + ((mVip.gold || 0) + mClan.gold) / 100)) * (mBuff('gold') ? 2 : 1);
-        const mXp = Math.round(baseXp * (1 + mXpPct / 100)) * (mBuff('exp') ? 2 : 1);
+        const mXp = Math.round(baseXp * (1 + mXpPct / 100)) * (mBuff('exp') ? 2 : 1)
+          * (mBuff(NEWBIE_BUFF.type) ? NEWBIE_BUFF.xpMult : 1);
         const r = await consumables.grantKillReward(t, pid, {
           gold: mGold, xp: mXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,
         });
