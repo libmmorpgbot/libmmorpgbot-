@@ -30,6 +30,7 @@ const {
   rollRuneStats, rerollRuneLine, runeKindOf, runeRarityOf, runeCatalogId,
   runeSocketsOf, runeKindForSlot,
   RUNE_REROLL_BONUS_SKILL_CHANCE, pickRandomSkillBook,
+  SKILL_MAX_LEVEL, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, skillBookId,
 } = require('../../../shared/definitions');
 
 class RuneError extends Error {
@@ -42,24 +43,25 @@ const err = (code, msg) => { throw new RuneError(code, msg); };
 const RAND_MAX = 2 ** 30;
 function rand() { return crypto.randomInt(RAND_MAX) / RAND_MAX; }
 
-// ── джекпот легендарного перебора ───────────────────────────────────────────
+// ── джекпот легендарного перебора (только оружейная руна) ──────────────────
 // Один бросок RUNE_REROLL_BONUS_SKILL_CHANCE на КНОПКУ (rerollRuneStat и
 // rerollRuneStats оба зовут это один раз за вызов, не за строку), и только
-// для legendary — вызывающая сторона решает это по rarity, не эта функция.
-// Полный инвентарь не валит переработку: она уже оплачена и уже применена,
-// бонус просто пропадает молча — то же самое правило, что у любой другой
-// «довеском» награды в этой игре (см. FRIENDSHIP_TIERS/MAIL_BONUS), только
-// здесь без единого места, которое их все читало бы.
-async function _maybeGrantBonusSkillBook(db, playerId, rarity) {
-  if (rarity !== 'legendary') return null;
+// для ОРУЖЕЙНОЙ legendary — броня такого не даёт (вызывающая сторона решает
+// это по kind/rarity, не эта функция).
+//
+// Приз пишется ПРЯМО В РУНУ (rune.bonusSkill = {cls,key,level:1}), не
+// отдельной строкой player_skills и не предметом в инвентаре: способность
+// принадлежит ЭТОМУ БРОСКУ характеристик руны, а не аккаунту — см. заголовок
+// файла (руна как первая вещь со своим содержимым). Вызывающая сторона
+// (rerollRuneStat/rerollRuneStats) кладёт результат в rune.bonusSkill каждый
+// раз заново — null, если не выпало, без разбора «а был ли там уже другой»:
+// старая способность, какая бы ни была, не переживает переброс сама по
+// себе — тот же бросок, что переписывает stats, переписывает и её.
+function _rollBonusSkill(kind, rarity) {
+  if (kind !== 'weapon' || rarity !== 'legendary') return null;
   if (rand() >= RUNE_REROLL_BONUS_SKILL_CHANCE) return null;
   const book = pickRandomSkillBook(rand);
-  if (!book) return null;
-  if (!await items.hasRoomFor(db, playerId, book.id)) return null;
-  const rowId = await items.add(db, playerId, book.id,
-    { source: 'rune_reroll_bonus', sourceRef: book.id });
-  if (rowId === null) return null;
-  return { itemId: book.id, name: book.name, rowId };
+  return book ? { cls: book.forClass, key: book.skillKey, level: 1 } : null;
 }
 
 // ── база ещё без миграции 029 ───────────────────────────────────────────────
@@ -177,13 +179,17 @@ async function rerollRuneStat(db, playerId, rowId, statIdx) {
   if (!paid) err('no_nexum', 'Недостаточно Liberty');
 
   const before = { stat: stats[idx].stat, q: stats[idx].q };
+  const hadBonusBefore = !!(rows[0].rune && rows[0].rune.bonusSkill);
   const lockedIdx = stats.map((_, i) => i).filter(i => i !== idx);
   const next = rerollRuneLine(kind, rarity, stats, lockedIdx, rand);
+  const bonusSkill = _rollBonusSkill(kind, rarity);
   await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
-    [id, playerId, JSON.stringify({ stats: next })]);
+    [id, playerId, JSON.stringify(bonusSkill ? { stats: next, bonusSkill } : { stats: next })]);
   const after = { stat: next[idx].stat, q: next[idx].q };
-  const bonusBook = await _maybeGrantBonusSkillBook(db, playerId, rarity);
-  return { rowId: id, statIdx: idx, before, after, cost: RUNE_REROLL_PRICE, stats: next, bonusBook };
+  return {
+    rowId: id, statIdx: idx, before, after, cost: RUNE_REROLL_PRICE, stats: next,
+    bonusSkill, bonusSkillLost: hadBonusBefore && !bonusSkill,
+  };
 }
 
 
@@ -242,13 +248,15 @@ async function rerollRuneStats(db, playerId, rowId, lockedIdx = []) {
   // клиенту нужно показать «без изменений» рядом с тем, что реально
   // изменилось, а не гадать по одному только locked-списку.
   const before = stats.map(st => ({ stat: st.stat, q: st.q }));
+  const hadBonusBefore = !!(rows[0].rune && rows[0].rune.bonusSkill);
   const next = rerollRuneLine(kind, rarity, stats, [...locks], rand);
+  const bonusSkill = _rollBonusSkill(kind, rarity);
   await query(db, 'UPDATE player_items SET rune = $3 WHERE id = $1 AND player_id = $2',
-    [id, playerId, JSON.stringify({ stats: next })]);
-  const bonusBook = await _maybeGrantBonusSkillBook(db, playerId, rarity);
+    [id, playerId, JSON.stringify(bonusSkill ? { stats: next, bonusSkill } : { stats: next })]);
   return {
     rowId: id, locked: [...locks].sort((a, b) => a - b),
-    before, after: next.map(st => ({ stat: st.stat, q: st.q })), cost: price, stats: next, bonusBook,
+    before, after: next.map(st => ({ stat: st.stat, q: st.q })), cost: price, stats: next,
+    bonusSkill, bonusSkillLost: hadBonusBefore && !bonusSkill,
   };
 }
 
@@ -335,9 +343,51 @@ async function unsocketRune(db, playerId, runeRowId) {
   return { runeRowId: rune, hostRowId: Number(rows[0].socket_of) };
 }
 
+// ── улучшение заимствованной способности (пятый слот) ───────────────────────
+// bonusSkill живёт ВНУТРИ руны (_rollBonusSkill выше), поэтому апгрейд —
+// это находка экипированного оружия → руны в его гнезде → её bonusSkill, а
+// не отдельная строка player_skills. Экономика та же, что у обычного
+// upgradeSkill (progression.js): SKILL_UPGRADE_COST книг ИМЕННО этой
+// способности (skillBookId(cls,key) — та же книга, что учит и качает
+// настоящий Q/W/E/R того класса, отдельного «книжного» экономики для
+// заимствованной способности нет), SKILL_UPGRADE_CHANCE шанс, книги горят
+// в любом случае. jsonb_set трогает только level внутри bonusSkill, а не
+// весь rune целиком — переброс той же руны кем-то ещё за то же время не
+// перетрёт этим апгрейдом её характеристики (и наоборот).
+async function upgradeBonusSkill(db, playerId) {
+  await items.lockPlayer(db, playerId);
+  const { rows } = await query(db, `
+    SELECT r.id AS row_id, r.rune
+      FROM player_items i
+      JOIN player_items r ON r.socket_of = i.id
+     WHERE i.player_id = $1 AND i.container = 'equipment' AND i.slot = 'weapon'
+       AND r.rune ? 'bonusSkill'
+     LIMIT 1`, [playerId]);
+  if (!rows.length) err('no_bonus_skill', 'Заимствованная способность не найдена');
+  const { row_id: rowId, rune } = rows[0];
+  const bs = rune.bonusSkill;
+  if ((bs.level || 0) >= SKILL_MAX_LEVEL) err('maxed', 'Уже максимальный уровень');
+
+  const bookId = skillBookId(bs.cls, bs.key);
+  if (!await items.removeQty(db, playerId, bookId, SKILL_UPGRADE_COST)) {
+    err('no_book', `Нужно книг: ${SKILL_UPGRADE_COST}`);
+  }
+
+  const chance = typeof SKILL_UPGRADE_CHANCE === 'number' ? SKILL_UPGRADE_CHANCE : 0.5;
+  const success = rand() < chance;
+  let level = bs.level || 0;
+  if (success) {
+    level = Math.min(SKILL_MAX_LEVEL, level + 1);
+    await query(db,
+      `UPDATE player_items SET rune = jsonb_set(rune, '{bonusSkill,level}', $2::jsonb) WHERE id = $1`,
+      [rowId, JSON.stringify(level)]);
+  }
+  return { ok: success, level, cls: bs.cls, key: bs.key };
+}
+
 // «Стоят ли в предмете руны» живёт НЕ здесь, а в repos/items.js
 // (assertNoRunes): спрашивают об этом продажа, разбор и рынок, то есть пути,
 // которые об руны ничего не знают и знать не должны. Две функции с одним
 // ответом разошлись бы на первом же изменении правила.
 
-module.exports = { craftRune, rerollRuneStat, rerollRuneStats, socketRune, unsocketRune };
+module.exports = { craftRune, rerollRuneStat, rerollRuneStats, socketRune, unsocketRune, upgradeBonusSkill };

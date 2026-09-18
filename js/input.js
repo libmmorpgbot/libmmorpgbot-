@@ -361,8 +361,8 @@ function _checkSkillTouch(cx, cy) {
       return true;
     }
   }
-  // The fifth, independent slot (learnForeignSkill, js/player.js) — seat 4
-  // on the same arc, only present once something's actually learned into it
+  // The fifth, independent slot — seat 4 on the same arc, only present once
+  // the equipped weapon's legendary rune actually carries one
   // (drawSkillButtons/js/ui.js only draws it then either).
   if (player.foreignSkill) {
     const b = getSkillBtnPos(4);
@@ -835,8 +835,8 @@ function initInput() {
         Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3,
       };
       if (e.code in map) useSkill(map[e.code]);
-      // The fifth, independent slot (learnForeignSkill, js/player.js) — 5
-      // continues the same 1-4 numbering rather than taking a letter, since
+      // The fifth, independent slot — 5 continues the same 1-4 numbering
+      // rather than taking a letter, since
       // it has no fixed name to mnemonic off (it's whichever class's
       // ability the jackpot handed out).
       if ((e.code === 'Digit5' || e.code === 'Numpad5') && player.foreignSkill) useForeignSkill();

@@ -1281,27 +1281,19 @@ canvas { display:block; width:100%; height:100%; }
 .adv-btn { background:linear-gradient(135deg,#2a5677,#f5c542); color:#141920; }
 
 /* ── пятый слот: заимствованная способность (джекпот переработки
-   легендарной руны, RUNE_REROLL_BONUS_SKILL_CHANCE) ─────────────────────
+   ОРУЖЕЙНОЙ легендарной руны, RUNE_REROLL_BONUS_SKILL_CHANCE) ────────────
    .foreign-skill-card is its own .skill-upg-card, appended after the four
    real slots — never nested inside one of them, since it never occupies
-   Q/W/E/R. .sk-foreign-row is the "book available/replace" sub-block,
-   shared by both the empty (nothing learned yet) and learned states. */
+   Q/W/E/R. Only ever drawn once a bonusSkill is actually attached — no
+   "book available" state, since acquiring it is never a player choice. */
 .foreign-skill-card {
   border-color: rgba(192,132,252,0.3);
   background: rgba(192,132,252,0.04);
 }
-.sk-foreign-row {
-  margin-top: 2px; padding: 9px 11px 8px;
-  background: rgba(192,132,252,0.06);
-  border: 1px solid rgba(192,132,252,0.25); border-radius: 10px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.sk-foreign-hdr {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 10px; font-weight: 700; color: #c084fc;
-  letter-spacing: 0.3px; text-transform: uppercase;
-}
 .foreign-btn { background: linear-gradient(135deg,#6b3fa0,#c084fc); color: #1a1024; }
+.sk-foreign-note {
+  margin-top: 2px; font-size: 10px; line-height: 1.4; color: #8a7fa3;
+}
 
 /* ── GRAM Wallet (Profile tab) ──────────────────────────────── */
 .gram-balance-card {

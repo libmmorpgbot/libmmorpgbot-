@@ -14,6 +14,7 @@
 const players = require('../db/repos/players');
 const progression = require('../db/repos/progression');
 const items = require('../db/repos/items');
+const runes = require('../db/repos/runes');
 const shopRepo = require('../db/repos/shop');
 const consumables = require('../db/repos/consumables');
 const {
@@ -22,7 +23,7 @@ const {
   SEASON_EMPOWER_POINTS, seasonActive,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
-  PLAYABLE_CLASSES, FOREIGN_SKILL_KEY,
+  FOREIGN_SKILL_KEY,
   SEASON_RATING_MIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
@@ -118,51 +119,17 @@ module.exports = function registerProgression(s, safeOn) {
   }));
 
   // ── пятый слот: заимствованная способность ──────────────────────────────
-  // Джекпот легендарного перебора руны (RUNE_REROLL_BONUS_SKILL_CHANCE, 3%,
-  // shared/definitions.js) выдаёт книгу активного навыка ЛЮБОГО класса. Она
-  // учится в ОТДЕЛЬНЫЙ, пятый слот — никогда не в Q/W/E/R — и всегда
-  // заменяет то, что там уже было: другая книга джекпота просто переучивает
-  // тот же единственный слот заново (players.setForeignSkill удаляет
-  // прежнюю строку перед вставкой новой). Уровень всегда начинается с 1.
-  safeOn('learnForeignSkill', ({ bookClass, bookKey } = {}) => s.act('learnForeignSkill', 'progressError', async (t, pid) => {
-    if (typeof bookClass !== 'string' || !PLAYABLE_CLASSES.includes(bookClass)) {
-      fail('Неизвестный класс', 'bad_class');
-    }
-    if (!SLOTS.has(bookKey)) fail('Неизвестный навык', 'bad_slot');
-    await items.lockPlayer(t, pid);
-    const bookId = skillBookId(bookClass, bookKey);
-    if (!await items.removeQty(t, pid, bookId, SKILL_STUDY_COST)) {
-      fail(`Нужно книг: ${SKILL_STUDY_COST}`, 'no_book');
-    }
-    await players.setForeignSkill(t, pid, bookClass, bookKey);
-    await s.pushItems(t); await pushAfterStat(t);
-  }));
-
-  // Same roll/cost shape as upgradeSkill above, but always the fifth slot's
-  // own (class, key) — read off what was actually learned, never claimed —
-  // and no `key` param: there is only ever one foreign slot to upgrade.
+  // Нет learnForeignSkill — способность никогда не выбор игрока: её кладёт
+  // ТОЛЬКО джекпот переработки легендарной оружейной руны (repos/runes.js's
+  // _rollBonusSkill, RUNE_REROLL_BONUS_SKILL_CHANCE, shared/definitions.js),
+  // и живёт она в самой руне, не здесь. Апгрейд — тот же book/chance путь,
+  // что и у upgradeSkill выше, только адресат (repos/runes.js's
+  // upgradeBonusSkill находит сам, по надетому оружию) не приходит от
+  // клиента: спрашивать «чей слот» бессмысленно, слот всегда один.
   safeOn('upgradeForeignSkill', () => s.act('upgradeForeignSkill', 'progressError', async (t, pid) => {
-    const sk = await players.skillsOf(t, pid);
-    if (!sk.foreignSkill) fail('Навык не изучен', 'not_learned');
-    const { cls, key } = sk.foreignSkill;
-
-    await items.lockPlayer(t, pid);
-    const bookId = skillBookId(cls, key);
-    if (!await items.removeQty(t, pid, bookId, SKILL_UPGRADE_COST)) {
-      fail(`Нужно книг: ${SKILL_UPGRADE_COST}`, 'no_book');
-    }
-
-    // crypto, not Math.random: same reasoning as upgradeSkill above.
-    const chance = typeof SKILL_UPGRADE_CHANCE === 'number' ? SKILL_UPGRADE_CHANCE : 0.5;
-    const success = require('crypto').randomInt(1e6) / 1e6 < chance;
-
-    let level = null;
-    if (success) {
-      const r = await players.bumpSkill(t, pid, 'foreign', key);
-      level = r.level;
-    }
+    const res = await runes.upgradeBonusSkill(t, pid);
     await s.pushItems(t); await pushAfterStat(t);
-    s.socket.emit('upgradeRolled', { kind: FOREIGN_SKILL_KEY, ok: success, level });
+    s.socket.emit('upgradeRolled', { kind: FOREIGN_SKILL_KEY, ok: res.ok, level: res.level });
   }));
 
   safeOn('learnPassive', ({ id } = {}) => s.act('learnPassive', 'progressError', async (t, pid) => {

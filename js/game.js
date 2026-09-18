@@ -532,8 +532,7 @@ function update(dt, realDt) {
             // loop: cleared eagerly anyway in case that skill's own state
             // (cooldown/level) changed while approaching and it bails out
             // early without reaching that point. sc.foreign is how the
-            // fifth slot (learnForeignSkill) armed this chase — see
-            // useForeignSkill, js/player.js.
+            // fifth slot armed this chase — see useForeignSkill, js/player.js.
             player._chasing = false;
             player._skillChase = null;
             if (sc.foreign) useForeignSkill(); else useSkill(sc.idx);
@@ -1028,8 +1027,8 @@ function update(dt, realDt) {
     if (cds.W > 0) cds.W -= realDt;
     if (cds.E > 0) cds.E -= realDt;
     if (cds.R > 0) cds.R -= realDt;
-    // The fifth, independent slot (learnForeignSkill) — its own cooldown,
-    // keyed by FOREIGN_SKILL_KEY, never one of the four above.
+    // The fifth, independent slot — its own cooldown, keyed by
+    // FOREIGN_SKILL_KEY, never one of the four above.
     if (cds[FOREIGN_SKILL_KEY] > 0) cds[FOREIGN_SKILL_KEY] -= realDt;
   }
   // Buffs, cooldowns and crowd control all run on realDt — see the realDt

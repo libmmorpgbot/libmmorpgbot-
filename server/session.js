@@ -70,7 +70,7 @@ const WRITE_ACTIONS = new Set([
   // бафа остаются — их покупают и крафтят, и вопрос «куда делось» к ним
   // возникает, а к лечилке нет.
   'useBuffPotion', 'spendUpgrade', 'resetUpgrades', 'empower',
-  'learnSkill', 'upgradeSkill', 'learnForeignSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
+  'learnSkill', 'upgradeSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'claimQuest', 'completeSpecialQuest', 'claimVipRewards',
   'gramDepositRequest', 'gramWithdrawRequest',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
@@ -769,9 +769,15 @@ class Session {
       // The base figures ride along: applyLevelState reads them, and without
       // them a level-up raised the level on screen while the character stayed as
       // strong as it was at level one.
+      // foreignSkill rides here, not progressSync: it can change from
+      // socketing/unsocketing a rune or just switching weapons, none of
+      // which touch player_skills (pushProgress's source) at all — but
+      // every one of them already calls pushStats (items.js's rune/equip
+      // handlers), which is why it lives on THIS event instead.
       this._emitRaw('xpSync', {
         lvl: st.level, xp: st.xp, xpNext: st.xpNext,
         baseAtk: st.baseAtk, baseDef: st.baseDef, baseMaxHp: st.baseMaxHp,
+        foreignSkill: st.foreignSkill,
       });
       // The ROOM's copy waits for the commit too, and that is not tidiness. It
       // is what decides damage: an empower whose transaction is rolled back
@@ -956,9 +962,11 @@ class Session {
       passiveLevels: skills.passiveLevels || {},
       advSkillLearned: skills.advSkillLearned || {},
       advSkillActive: skills.advSkillActive || {},
-      // The fifth, independent slot (learnForeignSkill) — null when nothing
-      // has been learned into it. See FOREIGN_SKILL_KEY, shared/definitions.js.
-      foreignSkill: skills.foreignSkill || null,
+      // The fifth, independent slot — not a skills.* field: it comes from
+      // stats.of() (the equipped weapon's legendary rune, repos/runes.js),
+      // null unless that rune currently carries one. See FOREIGN_SKILL_KEY,
+      // shared/definitions.js.
+      foreignSkill: (st && st.foreignSkill) || null,
 
       lang: prefs.lang,
       autoHpPct: prefs.autoHpPct,

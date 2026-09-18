@@ -109,8 +109,9 @@ function makePlayer(type) {
     // js/ui.js) — a fresh character has no Q/W/E/R skills until a skill
     // book drops and is spent to study one.
     skillLevels: { Q:0, W:0, E:0, R:0 },
-    // The fifth slot's ability — null until a legendary-rune-reroll jackpot
-    // book is learned into it (learnForeignSkill). { cls, key, level }.
+    // The fifth slot's ability — null unless the equipped weapon's
+    // legendary rune currently carries one (the reroll jackpot's own doing,
+    // never a player choice). { cls, key, level }.
     foreignSkill: null,
     // 0 = locked/not yet studied, 1-10 = level (see PASSIVE_MAX_LEVEL,
     // shared/definitions.js) — keyed by passive id across both the
@@ -210,8 +211,8 @@ function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 // active:true with no matching learned:true (e.g. a hand-edited save) can
 // never silently activate an unearned skill.
 function _advActive(key) {
-  // The fifth slot never has one (shared/definitions.js's migration 032:
-  // the jackpot only ever grants base skill books) — forced false here
+  // The fifth slot never has one (the reroll jackpot only ever rolls base
+  // skill books, never an advanced one) — forced false here
   // rather than left to fall through, because player.advSkillLearned/Active
   // are keyed by the bare letter and would otherwise answer with the
   // player's OWN real slot's adv status for the same key.
@@ -869,9 +870,9 @@ function useForeignSkill() {
 
   player._skillChase = null;
 
-  // The fifth slot never has an advanced variant (migration 032) — `false`
-  // rather than _advActive(sk.key), which would read the player's OWN real
-  // slot's adv flags for the same bare letter.
+  // The fifth slot never has an advanced variant — `false` rather than
+  // _advActive(sk.key), which would read the player's OWN real slot's adv
+  // flags for the same bare letter.
   if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(fs.cls, sk.key, false)) {
     const _rangeTgt = _lockedEnemy() || nearestEnemy();
     if (_rangeTgt) {
@@ -1583,8 +1584,9 @@ function restoreFromSave(data) {
   // other loadout choice — see _activeSkillDef, js/player.js.
   player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...(data.advSkillLearned || {}) };
   player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...(data.advSkillActive || {}) };
-  // The fifth, independent slot (learnForeignSkill) — null when nothing has
-  // been learned into it. See FOREIGN_SKILL_KEY, shared/definitions.js.
+  // The fifth, independent slot — null unless the equipped weapon's
+  // legendary rune currently carries one. See FOREIGN_SKILL_KEY,
+  // shared/definitions.js.
   player.foreignSkill = data.foreignSkill || null;
   if (!player.skillCooldowns) player.skillCooldowns = { Q:0, W:0, E:0, R:0 };
   if (player.skillCooldowns[FOREIGN_SKILL_KEY] == null) player.skillCooldowns[FOREIGN_SKILL_KEY] = 0;

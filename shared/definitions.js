@@ -1976,15 +1976,23 @@ function runeRerollAllPrice(lockCount) {
 
 // Джекпот легендарного перебора: 3% шанс, один раз за КНОПКУ (не за строку —
 // общий перебор пяти строк легендарной руны кидает этот шанс один раз, а не
-// пять), получить в довесок случайную активную книгу навыка — ЛЮБОГО класса,
-// не только своего. По прямому заданию владельца. Ниже rare/epic/uncommon/
-// common эта проверка не идёт вовсе — см. вызов в repos/runes.js.
+// пять), и только у ОРУЖЕЙНОЙ руны — броня такого не даёт (см. вызов в
+// repos/runes.js). Приз — не предмет: способность пишется ПРЯМО В РУНУ
+// (rune.bonusSkill), случайного класса, не обязательно своего. Она живёт,
+// пока эта конкретная руна стоит в надетом оружии — вынул руну или сменил
+// оружие, пятый слот пустеет, но ничего не теряется (способность остаётся
+// частью руны); переброс этой же руны заново решает, есть ли способность,
+// тем же самым броском, которым решает новые характеристики — старая, какая
+// бы ни была, не переживает переброс, если этот конкретный бросок не выпал
+// снова. Ниже rare/epic/uncommon/common эта проверка не идёт вовсе.
 const RUNE_REROLL_BONUS_SKILL_CHANCE = 0.03;
 
 // Пул — все книги базовых активных навыков (skillKey задан только у них: не
 // у пассивок — passiveId, не у книг второй профессии — advSkillKey), всех
-// классов разом. `rand` передаётся снаружи по той же причине, что и у
-// rollRuneStats выше: на сервере это обязан быть crypto, не Math.random.
+// классов разом. Используется и для джекпота (какой класс+навык достанется
+// руне), и для апгрейда уже прикреплённой способности (какую книгу спросить
+// — см. repos/runes.js). `rand` передаётся снаружи по той же причине, что и
+// у rollRuneStats выше: на сервере это обязан быть crypto, не Math.random.
 function pickRandomSkillBook(rand = Math.random) {
   const pool = CRAFT_MATS.filter(m => m.skillKey);
   if (!pool.length) return null;
@@ -3200,17 +3208,13 @@ function skillBookId(cls, key)  { return `book_${cls}_${key}`; }
 function advSkillBookId(cls, key) { return `book_adv_${cls}_${key}`; }
 function passiveBookId(id)      { return `book_pas_${id}`; }
 
-// Every playable class, derived from the one place that already lists them
-// all rather than typed out a second time — _SKILL_BOOK_SRC's 7×4 rows.
-// Used to validate a `bookClass` a client claims for the fifth (borrowed)
-// skill slot (learnForeignSkill) is a real class and not an arbitrary string.
-const PLAYABLE_CLASSES = [...new Set(_SKILL_BOOK_SRC.map(([cls]) => cls))];
-
 // The fifth skill slot's own identity — never Q/W/E/R, so it can never be
 // confused with (or overwrite) one of the player's real four. Shared so the
 // client's cooldown/HUD-button key and the server's combat-slot check are
-// the same literal. See learnForeignSkill (repos/players.js) and
-// RUNE_REROLL_BONUS_SKILL_CHANCE above for how a player gets one.
+// the same literal. It never comes from a player choice: it is whatever
+// bonusSkill a legendary WEAPON rune currently carries (see
+// RUNE_REROLL_BONUS_SKILL_CHANCE above and repos/runes.js's _rollBonusSkill/
+// upgradeBonusSkill) — socketed and equipped, or it is empty.
 const FOREIGN_SKILL_KEY = 'X';
 
 const PASSIVE_MAX_LEVEL = 10;
@@ -3609,7 +3613,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
-  PLAYABLE_CLASSES, FOREIGN_SKILL_KEY,
+  FOREIGN_SKILL_KEY,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES,

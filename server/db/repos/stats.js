@@ -104,6 +104,30 @@ const LOAD_SQL = `
 const { ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../../../shared/definitions');
 const _byId = new Map([...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF].map(d => [d.id, d]));
 
+// ── пятый слот: заимствованная способность ──────────────────────────────────
+// Живёт ВНУТРИ руны (rune.bonusSkill — repos/runes.js's _rollBonusSkill/
+// upgradeBonusSkill), не в player_skills: она belongs to whichever legendary
+// weapon rune is CURRENTLY EQUIPPED (container='equipment', slot='weapon'),
+// so unsocketing that rune, or just equipping a different weapon, empties
+// the fifth slot without erasing anything — the data stays with the rune.
+// Rides in the SAME migration (029, socket_of/rune) as the runes-array
+// fragment above, so it only needs that one flag below, not a second one.
+const _FOREIGN_SKILL_FRAGMENT = `
+    (
+      SELECT json_build_object(
+               'key', (r.rune->'bonusSkill')->>'key',
+               'level', ((r.rune->'bonusSkill')->>'level')::int,
+               'cls', (r.rune->'bonusSkill')->>'cls'
+             )
+        FROM player_items i
+        JOIN player_items r ON r.socket_of = i.id
+       WHERE i.player_id = pr.player_id AND i.container = 'equipment' AND i.slot = 'weapon'
+         AND r.rune ? 'bonusSkill'
+       LIMIT 1
+    ) AS foreign_skill,`;
+const LOAD_SQL_WITH_RUNES = LOAD_SQL.replace(
+  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_FOREIGN_SKILL_FRAGMENT}`);
+
 // ── запрос без рун ──────────────────────────────────────────────────────────
 // Порядок выкатки: код уезжает на сервер раньше, чем применяется миграция —
 // так устроен деплой (dev/server-deploy.sh перезапускает сервис, миграции
@@ -111,44 +135,20 @@ const _byId = new Map([...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF].map(d => [d.id, d
 // миграции 029, падает — а падает он на ЗАГРУЗКЕ ХАРАКТЕРИСТИК, то есть у
 // каждого входящего игрока. Поэтому колонка спрашивается у схемы один раз за
 // процесс, ровно как это делает _hasSourceCols в repos/items.js, и до
-// миграции работает прежний запрос без рун.
+// миграции работает прежний запрос без рун (и без пятого слота — он тоже
+// живёт в этих самых колонках).
 const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
   /,\n               -- Руны[\s\S]*?'\[\]'::json\)\)\)/,
   '))');
-
-// ── пятый слот: заимствованная способность ──────────────────────────────────
-// One row at most (kind='foreign', migration 032) — its own key (that
-// class's Q/W/E/R), level and which class it belongs to, all three needed
-// by Room.setPlayerStats to resolve a cast in the fifth slot exactly like
-// skill_levels/adv_learned/adv_active above resolve the real four.
-const _FOREIGN_SKILL_FRAGMENT = `
-    (
-      SELECT json_build_object('key', s.key, 'level', s.level, 'cls', s.foreign_class)
-        FROM player_skills s
-       WHERE s.player_id = pr.player_id AND s.kind = 'foreign'
-       LIMIT 1
-    ) AS foreign_skill,`;
-const LOAD_SQL_WITH_FOREIGN = LOAD_SQL.replace(
-  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_FOREIGN_SKILL_FRAGMENT}`);
-const LOAD_SQL_NO_RUNES_WITH_FOREIGN = LOAD_SQL_NO_RUNES.replace(
-  `), '{}'::json) AS adv_active,`, `), '{}'::json) AS adv_active,${_FOREIGN_SKILL_FRAGMENT}`);
 
 // Спрашивается ОБЩЕЙ функцией (db/index.js hasColumn), а не своей копией.
 // Копия здесь и стояла — и запоминала «нет» навсегда, из-за чего процесс,
 // переживший применение миграции 029 без перезапуска, до конца своей жизни
 // грузил характеристики запросом без рун: руны стояли в гнёздах и не давали
 // ничего. Общая функция запоминает только «да» и переспрашивает «нет».
-//
-// Два независимых флага (руны — 029, foreign_class — 032) дают четыре
-// варианта запроса, а не два: сервер может пережить выкладку одной миграции
-// без другой, и запрос, спрашивающий отсутствующую колонку, падает на
-// загрузке характеристик — то есть у каждого входящего игрока.
 async function load(db, playerId) {
   const runesOk = await hasColumn('player_items', 'socket_of');
-  const foreignOk = await hasColumn('player_skills', 'foreign_class');
-  const sql = runesOk
-    ? (foreignOk ? LOAD_SQL_WITH_FOREIGN : LOAD_SQL)
-    : (foreignOk ? LOAD_SQL_NO_RUNES_WITH_FOREIGN : LOAD_SQL_NO_RUNES);
+  const sql = runesOk ? LOAD_SQL_WITH_RUNES : LOAD_SQL_NO_RUNES;
   const { rows } = await query(db, sql, [playerId]);
   return rows.length ? rows[0] : null;
 }
@@ -361,8 +361,9 @@ function compute(row) {
     skillLevels: row.skill_levels || {},
     advSkillLearned: row.adv_learned || {},
     advSkillActive: row.adv_active || {},
-    // The fifth, independent slot — null when nothing's been learned into
-    // it. { key, level, cls } names which class's Q/W/E/R it actually is.
+    // The fifth, independent slot — null unless the currently-equipped
+    // weapon carries a legendary rune with a bonusSkill roll. { key, level,
+    // cls } names which class's Q/W/E/R it actually is.
     foreignSkill: row.foreign_skill || null,
     hp: Math.min(row.hp, h),
     clanAtkPct: clanPct,

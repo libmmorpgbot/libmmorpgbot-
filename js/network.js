@@ -2213,6 +2213,14 @@ function netConnect(onReady) {
   socket.on('xpSync', (st = {}) => {
     if (!player || !Number.isFinite(st.lvl)) return;
     applyLevelState(st);
+    // 'in', not truthy: legitimately null (no legendary weapon rune with a
+    // bonusSkill roll equipped) — a truthy guard would apply a real null
+    // only sometimes and silently keep a stale non-null value the rest of
+    // the time. See the same split server-side, Room.js's setPlayerStats.
+    if ('foreignSkill' in st) {
+      player.foreignSkill = st.foreignSkill;
+      if (typeof updateSkillsUI === 'function') updateSkillsUI();
+    }
     if (player.hp > player.maxHp) player.hp = player.maxHp;
     if (typeof updateProfileUI === 'function') updateProfileUI();
   });
@@ -2441,11 +2449,10 @@ function netConnect(onReady) {
     if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
     if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
     if (data.advSkillActive)  player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...data.advSkillActive };
-    // 'in', not truthy: unlike the maps above, this field is legitimately
-    // null (no fifth slot learned) — a truthy guard would apply a real null
-    // only sometimes and silently keep a stale non-null value the rest of
-    // the time. See the same split server-side, Room.js's setPlayerStats.
-    if ('foreignSkill' in data) player.foreignSkill = data.foreignSkill;
+    // foreignSkill is NOT read here — it isn't a player_skills field at all
+    // (it lives on the equipped weapon's legendary rune), so it never rides
+    // progressSync. See xpSync's handler below, and pushStats, server/
+    // session.js, for why that event carries it instead.
     // passiveLevels feed the stat bonuses (passiveBonusTotal,
     // shared/definitions.js), so a new level has to reach the live stats and
     // not just the panel.
@@ -3534,13 +3541,11 @@ function netSkillAttack(enemyId, multiplier, key) {
 // text still plays). See the handlers in server/index.js.
 function netLearnSkill(key)      { if (socket?.connected) socket.emit('learnSkill', { key }); }
 function netUpgradeSkill(key)    { if (socket?.connected) socket.emit('upgradeSkill', { key }); }
-// The fifth, independent slot (RUNE_REROLL_BONUS_SKILL_CHANCE's jackpot
-// book, shared/definitions.js) — bookClass/bookKey name which class's
-// Q/W/E/R the book actually is; the slot itself is never Q/W/E/R and
-// always FOREIGN_SKILL_KEY, so there is no `key` param here to send.
-function netLearnForeignSkill(bookClass, bookKey) {
-  if (socket?.connected) socket.emit('learnForeignSkill', { bookClass, bookKey });
-}
+// The fifth, independent slot never gets a netLearnForeignSkill: nothing the
+// player picks, only the legendary-rune-reroll jackpot puts an ability there
+// (RUNE_REROLL_BONUS_SKILL_CHANCE, shared/definitions.js) — the server finds
+// it by looking at the equipped weapon's rune, so there is no `key` param
+// here either.
 function netUpgradeForeignSkill() { if (socket?.connected) socket.emit('upgradeForeignSkill', {}); }
 function netLearnPassive(id)     { if (socket?.connected) socket.emit('learnPassive', { id }); }
 function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePassive', { id }); }

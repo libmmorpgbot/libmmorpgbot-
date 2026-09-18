@@ -470,14 +470,16 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const st = await stats.of(t, pid);
     if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
     const sk = await players.skillsOf(t, pid);
-    // The fifth slot (learnForeignSkill) resolves to its own borrowed
-    // (class, key, level) — never the player's own charClass — and never
-    // has an advanced variant (migration 032: base skill books only).
+    // The fifth slot resolves to its own borrowed (class, key, level) — read
+    // off st.foreignSkill (stats.of(), sourced from the equipped weapon's
+    // legendary rune, repos/runes.js), never the player's own charClass —
+    // and never has an advanced variant (the jackpot only ever rolls base
+    // skill books).
     const isForeign = k === FOREIGN_SKILL_KEY;
-    if (isForeign && !sk.foreignSkill) fail('Навык не изучен', 'not_learned');
-    const cls = isForeign ? sk.foreignSkill.cls : st.charClass;
-    const rk  = isForeign ? sk.foreignSkill.key : k;
-    const lvl = isForeign ? (sk.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    if (isForeign && !st.foreignSkill) fail('Навык не изучен', 'not_learned');
+    const cls = isForeign ? st.foreignSkill.cls : st.charClass;
+    const rk  = isForeign ? st.foreignSkill.key : k;
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const b = skillBuffOf(cls, rk, adv);
     if (!b) fail('Этот навык не даёт бафа', 'not_buff');
@@ -504,10 +506,10 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const sk = await players.skillsOf(t, pid);
     // See skillBuff above for what the fifth slot means here.
     const isForeign = k === FOREIGN_SKILL_KEY;
-    if (isForeign && !sk.foreignSkill) fail('Навык не изучен', 'not_learned');
-    const cls = isForeign ? sk.foreignSkill.cls : st.charClass;
-    const rk  = isForeign ? sk.foreignSkill.key : k;
-    const lvl = isForeign ? (sk.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    if (isForeign && !st.foreignSkill) fail('Навык не изучен', 'not_learned');
+    const cls = isForeign ? st.foreignSkill.cls : st.charClass;
+    const rk  = isForeign ? st.foreignSkill.key : k;
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const mult = skillHasteOf(cls, rk, adv);
     if (mult == null) fail('Этот навык не ускоряет атаку', 'not_haste');
@@ -535,11 +537,11 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // borrowed (class, key, level), never adv (the jackpot only ever grants
     // base skill books).
     const isForeign = k === FOREIGN_SKILL_KEY;
-    if (isForeign && !sk.foreignSkill) fail('Навык не изучен', 'not_learned');
-    const cls = isForeign ? sk.foreignSkill.cls : st.charClass;
-    const rk  = isForeign ? sk.foreignSkill.key : k;
+    if (isForeign && !st.foreignSkill) fail('Навык не изучен', 'not_learned');
+    const cls = isForeign ? st.foreignSkill.cls : st.charClass;
+    const rk  = isForeign ? st.foreignSkill.key : k;
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
-    const lvl = isForeign ? (sk.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
 
     // ── окна, а не разовое лечение ────────────────────────────────────────
     // «Бабочки» и вампиризм лечат не в момент нажатия, а некоторое время

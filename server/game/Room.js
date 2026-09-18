@@ -3262,11 +3262,12 @@ class Room {
   // p._sd is the same sanitized save the stats come from (computeStats), so
   // skillLevels/advSkillActive here are the ones the anti-cheat has already
   // bounded, and skillPct is read off the equipment rather than claimed.
-  // The fifth, independent slot (learnForeignSkill, repos/players.js) —
-  // never Q/W/E/R, so it can never collide with or overwrite one of the
-  // player's real four. { key, level, cls } is what stats.of() computed and
-  // setPlayerStats filled into p._foreignSkill, exactly like p._skillLevels
-  // for the real slots — never anything the packet itself claims.
+  // The fifth, independent slot — never Q/W/E/R, so it can never collide
+  // with or overwrite one of the player's real four. { key, level, cls } is
+  // what stats.of() computed (the equipped weapon's legendary rune, repos/
+  // runes.js) and setPlayerStats filled into p._foreignSkill, exactly like
+  // p._skillLevels for the real slots — never anything the packet itself
+  // claims.
   _foreignSkillOf(p) {
     const sd = p._sd || {};
     return p._foreignSkill || sd.foreignSkill || null;
@@ -3297,8 +3298,8 @@ class Room {
     let skillPct = Number(p.skillPct) || 0;
     if (!skillPct) Object.values(sd.equipment || {}).forEach(it => { if (it && it.skillPct) skillPct += it.skillPct; });
     // The fifth slot keeps its own level, entirely separate from the real
-    // four — see _foreignSkillOf. It never has an advanced variant
-    // (migration 032: the jackpot only ever grants base skill books).
+    // four — see _foreignSkillOf. It never has an advanced variant (the
+    // reroll jackpot only ever rolls base skill books).
     if (key === FOREIGN_SKILL_KEY) {
       const fs = this._foreignSkillOf(p);
       const flvl = fs ? Math.max(0, Math.floor(Number(fs.level)) || 0) : 0;
