@@ -9200,12 +9200,14 @@ function showGramShopBtn() {
 //  openGramShopConfirm only because the reward kinds (petChoice/classCloak/
 //  classArtifact/wings/rune) don't fit that card's layout.
 // ─────────────────────────────────────────────────────────
+// No `enhance` on any of these — mirrors server/shop.js's _GRAM_SHOP_PKGS
+// exactly: every item this tab hands out comes at +0, rarity is the reward.
 const _SPECIAL_PET_PKGS_UI = [
-  { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   enhance:6,  color:'#9c9086' },
-  { id:'extrapkg2', gram:50,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', enhance:8,  color:'#6f9c4a' },
-  { id:'extrapkg3', gram:125, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:10, color:'#4a7bab' },
-  { id:'extrapkg4', gram:225, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:12, color:'#deb568' },
-  { id:'extrapkg5', gram:345, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     enhance:14, color:'#e6af5e' },
+  { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
+  { id:'extrapkg2', gram:50,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
+  { id:'extrapkg3', gram:125, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
+  { id:'extrapkg4', gram:225, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
+  { id:'extrapkg5', gram:345, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
 ];
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
@@ -9310,8 +9312,8 @@ function _renderSeasonTicketInfo() {
 // icon each (a sample pet of the right rarity for the picker preview; the
 // buyer's own class's cloak/artifact; a sample wing/rune of the package's
 // rarity — the rune's actual rolled stats are only decided at purchase, same
-// as a crafted one), all sharing pkg.enhance (runes don't use it — they have
-// no +N tier).
+// as a crafted one). None of them carry a +N — every item this tab grants
+// comes out at +0 (see server/shop.js's _GRAM_SHOP_PKGS).
 function _petCloakArtifactRows(pkg, ri) {
   const enhLbl = pkg.enhance ? `+${pkg.enhance}` : '';
   const cls = player?.type;

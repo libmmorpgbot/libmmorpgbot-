@@ -91,23 +91,25 @@ const _GRAM_SHOP_PKGS = [
     enhance:8, nexum:20000 },
   // Pet+cloak+artifact+wings+rune packages (rendered on the GRAM shop's own
   // Допы tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same
-  // handler since petChoice/classCloak/classArtifact/enhance are already
-  // fully supported below; wings/rune are handled the same way, resolved by
-  // rarity in _packageContents, server/db/repos/shop.js).
+  // handler since petChoice/classCloak/classArtifact are already fully
+  // supported below; wings/rune are handled the same way, resolved by
+  // rarity in _packageContents, server/db/repos/shop.js). No `enhance`: the
+  // owner's call was that every item here comes out at +0 — rarity is the
+  // reward this tab sells, not a free enhancement roll on top of it.
   // classCloak/classArtifact only ever exist at common/uncommon/rare (see
   // ITEM_DEF) — there is no epic tier, so the top two packages' own jump to
   // epic (pet, and for extrapkg5 also wings/rune) isn't mirrored there; they
   // stay at their rare ceiling instead.
   { id:'extrapkg1', gram:30,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common',   enhance:6 },
+    petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common' },
   { id:'extrapkg2', gram:50,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', enhance:8 },
+    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon' },
   { id:'extrapkg3', gram:125, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:10 },
+    petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
   { id:'extrapkg4', gram:225, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare',     enhance:12 },
+    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
   { id:'extrapkg5', gram:345, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'epic',     rune:'epic',     enhance:14 },
+    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'epic',     rune:'epic' },
   // Усиление tab — pure material packs. These only GRANT the listed
   // items (via the same pkg.boxes/pkg.stones handling every other package
   // already uses below — `stones` isn't stone-specific, it resolves any
