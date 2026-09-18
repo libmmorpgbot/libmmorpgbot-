@@ -104,12 +104,20 @@ const _GRAM_SHOP_PKGS = [
     petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common' },
   { id:'extrapkg2', gram:50,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon' },
-  { id:'extrapkg3', gram:125, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+  { id:'extrapkg3', gram:220, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
-  { id:'extrapkg4', gram:225, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+  { id:'extrapkg4', gram:370, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
-  { id:'extrapkg5', gram:345, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+  { id:'extrapkg5', gram:550, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'epic',     rune:'epic' },
+  // Админский — the one exception to "everything on this tab is +0" above:
+  // a single item, legendary wings, deliberately pre-enhanced. Nothing
+  // else (no pet/cloak/artifact/rune), so every one of those fields stays
+  // absent rather than null-for-clarity like the five packages above —
+  // _packageContents only ever checks pkg.<field> truthiness, so leaving
+  // them out is exactly the same grant, just without five lines that would
+  // all read "nothing here".
+  { id:'extrapkg6', gram:700, wings:'legendary', enhance:10 },
   // Усиление tab — pure material packs. These only GRANT the listed
   // items (via the same pkg.boxes/pkg.stones handling every other package
   // already uses below — `stones` isn't stone-specific, it resolves any
@@ -152,7 +160,7 @@ const _SHOP_ARMOR_SETS = {
   epic:     ['hm4','ar4','gl4','bt4','rn4','nd4'],
 };
 // Wings item id per rarity (ITEM_DEF's wing_c..wing_l) — used by the
-// extrapkg1-5 packages' `wings` field, the same way _SHOP_ARMOR_SETS
+// extrapkg1-6 packages' `wings` field, the same way _SHOP_ARMOR_SETS
 // resolves `armor`.
 const _WING_ID = {
   common: 'wing_c', uncommon: 'wing_u', rare: 'wing_r', epic: 'wing_e', legendary: 'wing_l',

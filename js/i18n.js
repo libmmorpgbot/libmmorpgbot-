@@ -1076,6 +1076,7 @@ Object.assign(I18N_UI, {
   shopTierAdvanced:  { ru: 'Продвинутый',  en: 'Advanced',   uk: 'Просунутий',   es: 'Avanzado',     tr: 'Gelişmiş',   pt: 'Avançado' },
   shopTierExcellent: { ru: 'Превосходный', en: 'Excellent',  uk: 'Відмінний',    es: 'Excelente',    tr: 'Mükemmel',   pt: 'Excelente' },
   shopTierTop:       { ru: 'Топовый',      en: 'Top',        uk: 'Топовий',      es: 'Superior',     tr: 'En İyi',     pt: 'Top' },
+  shopTierAdmin:     { ru: 'Админский',    en: 'Admin',      uk: 'Адмінський',   es: 'Admin',        tr: 'Yönetici',   pt: 'Admin' },
   petChoiceLbl: { ru: 'Питомец', en: 'Pet', uk: 'Улюбленець', es: 'Mascota', tr: 'Evcil hayvan', pt: 'Mascote' },
   petPickerHint: { ru: 'Выберите питомца', en: 'Choose a pet', uk: 'Оберіть улюбленця', es: 'Elige una mascota', tr: 'Bir evcil hayvan seç', pt: 'Escolha um mascote' },
   refLinkCardTitle: { ru: 'Ваша реферальная ссылка', en: 'Your referral link', uk: 'Ваше реферальне посилання', es: 'Tu enlace de referido', tr: 'Referans bağlantın', pt: 'Seu link de indicação' },

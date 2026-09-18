@@ -9200,14 +9200,17 @@ function showGramShopBtn() {
 //  openGramShopConfirm only because the reward kinds (petChoice/classCloak/
 //  classArtifact/wings/rune) don't fit that card's layout.
 // ─────────────────────────────────────────────────────────
-// No `enhance` on any of these — mirrors server/shop.js's _GRAM_SHOP_PKGS
-// exactly: every item this tab hands out comes at +0, rarity is the reward.
+// No `enhance` on the first five — mirrors server/shop.js's _GRAM_SHOP_PKGS
+// exactly: every item those hand out comes at +0, rarity is the reward.
+// extrapkg6 ("Админский") is the one deliberate exception: a single item,
+// legendary wings, pre-enhanced — see the same package server-side for why.
 const _SPECIAL_PET_PKGS_UI = [
   { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
   { id:'extrapkg2', gram:50,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
-  { id:'extrapkg3', gram:125, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
-  { id:'extrapkg4', gram:225, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
-  { id:'extrapkg5', gram:345, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
+  { id:'extrapkg3', gram:220, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
+  { id:'extrapkg4', gram:370, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
+  { id:'extrapkg5', gram:550, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
+  { id:'extrapkg6', gram:700, get label() { return t('shopTierAdmin'); },     wings:'legendary', enhance:10, color:'#c084fc' },
 ];
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
@@ -9301,7 +9304,7 @@ function _renderSeasonTicketInfo() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  PET+CLOAK+ARTIFACT+WINGS+RUNE PACKAGES (extrapkg1-5, mirror of
+//  PET+CLOAK+ARTIFACT+WINGS+RUNE PACKAGES (extrapkg1-6, mirror of
 //  server/shop.js's _GRAM_SHOP_PKGS entries of the same id). Bought through
 //  gramShopBuy like any other GRAM package — petChoice/classCloak/
 //  classArtifact/wings/rune/enhance are already fully supported there — but
@@ -9336,6 +9339,11 @@ function _petCloakArtifactRows(pkg, ri) {
 function _specialPetPkgHtml(pkg, bal) {
   const canAfford = bal >= pkgPrice(pkg);
   const rows = _petCloakArtifactRows(pkg, ri);
+  // Only a package with petChoice has anything to actually pick (which pet,
+  // among however many share that rarity) — extrapkg6 has no pet at all, so
+  // it skips the picker modal and buys directly (behind its own confirm()).
+  const buyAction = pkg.petChoice ? `openSpecialPetPickerModal('${pkg.id}')` : `_buySpecialPkgDirect('${pkg.id}')`;
+  const buyLabel = pkg.petChoice ? t('specialChooseBtn') : t('buyBtn');
 
   return `<div class="gram-shop-card" style="border-color:${pkg.color}44">
     <div class="gram-shop-card-head">
@@ -9345,8 +9353,8 @@ function _specialPetPkgHtml(pkg, bal) {
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
-        onclick="${canAfford ? `openSpecialPetPickerModal('${pkg.id}')` : ''}">
-        ${canAfford ? t('specialChooseBtn') : t('notEnoughBtn')}
+        onclick="${canAfford ? buyAction : ''}">
+        ${canAfford ? buyLabel : t('notEnoughBtn')}
       </button>
     </div>
     <div class="vip-items-row">${rows}</div>
@@ -9420,6 +9428,18 @@ function _confirmPetPkgBuy() {
   if (ov) ov.remove();
   _petPicker = null;
   if (typeof netGramShopBuy === 'function') netGramShopBuy(pkgId, petId);
+}
+
+// A Допы package with no petChoice (extrapkg6) has nothing to pick, so it
+// never opens _renderPetPicker — this is its whole purchase flow, one
+// confirm() standing in for that modal's own explicit buy step.
+function _buySpecialPkgDirect(pkgId) {
+  const pkg = _SPECIAL_PET_PKGS_UI.find(p => p.id === pkgId);
+  if (!pkg || !player) return;
+  const bal = window._gramBalance || 0;
+  if (bal < pkgPrice(pkg)) return;
+  if (!confirm(`${pkg.label} — ${tVars('buyForFmt', { price: pkgPrice(pkg) })}?`)) return;
+  if (typeof netGramShopBuy === 'function') netGramShopBuy(pkg.id, null);
 }
 
 function openGramShopPanel() {
@@ -9626,7 +9646,7 @@ function onGramShopResult(data) {
   // подпишется общим «Пакет» из packageFallbackLbl, а не именем позиции,
   // которой в игре уже нет.
   const pkg = _GRAM_SHOP_PKGS_UI.find(p => p.id === data.pkgId);
-  // Pet+cloak+artifact+wings+rune packages (extrapkg1-5) — bought through
+  // Pet+cloak+artifact+wings+rune packages (extrapkg1-6) — bought through
   // this same handler but shown on the GRAM shop's own Допы tab
   // (_SPECIAL_PET_PKGS_UI), so they have no label of their own either.
   const ppkg = pkg ? null : _SPECIAL_PET_PKGS_UI.find(p => p.id === data.pkgId);
