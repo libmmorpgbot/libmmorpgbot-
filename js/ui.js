@@ -9206,7 +9206,7 @@ function showGramShopBtn() {
 // legendary wings, pre-enhanced — see the same package server-side for why.
 const _SPECIAL_PET_PKGS_UI = [
   { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
-  { id:'extrapkg2', gram:50,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
+  { id:'extrapkg2', gram:65,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
   { id:'extrapkg3', gram:220, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
   { id:'extrapkg4', gram:370, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
   { id:'extrapkg5', gram:550, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
@@ -9246,8 +9246,12 @@ function _shopExtraRewardRows(pkg, ri) {
     const wepSfx = { deathknight:'k', lev:'t', ranger:'b', mage:'s', warlock:'s', runefighter:'n', assassin:'d' }[player?.type] || 't';
     rows += ri(`/images/wep/${pfx}${wepSfx}.png`, pkg.enhance ? `+${pkg.enhance}` : '', key);
   }
-  if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'epic');
-  if (pkg.nexum) rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'epic');
+  // 'gold', not 'epic': these two are a currency amount, not an item at
+  // epic rarity — see the same fix on the skillBooks row below for why
+  // 'epic' used to leak in here (a class named after the VIP panel's own
+  // gold-accent tier, reused instead of the dedicated 'gold' class).
+  if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'gold');
+  if (pkg.nexum) rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'gold');
   // Сезонный билет — a status effect, not a granted item: just its own name
   // and icon here, tap it for the full breakdown (_openSeasonTicketInfo).
   if (pkg.seasonTicket) {
@@ -9503,9 +9507,11 @@ function _gramShopPkgHtml(pkg, bal) {
   let rows = pkg.gold ? ri(_shopCoinUri, kGold + ' ' + t('gramShopGoldSuffix'), 'gold') : '';
   rows += _shopExtraRewardRows(pkg, ri);
 
-  // skill books — for the buyer's own class (see _skillBooksLabel below)
+  // skill books — for the buyer's own class (see _skillBooksLabel below).
+  // 'gold', not 'epic': a book isn't epic-rarity, this is the same
+  // currency/bonus-reward accent as bonusSP/nexum above.
   if (pkg.skillBooks) {
-    rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'epic');
+    rows += ri(_shopBookUri, _skillBooksLabel(pkg.skillBooks), 'gold');
   }
 
   // boxes (BOX_DEF — see _boxesLabel below)

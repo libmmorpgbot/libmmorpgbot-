@@ -102,7 +102,7 @@ const _GRAM_SHOP_PKGS = [
   // stay at their rare ceiling instead.
   { id:'extrapkg1', gram:30,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common' },
-  { id:'extrapkg2', gram:50,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
+  { id:'extrapkg2', gram:65,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon' },
   { id:'extrapkg3', gram:220, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
     petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
