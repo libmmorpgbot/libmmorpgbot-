@@ -3406,6 +3406,44 @@ function setJoyAlpha(v) {
   try { localStorage.setItem('liberty.joyAlpha', String(n)); } catch (e) { /* приватный режим */ }
 }
 
+// ── расположение кнопок HUD (свободная перестановка) ───────────────────────
+// Тот же принцип, что у joyAlpha чуть выше: свойство ЭКРАНА игрока, не
+// аккаунта — в localStorage, без синхронизации между устройствами. Каждая
+// запись — ЦЕНТР переставленного элемента как доля экрана (0..1 от W/H), а
+// не пиксели: при повороте или на другом устройстве позиция масштабируется
+// вместе с экраном, а не остаётся приколоченной к старым пикселям.
+//
+// Пусто (нет записи для id) значит «элемент на своём обычном месте» —
+// getAttackBtnPos/getSkillBtnPos/joyCenter/и т.д. (js/input.js) сами решают,
+// что это за место, по своей обычной формуле fanPos(). hudOverride() —
+// единственная точка, где эти формулы можно подменить: она не заводит
+// вторую систему координат, она просто отдаёт другое число вместо той же
+// формулы, когда игрок это место передвинул (openHudEditMode, js/input.js).
+let _hudLayout = null;
+function hudLayout() {
+  if (_hudLayout === null) {
+    let parsed = null;
+    try { parsed = JSON.parse(localStorage.getItem('liberty.hudLayout')); } catch (e) { parsed = null; }
+    _hudLayout = (parsed && typeof parsed === 'object') ? parsed : {};
+  }
+  return _hudLayout;
+}
+function _saveHudLayout() {
+  try { localStorage.setItem('liberty.hudLayout', JSON.stringify(hudLayout())); } catch (e) { /* приватный режим */ }
+}
+function hudOverride(id) {
+  const o = hudLayout()[id];
+  if (!o || !Number.isFinite(o.xPct) || !Number.isFinite(o.yPct)) return null;
+  return { x: o.xPct * W, y: o.yPct * H };
+}
+function setHudOverride(id, x, y) {
+  hudLayout()[id] = { xPct: x / W, yPct: y / H };
+}
+function resetHudLayout() {
+  _hudLayout = {};
+  _saveHudLayout();
+}
+
 let _joyKnobGrad = null, _joyKnobGradKx = null, _joyKnobGradKy = null;
 // Ring, four direction arrows, four studs on the diagonals, and a knob that
 // lights up while it is being pushed — the arrows are what make it read as a
@@ -3658,6 +3696,46 @@ function drawSkillButtons() {
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────
+//  HUD EDIT MODE — ручки поверх каждого переставляемого элемента
+// ─────────────────────────────────────────────────────────
+// Рисует пунктирное кольцо и подпись над КАЖДЫМ элементом из
+// _hudEditElements() (js/input.js) на его ТЕКУЩЕМ месте — обычном или уже
+// переставленном, разницы нет: get() каждого элемента читает те же
+// getXBtnPos()/joyCenter(), что рисование вне режима редактирования, а те
+// сами читают hudOverride(). Перетаскиваемый прямо сейчас элемент
+// подсвечен ярче — единственный визуальный признак того, какое кольцо
+// сейчас «в руке» у игрока.
+function drawHudEditOverlay() {
+  if (!hudEditMode || typeof _hudEditElements !== 'function') return;
+  const els = _hudEditElements();
+  ctx.save();
+  els.forEach(e => {
+    const p = e.get();
+    if (!p) return;
+    const active = _hudDragId === e.id;
+    const rr = p.r + 6;
+    ctx.beginPath();
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = active ? 2.5 : 1.5;
+    ctx.strokeStyle = active ? '#ebab4b' : 'rgba(235,171,74,0.65)';
+    ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (active) {
+      ctx.fillStyle = 'rgba(235,171,74,0.18)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.font = `bold ${hudF(11)}px ${_F_SKILL}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(12,22,34,0.9)';
+    ctx.strokeText(e.label, p.x, p.y - rr - 12);
+    ctx.fillStyle = '#f2d39c';
+    ctx.fillText(e.label, p.x, p.y - rr - 12);
+  });
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -9646,6 +9724,10 @@ function _renderSoundPicker() {
       </button>
     </div>
     <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('perfModeHint')}</div>
+
+    <div class="gram-section-title" style="margin:18px 0 10px">${t('hudLayoutTitle')}</div>
+    <button class="skill-upg-btn" style="background:linear-gradient(135deg,#306387,#4187b9)" onclick="openHudEditMode()">${t('hudLayoutOpenBtn')}</button>
+    <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('hudLayoutHint')}</div>
   `;
 }
 

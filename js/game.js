@@ -1599,6 +1599,7 @@ function _renderUI() {
     drawTargetButton();
     drawAttackButton();
     drawAutoToggle();
+    if (typeof drawHudEditOverlay === 'function') drawHudEditOverlay();
   }
   drawPartyInvitePopup();
   if (state === 'dead') drawDead();
@@ -3682,6 +3683,7 @@ window.addEventListener('load', () => {
     _partyHpGrads = null;
     _recalcEnemySimR();
     updateJoyCenter();
+    if (typeof applyDomHudOverrides === 'function') applyDomHudOverrides();
     // The HUD's right-hand button column is laid out from the right edge in
     // DOM pixels, so it has to be redone whenever W changes (rotation, a
     // desktop window resize) — and on the first resize, which is what

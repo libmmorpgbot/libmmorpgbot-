@@ -449,6 +449,16 @@
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
   <span id="chat-badge"></span>
 </button>
+<!-- HUD edit mode toolbar (openHudEditMode, js/input.js) — a plain DOM bar
+     rather than canvas: it needs to sit reliably above every draggable
+     element regardless of where the player has dragged it, and it never
+     needs to move itself. Hidden by default; shown/hidden only by
+     openHudEditMode/closeHudEditMode. -->
+<div id="hud-edit-toolbar" style="display:none">
+  <span id="hud-edit-hint" data-i18n="hudEditHint">Перетащите кнопки, куда удобно</span>
+  <button id="hud-edit-reset" onclick="resetHudLayoutAndApply()" data-i18n="hudEditResetBtn">Сбросить</button>
+  <button id="hud-edit-done" onclick="closeHudEditMode()" data-i18n="hudEditDoneBtn">Готово</button>
+</div>
 <!-- Last-message preview bubble, floats above the chat button; tapping it
      opens the chat same as the button itself. Hidden whenever there's no
      message yet or the chat panel is already open (see _refreshChatPreview
@@ -713,6 +723,26 @@
   display:none; align-items:center; justify-content:center;
   padding:0 3px; border:1.5px solid #0a0515;
 }
+/* Pinned to the very top so it can never end up under a button the player
+   just dragged — every other draggable element lives below the header,
+   and this bar sits above all of them regardless of where they land. */
+#hud-edit-toolbar {
+  position:absolute; top:0; left:0; right:0; z-index:70;
+  pointer-events:all;
+  display:none; align-items:center; justify-content:space-between; gap:8px;
+  padding:8px 10px; padding-top:calc(8px + env(safe-area-inset-top, 0px));
+  background:rgba(8,14,22,0.94); border-bottom:1px solid rgba(235,171,74,0.4);
+  box-shadow:0 4px 14px rgba(0,0,0,0.5);
+}
+#hud-edit-hint { font-size:11px; color:#c1ccd5; flex:1; min-width:0; }
+#hud-edit-toolbar button {
+  flex-shrink:0; padding:6px 12px; border-radius:8px; border:none;
+  font-size:12px; font-weight:700; cursor:pointer; touch-action:manipulation;
+}
+#hud-edit-reset { background:#2a3346; color:#c1ccd5; }
+#hud-edit-reset:active { opacity:0.75; }
+#hud-edit-done { background:linear-gradient(135deg,#e3941d,#ebab4b); color:#1a1408; }
+#hud-edit-done:active { opacity:0.75; }
 /* Anchored to the same bottom offset as #chat-btn so it reads as level with
    the button, not floating above it. Right edge is capped well clear of the
    action fan: its lowest skill button reaches x = W-182 (fanCenter/

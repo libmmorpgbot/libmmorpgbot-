@@ -93,6 +93,24 @@ const I18N_UI = {
   perfModeOffLbl:    { ru: 'Выключена', en: 'Off', uk: 'Вимкнена', es: 'Desactivada', tr: 'Kapalı', pt: 'Desativada' },
   perfModeHint:      { ru: 'На переполненной локации показывает только ближайших игроков и монстров — меньше лагов на слабых устройствах', en: 'On a crowded floor, shows only the nearest players and monsters — fewer lags on weaker devices', uk: 'На переповненій локації показує лише найближчих гравців і монстрів — менше лагів на слабких пристроях', es: 'En una zona con mucha gente, muestra solo a los jugadores y monstruos más cercanos — menos lag en dispositivos débiles', tr: 'Kalabalık bir bölgede sadece en yakın oyuncuları ve canavarları gösterir — zayıf cihazlarda daha az gecikme', pt: 'Em uma área cheia, mostra apenas os jogadores e monstros mais próximos — menos lag em dispositivos fracos' },
 
+  // ── Расположение HUD (Профиль → Звук, openHudEditMode/js/input.js) ──────
+  // Свойство экрана, не аккаунта — хранится в localStorage (hudLayout,
+  // js/ui.js), как и джойстик/perfMode выше, а не на сервере.
+  hudLayoutTitle:    { ru: 'Расположение кнопок', en: 'Button layout', uk: 'Розташування кнопок', es: 'Disposición de botones', tr: 'Düğme yerleşimi', pt: 'Disposição dos botões' },
+  hudLayoutOpenBtn:  { ru: 'Настроить расположение', en: 'Customize layout', uk: 'Налаштувати розташування', es: 'Personalizar disposición', tr: 'Yerleşimi özelleştir', pt: 'Personalizar disposição' },
+  hudLayoutHint:     { ru: 'Атака, навыки, джойстик, зелье, цель, авто/ручной, питомец, чат, телепорт — любую кнопку можно перетащить туда, где удобнее', en: 'Attack, skills, joystick, potion, target, auto/manual, pet, chat, teleport — drag any button wherever feels better', uk: 'Атака, навички, джойстик, зілля, ціль, авто/ручний, вихованець, чат, телепорт — будь-яку кнопку можна перетягнути туди, де зручніше', es: 'Ataque, habilidades, joystick, poción, objetivo, auto/manual, mascota, chat, teletransporte — arrastra cualquier botón a donde te resulte más cómodo', tr: 'Saldırı, yetenekler, joystick, iksir, hedef, otomatik/manuel, evcil hayvan, sohbet, ışınlanma — herhangi bir düğmeyi istediğin yere sürükleyebilirsin', pt: 'Ataque, habilidades, joystick, poção, alvo, auto/manual, mascote, chat, teletransporte — arraste qualquer botão para onde for mais confortável' },
+  hudEditHint:       { ru: 'Перетащите кнопки, куда удобно', en: 'Drag the buttons wherever you like', uk: 'Перетягніть кнопки, куди зручно', es: 'Arrastra los botones a donde quieras', tr: 'Düğmeleri istediğin yere sürükle', pt: 'Arraste os botões para onde quiser' },
+  hudEditResetBtn:   { ru: 'Сбросить', en: 'Reset', uk: 'Скинути', es: 'Restablecer', tr: 'Sıfırla', pt: 'Redefinir' },
+  hudEditDoneBtn:    { ru: 'Готово', en: 'Done', uk: 'Готово', es: 'Listo', tr: 'Bitti', pt: 'Concluído' },
+  hudElAttack:       { ru: 'Атака', en: 'Attack', uk: 'Атака', es: 'Ataque', tr: 'Saldırı', pt: 'Ataque' },
+  hudElJoystick:     { ru: 'Джойстик', en: 'Joystick', uk: 'Джойстик', es: 'Joystick', tr: 'Joystick', pt: 'Joystick' },
+  hudElPotion:       { ru: 'Зелье', en: 'Potion', uk: 'Зілля', es: 'Poción', tr: 'İksir', pt: 'Poção' },
+  hudElTarget:       { ru: 'Цель', en: 'Target', uk: 'Ціль', es: 'Objetivo', tr: 'Hedef', pt: 'Alvo' },
+  hudElAuto:         { ru: 'Авто/Ручн', en: 'Auto/Manual', uk: 'Авто/Ручн', es: 'Auto/Manual', tr: 'Oto/Manuel', pt: 'Auto/Manual' },
+  hudElPet:          { ru: 'Питомец', en: 'Pet', uk: 'Вихованець', es: 'Mascota', tr: 'Evcil hayvan', pt: 'Mascote' },
+  hudElChat:         { ru: 'Чат', en: 'Chat', uk: 'Чат', es: 'Chat', tr: 'Sohbet', pt: 'Chat' },
+  hudElTeleport:     { ru: 'Телепорт', en: 'Teleport', uk: 'Телепорт', es: 'Teletransporte', tr: 'Işınlanma', pt: 'Teletransporte' },
+
   // ── Death Battle (Битва на смерть) ──────────────────────
   // ── Events panel (События) ──────────────────────────────────────────────
   eventsBtn:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },

@@ -40,7 +40,15 @@ function fanSkillAngle(idx) { return FAN_A_SKILL + idx * FAN_A_STEP; }
 // Cached joystick center — recomputed only on resize via updateJoyCenter()
 const _joyCenter = { x: 0, y: 0 };
 function joyCenter() { return _joyCenter; }
-function updateJoyCenter() { _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - hud(130); }
+// hudOverride (js/ui.js) is the one seam every position below goes through:
+// a player who dragged this element in openHudEditMode gets its saved spot
+// back instead of the usual fanPos() formula — everything else about the
+// element (radius, draw code, hit test) stays exactly the same either way.
+function updateJoyCenter() {
+  const o = (typeof hudOverride === 'function') ? hudOverride('joystick') : null;
+  if (o) { _joyCenter.x = o.x; _joyCenter.y = o.y; return; }
+  _joyCenter.x = W * 0.27; _joyCenter.y = H - NAV_H - hud(130);
+}
 
 function _inJoyZone(cx, cy) {
   const jc = joyCenter();
@@ -51,9 +59,12 @@ function _inJoyZone(cx, cy) {
 // Skill button `idx`, counted from the top of the arc down. x/y/w/h is the
 // bounding box (what the gradient cache and the drawing code read); cx/cy/r
 // is the circle actually drawn and hit-tested.
+const _SKILL_HUD_IDS = ['skillQ', 'skillW', 'skillE', 'skillR', 'skillX'];
 function getSkillBtnPos(idx) {
   const r = SKILL_SZ / 2;
-  const p = fanPos(FAN_R_SKILL, fanSkillAngle(idx));
+  const p0 = fanPos(FAN_R_SKILL, fanSkillAngle(idx));
+  const o = (typeof hudOverride === 'function') ? hudOverride(_SKILL_HUD_IDS[idx]) : null;
+  const p = o || p0;
   return { x: p.x - r, y: p.y - r, w: SKILL_SZ, h: SKILL_SZ, cx: p.x, cy: p.y, r };
 }
 
@@ -63,7 +74,8 @@ function getSkillBtnPos(idx) {
 // here alone decide how big each icon renders).
 function getAttackBtnPos() {
   const c = fanCenter();
-  return { x: c.x, y: c.y, r: FAN_R_ATK };
+  const o = (typeof hudOverride === 'function') ? hudOverride('attack') : null;
+  return { x: o ? o.x : c.x, y: o ? o.y : c.y, r: FAN_R_ATK };
 }
 
 // ── кружок навыка питомца ───────────────────────────────────────────────────
@@ -81,12 +93,16 @@ const FAN_R_PET = hud(60);
 const FAN_A_PET = 45;
 const PET_BTN_R = hud(17);
 function getPetBtnPos() {
-  const p = fanPos(FAN_R_PET, FAN_A_PET);
+  const p0 = fanPos(FAN_R_PET, FAN_A_PET);
+  const o = (typeof hudOverride === 'function') ? hudOverride('pet') : null;
+  const p = o || p0;
   return { x: p.x, y: p.y, r: PET_BTN_R };
 }
 
 function getTargetBtnPos() {
-  const p = fanPos(FAN_R_OUTER, FAN_A_TARGET);
+  const p0 = fanPos(FAN_R_OUTER, FAN_A_TARGET);
+  const o = (typeof hudOverride === 'function') ? hudOverride('target') : null;
+  const p = o || p0;
   return { x: p.x, y: p.y, r: POTION_R };
 }
 
@@ -177,7 +193,9 @@ function getPartyInfoBtnPos() {
 }
 
 function getPotionBtnPos() {
-  const p = fanPos(FAN_R_OUTER, FAN_A_POTION);
+  const p0 = fanPos(FAN_R_OUTER, FAN_A_POTION);
+  const o = (typeof hudOverride === 'function') ? hudOverride('potion') : null;
+  const p = o || p0;
   return { x: p.x, y: p.y, r: POTION_R + 2 };
 }
 
@@ -188,13 +206,180 @@ function getPotionBtnPos() {
 // hit test and dev/harness.js read.
 function getAutoBtnPos() {
   const r = POTION_R;
-  const p = fanPos(FAN_R_OUTER + r * 2 + hud(8), FAN_A_POTION);
+  const p0 = fanPos(FAN_R_OUTER + r * 2 + hud(8), FAN_A_POTION);
+  const o = (typeof hudOverride === 'function') ? hudOverride('auto') : null;
+  const p = o || p0;
   return { x: p.x - r, y: p.y - r, w: r * 2, h: r * 2, cx: p.x, cy: p.y, r };
 }
 
 // Invite accept/decline buttons (for popup)
 function getPartyAcceptPos()  { return { x: W / 2 - 68, y: H / 2 + 18, w: 58, h: 26 }; }
 function getPartyDeclinePos() { return { x: W / 2 + 10, y: H / 2 + 18, w: 58, h: 26 }; }
+
+// ─────────────────────────────────────────────────────────
+//  HUD EDIT MODE — свободная перестановка кнопок игроком
+// ─────────────────────────────────────────────────────────
+// Каждый элемент здесь — обычная точка (x,y) плюс радиус, ЧИТАЕТСЯ теми же
+// getXBtnPos()/joyCenter(), что рисование и хит-тест вне режима
+// редактирования. Перетаскивание не заводит вторую систему координат — оно
+// двигает первую: drag пишет через setHudOverride (js/ui.js) прямо туда,
+// откуда эти функции сами берут число вместо своей обычной формулы fanPos().
+// Поэтому «выйти из режима редактирования» — не отдельный шаг сохранения:
+// оно уже сохранено при отпускании пальца (_hudEditUp ниже).
+let hudEditMode = false;
+let _hudDragId = null;
+let _hudDragTouchId = null;
+
+// Что можно перетащить ПРЯМО СЕЙЧАС. skillX/pet/chat/teleport входят в
+// список только пока реально показаны на экране — иначе ручка висела бы
+// над пустым местом и путала, что именно двигаешь.
+function _hudEditElements() {
+  const list = [
+    { id: 'attack', label: t('hudElAttack'), get: () => { const p = getAttackBtnPos(); return { x: p.x, y: p.y, r: p.r }; } },
+    { id: 'skillQ', label: 'Q', get: () => { const p = getSkillBtnPos(0); return { x: p.cx, y: p.cy, r: p.r }; } },
+    { id: 'skillW', label: 'W', get: () => { const p = getSkillBtnPos(1); return { x: p.cx, y: p.cy, r: p.r }; } },
+    { id: 'skillE', label: 'E', get: () => { const p = getSkillBtnPos(2); return { x: p.cx, y: p.cy, r: p.r }; } },
+    { id: 'skillR', label: 'R', get: () => { const p = getSkillBtnPos(3); return { x: p.cx, y: p.cy, r: p.r }; } },
+    { id: 'joystick', label: t('hudElJoystick'), get: () => { const c = joyCenter(); return { x: c.x, y: c.y, r: JOY_R }; } },
+    { id: 'potion', label: t('hudElPotion'), get: () => { const p = getPotionBtnPos(); return { x: p.x, y: p.y, r: p.r }; } },
+    { id: 'target', label: t('hudElTarget'), get: () => { const p = getTargetBtnPos(); return { x: p.x, y: p.y, r: p.r }; } },
+    { id: 'auto', label: t('hudElAuto'), get: () => { const p = getAutoBtnPos(); return { x: p.cx, y: p.cy, r: p.r }; } },
+  ];
+  if (player && player.foreignSkill) {
+    list.push({ id: 'skillX', label: '5', get: () => { const p = getSkillBtnPos(4); return { x: p.cx, y: p.cy, r: p.r }; } });
+  }
+  if (player && player.equipment && player.equipment.pet && typeof petSkillOf === 'function' && petSkillOf(player.equipment.pet.id)) {
+    list.push({ id: 'pet', label: t('hudElPet'), get: () => { const p = getPetBtnPos(); return { x: p.x, y: p.y, r: p.r }; } });
+  }
+  [['chat', 'chat-btn', 'hudElChat'], ['teleport', 'teleport-btn', 'hudElTeleport']].forEach(([id, elId, key]) => {
+    const el = document.getElementById(elId);
+    if (el && el.dataset.shown === '1') list.push({ id, label: t(key), get: () => _hudDomCenter(elId) });
+  });
+  return list;
+}
+
+// Live rect of a DOM HUD button (chat-btn/teleport-btn) in CANVAS space —
+// same left/top subtraction _toCanvasXY uses below, so a drag handle drawn
+// from this lines up with the real button whether it's still at its CSS
+// default or already has an inline override (_hudApplyDomOverride) applied.
+function _hudDomCenter(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  return { x: r.left - cr.left + r.width / 2, y: r.top - cr.top + r.height / 2, r: Math.max(r.width, r.height) / 2 };
+}
+
+function _hudApplyDomOverride(elId, cx, cy) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const w = el.offsetWidth || 42, h = el.offsetHeight || 42;
+  el.style.left = Math.round(cx - w / 2) + 'px';
+  el.style.top = Math.round(cy - h / 2) + 'px';
+  el.style.right = 'auto';
+  el.style.bottom = 'auto';
+}
+
+// Called on load, resize and reset (js/game.js's resize, resetHudLayoutAndApply
+// below) — snaps chat-btn/teleport-btn to their saved spot, or back to the
+// plain CSS default (index.html) when there is none.
+function applyDomHudOverrides() {
+  [['chat', 'chat-btn'], ['teleport', 'teleport-btn']].forEach(([id, elId]) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const o = (typeof hudOverride === 'function') ? hudOverride(id) : null;
+    if (o) _hudApplyDomOverride(elId, o.x, o.y);
+    else { el.style.left = ''; el.style.top = ''; el.style.right = ''; el.style.bottom = ''; }
+  });
+}
+
+// Closest registered element under (cx,cy), within its own radius plus a
+// forgiving margin — same "circle, not bounding box" reasoning as
+// _checkSkillTouch above: on a crowded HUD a box test would hand a tap in
+// the gap between two neighbours to whichever happened to be checked first.
+function _hudEditFindAt(cx, cy) {
+  const els = _hudEditElements();
+  let best = null, bestD = Infinity;
+  for (const e of els) {
+    const p = e.get();
+    if (!p) continue;
+    const d = Math.hypot(cx - p.x, cy - p.y);
+    if (d <= p.r + 14 && d < bestD) { bestD = d; best = e; }
+  }
+  return best;
+}
+
+function _hudEditDown(cx, cy, touchId) {
+  const found = _hudEditFindAt(cx, cy);
+  if (!found) return;
+  _hudDragId = found.id;
+  _hudDragTouchId = touchId;
+  _hudEditMove(cx, cy, touchId);
+}
+
+// Clamped well inside the screen (not to H-NAV_H specifically): the fifth
+// skill slot's own default position already dips under the nav bar on
+// purpose (see drawActionFan, js/ui.js) — a player is free to put anything
+// there deliberately, this margin only keeps a drag from losing the button
+// off the edge of the screen entirely.
+function _hudEditMove(cx, cy, touchId) {
+  if (!_hudDragId || _hudDragTouchId !== touchId) return;
+  const margin = 24;
+  const x = Math.min(W - margin, Math.max(margin, cx));
+  const y = Math.min(H - margin, Math.max(margin, cy));
+  if (typeof setHudOverride === 'function') setHudOverride(_hudDragId, x, y);
+  if (_hudDragId === 'joystick') updateJoyCenter();
+  else if (_hudDragId === 'chat') _hudApplyDomOverride('chat-btn', x, y);
+  else if (_hudDragId === 'teleport') _hudApplyDomOverride('teleport-btn', x, y);
+  // Attack/potion/target/auto (js/ui.js's _uiBtnGrads) and every skill seat
+  // (_skillBtnGradCache) each cache their own gradient object ONCE per
+  // resize with the position baked in — a perf win the rest of the year,
+  // but it means drawAttackButton() and friends would keep painting the
+  // OLD spot all the way through a drag if these caches were left alone.
+  // Edit mode is rare and deliberate, never mid-fight, so rebuilding both
+  // every frame here is the cheap side to be on.
+  if (typeof _uiBtnGrads !== 'undefined') _uiBtnGrads = null;
+  if (typeof _skillBtnGradCache !== 'undefined') _skillBtnGradCache = null;
+}
+
+function _hudEditUp(touchId) {
+  if (_hudDragTouchId !== touchId) return;
+  _hudDragId = null;
+  _hudDragTouchId = null;
+  if (typeof _saveHudLayout === 'function') _saveHudLayout();
+}
+
+// Entry point — called from the HUD settings panel (Профиль → Звук,
+// js/ui.js's _renderSoundPicker). Forces tab 0: editing a HUD nobody can
+// see would just be confusing.
+function openHudEditMode() {
+  if (!player) return;
+  hudEditMode = true;
+  if (typeof setTab === 'function') setTab(0);
+  const bar = document.getElementById('hud-edit-toolbar');
+  if (bar) bar.style.display = 'flex';
+  // Bottom nav is plain DOM, outside the canvas this file otherwise owns
+  // during edit mode — hidden for the duration so a stray tap can't leave
+  // the game view (and the toolbar's own "Готово") behind on another tab.
+  const nav = document.getElementById('bottom-nav');
+  if (nav) nav.style.visibility = 'hidden';
+}
+
+function closeHudEditMode() {
+  hudEditMode = false;
+  _hudDragId = null;
+  _hudDragTouchId = null;
+  const bar = document.getElementById('hud-edit-toolbar');
+  if (bar) bar.style.display = 'none';
+  const nav = document.getElementById('bottom-nav');
+  if (nav) nav.style.visibility = '';
+}
+
+function resetHudLayoutAndApply() {
+  if (typeof resetHudLayout === 'function') resetHudLayout();
+  updateJoyCenter();
+  applyDomHudOverrides();
+}
 
 function _isOnScreen(wx, wy) {
   return wx >= _vL && wx <= _vR && wy >= _vT && wy <= _vB;
@@ -631,6 +816,13 @@ function _toCanvasXY(clientX, clientY) {
 
 function onTS(e) {
   e.preventDefault();
+  if (hudEditMode) {
+    for (const t of e.changedTouches) {
+      const p = _toCanvasXY(t.clientX, t.clientY);
+      _hudEditDown(p.x, p.y, t.identifier);
+    }
+    return;
+  }
   for (const t of e.changedTouches) {
     const p = _toCanvasXY(t.clientX, t.clientY);
     _perfToggleTap(p.x, p.y);
@@ -675,6 +867,13 @@ function onTS(e) {
 
 function onTM(e) {
   e.preventDefault();
+  if (hudEditMode) {
+    for (const t of e.changedTouches) {
+      const p = _toCanvasXY(t.clientX, t.clientY);
+      _hudEditMove(p.x, p.y, t.identifier);
+    }
+    return;
+  }
   if (!joyGuard()) return;
   // joy.active is required here, not just the identifier match: touch
   // identifiers are small integers many mobile browsers hand out
@@ -708,6 +907,10 @@ function onTM(e) {
 }
 
 function onTE(e) {
+  if (hudEditMode) {
+    for (const t of e.changedTouches) _hudEditUp(t.identifier);
+    return;
+  }
   for (const t of e.changedTouches) {
     if (t.identifier === joy.id) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
     _potionPressEnd(t.identifier);
@@ -716,10 +919,14 @@ function onTE(e) {
   if (e.touches.length === 0) { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; }
 }
 
-function onTC() { joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; _potionPressCancel(); _autoPressCancel(); }
+function onTC() {
+  if (hudEditMode) { _hudDragId = null; _hudDragTouchId = null; return; }
+  joy.active = false; joy.id = null; joy.dx = 0; joy.dy = 0; _potionPressCancel(); _autoPressCancel();
+}
 
 function onMD(e) {
   const p = _toCanvasXY(e.clientX, e.clientY);
+  if (hudEditMode) { _hudEditDown(p.x, p.y, 'mouse'); return; }
   _perfToggleTap(p.x, p.y);
   if (!joyGuard()) return;
   if (p.y > H - NAV_H) return;
@@ -746,6 +953,10 @@ function onMD(e) {
 }
 
 function onMM(e) {
+  if (hudEditMode) {
+    if (_hudDragId) { const p = _toCanvasXY(e.clientX, e.clientY); _hudEditMove(p.x, p.y, 'mouse'); }
+    return;
+  }
   if (_potionTouchId === 'mouse') {
     const p = _toCanvasXY(e.clientX, e.clientY);
     const pb = getPotionBtnPos();
@@ -763,7 +974,10 @@ function onMM(e) {
     setJoy(p.x, p.y);
   }
 }
-function onMU()  { joy.active = false; joy.dx = 0; joy.dy = 0; _potionPressEnd('mouse'); _autoPressEnd('mouse'); }
+function onMU() {
+  if (hudEditMode) { _hudEditUp('mouse'); return; }
+  joy.active = false; joy.dx = 0; joy.dy = 0; _potionPressEnd('mouse'); _autoPressEnd('mouse');
+}
 
 function setJoy(cx, cy) {
   const dx = cx - joy.sx, dy = cy - joy.sy, len = Math.hypot(dx, dy);
@@ -817,6 +1031,10 @@ function initInput() {
     // sets keys to false, so a skipped keydown cannot strand a key down).
     const el = e.target;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+    // HUD edit mode owns every key the same way it owns every touch below —
+    // WASD moving the character (or Q/W/E/R casting) while the player is
+    // mid-drag on a button would fight the very thing being repositioned.
+    if (hudEditMode) return;
     keys[e.code] = true;
     if (state === 'playing' && activeTab === 0) {
       // e.repeat — удержание клавиши. Браузер повторяет keydown, пока клавишу
