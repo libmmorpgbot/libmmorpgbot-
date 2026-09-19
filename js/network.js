@@ -4278,6 +4278,9 @@ function netMarketMyListings() {
 function netMarketHistory() {
   if (socket?.connected) socket.emit('marketHistory');
 }
+function netMarketVolume() {
+  if (socket?.connected) socket.emit('marketVolume');
+}
 function netMarketList(item, price) {
   if (socket?.connected) socket.emit('marketList', { item, price });
 }
@@ -5775,6 +5778,9 @@ function _initMarketHandlers(s) {
   });
   s.on('marketHistoryData', ({ entries }) => {
     if (typeof onMarketHistoryData === 'function') onMarketHistoryData(entries || []);
+  });
+  s.on('marketVolumeData', (data) => {
+    if (typeof onMarketVolumeData === 'function') onMarketVolumeData(data || {});
   });
   s.on('marketListed', ({ listing }) => {
     if (typeof onMarketListed === 'function') onMarketListed(listing);

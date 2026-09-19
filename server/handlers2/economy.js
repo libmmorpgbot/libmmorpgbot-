@@ -541,6 +541,10 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     s.socket.emit('marketHistoryData', { entries: await market.history(t, pid) });
   }));
 
+  safeOn('marketVolume', () => s.act('marketVolume', 'marketError', async (t, pid) => {
+    s.socket.emit('marketVolumeData', await market.volume(t, pid));
+  }));
+
   // ── GRAM ─────────────────────────────────────────────────────────────────
   // A deposit is an INTENT now. The client asks for an address and a memo; it
   // does not state an amount, because the amount is whatever arrives on the

@@ -6795,7 +6795,8 @@ let _marketTab    = 'lots';
 let _marketLots    = [];
 let _marketMine     = [];
 let _marketHist     = [];
-let _marketLoaded  = { lots: false, mine: false, history: false };
+let _marketVolumeData = null;
+let _marketLoaded  = { lots: false, mine: false, history: false, volume: false };
 let _pendingSellItem = null; // { item } while a marketList request is in flight — used to roll back on error
 let _marketSellPick  = null; // selected inventory index in the sell picker modal
 
@@ -8109,6 +8110,7 @@ function switchMarketTab(tab) {
   if (tab === 'lots') netMarketBrowse();
   else if (tab === 'mine') netMarketMyListings();
   else if (tab === 'history') netMarketHistory();
+  else if (tab === 'volume') netMarketVolume();
 }
 
 function _renderMarketBody() {
@@ -8129,7 +8131,8 @@ function _renderMarketBody() {
 
   if (_marketTab === 'lots') _renderMarketLots(el);
   else if (_marketTab === 'mine') _renderMarketMine(el);
-  else _renderMarketHistoryTab(el);
+  else if (_marketTab === 'history') _renderMarketHistoryTab(el);
+  else _renderMarketVolumeTab(el);
 
   const strip = el.querySelector('.market-cat-tabs');
   if (strip && stripLeft) strip.scrollLeft = stripLeft;
@@ -8424,6 +8427,70 @@ function _renderMarketHistoryTab(el) {
       <div class="market-row-price">${amt ? amtSign + amt + '<br><span style="font-size:9px;color:#a3957c;font-weight:600">GRAM</span>' : ''}</div>
     </div>`;
   }).join('');
+}
+
+// «Объём» — lifetime GRAM moved through the market (bought + sold) and how
+// far that purchasing put the account toward its next VIP level. The totals
+// come from the server (market.volume, server/db/repos/market.js); the VIP
+// bar itself reuses window._vipData exactly like renderVipPanel does — it is
+// the account's real progress, market purchases being only one of the ways
+// to fill it (GRAM shop packages fill the same bar).
+function _renderMarketVolumeTab(el) {
+  if (!_marketLoaded.volume || !_marketVolumeData) {
+    el.innerHTML = `<div class="rating-loading">${t('questLoading')}</div>`;
+    return;
+  }
+  const v = _marketVolumeData;
+  const bought = Number(v.bought) || 0;
+  const sold   = Number(v.sold)   || 0;
+  const total  = Number(v.total)  || (bought + sold);
+  const fmt    = n => n.toFixed(2);
+
+  const vip        = window._vipData || { level: 0, deposited: 0, pending: [] };
+  const level      = vip.level     || 0;
+  const deposited  = vip.deposited || 0;
+  const thresholds = typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500];
+  const cumulative = typeof VIP_CUMULATIVE !== 'undefined' ? VIP_CUMULATIVE : _vipCumulative(thresholds);
+
+  let vipProgressHtml;
+  if (level < 10) {
+    const needed   = thresholds[level + 1] || 1;
+    const progress = Math.max(0, deposited - cumulative[level]);
+    const pct      = Math.min(100, (progress / needed) * 100).toFixed(1);
+    vipProgressHtml = `
+      <div class="vip-progress-wrap">
+        <div class="vip-progress-label">
+          <span>${tVars('vipNextFmt', { lvl: level + 1, total: cumulative[level + 1] })}</span>
+          <span>${progress.toFixed(2)} / ${needed} GRAM</span>
+        </div>
+        <div class="vip-progress-bar"><div class="vip-progress-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  } else {
+    vipProgressHtml = `<div class="vip-max-badge">${t('vipMaxBadge')}</div>`;
+  }
+
+  el.innerHTML = `
+    <div class="vip-level-badge">VIP ${level}</div>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-ic">🛒</div>
+        <div class="stat-vl">${fmt(bought)}</div>
+        <div class="stat-nm">${t('marketVolumeBoughtLbl')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-ic">💰</div>
+        <div class="stat-vl">${fmt(sold)}</div>
+        <div class="stat-nm">${t('marketVolumeSoldLbl')}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-ic">📊</div>
+        <div class="stat-vl">${fmt(total)}</div>
+        <div class="stat-nm">${t('marketVolumeTotalLbl')}</div>
+      </div>
+    </div>
+    <div class="vip-section-title">${t('marketVolumeVipHdr')}</div>
+    ${vipProgressHtml}
+  `;
 }
 
 function _marketToast(text, type) {
@@ -9022,6 +9089,11 @@ function onMarketHistoryData(entries) {
   _marketHist = _marketEnrich(entries);
   _marketLoaded.history = true;
   if (_marketTab === 'history') _renderMarketBody();
+}
+function onMarketVolumeData(data) {
+  _marketVolumeData = data || {};
+  _marketLoaded.volume = true;
+  if (_marketTab === 'volume') _renderMarketBody();
 }
 function onMarketListed(listing) {
   _pendingSellItem = null;

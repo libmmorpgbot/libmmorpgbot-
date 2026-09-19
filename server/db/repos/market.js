@@ -667,4 +667,24 @@ async function history(db, playerId, limit = 30) {
   });
 }
 
-module.exports = { list, cancel, buy, browse, mine, history, byId, MarketError, MARKET_BROWSE_MAX };
+// ── объём ────────────────────────────────────────────────────────────────
+// Lifetime totals across every closed trade this account was on either side
+// of — what the "Объём" tab shows next to the VIP progress bar. Bought and
+// sold are summed separately (a status='sold' listing has exactly one buyer
+// and one seller, never both the same account — buy() rejects own_lot), and
+// vipEarned mirrors the same MARKET_VIP_PCT share that buy() actually
+// credited at purchase time, so the number shown here can never drift from
+// what addVipSpend really added.
+async function volume(db, playerId) {
+  const { rows } = await query(db, `
+    SELECT
+      COALESCE(SUM(price) FILTER (WHERE buyer_id  = $1), 0) AS bought,
+      COALESCE(SUM(price) FILTER (WHERE seller_id = $1), 0) AS sold
+      FROM market_listings
+     WHERE status = 'sold' AND (buyer_id = $1 OR seller_id = $1)`, [playerId]);
+  const bought = Number(rows[0].bought);
+  const sold = Number(rows[0].sold);
+  return { bought, sold, total: round2(bought + sold), vipEarned: round2(bought * MARKET_VIP_PCT) };
+}
+
+module.exports = { list, cancel, buy, browse, mine, history, volume, byId, MarketError, MARKET_BROWSE_MAX };

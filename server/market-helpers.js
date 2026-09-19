@@ -15,9 +15,9 @@ function _marketMaxActive(vipLevel) {
   return (vipLevel || 0) >= MARKET_MAX_ACTIVE_VIP_LEVEL ? MARKET_MAX_ACTIVE_VIP : MARKET_MAX_ACTIVE;
 }
 
-// 10% of what a market BUYER pays counts toward their VIP bar, same deposit
+// 20% of what a market BUYER pays counts toward their VIP bar, same deposit
 // mechanic gramShopBuy's own pkg.gram uses — see marketBuy below.
-const MARKET_VIP_PCT = 0.10;
+const MARKET_VIP_PCT = 0.20;
 
 // ── тут стояли _marketListingData / _marketHistoryData ─────────────────────
 // Два мапери епохи Mongo (`l._id.toString()`), які пережили переїзд на
