@@ -9204,7 +9204,7 @@ function packPriceHtml(gram, color) {
 }
 // Every other package (pkg1-pkg600, rmat1-3) was removed here at the owner's
 // request, mirroring server/shop.js's own _GRAM_SHOP_PKGS — the GRAM shop
-// now sells exactly one thing.
+// now sells only these two.
 const _GRAM_SHOP_PKGS_UI = [
   // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
   // branch): x2 xp, +60% bonus-loot re-roll chance, x2 Liberty drop chance,
@@ -9217,6 +9217,11 @@ const _GRAM_SHOP_PKGS_UI = [
   // actually charges — used to need a second, easy-to-forget edit here to
   // keep the card from quoting a stale price.
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
+  // Мешок Либерти — mirror of server/shop.js's liberty_bag_pkg; that copy is
+  // what actually validates and grants, this one only draws the card. Goes
+  // through the same generic `boxes` rendering as box_rare/box_uncommon used
+  // to (_boxesLabel/_boxesLine below), extended to cover this BOX_DEF id too.
+  { id:'liberty_bag_pkg', gram:10, get label() { return t('gramPkgLabel_liberty_bag'); }, color:'#7ee0c0', boxes:{ liberty_bag:1 } },
 ];
 
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
@@ -9587,16 +9592,24 @@ function _skillBooksLabel(skillBooks) {
 
 // Shared between the shop card preview and the confirm modal — mirrors
 // server/index.js's pkg.boxes handling in the gramShopBuy handler.
-const _BOX_IMG = { box_uncommon: '/images/material/boxu.png', box_rare: '/images/material/boxr.png' };
-const _BOX_CLS = { box_uncommon: 'uncommon', box_rare: 'rare' };
+const _BOX_IMG = { box_uncommon: '/images/material/boxu.png', box_rare: '/images/material/boxr.png', liberty_bag: '/images/material/libertybag.png' };
+const _BOX_CLS = { box_uncommon: 'uncommon', box_rare: 'rare', liberty_bag: 'epic' };
 function _boxesLabel(boxes) {
   return Object.entries(boxes).map(([id, qty]) => ({
     img: _BOX_IMG[id] || '', label: `×${qty}`, cls: _BOX_CLS[id] || '',
   }));
 }
+// box_rare/box_uncommon use their own plural forms (t()), since Russian
+// declines a count noun differently from its dictionary form ("редких
+// бокса", not "редкий бокс"). Any other BOX_DEF id — just liberty_bag for
+// now — falls back to the item's own already-localized name (BOX_DEF.name,
+// set by js/i18n.js's I18N_BOXES pass) rather than silently reusing
+// uncommonBoxesLbl the way this used to for anything that wasn't box_rare.
 function _boxesLine(boxes) {
   return Object.entries(boxes).map(([id, qty]) => {
-    const name = id === 'box_rare' ? t('rareBoxesLbl') : t('uncommonBoxesLbl');
+    const name = id === 'box_rare' ? t('rareBoxesLbl')
+      : id === 'box_uncommon' ? t('uncommonBoxesLbl')
+      : (typeof BOX_DEF !== 'undefined' && BOX_DEF.find(b => b.id === id) || {}).name || id;
     return `${qty}× ${name}`;
   }).join(', ');
 }

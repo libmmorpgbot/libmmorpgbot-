@@ -1038,6 +1038,7 @@ Object.assign(I18N_UI, {
   gramPkgLabel_pkg50: { ru: 'Элитный', en: 'Elite', uk: 'Елітний', es: 'Élite', tr: 'Elit', pt: 'Elite' },
   gramPkgLabel_pkg100: { ru: 'Легендарный', en: 'Legendary', uk: 'Легендарний', es: 'Legendario', tr: 'Efsanevi', pt: 'Lendário' },
   gramPkgLabel_pkg600: { ru: 'Эпический', en: 'Epic', uk: 'Епічний', es: 'Épico', tr: 'Epik', pt: 'Épico' },
+  gramPkgLabel_liberty_bag: { ru: 'Мешок Либерти', en: 'Liberty Bag', uk: 'Мішок Ліберті', es: 'Bolsa de Libertad', tr: 'Liberty Torbası', pt: 'Saco de Liberdade' },
   mailBonusBtn: { ru: 'Письмо', en: 'Mail', uk: 'Лист', es: 'Carta', tr: 'Mektup', pt: 'Carta' },
   mailBonusTitle: { ru: 'Письмо', en: 'Mail', uk: 'Лист', es: 'Carta', tr: 'Mektup', pt: 'Carta' },
   mailBonusDesc: { ru: 'Подарок — один раз на аккаунт. Что именно придёт, решает сезонный билет: с ним награда своя, без него своя.', en: 'A gift — one per account. Which one arrives depends on the season ticket: holders get theirs, everyone else gets the other.', uk: 'Подарунок — один раз на акаунт. Що саме прийде, вирішує сезонний квиток: з ним нагорода своя, без нього своя.', es: 'Un regalo, uno por cuenta. Cuál llega lo decide el pase de temporada: con él, una recompensa; sin él, la otra.', tr: 'Bir hediye — hesap başına bir kez. Hangisinin geleceğini sezon bileti belirler: bilet sahibine biri, diğerlerine öteki.', pt: 'Um presente — um por conta. Qual chega depende do passe de temporada: com ele, uma recompensa; sem ele, a outra.' },
@@ -1753,6 +1754,7 @@ const I18N_MATS = {
 const I18N_BOXES = {
   box_uncommon: { en: 'Uncommon Box', uk: 'Незвичайний бокс', es: 'Caja Poco Común', tr: 'Nadir Olmayan Kutu', pt: 'Caixa Incomum' },
   box_rare:     { en: 'Rare Box',     uk: 'Рідкісний бокс',   es: 'Caja Rara',       tr: 'Nadir Kutu',        pt: 'Caixa Rara' },
+  liberty_bag:  { en: 'Liberty Bag',  uk: 'Мішок Ліберті',    es: 'Bolsa de Libertad', tr: 'Liberty Torbası', pt: 'Saco de Liberdade' },
 };
 
 // key: enemy eid -> {en, uk, es, tr, pt} — base species+rank name (e.g.

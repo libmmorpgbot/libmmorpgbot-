@@ -79,6 +79,13 @@ const _GRAM_SHOP_PKGS = [
   // own seasonTicket branch) that boosts kill rewards for as long as the
   // current season runs (see shared/definitions.js's SEASON_TICKET_* section).
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },
+  // Мешок Либерти — the shared/definitions.js BOX_DEF entry of the same id
+  // (nexumCost:600, nexumReward:500 through the crafting station), sold here
+  // directly for GRAM instead. `boxes` is the same generic field every other
+  // package already used for box_rare/box_uncommon — _packageContents
+  // (server/db/repos/shop.js) resolves any BOX_DEF id through it, so
+  // 'liberty_bag' needs no code of its own to grant.
+  { id:'liberty_bag_pkg', gram:10, boxes:{ liberty_bag:1 } },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)
