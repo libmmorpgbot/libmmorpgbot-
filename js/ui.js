@@ -6731,7 +6731,7 @@ function _vipItemDesc(lvl) {
 // ─────────────────────────────────────────────────────────
 const MARKET_MIN_PRICE = 0.1;
 const MARKET_MAX_PRICE = 1000;
-const MARKET_FEE_PCT   = 0.10; // burned — mirrors server; display only, not authoritative
+const MARKET_FEE_PCT   = 0.20; // burned — mirrors server; display only, not authoritative
 // Стеля видачі browse() (MARKET_BROWSE_MAX, server/db/repos/market.js) —
 // дзеркало, як і три константи вище: сервер лишається джерелом правди, тут це
 // число потрібне рівно для одного — щоб СКАЗАТИ гравцеві, що список обрізаний.
@@ -9202,6 +9202,9 @@ function pkgPrice(pkg) {
 function packPriceHtml(gram, color) {
   return `<span style="color:${color || '#8bd66a'}">${gram} GRAM</span>`;
 }
+// Every other package (pkg1-pkg600, rmat1-3) was removed here at the owner's
+// request, mirroring server/shop.js's own _GRAM_SHOP_PKGS — the GRAM shop
+// now sells exactly one thing.
 const _GRAM_SHOP_PKGS_UI = [
   // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
   // branch): x2 xp, +60% bonus-loot re-roll chance, x2 Liberty drop chance,
@@ -9214,34 +9217,6 @@ const _GRAM_SHOP_PKGS_UI = [
   // actually charges — used to need a second, easy-to-forget edit here to
   // keep the card from quoting a stale price.
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
-  { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
-  { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
-  { id:'pkg100', gram:180, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // Top tier — mirror of server/shop.js's pkg600 down to the digit; that copy
-  // is what actually validates and grants, this one only draws the card.
-  { id:'pkg600', gram:600, get label() { return t('gramPkgLabel_pkg600'); }, potions:200, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#c084fc',
-    skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
-    stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
-    enhance:8, nexum:20000 },
-  // The old pkg300 («Эпический» / «+Pack») stood here as the top tier of the
-  // regular tab, then moved to its own HUD button, then was removed
-  // entirely at the owner's request: no button, no card, no row in
-  // server/shop.js — pkg600 above is a new, unrelated product, not its
-  // return; a pkg300 receipt from back then still names 'pkg300' and still
-  // falls back to the generic packageFallbackLbl.
-  // Усиление tab — pure material packs (the empowerment itself still happens
-  // from the Персонаж → Усиление panel, see updateEmpowerUI; these only grant
-  // the listed items). Зеркало серверного списка в server/shop.js — содержимое
-  // обязано совпадать до предмета, иначе витрина обещает одно, а приходит
-  // другое.
-  { id:'rmat1', gram:25, get label() { return t('empowerMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
-  { id:'rmat2', gram:40, get label() { return t('empowerMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
-  { id:'rmat3', gram:80, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
 ];
 
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
@@ -9265,25 +9240,14 @@ function showGramShopBtn() {
 
 // ─────────────────────────────────────────────────────────
 //  "Допы" TAB PACKAGES (GRAM shop) — pet+cloak+artifact+wings+rune bundles.
-//  Mirror of the same-id entries in server/shop.js's _GRAM_SHOP_PKGS (that's
-//  what actually validates and grants them — this copy only draws the
-//  cards). Bought through gramShopBuy like any other GRAM package — own
-//  render/picker functions below instead of reusing _gramShopPkgHtml/
-//  openGramShopConfirm only because the reward kinds (petChoice/classCloak/
-//  classArtifact/wings/rune) don't fit that card's layout.
-// ─────────────────────────────────────────────────────────
-// No `enhance` on the first five — mirrors server/shop.js's _GRAM_SHOP_PKGS
-// exactly: every item those hand out comes at +0, rarity is the reward.
-// extrapkg6 ("Админский") is the one deliberate exception: a single item,
-// legendary wings, pre-enhanced — see the same package server-side for why.
-const _SPECIAL_PET_PKGS_UI = [
-  { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
-  { id:'extrapkg2', gram:65,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
-  { id:'extrapkg3', gram:220, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
-  { id:'extrapkg4', gram:370, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
-  { id:'extrapkg5', gram:550, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
-  { id:'extrapkg6', gram:700, get label() { return t('shopTierAdmin'); },     wings:'legendary', enhance:10, color:'#c084fc' },
-];
+//  Removed at the owner's request, along with their server/shop.js
+//  _GRAM_SHOP_PKGS entries (extrapkg1-6) — the GRAM shop now sells only the
+//  season ticket. Left empty rather than deleted, along with the render/
+//  picker functions below: switchShopTab('pets') still exists as a reachable
+//  code path (nothing currently links to it, since the "Допы" tab button is
+//  gone from index.html) and an empty array is what makes it render nothing
+//  instead of throwing.
+const _SPECIAL_PET_PKGS_UI = [];
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
 // coin icon) used by _gramShopPkgHtml below.

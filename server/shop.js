@@ -69,73 +69,12 @@ function pkgPrice(pkg) {
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
+// Every other package (pkg1-pkg600, extrapkg1-6, rmat1-3) was removed here at
+// the owner's request — the GRAM shop now sells exactly one thing. A past
+// receipt for any of those ids still shows the generic «Пакет» fallback
+// (packageFallbackLbl, js/ui.js), the same way an old pkg300 receipt already
+// did before this list ever grew that large.
 const _GRAM_SHOP_PKGS = [
-  { id:'pkg1',   gram:1,   gold:10000,  potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
-  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:'uncommon', weapon:'uncommon', bonusSP:0,  skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:20,  gold:7000,   potions:20,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:5 }, enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
-  { id:'pkg100', gram:180, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // Top tier — the full epic gear set (6 armor slots + the class weapon),
-  // both at +8, plus a heavy stack of everything else the game hands out in
-  // smaller packages: 200 of every buff potion, 120 skill books (30 × the
-  // class's 4), 30 rare + 30 uncommon boxes, 30 safe (bless) and 100 regular
-  // (norm) enhancement stones, 50 legendary + 100 epic recipes, 20 bonus
-  // skill points, 20000 Liberty. Note this id is unrelated to the old
-  // 'pkg300' («Эпический» / «+Pack», 600 GRAM) that used to sit here and was
-  // removed at the owner's request — a past pkg300 receipt still shows the
-  // generic «Пакет» fallback (packageFallbackLbl, js/ui.js) rather than this
-  // one's name, since its GramTx row names 'pkg300', not 'pkg600'.
-  { id:'pkg600', gram:600, potions:200, armor:'epic', weapon:'epic', bonusSP:20,
-    skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
-    stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
-    enhance:8, nexum:20000 },
-  // Pet+cloak+artifact+wings+rune packages (rendered on the GRAM shop's own
-  // Допы tab, js/ui.js's _SPECIAL_PET_PKGS_UI — bought through this same
-  // handler since petChoice/classCloak/classArtifact are already fully
-  // supported below; wings/rune are handled the same way, resolved by
-  // rarity in _packageContents, server/db/repos/shop.js). No `enhance`: the
-  // owner's call was that every item here comes out at +0 — rarity is the
-  // reward this tab sells, not a free enhancement roll on top of it.
-  // classCloak/classArtifact only ever exist at common/uncommon/rare (see
-  // ITEM_DEF) — there is no epic tier, so the top two packages' own jump to
-  // epic (pet, and for extrapkg5 also wings/rune) isn't mirrored there; they
-  // stay at their rare ceiling instead.
-  { id:'extrapkg1', gram:30,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common' },
-  { id:'extrapkg2', gram:65,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon' },
-  { id:'extrapkg3', gram:220, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
-  { id:'extrapkg4', gram:370, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
-  { id:'extrapkg5', gram:550, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'epic',     rune:'epic' },
-  // Админский — the one exception to "everything on this tab is +0" above:
-  // a single item, legendary wings, deliberately pre-enhanced. Nothing
-  // else (no pet/cloak/artifact/rune), so every one of those fields stays
-  // absent rather than null-for-clarity like the five packages above —
-  // _packageContents only ever checks pkg.<field> truthiness, so leaving
-  // them out is exactly the same grant, just without five lines that would
-  // all read "nothing here".
-  { id:'extrapkg6', gram:700, wings:'legendary', enhance:10 },
-  // Усиление tab — pure material packs. These only GRANT the listed
-  // items (via the same pkg.boxes/pkg.stones handling every other package
-  // already uses below — `stones` isn't stone-specific, it resolves any
-  // CRAFT_MATS id, which is how rece/recl and norm_stone land here too);
-  // buying one never performs an empowerment by itself, that's still the
-  // separate 'empower' event above, spending materials out of the inventory
-  // these packs fill.
-  //
-  // Id'ы остались rmat1-3 со времён, когда вкладка называлась Перерождением:
-  // они записаны в GramTx каждой прошлой покупки, и переименование разорвало
-  // бы связь чека с товаром.
-  //
-  // norm_stone добавлен вместе с Усилением: обычные камни заточки входят в
-  // его цену, и без них набор перестал бы покрывать ровно одно усиление —
-  // ради чего наборы и собраны по этой шкале.
-  { id:'rmat1', gram:25, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
-  { id:'rmat2', gram:40, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
-  { id:'rmat3', gram:80, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
   // Сезонный билет — grants no items, just flips a status flag (gramShopBuy's
   // own seasonTicket branch) that boosts kill rewards for as long as the
   // current season runs (see shared/definitions.js's SEASON_TICKET_* section).

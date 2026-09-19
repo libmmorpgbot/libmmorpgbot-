@@ -14,7 +14,7 @@ const { _catalogBase, SERVER_INV_MAX } = require('./anticheat');
 // ── Market (player-to-player item trading for GRAM) ────────────────────────
 const MARKET_MIN_PRICE   = 0.1;
 const MARKET_MAX_PRICE   = 1000;
-const MARKET_FEE_PCT     = 0.10;   // burned — not paid out to anyone
+const MARKET_FEE_PCT     = 0.20;   // burned — not paid out to anyone
 const MARKET_MAX_ACTIVE  = 5;      // active listings per seller below MARKET_MAX_ACTIVE_VIP_LEVEL
 const MARKET_MAX_ACTIVE_VIP_LEVEL = 3; // VIP level at which the cap switches to MARKET_MAX_ACTIVE_VIP, see _marketMaxActive (server/index.js)
 const MARKET_MAX_ACTIVE_VIP = 10;  // active listings per seller at VIP 3+
