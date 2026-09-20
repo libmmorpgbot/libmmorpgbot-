@@ -622,6 +622,14 @@ function _checkPvpBtnTouch(cx, cy) {
       if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, 'Нельзя в безопасной зоне', '#f88');
       return true;
     }
+    // Первая локация (левый рукав, dungeonLvl 2 — server/game/floors.js's
+    // FLOOR_IDS.left) is a no-PK starting zone up to level 20: the server
+    // refuses the toggle outright (Room.setPlayerPvpMode), this just keeps the
+    // client's own optimistic pvpMode flag from drifting out of sync with it.
+    if (!pvpMode && dungeonLvl === 2) {
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, 'Нельзя в начальной локации', '#f88');
+      return true;
+    }
     pvpMode = !pvpMode;
     if (typeof netSetPvpMode === 'function') netSetPvpMode(pvpMode);
     if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }

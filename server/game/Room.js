@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { TILE, WALL } = require('./dungeon');
-const { floorEntry } = require('./floors');
+const { floorEntry, FLOOR_IDS } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
@@ -3226,6 +3226,10 @@ class Room {
     // клиент мог его снять — и снимал, — а тик возвращал обратно только при
     // следующем пересечении границы, которого внутри зоны не случается.
     if (!mode && p._guildWarZone) return;
+    // Первая локация (левый рукав, уровни 1-20) — стартовая зона: новичков
+    // нельзя пускать под удар, пока они качаются с нуля, так что ПК там
+    // включить нельзя вовсе (выключить, если он всё же был включён, можно).
+    if (mode && this.floor === FLOOR_IDS.left) return;
     if (p.pvpMode !== !!mode) { p.pvpMode = !!mode; p._profileRev++; }
   }
 
@@ -3234,6 +3238,10 @@ class Room {
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
+    // setPlayerPvpMode already refuses to turn PK on here — this is belt and
+    // suspenders against pvpMode having been true before the player ever
+    // walked into the first location's no-PK zone.
+    if (this.floor === FLOOR_IDS.left) return null;
     if (attacker.hp <= 0) return null;
     if (target.hp <= 0) return null;
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
@@ -3374,6 +3382,9 @@ class Room {
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
     if (!attacker.pvpMode) return null;
+    // Same belt-and-suspenders as pvpAttack: PK can never actually be on here,
+    // but refuse the damage outright too.
+    if (this.floor === FLOOR_IDS.left) return null;
     if (attacker.hp <= 0) return null;
     // Same server-side floor as skillAttackEnemy — and it matters more here:
     // this handler doesn't go through the attack limiter in server/index.js at
