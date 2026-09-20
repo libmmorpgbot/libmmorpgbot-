@@ -69,23 +69,29 @@ function pkgPrice(pkg) {
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
 // `each: N` grants N copies of EVERY one of the class's 4 books.
-// Every other package (pkg1-pkg600, extrapkg1-6, rmat1-3) was removed here at
-// the owner's request — the GRAM shop now sells exactly one thing. A past
-// receipt for any of those ids still shows the generic «Пакет» fallback
-// (packageFallbackLbl, js/ui.js), the same way an old pkg300 receipt already
-// did before this list ever grew that large.
+// Every earlier package (pkg1-pkg600, extrapkg1-6, rmat1-3) was removed here
+// at the owner's request. A past receipt for any of those ids still shows
+// the generic «Пакет» fallback (packageFallbackLbl, js/ui.js), the same way
+// an old pkg300 receipt already did before this list ever grew that large —
+// which is also why the packages added back below use fresh ids rather than
+// reusing one of the retired ones.
 const _GRAM_SHOP_PKGS = [
   // Сезонный билет — grants no items, just flips a status flag (gramShopBuy's
   // own seasonTicket branch) that boosts kill rewards for as long as the
   // current season runs (see shared/definitions.js's SEASON_TICKET_* section).
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },
-  // Мешок Либерти — the shared/definitions.js BOX_DEF entry of the same id
-  // (nexumCost:600, nexumReward:500 through the crafting station), sold here
-  // directly for GRAM instead. `boxes` is the same generic field every other
-  // package already used for box_rare/box_uncommon — _packageContents
-  // (server/db/repos/shop.js) resolves any BOX_DEF id through it, so
-  // 'liberty_bag' needs no code of its own to grant.
-  { id:'liberty_bag_pkg', gram:10, boxes:{ liberty_bag:1 } },
+  // 4 активные книги (Q/W/E/R, по 1 каждая) под класс покупателя + оружие
+  // uncommon-редкости («зелёное», см. RARITY_COLOR в js/definitions.js) под
+  // тот же класс.
+  { id:'books_weapon_pkg', gram:5, skillBooks:{ each:1 }, weapon:'uncommon' },
+  // Все 6 зелий бафов по 1 штуке + 50 000 золота.
+  { id:'potions_gold_pkg', gram:1, potions:1, gold:50000 },
+  // Мешок Либерти — раньше выдавал сам бокс liberty_bag (shared/
+  // definitions.js BOX_DEF, nexumCost:600/nexumReward:500 через крафт-
+  // станцию); теперь начисляет Liberty (nexum) напрямую вместо бокса —
+  // `pkg.nexum` кредитуется прямо в buyPackage (server/db/repos/shop.js), без
+  // бокса и лишнего инвентарного слота.
+  { id:'liberty_bag_pkg', gram:10, nexum:700 },
 ];
 
 // Weapon IDs per class and rarity for the shop (reuses ITEM_DEF entries)

@@ -9202,9 +9202,11 @@ function pkgPrice(pkg) {
 function packPriceHtml(gram, color) {
   return `<span style="color:${color || '#8bd66a'}">${gram} GRAM</span>`;
 }
-// Every other package (pkg1-pkg600, rmat1-3) was removed here at the owner's
-// request, mirroring server/shop.js's own _GRAM_SHOP_PKGS — the GRAM shop
-// now sells only these two.
+// Every earlier package (pkg1-pkg600, rmat1-3) was removed here at the
+// owner's request, mirroring server/shop.js's own _GRAM_SHOP_PKGS. The ones
+// below use fresh ids rather than reusing a retired one, so an old receipt
+// still falls back to the generic «Пакет» label instead of picking up a
+// new, unrelated definition.
 const _GRAM_SHOP_PKGS_UI = [
   // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
   // branch): x2 xp, +60% bonus-loot re-roll chance, x2 Liberty drop chance,
@@ -9217,11 +9219,19 @@ const _GRAM_SHOP_PKGS_UI = [
   // actually charges — used to need a second, easy-to-forget edit here to
   // keep the card from quoting a stale price.
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
+  // 4 активные книги (по классу) + зелёное (uncommon) оружие — mirror of
+  // server/shop.js's books_weapon_pkg. skillBooks/weapon are already fully
+  // rendered generically by _gramShopPkgHtml/_shopExtraRewardRows below.
+  { id:'books_weapon_pkg', gram:5, get label() { return t('gramPkgLabel_books_weapon'); }, color:'#8bd66a', skillBooks:{ each:1 }, weapon:'uncommon' },
+  // Все зелья бафов по 1 штуке + 50 000 золота — mirror of server/shop.js's
+  // potions_gold_pkg.
+  { id:'potions_gold_pkg', gram:1, get label() { return t('gramPkgLabel_potions_gold'); }, color:'#f1c40f', potions:1, gold:50000 },
   // Мешок Либерти — mirror of server/shop.js's liberty_bag_pkg; that copy is
-  // what actually validates and grants, this one only draws the card. Goes
-  // through the same generic `boxes` rendering as box_rare/box_uncommon used
-  // to (_boxesLabel/_boxesLine below), extended to cover this BOX_DEF id too.
-  { id:'liberty_bag_pkg', gram:10, get label() { return t('gramPkgLabel_liberty_bag'); }, color:'#7ee0c0', boxes:{ liberty_bag:1 } },
+  // what actually validates and grants, this one only draws the card. Now
+  // credits Liberty (nexum) directly instead of granting the liberty_bag
+  // box — same generic `nexum` rendering as any other package (see
+  // _shopExtraRewardRows below).
+  { id:'liberty_bag_pkg', gram:10, get label() { return t('gramPkgLabel_liberty_bag'); }, color:'#7ee0c0', nexum:700 },
 ];
 
 const _STONE_IMG = { norm_stone: '/images/norm.png', bless_stone: '/images/bless.png' };
