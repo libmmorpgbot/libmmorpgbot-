@@ -286,6 +286,9 @@ function recompute() {
   // после всех плоских прибавок — иначе порядок слагаемых решал бы результат.
   let speedPct = 0, atkPct = 0, critPowerAdd = 0;
   let _runeDefPct = 0;
+  // Уникальные сеты — see the identical block in server/db/repos/stats.js's
+  // compute(), which this MUST stay step-for-step identical to.
+  let uniqueSetCount = 0;
   Object.values(player.equipment).forEach(it => {
     if (!it) return;
     const eb = _enhBonus(it);
@@ -305,7 +308,13 @@ function recompute() {
     if (it.speedPct)   speedPct  += it.speedPct;
     if (it.atkPct)     atkPct    += it.atkPct;
     if (it.critPower)  critPowerAdd += it.critPower;
+    if (it.uniqueSet)  uniqueSetCount++;
   });
+  if (typeof uniqueSetBonusFor === 'function') {
+    const usb = uniqueSetBonusFor(uniqueSetCount);
+    atkPct += usb.atkPct; hpPct += usb.hpPct; critPowerAdd += usb.critPowerPct;
+    extraAS += (player.charDef.atkSpeed || 0) * usb.atkSpeedPct;
+  }
   // ── руны надетого ───────────────────────────────────────────────────────
   // Те же слагаемые, что считает сервер (repos/stats.js), и по той же общей
   // таблице: панель обязана показывать числа, по которым уже идёт бой.

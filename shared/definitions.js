@@ -957,8 +957,9 @@ const CRAFT_MATS = [
   // ── Свитки Башни (Tower scrolls) ──────────────────────────
   // One per class, dropped only in that class's own corridor of the Башня
   // (see TOWER_LICH/TOWER_SCROLL_CHANCE above, _rollTowerLoot in server/
-  // game/loot.js) — what they're for isn't decided yet, so this is just the
-  // catalog entry a drop needs to exist at all.
+  // game/loot.js). Craft material for UNIQUE_SET_CRAFT_RECIPES below —
+  // every set piece asks for all 7, 120 each, regardless of which class's
+  // piece is being crafted (owner's own spec, confirmed literally).
   // Object.keys(CHAR_DEF), not TOWER_CLASSES: that const is declared further
   // down this file (Башня section) and CRAFT_MATS is built before it exists.
   ...Object.keys(CHAR_DEF).map(cls => ({
@@ -966,6 +967,13 @@ const CRAFT_MATS = [
     img: `/images/material/tower_scroll_${cls}.png`,
     slot: 'material', rarity: 'legendary', forClass: cls,
   })),
+  // ── Свиток босса (Boss scroll) ─────────────────────────────
+  // The other UNIQUE_SET_CRAFT_RECIPES ingredient, 15 per set piece. Drops
+  // from the world boss (rollEventBossDrops below) and from every arm's own
+  // boss (imp_boss/orc_boss/beholder_boss/demon_boss — _rollMobLoot, server/
+  // game/loot.js, same eType==='boss' branch the skill/passive books already
+  // use) at BOSS_SCROLL_CHANCE, 1-2 at a time.
+  { id: 'boss_scroll', name: 'Свиток босса', img: '/images/material/recl.png', slot: 'material', rarity: 'legendary' },
 ];
 
 // ── Level-banded skill-book drop pools ──────────────────────────────────────
@@ -1320,42 +1328,15 @@ const ITEM_DEF = [
 // The craftStone handler in server/index.js still exists and refuses, so a
 // client running a cached bundle gets a clear message instead of silence.
 
-// Epic/legendary gear tiers: these two additionally cost Liberty on top of
-// the usual mats, and
-// Liberty is server-authoritative, so the recipe the server charges against
-// has to live here rather than in js/definitions.js's client-only
-// ITEM_CRAFT_RECIPES — a client can't be trusted to report its own spend.
-// Uncommon/rare stay pure client-trusted gold+mats crafts, untouched.
-// js/definitions.js splices this array into ITEM_CRAFT_RECIPES so the
-// craftsman UI keeps listing every tier from one place.
-const GEAR_CRAFT_EPIC_COST = 7000;
-const GEAR_CRAFT_LEGENDARY_COST = 20000;
-const GEAR_CRAFT_RECIPES = [
-  { itemId:'sw4', mats:[{id:'sw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'tw4', mats:[{id:'tw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'bw4', mats:[{id:'bw3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'st4', mats:[{id:'st3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'hm4', mats:[{id:'hm3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'ar4', mats:[{id:'ar3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'gl4', mats:[{id:'gl3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'bt4', mats:[{id:'bt3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'rn4', mats:[{id:'rn3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'nd4', mats:[{id:'nd3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'rf4', mats:[{id:'rf3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'as4', mats:[{id:'as3',n:2,minEnhance:8},{id:'rece',n:10}], chance:1.0, nexumCost:GEAR_CRAFT_EPIC_COST },
-  { itemId:'sw5', mats:[{id:'sw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'tw5', mats:[{id:'tw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'bw5', mats:[{id:'bw4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'st5', mats:[{id:'st4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'hm5', mats:[{id:'hm4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'ar5', mats:[{id:'ar4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'gl5', mats:[{id:'gl4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'bt5', mats:[{id:'bt4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'rn5', mats:[{id:'rn4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'nd5', mats:[{id:'nd4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'rf5', mats:[{id:'rf4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-  { itemId:'as5', mats:[{id:'as4',n:2,minEnhance:8},{id:'recl',n:15}], chance:1.0, nexumCost:GEAR_CRAFT_LEGENDARY_COST },
-];
+// Epic/legendary gear tiers (sw4/5, tw4/5, …) are no longer craftable at all
+// — by owner request, the "Предметы" craftsman tab keeps only Уникальное
+// оружие (and now Уникальные сеты, see UNIQUE_SET_CRAFT_RECIPES below). The
+// table is gone rather than emptied, same as the enchant-stone removal above,
+// so nothing can quietly resurrect it. The items themselves (hm4/hm5, etc.)
+// still exist in ITEM_DEF and can still drop or be found — only this forge
+// route is closed. GEAR_TIER_CRAFT_RECIPES (uncommon/rare) is the same
+// removal, its own comment sits where that table used to be, below the
+// Уникальное оружие section.
 
 // ── Уникальное оружие ───────────────────────────────────────────────────────
 // A separate, top-end weapon line that is not part of the common→legendary
@@ -1781,8 +1762,9 @@ const UNIQUE_WEAPONS = [
 // One recipe per weapon: every shard kind at the tier's cost, nothing else.
 // No Liberty, no recipe scrolls and chance 1.0 — at these quantities a failed
 // roll would destroy months of farming, which is not a risk worth offering.
-// Shape matches GEAR_CRAFT_RECIPES so craftGear (server/index.js) validates,
-// charges and grants these through exactly the same path.
+// Same {itemId, mats, chance} shape every craft recipe family uses, so
+// craftGear (server/index.js) validates, charges and grants these through
+// exactly the same path as any other family.
 const UNIQUE_CRAFT_RECIPES = UNIQUE_WEAPONS.map(w => ({
   itemId: w.id,
   unique: true,
@@ -1806,16 +1788,99 @@ CRAFT_MATS.push(...UNIQUE_SHARDS.map(sh => ({
 })));
 ITEM_DEF.push(...UNIQUE_WEAPONS.map(w => ({ ...w, noDrop: true, unique: true })));
 
-// Uncommon/rare gear tiers — used to live purely in js/definitions.js's
-// client-only ITEM_CRAFT_RECIPES and be trusted outright: the client rolled
-// the chance, spent the materials, and granted the result itself, reaching
-// the server only via the next saveProgress blob (which _canonSavedItem
-// trusts for any valid id+enhance). Moved here so craftGear (server/
-// index.js) can validate and roll these the same way it already does
-// GEAR_CRAFT_RECIPES above — no currency involved, only materials, so there's
-// no nexumCost/goldCost field on any of these. js/definitions.js splices this
-// into ITEM_CRAFT_RECIPES so the craftsman UI keeps listing every tier from
-// one place.
+// ── Уникальные сеты (Unique Sets) ────────────────────────────────────────
+// A second craft-only gear line, alongside Уникальное оружие (UNIQUE_WEAPONS
+// above) — by owner request, six armor pieces per class instead of one
+// weapon. Same "craft-only, cannot drop, cannot be bought" shape as the
+// weapons: noDrop keeps them out of every rarity-filtered random pool,
+// forClass restricts who can EQUIP one (enforced in equipItem, server/
+// handlers2/items.js) — crafting itself is unrestricted, same as every
+// other class item already in the game (cloak_c_ranger etc.), so nothing
+// stops crafting one for the market or an alt.
+//
+// legs/"низ" piggybacks on the existing `ring` slot rather than a new one:
+// the equip/enhance/rune/stat pipeline all key off one small fixed slot
+// list (EQ_SLOTS, ENHANCEABLE_SLOTS, _RUNE_ARMOR_SLOTS, CRAFT_ANY_GEAR_SLOTS,
+// …) hardcoded in a dozen places across both ends of the wire, and reusing
+// `ring` gets every one of them for free — a genuinely new slot would mean
+// finding and updating all of them for six items in the whole game.
+//
+// Per-piece stats are exactly 2× the universal legendary tier at that slot
+// (hm5/ar5/gl5/bt5/rn5/nd5, ITEM_DEF above), plus a flat "additional stat"
+// on top — xpPct/dropPct, the same extra a rare-tier class item (cloak_r_*,
+// artifact_r_*) already carries, rather than inventing a new stat kind for
+// this one line.
+const UNIQUE_SET_SLOTS = [
+  { key: 'helmet', ruName: 'Шлем',     slot: 'helmet', base: { hp: 420, atk: 24 } },
+  { key: 'body',   ruName: 'Доспех',   slot: 'body',   base: { def: 96, hp: 100 } },
+  { key: 'gloves', ruName: 'Перчатки', slot: 'gloves', base: { atk: 48, def: 16 } },
+  { key: 'boots',  ruName: 'Ботинки',  slot: 'boots',  base: { def: 40, atk: 20 } },
+  // "Низ"/legs — see this section's own header comment for why it is `ring`.
+  { key: 'legs',   ruName: 'Поножи',   slot: 'ring',   base: { atk: 28, def: 16, hp: 100 } },
+  { key: 'belt',   ruName: 'Пояс',     slot: 'belt',   base: { atk: 48, hp: 240 } },
+];
+const UNIQUE_SET_EXTRA_STAT = { xpPct: 0.05, dropPct: 0.05 };
+
+const UNIQUE_SET_ITEMS = Object.keys(CHAR_DEF).flatMap(cls => UNIQUE_SET_SLOTS.map(s => ({
+  id: `uq_set_${cls}_${s.key}`,
+  name: `${s.ruName}: ${CHAR_DEF[cls].name}`,
+  slot: s.slot,
+  forClass: [cls],
+  img: `/images/uniqueset/${cls}/${s.key}.png`,
+  ...s.base,
+  ...UNIQUE_SET_EXTRA_STAT,
+  rarity: 'legendary',
+  uniqueSet: true,
+  noDrop: true,
+})));
+ITEM_DEF.push(...UNIQUE_SET_ITEMS);
+
+// One recipe per piece (42 total) — same flat materials list every time,
+// regardless of class or slot: 120 of EVERY class's own Tower scroll
+// (840 scrolls total) plus 15 Свиток босса. Owner's own spec, confirmed
+// literally rather than narrowed to "just that class's scroll" — this is
+// meant to be an extreme, months-long endgame grind, not an ordinary craft.
+const UNIQUE_SET_SCROLL_COST = 120;
+const UNIQUE_SET_BOSS_SCROLL_COST = 15;
+const UNIQUE_SET_CRAFT_RECIPES = UNIQUE_SET_ITEMS.map(it => ({
+  itemId: it.id,
+  uniqueSet: true,
+  mats: [
+    ...Object.keys(CHAR_DEF).map(cls => ({ id: `tower_scroll_${cls}`, n: UNIQUE_SET_SCROLL_COST })),
+    { id: 'boss_scroll', n: UNIQUE_SET_BOSS_SCROLL_COST },
+  ],
+  chance: 1.0,
+}));
+
+// ── Бонус за ношение сета (2/3/4/5 предметов) ────────────────────────────
+// Cumulative, not "highest tier wins": at 5 pieces worn, all four bonuses
+// below are active at once. Read by both ends (server/db/repos/stats.js's
+// compute() and js/player.js's recompute() — the two MUST stay step-for-step
+// identical, see stats.js's own header comment) off a plain count of
+// equipped items carrying `uniqueSet` — a player only ever has one class,
+// so there is never more than one set's worth of pieces to count, no setId
+// grouping needed.
+const UNIQUE_SET_BONUS_TIERS = [
+  { count: 2, atkSpeedPct: 0.10 },
+  { count: 3, hpPct: 0.20 },
+  { count: 4, atkPct: 0.30 },
+  { count: 5, critPowerPct: 0.40 },
+];
+function uniqueSetBonusFor(count) {
+  const out = { atkSpeedPct: 0, hpPct: 0, atkPct: 0, critPowerPct: 0 };
+  for (const tier of UNIQUE_SET_BONUS_TIERS) {
+    if (count < tier.count) continue;
+    if (tier.atkSpeedPct) out.atkSpeedPct += tier.atkSpeedPct;
+    if (tier.hpPct) out.hpPct += tier.hpPct;
+    if (tier.atkPct) out.atkPct += tier.atkPct;
+    if (tier.critPowerPct) out.critPowerPct += tier.critPowerPct;
+  }
+  return out;
+}
+const BOSS_SCROLL_CHANCE = 0.10;
+const BOSS_SCROLL_MIN_QTY = 1;
+const BOSS_SCROLL_MAX_QTY = 2;
+
 // What enhancement a crafted item comes out at.
 //
 // A tier recipe asks for two copies at +8 and the result carries +6 — two
@@ -1836,49 +1901,16 @@ function craftResultEnhance(rec) {
   return baseMat ? Math.max(0, baseMat.minEnhance - 2) : 0;
 }
 
-const GEAR_TIER_CRAFT_RECIPES = [
-  // ── Assassin knives ──────────────────────────────────────
-  { itemId:'sw2', mats:[{id:'sw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'sw3', mats:[{id:'sw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Warrior axes ─────────────────────────────────────────
-  { itemId:'tw2', mats:[{id:'tw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'tw3', mats:[{id:'tw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Archer bows ──────────────────────────────────────────
-  { itemId:'bw2', mats:[{id:'bw1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'bw3', mats:[{id:'bw2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Staves ───────────────────────────────────────────────
-  { itemId:'st2', mats:[{id:'st1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'st3', mats:[{id:'st2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Rune fighter blades ────────────────────────────────────
-  { itemId:'rf2', mats:[{id:'rf1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'rf3', mats:[{id:'rf2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Assassin daggers ───────────────────────────────────────
-  { itemId:'as2', mats:[{id:'as1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'as3', mats:[{id:'as2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Helmets ──────────────────────────────────────────────
-  { itemId:'hm2', mats:[{id:'hm1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'hm3', mats:[{id:'hm2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Body armor ───────────────────────────────────────────
-  { itemId:'ar2', mats:[{id:'ar1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'ar3', mats:[{id:'ar2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Gloves ───────────────────────────────────────────────
-  { itemId:'gl2', mats:[{id:'gl1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'gl3', mats:[{id:'gl2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Boots ────────────────────────────────────────────────
-  { itemId:'bt2', mats:[{id:'bt1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'bt3', mats:[{id:'bt2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Rings ────────────────────────────────────────────────
-  { itemId:'rn2', mats:[{id:'rn1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'rn3', mats:[{id:'rn2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-  // ── Belts ────────────────────────────────────────────────
-  { itemId:'nd2', mats:[{id:'nd1',n:2,minEnhance:8},{id:'recu',n:1}],  chance:1.0 },
-  { itemId:'nd3', mats:[{id:'nd2',n:2,minEnhance:8},{id:'recr',n:5}],  chance:1.0 },
-];
+// Uncommon/rare gear tiers (sw2/3, tw2/3, …) — removed the same way the
+// epic/legendary tiers above were (see that removal's own comment): gone
+// rather than emptied, by the same owner request to keep the "Предметы" tab
+// down to Уникальное оружие and Уникальные сеты only. The items themselves
+// are untouched — hm2/hm3 etc. still exist and can still be found — only
+// this forge route is closed.
 
 // Recipe-scroll tier-up (recu→recr→rece→recl): 20 of the lower rarity → 1 of
-// the higher, 80% chance. Moved here from js/definitions.js for the same
-// reason as GEAR_TIER_CRAFT_RECIPES above — craftMatUpgrade (server/
-// index.js) now rolls this itself instead of trusting the client's roll.
+// the higher, 80% chance. Moved here from js/definitions.js — craftMatUpgrade
+// (server/index.js) rolls this itself instead of trusting the client's roll.
 const MAT_UPGRADE_RECIPES = [
   { from:'recu', to:'recr', count:20, chance:0.80 },
   { from:'recr', to:'rece', count:20, chance:0.80 },
@@ -2745,6 +2777,13 @@ function rollEventBossDrops(rand) {
   for (let i = 0; i < 5; i++) add(pick(commons), 1);               // 5 случайных common
   add(mat('bless_stone'), 2);                                      // 2 безопасных заточек
   add(mat('norm_stone'), 5);                                       // 5 обычных заточек
+  // Свиток босса — материал UNIQUE_SET_CRAFT_RECIPES (см. его собственный
+  // комментарий), тем же BOSS_SCROLL_CHANCE/MIN/MAX_QTY, что и с обычных
+  // боссов на локациях (_rollMobLoot, server/game/loot.js).
+  if (rnd() < BOSS_SCROLL_CHANCE) {
+    const qty = BOSS_SCROLL_MIN_QTY + Math.floor(rnd() * (BOSS_SCROLL_MAX_QTY - BOSS_SCROLL_MIN_QTY + 1));
+    add(mat('boss_scroll'), qty);
+  }
   return out;
 }
 
@@ -3702,10 +3741,11 @@ if (typeof module !== 'undefined') module.exports = {
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
-  PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
+  PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
+  UNIQUE_SET_CRAFT_RECIPES, uniqueSetBonusFor, BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,

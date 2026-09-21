@@ -98,9 +98,23 @@ module.exports = function registerItems(s, safeOn) {
     // The SLOT is the catalog's answer, not the client's. The shipped client
     // does not send one at all, and a client that did could ask for a helmet in
     // the weapon slot — which is a stat bonus applied twice over.
-    const slot = (ITEM_DEF.find(d => d.id === target.id) || {}).slot;
+    const base = ITEM_DEF.find(d => d.id === target.id) || {};
+    const slot = base.slot;
     if (!EQ_SLOTS.has(slot)) {
       throw Object.assign(new Error('not equipment'), { userMessage: 'Этот предмет нельзя надеть' });
+    }
+    // Class-locked gear (cloaks/artifacts, and now Уникальные сеты — see
+    // UNIQUE_SET_ITEMS, shared/definitions.js) was never actually enforced
+    // here: forClass existed on the catalog entry and nothing ever read it at
+    // equip time, only at drop/craft time on the client's own UI filters. A
+    // modified client could equip any class's piece on any character. The
+    // catalog is still the source of truth — read the same way `slot` above
+    // is, not trusted from the client.
+    if (Array.isArray(base.forClass) && base.forClass.length) {
+      const prog = await players.progressOf(t, pid);
+      if (!prog || !base.forClass.includes(prog.charClass)) {
+        throw Object.assign(new Error('wrong class'), { userMessage: 'Этот предмет нельзя надеть — не тот класс' });
+      }
     }
 
     const occupying = inv.equipment[slot];

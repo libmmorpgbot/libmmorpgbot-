@@ -881,6 +881,8 @@ Object.assign(I18N_UI, {
   declineBtn: { ru: 'Отказ', en: 'Decline', uk: 'Відмова', es: 'Rechazar', tr: 'Reddet', pt: 'Recusar' },
   uniqueShardsHdr: { ru: 'Осколки уникального оружия', en: 'Unique weapon shards', uk: 'Осколки унікальної зброї', es: 'Fragmentos de arma única', tr: 'Eşsiz silah parçaları', pt: 'Fragmentos de arma única' },
   craftUniqueHdr:  { ru: 'Уникальное оружие', en: 'Unique weapons', uk: 'Унікальна зброя', es: 'Armas únicas', tr: 'Eşsiz silahlar', pt: 'Armas únicas' },
+  craftUniqueSetHdr: { ru: 'Уникальные сеты', en: 'Unique sets', uk: 'Унікальні сети', es: 'Sets únicos', tr: 'Eşsiz setler', pt: 'Sets únicos' },
+  craftUniqueSetOtherClassHint: { ru: 'нельзя надеть — не тот класс', en: 'cannot be worn — wrong class', uk: 'не можна вдягнути — не той клас', es: 'no se puede equipar — clase incorrecta', tr: 'giyilemez — yanlış sınıf', pt: 'não pode ser equipado — classe errada' },
   craftUniqueNote: { ru: 'Собирается только из Осколков. Осколки падают с монстров от {lv} уровня.', en: 'Built from Shards only. Shards drop from monsters level {lv} and up.', uk: 'Збирається лише з Осколків. Осколки падають з монстрів від {lv} рівня.', es: 'Se fabrica solo con Fragmentos. Caen de monstruos de nivel {lv} o superior.', tr: 'Yalnızca Parçalardan yapılır. Parçalar {lv}. seviyeden itibaren canavarlardan düşer.', pt: 'Feita apenas de Fragmentos. Caem de monstros a partir do nível {lv}.' },
   buffPotionSlotName: { ru: 'Зелье усиления', en: 'Buff Potion', uk: 'Зілля посилення', es: 'Poción de Refuerzo', tr: 'Güçlendirme İksiri', pt: 'Poção de Reforço' },
   boxSlotName: { ru: 'Бокс', en: 'Box', uk: 'Бокс', es: 'Caja', tr: 'Kutu', pt: 'Caixa' },

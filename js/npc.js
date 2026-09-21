@@ -208,15 +208,6 @@ function _matIcon(mat, size) {
   return iconHTML(mat.icon || '', size, RARITY_COLOR[mat.rarity] || '#aea599');
 }
 
-function _listMats() {
-  const parts = [];
-  CRAFT_MATS.forEach(m => {
-    const n = countMaterial(m.id);
-    if (n > 0) parts.push(_matIcon(m, 14) + '<span style="font-size:10px">×' + n + '</span>');
-  });
-  return parts.join(' ') || (typeof t === 'function' ? t('npcNone') : 'нет');
-}
-
 function _matAvailable(m) {
   if (m.minEnhance != null) return countEnhancedItem(m.id, m.minEnhance) >= m.n;
   return countMaterial(m.id) >= m.n;
@@ -425,44 +416,14 @@ function _refreshRuneTab() {
   if (_craftsmanTab === 'runes') _setCraftsmanTab('runes');
 }
 
+// The ordinary common→legendary gear tiers used to fill this tab (uncommon/
+// rare/epic/legendary RARITIES groups, one per tier) — removed by owner
+// request, along with their GEAR_TIER_CRAFT_RECIPES/GEAR_CRAFT_RECIPES
+// tables (shared/definitions.js). Уникальное оружие and Уникальные сеты are
+// what's left, each its own group below.
 function _craftsmanItemsTab() {
-  const RARITIES = [
-    { key:'uncommon',  label: typeof t === 'function' ? t('rarityGroupUncommon') : 'Необычные' },
-    { key:'rare',      label: typeof t === 'function' ? t('rarityGroupRare') : 'Редкие' },
-    { key:'epic',      label: typeof t === 'function' ? t('rarityGroupEpic') : 'Эпические' },
-    { key:'legendary', label: typeof t === 'function' ? t('rarityGroupLegendary') : 'Легендарные' },
-  ];
-
-  let html = '<div class="craft-mats-info">' + (typeof t === 'function' ? t('craftRecipesPrefix') : 'Рецепты: ') + _listMats() + '</div>';
-
-  RARITIES.forEach(r => {
-    const entries = ITEM_CRAFT_RECIPES
-      .map((rec, idx) => ({ rec, idx, item: rec.itemId ? ITEM_DEF.find(i => i.id === rec.itemId) : null }))
-      // Unique weapons are epic/legendary too, but they get their own group
-      // below rather than sitting among the ordinary tiers of that rarity.
-      .filter(({ rec, item }) => item && item.rarity === r.key && !rec.unique);
-    if (!entries.length) return;
-
-    const rc = RARITY_COLOR[r.key] || '#aea599';
-    html += `<div class="craft-group-hdr" style="color:${rc}">${r.label}</div><div class="craft-items-grid">`;
-    entries.forEach(({ rec, idx, item }) => {
-      const canCraft = invHasSpace() &&
-        rec.mats.every(m => _matAvailable(m)) &&
-        (window._nexumBalance || 0) >= (rec.nexumCost || 0) &&
-        player.gold >= (rec.goldCost || 0);
-      const enhance = _craftResultEnhance(rec);
-      const enhBadge = enhance ? `<span style="position:absolute;top:1px;right:3px;font-size:8px;color:#e69419;font-weight:bold">+${enhance}</span>` : '';
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66;position:relative">
-        ${enhBadge}
-        <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
-        <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
-      </div>`;
-    });
-    html += '</div>';
-  });
-
-  html += _uniqueCraftGroupHTML();
-
+  let html = _uniqueCraftGroupHTML();
+  html += _uniqueSetCraftGroupHTML();
   return html;
 }
 
@@ -491,6 +452,41 @@ function _uniqueCraftGroupHTML() {
     </div>`;
   });
   html += '</div>';
+  return html;
+}
+
+// Уникальные сеты — unlike _uniqueCraftGroupHTML above, NOT filtered to the
+// player's own class: "будут показываться все" (owner's own words) — every
+// class's set is shown to everyone, only EQUIPPING is class-locked (see
+// equipItem's forClass check, server/handlers2/items.js). Grouped one
+// sub-heading per class so 42 cells in one flat grid doesn't read as an
+// undifferentiated wall. openCraftModal works unchanged: it reads rec.mats
+// generically, and 8 plain material entries (7 class scrolls + Свиток
+// босса) is exactly what it already knows how to show.
+function _uniqueSetCraftGroupHTML() {
+  if (typeof UNIQUE_SET_CRAFT_RECIPES === 'undefined') return '';
+  const entries = ITEM_CRAFT_RECIPES
+    .map((rec, idx) => ({ rec, idx, item: rec.itemId ? ITEM_DEF.find(i => i.id === rec.itemId) : null }))
+    .filter(({ rec, item }) => rec.uniqueSet && item);
+  if (!entries.length) return '';
+
+  let html = `<div class="craft-group-hdr" style="color:#5fd0e0">${typeof t === 'function' ? t('craftUniqueSetHdr') : 'Уникальные сеты'}</div>`;
+  Object.keys(CHAR_DEF).forEach(cls => {
+    const clsEntries = entries.filter(({ item }) => (item.forClass || [])[0] === cls);
+    if (!clsEntries.length) return;
+    const own = player && player.type === cls;
+    html += `<div class="craft-group-hdr" style="color:${CHAR_DEF[cls].color};font-size:12px">${CHAR_DEF[cls].name}${own ? '' : ` (${typeof t === 'function' ? t('craftUniqueSetOtherClassHint') : 'нельзя надеть — не тот класс'})`}</div>`;
+    html += '<div class="craft-items-grid">';
+    clsEntries.forEach(({ rec, idx, item }) => {
+      const rc = RARITY_COLOR[item.rarity] || '#aea599';
+      const canCraft = invHasSpace() && rec.mats.every(m => _matAvailable(m));
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66;position:relative">
+        <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
+        <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
+      </div>`;
+    });
+    html += '</div>';
+  });
   return html;
 }
 

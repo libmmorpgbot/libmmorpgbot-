@@ -42,7 +42,7 @@
 const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF,
+  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -234,6 +234,11 @@ function compute(row) {
   // Не сила, а добыча: в атаку и защиту не идут, но считаются здесь — иначе
   // путь награды лез бы в инвентарь заново на каждое убийство.
   let xpPct = 0, dropPct = 0;
+  // Уникальные сеты — сколько предметов сета сейчас надето. Один персонаж
+  // всегда одного класса, так что считать по id сета незачем: достаточно
+  // плоского счётчика штук с меткой `uniqueSet` (см. UNIQUE_SET_ITEMS,
+  // shared/definitions.js).
+  let uniqueSetCount = 0;
   for (const it of (row.equipped || [])) {
     const base = _byId.get(it.id);
     if (!base) continue;                        // retired id — contributes nothing
@@ -250,7 +255,14 @@ function compute(row) {
     if (base.critPower)  critPowerAdd += base.critPower;
     if (base.xpPct)      xpPct     += base.xpPct;
     if (base.dropPct)    dropPct   += base.dropPct;
+    if (base.uniqueSet)  uniqueSetCount++;
   }
+  // Бонус за ношение сета (2/3/4/5 штук) — тем же процентам, что и всё
+  // остальное здесь, сразу после того, как штуки посчитаны. uniqueSetBonusFor
+  // сама решает, какие пороги уже пройдены (shared/definitions.js).
+  const usb = uniqueSetBonusFor(uniqueSetCount);
+  atkPct += usb.atkPct; hpPct += usb.hpPct; critPowerAdd += usb.critPowerPct;
+  extraAS += (cd.atkSpeed || 0) * usb.atkSpeedPct;
 
   // ── руны ────────────────────────────────────────────────────────────────
   // Складываются со СВОИМИ же полями снаряжения, а не отдельным множителем:

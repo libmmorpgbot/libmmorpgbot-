@@ -34,8 +34,9 @@ const items = require('./items');
 const money = require('./money');
 const {
   ENHANCE_MAX, ENHANCEABLE_SLOTS, ITEM_DEF, BOX_DEF, CRAFT_MATS,
-  GEAR_CRAFT_RECIPES, PET_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES,
+  PET_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, MAT_UPGRADE_MAX_BATCH, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
+  UNIQUE_SET_CRAFT_RECIPES,
   ADV_SKILL_BOOK_CRAFT, craftResultEnhance, BUFF_POTION_CRAFT_RECIPES,
   CRAFT_ANY_GEAR_SLOTS, WINGS_CRAFT_RECIPES, boxLootPool,
 } = require('../../../shared/definitions');
@@ -152,12 +153,11 @@ function _slotOf(itemId) {
 // — in the old code each had its own copy of "take the materials, then grant",
 // and the ordering had to be right in all eight.
 const FAMILIES = {
-  gear:       GEAR_CRAFT_RECIPES,
   pet:        PET_CRAFT_RECIPES,
-  gearTier:   GEAR_TIER_CRAFT_RECIPES,
   matUpgrade: MAT_UPGRADE_RECIPES,
   classGear:  CLASS_GEAR_SALVAGE_RECIPES,
   unique:     UNIQUE_CRAFT_RECIPES,
+  uniqueSet:  UNIQUE_SET_CRAFT_RECIPES,
   wings:      WINGS_CRAFT_RECIPES,
 };
 
@@ -532,8 +532,8 @@ async function craftClassGear(db, playerId, slot, rarity) {
 // table. Three lists can produce gear, searched in the order the old handler
 // used so a duplicated id resolves the same way it always has.
 function gearRecipeByItemId(itemId) {
-  const lists = [['gear', GEAR_CRAFT_RECIPES], ['gearTier', GEAR_TIER_CRAFT_RECIPES],
-                 ['unique', UNIQUE_CRAFT_RECIPES], ['wings', WINGS_CRAFT_RECIPES]];
+  const lists = [['unique', UNIQUE_CRAFT_RECIPES], ['uniqueSet', UNIQUE_SET_CRAFT_RECIPES],
+                 ['wings', WINGS_CRAFT_RECIPES]];
   for (const [family, list] of lists) {
     const index = list.findIndex(r => r.itemId === itemId);
     if (index >= 0) return { family, index };

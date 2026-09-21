@@ -25,6 +25,7 @@ const {
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
   TOWER_SCROLL_CHANCE,
+  BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
 } = require('../../shared/definitions');
 const { _invAdd } = require('../inventory');
 
@@ -131,6 +132,16 @@ function _rollMobLoot(inv, eid, rlvl) {
     } else if (Math.random() < 0.00002 * Math.min(_dropMult, 3) * _zoneMult) {
       addMat(_allPassiveBooks[Math.floor(Math.random() * _allPassiveBooks.length)].id, 1);
     }
+  }
+
+  // Свиток босса — "с босса на локациях", i.e. every arm's own boss
+  // (imp_boss/orc_boss/beholder_boss/demon_boss — the only monsters that
+  // reach this function with eType==='boss'; the world boss rolls its own
+  // copy in rollEventBossDrops, shared/definitions.js). Material for
+  // UNIQUE_SET_CRAFT_RECIPES (shared/definitions.js's own comment there).
+  if (eType === 'boss' && Math.random() < BOSS_SCROLL_CHANCE) {
+    const qty = BOSS_SCROLL_MIN_QTY + Math.floor(Math.random() * (BOSS_SCROLL_MAX_QTY - BOSS_SCROLL_MIN_QTY + 1));
+    addMat('boss_scroll', qty);
   }
 
   return granted;

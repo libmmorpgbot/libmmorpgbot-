@@ -228,23 +228,23 @@ const _MERCHANT_UI = {
 };
 const MERCHANT_SHOP_UI = MERCHANT_SHOP.map(e => ({ ...e, ..._MERCHANT_UI[e.itemId] }));
 
-// Crafting recipes: uncommon+ = 2× same-type lower tier at +8 + 1 recipe scroll
-// GEAR_TIER_CRAFT_RECIPES (uncommon/rare) and GEAR_CRAFT_RECIPES (epic/
-// legendary) both now live in shared/definitions.js — the server rolls and
-// validates every one of them (craftGear, server/index.js), not just the
-// Liberty-priced tiers, so it needs the same single copy of each recipe the
-// client shows. Spliced together here purely so the craftsman UI keeps
-// listing every tier from one place.
-// Enchant stones used to be spliced in here too; they are no longer craftable
-// at all (see shared/definitions.js).
+// Crafting recipes. GEAR_TIER_CRAFT_RECIPES (uncommon/rare) and
+// GEAR_CRAFT_RECIPES (epic/legendary) — the ordinary common→legendary gear
+// line — are gone (shared/definitions.js), by owner request: the "Предметы"
+// craftsman tab now lists only Уникальное оружие and Уникальные сеты, both
+// below. Enchant stones were removed the same way earlier.
 const ITEM_CRAFT_RECIPES = [];
-if (typeof GEAR_TIER_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_TIER_CRAFT_RECIPES);
-if (typeof GEAR_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...GEAR_CRAFT_RECIPES);
 // Уникальное оружие. In the same list so openCraftModal's index-based lookup
 // and the whole craft flow work unchanged, but flagged `unique` so the
 // craftsman renders them under their own heading instead of mixing them into
 // the epic/legendary groups — they are a separate line, not another tier.
 if (typeof UNIQUE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...UNIQUE_CRAFT_RECIPES);
+// Уникальные сеты — 2× legendary stats + a per-class set bonus at 2/3/4/5
+// pieces worn (shared/definitions.js's TOWER_LICH-adjacent "Башня" note has
+// nothing to do with these; see UNIQUE_SET_ITEMS/UNIQUE_SET_CRAFT_RECIPES's
+// own comment instead). Flagged `uniqueSet` for the same reason `unique` is
+// flagged above — its own heading, not mixed into anything else.
+if (typeof UNIQUE_SET_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...UNIQUE_SET_CRAFT_RECIPES);
 
 // CLASS_GEAR_SALVAGE_RECIPES (class cloaks/artifacts) lives in
 // shared/definitions.js, not here — it costs Liberty on top of the salvage

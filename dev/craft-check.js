@@ -18,7 +18,7 @@ const players = require('../server/db/repos/players');
 const craft = require('../server/db/repos/craft');
 const { wipeItemsAll } = require('./fixtures');
 const {
-  GEAR_CRAFT_RECIPES, GEAR_TIER_CRAFT_RECIPES, MAT_UPGRADE_RECIPES, craftResultEnhance,
+  UNIQUE_SET_CRAFT_RECIPES, UNIQUE_CRAFT_RECIPES, WINGS_CRAFT_RECIPES, CRAFT_ANY_GEAR_SLOTS, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
   BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
   QUEST_DEF, questComplete,
@@ -151,43 +151,39 @@ async function main() {
     'матеріал заточити неможливо');
 
   // ── crafting ─────────────────────────────────────────────────────────────
+  // UNIQUE_SET_CRAFT_RECIPES ('uniqueSet' family), not GEAR_CRAFT_RECIPES/
+  // GEAR_TIER_CRAFT_RECIPES ('gear'/'gearTier'): both of those are gone
+  // (shared/definitions.js — owner request, "Предметы" tab keeps only
+  // Уникальное оружие and Уникальные сеты now). Same generic craft() engine,
+  // just a different live recipe family to exercise it with — none of its
+  // mats carry minEnhance, so the minEnhance-specific sections further down
+  // (multi-row take ordering, craftResultEnhance) no longer have a live
+  // recipe to run against; see the note where they used to be.
   console.log('  ── крафт ──');
   const c = await mk('crafter');
-  const rec = GEAR_CRAFT_RECIPES[0];
+  const rec = UNIQUE_SET_CRAFT_RECIPES[0];
 
-  eq(await caught(() => tx(t => craft.craft(t, c, 'gear', 0))), 'no_mats',
+  eq(await caught(() => tx(t => craft.craft(t, c, 'uniqueSet', 0))), 'no_mats',
     'крафт без матеріалів — відмова');
   eq((await invOf(c)).length, 0, 'нічого не з’явилось');
 
-  eq(await caught(() => tx(t => craft.craft(t, c, 'gear', 99999))), 'bad_recipe',
+  eq(await caught(() => tx(t => craft.craft(t, c, 'uniqueSet', 99999))), 'bad_recipe',
     'неіснуючий рецепт — відмова');
   eq(await caught(() => tx(t => craft.craft(t, c, 'нема_такої', 0))), 'bad_family',
     'вигаданий тип крафту — відмова');
 
-  // Materials that are present but NOT enhanced enough must not pass.
-  for (const m of rec.mats) await give(c, m.id, m.n, 0);
-  const needsEnh = rec.mats.find(m => m.minEnhance > 0);
-  if (needsEnh) {
-    eq(await caught(() => tx(t => craft.craft(t, c, 'gear', 0))), 'no_mats',
-      `матеріал без потрібної заточки +${needsEnh.minEnhance} не рахується`);
-  }
-
-  // A real craft: materials go, the item arrives, Nexum is charged.
+  // A real craft: materials go, the item arrives.
   const c2 = await mk('crafter2');
-  for (const m of rec.mats) await give(c2, m.id, m.n, m.minEnhance || 0);
-  if (rec.nexumCost) {
-    await money.credit(null, c2, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx` });
-  }
+  for (const m of rec.mats) await give(c2, m.id, m.n);
   const matsBefore = {};
   for (const m of rec.mats) matsBefore[m.id] = await countOf(c2, m.id);
 
-  const res = await tx(t => craft.craft(t, c2, 'gear', 0));
+  const res = await tx(t => craft.craft(t, c2, 'uniqueSet', 0));
   eq(res.outcome, 'success', `крафт ${rec.itemId} вдався (шанс ${rec.chance})`);
   eq(await countOf(c2, rec.itemId), 1, 'предмет отримано рівно один');
   for (const m of rec.mats) {
     eq(await countOf(c2, m.id), matsBefore[m.id] - m.n, `матеріал ${m.id} списано рівно ${m.n}`);
   }
-  eq((await money.balancesOf(null, c2)).nexum, 0, 'Liberty списано за рецептом');
 
   // ── boxes ────────────────────────────────────────────────────────────────
   console.log('  ── бокси ──');
@@ -234,135 +230,40 @@ async function main() {
   // exercise a function this file no longer owns.
 
   // ── THE INVARIANT: a failed craft consumes nothing ───────────────────────
+  // Needs a family with BOTH a real item mat (to prove it survives) and a
+  // nexumCost (a failure point that fires after the mats/room checks but
+  // before anything is taken) — uniqueSet has no nexumCost, so this one runs
+  // against WINGS_CRAFT_RECIPES instead, the only remaining family with both.
   console.log('  ── відкат ──');
+  const wr = WINGS_CRAFT_RECIPES[0];
+  const wrMat = wr.mats[0]; // { rarity, n } — "any N items of this rarity", not a plain id
+  const wrJunk = ITEM_DEF.find(d => CRAFT_ANY_GEAR_SLOTS.includes(d.slot) && d.rarity === wrMat.rarity);
   const r2 = await mk('rollback');
-  for (const m of rec.mats) await give(r2, m.id, m.n, m.minEnhance || 0);
-  const before2 = {};
-  for (const m of rec.mats) before2[m.id] = await countOf(r2, m.id);
+  for (let i = 0; i < wrMat.n; i++) await give(r2, wrJunk.id, 1);
+  const before2 = await countOf(r2, wrJunk.id);
 
   // Nexum is missing, so the craft throws AFTER the room check — the materials
   // must come back with the transaction.
-  eq(await caught(() => tx(t => craft.craft(t, r2, 'gear', 0))), 'no_nexum', 'без Liberty крафт відхилено');
-  for (const m of rec.mats) {
-    eq(await countOf(r2, m.id), before2[m.id], `матеріал ${m.id} НЕ витрачено при невдачі`);
-  }
-  eq(await countOf(r2, rec.itemId), 0, 'предмет не створився');
+  eq(await caught(() => tx(t => craft.craft(t, r2, 'wings', 0))), 'no_nexum', 'без Liberty крафт відхилено');
+  eq(await countOf(r2, wrJunk.id), before2, `матеріал ${wrJunk.id} НЕ витрачено при невдачі`);
+  eq(await countOf(r2, wr.itemId), 0, 'предмет не створився');
 
-  // ── the shape the game actually stores ───────────────────────────────────
-  // Everything above granted materials with give(id, qty), which puts qty in
-  // ONE row. add() only ever does that for a stackable; two swords are two
-  // rows. So the fixture was testing a shape the game cannot produce, and it
-  // hid the fact that every gear recipe was unreachable: they all ask for n:2
-  // of a non-stackable, and the take looked for one row holding two.
-  console.log('  ── реальна форма інвентаря ──');
-  const rows = async (pid, itemId) =>
-    (await pool().query(
-      `SELECT enhance, qty FROM player_items
-        WHERE player_id=$1 AND container='inventory' AND item_id=$2
-        ORDER BY enhance, id`, [pid, itemId])).rows;
-  const giveRows = async (pid, itemId, n, enhance = 0) => {
-    for (let i = 0; i < n; i++) await give(pid, itemId, 1, enhance);
-  };
-
-  const gearMat = rec.mats.find(m => m.minEnhance > 0);
-  const bulkMat = rec.mats.find(m => !m.minEnhance);
-
-  const r3 = await mk('rows');
-  await giveRows(r3, gearMat.id, gearMat.n, gearMat.minEnhance);   // separate rows
-  await give(r3, bulkMat.id, bulkMat.n);
-  await money.credit(null, r3, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx3` });
-  eq((await rows(r3, gearMat.id)).length, gearMat.n,
-    `${gearMat.n} × ${gearMat.id} лежать окремими рядками, як у грі`);
-  eq((await tx(t => craft.craft(t, r3, 'gear', 0))).outcome, 'success',
-    'крафт бере матеріал З КІЛЬКОХ РЯДКІВ — саме це було зламано');
-  eq((await rows(r3, gearMat.id)).length, 0, 'обидва рядки списано');
-
-  // ── minEnhance means the same thing on both ends ─────────────────────────
-  // _haveMats counted copies at or above the requirement; the take applied no
-  // filter at all. A player holding two +8 and four +0 passed the check and
-  // paid with the +0 — keeping the enhanced pair and crafting at a fraction of
-  // the recipe's real price.
-  console.log('  ── заточка матеріалу ──');
-  const r4 = await mk('minenh');
-  await giveRows(r4, gearMat.id, gearMat.n, gearMat.minEnhance);
-  await giveRows(r4, gearMat.id, 4, 0);                              // decoys
-  await give(r4, bulkMat.id, bulkMat.n);
-  await money.credit(null, r4, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx4` });
-
-  eq((await tx(t => craft.craft(t, r4, 'gear', 0))).outcome, 'success', 'крафт пройшов');
-  const left4 = await rows(r4, gearMat.id);
-  eq(left4.length, 4, 'залишилось рівно 4 рядки');
-  ok(left4.every(x => x.enhance === 0),
-    'списано ЗАТОЧЕНІ, а не звичайні — оплачено тим, чого вимагає рецепт');
-
-  // Lowest qualifying enhancement goes first: when +8 satisfies the recipe the
-  // +12 stays in the bag. The alternative silently eats work already paid for.
-  const r5 = await mk('lowest');
-  await giveRows(r5, gearMat.id, gearMat.n, gearMat.minEnhance);
-  await giveRows(r5, gearMat.id, gearMat.n, Math.min(ENHANCE_MAX, gearMat.minEnhance + 4));
-  await give(r5, bulkMat.id, bulkMat.n);
-  await money.credit(null, r5, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx5` });
-  await tx(t => craft.craft(t, r5, 'gear', 0));
-  const left5 = await rows(r5, gearMat.id);
-  ok(left5.length === gearMat.n && left5.every(x => x.enhance > gearMat.minEnhance),
-    `витрачено +${gearMat.minEnhance}, а +${gearMat.minEnhance + 4} лишився цілим`);
-
-  // All or nothing: one short means nothing is taken, not a partial take.
-  const r6 = await mk('partial');
-  await giveRows(r6, gearMat.id, gearMat.n - 1, gearMat.minEnhance);
-  await give(r6, bulkMat.id, bulkMat.n);
-  await money.credit(null, r6, 'nexum', rec.nexumCost, { reason: 'seed', idemKey: `${TAG}:nx6` });
-  eq(await caught(() => tx(t => craft.craft(t, r6, 'gear', 0))), 'no_mats', 'одного не вистачає — відмова');
-  eq((await rows(r6, gearMat.id)).length, gearMat.n - 1, 'НІЧОГО не списано частково');
-  eq(await countOf(r6, bulkMat.id), bulkMat.n, 'другий матеріал теж на місці');
-
-  // ── naming a recipe by its result ────────────────────────────────────────
-  // ── ЩО ВИХОДИТЬ ІЗ ЗАТОЧЕНОГО ──────────────────────────────────────────
-  // "В крафте тоже: заточенную вещь крафтишь, не заточенную даёт."
-  //
-  // A tier recipe asks for two copies at +8 and the result carries +6 — two
-  // levels below what was consumed. That rule was written twice: js/npc.js
-  // computed it to SHOW the player what they would get, and the old server
-  // handler computed it again to GRANT it. The PostgreSQL rewrite dropped the
-  // server half and put `enhance: rec.enhance || 0` in its place — and no
-  // recipe has ever had an `enhance` field, so every craft granted +0 while
-  // the crafting window promised +6.
-  //
-  // Eighty-one assertions in this file and none of them looked at the
-  // enhancement of the thing that came out.
-  console.log('');
-  console.log('  ── заточка результату ──');
-  const tierIdx = GEAR_TIER_CRAFT_RECIPES.findIndex(r =>
-    (r.mats || []).some(m => m.minEnhance > 0));
-  const tier = GEAR_TIER_CRAFT_RECIPES[tierIdx];
-  const wantEnh = craftResultEnhance(tier);
-  eq(wantEnh, tier.mats.find(m => m.minEnhance != null).minEnhance - 2,
-    `правило: на два рівні нижче за з'їдене (+${wantEnh})`);
-  ok(wantEnh > 0, 'і воно не нуль — інакше перевірка нижче нічого не доводить');
-
-  const te = await mk('tier');
-  for (const m of tier.mats) {
-    for (let i = 0; i < (m.n || 1); i++) {
-      await tx(t => items.add(t, te, m.id, { enhance: m.minEnhance || 0 }));
-    }
-  }
-  if (tier.nexumCost) {
-    await money.credit(null, te, 'nexum', tier.nexumCost, { reason: 'seed', idemKey: `${TAG}:nxt` });
-  }
-  const tRes = await tx(t => craft.craft(t, te, 'gearTier', tierIdx));
-  eq(tRes.outcome, 'success', 'тировий крафт пройшов');
-  const { rows: got } = await pool().query(
-    `SELECT enhance FROM player_items WHERE player_id = $1 AND item_id = $2`, [te, tier.itemId]);
-  ok(got.length === 1, 'предмет виданий');
-  eq(got[0] && got[0].enhance, wantEnh,
-    `і він виходить +${wantEnh}, а не +0 — саме це й було зламано`);
-
+  // ── minEnhance-специфічні перевірки (multi-row take, lowest-first order,
+  // craftResultEnhance на реальному крафті) стояли тут і зникли РАЗОМ із
+  // GEAR_CRAFT_RECIPES/GEAR_TIER_CRAFT_RECIPES — це були єдині дві родини з
+  // mats:[{id, minEnhance}] (owner request: "Предметы" tab keeps only
+  // Уникальное оружие/Уникальные сеты now). Сам механізм у craft.js
+  // (_haveMats's minEnhance filter, the removeQty ORDER BY enhance ASC take,
+  // craftResultEnhance) не чіпався і лишається коректним — просто жодного
+  // живого рецепта з таким mat нема, щоб його зараз перевірити. Повернеться
+  // тут само собою, якщо колись з'явиться рецепт із minEnhance-матеріалом.
 
   console.log('  ── рецепт за предметом ──');
-  eq(JSON.stringify(craft.gearRecipeByItemId(rec.itemId)), JSON.stringify({ family: 'gear', index: 0 }),
-    'епічний рецеп знайдено в GEAR_CRAFT_RECIPES');
-  eq(craft.gearRecipeByItemId(GEAR_TIER_CRAFT_RECIPES[0].itemId).family, 'gearTier',
-    'тировий рецепт знайдено в GEAR_TIER_CRAFT_RECIPES');
+  eq(craft.gearRecipeByItemId(rec.itemId).family, 'uniqueSet',
+    'сет знайдено в UNIQUE_SET_CRAFT_RECIPES');
+  const uniqRec = UNIQUE_CRAFT_RECIPES[0];
+  eq(craft.gearRecipeByItemId(uniqRec.itemId).family, 'unique',
+    'зброя знайдена в UNIQUE_CRAFT_RECIPES');
   eq(await caught(async () => craft.gearRecipeByItemId('НЕМАЄ')), 'bad_recipe',
     'вигаданий предмет — відмова, а не мовчазний перший рецепт');
 
