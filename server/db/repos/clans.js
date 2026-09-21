@@ -588,6 +588,7 @@ async function dataView(db, clanId, playerId) {
     members: view.members.map(m => ({
       telegramId: tgOf.get(m.playerId), playerId: m.playerId,
       username: m.username, role: m.role, bm: m.bm, joinedAt: m.joinedAt,
+      charClass: m.charClass,
     })),
     // Only a leader sees the queue, same as before: it carries the usernames
     // of people who have not joined anything yet.
@@ -678,8 +679,9 @@ async function fullView(db, clanId) {
   // Sequential: inside a transaction these share one pg client, which runs one
   // query at a time — Promise.all here would queue them anyway and warn.
   const members = await query(db, `
-      SELECT m.player_id, m.role, m.joined_at, p.username, p.bm
+      SELECT m.player_id, m.role, m.joined_at, p.username, p.bm, pp.char_class
         FROM clan_members m JOIN players p ON p.id = m.player_id
+        LEFT JOIN player_progress pp ON pp.player_id = m.player_id
        WHERE m.clan_id = $1 ORDER BY (m.role = 'leader') DESC, p.bm DESC`, [clanId]);
   // Заявки тех, кто УЖЕ где-то состоит, не показываются. Создать такую строку
   // теперь нельзя (accept снимает все заявки вступившего), но правило стоит
@@ -708,6 +710,7 @@ async function fullView(db, clanId) {
     storageUnlocked: row.storage_unlocked, createdAt: row.created_at,
     members: members.rows.map(m => ({
       playerId: Number(m.player_id), username: m.username, role: m.role, bm: m.bm, joinedAt: m.joined_at,
+      charClass: m.char_class,
     })),
     applications: apps.rows.map(a => ({ playerId: Number(a.player_id), username: a.username, bm: a.bm, appliedAt: a.applied_at })),
     storage: storage.rows.map(s => ({ id: s.item_id, qty: s.qty, name: s.name })),

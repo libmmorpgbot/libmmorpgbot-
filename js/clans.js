@@ -836,6 +836,7 @@ function _renderClanHome(el) {
         return `<div class="clan-member">
           <span class="clan-member-role">${roleIcon}</span>
           <span class="clan-member-name">${_esc(m.username)}</span>
+          ${classBadgeHTML(m.charClass, 18)}
           ${m.bm ? `<span class="clan-member-bm">БМ ${m.bm.toLocaleString()}</span>` : ''}
           ${transferBtn}
           ${kickBtn}

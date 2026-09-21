@@ -182,8 +182,8 @@ function drawClassIconCtx(c, cls, cx, cy, size) {
 }
 
 // Full badge: a filled circle in the class's own color, portrait inset —
-// for callers with no background of their own (Башня's corridor signs,
-// js/game.js; the season rating list, js/ui.js).
+// for callers with no background of their own (Подземелье's teleport-hall
+// pads, js/game.js).
 function drawClassBadgeCtx(c, cls, cx, cy, size) {
   const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
   if (!cd) return;
@@ -205,4 +205,19 @@ function classIconHTML(cls, size = 20) {
   const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
   if (!cd || !cd.iconImg) return '';
   return `<img src="${cd.iconImg}" width="${size}" height="${size}" style="display:inline-block;vertical-align:middle;object-fit:contain;flex-shrink:0">`;
+}
+
+// Same portrait, round badge with the class's own color behind it (the DOM
+// equivalent of drawClassBadgeCtx above) — for a compact "whose class is
+// this" marker next to a username: the season rating list, the regular BM
+// rating list and the clan member list (all js/ui.js/js/clans.js), and the
+// header avatar slot (drawn on canvas there instead, via drawClassBadgeCtx
+// directly — see drawHeader, js/ui.js). Empty string, not a placeholder,
+// for a class that hasn't been picked yet (null/undefined) — every caller
+// here already only shows it when truthy.
+function classBadgeHTML(cls, size = 20) {
+  const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
+  if (!cd || !cd.iconImg) return '';
+  const name = typeof _esc === 'function' ? _esc(cd.name) : cd.name;
+  return `<img src="${cd.iconImg}" class="class-icon-badge" style="width:${size}px;height:${size}px;background:${cd.color}" title="${name}">`;
 }

@@ -3288,6 +3288,15 @@ function drawHeader() {
   ctx.fillStyle = '#f4d9a4';
   ctx.fillText(p.lvl, lbX, lbY + 0.5);
 
+  // Class badge — the opposite corner from the level badge, same size/style.
+  // Drawn regardless of hasTgAvatar above: when the Telegram photo is showing
+  // in the main circle, this is the only place the class portrait itself
+  // still appears on the avatar (the name+class line below is text only).
+  const cbR = hud(11), cbX = avX + hud(14), cbY = avY + avR - 2;
+  drawClassBadgeCtx(ctx, p.type, cbX, cbY, cbR * 2);
+  ctx.strokeStyle = 'rgba(9,18,31,0.96)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cbX, cbY, cbR, 0, Math.PI * 2); ctx.stroke();
+
   // ── Name + class ──────────────────────────────────────────
   const infoX = avX + avR + hud(12);
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
@@ -6294,15 +6303,6 @@ function _seasonBurnBookConfirm(id) {
 }
 
 // ── "Рейтинг" tab: top 20 ────────────────────────────────────────────────
-// Round class icon next to a rating row's nickname (owner's own ask) — the
-// same portrait badge the Башня corridor signs use, just as an <img>
-// (season rows are plain DOM, not a canvas). Empty string, not a placeholder,
-// for a row whose class hasn't been picked yet (charClass null/undefined).
-function _seasonClassIconHTML(cls) {
-  const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
-  if (!cd || !cd.iconImg) return '';
-  return `<img src="${cd.iconImg}" class="season-class-icon" style="background:${cd.color}" title="${_esc(cd.name)}">`;
-}
 function _seasonRatingHTML() {
   const r = _seasonRating;
   if (!r) return `<div style="padding:16px"><div class="db-phase">${t('seasonLoading')}</div></div>`;
@@ -6312,7 +6312,7 @@ function _seasonRatingHTML() {
     return `<div class="season-row${mine ? ' me' : ''}">
       <span class="season-place${pc}">${x.place}</span>
       <span class="season-name">${_esc(x.username)}</span>
-      ${_seasonClassIconHTML(x.charClass)}
+      ${classBadgeHTML(x.charClass)}
       <span class="season-pts">${x.points}</span>
     </div>`;
   }).join('');
@@ -6321,7 +6321,7 @@ function _seasonRatingHTML() {
     ? `<div class="season-row me" style="margin-top:10px">
          <span class="season-place">${r.me.place}</span>
          <span class="season-name">${_esc(r.me.username)}</span>
-         ${_seasonClassIconHTML(r.me.charClass)}
+         ${classBadgeHTML(r.me.charClass)}
          <span class="season-pts">${r.me.points}</span>
        </div>`
     : '';
@@ -6551,7 +6551,7 @@ function _renderRatingBody() {
         <div class="rating-rank ${rankCls}">${medal}</div>
         <div class="rating-avatar">${init}</div>
         <div style="flex:1;min-width:0">
-          <div class="rating-name">@${uname}${isMe ? ` <span style="font-size:10px;color:#ebaa49;opacity:.7">${t('youMarker')}</span>` : ''}</div>
+          <div class="rating-name">@${uname}${isMe ? ` <span style="font-size:10px;color:#ebaa49;opacity:.7">${t('youMarker')}</span>` : ''} ${classBadgeHTML(r.charClass, 18)}</div>
           <div class="rating-sub">${t('levelAbbrev')} ${r.level || 1}</div>
         </div>
         <div class="rating-bm">

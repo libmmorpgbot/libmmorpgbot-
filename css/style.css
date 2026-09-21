@@ -3228,8 +3228,13 @@ canvas { display:block; width:100%; height:100%; }
 .season-place { width: 30px; font-weight: 800; color: #c1ccd5; font-size: 13px; }
 .season-place.p1 { color: #ffd35c; } .season-place.p2 { color: #ced7de; } .season-place.p3 { color: #d99a5c; }
 .season-name { flex: 1; color: #c1ccd5; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.season-class-icon {
-  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+/* Round class portrait badge (classBadgeHTML, js/icons.js) — a compact
+   "whose class is this" marker next to a username. Shared by the season
+   rating list, the regular BM rating list and the clan member list; each
+   caller sets its own width/height inline (default 20px), this only fixes
+   the shape. */
+.class-icon-badge {
+  border-radius: 50%; flex-shrink: 0; vertical-align: middle;
   object-fit: contain; padding: 3px; box-sizing: border-box;
   border: 1px solid rgba(0,0,0,.35);
 }

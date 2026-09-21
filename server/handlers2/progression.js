@@ -567,7 +567,7 @@ module.exports = function registerProgression(s, safeOn) {
       });
     }
     const { rows } = await query(t, `
-      SELECT p.username, p.bm, pr.lvl AS level
+      SELECT p.username, p.bm, pr.lvl AS level, pr.char_class AS "charClass"
         FROM players p JOIN player_progress pr ON pr.player_id = p.id
        WHERE ${players.realPlayerSql('p')} AND p.bm > 0
        ORDER BY p.bm DESC, p.id LIMIT 50`);
@@ -576,7 +576,7 @@ module.exports = function registerProgression(s, safeOn) {
     // человек следит, и оно должно быть сегодняшним.
     if (!rows.some(r => r.username === s.username)) {
       const { rows: me } = await query(t, `
-        SELECT p.username, p.bm, pr.lvl AS level,
+        SELECT p.username, p.bm, pr.lvl AS level, pr.char_class AS "charClass",
                (SELECT count(*) FROM players q
                  WHERE ${players.realPlayerSql('q')} AND q.bm > p.bm)::int + 1 AS rank
           FROM players p JOIN player_progress pr ON pr.player_id = p.id
