@@ -576,6 +576,37 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
     }
   },
+  // Башня (Tower) corridor guards — shared/definitions.js's TOWER_LICH.
+  // frameW/frameH are 64, not the 128 the Demon/Rat family above uses: this
+  // source sheet's own per-frame cell is smaller (256px-tall sheet ÷ 4
+  // facing rows = 64), same scale the Slime/Imp family already uses.
+  tower_lich_commander: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Run_with_shadow.png',      cols:6,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Attack_with_shadow.png',   cols:8,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  tower_lich_blue: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Run_with_shadow.png',      cols:6,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Attack_with_shadow.png',   cols:8,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
+  tower_lich_skeleton: {
+    frameW: 64, frameH: 64,
+    sheets: {
+      idle:   { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
+      walk:   { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Run_with_shadow.png',      cols:6,  fps:12, loop:true  },
+      attack: { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Attack_with_shadow.png',   cols:8,  fps:14, loop:false },
+      death:  { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
+    }
+  },
   // Guild War tower/castle (server/game/Room.js spawnGuildWarTower) — a
   // single static illustration, no facing/movement/attack of its own
   // (guildWar enemies are permanently stationary — see the stationary branch

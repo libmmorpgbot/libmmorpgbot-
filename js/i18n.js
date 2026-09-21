@@ -1193,6 +1193,7 @@ Object.assign(I18N_UI, {
   guildWarLbl: { ru: '🏰 Война гильдий', en: '🏰 Guild War', uk: '🏰 Війна гільдій', es: '🏰 Guerra de Clanes', tr: '🏰 Klan Savaşı', pt: '🏰 Guerra de Clãs' },
   farmZoneLbl: { ru: '🌾 Фарм зона', en: '🌾 Farm Zone', uk: '🌾 Ферм-зона', es: '🌾 Zona de Farmeo', tr: '🌾 Farm Bölgesi', pt: '🌾 Zona de Farm' },
   farmHighLbl: { ru: '🌾 Фарм зона 2', en: '🌾 Farm Zone 2', uk: '🌾 Ферм-зона 2', es: '🌾 Zona de Farmeo 2', tr: '🌾 Farm Bölgesi 2', pt: '🌾 Zona de Farm 2' },
+  towerLbl: { ru: '🗼 Башня', en: '🗼 Tower', uk: '🗼 Вежа', es: '🗼 Torre', tr: '🗼 Kule', pt: '🗼 Torre' },
   farmSeasonLbl: { ru: '🎟 Фарм зона · сезонные комнаты', en: '🎟 Farm Zone · season rooms', uk: '🎟 Ферм-зона · сезонні кімнати', es: '🎟 Zona de Farmeo · salas de temporada', tr: '🎟 Farm Bölgesi · sezon odaları', pt: '🎟 Zona de Farm · salas de temporada' },
   portalLbl: { ru: '🌀 Телепорт', en: '🌀 Portal', uk: '🌀 Телепорт', es: '🌀 Portal', tr: '🌀 Portal', pt: '🌀 Portal' },
   portalPickTitle: { ru: 'Куда телепортироваться?', en: 'Where to teleport?', uk: 'Куди телепортуватися?', es: '¿A dónde teletransportarse?', tr: 'Nereye ışınlanmak istersin?', pt: 'Para onde teleportar?' },

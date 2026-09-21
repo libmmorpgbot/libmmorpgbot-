@@ -1,6 +1,6 @@
 const {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial,
+  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateTower,
 } = require('./dungeon');
 
 // Every location the player can stand in is its own floor id + its own
@@ -40,6 +40,12 @@ const FLOOR_IDS = {
   // is never actually entered — trialEnter, server/handlers2/trial.js,
   // always builds its own private Room instead, exactly like Fear/coop do).
   trial: 17,
+  // Башня — a new endgame walk-in floor: a small hall with 7 class-gated
+  // corridors branching off it (see generateTower, server/game/dungeon.js).
+  // Not to be confused with race10's "Кровавая Башня" above (FLOOR_IDS.
+  // race10) — a different, older mode that just happens to share the
+  // Russian word "Башня" in its own name.
+  tower: 18,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -63,6 +69,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
   { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentPit() },
   { id: FLOOR_IDS.trial,     key: 'trial',     generate: () => generateTrial() },
+  { id: FLOOR_IDS.tower,     key: 'tower',     generate: () => generateTower() },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

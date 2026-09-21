@@ -1940,6 +1940,15 @@ function _buildArmGates() {
       { target: 'farmHigh', req: fhe.req || 0, label: typeof t === 'function' ? t('farmHighLbl') : 'Фарм зона 2' }
     );
   }
+  // Башня — свой пункт в том же списке, со своим гейтом. Сама зона
+  // (7 корридоров, по одному на класс) живёт на своём этаже —
+  // generateTower, server/game/dungeon.js.
+  const twe = dungeon.towerEntry;
+  if (twe) {
+    _portalDestinations.push(
+      { target: 'tower', req: twe.req || 0, label: typeof t === 'function' ? t('towerLbl') : 'Башня' }
+    );
+  }
   _portalPad = (onHub && _portalDestinations.length)
     ? { x: sx + _PORTAL_DX * TILE, y: sy + _PORTAL_DY * TILE }
     : null;

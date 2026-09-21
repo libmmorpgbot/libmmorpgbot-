@@ -954,6 +954,18 @@ const CRAFT_MATS = [
     id: `book_adv_${cls}_${key}`, name: `Книга: ${name}`,
     slot: 'material', rarity: 'legendary', forClass: cls, advSkillKey: key,
   })),
+  // ── Свитки Башни (Tower scrolls) ──────────────────────────
+  // One per class, dropped only in that class's own corridor of the Башня
+  // (see TOWER_LICH/TOWER_SCROLL_CHANCE above, _rollTowerLoot in server/
+  // game/loot.js) — what they're for isn't decided yet, so this is just the
+  // catalog entry a drop needs to exist at all.
+  // Object.keys(CHAR_DEF), not TOWER_CLASSES: that const is declared further
+  // down this file (Башня section) and CRAFT_MATS is built before it exists.
+  ...Object.keys(CHAR_DEF).map(cls => ({
+    id: `tower_scroll_${cls}`, name: `Свиток: ${CHAR_DEF[cls].name}`,
+    img: `/images/material/tower_scroll_${cls}.png`,
+    slot: 'material', rarity: 'legendary', forClass: cls,
+  })),
 ];
 
 // ── Level-banded skill-book drop pools ──────────────────────────────────────
@@ -1680,6 +1692,58 @@ const FARM2_ADV_SKILL_BOOK_CHANCE   = 0.005 / 100;
 // every other loot roll in the game respects. Not filtered to the killer's
 // own class: this is a random kill drop, not a player-chosen craft.
 const FARM2_UNIQUE_WEAPON_CHANCE    = 0.000006 / 100;
+
+// ── Башня (Tower) ────────────────────────────────────────────────────────
+// A new, endgame walk-in floor (own generator, generateTower, server/game/
+// dungeon.js — own floor id, server/game/floors.js): a small central hall
+// with 7 corridors branching off it, one per class (TOWER_CLASSES below,
+// same 7 keys as CHAR_DEF). A corridor's own class-gate (its bounds, baked
+// into the floor's own dungeon payload as `tower.gates`) refuses any other
+// class's movement past its mouth — enforced server-side in
+// Room.updatePlayerPos, the same way a wall tile is, just keyed on the
+// walking player's own class instead of the grid. Each corridor holds
+// TOWER_ROOM_COUNT rooms in a chain, TOWER_MOBS_PER_ROOM monsters per room
+// standing in TOWER_PACK_SIZE clusters (a hit on one wakes the whole
+// cluster — Room.js's _wakePack, same mechanic FARM2_PACK_SIZE above uses),
+// picked at random from TOWER_LICH (three flat, non-level-scaled stat
+// blocks — see TOWER_LICH's own comment for why the level curve is skipped
+// entirely here).
+const TOWER_CLASSES = Object.keys(CHAR_DEF);
+const TOWER_ROOM = 12;
+const TOWER_ROOM_COUNT = 2;
+const TOWER_PACK_SIZE = 3;
+const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 2; // 2 clusters of 3 per room
+// Entry gate — same tier as "Фарм зона 2" (FARM_HIGH_ENTRY_LEVEL): the loot
+// table is that zone's own (see _rollTowerLoot, server/game/loot.js — "лут
+// такой же, как с фарм зоны 2"), so the gate matches it too.
+const TOWER_ENTRY_LEVEL = FARM_HIGH_ENTRY_LEVEL;
+// Representative monster level for display/ore-chance purposes only
+// (oreDropChance(rlvl), server/handlers2/world.js) — TOWER_LICH's own hp/atk
+// are flat, not derived from this.
+const TOWER_LVL = MAX_MONSTER_LEVEL;
+// Every stat below is the owner's own number, flat — no monsterStatsAtLevel
+// curve involved (unlike every other zone's monsters, which all resolve
+// through it one way or another). atkRange copies the ranger's own
+// (CHAR_DEF.ranger.atkRange) — "дальность как у лучника" — and atkCdMult
+// halves the attack cooldown Room.js's tick loop rolls for every monster
+// (1.4-2.0s) — "скорость атаки в 2 раза быстрее обычных монстров".
+const TOWER_LICH = {
+  commander: { eid: 'tower_lich_commander', name: 'Командир Лич', color: '#3f6fe0', size: 24,
+    hp: 30000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 500, gold: 500 },
+  blue:      { eid: 'tower_lich_blue', name: 'Синий Лич', color: '#3f6fe0', size: 20,
+    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 300, gold: 300 },
+  skeleton:  { eid: 'tower_lich_skeleton', name: 'Скелетон Лич', color: '#cfd6dd', size: 20,
+    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 300, gold: 300 },
+};
+// Every non-boss room rolls one of the three at random, including the
+// commander — nothing reserves him for a fixed slot.
+const TOWER_SPECIES = ['commander', 'blue', 'skeleton'];
+// Свиток — один вид на класс, падает только в комнатах ЭТОГО класса
+// (см. _rollTowerLoot). «Шанс выпадения 0.003%», дословно — владелец сам
+// сверял его с FARM2_UNIQUE_WEAPON_CHANCE (0.000006%) и посчитал именно
+// такое число: на пять порядков реже книги/камня, но не настолько редко,
+// как уникальное оружие Элитной зоны.
+const TOWER_SCROLL_CHANCE = 0.003 / 100;
 
 // The weapons themselves. Every stat carried over from the ordinary line is
 // exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
@@ -3659,6 +3723,8 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
+  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM,
+  TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES, TOWER_SCROLL_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,
