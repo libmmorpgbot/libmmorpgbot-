@@ -72,6 +72,16 @@ const ICON_SVG = {
   archerClass:`<path d="M6 3a9 9 0 0 0 0 18"/><line x1="6" y1="12" x2="21" y2="12"/><polyline points="17,8 21,12 17,16"/>`,
   mageClass:  `<circle cx="12" cy="12" r="5"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/>`,
   lev:        `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="6" x2="12" y2="16"/><line x1="9" y1="9" x2="15" y2="9"/>`,
+  // Seven distinct class glyphs (CHAR_DEF's own icon per class, shared/
+  // definitions.js) — mage/warlock used to share mageClass and deathknight/
+  // assassin used to share skull above; every class gets its own now.
+  tankBadge:        `<path d="M12 21s7-3.5 7-9V5.5L12 3 5 5.5V12c0 5.5 7 9 7 9z"/><circle cx="12" cy="8" r="1.3"/><circle cx="9" cy="11.5" r="1.1"/><circle cx="15" cy="11.5" r="1.1"/><circle cx="12" cy="15" r="1.1"/>`,
+  deathknightBadge: `<line x1="12" y1="2" x2="12" y2="15"/><line x1="7" y1="7" x2="17" y2="7"/><path d="M9 15h6l-1.5 4h-3z"/><circle cx="12" cy="21" r="1.1"/>`,
+  archerBadge:      `<path d="M6 2a11 11 0 0 0 0 20"/><line x1="6" y1="3" x2="6" y2="21"/><line x1="2" y1="12" x2="19" y2="12"/><polyline points="15,8 19,12 15,16"/>`,
+  wizardBadge:      `<path d="M12 2L5 19h14z"/><line x1="4" y1="19" x2="20" y2="19"/><circle cx="12" cy="7" r="1"/>`,
+  healerBadge:      `<circle cx="12" cy="6" r="3.2"/><line x1="12" y1="9.2" x2="12" y2="21"/><line x1="7" y1="14" x2="17" y2="14"/>`,
+  runeBadge:        `<polygon points="12,2 20,7 20,17 12,22 4,17 4,7"/><line x1="12" y1="7" x2="12" y2="17"/><line x1="8" y1="9.5" x2="16" y2="14.5"/>`,
+  hoodBadge:        `<path d="M4 20v-8a8 8 0 0 1 16 0v8"/><line x1="4" y1="20" x2="20" y2="20"/><line x1="9" y1="13" x2="9" y2="15.5"/><line x1="15" y1="13" x2="15" y2="15.5"/>`,
 
   // ── NPCs ───────────────────────────────────────────────────────────────────
   merchant:   `<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>`,

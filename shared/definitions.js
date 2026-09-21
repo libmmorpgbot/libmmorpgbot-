@@ -34,13 +34,20 @@ const ENEMY_AOI_R = 1400;
 // visuals) is left alone; combat-FX readability matters more there than
 // theme purity.
 const CHAR_DEF = {
-  lev:         { name:'Танк',         icon:'lev',        color:'#9aa3ab', baseHP:260, baseAtk:2, baseDef:14, speed:130, atkRange:58,  atkSpeed:1.000, atkType:'melee' },
-  deathknight: { name:'Рыцарь Смерти',icon:'skull',      color:'#7a5c99', baseHP:200, baseAtk:3, baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
-  ranger:      { name:'Егерь',        icon:'archerClass',color:'#5c7a4a', baseHP:140, baseAtk:2, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#8fbf5a' },
-  mage:        { name:'Маг',          icon:'mageClass',  color:'#5c7fbf', baseHP:110, baseAtk:4, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#66aaff' },
-  warlock:     { name:'Целитель',     icon:'mageClass',  color:'#8a3a4a', baseHP:160, baseAtk:2, baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#a855e0' },
-  runefighter: { name:'Рунный боец',  icon:'warrior',    color:'#a86b3f', baseHP:230, baseAtk:3, baseDef:8,  speed:160, atkRange:58,  atkSpeed:1.100, atkType:'melee' },
-  assassin:    { name:'Ассасин',      icon:'skull',      color:'#2e2438', baseHP:95,  baseAtk:4, baseDef:2,  speed:165, atkRange:56,  atkSpeed:1.350, atkType:'melee' },
+  // icon: each class gets its own dedicated glyph now (js/icons.js's
+  // "seven distinct class glyphs" block) — mage/warlock used to share
+  // mageClass and deathknight/assassin used to share skull, both by owner
+  // request replaced with "какие нибудь другие RPG svg иконки", one per
+  // class. warrior/archerClass/mageClass/skull/lev stay defined in
+  // js/icons.js (js/quests.js's own 'skull' use, in particular, is
+  // unrelated to any class and untouched).
+  lev:         { name:'Танк',         icon:'tankBadge',        color:'#9aa3ab', baseHP:260, baseAtk:2, baseDef:14, speed:130, atkRange:58,  atkSpeed:1.000, atkType:'melee' },
+  deathknight: { name:'Рыцарь Смерти',icon:'deathknightBadge', color:'#7a5c99', baseHP:200, baseAtk:3, baseDef:10, speed:145, atkRange:58,  atkSpeed:1.197, atkType:'melee' },
+  ranger:      { name:'Егерь',        icon:'archerBadge',      color:'#5c7a4a', baseHP:140, baseAtk:2, baseDef:5,  speed:175, atkRange:210, atkSpeed:1.593, atkType:'ranged', projColor:'#8fbf5a' },
+  mage:        { name:'Маг',          icon:'wizardBadge',      color:'#5c7fbf', baseHP:110, baseAtk:4, baseDef:3,  speed:155, atkRange:180, atkSpeed:0.837, atkType:'ranged', projColor:'#66aaff' },
+  warlock:     { name:'Целитель',     icon:'healerBadge',      color:'#8a3a4a', baseHP:160, baseAtk:2, baseDef:7,  speed:148, atkRange:170, atkSpeed:1.200, atkType:'ranged', projColor:'#a855e0' },
+  runefighter: { name:'Рунный боец',  icon:'runeBadge',        color:'#a86b3f', baseHP:230, baseAtk:3, baseDef:8,  speed:160, atkRange:58,  atkSpeed:1.100, atkType:'melee' },
+  assassin:    { name:'Ассасин',      icon:'hoodBadge',        color:'#2e2438', baseHP:95,  baseAtk:4, baseDef:2,  speed:165, atkRange:56,  atkSpeed:1.350, atkType:'melee' },
 };
 
 // ── Monster level curve ────────────────────────────────────────────────────────
