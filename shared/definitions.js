@@ -1704,6 +1704,17 @@ const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 4; // 4 clusters of 3 per room
 // bigger constant now rather than reusing STUB, so this doesn't lengthen
 // every other zone's branches too.
 const TOWER_STUB = 16;
+// Branch-to-branch spacing along the main corridor. Was the shared PITCH
+// (20) — with TOWER_ROOM at 22 that put adjacent branches' rooms WIDER than
+// the gap between their centers, so they overlapped into one floor with no
+// wall between them ("комнаты как будто соединились" — owner caught this
+// exactly). Needs its own, much bigger constant: TOWER_ROOM + a generous
+// gap of solid wall, not just "no longer negative" — owner asked for the
+// rooms far apart, not merely separated. Bumping this also lengthens the
+// main corridor for free, since its own width is entirely PITCH-driven
+// below (w = firstX + (branchCount-1)*PITCH + …) — the second half of the
+// same ask.
+const TOWER_PITCH = 50;
 // Entry gate — owner's own number ("вход в зону с телепорта от 38 уровня"),
 // no longer tied to FARM_HIGH_ENTRY_LEVEL (the loot table is still Фарм
 // зона 2's own — see _rollTowerLoot, server/game/loot.js — only the gate
@@ -3776,7 +3787,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_STUB,
+  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_STUB, TOWER_PITCH,
   TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES, TOWER_SCROLL_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,

@@ -2874,43 +2874,69 @@ function _buildChunk(cx, cy) {
   }
   _chunkTorches.set(cx + ',' + cy, torchList);
 
-  // 7. Башня — corridor class signs (server's own tower.signs, generateTower
-  // in server/game/dungeon.js: one per branch mouth, sat on the shared main
-  // corridor tile itself so every class walks past every sign, not just the
-  // one it opens). "значки обозначение какого класса коридор" (owner's own
-  // ask) — a plate in that class's own CHAR_DEF color with its name, baked
-  // once into the floor texture like every other decoration above. Own-tile
-  // range (ptx0..pty1, no gutter ring), same as the floor-props pass, so a
-  // sign is never drawn twice across a chunk seam.
-  if (dungeon.tower && dungeon.tower.signs && typeof CHAR_DEF !== 'undefined') {
+  // 7. Башня — corridor class icon signs (server's own tower.signs,
+  // generateTower in server/game/dungeon.js: one per branch mouth, sat on
+  // the shared main corridor tile itself so every class walks past every
+  // sign, not just the one it opens). "вместо надписей классов сделай svg
+  // иконки классов" (owner's own follow-up) — a circular badge in that
+  // class's own CHAR_DEF color plus its CHAR_DEF icon, the same vector
+  // glyph the class-select screen and the HUD avatar already draw via
+  // drawIconCtx (js/icons.js), baked once into the floor texture like every
+  // other decoration above. Own-tile range (ptx0..pty1, no gutter ring),
+  // same as the floor-props pass, so a sign is never drawn twice across a
+  // chunk seam.
+  //
+  // drawIconCtx silently draws nothing on a cache miss — it's built for a
+  // per-frame HUD redraw, where a miss just means "try again next frame".
+  // A chunk bake is a one-time cached canvas, so a miss here would stay a
+  // blank badge forever. Hooked onto the icon image's own onload instead:
+  // the first miss still bakes blank, but the load that follows invalidates
+  // every cached chunk (pixiInvalidateChunks) so the next frame rebuilds
+  // this one with the icon actually in it.
+  if (dungeon.tower && dungeon.tower.signs && typeof CHAR_DEF !== 'undefined' && typeof drawIconCtx === 'function') {
     for (const sgn of dungeon.tower.signs) {
       if (sgn.tx < ptx0 || sgn.tx > ptx1 || sgn.ty < pty0 || sgn.ty > pty1) continue;
       const cd = CHAR_DEF[sgn.cls];
       if (!cd) continue;
       const px = sgn.tx * TILE + TILE / 2, py = sgn.ty * TILE + TILE / 2;
-      c.font = 'bold 11px sans-serif';
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
-      const padX = 8, padY = 5;
-      const textW = c.measureText(cd.name).width;
-      const plateW = textW + padX * 2, plateH = 14 + padY * 2;
+      const r = TILE * 0.5;
       c.fillStyle = cd.color;
       c.strokeStyle = 'rgba(0,0,0,0.65)';
       c.lineWidth = 2;
-      c.fillRect(px - plateW / 2, py - plateH / 2, plateW, plateH);
-      c.strokeRect(px - plateW / 2, py - plateH / 2, plateW, plateH);
-      // Stroke-then-fill text so the label stays legible over both a dark
-      // class color (deathknight) and a pale one (lev, assassin's near-black
-      // is the other extreme, already fine with plain white).
-      c.lineWidth = 3;
-      c.strokeStyle = 'rgba(0,0,0,0.8)';
-      c.strokeText(cd.name, px, py + 1);
-      c.fillStyle = '#fff';
-      c.fillText(cd.name, px, py + 1);
+      c.beginPath();
+      c.arc(px, py, r, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
+      // Stroke-only glyph over a solid badge — pick whichever of near-black
+      // or white actually contrasts against THIS class's own color (lev's
+      // pale gray needs a dark glyph; every other class's darker color
+      // needs white) rather than assuming one always works.
+      const iconColor = _iconContrastColor(cd.color);
+      const iconSize = r * 1.15;
+      const iconPx = Math.ceil(iconSize * 2); // matches drawIconCtx's own px math — same _getIconImg cache entry
+      const img = (typeof _getIconImg === 'function') ? _getIconImg(cd.icon, iconColor, iconPx) : null;
+      if (img && !img.complete && !img._towerHooked) {
+        img._towerHooked = true;
+        img.addEventListener('load', () => {
+          if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
+        });
+      }
+      drawIconCtx(c, cd.icon, px, py, iconSize, iconColor);
     }
   }
 
   return cv;
+}
+
+// Perceived luminance of a hex color, via _expandHex (shared/definitions.js)
+// for the same 3-digit-hex handling every other color helper here already
+// gets for free. >0.55 reads as "light enough that white loses contrast".
+function _iconContrastColor(hex) {
+  const h = (typeof _expandHex === 'function') ? _expandHex(hex) : String(hex).replace('#', '');
+  const v = parseInt(h, 16) || 0;
+  const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luma > 0.55 ? '#1a1a1a' : '#ffffff';
 }
 
 
