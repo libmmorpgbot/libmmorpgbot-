@@ -1734,17 +1734,19 @@ const DUNGEON_LVL = 50;
 // curve involved (unlike every other zone's monsters, which all resolve
 // through it one way or another). atkRange copies the ranger's own
 // (CHAR_DEF.ranger.atkRange) — "дальность как у лучника" — and atkCdMult
-// halves the attack cooldown Room.js's tick loop rolls for every monster
-// (1.4-2.0s) — "скорость атаки в 2 раза быстрее обычных монстров". xp is
-// flat 200 off all three ("Опыт сделай 200 со всех") — gold is left at its
-// own earlier number, that one was never asked to change.
+// scales the attack cooldown Room.js's tick loop rolls for every monster
+// (1.4-2.0s): was 0.5 ("скорость атаки в 2 раза быстрее обычных монстров"),
+// halved again to 0.25 by the owner's own follow-up ("скорость атаки
+// монстров там в 2 раза быстрее") — 4x a normal monster's attack speed in
+// total. xp is flat 200 off all three ("Опыт сделай 200 со всех") — gold is
+// left at its own earlier number, that one was never asked to change.
 const DUNGEON_LICH = {
   commander: { eid: 'dungeon_lich_commander', name: 'Командир Лич', color: '#3f6fe0', size: 24,
-    hp: 30000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 500 },
+    hp: 30000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.25, xp: 200, gold: 500 },
   blue:      { eid: 'dungeon_lich_blue', name: 'Синий Лич', color: '#3f6fe0', size: 20,
-    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 300 },
+    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.25, xp: 200, gold: 300 },
   skeleton:  { eid: 'dungeon_lich_skeleton', name: 'Скелетон Лич', color: '#cfd6dd', size: 20,
-    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 300 },
+    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.25, xp: 200, gold: 300 },
 };
 // Every non-boss room rolls one of the three at random, including the
 // commander — nothing reserves him for a fixed slot.

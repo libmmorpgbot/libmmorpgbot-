@@ -1229,6 +1229,10 @@ Object.assign(I18N_UI, {
   farmHighPassiveBooksHdr: { ru: 'Книги пассивных навыков', en: 'Passive skill books', uk: 'Книги пасивних навичок', es: 'Libros de habilidades pasivas', tr: 'Pasif yetenek kitapları', pt: 'Livros de habilidades passivas' },
   farmHighZoneDropHdr: { ru: 'Падает с любого монстра зоны', en: 'Drops from any monster in the zone', uk: 'Падає з будь-якого монстра зони', es: 'Cae de cualquier monstruo de la zona', tr: 'Bölgedeki herhangi bir canavardan düşer', pt: 'Cai de qualquer monstro da zona' },
   noMonstersHereHint: { ru: 'Здесь монстров нет — зайдите в один из коридоров, чтобы увидеть список.', en: 'No monsters here — enter one of the corridors to see the list.', uk: 'Тут монстрів немає — зайдіть в один з коридорів, щоб побачити список.', es: 'Aquí no hay monstruos — entra en uno de los corredores para ver la lista.', tr: 'Burada canavar yok — listeyi görmek için koridorlardan birine gir.', pt: 'Não há monstros aqui — entre em um dos corredores para ver a lista.' },
+  // Map panel's monster reference list, Подземелье variant — see
+  // updateFloorUI/_dungeonMonsterListHtml, js/ui.js.
+  dungeonBestiaryHint: { ru: 'Лут такой же, как в Фарм зоне 2, плюс свиток этого класса. Уровень у всех фиксированный, 50.', en: 'Loot is the same as Фарм зона 2, plus this class\'s own scroll. Every monster here is a fixed level 50.', uk: 'Лут такий самий, як у Фарм зоні 2, плюс сувій цього класу. Рівень у всіх фіксований, 50.', es: 'El botín es el mismo que en Фарм зона 2, más el pergamino de esta clase. Todos son de nivel fijo 50.', tr: 'Ganimet Фарм зона 2 ile aynı, artı bu sınıfın kendi tomarı. Herkes sabit 50. seviyede.', pt: 'O saque é o mesmo da Фарм зона 2, mais o pergaminho desta classe. Todos têm nível fixo 50.' },
+  dungeonScrollHdr: { ru: 'Классовый свиток', en: 'Class scroll', uk: 'Класовий сувій', es: 'Pergamino de clase', tr: 'Sınıf tomarı', pt: 'Pergaminho de classe' },
 
   // ── Профессия HUD panel (openProfessionPanel, js/ui.js) — second-profession
   // codex reachable from the HUD button under Мир/ПК.

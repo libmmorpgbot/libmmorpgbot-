@@ -982,13 +982,17 @@ function generateFarmZone2() {
 // Башня's own corridor gates.
 function generateDungeonHub() {
   const classes = DUNGEON_CLASSES;
-  const padGap = 8;
+  // Halved from 8/10/24 (owner's own follow-up: "подземелье локацию в 2 раза
+  // меньше там где телепорты") — 4/5/12, each term exactly half of what it
+  // replaces, so HALL itself comes out exactly half of its old value (29 vs
+  // 58 at 7 classes) rather than just approximately smaller.
+  const padGap = 4;
   // Square, not just wide — roomAt (js/game.js) tests tx < r.x + r.size and
   // ty < r.y + r.size against the SAME size, so a non-square hall would
-  // mis-hit-test its own shorter axis. 24 is a floor so a 7-class row still
+  // mis-hit-test its own shorter axis. 12 is a floor so a 7-class row still
   // leaves the spawn/return end some breathing room even at padGap's own
   // smaller multiples.
-  const HALL = Math.max((classes.length - 1) * padGap + 10, 24);
+  const HALL = Math.max((classes.length - 1) * padGap + 5, 12);
   const w = MARGIN * 2 + HALL, h = MARGIN * 2 + HALL;
 
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
@@ -1124,7 +1128,12 @@ function generateDungeonZone(cls, idx) {
           atkRange: sp.atkRange, atkCdMult: sp.atkCdMult,
           xp: sp.xp, gold: sp.gold,
           x: ex, y: ey, spawnX: ex, spawnY: ey,
-          atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+          // Aggressive from spawn (owner's own ask), not just on approach —
+          // the self-aggro proximity trigger (Room.js's _tick) only ever
+          // sets this the same way, so starting it true just skips the
+          // "wait for someone to get close" step entirely; aggroR still
+          // matters for nothing once this is already true.
+          atkTimer: 1 + rng(), aggro: true, aggroR: 175 + rng() * 55,
         };
         enemyList.push(enemy);
         pack.push(enemy);
@@ -1143,6 +1152,12 @@ function generateDungeonZone(cls, idx) {
     grid, rooms, w, h,
     spawn,
     returnPad,
+    // Which class this floor belongs to — read by _currentLocationBounds
+    // (js/ui.js) to show the zone's bestiary/loot list on the map panel
+    // (owner's own ask) without needing a `bounds` sub-object the way
+    // farmHigh/farmZone/etc. do: the whole floor already IS the zone, there
+    // is nothing else on it to distinguish bounds from.
+    dungeonZone: cls,
     enemies: enemyList,
   };
 }

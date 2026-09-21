@@ -1591,6 +1591,20 @@ function netConnect(onReady) {
             const fdx = tx - se.x, fdy = ty - se.y;
             if (Math.abs(fdx) >= Math.abs(fdy)) ex._facing = fdx > 0 ? 'right' : 'left';
             else                                ex._facing = fdy > 0 ? 'down'  : 'up';
+            // Подземелье's Lich guards fire a white sphere on every swing
+            // (owner's own ask) — purely cosmetic, same as every other
+            // projectile drawn from otherProjs (js/pixi-world.js's
+            // _pixiDrawProj, default projType): damage already landed
+            // instantly server-side above (playerHurt), this is only the
+            // travel animation. eid is checked on the merged local record
+            // (ex), not the incoming slim delta (se), since a restate tick
+            // can omit eid once the enemy's full entry has already synced.
+            const _eid = ex.eid || se.eid;
+            if (typeof _eid === 'string' && _eid.indexOf('dungeon_lich_') === 0) {
+              const dlen = Math.hypot(tx - se.x, ty - se.y) || 1;
+              const dvx = (tx - se.x) / dlen * 400, dvy = (ty - se.y) / dlen * 400;
+              otherProjs.push({ x: se.x, y: se.y, vx: dvx, vy: dvy, color: '#ffffff', size: 7, life: 1.2, projType: 'ball' });
+            }
           }
         }
       } else {

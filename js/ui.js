@@ -2023,6 +2023,17 @@ function _currentLocationBounds() {
       ty1: Math.min(dungeon.h - 1, Math.ceil(sz.y2 / TILE) + margin),
     };
   }
+  // Подземелье's own class zone floor — the whole floor IS the zone (no
+  // hub/corridor mixed onto it the way farmHigh/farmZone share their grid),
+  // so there's no `bounds` sub-object to check the way the namedZones list
+  // below needs: dungeonZone alone (generateDungeonZone, server/game/
+  // dungeon.js) is enough to both name it and cover it entirely.
+  if (dungeon.dungeonZone) {
+    return {
+      tx0: 0, ty0: 0, tx1: dungeon.w - 1, ty1: dungeon.h - 1,
+      zoneLabel: 'dungeonLbl', dungeonClass: dungeon.dungeonZone,
+    };
+  }
   // Sealed zones that carry their own tile-space `bounds` (Фарм-зона, Война
   // гильдий, Кровавая Башня — see their dungeon.js entries). Checked by raw
   // tile bounds rather than _getRoomAt's room-only lookup, so standing in a
@@ -2222,6 +2233,7 @@ function _floorUISignature() {
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) return 'farm';
   if (_b && _b.zoneLabel === 'farmHighLbl') return 'farmHigh';
+  if (_b && _b.zoneLabel === 'dungeonLbl') return 'dungeon:' + _b.dungeonClass;
   return _currentArmIdx() || 'hub';
 }
 let _lastFloorUISignature = null;
@@ -2243,6 +2255,7 @@ function updateFloorUI() {
   // список тот же самый: своя копия расходилась бы с ней на первой же правке.
   if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
   if (_b && _b.zoneLabel === 'farmHighLbl') { grid.innerHTML = _farmHighMonsterListHtml(); return; }
+  if (_b && _b.zoneLabel === 'dungeonLbl') { grid.innerHTML = _dungeonMonsterListHtml(_b.dungeonClass); return; }
 
   // Scoped to wherever the player actually is: the hub has no monsters at
   // all, and each corridor only ever spawns its own level band (arm 1 =
@@ -2578,6 +2591,82 @@ function _farmHighMonsterListHtml() {
     }).join('');
   const hint = tVars('farmHighBestiaryHint', { a: FARM_HIGH_LVL_MIN, b: FARM_HIGH_LVL_MAX });
   return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${items}`;
+}
+
+// ── Подземелье: бестиарий зоны (owner's own ask — "на карте виден список
+// лута") ──────────────────────────────────────────────────────────────────
+// Same accordion shape as _farmHighMonsterListHtml above, but the loot
+// itself (_rollDungeonLoot, server/game/loot.js) reuses Фарм зона 2's table
+// UNSPLIT: none of DUNGEON_LICH's eids are in any FARM_HIGH_SPECIES_* map,
+// so every roll there already falls back to its own FULL pool (see that
+// function's own comment) rather than a per-species slice — every section
+// below shows that same full pool for all three Lich, not a species split.
+// Plus one row this zone alone has: the class scroll, which only drops
+// here, in the zone matching its own class.
+function _dungeonFullGearRows() {
+  const slots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+  return Object.keys(FARM_HIGH_GEAR_CHANCE).map(rarity => {
+    const pool = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && slots.includes(d.slot));
+    if (!pool.length) return '';
+    const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
+    const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
+    const per = _pctSmall(FARM_HIGH_GEAR_CHANCE[rarity] / pool.length * 100);
+    const rows = pool.map(it => _dropRow(_itemIcon(it, 16), it.name, per, rc)).join('');
+    return `<div class="fi-drops-hdr" style="margin-top:8px">${tVars('gearRarityFmt', { rn })}</div><div class="fi-drops">${rows}</div>`;
+  }).join('');
+}
+function _dungeonFullBookRows(ids, chance, iconFor) {
+  const pool = (ids || []).map(id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === id)).filter(Boolean);
+  if (!pool.length) return '';
+  const per = _pctSmall(chance / pool.length * 100);
+  return pool.map(b => _dropRow(iconFor(b), b.name, per, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec')).join('');
+}
+function _dungeonFullShardRows() {
+  const pool = typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : [];
+  if (!pool.length) return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const pct = _pctSmall(FARM_HIGH_SHARD_CHANCE * 100);
+  return pool.map(sh => _dropRow(_mi(sh, 20), sh.name, pct, '#c9a24b')).join('');
+}
+function _dungeonScrollRow(cls) {
+  const mat = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === `dungeon_scroll_${cls}`);
+  if (!mat) return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  return _dropRow(_mi(mat, 16), mat.name, _pctSmall(DUNGEON_SCROLL_CHANCE * 100), '#7fd7ff');
+}
+function _dungeonSpeciesBodyHtml(e, cls) {
+  const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
+  return `
+    <div class="fi-mstats">
+      <span>HP <b>${e.hp}</b></span>
+      <span>ATK <b>${e.atk}</b></span>
+      <span>DEF <b>${e.def || 0}</b></span>
+      <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
+    </div>
+    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e))}
+    ${_dungeonFullGearRows()}
+    ${sec(t('uniqueShardsHdr'), _dungeonFullShardRows())}
+    ${sec(t('farmHighSkillBooksHdr'), _dungeonFullBookRows(_SKILL_BOOK_SRC.map(([c, k]) => `book_${c}_${k}`), FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
+    ${sec(t('farmHighAdvBooksHdr'), _dungeonFullBookRows(_ADV_SKILL_BOOK_SRC.map(([c, k]) => `book_adv_${c}_${k}`), FARM_HIGH_ADV_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
+    ${sec(t('farmHighPassiveBooksHdr'), _dungeonFullBookRows((typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.passiveId).map(m => m.id), FARM_HIGH_PASSIVE_BOOK_CHANCE, b => _itemIcon(b, 16)))}
+    ${sec(t('dungeonScrollHdr'), _dungeonScrollRow(cls))}`;
+}
+function _dungeonMonsterListHtml(cls) {
+  const items = (typeof DUNGEON_SPECIES !== 'undefined' ? DUNGEON_SPECIES : [])
+    .map(key => DUNGEON_LICH[key]).filter(Boolean)
+    .map(sp => `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:${sp.color}"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl">${t('levelAbbrev')} ${DUNGEON_LVL}</span>
+          <div class="mon-name-row"><span class="mon-name">${sp.name}</span></div>
+        </div>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div class="mon-body">${_dungeonSpeciesBodyHtml(sp, cls)}</div>
+    </div>`).join('');
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('dungeonBestiaryHint')}</div>${items}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
