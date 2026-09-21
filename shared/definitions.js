@@ -1690,10 +1690,20 @@ const FARM2_UNIQUE_WEAPON_CHANCE    = 0.000006 / 100;
 // blocks — see TOWER_LICH's own comment for why the level curve is skipped
 // entirely here).
 const TOWER_CLASSES = Object.keys(CHAR_DEF);
-const TOWER_ROOM = 12;
+// "Комнаты большими" + "по 4 пачек монстров" (owner's own follow-up ask) —
+// room bumped from 12 to 22 tiles (same scale RACE10_BOSS_ROOM/TRIAL_ROOM
+// already use for a "big room" in this file) so 4 packs of 3 have room to
+// stand apart instead of crowding a 12-tile room built for 2.
+const TOWER_ROOM = 22;
 const TOWER_ROOM_COUNT = 2;
 const TOWER_PACK_SIZE = 3;
-const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 2; // 2 clusters of 3 per room
+const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 4; // 4 clusters of 3 per room
+// "Входные коридоры длиннее" — the branch stub connecting the main corridor
+// to a corridor's own rooms (generateTower, server/game/dungeon.js). Was the
+// shared STUB (6 tiles, same as every other zone's branch) — its own,
+// bigger constant now rather than reusing STUB, so this doesn't lengthen
+// every other zone's branches too.
+const TOWER_STUB = 16;
 // Entry gate — owner's own number ("вход в зону с телепорта от 38 уровня"),
 // no longer tied to FARM_HIGH_ENTRY_LEVEL (the loot table is still Фарм
 // зона 2's own — see _rollTowerLoot, server/game/loot.js — only the gate
@@ -3766,7 +3776,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM,
+  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_STUB,
   TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES, TOWER_SCROLL_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,

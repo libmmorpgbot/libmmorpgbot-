@@ -1,5 +1,5 @@
 const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
-  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES } = require('../../shared/definitions');
+  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_STUB, TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -990,7 +990,7 @@ function generateTower() {
   const roomSize = TOWER_ROOM;
   const halfRoom = Math.floor(roomSize / 2);
   const branchCount = TOWER_CLASSES.length;
-  const branchDepth = (STUB + roomSize) * TOWER_ROOM_COUNT; // one branch's own north extent
+  const branchDepth = (TOWER_STUB + roomSize) * TOWER_ROOM_COUNT; // one branch's own north extent
   const firstX = MARGIN + LEAD_IN;
 
   const fixedCoord = MARGIN + CW + branchDepth; // main corridor's own row
@@ -1011,11 +1011,21 @@ function generateTower() {
 
   const rooms = [];
   const gates = [];
+  // One per class, sat right at its own branch's mouth — the row directly
+  // above the main corridor (fixedCoord - CW), which is the corridor's OWN
+  // tile, not the gate's: every class walks past every sign on its way down
+  // the shared corridor, whether that class's own branch is further on or
+  // not. Client draws these baked into the floor texture (see the Башня
+  // pass in _buildChunk, js/game.js) — "значки обозначение какого класса
+  // коридор" (owner's own ask), so nobody has to open a branch blind to find
+  // out whose corridor it is.
+  const signs = [];
   const enemyList = [];
   let eid = 0;
 
   TOWER_CLASSES.forEach((cls, ci) => {
     const bx = firstX + ci * PITCH;
+    signs.push({ cls, tx: bx, ty: fixedCoord - CW });
     const branchX0 = bx - BW, branchX1 = bx + BW;
     const roomX0 = bx - halfRoom, roomX1 = roomX0 + roomSize - 1;
     let cursor = fixedCoord - CW; // just north of the main corridor
@@ -1023,8 +1033,8 @@ function generateTower() {
     for (let ri = 0; ri < TOWER_ROOM_COUNT; ri++) {
       // Stub connecting the previous segment (the main corridor, or the
       // room before this one) to this room.
-      paintRect(branchX0, cursor - STUB, branchX1, cursor - 1);
-      cursor -= STUB;
+      paintRect(branchX0, cursor - TOWER_STUB, branchX1, cursor - 1);
+      cursor -= TOWER_STUB;
       const roomY1 = cursor - 1, roomY0 = cursor - roomSize;
       paintRect(roomX0, roomY0, roomX1, roomY1);
       const room = {
@@ -1100,7 +1110,7 @@ function generateTower() {
     grid, rooms, w, h,
     spawn,
     returnPad,
-    tower: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: TOWER_ENTRY_LEVEL, gates },
+    tower: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: TOWER_ENTRY_LEVEL, gates, signs },
     enemies: enemyList,
   };
 }

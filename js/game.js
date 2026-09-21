@@ -2874,6 +2874,42 @@ function _buildChunk(cx, cy) {
   }
   _chunkTorches.set(cx + ',' + cy, torchList);
 
+  // 7. Башня — corridor class signs (server's own tower.signs, generateTower
+  // in server/game/dungeon.js: one per branch mouth, sat on the shared main
+  // corridor tile itself so every class walks past every sign, not just the
+  // one it opens). "значки обозначение какого класса коридор" (owner's own
+  // ask) — a plate in that class's own CHAR_DEF color with its name, baked
+  // once into the floor texture like every other decoration above. Own-tile
+  // range (ptx0..pty1, no gutter ring), same as the floor-props pass, so a
+  // sign is never drawn twice across a chunk seam.
+  if (dungeon.tower && dungeon.tower.signs && typeof CHAR_DEF !== 'undefined') {
+    for (const sgn of dungeon.tower.signs) {
+      if (sgn.tx < ptx0 || sgn.tx > ptx1 || sgn.ty < pty0 || sgn.ty > pty1) continue;
+      const cd = CHAR_DEF[sgn.cls];
+      if (!cd) continue;
+      const px = sgn.tx * TILE + TILE / 2, py = sgn.ty * TILE + TILE / 2;
+      c.font = 'bold 11px sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      const padX = 8, padY = 5;
+      const textW = c.measureText(cd.name).width;
+      const plateW = textW + padX * 2, plateH = 14 + padY * 2;
+      c.fillStyle = cd.color;
+      c.strokeStyle = 'rgba(0,0,0,0.65)';
+      c.lineWidth = 2;
+      c.fillRect(px - plateW / 2, py - plateH / 2, plateW, plateH);
+      c.strokeRect(px - plateW / 2, py - plateH / 2, plateW, plateH);
+      // Stroke-then-fill text so the label stays legible over both a dark
+      // class color (deathknight) and a pale one (lev, assassin's near-black
+      // is the other extreme, already fine with plain white).
+      c.lineWidth = 3;
+      c.strokeStyle = 'rgba(0,0,0,0.8)';
+      c.strokeText(cd.name, px, py + 1);
+      c.fillStyle = '#fff';
+      c.fillText(cd.name, px, py + 1);
+    }
+  }
+
   return cv;
 }
 
