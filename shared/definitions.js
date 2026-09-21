@@ -1694,7 +1694,9 @@ const TOWER_CLASSES = Object.keys(CHAR_DEF);
 // room bumped from 12 to 22 tiles (same scale RACE10_BOSS_ROOM/TRIAL_ROOM
 // already use for a "big room" in this file) so 4 packs of 3 have room to
 // stand apart instead of crowding a 12-tile room built for 2.
-const TOWER_ROOM = 22;
+// -20% from 22 (owner's own follow-up: "уменьши... комнаты... на процентов
+// 20") — 18, keeping it even so halfRoom stays a whole tile.
+const TOWER_ROOM = 18;
 const TOWER_ROOM_COUNT = 2;
 const TOWER_PACK_SIZE = 3;
 const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 4; // 4 clusters of 3 per room
@@ -1713,8 +1715,11 @@ const TOWER_STUB = 16;
 // rooms far apart, not merely separated. Bumping this also lengthens the
 // main corridor for free, since its own width is entirely PITCH-driven
 // below (w = firstX + (branchCount-1)*PITCH + …) — the second half of the
-// same ask.
-const TOWER_PITCH = 50;
+// same ask. -20% from 50 (owner's own follow-up, "усеньши общий коридор...
+// на процентов 20" — this is what the main corridor's own length scales
+// with) — 40; still a 22-tile solid-wall gap between neighboring rooms at
+// TOWER_ROOM's own new 18 (was 28 at 22/50), comfortably "far apart" either way.
+const TOWER_PITCH = 40;
 // Entry gate — owner's own number ("вход в зону с телепорта от 38 уровня"),
 // no longer tied to FARM_HIGH_ENTRY_LEVEL (the loot table is still Фарм
 // зона 2's own — see _rollTowerLoot, server/game/loot.js — only the gate
