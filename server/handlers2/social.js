@@ -732,7 +732,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
         fromName: rows[0].username,
         profile: {
           name: rows[0].username, bm: rows[0].bm,
-          charIcon: cd.icon || null, charColor: cd.color || null,
+          charIconImg: cd.iconImg || null, charColor: cd.color || null,
           className: cd.name || st.charClass,
           lvl: st.level, empowers: prog.empowers,
           hp: Math.ceil(st.hp), maxHp: st.maxHp,

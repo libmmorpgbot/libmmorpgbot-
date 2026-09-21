@@ -554,7 +554,7 @@ function showPeerProfileModal(fromName, profile) {
       <button onclick="document.getElementById('peer-profile-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div class="prof-hero">
-      <div class="prof-emoji">${iconHTML(profile.charIcon, 40, profile.charColor)}</div>
+      <div class="prof-emoji">${profile.charIconImg ? `<img src="${profile.charIconImg}" width="40" height="40" style="object-fit:contain;vertical-align:middle;">` : ''}</div>
       <div>
         <div class="prof-cls" style="color:${profile.charColor}">${profile.className}</div>
         <div class="prof-lvl">${tVars('charLevelFmt', { lvl: profile.lvl })}</div>
@@ -3272,7 +3272,7 @@ function drawHeader() {
     }
     ctx.fillStyle = _avBgGrad;
     ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
-    drawIconCtx(ctx, p.charDef.icon, avX, avY + 1, 26, p.charDef.color);
+    drawClassIconCtx(ctx, p.type, avX, avY + 1, 26);
   }
   ctx.strokeStyle = 'rgba(122,196,255,0.85)'; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
@@ -6294,6 +6294,15 @@ function _seasonBurnBookConfirm(id) {
 }
 
 // ── "Рейтинг" tab: top 20 ────────────────────────────────────────────────
+// Round class icon next to a rating row's nickname (owner's own ask) — the
+// same portrait badge the Башня corridor signs use, just as an <img>
+// (season rows are plain DOM, not a canvas). Empty string, not a placeholder,
+// for a row whose class hasn't been picked yet (charClass null/undefined).
+function _seasonClassIconHTML(cls) {
+  const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
+  if (!cd || !cd.iconImg) return '';
+  return `<img src="${cd.iconImg}" class="season-class-icon" style="background:${cd.color}" title="${_esc(cd.name)}">`;
+}
 function _seasonRatingHTML() {
   const r = _seasonRating;
   if (!r) return `<div style="padding:16px"><div class="db-phase">${t('seasonLoading')}</div></div>`;
@@ -6303,6 +6312,7 @@ function _seasonRatingHTML() {
     return `<div class="season-row${mine ? ' me' : ''}">
       <span class="season-place${pc}">${x.place}</span>
       <span class="season-name">${_esc(x.username)}</span>
+      ${_seasonClassIconHTML(x.charClass)}
       <span class="season-pts">${x.points}</span>
     </div>`;
   }).join('');
@@ -6311,6 +6321,7 @@ function _seasonRatingHTML() {
     ? `<div class="season-row me" style="margin-top:10px">
          <span class="season-place">${r.me.place}</span>
          <span class="season-name">${_esc(r.me.username)}</span>
+         ${_seasonClassIconHTML(r.me.charClass)}
          <span class="season-pts">${r.me.points}</span>
        </div>`
     : '';

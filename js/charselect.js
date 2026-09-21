@@ -319,7 +319,7 @@ function _csDrawFrame(type, dt) {
   ctx.lineWidth = 3;
   ctx.stroke();
 
-  drawIconCtx(ctx, def.icon, cx, cy - bob + 2, r * 1.8, def.color);
+  drawClassIconCtx(ctx, type, cx, cy - bob + 2, r * 1.8);
 }
 
 // ── Loading gate ──────────────────────────────────────────────
@@ -339,7 +339,7 @@ function csStartLoading(type, onReady) {
 
   const emojiEl = document.getElementById('csl-emoji');
   const nameEl  = document.getElementById('csl-name');
-  if (emojiEl) emojiEl.innerHTML = iconHTML(def.icon, 60, def.color);
+  if (emojiEl) emojiEl.innerHTML = classIconHTML(type, 60);
   if (nameEl)  nameEl.textContent  = def.name;
 
   csSetStatus(typeof t === 'function' ? t('csLoadingSprites') : 'Загрузка спрайтов...');

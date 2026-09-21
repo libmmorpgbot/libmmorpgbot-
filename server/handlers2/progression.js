@@ -297,13 +297,18 @@ module.exports = function registerProgression(s, safeOn) {
       minPoints: SEASON_RATING_MIN_POINTS,
     });
     const mine = await progression.seasonOf(t, pid);
+    // seasonOf doesn't carry char_class either (same reasoning as username
+    // below) — the class icon next to a nickname needs it too (owner's own
+    // ask: round class icons in the rating), so it's read the same way any
+    // other class-gated action already does (server/handlers2/items.js).
+    const myProg = await players.progressOf(t, pid);
     s.socket.emit('seasonRatingData', {
       list,
       // seasonOf returns the player's season row and knows nothing about
       // names, so `me.username` was undefined: the player's own line rendered
       // blank, and "am I already in the list" compared undefined against every
       // row. The session is the only thing here that knows who this is.
-      me: { ...mine, username: s.username },
+      me: { ...mine, username: s.username, charClass: myProg && myProg.charClass },
       // Printed by the panel. It had a hardcoded 5000 as a fallback, which was
       // right by luck; changing the constant would have made the panel lie.
       minPoints: SEASON_RATING_MIN_POINTS,

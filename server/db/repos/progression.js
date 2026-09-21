@@ -431,14 +431,15 @@ async function payReferralOnLevel(db, playerId, newLevel) {
 // the Mongo version ran on every request — from a PLAYER-facing handler.
 async function seasonBoard(db, { season = CURRENT_SEASON, limit = 50, minPoints = 1 } = {}) {
   const { rows } = await query(db, `
-    SELECT s.player_id, s.points, p.username, p.bm
+    SELECT s.player_id, s.points, p.username, p.bm, pp.char_class
       FROM player_season s JOIN players p ON p.id = s.player_id
+      LEFT JOIN player_progress pp ON pp.player_id = s.player_id
      WHERE s.season = $1 AND s.points >= $2
      ORDER BY s.points DESC, s.player_id
      LIMIT $3`, [season, minPoints, Math.min(limit, 200)]);
   return rows.map((r, i) => ({
     place: i + 1, playerId: Number(r.player_id), username: r.username,
-    points: Number(r.points), bm: r.bm,
+    points: Number(r.points), bm: r.bm, charClass: r.char_class,
   }));
 }
 

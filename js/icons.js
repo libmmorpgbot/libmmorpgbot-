@@ -68,20 +68,12 @@ const ICON_SVG = {
   teleport:  `<path d="M5 3h14"/><path d="M5 21h14"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><polyline points="9,8 12,11 15,8"/><polyline points="9,16 12,13 15,16"/>`,
 
   // ── Character Classes ──────────────────────────────────────────────────────
-  warrior:    `<path d="M14.5 17.5L3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="M16 16l4 4"/><line x1="19" y1="21" x2="21" y2="19"/>`,
-  archerClass:`<path d="M6 3a9 9 0 0 0 0 18"/><line x1="6" y1="12" x2="21" y2="12"/><polyline points="17,8 21,12 17,16"/>`,
-  mageClass:  `<circle cx="12" cy="12" r="5"/><line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/>`,
-  lev:        `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><line x1="12" y1="6" x2="12" y2="16"/><line x1="9" y1="9" x2="15" y2="9"/>`,
-  // Seven distinct class glyphs (CHAR_DEF's own icon per class, shared/
-  // definitions.js) — mage/warlock used to share mageClass and deathknight/
-  // assassin used to share skull above; every class gets its own now.
-  tankBadge:        `<path d="M12 21s7-3.5 7-9V5.5L12 3 5 5.5V12c0 5.5 7 9 7 9z"/><circle cx="12" cy="8" r="1.3"/><circle cx="9" cy="11.5" r="1.1"/><circle cx="15" cy="11.5" r="1.1"/><circle cx="12" cy="15" r="1.1"/>`,
-  deathknightBadge: `<line x1="12" y1="2" x2="12" y2="15"/><line x1="7" y1="7" x2="17" y2="7"/><path d="M9 15h6l-1.5 4h-3z"/><circle cx="12" cy="21" r="1.1"/>`,
-  archerBadge:      `<path d="M6 2a11 11 0 0 0 0 20"/><line x1="6" y1="3" x2="6" y2="21"/><line x1="2" y1="12" x2="19" y2="12"/><polyline points="15,8 19,12 15,16"/>`,
-  wizardBadge:      `<path d="M12 2L5 19h14z"/><line x1="4" y1="19" x2="20" y2="19"/><circle cx="12" cy="7" r="1"/>`,
-  healerBadge:      `<circle cx="12" cy="6" r="3.2"/><line x1="12" y1="9.2" x2="12" y2="21"/><line x1="7" y1="14" x2="17" y2="14"/>`,
-  runeBadge:        `<polygon points="12,2 20,7 20,17 12,22 4,17 4,7"/><line x1="12" y1="7" x2="12" y2="17"/><line x1="8" y1="9.5" x2="16" y2="14.5"/>`,
-  hoodBadge:        `<path d="M4 20v-8a8 8 0 0 1 16 0v8"/><line x1="4" y1="20" x2="20" y2="20"/><line x1="9" y1="13" x2="9" y2="15.5"/><line x1="15" y1="13" x2="15" y2="15.5"/>`,
+  // Was 4 hand-drawn stroke glyphs here (plus a further 7 replacing their
+  // two look-alike pairs one commit ago) — CHAR_DEF now points every class
+  // at real artwork instead (iconImg, shared/definitions.js; drawn via
+  // drawClassIconCtx/drawClassBadgeCtx below), owner-supplied and swapped in
+  // by request. Nothing reads a class by an ICON_SVG key any more, so the
+  // vector glyphs are gone rather than left as dead entries.
 
   // ── NPCs ───────────────────────────────────────────────────────────────────
   merchant:   `<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>`,
@@ -164,4 +156,53 @@ function drawIconCtx(c, name, cx, cy, size, color) {
   const img = _getIconImg(name, color || 'white', px);
   if (!img || !img.complete || img.naturalWidth === 0) return;
   c.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+}
+
+// ── Class portrait icons ─────────────────────────────────────────────────────
+// CHAR_DEF's own iconImg per class (shared/definitions.js) — real artwork
+// (images/classicon/<cls>.png), not a stroke path, so this is a plain
+// Image cache rather than the SVG-blob wrapping _getIconImg needs above.
+const _classIconImgCache = {};
+function _getClassIconImg(src) {
+  if (!src) return null;
+  if (_classIconImgCache[src]) return _classIconImgCache[src];
+  const img = new Image();
+  img.src = src;
+  return (_classIconImgCache[src] = img);
+}
+
+// Just the portrait, centered at (cx, cy) — for callers that already draw
+// their own background (charselect.js's fallback circle, the HUD avatar's
+// gradient disc).
+function drawClassIconCtx(c, cls, cx, cy, size) {
+  const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
+  const img = cd && _getClassIconImg(cd.iconImg);
+  if (!img || !img.complete || img.naturalWidth === 0) return;
+  c.drawImage(img, cx - size / 2, cy - size / 2, size, size);
+}
+
+// Full badge: a filled circle in the class's own color, portrait inset —
+// for callers with no background of their own (Башня's corridor signs,
+// js/game.js; the season rating list, js/ui.js).
+function drawClassBadgeCtx(c, cls, cx, cy, size) {
+  const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
+  if (!cd) return;
+  c.fillStyle = cd.color;
+  c.strokeStyle = 'rgba(0,0,0,0.65)';
+  c.lineWidth = 2;
+  c.beginPath();
+  c.arc(cx, cy, size / 2, 0, Math.PI * 2);
+  c.fill();
+  c.stroke();
+  drawClassIconCtx(c, cls, cx, cy, size * 0.72);
+}
+
+// ── DOM helper: class portrait as an <img> ───────────────────────────────────
+// Same role iconHTML plays for a stroke glyph, for the places that build a
+// class icon into innerHTML instead of a canvas (charselect.js's loading
+// screen, the peer-profile card in js/ui.js).
+function classIconHTML(cls, size = 20) {
+  const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[cls];
+  if (!cd || !cd.iconImg) return '';
+  return `<img src="${cd.iconImg}" width="${size}" height="${size}" style="display:inline-block;vertical-align:middle;object-fit:contain;flex-shrink:0">`;
 }
