@@ -1202,11 +1202,15 @@ const ITEM_DEF = [
   { id:'cloak_c_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, forClass:['ranger'],      img:'/images/cloak/ranger_c.png',      hp:75,  atk:5,  def:10, rarity:'common'   },
   { id:'cloak_c_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, forClass:['mage'],        img:'/images/cloak/mage_c.png',        hp:75,  atk:5,  def:10, rarity:'common'   },
   { id:'cloak_c_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, forClass:['warlock'],     img:'/images/cloak/warlock_c.png',     hp:75,  atk:5,  def:10, rarity:'common'   },
+  { id:'cloak_c_runefighter', name:'Плащ рунного бойца',  slot:'cloak', classItem:true, forClass:['runefighter'], img:'/images/cloak/runefighter_c.png', hp:75,  atk:5,  def:10, rarity:'common'   },
+  { id:'cloak_c_assassin',    name:'Плащ ассасина',       slot:'cloak', classItem:true, forClass:['assassin'],    img:'/images/cloak/assassin_c.png',    hp:75,  atk:5,  def:10, rarity:'common'   },
   { id:'cloak_u_lev',         name:'Плащ танка',          slot:'cloak', classItem:true, forClass:['lev'],         img:'/images/cloak/lev_u.png',         hp:150, atk:13, def:20, rarity:'uncommon' },
   { id:'cloak_u_deathknight', name:'Плащ рыцаря смерти',  slot:'cloak', classItem:true, forClass:['deathknight'], img:'/images/cloak/deathknight_u.png', hp:150, atk:13, def:20, rarity:'uncommon' },
   { id:'cloak_u_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, forClass:['ranger'],      img:'/images/cloak/ranger_u.png',      hp:150, atk:13, def:20, rarity:'uncommon' },
   { id:'cloak_u_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, forClass:['mage'],        img:'/images/cloak/mage_u.png',        hp:150, atk:13, def:20, rarity:'uncommon' },
   { id:'cloak_u_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, forClass:['warlock'],     img:'/images/cloak/warlock_u.png',     hp:150, atk:13, def:20, rarity:'uncommon' },
+  { id:'cloak_u_runefighter', name:'Плащ рунного бойца',  slot:'cloak', classItem:true, forClass:['runefighter'], img:'/images/cloak/runefighter_u.png', hp:150, atk:13, def:20, rarity:'uncommon' },
+  { id:'cloak_u_assassin',    name:'Плащ ассасина',       slot:'cloak', classItem:true, forClass:['assassin'],    img:'/images/cloak/assassin_u.png',    hp:150, atk:13, def:20, rarity:'uncommon' },
   // ── редкие плащи ────────────────────────────────────────────────────────
   // Втрое больше статов, чем у необычного, плюс два процентных бонуса,
   // которых нет ни у одного другого слота: опыт и шанс выпадения предметов.
@@ -1217,16 +1221,27 @@ const ITEM_DEF = [
   { id:'cloak_r_ranger',      name:'Плащ лучника',        slot:'cloak', classItem:true, forClass:['ranger'],      img:'/images/cloak/ranger_r.png',      hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   { id:'cloak_r_mage',        name:'Плащ мага',           slot:'cloak', classItem:true, forClass:['mage'],        img:'/images/cloak/mage_r.png',        hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   { id:'cloak_r_warlock',     name:'Плащ целителя',       slot:'cloak', classItem:true, forClass:['warlock'],     img:'/images/cloak/warlock_r.png',     hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'cloak_r_runefighter', name:'Плащ рунного бойца',  slot:'cloak', classItem:true, forClass:['runefighter'], img:'/images/cloak/runefighter_r.png', hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'cloak_r_assassin',    name:'Плащ ассасина',       slot:'cloak', classItem:true, forClass:['assassin'],    img:'/images/cloak/assassin_r.png',    hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   { id:'artifact_c_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, forClass:['lev'],         img:'/images/artifact/lev.png',         hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_c_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, forClass:['deathknight'], img:'/images/artifact/deathknight.png', hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_c_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger.png',      hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_c_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage.png',        hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_c_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock.png',     hp:75,  atk:10, def:5,  rarity:'common'   },
+  // runefighter/assassin got their own art per tier instead of reusing one
+  // common+uncommon image like the five classes above (img:
+  // /images/artifact/<class>_c|u|r.png rather than <class>.png +
+  // <class>_r.png) — the owner's asset drop for these two came with three
+  // separate pieces, so all three get used rather than discarding one.
+  { id:'artifact_c_runefighter', name:'Артефакт рунного бойца', slot:'artifact', classItem:true, forClass:['runefighter'], img:'/images/artifact/runefighter_c.png', hp:75,  atk:10, def:5,  rarity:'common'   },
+  { id:'artifact_c_assassin',    name:'Артефакт ассасина',      slot:'artifact', classItem:true, forClass:['assassin'],    img:'/images/artifact/assassin_c.png',    hp:75,  atk:10, def:5,  rarity:'common'   },
   { id:'artifact_u_lev',         name:'Артефакт танка',         slot:'artifact', classItem:true, forClass:['lev'],         img:'/images/artifact/lev.png',         hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_deathknight', name:'Артефакт рыцаря смерти', slot:'artifact', classItem:true, forClass:['deathknight'], img:'/images/artifact/deathknight.png', hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger.png',      hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage.png',        hp:150, atk:23, def:10, rarity:'uncommon' },
   { id:'artifact_u_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock.png',     hp:150, atk:23, def:10, rarity:'uncommon' },
+  { id:'artifact_u_runefighter', name:'Артефакт рунного бойца', slot:'artifact', classItem:true, forClass:['runefighter'], img:'/images/artifact/runefighter_u.png', hp:150, atk:23, def:10, rarity:'uncommon' },
+  { id:'artifact_u_assassin',    name:'Артефакт ассасина',      slot:'artifact', classItem:true, forClass:['assassin'],    img:'/images/artifact/assassin_u.png',    hp:150, atk:23, def:10, rarity:'uncommon' },
   // ── редкие артефакты ────────────────────────────────────────────────────
   // Втрое больше, чем у необычного ПЛАЩА (150/13/20 × 3 = 450/39/60) — так
   // написано в задании про оба слота, дословно. Первый заход прочитал это как
@@ -1240,6 +1255,8 @@ const ITEM_DEF = [
   { id:'artifact_r_ranger',      name:'Артефакт лучника',       slot:'artifact', classItem:true, forClass:['ranger'],      img:'/images/artifact/ranger_r.png',      hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   { id:'artifact_r_mage',        name:'Артефакт мага',          slot:'artifact', classItem:true, forClass:['mage'],        img:'/images/artifact/mage_r.png',        hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   { id:'artifact_r_warlock',     name:'Артефакт целителя',      slot:'artifact', classItem:true, forClass:['warlock'],     img:'/images/artifact/warlock_r.png',     hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_runefighter', name:'Артефакт рунного бойца', slot:'artifact', classItem:true, forClass:['runefighter'], img:'/images/artifact/runefighter_r.png', hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
+  { id:'artifact_r_assassin',    name:'Артефакт ассасина',      slot:'artifact', classItem:true, forClass:['assassin'],    img:'/images/artifact/assassin_r.png',    hp:450, atk:39, def:60, xpPct:0.20, dropPct:0.20, rarity:'rare' },
   // ── Pets ─────────────────────────────────────────────────
   // Own equip slot (EQ_SLOTS 'pet', js/definitions.js), crafted at the forge
   // for Liberty/Nexum (PET_CRAFT_RECIPES below) — not a mob/box drop. Base
