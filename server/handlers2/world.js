@@ -72,7 +72,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
     farmZone2: 'Элитная фарм-зона', farmSeason: 'Сезонное крыло',
     arena: 'Арена мирового босса', pvpArena: 'Арена 3×3', race10: 'Кровавая Башня',
     fear: 'Страх', coop: 'Сотрудничество', tournament: 'Турнир', trial: 'Испытание',
-    tower: 'Башня',
+    dungeon: 'Подземелье',
+    dungeonLev: 'Подземелье', dungeonDeathknight: 'Подземелье', dungeonRanger: 'Подземелье',
+    dungeonMage: 'Подземелье', dungeonWarlock: 'Подземелье', dungeonRunefighter: 'Подземелье',
+    dungeonAssassin: 'Подземелье',
   };
   const _floorName = (target, landed) => {
     const key = String(target || '');
@@ -443,7 +446,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (result.farmZone) out.items = loot._rollFarmZoneLoot(scratch, result.eid) || [];
     else if (result.farmHigh) out.items = loot._rollFarmHighLoot(scratch, result.eid) || [];
     else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
-    else if (result.tower) out.items = loot._rollTowerLoot(scratch, result.eid, result.towerClass) || [];
+    else if (result.dungeon) out.items = loot._rollDungeonLoot(scratch, result.eid, result.dungeonClass) || [];
     else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl) || [];
 
     // ── руда ────────────────────────────────────────────────────────────────
@@ -477,7 +480,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       + ((s._roomStats && s._roomStats.gearDropPct) || 0);
     const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
     const extra = bonus + ticket;
-    if (!result.farmZone && !result.farmHigh && !result.farmZone2 && !result.tower && extra > 0 && rand() * 100 < extra) {
+    if (!result.farmZone && !result.farmHigh && !result.farmZone2 && !result.dungeon && extra > 0 && rand() * 100 < extra) {
       out.items.push(...(loot._rollMobLoot([], result.eid, result.rlvl) || []));
     }
 
@@ -647,7 +650,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // co-op run — those pay their own fixed rewards — and, like Liberty, its
     // chance table never came across from the retired handler file, so
     // `result.gram` was emitted to the client while nothing set it.
-    const myGram = (result.farmZone || result.farmHigh || result.farmZone2 || result.tower || result.arm === 'coop') ? 0
+    const myGram = (result.farmZone || result.farmHigh || result.farmZone2 || result.dungeon || result.arm === 'coop') ? 0
       : (rand() < (GRAM_DROP_CHANCE || 0) ? (result.rlvl || 1) * (GRAM_PER_LEVEL || 0) : 0);
 
     // One key per KILL, not per enemy and not per attempt.

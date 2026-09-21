@@ -1,6 +1,6 @@
 const {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateTower,
+  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
 } = require('./dungeon');
 
 // Every location the player can stand in is its own floor id + its own
@@ -40,12 +40,15 @@ const FLOOR_IDS = {
   // is never actually entered — trialEnter, server/handlers2/trial.js,
   // always builds its own private Room instead, exactly like Fear/coop do).
   trial: 17,
-  // Башня — a new endgame walk-in floor: a small hall with 7 class-gated
-  // corridors branching off it (see generateTower, server/game/dungeon.js).
+  // Подземелье — a new endgame teleport hall (see generateDungeonHub,
+  // server/game/dungeon.js): an empty room with 7 pads, one per class, each
+  // its own floor beyond it (dungeon<Class> below — generateDungeonZone).
   // Not to be confused with race10's "Кровавая Башня" above (FLOOR_IDS.
   // race10) — a different, older mode that just happens to share the
-  // Russian word "Башня" in its own name.
-  tower: 18,
+  // Russian word "Башня" in its own (unrelated) name.
+  dungeon: 18,
+  dungeonLev: 19, dungeonDeathknight: 20, dungeonRanger: 21, dungeonMage: 22,
+  dungeonWarlock: 23, dungeonRunefighter: 24, dungeonAssassin: 25,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -69,7 +72,14 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
   { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentPit() },
   { id: FLOOR_IDS.trial,     key: 'trial',     generate: () => generateTrial() },
-  { id: FLOOR_IDS.tower,     key: 'tower',     generate: () => generateTower() },
+  { id: FLOOR_IDS.dungeon,             key: 'dungeon',             generate: () => generateDungeonHub() },
+  { id: FLOOR_IDS.dungeonLev,          key: 'dungeonLev',          generate: () => generateDungeonZone('lev', 0) },
+  { id: FLOOR_IDS.dungeonDeathknight,  key: 'dungeonDeathknight',  generate: () => generateDungeonZone('deathknight', 1) },
+  { id: FLOOR_IDS.dungeonRanger,       key: 'dungeonRanger',       generate: () => generateDungeonZone('ranger', 2) },
+  { id: FLOOR_IDS.dungeonMage,         key: 'dungeonMage',         generate: () => generateDungeonZone('mage', 3) },
+  { id: FLOOR_IDS.dungeonWarlock,      key: 'dungeonWarlock',      generate: () => generateDungeonZone('warlock', 4) },
+  { id: FLOOR_IDS.dungeonRunefighter,  key: 'dungeonRunefighter',  generate: () => generateDungeonZone('runefighter', 5) },
+  { id: FLOOR_IDS.dungeonAssassin,     key: 'dungeonAssassin',     generate: () => generateDungeonZone('assassin', 6) },
 ];
 
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));

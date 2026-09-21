@@ -1686,7 +1686,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, towerEntry: d.towerEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, tower: d.tower, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, dungeonEntry: d.dungeonEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, classPads: d.classPads, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
@@ -2204,14 +2204,14 @@ class Room {
         // rest of its behaviour alone — it still aggros, still swings at
         // anyone who steps into reach. Used by the tower's boss (see
         // spawnRaceBoss); everything else moves as before.
-        // e.atkRange (Башня's Lich guards — "дальность как у лучника",
-        // shared/definitions.js's TOWER_LICH) makes this a RANGED monster: it
+        // e.atkRange (Подземелье's Lich guards — "дальность как у лучника",
+        // shared/definitions.js's DUNGEON_LICH) makes this a RANGED monster: it
         // stops closing once it's within striking distance instead of
         // walking all the way up to melee, and that same distance (not
         // e.size + 20 below) is what lets it actually swing from there.
-        // e.atkCdMult (also TOWER_LICH's own — "скорость атаки в 2 раза
+        // e.atkCdMult (also DUNGEON_LICH's own — "скорость атаки в 2 раза
         // быстрее обычных монстров") scales the cooldown every monster's
-        // swing rolls, so it stays generic rather than a Башня-only branch.
+        // swing rolls, so it stays generic rather than a Подземелье-only branch.
         const atkReach = e.atkRange || (e.size + 20);
         const chaseStopD = e.atkRange ? Math.max(e.atkRange - 20, e.size + 14) : e.size + 14;
         if (!e.stationary && closestD > chaseStopD) {
@@ -3682,26 +3682,13 @@ class Room {
       p._wallRefusals = (p._wallRefusals || 0) + 1;
       return { refused: 'wall', x: p.x, y: p.y };
     }
-    // ── Башня: барьер по классу ─────────────────────────────────────────────
-    // Each of the 7 corridors (server/game/dungeon.js's generateTower) is
-    // walled off to every class but its own — but the grid itself is the
-    // same for every player on the floor, so that cannot be a WALL tile the
-    // way the check above is. It is this instead: a bounds rectangle per
-    // corridor (this._dungeon.tower.gates), refused against the WALKING
-    // player's own class, the same shape the check above uses for geometry.
-    // Same "already inside, free to leave" exception as the wall check above
-    // — a gate must never trap someone already standing past it.
-    const tw = this._dungeon.tower;
-    if (tw && tw.gates) {
-      for (const g of tw.gates) {
-        if (g.cls === p.type) continue;
-        const b = g.bounds;
-        const nowIn = x >= b.x0 * TILE && x < b.x1 * TILE && y >= b.y0 * TILE && y < b.y1 * TILE;
-        if (!nowIn) continue;
-        const wasIn = p.x >= b.x0 * TILE && p.x < b.x1 * TILE && p.y >= b.y0 * TILE && p.y < b.y1 * TILE;
-        if (!wasIn) return { refused: 'classGate', x: p.x, y: p.y };
-      }
-    }
+    // Подземелье's own class zones need no check here: each is its own
+    // floor (server/game/floors.js), entered only from a pad gated by class
+    // at the door (resolveFloor, server/world.js) — there's no shared floor
+    // with another class's zone on it for a walking player to ever reach,
+    // unlike the old Башня's single floor with 7 corridors on it, which is
+    // what the classGate bounds-rectangle check that used to live here
+    // (this._dungeon.tower.gates) existed to guard.
     // undefined means a client still running the pre-authoritative-flag
     // bundle (mid-rollout, tab open since before the deploy) — its 'mv'
     // packet has no 5th element at all. Leaving p.moving untouched in that
@@ -5015,7 +5002,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, tower: !!enemy.tower, towerClass: enemy.towerClass };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -5126,7 +5113,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, tower: !!enemy.tower, towerClass: enemy.towerClass };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

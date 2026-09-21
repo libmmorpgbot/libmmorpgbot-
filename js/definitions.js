@@ -240,9 +240,10 @@ const ITEM_CRAFT_RECIPES = [];
 // the epic/legendary groups — they are a separate line, not another tier.
 if (typeof UNIQUE_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...UNIQUE_CRAFT_RECIPES);
 // Уникальные сеты — 2× legendary stats + a per-class set bonus at 2/3/4/5
-// pieces worn (shared/definitions.js's TOWER_LICH-adjacent "Башня" note has
-// nothing to do with these; see UNIQUE_SET_ITEMS/UNIQUE_SET_CRAFT_RECIPES's
-// own comment instead). Flagged `uniqueSet` for the same reason `unique` is
+// pieces worn (shared/definitions.js's DUNGEON_LICH-adjacent "Подземелье"
+// note has nothing to do with these; see UNIQUE_SET_ITEMS/
+// UNIQUE_SET_CRAFT_RECIPES's own comment instead). Flagged `uniqueSet` for
+// the same reason `unique` is
 // flagged above — its own heading, not mixed into anything else.
 if (typeof UNIQUE_SET_CRAFT_RECIPES !== 'undefined') ITEM_CRAFT_RECIPES.push(...UNIQUE_SET_CRAFT_RECIPES);
 

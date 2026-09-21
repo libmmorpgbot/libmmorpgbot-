@@ -11,7 +11,7 @@
 
 const Room = require('./game/Room');
 const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
-const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, TOWER_ENTRY_LEVEL, seasonActive } = require('../shared/definitions');
+const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, DUNGEON_ENTRY_LEVEL, seasonActive } = require('../shared/definitions');
 
 const floorRooms = new Map();
 
@@ -25,8 +25,30 @@ const ZONE_LEVEL_REQ = {
   // Сезонное крыло — та же зона 20+, только за билетом; уровень с неё никто
   // не снимал, билет добавлен СВЕРХУ (TICKET_ONLY ниже), а не вместо.
   farmSeason: FARM_ENTRY_LEVEL,
-  // Башня — тот же гейт, что у Фарм зоны 2 (её лут-таблицу и повторяет).
-  tower: TOWER_ENTRY_LEVEL,
+  // Подземелье — тот же гейт, что у Фарм зоны 2 (её лут-таблицу и повторяет),
+  // на входном этаже (зал телепортов); каждая из 7 классовых зон за ним
+  // гейтится по классу (DUNGEON_CLASS_ZONE below), не по уровню повторно.
+  dungeon: DUNGEON_ENTRY_LEVEL,
+  dungeonLev: DUNGEON_ENTRY_LEVEL, dungeonDeathknight: DUNGEON_ENTRY_LEVEL,
+  dungeonRanger: DUNGEON_ENTRY_LEVEL, dungeonMage: DUNGEON_ENTRY_LEVEL,
+  dungeonWarlock: DUNGEON_ENTRY_LEVEL, dungeonRunefighter: DUNGEON_ENTRY_LEVEL,
+  dungeonAssassin: DUNGEON_ENTRY_LEVEL,
+};
+
+// Which class may stand on which Подземелье zone floor — resolveFloor below
+// refuses anyone else onto it, the same way TICKET_ONLY refuses a floor
+// without a ticket: validated once, at the door, not continuously in the
+// tick loop the way the old Башня's own corridor gates were (Room.js has no
+// class-gate check left at all now — there is nothing left for it to guard,
+// since only this class's own players are ever routed onto this floor).
+const DUNGEON_CLASS_ZONE = {
+  [FLOOR_IDS.dungeonLev]: 'lev',
+  [FLOOR_IDS.dungeonDeathknight]: 'deathknight',
+  [FLOOR_IDS.dungeonRanger]: 'ranger',
+  [FLOOR_IDS.dungeonMage]: 'mage',
+  [FLOOR_IDS.dungeonWarlock]: 'warlock',
+  [FLOOR_IDS.dungeonRunefighter]: 'runefighter',
+  [FLOOR_IDS.dungeonAssassin]: 'assassin',
 };
 
 // ── этажи за сезонным билетом ───────────────────────────────────────────────
@@ -50,7 +72,8 @@ const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [
 const STANDABLE = new Set([
   FLOOR_IDS.hub, FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
   FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
-  FLOOR_IDS.tower,
+  FLOOR_IDS.dungeon, FLOOR_IDS.dungeonLev, FLOOR_IDS.dungeonDeathknight, FLOOR_IDS.dungeonRanger,
+  FLOOR_IDS.dungeonMage, FLOOR_IDS.dungeonWarlock, FLOOR_IDS.dungeonRunefighter, FLOOR_IDS.dungeonAssassin,
 ]);
 
 // bossStates: { [floorId]: { [arm]: respawnAtMs } }, read out of boss_state
@@ -132,6 +155,8 @@ function resolveFloor(floorId, progress, ctx = {}) {
   const need = ZONE_LEVEL_REQ[FLOOR_KEY[f]] || 0;
   if ((progress && progress.lvl ? progress.lvl : 1) < need) return FLOOR_IDS.hub;
   if (TICKET_ONLY.has(f) && !(ctx.seasonTicket && seasonActive())) return FLOOR_IDS.hub;
+  const wantClass = DUNGEON_CLASS_ZONE[f];
+  if (wantClass && (!progress || progress.charClass !== wantClass)) return FLOOR_IDS.hub;
   if (!_timedZoneOpen(f)) return FLOOR_IDS.hub;
   return f;
 }

@@ -24,7 +24,7 @@ const {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  TOWER_SCROLL_CHANCE,
+  DUNGEON_SCROLL_CHANCE,
   BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
 } = require('../../shared/definitions');
 const { _invAdd } = require('../inventory');
@@ -324,23 +324,23 @@ function _rollFarm2Loot(inv) {
   return granted;
 }
 
-// ── Башня (Tower) kill loot ──────────────────────────────────────────────
+// ── Подземелье (Dungeon) kill loot ────────────────────────────────────────
 // "Лут с них такой же, как и с фарм зоны 2" — literally the same table
 // (_rollFarmHighLoot), reused rather than duplicated: our new eids aren't
 // in any of the FARM_HIGH_SPECIES_* per-species maps, so every roll there
 // already falls back to its full, un-split pool — see each map's own
 // comment for why an unrecognized eid does that rather than silently
-// granting nothing. On top of that one independent roll for this corridor's
-// own class scroll (TOWER_SCROLL_CHANCE, shared/definitions.js) — dropped
-// only in the room it belongs to, so `towerClass` (set at spawn, generateTower)
-// decides which of the 7 scroll ids can even come up.
-function _rollTowerLoot(inv, eid, towerClass) {
+// granting nothing. On top of that one independent roll for this zone's
+// own class scroll (DUNGEON_SCROLL_CHANCE, shared/definitions.js) — dropped
+// only in the zone it belongs to, so `dungeonClass` (set at spawn,
+// generateDungeonZone) decides which of the 7 scroll ids can even come up.
+function _rollDungeonLoot(inv, eid, dungeonClass) {
   const granted = _rollFarmHighLoot(inv, eid) || [];
-  if (towerClass && Math.random() < TOWER_SCROLL_CHANCE) {
-    const mat = CRAFT_MATS.find(m => m.id === `tower_scroll_${towerClass}`);
+  if (dungeonClass && Math.random() < DUNGEON_SCROLL_CHANCE) {
+    const mat = CRAFT_MATS.find(m => m.id === `dungeon_scroll_${dungeonClass}`);
     if (mat && _invAdd(inv, { ...mat, qty: 1 })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty: 1 });
   }
   return granted;
 }
 
-module.exports = { _rollMobLoot, _rollFarmZoneLoot, _rollFarmHighLoot, _rollFarm2Loot, _rollTowerLoot };
+module.exports = { _rollMobLoot, _rollFarmZoneLoot, _rollFarmHighLoot, _rollFarm2Loot, _rollDungeonLoot };

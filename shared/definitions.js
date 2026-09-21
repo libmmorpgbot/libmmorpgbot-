@@ -959,17 +959,18 @@ const CRAFT_MATS = [
     id: `book_adv_${cls}_${key}`, name: `Книга: ${name}`,
     slot: 'material', rarity: 'legendary', forClass: cls, advSkillKey: key,
   })),
-  // ── Свитки Башни (Tower scrolls) ──────────────────────────
-  // One per class, dropped only in that class's own corridor of the Башня
-  // (see TOWER_LICH/TOWER_SCROLL_CHANCE above, _rollTowerLoot in server/
+  // ── Свитки Подземелья (Dungeon scrolls) ──────────────────────────
+  // One per class, dropped only in that class's own zone of the Подземелье
+  // (see DUNGEON_LICH/DUNGEON_SCROLL_CHANCE above, _rollDungeonLoot in server/
   // game/loot.js). Craft material for UNIQUE_SET_CRAFT_RECIPES below —
   // every set piece asks for all 7, 120 each, regardless of which class's
   // piece is being crafted (owner's own spec, confirmed literally).
-  // Object.keys(CHAR_DEF), not TOWER_CLASSES: that const is declared further
-  // down this file (Башня section) and CRAFT_MATS is built before it exists.
+  // Object.keys(CHAR_DEF), not DUNGEON_CLASSES: that const is declared
+  // further down this file (Подземелье section) and CRAFT_MATS is built
+  // before it exists.
   ...Object.keys(CHAR_DEF).map(cls => ({
-    id: `tower_scroll_${cls}`, name: `Свиток: ${CHAR_DEF[cls].name}`,
-    img: `/images/material/tower_scroll_${cls}.png`,
+    id: `dungeon_scroll_${cls}`, name: `Свиток: ${CHAR_DEF[cls].name}`,
+    img: `/images/material/dungeon_scroll_${cls}.png`,
     slot: 'material', rarity: 'legendary', forClass: cls,
   })),
   // ── Свиток босса (Boss scroll) ─────────────────────────────
@@ -1679,61 +1680,56 @@ const FARM2_ADV_SKILL_BOOK_CHANCE   = 0.005 / 100;
 // own class: this is a random kill drop, not a player-chosen craft.
 const FARM2_UNIQUE_WEAPON_CHANCE    = 0.000006 / 100;
 
-// ── Башня (Tower) ────────────────────────────────────────────────────────
-// A new, endgame walk-in floor (own generator, generateTower, server/game/
-// dungeon.js — own floor id, server/game/floors.js): a small central hall
-// with 7 corridors branching off it, one per class (TOWER_CLASSES below,
-// same 7 keys as CHAR_DEF). A corridor's own class-gate (its bounds, baked
-// into the floor's own dungeon payload as `tower.gates`) refuses any other
-// class's movement past its mouth — enforced server-side in
-// Room.updatePlayerPos, the same way a wall tile is, just keyed on the
-// walking player's own class instead of the grid. Each corridor holds
-// TOWER_ROOM_COUNT rooms in a chain, TOWER_MOBS_PER_ROOM monsters per room
-// standing in TOWER_PACK_SIZE clusters (a hit on one wakes the whole
+// ── Подземелье (Dungeon) ──────────────────────────────────────────────────
+// Was Башня (Tower): one floor, one central hall with 7 class-gated
+// corridors branching off it. Replaced by the owner's own request ("удали
+// локацию башня, сделай локацию Подземелье... при входе комната пустая и 7
+// телепортов по классам") with an entry floor (own generator,
+// generateDungeonHub, server/game/dungeon.js — own floor id,
+// server/game/floors.js) that is just an empty hall holding 7 teleport
+// pads, one per class (DUNGEON_CLASSES below, same 7 keys as CHAR_DEF).
+// Each pad is its own floor transition (server/game/floors.js registers
+// one generateDungeonZone(cls) floor per class, the exact same pattern
+// every leveling arm already uses for its own hub pad) rather than a
+// walk-through corridor — "можно войти только в свою зону классовую" is
+// enforced the same way every level-gated floor already is: resolveFloor
+// (server/world.js) refuses the transition outright if the requesting
+// player's own class doesn't match that pad's zone, so there is no
+// in-floor class-gate geometry left to maintain (the old `tower.gates`/
+// Room.updatePlayerPos check is gone with it). Every zone floor is
+// otherwise identical in principle to the old corridor it replaces:
+// DUNGEON_ROOM_COUNT rooms in a chain, DUNGEON_MOBS_PER_ROOM monsters per
+// room standing in DUNGEON_PACK_SIZE clusters (a hit on one wakes the whole
 // cluster — Room.js's _wakePack, same mechanic FARM2_PACK_SIZE above uses),
-// picked at random from TOWER_LICH (three flat, non-level-scaled stat
-// blocks — see TOWER_LICH's own comment for why the level curve is skipped
-// entirely here).
-const TOWER_CLASSES = Object.keys(CHAR_DEF);
-// "Комнаты большими" + "по 4 пачек монстров" (owner's own follow-up ask) —
-// room bumped from 12 to 22 tiles (same scale RACE10_BOSS_ROOM/TRIAL_ROOM
-// already use for a "big room" in this file) so 4 packs of 3 have room to
-// stand apart instead of crowding a 12-tile room built for 2.
-// -20% from 22 (owner's own follow-up: "уменьши... комнаты... на процентов
-// 20") — 18, keeping it even so halfRoom stays a whole tile.
-const TOWER_ROOM = 18;
-const TOWER_ROOM_COUNT = 2;
-const TOWER_PACK_SIZE = 3;
-const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 4; // 4 clusters of 3 per room
-// "Входные коридоры длиннее" — the branch stub connecting the main corridor
-// to a corridor's own rooms (generateTower, server/game/dungeon.js). Was the
-// shared STUB (6 tiles, same as every other zone's branch) — its own,
-// bigger constant now rather than reusing STUB, so this doesn't lengthen
-// every other zone's branches too.
-const TOWER_STUB = 16;
-// Branch-to-branch spacing along the main corridor. Was the shared PITCH
-// (20) — with TOWER_ROOM at 22 that put adjacent branches' rooms WIDER than
-// the gap between their centers, so they overlapped into one floor with no
-// wall between them ("комнаты как будто соединились" — owner caught this
-// exactly). Needs its own, much bigger constant: TOWER_ROOM + a generous
-// gap of solid wall, not just "no longer negative" — owner asked for the
-// rooms far apart, not merely separated. Bumping this also lengthens the
-// main corridor for free, since its own width is entirely PITCH-driven
-// below (w = firstX + (branchCount-1)*PITCH + …) — the second half of the
-// same ask. -20% from 50 (owner's own follow-up, "усеньши общий коридор...
-// на процентов 20" — this is what the main corridor's own length scales
-// with) — 40; still a 22-tile solid-wall gap between neighboring rooms at
-// TOWER_ROOM's own new 18 (was 28 at 22/50), comfortably "far apart" either way.
-const TOWER_PITCH = 40;
+// picked at random from DUNGEON_LICH (three flat, non-level-scaled stat
+// blocks — see DUNGEON_LICH's own comment for why the level curve is
+// skipped entirely here) — same loot table (Фарм зона 2's) and the same
+// class scroll drop.
+const DUNGEON_CLASSES = Object.keys(CHAR_DEF);
+// Room size, unchanged from Башня's own (Tower's own room already fit 4
+// packs of 3 comfortably; the new zone floor's own 2-room chain reuses the
+// exact same size).
+const DUNGEON_ROOM = 18;
+const DUNGEON_ROOM_COUNT = 2;
+const DUNGEON_PACK_SIZE = 3;
+const DUNGEON_MOBS_PER_ROOM = DUNGEON_PACK_SIZE * 4; // 4 clusters of 3 per room
+// Stub connecting the zone floor's own entrance to its first room, and each
+// room to the next in its chain — same constant Башня used for its own
+// branch stubs (TOWER_STUB), carried over unchanged; there's no shared main
+// corridor left to keep clear of any more, so no pitch/spacing constant is
+// needed alongside it.
+const DUNGEON_STUB = 16;
 // Entry gate — owner's own number ("вход в зону с телепорта от 38 уровня"),
-// no longer tied to FARM_HIGH_ENTRY_LEVEL (the loot table is still Фарм
-// зона 2's own — see _rollTowerLoot, server/game/loot.js — only the gate
-// level was asked to move).
-const TOWER_ENTRY_LEVEL = 38;
+// unchanged from Башня's own TOWER_ENTRY_LEVEL. Gates the hub's own pad
+// into the Подземелье entry floor; each class zone floor beyond it is
+// gated by class instead (resolveFloor, server/world.js), not by level
+// again.
+const DUNGEON_ENTRY_LEVEL = 38;
 // Representative monster level for display/ore-chance purposes only
-// (oreDropChance(rlvl), server/handlers2/world.js) — TOWER_LICH's own hp/atk
-// are flat, not derived from this. Owner's own number ("уровень монстров 50").
-const TOWER_LVL = 50;
+// (oreDropChance(rlvl), server/handlers2/world.js) — DUNGEON_LICH's own
+// hp/atk are flat, not derived from this. Owner's own number ("уровень
+// монстров 50").
+const DUNGEON_LVL = 50;
 // Every stat below is the owner's own number, flat — no monsterStatsAtLevel
 // curve involved (unlike every other zone's monsters, which all resolve
 // through it one way or another). atkRange copies the ranger's own
@@ -1742,23 +1738,23 @@ const TOWER_LVL = 50;
 // (1.4-2.0s) — "скорость атаки в 2 раза быстрее обычных монстров". xp is
 // flat 200 off all three ("Опыт сделай 200 со всех") — gold is left at its
 // own earlier number, that one was never asked to change.
-const TOWER_LICH = {
-  commander: { eid: 'tower_lich_commander', name: 'Командир Лич', color: '#3f6fe0', size: 24,
+const DUNGEON_LICH = {
+  commander: { eid: 'dungeon_lich_commander', name: 'Командир Лич', color: '#3f6fe0', size: 24,
     hp: 30000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 500 },
-  blue:      { eid: 'tower_lich_blue', name: 'Синий Лич', color: '#3f6fe0', size: 20,
+  blue:      { eid: 'dungeon_lich_blue', name: 'Синий Лич', color: '#3f6fe0', size: 20,
     hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 300 },
-  skeleton:  { eid: 'tower_lich_skeleton', name: 'Скелетон Лич', color: '#cfd6dd', size: 20,
+  skeleton:  { eid: 'dungeon_lich_skeleton', name: 'Скелетон Лич', color: '#cfd6dd', size: 20,
     hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 300 },
 };
 // Every non-boss room rolls one of the three at random, including the
 // commander — nothing reserves him for a fixed slot.
-const TOWER_SPECIES = ['commander', 'blue', 'skeleton'];
+const DUNGEON_SPECIES = ['commander', 'blue', 'skeleton'];
 // Свиток — один вид на класс, падает только в комнатах ЭТОГО класса
-// (см. _rollTowerLoot). «Шанс выпадения 0.003%», дословно — владелец сам
+// (см. _rollDungeonLoot). «Шанс выпадения 0.003%», дословно — владелец сам
 // сверял его с FARM2_UNIQUE_WEAPON_CHANCE (0.000006%) и посчитал именно
 // такое число: на пять порядков реже книги/камня, но не настолько редко,
 // как уникальное оружие Элитной зоны.
-const TOWER_SCROLL_CHANCE = 0.003 / 100;
+const DUNGEON_SCROLL_CHANCE = 0.003 / 100;
 
 // The weapons themselves. Every stat carried over from the ordinary line is
 // exactly twice the same class's weapon at that rarity (sw4/sw5, tw4/tw5,
@@ -1867,7 +1863,7 @@ const UNIQUE_SET_ITEMS = Object.keys(CHAR_DEF).flatMap(cls => UNIQUE_SET_SLOTS.m
 ITEM_DEF.push(...UNIQUE_SET_ITEMS);
 
 // One recipe per piece (42 total) — same flat materials list every time,
-// regardless of class or slot: 120 of EVERY class's own Tower scroll
+// regardless of class or slot: 120 of EVERY class's own Подземелье scroll
 // (840 scrolls total) plus 15 Свиток босса. Owner's own spec, confirmed
 // literally rather than narrowed to "just that class's scroll" — this is
 // meant to be an extreme, months-long endgame grind, not an ordinary craft.
@@ -1877,7 +1873,7 @@ const UNIQUE_SET_CRAFT_RECIPES = UNIQUE_SET_ITEMS.map(it => ({
   itemId: it.id,
   uniqueSet: true,
   mats: [
-    ...Object.keys(CHAR_DEF).map(cls => ({ id: `tower_scroll_${cls}`, n: UNIQUE_SET_SCROLL_COST })),
+    ...Object.keys(CHAR_DEF).map(cls => ({ id: `dungeon_scroll_${cls}`, n: UNIQUE_SET_SCROLL_COST })),
     { id: 'boss_scroll', n: UNIQUE_SET_BOSS_SCROLL_COST },
   ],
   chance: 1.0,
@@ -3797,8 +3793,8 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_STUB, TOWER_PITCH,
-  TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES, TOWER_SCROLL_CHANCE,
+  DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB,
+  DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES, DUNGEON_SCROLL_CHANCE,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,

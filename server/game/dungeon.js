@@ -1,5 +1,5 @@
 const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
-  TOWER_CLASSES, TOWER_ROOM, TOWER_ROOM_COUNT, TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM, TOWER_STUB, TOWER_PITCH, TOWER_ENTRY_LEVEL, TOWER_LVL, TOWER_LICH, TOWER_SPECIES } = require('../../shared/definitions');
+  DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB, DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -267,9 +267,10 @@ function generateHub() {
     // два по имени, и «список фарм-зон» на две зоны стоил бы обеим сторонам
     // больше, чем стоит одна строка.
     farmHighEntry: { req: FARM_HIGH_ENTRY_LEVEL },
-    // Башня — третий пункт того же списка, со своим гейтом. Сама зона живёт
-    // на своём этаже (generateTower, ниже), здесь только запись для пада.
-    towerEntry: { req: TOWER_ENTRY_LEVEL },
+    // Подземелье — третий пункт того же списка, со своим гейтом. Сама зона
+    // (пустой зал с 7 телепортами по классам) живёт на своём этаже
+    // (generateDungeonHub, ниже), здесь только запись для пада.
+    dungeonEntry: { req: DUNGEON_ENTRY_LEVEL },
     enemies: enemyList,
   };
 }
@@ -965,37 +966,30 @@ function generateFarmZone2() {
   };
 }
 
-// ── Башня (Tower) ────────────────────────────────────────────────────────
-// A new endgame walk-in floor (own floor id, server/game/floors.js — walked
-// onto from the hub's own portal pad exactly like Фарм зона 2, see
-// generateHub's towerEntry above): one straight main corridor, always
-// empty, with TOWER_CLASSES.length branches running north off it at evenly
-// spaced points, one per class. Every branch is sealed to every OTHER class
-// right where it leaves the main corridor — not a wall in the grid (the
-// grid is the same for every player on the floor), but a bounds rectangle
-// tagged with that branch's own class (`tower.gates` below), refused in
-// Room.updatePlayerPos against the WALKING PLAYER's own class the same way
-// a wall tile refuses a step. Each branch chains TOWER_ROOM_COUNT rooms (2)
-// one after another, every room holding TOWER_MOBS_PER_ROOM monsters in
-// TOWER_PACK_SIZE clusters, picked at random from TOWER_LICH per cluster —
-// same grid-of-slots placement generateFarmZone2 uses above (so no two
-// clusters in a room blend into one visual blob), and the same packMateIds
-// wake-the-whole-cluster-on-one-hit wiring (Room.js's _wakePack). Unlike
-// farmZone2's own monsters, these are NOT excluded from the self-aggro
-// proximity trigger — this zone's monsters are meant to attack on sight
-// (they stand behind their own class's locked door in the first place, so
-// only the one class that can ever reach them will ever wake them).
-function generateTower() {
-  const rng = seededRng(2026 * 1337 + 12321);
-  const roomSize = TOWER_ROOM;
-  const halfRoom = Math.floor(roomSize / 2);
-  const branchCount = TOWER_CLASSES.length;
-  const branchDepth = (TOWER_STUB + roomSize) * TOWER_ROOM_COUNT; // one branch's own north extent
-  const firstX = MARGIN + LEAD_IN;
-
-  const fixedCoord = MARGIN + CW + branchDepth; // main corridor's own row
-  const w = firstX + (branchCount - 1) * TOWER_PITCH + halfRoom + MARGIN + 1;
-  const h = fixedCoord + CW + MARGIN + 1;
+// ── Подземелье: зал телепортов (Dungeon: teleport hall) ──────────────────
+// Entry floor (own floor id, server/game/floors.js — walked onto from the
+// hub's own portal pad exactly like Фарм зона 2, see generateHub's
+// dungeonEntry above): one big, always-empty square hall, no monsters,
+// holding DUNGEON_CLASSES.length teleport pads in a row, one per class.
+// Walking onto a pad is a real floor transition (js/game.js's
+// _updateTeleportPads — the same generic pad-walk mechanism the hub's own
+// arm/farm/guild-war pads already use), into that class's own zone floor
+// (generateDungeonZone, below). "Можно войти только в свою зону классовую"
+// is enforced the same way every level-gated floor already is —
+// resolveFloor (server/world.js) refuses the transition outright if the
+// walking player's own class doesn't match the pad's class — so there is
+// no in-floor class-gate geometry to draw or check here, unlike the old
+// Башня's own corridor gates.
+function generateDungeonHub() {
+  const classes = DUNGEON_CLASSES;
+  const padGap = 8;
+  // Square, not just wide — roomAt (js/game.js) tests tx < r.x + r.size and
+  // ty < r.y + r.size against the SAME size, so a non-square hall would
+  // mis-hit-test its own shorter axis. 24 is a floor so a 7-class row still
+  // leaves the spawn/return end some breathing room even at padGap's own
+  // smaller multiples.
+  const HALL = Math.max((classes.length - 1) * padGap + 10, 24);
+  const w = MARGIN * 2 + HALL, h = MARGIN * 2 + HALL;
 
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
   function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
@@ -1004,113 +998,151 @@ function generateTower() {
     for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
   }
 
-  // Main corridor: dead-straight, always empty, west edge past the last
-  // branch — same "nothing spawns outside a room's own rectangle" guarantee
-  // every other zone's own main corridor gives.
-  paintRect(MARGIN, fixedCoord - CW, w - MARGIN - 1, fixedCoord + CW);
+  const roomX0 = MARGIN, roomY0 = MARGIN, roomX1 = w - MARGIN - 1, roomY1 = h - MARGIN - 1;
+  paintRect(roomX0, roomY0, roomX1, roomY1);
+  const room = {
+    x: roomX0, y: roomY0, size: HALL,
+    bx1: roomX0 - 1, by1: roomY0 - 1, bx2: roomX1 + 1, by2: roomY1 + 1,
+    cx: roomX0 + Math.floor(HALL / 2), cy: roomY0 + Math.floor(HALL / 2),
+    isDungeonHub: true,
+  };
 
+  // One row of pads near the north wall — client draws each with that
+  // class's own badge icon (drawClassBadgeCtx, js/icons.js), same artwork
+  // the old branch-mouth signs used, just on a walk-to pad now instead of a
+  // baked floor decal.
+  const padsY = roomY0 + 5;
+  const firstX = roomX0 + Math.floor((HALL - (classes.length - 1) * padGap) / 2);
+  const classPads = classes.map((cls, i) => ({ cls, tx: firstX + i * padGap, ty: padsY }));
+
+  const cx = room.cx;
+  // returnPad sits right at the entrance (south wall); spawn a few tiles
+  // further in, clear of it — same "returnPad closer to the door than
+  // spawn" shape every arm's own entrance uses (see generateArm above).
+  const spawn = { x: cx * TILE + TILE / 2, y: (roomY1 - 4) * TILE + TILE / 2 };
+  const returnPad = { x: cx * TILE + TILE / 2, y: (roomY1 - 1) * TILE + TILE / 2 };
+
+  return {
+    grid, rooms: [room], w, h,
+    spawn,
+    returnPad,
+    classPads,
+    enemies: [],
+  };
+}
+
+// ── Подземелье: классовая зона (Dungeon: class zone) ──────────────────────
+// One floor per class (DUNGEON_CLASSES.length of these, server/game/
+// floors.js), entered only from generateDungeonHub's own pad for this
+// class — same "own floor per destination" shape every leveling arm
+// already uses (generateArm above), just gated by class instead of level.
+// A short straight entrance corridor, always empty, leads to
+// DUNGEON_ROOM_COUNT rooms (2) chained one after another, every room
+// holding DUNGEON_MOBS_PER_ROOM monsters in DUNGEON_PACK_SIZE clusters,
+// picked at random from DUNGEON_LICH per cluster — same grid-of-slots
+// placement generateFarmZone2 uses above (so no two clusters in a room
+// blend into one visual blob), and the same packMateIds
+// wake-the-whole-cluster-on-one-hit wiring (Room.js's _wakePack). Exactly
+// the same monsters/loot/drop principle the old per-class corridor used,
+// just without a shared main corridor or class-gate geometry to maintain —
+// only this class's own players are ever routed onto this floor at all
+// (resolveFloor, server/world.js).
+function generateDungeonZone(cls, idx) {
+  const rng = seededRng(2026 * 1337 + 13321 + idx);
+  const roomSize = DUNGEON_ROOM;
+  const halfRoom = Math.floor(roomSize / 2);
+  const entryLen = DUNGEON_STUB;
+  const w = roomSize + MARGIN * 2;
+  const depth = entryLen + (DUNGEON_STUB + roomSize) * DUNGEON_ROOM_COUNT;
+  const h = depth + MARGIN * 2;
+
+  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  function paintRect(x0, y0, x1, y1) {
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  }
+
+  const cx = MARGIN + halfRoom;
   const rooms = [];
-  const gates = [];
-  // One per class, sat right at its own branch's mouth — the row directly
-  // above the main corridor (fixedCoord - CW), which is the corridor's OWN
-  // tile, not the gate's: every class walks past every sign on its way down
-  // the shared corridor, whether that class's own branch is further on or
-  // not. Client draws these baked into the floor texture (see the Башня
-  // pass in _buildChunk, js/game.js) — "значки обозначение какого класса
-  // коридор" (owner's own ask), so nobody has to open a branch blind to find
-  // out whose corridor it is.
-  const signs = [];
   const enemyList = [];
   let eid = 0;
 
-  TOWER_CLASSES.forEach((cls, ci) => {
-    const bx = firstX + ci * TOWER_PITCH;
-    signs.push({ cls, tx: bx, ty: fixedCoord - CW });
-    const branchX0 = bx - BW, branchX1 = bx + BW;
-    const roomX0 = bx - halfRoom, roomX1 = roomX0 + roomSize - 1;
-    let cursor = fixedCoord - CW; // just north of the main corridor
-    const branchRooms = [];
-    for (let ri = 0; ri < TOWER_ROOM_COUNT; ri++) {
-      // Stub connecting the previous segment (the main corridor, or the
-      // room before this one) to this room.
-      paintRect(branchX0, cursor - TOWER_STUB, branchX1, cursor - 1);
-      cursor -= TOWER_STUB;
-      const roomY1 = cursor - 1, roomY0 = cursor - roomSize;
-      paintRect(roomX0, roomY0, roomX1, roomY1);
-      const room = {
-        x: roomX0, y: roomY0, size: roomSize,
-        bx1: roomX0 - 1, by1: roomY0 - 1, bx2: roomX1 + 1, by2: roomY1 + 1,
-        cx: bx, cy: roomY0 + halfRoom,
-        isTower: true, arm: 'tower', towerClass: cls,
-      };
-      rooms.push(room);
-      branchRooms.push(room);
-      cursor -= roomSize;
+  // Entrance corridor, running north from the bottom edge — same shape
+  // every arm's own main corridor opens with, just with nothing chained
+  // off its sides.
+  let cursor = h - MARGIN;
+  paintRect(cx - BW, cursor - entryLen, cx + BW, cursor - 1);
+  cursor -= entryLen;
+
+  for (let ri = 0; ri < DUNGEON_ROOM_COUNT; ri++) {
+    paintRect(cx - BW, cursor - DUNGEON_STUB, cx + BW, cursor - 1);
+    cursor -= DUNGEON_STUB;
+    const roomY1 = cursor - 1, roomY0 = cursor - roomSize;
+    const roomX0 = cx - halfRoom, roomX1 = roomX0 + roomSize - 1;
+    paintRect(roomX0, roomY0, roomX1, roomY1);
+    const room = {
+      x: roomX0, y: roomY0, size: roomSize,
+      bx1: roomX0 - 1, by1: roomY0 - 1, bx2: roomX1 + 1, by2: roomY1 + 1,
+      cx, cy: roomY0 + halfRoom,
+      isDungeon: true, arm: 'dungeon', dungeonClass: cls,
+    };
+    rooms.push(room);
+    cursor -= roomSize;
+
+    const usable = room.size - 4; // inset from the room's own walls
+    const packsPerRoom = Math.ceil(DUNGEON_MOBS_PER_ROOM / DUNGEON_PACK_SIZE);
+    const gridN = Math.ceil(Math.sqrt(packsPerRoom));
+    const pitch = usable / gridN;
+    const slots = [];
+    for (let gx = 0; gx < gridN; gx++) for (let gy = 0; gy < gridN; gy++) slots.push({ gx, gy });
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
     }
 
-    // Class gate: the whole branch's own footprint (every stub + room past
-    // the main corridor, up to but excluding the corridor's own edge), so
-    // another class is stopped right at the mouth — never sees past its own
-    // entrance stub.
-    gates.push({ cls, bounds: { x0: roomX0, y0: cursor, x1: roomX1 + 1, y1: fixedCoord - CW } });
-
-    branchRooms.forEach((room, ri) => {
-      const usable = room.size - 4; // inset from the room's own walls
-      const packsPerRoom = Math.ceil(TOWER_MOBS_PER_ROOM / TOWER_PACK_SIZE);
-      const gridN = Math.ceil(Math.sqrt(packsPerRoom));
-      const pitch = usable / gridN;
-      const slots = [];
-      for (let gx = 0; gx < gridN; gx++) for (let gy = 0; gy < gridN; gy++) slots.push({ gx, gy });
-      for (let i = slots.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
-        [slots[i], slots[j]] = [slots[j], slots[i]];
-      }
-
-      let placed = 0, slotIdx = 0;
-      while (placed < TOWER_MOBS_PER_ROOM) {
-        const packSize = Math.min(TOWER_PACK_SIZE, TOWER_MOBS_PER_ROOM - placed);
-        const slot = slots[slotIdx++];
-        let ccx = room.x + 2 + Math.round(pitch * (slot.gx + 0.5));
-        let ccy = room.y + 2 + Math.round(pitch * (slot.gy + 0.5));
-        if (!inBounds(ccx, ccy) || grid[ccy][ccx] !== FLOOR) { ccx = room.cx; ccy = room.cy; }
-        const pack = [];
-        for (let m = 0; m < packSize; m++) {
-          const sp = TOWER_LICH[TOWER_SPECIES[Math.floor(rng() * TOWER_SPECIES.length)]];
-          let ex = ccx * TILE + TILE / 2, ey = ccy * TILE + TILE / 2;
-          for (let attempt = 0; attempt < 20; attempt++) {
-            const gx = ccx + Math.floor(rng() * 3) - 1, gy = ccy + Math.floor(rng() * 3) - 1;
-            if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
-          }
-          const enemy = {
-            id: `tower_${ci}_${ri}_${eid++}`, eid: sp.eid, name: sp.name, color: sp.color, size: sp.size,
-            isBoss: false, arm: 'tower', tower: true, towerClass: cls,
-            rlvl: TOWER_LVL,
-            maxHp: sp.hp, hp: sp.hp, atk: sp.atk, def: 0, spd: sp.spd,
-            atkRange: sp.atkRange, atkCdMult: sp.atkCdMult,
-            xp: sp.xp, gold: sp.gold,
-            x: ex, y: ey, spawnX: ex, spawnY: ey,
-            atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
-          };
-          enemyList.push(enemy);
-          pack.push(enemy);
+    let placed = 0, slotIdx = 0;
+    while (placed < DUNGEON_MOBS_PER_ROOM) {
+      const packSize = Math.min(DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM - placed);
+      const slot = slots[slotIdx++];
+      let ccx = room.x + 2 + Math.round(pitch * (slot.gx + 0.5));
+      let ccy = room.y + 2 + Math.round(pitch * (slot.gy + 0.5));
+      if (!inBounds(ccx, ccy) || grid[ccy][ccx] !== FLOOR) { ccx = room.cx; ccy = room.cy; }
+      const pack = [];
+      for (let m = 0; m < packSize; m++) {
+        const sp = DUNGEON_LICH[DUNGEON_SPECIES[Math.floor(rng() * DUNGEON_SPECIES.length)]];
+        let ex = ccx * TILE + TILE / 2, ey = ccy * TILE + TILE / 2;
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const gx = ccx + Math.floor(rng() * 3) - 1, gy = ccy + Math.floor(rng() * 3) - 1;
+          if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
         }
-        pack.forEach(e => { e.packMateIds = pack.filter(o => o !== e).map(o => o.id); });
-        placed += packSize;
+        const enemy = {
+          id: `dungeon_${cls}_${ri}_${eid++}`, eid: sp.eid, name: sp.name, color: sp.color, size: sp.size,
+          isBoss: false, arm: 'dungeon', dungeon: true, dungeonClass: cls,
+          rlvl: DUNGEON_LVL,
+          maxHp: sp.hp, hp: sp.hp, atk: sp.atk, def: 0, spd: sp.spd,
+          atkRange: sp.atkRange, atkCdMult: sp.atkCdMult,
+          xp: sp.xp, gold: sp.gold,
+          x: ex, y: ey, spawnX: ex, spawnY: ey,
+          atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+        };
+        enemyList.push(enemy);
+        pack.push(enemy);
       }
-    });
-  });
+      pack.forEach(e => { e.packMateIds = pack.filter(o => o !== e).map(o => o.id); });
+      placed += packSize;
+    }
+  }
 
-  // Sits in the entrance corridor, well clear of every branch mouth — same
-  // entrance/return-pad pattern every other zone uses.
-  const corridorYPx = fixedCoord * TILE + TILE / 2;
-  const returnPad = { x: (MARGIN + 2) * TILE + TILE / 2, y: corridorYPx };
-  const spawn = { x: (MARGIN + 5) * TILE + TILE / 2, y: corridorYPx };
+  // Same entrance/return-pad shape every arm's own floor uses: returnPad
+  // right at the door, spawn a couple tiles further in.
+  const spawn = { x: cx * TILE + TILE / 2, y: (h - MARGIN - 2) * TILE + TILE / 2 };
+  const returnPad = { x: cx * TILE + TILE / 2, y: (h - MARGIN - 1) * TILE + TILE / 2, target: 'dungeon' };
 
   return {
     grid, rooms, w, h,
     spawn,
     returnPad,
-    tower: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: TOWER_ENTRY_LEVEL, gates, signs },
     enemies: enemyList,
   };
 }
@@ -1544,6 +1576,6 @@ function generateCoop() {
 
 module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
-  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateTower,
+  generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
   TILE, WALL, FLOOR,
 };

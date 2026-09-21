@@ -1875,10 +1875,24 @@ let _portalDismissed = false; // player closed it manually; don't reopen until t
 // Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
 let _evtBossState = { spawnAt: 0, alive: false, nextAt: 0 };
 let _evtHpCd = 0;
+// Подземелье's own teleport hall (dungeon.classPads, generateDungeonHub,
+// server/game/dungeon.js): [{cls, x, y}], only ever populated on that one
+// floor. Walking onto your own class's pad is a real floor transition
+// (same _requestEnterLocation mechanism the arm/farm/guild-war pads already
+// use); any other class's pad just refuses with a toast — the server's own
+// resolveFloor (server/world.js) would refuse the transition anyway, this
+// only saves the round trip.
+let _dungeonClassPads = [];
+let _dungeonMsgCd = 0;
+const _DUNGEON_ZONE_TARGET = {
+  lev: 'dungeonLev', deathknight: 'dungeonDeathknight', ranger: 'dungeonRanger',
+  mage: 'dungeonMage', warlock: 'dungeonWarlock', runefighter: 'dungeonRunefighter',
+  assassin: 'dungeonAssassin',
+};
 
 function _buildArmGates() {
   _closePortalModal();
-  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _seasonPad = null; _raceBarriers = []; _coopBarriers = []; return; }
+  if (!dungeon) { _armGates = []; _portalPad = null; _portalDestinations = null; _returnPads = []; _seasonPad = null; _raceBarriers = []; _coopBarriers = []; _dungeonClassPads = []; return; }
   _armGates = (dungeon.corridorGates || []).map(g => (
     { dir: g.dir, x: g.tx * TILE + TILE / 2, y: g.ty * TILE + TILE / 2, req: g.req }
   ));
@@ -1893,6 +1907,12 @@ function _buildArmGates() {
   // there's no per-lane aliveness to check client-side — see
   // _isCoopBarrierBlocked.
   _coopBarriers = (dungeon.coop && dungeon.coop.barriers) || [];
+
+  // Подземелье's own teleport hall — only present on that one floor
+  // (generateDungeonHub, server/game/dungeon.js).
+  _dungeonClassPads = (dungeon.classPads || []).map(p => (
+    { cls: p.cls, x: p.tx * TILE + TILE / 2, y: p.ty * TILE + TILE / 2 }
+  ));
 
   const sx = dungeon.spawn ? dungeon.spawn.x : 0, sy = dungeon.spawn ? dungeon.spawn.y : 0;
 
@@ -1940,13 +1960,13 @@ function _buildArmGates() {
       { target: 'farmHigh', req: fhe.req || 0, label: typeof t === 'function' ? t('farmHighLbl') : 'Фарм зона 2' }
     );
   }
-  // Башня — свой пункт в том же списке, со своим гейтом. Сама зона
-  // (7 корридоров, по одному на класс) живёт на своём этаже —
-  // generateTower, server/game/dungeon.js.
-  const twe = dungeon.towerEntry;
-  if (twe) {
+  // Подземелье — свой пункт в том же списке, со своим гейтом. Сама зона
+  // (пустой зал с 7 телепортами по классам) живёт на своём этаже —
+  // generateDungeonHub, server/game/dungeon.js.
+  const dge = dungeon.dungeonEntry;
+  if (dge) {
     _portalDestinations.push(
-      { target: 'tower', req: twe.req || 0, label: typeof t === 'function' ? t('towerLbl') : 'Башня' }
+      { target: 'dungeon', req: dge.req || 0, label: typeof t === 'function' ? t('dungeonLbl') : 'Подземелье' }
     );
   }
   _portalPad = (onHub && _portalDestinations.length)
@@ -2070,6 +2090,26 @@ function _updateTeleportPads(dt) {
       _seasonMsgCd = 1.5;
       dmgNum(player.x, player.y - 40,
         typeof t === 'function' ? t('lockedNeedTicket') : '🔒 Нужен сезонный билет', '#f17e8b');
+    }
+  }
+  // ── Подземелье: 7 паdов по классам ───────────────────────────────────────
+  // Own class's pad → real floor transition, same as every other pad here.
+  // Any other class's pad → refused with a toast; the server's own
+  // resolveFloor (server/world.js) would refuse the transition anyway (see
+  // DUNGEON_CLASS_ZONE there), this only saves the round trip.
+  if (_dungeonMsgCd > 0) _dungeonMsgCd -= dt;
+  for (const pad of _dungeonClassPads) {
+    if (dist(player.x, player.y, pad.x, pad.y) >= TRIGGER_R) continue;
+    if (pad.cls === player.type) {
+      const target = _DUNGEON_ZONE_TARGET[pad.cls];
+      if (target) {
+        const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[pad.cls];
+        _requestEnterLocation(target, cd ? cd.name : (typeof t === 'function' ? t('dungeonLbl') : 'Подземелье'));
+      }
+    } else if (_dungeonMsgCd <= 0) {
+      _dungeonMsgCd = 1.5;
+      dmgNum(player.x, player.y - 40,
+        typeof t === 'function' ? t('lockedWrongClass') : '🔒 Не ваш класс', '#f17e8b');
     }
   }
   // Boss HP readout, refreshed 8x/sec — a DOM write every frame would be
@@ -2248,6 +2288,17 @@ function _buildDecals(ts) {
     _pushRingPad(_seasonPad.x, _seasonPad.y, _PAD_R, !open, 0xeb4e61, 0xe8c15a,
       (open ? '' : '\u{1F512} ') + (typeof t === 'function' ? t('farmSeasonShort') : '\u0421\u0435\u0437\u043e\u043d'),
       '#f17e8b', '#f0d79a');
+  }
+  // Подземелье: 7 паdов по классам, one ring each — unlocked (green edge) for
+  // the player's own class, locked (red edge, same visual language every
+  // other level-gate pad uses) for the other 6. Labeled with the class's own
+  // name, not a generic "Zone" — nothing else here tells them apart.
+  for (const pad of _dungeonClassPads) {
+    const cd = (typeof CHAR_DEF !== 'undefined') && CHAR_DEF[pad.cls];
+    const mine = pad.cls === player.type;
+    _pushRingPad(pad.x, pad.y, _PAD_R, !mine, 0xeb4e61, 0x4ee69a,
+      (mine ? '' : '\u{1F512} ') + (cd ? cd.name : pad.cls),
+      '#f17e8b', '#8ff0c0');
   }
   if (_evtArenaOpen() && _evtPad) _pushSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
   if (_gwOpen() && _gwPad) _pushSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : '\u0412\u043e\u0439\u043d\u0430 \u0433\u0438\u043b\u044c\u0434\u0438\u0439', 'green');
@@ -2874,15 +2925,14 @@ function _buildChunk(cx, cy) {
   }
   _chunkTorches.set(cx + ',' + cy, torchList);
 
-  // 7. Башня — corridor class icon signs (server's own tower.signs,
-  // generateTower in server/game/dungeon.js: one per branch mouth, sat on
-  // the shared main corridor tile itself so every class walks past every
-  // sign, not just the one it opens). A circular badge in that class's own
-  // CHAR_DEF color plus its CHAR_DEF portrait (drawClassBadgeCtx, js/
-  // icons.js — owner-supplied artwork, images/classicon/<cls>.png, not a
-  // hand-drawn glyph), baked once into the floor texture like every other
-  // decoration above. Own-tile range (ptx0..pty1, no gutter ring), same as
-  // the floor-props pass, so a sign is never drawn twice across a chunk seam.
+  // 7. Подземелье — teleport-hall pad icons (server's own classPads,
+  // generateDungeonHub in server/game/dungeon.js: one per class, in a row
+  // across the entry hall). A circular badge in that class's own CHAR_DEF
+  // color plus its CHAR_DEF portrait (drawClassBadgeCtx, js/icons.js —
+  // owner-supplied artwork, images/classicon/<cls>.png, not a hand-drawn
+  // glyph), baked once into the floor texture like every other decoration
+  // above. Own-tile range (ptx0..pty1, no gutter ring), same as the
+  // floor-props pass, so a badge is never drawn twice across a chunk seam.
   //
   // drawClassBadgeCtx silently skips the portrait on a cache miss (built for
   // a per-frame HUD redraw, where a miss just means "try again next frame").
@@ -2891,20 +2941,20 @@ function _buildChunk(cx, cy) {
   // instead: the first miss still bakes blank, but the load that follows
   // invalidates every cached chunk (pixiInvalidateChunks) so the next frame
   // rebuilds this one with the portrait actually in it.
-  if (dungeon.tower && dungeon.tower.signs && typeof CHAR_DEF !== 'undefined' && typeof drawClassBadgeCtx === 'function') {
-    for (const sgn of dungeon.tower.signs) {
-      if (sgn.tx < ptx0 || sgn.tx > ptx1 || sgn.ty < pty0 || sgn.ty > pty1) continue;
-      const cd = CHAR_DEF[sgn.cls];
+  if (dungeon.classPads && typeof CHAR_DEF !== 'undefined' && typeof drawClassBadgeCtx === 'function') {
+    for (const pad of dungeon.classPads) {
+      if (pad.tx < ptx0 || pad.tx > ptx1 || pad.ty < pty0 || pad.ty > pty1) continue;
+      const cd = CHAR_DEF[pad.cls];
       if (!cd) continue;
-      const px = sgn.tx * TILE + TILE / 2, py = sgn.ty * TILE + TILE / 2;
+      const px = pad.tx * TILE + TILE / 2, py = pad.ty * TILE + TILE / 2;
       const img = (typeof _getClassIconImg === 'function') ? _getClassIconImg(cd.iconImg) : null;
-      if (img && !img.complete && !img._towerHooked) {
-        img._towerHooked = true;
+      if (img && !img.complete && !img._dungeonHooked) {
+        img._dungeonHooked = true;
         img.addEventListener('load', () => {
           if (typeof pixiInvalidateChunks === 'function') pixiInvalidateChunks();
         });
       }
-      drawClassBadgeCtx(c, sgn.cls, px, py, TILE);
+      drawClassBadgeCtx(c, pad.cls, px, py, TILE);
     }
   }
 
