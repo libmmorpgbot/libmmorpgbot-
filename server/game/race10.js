@@ -414,6 +414,13 @@ module.exports = function createRace10(deps) {
     clearTimeout(_race10.freezeTimer);
     _race10.freezeTimer = safeTimeout('race10Freeze', () => {
       if (!_race10.live) return;
+      // One more explicit lane/position check right as the freeze door
+      // opens. The periodic sweep below already runs every RACE10_SWEEP_MS
+      // through the whole freeze window, but nothing guaranteed a tick had
+      // actually landed before combat unlocked — this makes sure every
+      // racer's placement is verified (and corrected, if needed — see
+      // _race10Sweep) at least once before anyone can swing.
+      try { _race10Sweep(); } catch (err) { console.error('[race10 pre-fight sweep]', err); }
       _race10.alive.forEach((_, sid) => io.to(sid).emit('race10Fight'));
     }, RACE10_FREEZE_MS);
 
@@ -463,6 +470,27 @@ module.exports = function createRace10(deps) {
       // свой путь, отсюда трогать нечего.
       if (!p) return;
       if (p._raceLane !== run.lane) { p._raceLane = run.lane; p._profileRev++; }
+      // ── «Игрока кинуло на чужую дорожку» ──────────────────────────────────
+      // The line above only fixes which lane's monsters this racer is TOLD
+      // about (p._raceLane, read by Room._raceVisible) — it never checked
+      // where they were actually STANDING. A racer whose x/y ended up
+      // outside their own lane's row (any placement path other than
+      // raceDeploy/raceLaneSpot writing p.x/p.y directly — the two are not
+      // atomic with each other) could sit there with the right _raceLane and
+      // the right monster list while physically overlapping a neighbour's
+      // corridor, or nowhere near their own — exactly what got reported.
+      // Movement here is client-authoritative (playerMove, server/handlers2/
+      // world.js), so the client is walking off the last position IT sent —
+      // this alone would be overwritten by the next move packet unless the
+      // client is told to relocate too (race10LaneSnap below).
+      if (!run.atBoss && !room.raceLaneRowOk(run.lane, p.y)) {
+        const spot = room.raceLaneSpot(run.lane);
+        if (spot) {
+          console.warn(`[race10] ${sid} off lane ${run.lane} at (${Math.round(p.x)},${Math.round(p.y)}) — snapping back`);
+          p.x = spot.x; p.y = spot.y; p._profileRev++;
+          io.to(sid).emit('race10LaneSnap', { x: spot.x, y: spot.y, lane: run.lane });
+        }
+      }
       if (!run.atBoss && !laneHasMonsters.has(run.lane)) _race10ReachBoss(sid, run.lane);
     });
   }

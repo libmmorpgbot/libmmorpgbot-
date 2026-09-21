@@ -1593,4 +1593,8 @@ module.exports = {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
   TILE, WALL, FLOOR,
+  // Corridor half-width, exported so Room.js can tell whether a racer's y is
+  // still inside their own lane's row without hardcoding the geometry a
+  // second time — see Room.raceLaneRowOk.
+  RACE10_LANE_HW,
 };

@@ -4915,6 +4915,20 @@ function _initRace10Handlers(s) {
     if (typeof onRace10State === 'function') onRace10State();
   });
 
+  // A silent correction from the server's own position sweep (_race10Sweep,
+  // server/game/race10.js): this racer's x/y drifted outside their own
+  // lane's row (client-authoritative movement means the client has to be
+  // told to relocate too, or the very next playerMove just overwrites the
+  // server's fix) — «Игрока кинуло на чужую дорожку». No banner/sound,
+  // unlike race10Started: this isn't a new start, just a snap back into the
+  // corridor the racer was already supposed to be in, and it can fire more
+  // than once for the same run.
+  s.on('race10LaneSnap', ({ x, y }) => {
+    if (!player) return;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('race10ArenaLbl'));
+    else { player.x = x; player.y = y; }
+  });
+
   // The instant this lane's monsters are all dead, the server teleports this
   // racer straight into the (small, shared) boss room — see
   // _race10ReachBoss, server/game/race10.js, and generateRace10's own
