@@ -1713,27 +1713,30 @@ const TOWER_ROOM = 12;
 const TOWER_ROOM_COUNT = 2;
 const TOWER_PACK_SIZE = 3;
 const TOWER_MOBS_PER_ROOM = TOWER_PACK_SIZE * 2; // 2 clusters of 3 per room
-// Entry gate — same tier as "Фарм зона 2" (FARM_HIGH_ENTRY_LEVEL): the loot
-// table is that zone's own (see _rollTowerLoot, server/game/loot.js — "лут
-// такой же, как с фарм зоны 2"), so the gate matches it too.
-const TOWER_ENTRY_LEVEL = FARM_HIGH_ENTRY_LEVEL;
+// Entry gate — owner's own number ("вход в зону с телепорта от 38 уровня"),
+// no longer tied to FARM_HIGH_ENTRY_LEVEL (the loot table is still Фарм
+// зона 2's own — see _rollTowerLoot, server/game/loot.js — only the gate
+// level was asked to move).
+const TOWER_ENTRY_LEVEL = 38;
 // Representative monster level for display/ore-chance purposes only
 // (oreDropChance(rlvl), server/handlers2/world.js) — TOWER_LICH's own hp/atk
-// are flat, not derived from this.
-const TOWER_LVL = MAX_MONSTER_LEVEL;
+// are flat, not derived from this. Owner's own number ("уровень монстров 50").
+const TOWER_LVL = 50;
 // Every stat below is the owner's own number, flat — no monsterStatsAtLevel
 // curve involved (unlike every other zone's monsters, which all resolve
 // through it one way or another). atkRange copies the ranger's own
 // (CHAR_DEF.ranger.atkRange) — "дальность как у лучника" — and atkCdMult
 // halves the attack cooldown Room.js's tick loop rolls for every monster
-// (1.4-2.0s) — "скорость атаки в 2 раза быстрее обычных монстров".
+// (1.4-2.0s) — "скорость атаки в 2 раза быстрее обычных монстров". xp is
+// flat 200 off all three ("Опыт сделай 200 со всех") — gold is left at its
+// own earlier number, that one was never asked to change.
 const TOWER_LICH = {
   commander: { eid: 'tower_lich_commander', name: 'Командир Лич', color: '#3f6fe0', size: 24,
-    hp: 30000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 500, gold: 500 },
+    hp: 30000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 500 },
   blue:      { eid: 'tower_lich_blue', name: 'Синий Лич', color: '#3f6fe0', size: 20,
-    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 300, gold: 300 },
+    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 300 },
   skeleton:  { eid: 'tower_lich_skeleton', name: 'Скелетон Лич', color: '#cfd6dd', size: 20,
-    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 300, gold: 300 },
+    hp: 15000, atk: 800, spd: 100, atkRange: CHAR_DEF.ranger.atkRange, atkCdMult: 0.5, xp: 200, gold: 300 },
 };
 // Every non-boss room rolls one of the three at random, including the
 // commander — nothing reserves him for a fixed slot.
