@@ -491,7 +491,18 @@ module.exports = function createRace10(deps) {
           io.to(sid).emit('race10LaneSnap', { x: spot.x, y: spot.y, lane: run.lane });
         }
       }
-      if (!run.atBoss && !laneHasMonsters.has(run.lane)) _race10ReachBoss(sid, run.lane);
+      // ── «в конце коридора телепорт независимо от того убила монстров или
+      //    нет» ──────────────────────────────────────────────────────────────
+      // laneHasMonsters (raceLaneClear's own bookkeeping) is the intended
+      // trigger — but it is a TALLY, and a tally can desync from what is
+      // actually standing on the floor. room.raceAtLaneEnd(p.x) is the other
+      // way to ask the same question: has this racer physically reached the
+      // end of their own corridor at all. Under normal play the two always
+      // agree (js/game.js's client-side barriers physically block any x past
+      // a still-alive tier), so this never fires early — it only rescues a
+      // racer a stuck tally left dead-ended with nothing left to fight and no
+      // way out for the rest of RACE10_MAX_MS.
+      if (!run.atBoss && (!laneHasMonsters.has(run.lane) || room.raceAtLaneEnd(p.x))) _race10ReachBoss(sid, run.lane);
     });
   }
 
