@@ -1133,7 +1133,7 @@ function netConnect(onReady) {
     // rebuilding when the grid did (see _resumeSameFloor above).
     if (!_resumeSameFloor) buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
-    _stickerFx = [];
+    _stickerFx.forEach(s => s.el && s.el.remove()); _stickerFx = [];
     // Event-boss ground loot and the map panel's dot cache are both scoped to
     // whatever floor they were fetched/claimed on — stale entries from the
     // floor just left would otherwise survive the switch.

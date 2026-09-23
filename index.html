@@ -445,6 +445,7 @@
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>
 </button>
 <div id="sticker-picker" style="display:none"></div>
+<div id="sticker-layer" aria-hidden="true"></div>
 <button id="teleport-btn" onclick="_useTeleportStone()" style="display:none" title="Камни телепортации">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="M5 21h14"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><polyline points="9,8 12,11 15,8"/><polyline points="9,16 12,13 15,16"/></svg>
   <span id="teleport-stone-badge"></span>
@@ -747,8 +748,15 @@
 }
 #sticker-picker button {
   width:46px; height:46px; border:0; border-radius:10px; padding:0;
-  background:rgba(255,255,255,0.05); font-size:28px; line-height:46px; cursor:pointer;
-  touch-action:manipulation;
+  background:rgba(255,255,255,0.05); cursor:pointer; touch-action:manipulation;
+  display:flex; align-items:center; justify-content:center;
+}
+#sticker-picker img { width:40px; height:40px; pointer-events:none; }
+/* Стикеры над головами — <img> поверх мира, двигает их _updateStickers. */
+#sticker-layer { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
+#sticker-layer .stk {
+  position:absolute; left:0; top:0; width:64px; height:64px;
+  will-change:transform, opacity; user-select:none;
 }
 #sticker-picker button:active { transform:scale(.88); background:rgba(243,207,114,0.18); }
 #sticker-picker.cooling button { opacity:.45; }

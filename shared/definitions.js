@@ -3119,23 +3119,24 @@ function pvpDamageMult(attackerLvl, targetLvl) {
 }
 
 // ── стикеры ─────────────────────────────────────────────────────────────────
-// Кнопка над телепортом: игрок выбирает стикер, он всплывает с анимацией над
-// его головой — у него и у всех, кто рядом (handlers2/world.js, 'sticker').
-// id — то, что ходит по сети и что сервер сверяет со списком; e — эмодзи;
-// anim — как он двигается (_stickerAnim, js/pixi-world.js).
+// Кнопка над телепортом: игрок выбирает стикер, он всплывает над его головой —
+// у него и у всех, кто рядом (handlers2/world.js, 'sticker'). id — то, что
+// ходит по сети и что сервер сверяет со списком; img — анимированный WebP
+// (Noto Animated Emoji, CC BY 4.0, см. images/stickers/LICENSE.txt);
+// e — тот же эмодзи текстом, на случай если картинка не загрузилась.
 const STICKER_DEF = [
-  { id: 'lol',   e: '😂', anim: 'bounce' },
-  { id: 'rage',  e: '😡', anim: 'shake'  },
-  { id: 'like',  e: '👍', anim: 'pop'    },
-  { id: 'skull', e: '💀', anim: 'spin'   },
-  { id: 'fire',  e: '🔥', anim: 'pulse'  },
-  { id: 'love',  e: '❤️', anim: 'pulse'  },
-  { id: 'cool',  e: '😎', anim: 'pop'    },
-  { id: 'cry',   e: '😭', anim: 'shake'  },
-  { id: 'gg',    e: '🤝', anim: 'bounce' },
-  { id: 'clown', e: '🤡', anim: 'spin'   },
-  { id: 'eyes',  e: '👀', anim: 'shake'  },
-  { id: 'party', e: '🎉', anim: 'bounce' },
+  { id: 'lol',   e: '😂', img: '/images/stickers/lol.webp'   },
+  { id: 'rage',  e: '😡', img: '/images/stickers/rage.webp'  },
+  { id: 'like',  e: '👍', img: '/images/stickers/like.webp'  },
+  { id: 'skull', e: '💀', img: '/images/stickers/skull.webp' },
+  { id: 'fire',  e: '🔥', img: '/images/stickers/fire.webp'  },
+  { id: 'love',  e: '❤️', img: '/images/stickers/love.webp'  },
+  { id: 'cool',  e: '😎', img: '/images/stickers/cool.webp'  },
+  { id: 'cry',   e: '😭', img: '/images/stickers/cry.webp'   },
+  { id: 'gg',    e: '🤝', img: '/images/stickers/gg.webp'    },
+  { id: 'clown', e: '🤡', img: '/images/stickers/clown.webp' },
+  { id: 'eyes',  e: '👀', img: '/images/stickers/eyes.webp'  },
+  { id: 'party', e: '🎉', img: '/images/stickers/party.webp' },
 ];
 // Сколько живёт стикер над головой и как часто можно слать новый.
 const STICKER_LIFE_MS = 3000;

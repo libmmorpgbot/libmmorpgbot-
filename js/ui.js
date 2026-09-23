@@ -145,7 +145,11 @@ function updateInvUI() {
 // головой — у себя сразу, у тех, кто рядом, через сервер ('sticker',
 // handlers2/world.js). Рисует _updateStickers (js/pixi-world.js).
 // Один активный стикер на игрока: новый заменяет прежний.
-let _stickerFx = [];          // { sid, self, def, t0 }
+// Рисуется не в PIXI, а <img> в #sticker-layer поверх мира: анимированный
+// WebP в WebGL-текстуре замирает на первом кадре, а в <img> браузер крутит
+// его сам. el — этот <img>, новый на каждый стикер, чтобы анимация шла с
+// начала (_updateStickers, js/pixi-world.js, двигает и снимает его).
+let _stickerFx = [];          // { sid, self, def, t0, el }
 let _stickerSentAt = 0;
 const _STICKER_PICKER_W = 222; // 4×46 + 3×6 + 2×8 + рамка
 
@@ -157,7 +161,7 @@ function _stickerTogglePicker(force) {
   if (!open) { pk.style.display = 'none'; btn.classList.remove('on'); return; }
   if (!pk.dataset.built) {
     pk.innerHTML = STICKER_DEF.map(d =>
-      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.id}">${d.e}</button>`).join('');
+      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.id}"><img src="${d.img}" alt="${d.e}" width="40" height="40" draggable="false"></button>`).join('');
     pk.dataset.built = '1';
   }
   // Справа от кнопки, низом по её низу. Кнопку можно перетащить к правому
@@ -195,9 +199,22 @@ function _stickerSend(id) {
 function _stickerSpawn(sid, id, self) {
   const def = STICKER_DEF.find(d => d.id === id);
   if (!def) return;
-  _stickerFx = _stickerFx.filter(s => self ? !s.self : s.sid !== sid);
-  _stickerFx.push({ sid, self: !!self, def, t0: performance.now() });
-  if (_stickerFx.length > 24) _stickerFx.shift();
+  _stickerFx = _stickerFx.filter(s => {
+    const drop = self ? s.self : s.sid === sid;
+    if (drop && s.el) s.el.remove();
+    return !drop;
+  });
+  const layer = document.getElementById('sticker-layer');
+  let el = null;
+  if (layer) {
+    el = document.createElement('img');
+    el.className = 'stk';
+    el.src = def.img; el.alt = def.e; el.draggable = false;
+    el.style.opacity = '0';
+    layer.appendChild(el);
+  }
+  _stickerFx.push({ sid, self: !!self, def, t0: performance.now(), el });
+  if (_stickerFx.length > 24) { const old = _stickerFx.shift(); if (old.el) old.el.remove(); }
 }
 
 // ── Teleport stones ─────────────────────────────────────────────────────
@@ -3024,6 +3041,8 @@ function _syncGameOnlyBtns(n) {
   const stkEl = document.getElementById('sticker-btn');
   if (stkEl && stkEl.dataset.shown === '1') stkEl.style.display = (n === 0) ? 'flex' : 'none';
   if (n !== 0) _stickerTogglePicker(false);
+  const stkLayer = document.getElementById('sticker-layer');
+  if (stkLayer) stkLayer.style.display = (n === 0) ? '' : 'none';
   const menuEl = document.getElementById('hud-menu-btn');
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
   const tourEl = document.getElementById('tournament-hud-btn');
