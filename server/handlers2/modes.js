@@ -93,6 +93,23 @@ const CC_RANGE = 600;
 const CC_CD_MS = 400;
 const CC_BURST_MS = 150;
 
+// ── стан в PvP: короче и не подряд ─────────────────────────────────────────
+// Длительность стана растёт с уровнем навыка (3-5 с + уровень), и потолок 6 с
+// был единственным ограничением. У «Урона молнии» (продвинутый Q мага)
+// перезарядка 5 с — то есть 6-секундный стан, повторяемый каждые 5 секунд:
+// цель не могла ни ходить, ни бить, ни нажать навык до самой смерти. Остриё
+// егеря держало в стане 60% боя.
+//
+// Два правила, оба только для стана (замедление не отнимает управление):
+//   * не дольше PVP_STUN_MAX_SEC;
+//   * после стана цель PVP_STUN_IMMUNE_SEC неуязвима к новому — стан,
+//     пришедший в это окно, молча не накладывается (это правило боя, а не
+//     подделка клиента, поэтому и в журнал отказов не идёт).
+// Итог: самый частый стан в игре занимает не больше 3/(3+4) ≈ 43% времени,
+// а на практике — одну перезарядку из двух.
+const PVP_STUN_MAX_SEC = 3;
+const PVP_STUN_IMMUNE_SEC = 4;
+
 // Has this player actually studied something that applies `type`? Reads the
 // same three fields _skillMultFor does (server/game/Room.js) and in the same
 // order — p._skillLevels / p._advLearned / p._advActive are stamped onto the
@@ -342,7 +359,12 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
         }
         _lastCC = now;
       }
-      const dur = Math.max(0, Math.min(duration, 6));
+      let dur = Math.max(0, Math.min(Number(duration) || 0, 6));
+      if (type === 'stun') {
+        if ((target._stunImmuneUntil || 0) > now) return;
+        dur = Math.min(dur, PVP_STUN_MAX_SEC);
+        target._stunImmuneUntil = now + (dur + PVP_STUN_IMMUNE_SEC) * 1000;
+      }
       // Anchored on the TARGET, and including the caster: the target's own
       // client is what applies the freeze/stun, so it must be in the recipient
       // set, and it always is — it sits at distance 0 from the anchor. Everyone
