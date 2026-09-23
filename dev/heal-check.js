@@ -37,6 +37,7 @@ function mkRoom(inSafe = false) {
     sent,
     io: { to: (sid) => ({ emit: (ev, p) => sent.push({ sid, ev, p }) }) },
     _inSafeZone: () => inSafe,
+    _maxHpOf: RoomClass.prototype._maxHpOf, _buffAgg: RoomClass.prototype._buffAgg,
     players: new Map(),
   };
 }
@@ -272,7 +273,7 @@ console.log('\n  ── окна навыков на пороге ──');
   ok(fresh._vampUntil === p._vampUntil && fresh._vampPct === D.ADV_VAMPIRISM_PCT,
     'вампиризм переехал вместе со сроком и процентом');
   ok(fresh._hasteUntil === p._hasteUntil && fresh._hasteMult === 1.5, 'ускорение тоже');
-  ok(fresh._buffUntil === p._buffUntil && fresh._buffDef === 1.8, 'боевой баф тоже');
+  ok(JSON.stringify(fresh._buffs) === JSON.stringify(p._buffs) && fresh._buffs._.def === 1.8, 'боевой баф тоже');
   ok(fresh._butterfliesUntil === p._butterfliesUntil && fresh._butterAt === p._butterAt,
     '«Бабочки» вместе со своими часами тика');
   // Сроки АБСОЛЮТНЫЕ: дорога через дверь не продлевает баф.
@@ -473,7 +474,7 @@ console.log('\n  ── повышение уровня ──');
 console.log('\n  ── заклинателя больше не пропускают ──');
 {
   const soc = fs.readFileSync(path.join(ROOT, 'server/handlers2/social.js'), 'utf8');
-  const h = soc.slice(soc.indexOf("safeOn('skillHeal'"), soc.indexOf("safeOn('skillHeal'") + 4200);
+  const h = soc.slice(soc.indexOf("safeOn('skillHeal'"), soc.indexOf("safeOn('skillHeal'") + 6000);
   ok(h.length > 100, 'обработчик skillHeal существует');
   // Раньше здесь стоял безусловный `if (!partyId) fail(...)` — одиночный
   // чернокнижник не лечился вовсе.

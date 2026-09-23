@@ -4089,13 +4089,22 @@ class Room {
     // «Пульса», Rune Fighter R adv) максимуму здоровья. Приходит объектом,
     // потому что один навык может давать несколько сразу (у Танка
     // продвинутый E — и защита, и атака).
+    //
+    // Окно — НА СЛОТ (pct.slot), а не одно на игрока. Одно общее окно
+    // затиралось любым следующим бафом: «Жадность» рыцаря смерти (+5% силы
+    // крита на 20 минут) пропадала от первого же нажатия E или Q, потому что
+    // их пятисекундный баф вставал на её место и через пять секунд кончался.
+    // Повторный каст того же слота по-прежнему заменяет свой баф.
     if (kind === 'buff') {
-      p._buffUntil = until;
-      p._buffAtk = Number(pct && pct.atk) || 1;
-      p._buffDef = Number(pct && pct.def) || 1;
-      p._buffCritChance = Number(pct && pct.critChance) || 0;
-      p._buffCritPower = Number(pct && pct.critPower) || 0;
-      p._buffHp = Number(pct && pct.hp) || 1;
+      const slot = String((pct && pct.slot) || '_');
+      (p._buffs || (p._buffs = {}))[slot] = {
+        until,
+        atk: Number(pct && pct.atk) || 1,
+        def: Number(pct && pct.def) || 1,
+        critChance: Number(pct && pct.critChance) || 0,
+        critPower: Number(pct && pct.critPower) || 0,
+        hp: Number(pct && pct.hp) || 1,
+      };
       return true;
     }
     return false;
@@ -4127,10 +4136,7 @@ class Room {
       butterfliesUntil: live(p._butterfliesUntil || 0), butterAt: p._butterAt || 0,
       hasteUntil: live(p._hasteUntil || 0), hasteMult: p._hasteMult || 1,
       regenHotUntil: live(p._regenHotUntil || 0), regenHotRate: p._regenHotRate || 0,
-      buffUntil: live(p._buffUntil || 0),
-      buffAtk: p._buffAtk || 1, buffDef: p._buffDef || 1,
-      buffCritChance: p._buffCritChance || 0, buffCritPower: p._buffCritPower || 0,
-      buffHp: p._buffHp || 1,
+      buffs: Object.fromEntries(Object.entries(p._buffs || {}).filter(([, b]) => live(b.until))),
       // Питомец переносит ДВЕ вещи: своё окно и свои часы. Без вторых дверь
       // стала бы сбросом отсчёта — а этажи здесь переходят постоянно, и
       // навык «раз в тридцать секунд» у ходока не срабатывал бы вовсе.
@@ -4139,7 +4145,7 @@ class Room {
       petBuffCritPower: p._petBuffCritPower || 0, petBuffHaste: p._petBuffHaste || 1,
       petSkillAt: p._petSkillAt || 0,
     };
-    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.regenHotUntil || w.buffUntil ||
+    return (w.vampUntil || w.butterfliesUntil || w.hasteUntil || w.regenHotUntil || Object.keys(w.buffs).length ||
             w.petBuffUntil || w.petSkillAt) ? w : null;
   }
 
@@ -4155,12 +4161,7 @@ class Room {
       p._butterAt = w.butterAt || Date.now();
     }
     if (w.hasteUntil) { p._hasteUntil = w.hasteUntil; p._hasteMult = w.hasteMult; }
-    if (w.buffUntil) {
-      p._buffUntil = w.buffUntil;
-      p._buffAtk = w.buffAtk; p._buffDef = w.buffDef;
-      p._buffCritChance = w.buffCritChance; p._buffCritPower = w.buffCritPower;
-      p._buffHp = w.buffHp;
-    }
+    if (w.buffs && Object.keys(w.buffs).length) p._buffs = { ...w.buffs };
     if (w.petBuffUntil) {
       p._petBuffUntil = w.petBuffUntil;
       p._petBuffAtk = w.petBuffAtk; p._petBuffDef = w.petBuffDef;
@@ -4183,18 +4184,32 @@ class Room {
   // Окно ставит обработчик навыка ПОСЛЕ проверки класса и изученности; клиент
   // присылает только клавишу. Множители — из общей таблицы (SKILL_BUFFS), той
   // же, по которой рисует клиент, так что разойтись им негде.
-  _buffOn(p) { return !!(p && p._buffUntil > Date.now()); }
+  // Все живые бафы игрока одним набором: множители (атака, защита, здоровье)
+  // перемножаются, прибавки к криту складываются — как в recompute() у
+  // клиента, где у каждого навыка свой таймер.
+  _buffAgg(p) {
+    const agg = { on: false, atk: 1, def: 1, hp: 1, critChance: 0, critPower: 0 };
+    const now = Date.now();
+    for (const b of Object.values((p && p._buffs) || {})) {
+      if (!(b.until > now)) continue;
+      agg.on = true;
+      agg.atk *= b.atk; agg.def *= b.def; agg.hp *= b.hp;
+      agg.critChance += b.critChance; agg.critPower += b.critPower;
+    }
+    return agg;
+  }
+  _buffOn(p) { return this._buffAgg(p).on; }
   // Окно питомца — отдельное от навычного (см. _petSkillTick), поэтому и
   // читается отдельно, и МНОЖИТСЯ поверх: это два разных источника, а не две
   // записи одного.
   _petBuffOn(p) { return !!(p && p._petBuffUntil > Date.now()); }
   _atkOf(p) {
-    let a = this._buffOn(p) ? (p.atk || 0) * p._buffAtk : (p.atk || 0);
+    let a = (p.atk || 0) * this._buffAgg(p).atk;
     if (this._petBuffOn(p)) a *= (p._petBuffAtk || 1);
     return a;
   }
   _defOf(p) {
-    let d = this._buffOn(p) ? (p.def || 0) * p._buffDef : (p.def || 0);
+    let d = (p.def || 0) * this._buffAgg(p).def;
     if (this._petBuffOn(p)) d *= (p._petBuffDef || 1);
     return d;
   }
@@ -4205,17 +4220,17 @@ class Room {
   // instant any of those ran mid-buff. Read on demand instead, exactly like
   // _atkOf/_defOf — the two places that gate healing (setPlayerHp's clamp,
   // _regenTick's "already full" check) call this rather than p.maxHp.
-  _maxHpOf(p) { return this._buffOn(p) ? Math.floor((p.maxHp || 0) * p._buffHp) : (p.maxHp || 0); }
+  _maxHpOf(p) { return Math.floor((p.maxHp || 0) * this._buffAgg(p).hp); }
   _critChanceOf(p) {
     const c = (p && p.critChance) || 0;
     // Тот же потолок 0.80, что и в repos/stats.js: иначе баф крита в связке с
     // экипировкой делает критом каждый удар, и характеристика перестаёт что-то
     // значить.
-    return Math.min(0.80, this._buffOn(p) ? c + p._buffCritChance : c);
+    return Math.min(0.80, c + this._buffAgg(p).critChance);
   }
   _critPowerOf(p) {
     let c = (p && p.critPower) || 1.5;
-    if (this._buffOn(p)) c += p._buffCritPower;
+    c += this._buffAgg(p).critPower;
     if (this._petBuffOn(p)) c += (p._petBuffCritPower || 0);
     return c;
   }

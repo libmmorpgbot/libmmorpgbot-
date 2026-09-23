@@ -36,7 +36,7 @@ const sent = [];
 function mkRoom() {
   return {
     _petSkillTick: R._petSkillTick, _maxHpOf: R._maxHpOf,
-    _buffOn: R._buffOn, _petBuffOn: R._petBuffOn,
+    _buffOn: R._buffOn, _buffAgg: R._buffAgg, _petBuffOn: R._petBuffOn,
     _atkOf: R._atkOf, _defOf: R._defOf, _critPowerOf: R._critPowerOf,
     _attackRate: R._attackRate, setPlayerPet: R.setPlayerPet,
     skillWindowsOf: R.skillWindowsOf, restoreSkillWindows: R.restoreSkillWindows,
@@ -113,8 +113,7 @@ console.log('\n  ── Вилорд: сила крита и скорость а
 console.log('\n  ── навык игрока и навык питомца вместе ──');
 {
   const room = mkRoom(); const p = mkPlayer('pet_groot'); room.players.set('s1', p);
-  p._buffUntil = Date.now() + 60000; p._buffAtk = 1; p._buffDef = 1.8;
-  p._buffCritChance = 0; p._buffCritPower = 0; p._buffHp = 1;
+  p._buffs = { E: { until: Date.now() + 60000, atk: 1, def: 1.8, critChance: 0, critPower: 0, hp: 1 } };
   const T = Date.now();
   room._petSkillTick(p, T);
   room._petSkillTick(p, T + PERIOD);

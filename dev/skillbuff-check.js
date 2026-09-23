@@ -33,7 +33,7 @@ const room = {
   // _petBuffOn — окно навыка питомца (dev/petskill-check.js): _atkOf/_defOf/
   // _critPowerOf читают оба окна, и заглушка без него роняет проверку на
   // ровном месте, хотя проверяет она совсем другое.
-  _buffOn: R._buffOn, _petBuffOn: R._petBuffOn, _atkOf: R._atkOf, _defOf: R._defOf,
+  _buffOn: R._buffOn, _buffAgg: R._buffAgg, _petBuffOn: R._petBuffOn, _atkOf: R._atkOf, _defOf: R._defOf,
   _critChanceOf: R._critChanceOf, _critPowerOf: R._critPowerOf,
   players: new Map(),
 };
@@ -84,9 +84,22 @@ console.log('\n  ── окно ──');
   room.players.set('x', p);
   setWin.call(room, 'x', 'buff', 10000, { atk: 2 });
   eq(room._atkOf(p), 200, 'пока окно открыто — действует');
-  p._buffUntil = Date.now() - 1;
+  for (const b of Object.values(p._buffs)) b.until = Date.now() - 1;
   eq(room._atkOf(p), 100, 'как истекло — не действует');
   eq(room._defOf(p), 100, 'и защита тоже вернулась');
+}
+
+// ── 3б. бафы разных слотов не затирают друг друга ──────────────────────────
+console.log('\n  ── разные слоты ──');
+{
+  const p = { socketId: 'y', atk: 100, def: 100, critPower: 2.0 };
+  room.players.set('y', p);
+  setWin.call(room, 'y', 'buff', 1200000, { slot: 'W', critPower: 0.05 });
+  setWin.call(room, 'y', 'buff', 5000, { slot: 'E', atk: 1.25 });
+  eq(room._atkOf(p), 125, 'баф E действует');
+  eq(Math.round(room._critPowerOf(p) * 100), 205, 'и «Жадность» (W) осталась на месте');
+  setWin.call(room, 'y', 'buff', 5000, { slot: 'E', atk: 1.2 });
+  eq(room._atkOf(p), 120, 'повторный каст того же слота заменяет свой баф');
 }
 
 // ── 4. крит ────────────────────────────────────────────────────────────────
@@ -142,7 +155,7 @@ console.log('\n  ── клиент сообщает о касте ──');
     'по проводу уходит только клавиша — множитель клиент не называет');
   const soc = fs.readFileSync(path.join(ROOT, 'server/handlers2/social.js'), 'utf8');
   const h = soc.slice(soc.indexOf("safeOn('skillBuff'"), soc.indexOf("safeOn('skillBuff'") + 1600);
-  ok(/skillBuffOf\(st\.charClass, k, adv\)/.test(h), 'сервер берёт множитель из общей таблицы');
+  ok(/skillBuffOf\(cls, rk, adv\)/.test(h), 'сервер берёт множитель из общей таблицы');
   ok(/sk\.advSkillLearned\[k\] && sk\.advSkillActive\[k\]/.test(h),
     'и проверяет, изучена ли продвинутая версия');
 }

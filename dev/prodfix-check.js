@@ -37,7 +37,8 @@ console.log('\n  ── регенерация HP считается серве�
     // Room._regenTick), и заглушка без него роняет проверку на TypeError.
     // Здесь всюду "вне зоны" — проверка про пассивную регенерацию, а зона
     // разобрана отдельно, в dev/heal-check.js.
-    const room = { io, _inSafeZone: () => false };
+    const room = { io, _inSafeZone: () => false,
+      _maxHpOf: RoomClass.prototype._maxHpOf, _buffAgg: RoomClass.prototype._buffAgg };
 
     // Раненый игрок с обычным для 30-го уровня реgenerом.
     const p = { socketId: 's1', hp: 500, maxHp: 3000, hpRegen: 2.5 };

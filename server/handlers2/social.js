@@ -501,7 +501,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     lastCastAt.set('buff:' + k, now);
     const sec = skillBuffSecOf(b, lvl);
     s.room.setSkillWindow(s.socket.id, 'buff', sec * 1000, {
-      atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower, hp: b.hp,
+      slot: k, atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower, hp: b.hp,
     });
     return { sec, atk: b.atk || 1, def: b.def || 1 };
   }));
