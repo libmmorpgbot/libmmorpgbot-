@@ -251,7 +251,7 @@ function _hudEditElements() {
   if (player && player.equipment && player.equipment.pet && typeof petSkillOf === 'function' && petSkillOf(player.equipment.pet.id)) {
     list.push({ id: 'pet', label: t('hudElPet'), get: () => { const p = getPetBtnPos(); return { x: p.x, y: p.y, r: p.r }; } });
   }
-  [['chat', 'chat-btn', 'hudElChat'], ['teleport', 'teleport-btn', 'hudElTeleport']].forEach(([id, elId, key]) => {
+  [['chat', 'chat-btn', 'hudElChat'], ['teleport', 'teleport-btn', 'hudElTeleport'], ['sticker', 'sticker-btn', 'hudElSticker']].forEach(([id, elId, key]) => {
     const el = document.getElementById(elId);
     if (el && el.dataset.shown === '1') list.push({ id, label: t(key), get: () => _hudDomCenter(elId) });
   });
@@ -284,7 +284,7 @@ function _hudApplyDomOverride(elId, cx, cy) {
 // below) — snaps chat-btn/teleport-btn to their saved spot, or back to the
 // plain CSS default (index.html) when there is none.
 function applyDomHudOverrides() {
-  [['chat', 'chat-btn'], ['teleport', 'teleport-btn']].forEach(([id, elId]) => {
+  [['chat', 'chat-btn'], ['teleport', 'teleport-btn'], ['sticker', 'sticker-btn']].forEach(([id, elId]) => {
     const el = document.getElementById(elId);
     if (!el) return;
     const o = (typeof hudOverride === 'function') ? hudOverride(id) : null;
@@ -331,6 +331,7 @@ function _hudEditMove(cx, cy, touchId) {
   if (_hudDragId === 'joystick') updateJoyCenter();
   else if (_hudDragId === 'chat') _hudApplyDomOverride('chat-btn', x, y);
   else if (_hudDragId === 'teleport') _hudApplyDomOverride('teleport-btn', x, y);
+  else if (_hudDragId === 'sticker') { _hudApplyDomOverride('sticker-btn', x, y); _stickerTogglePicker(false); }
   // Attack/potion/target/auto (js/ui.js's _uiBtnGrads) and every skill seat
   // (_skillBtnGradCache) each cache their own gradient object ONCE per
   // resize with the position baked in — a perf win the rest of the year,

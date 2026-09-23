@@ -42,7 +42,9 @@ const {
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
   oreDropChance, CRAFT_MATS, NEWBIE_BUFF,
+  STICKER_DEF, STICKER_COOLDOWN_MS,
 } = require('../../shared/definitions');
+const _STICKER_IDS = new Set(STICKER_DEF.map(d => d.id));
 
 // crypto, not Math.random: these rolls decide whether a boss drops a rare box,
 // and a rare box is worth real money on the market. V8's generator has a state
@@ -940,6 +942,21 @@ module.exports = function registerWorld(s, safeOn, deps) {
     }
     onKill({ ...res, enemyUid: enemyId });
   }
+
+  // ── стикеры ──────────────────────────────────────────────────────────────
+  // Чистая картинка, без базы: сервер только сверяет id со списком, держит
+  // перезарядку и рассылает тем, кто видит игрока. Себе клиент рисует сам,
+  // не дожидаясь ответа. Мёртвым — нельзя: стикер висит над трупом.
+  safeOn('sticker', ({ id } = {}) => {
+    if (!s.room || !s.authed) return;
+    if (typeof id !== 'string' || !_STICKER_IDS.has(id)) return;
+    const me = s.room.players.get(s.socket.id);
+    if (!me || me.hp <= 0) return;
+    const now = Date.now();
+    if (now - (s._stickerAt || 0) < STICKER_COOLDOWN_MS) return;
+    s._stickerAt = now;
+    s.emitNearby(me.x, me.y, 'sticker', { sid: s.socket.id, id });
+  });
 
   safeOn('attack', ({ enemyId, splash } = {}) => {
     if (!s.room || !s.authed) return;

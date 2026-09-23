@@ -109,6 +109,7 @@ const I18N_UI = {
   hudElAuto:         { ru: 'Авто/Ручн', en: 'Auto/Manual', uk: 'Авто/Ручн', es: 'Auto/Manual', tr: 'Oto/Manuel', pt: 'Auto/Manual' },
   hudElPet:          { ru: 'Питомец', en: 'Pet', uk: 'Вихованець', es: 'Mascota', tr: 'Evcil hayvan', pt: 'Mascote' },
   hudElChat:         { ru: 'Чат', en: 'Chat', uk: 'Чат', es: 'Chat', tr: 'Sohbet', pt: 'Chat' },
+  hudElSticker:      { ru: 'Стикеры', en: 'Stickers', uk: 'Стікери', es: 'Pegatinas', tr: 'Çıkartmalar', pt: 'Figurinhas' },
   hudElTeleport:     { ru: 'Телепорт', en: 'Teleport', uk: 'Телепорт', es: 'Teletransporte', tr: 'Işınlanma', pt: 'Teletransporte' },
 
   // ── Death Battle (Битва на смерть) ──────────────────────

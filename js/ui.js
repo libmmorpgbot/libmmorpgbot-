@@ -140,6 +140,66 @@ function updateInvUI() {
   _refreshTeleportBadge();
 }
 
+// ── стикеры ─────────────────────────────────────────────────────────────
+// Кнопка над телепортом открывает панель; выбранный стикер всплывает над
+// головой — у себя сразу, у тех, кто рядом, через сервер ('sticker',
+// handlers2/world.js). Рисует _updateStickers (js/pixi-world.js).
+// Один активный стикер на игрока: новый заменяет прежний.
+let _stickerFx = [];          // { sid, self, def, t0 }
+let _stickerSentAt = 0;
+const _STICKER_PICKER_W = 222; // 4×46 + 3×6 + 2×8 + рамка
+
+function _stickerTogglePicker(force) {
+  const pk = document.getElementById('sticker-picker');
+  const btn = document.getElementById('sticker-btn');
+  if (!pk || !btn) return;
+  const open = force !== undefined ? !!force : pk.style.display === 'none';
+  if (!open) { pk.style.display = 'none'; btn.classList.remove('on'); return; }
+  if (!pk.dataset.built) {
+    pk.innerHTML = STICKER_DEF.map(d =>
+      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.id}">${d.e}</button>`).join('');
+    pk.dataset.built = '1';
+  }
+  // Справа от кнопки, низом по её низу. Кнопку можно перетащить к правому
+  // краю (редактор HUD) — тогда панель уходит влево от неё.
+  const app = document.getElementById('app').getBoundingClientRect();
+  const r = btn.getBoundingClientRect();
+  let left = r.right - app.left + 8;
+  if (left + _STICKER_PICKER_W > app.width - 6) left = Math.max(6, r.left - app.left - 8 - _STICKER_PICKER_W);
+  pk.style.left = left + 'px';
+  pk.style.top = 'auto';
+  pk.style.bottom = Math.max(6, app.bottom - r.bottom) + 'px';
+  pk.classList.toggle('cooling', Date.now() - _stickerSentAt < STICKER_COOLDOWN_MS);
+  pk.style.display = 'grid';
+  btn.classList.add('on');
+}
+
+// Нажатие мимо панели закрывает её — иначе она так и висит поверх джойстика.
+document.addEventListener('pointerdown', (ev) => {
+  const pk = document.getElementById('sticker-picker');
+  if (!pk || pk.style.display === 'none') return;
+  if (pk.contains(ev.target) || document.getElementById('sticker-btn').contains(ev.target)) return;
+  _stickerTogglePicker(false);
+}, true);
+
+function _stickerSend(id) {
+  if (!player || player.hp <= 0) return;
+  const now = Date.now();
+  if (now - _stickerSentAt < STICKER_COOLDOWN_MS) return;
+  _stickerSentAt = now;
+  _stickerSpawn(socket && socket.id, id, true);
+  if (typeof netSendSticker === 'function') netSendSticker(id);
+  _stickerTogglePicker(false);
+}
+
+function _stickerSpawn(sid, id, self) {
+  const def = STICKER_DEF.find(d => d.id === id);
+  if (!def) return;
+  _stickerFx = _stickerFx.filter(s => self ? !s.self : s.sid !== sid);
+  _stickerFx.push({ sid, self: !!self, def, t0: performance.now() });
+  if (_stickerFx.length > 24) _stickerFx.shift();
+}
+
 // ── Teleport stones ─────────────────────────────────────────────────────
 // Badge on #teleport-btn (index.html) mirrors how many teleport_stone the
 // player currently holds — hidden at 0, same shape as #chat-badge's unread
@@ -2961,6 +3021,9 @@ function _syncGameOnlyBtns(n) {
   if (chatEl && chatEl.dataset.shown === '1') chatEl.style.display = (n === 0) ? 'flex' : 'none';
   const teleEl = document.getElementById(_TELEPORT_BTN_ID);
   if (teleEl && teleEl.dataset.shown === '1') teleEl.style.display = (n === 0) ? 'flex' : 'none';
+  const stkEl = document.getElementById('sticker-btn');
+  if (stkEl && stkEl.dataset.shown === '1') stkEl.style.display = (n === 0) ? 'flex' : 'none';
+  if (n !== 0) _stickerTogglePicker(false);
   const menuEl = document.getElementById('hud-menu-btn');
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
   const tourEl = document.getElementById('tournament-hud-btn');

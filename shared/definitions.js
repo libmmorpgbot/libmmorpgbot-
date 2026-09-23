@@ -3118,6 +3118,29 @@ function pvpDamageMult(attackerLvl, targetLvl) {
   return lvl <= PVP_DMG_LVL_REF ? 1 : Math.pow(PVP_DMG_LVL_REF / lvl, PVP_DMG_LVL_EXP);
 }
 
+// ── стикеры ─────────────────────────────────────────────────────────────────
+// Кнопка над телепортом: игрок выбирает стикер, он всплывает с анимацией над
+// его головой — у него и у всех, кто рядом (handlers2/world.js, 'sticker').
+// id — то, что ходит по сети и что сервер сверяет со списком; e — эмодзи;
+// anim — как он двигается (_stickerAnim, js/pixi-world.js).
+const STICKER_DEF = [
+  { id: 'lol',   e: '😂', anim: 'bounce' },
+  { id: 'rage',  e: '😡', anim: 'shake'  },
+  { id: 'like',  e: '👍', anim: 'pop'    },
+  { id: 'skull', e: '💀', anim: 'spin'   },
+  { id: 'fire',  e: '🔥', anim: 'pulse'  },
+  { id: 'love',  e: '❤️', anim: 'pulse'  },
+  { id: 'cool',  e: '😎', anim: 'pop'    },
+  { id: 'cry',   e: '😭', anim: 'shake'  },
+  { id: 'gg',    e: '🤝', anim: 'bounce' },
+  { id: 'clown', e: '🤡', anim: 'spin'   },
+  { id: 'eyes',  e: '👀', anim: 'shake'  },
+  { id: 'party', e: '🎉', anim: 'bounce' },
+];
+// Сколько живёт стикер над головой и как часто можно слать новый.
+const STICKER_LIFE_MS = 3000;
+const STICKER_COOLDOWN_MS = 2500;
+
 // ── CP (Combat Points) ──────────────────────────────────────────────────────
 // Второй запас «здоровья», который тратится только в PvP: удар игрока сперва
 // снимает CP и лишь остаток — HP. Монстры бьют мимо CP, прямо по здоровью.
@@ -3867,7 +3890,7 @@ if (typeof module !== 'undefined') module.exports = {
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
-  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,

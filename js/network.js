@@ -1133,6 +1133,7 @@ function netConnect(onReady) {
     // rebuilding when the grid did (see _resumeSameFloor above).
     if (!_resumeSameFloor) buildTileCanvas();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
+    _stickerFx = [];
     // Event-boss ground loot and the map panel's dot cache are both scoped to
     // whatever floor they were fetched/claimed on — stale entries from the
     // floor just left would otherwise survive the switch.
@@ -1306,6 +1307,8 @@ function netConnect(onReady) {
       if (_chatBtn) { _chatBtn.dataset.shown = '1'; _chatBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
       const _teleBtn = document.getElementById('teleport-btn');
       if (_teleBtn) { _teleBtn.dataset.shown = '1'; _teleBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
+      const _stkBtn = document.getElementById('sticker-btn');
+      if (_stkBtn) { _stkBtn.dataset.shown = '1'; _stkBtn.style.display = (typeof activeTab === 'undefined' || activeTab === 0) ? 'flex' : 'none'; }
       if (typeof _refreshChatPreview === 'function') _refreshChatPreview();
       // A reconnect (background tab suspended mid-session, brief network
       // drop, etc.) re-joins as a fresh server-side room entry — if the
@@ -1840,6 +1843,12 @@ function netConnect(onReady) {
     if (!player) return;
     if (cp != null) player.cp = Math.max(0, cp);
     if (maxCp != null) player.maxCp = maxCp;
+  });
+
+  // Стикер другого игрока рядом (свой клиент рисует сам, см. _stickerSend).
+  socket.on('sticker', ({ sid, id } = {}) => {
+    if (!sid || sid === socket.id) return;
+    _stickerSpawn(sid, id, false);
   });
 
   socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId, cp, maxCp }) => {
@@ -2764,6 +2773,9 @@ function _scheduleWorldWipe() {
     if (chatPreview) chatPreview.style.display = 'none';
     const teleBtn = document.getElementById('teleport-btn');
     if (teleBtn) teleBtn.style.display = 'none';
+    const stkBtn = document.getElementById('sticker-btn');
+    if (stkBtn) stkBtn.style.display = 'none';
+    _stickerTogglePicker(false);
     _teleportCastUntil = 0;
   }, _WORLD_WIPE_AFTER_MS);
 }
@@ -4001,6 +4013,8 @@ function _finishOnlineStart() {
   if (chatBtn) { chatBtn.dataset.shown = '1'; chatBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
   const teleBtn = document.getElementById('teleport-btn');
   if (teleBtn) { teleBtn.dataset.shown = '1'; teleBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
+  const stkBtn = document.getElementById('sticker-btn');
+  if (stkBtn) { stkBtn.dataset.shown = '1'; stkBtn.style.display = (activeTab === 0) ? 'flex' : 'none'; }
   if (typeof _refreshTeleportBadge === 'function') _refreshTeleportBadge();
   _refreshChatPreview();
   if (typeof showTournamentHudBtn === 'function') showTournamentHudBtn();
@@ -4156,6 +4170,10 @@ function netAttack(enemyId, splash) {
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
   if (invisTimer > 0) { invisTimer = 0; socket.emit('playerInvis', { invis: false }); }
   socket.emit('attack', splash ? { enemyId, splash: true } : { enemyId });
+}
+
+function netSendSticker(id) {
+  if (socket?.connected) socket.emit('sticker', { id });
 }
 
 function netSelectChar(type, savedStats) {

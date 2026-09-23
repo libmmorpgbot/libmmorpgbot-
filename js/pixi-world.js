@@ -20,6 +20,8 @@ let _projCt   = null;   // magic bolts (pooled sprites — three circles each wa
 let _playerCt = null;
 let _plAura = null;
 let _dmgNumCt = null;
+let _stickerCt = null;
+const _stkTxt = [];
 let _petCt = null; // holds every player's pet follower (see _updatePets)
 let _decalCt = null;   // ground decals: teleport pads, level gates (below everything)
 let _wallCt  = null;   // zone barriers (above everything — they are walls, not floor)
@@ -586,6 +588,7 @@ function pixiInit(canvasEl) {
   _decalCt  = new PIXI.Container();
   _wallCt   = new PIXI.Container();
   _dmgNumCt = new PIXI.Container();
+  _stickerCt = new PIXI.Container();
 
   // _voidSpr идёт ПЕРВЫМ ребёнком — под всеми тайлами. Он не часть мира и
   // не двигается вместе с ним: это фон за краем карты (см. _makeVoidSprite).
@@ -593,7 +596,7 @@ function pixiInit(canvasEl) {
     _voidSpr, _tileCt, _decalCt, _lightsCt, _aoeGfx,
     _npcCt, _dropCt, _partCt,
     _enemyCt, _otherPCt, _projGfx, _projCt,
-    _petCt, _playerCt, _wallCt, _dmgNumCt
+    _petCt, _playerCt, _wallCt, _dmgNumCt, _stickerCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -1706,6 +1709,59 @@ function _updateDmgNums() {
   _hideRest(_dmgTxt, _dmgTxtN);
 }
 
+// ── стикеры над головой ──────────────────────────────────
+// _stickerFx (js/ui.js) → по одному PIXI.Text на живой стикер, пул как у
+// цифр урона. Позиция каждый кадр берётся у владельца, так что стикер едет
+// вместе с игроком; ушёл владелец из видимости — стикер снимается.
+const _STK_BAKE_PX = 64, _STK_SIZE = 36, _STK_ABOVE = 88;
+function _stkEaseBack(k) { const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); }
+function _stickerAnim(anim, age) {
+  // Появление: выпрыгивает с перелётом, последние 0.4 с тает и уплывает.
+  const life = STICKER_LIFE_MS / 1000;
+  const k = Math.min(1, age / 0.3);
+  let sc = _stkEaseBack(k), rot = 0, dy = -10 * Math.min(1, age / life);
+  const alpha = age > life - 0.4 ? Math.max(0, (life - age) / 0.4) : Math.min(1, age / 0.08);
+  const calm = Math.max(0, 1 - age / 1.6);
+  if (anim === 'bounce') dy -= Math.abs(Math.sin(age * 7)) * 12 * (0.35 + 0.65 * calm);
+  else if (anim === 'shake') rot = Math.sin(age * 32) * 0.22 * calm;
+  else if (anim === 'spin') rot = (1 - Math.min(1, age / 0.7)) * Math.PI * 2;
+  else if (anim === 'pulse') sc *= 1 + 0.16 * Math.abs(Math.sin(age * 5));
+  else if (anim === 'pop') { sc *= 1 + 0.08 * Math.sin(age * 6); rot = Math.sin(age * 3) * 0.08; }
+  return { sc, rot, dy, alpha };
+}
+function _updateStickers() {
+  const now = performance.now();
+  const life = STICKER_LIFE_MS;
+  let n = 0, keep = 0;
+  for (let i = 0; i < _stickerFx.length; i++) {
+    const s = _stickerFx[i];
+    const age = now - s.t0;
+    if (age >= life) continue;
+    const owner = s.self ? player : otherPlayers.get(s.sid);
+    if (!owner || owner.x == null || isNaN(owner.x) || (owner.hp != null && owner.hp <= 0)) continue;
+    _stickerFx[keep++] = s;
+    if (!_isOnScreen(owner.x, owner.y)) continue;
+    let t = _stkTxt[n];
+    if (!t) {
+      t = new PIXI.Text('', { fontFamily: 'Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif', fontSize: _STK_BAKE_PX, align: 'center' });
+      t.anchor.set(0.5, 0.5);
+      _stickerCt.addChild(t);
+      _stkTxt[n] = t;
+    }
+    n++;
+    t.visible = true;
+    if (t.text !== s.def.e) t.text = s.def.e;
+    const a = _stickerAnim(s.def.anim, age / 1000);
+    t.scale.set(a.sc * _STK_SIZE / _STK_BAKE_PX);
+    t.rotation = a.rot;
+    t.alpha = a.alpha;
+    t.x = owner.x;
+    t.y = owner.y - _STK_ABOVE + a.dy;
+  }
+  _stickerFx.length = keep;
+  _hideRest(_stkTxt, n);
+}
+
 // ── enemy pool ────────────────────────────────────────────
 
 function _getEnemy(id) {
@@ -2452,6 +2508,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _layer('pets', () => _updatePets(dt));
   _layer('player', () => _updatePlayer(dt, ts));
   _layer('dmg', () => _updateDmgNums());
+  _layer('stickers', () => _updateStickers());
 
   _pixiApp.renderer.render(_pixiApp.stage);
   _gpuDrawsSnap = _gpuDraws; _gpuVertsSnap = _gpuVerts;

@@ -439,6 +439,12 @@
 <!-- Teleport stones — opens the same destination picker the hub portal shows,
      but usable from anywhere by spending a stone bought from the merchant
      (see buyTeleportStone/useTeleportStone, server/index.js). -->
+<!-- Стикеры — над телепортом. Нажатие открывает панель выбора
+     (#sticker-picker), выбранный всплывает над головой (js/ui.js). -->
+<button id="sticker-btn" onclick="_stickerTogglePicker()" style="display:none" title="Стикеры" aria-label="Стикеры">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="19" height="19" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>
+</button>
+<div id="sticker-picker" style="display:none"></div>
 <button id="teleport-btn" onclick="_useTeleportStone()" style="display:none" title="Камни телепортации">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="M5 21h14"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><polyline points="9,8 12,11 15,8"/><polyline points="9,16 12,13 15,16"/></svg>
   <span id="teleport-stone-badge"></span>
@@ -718,6 +724,35 @@
   box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
 }
 #teleport-btn:active { opacity:0.75; }
+/* Над #teleport-btn — тот же шаг вверх, что у него над чатом. */
+#sticker-btn {
+  position:absolute; bottom:174px; left:10px; z-index:62;
+  pointer-events:all; touch-action:manipulation;
+  width:42px; height:42px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, rgba(37,28,12,0.96), rgba(14,10,4,0.97));
+  border:1px solid rgba(243,207,114,0.55);
+  color:#f3cf72; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
+}
+#sticker-btn:active { opacity:0.75; }
+#sticker-btn.on { background:radial-gradient(circle at 35% 30%, rgba(80,60,20,0.97), rgba(30,22,8,0.97)); }
+#sticker-picker {
+  position:absolute; z-index:63; pointer-events:all;
+  display:grid; grid-template-columns:repeat(4, 46px); gap:6px; padding:8px;
+  border-radius:14px; background:rgba(10,12,18,0.94);
+  border:1px solid rgba(243,207,114,0.35);
+  box-shadow:0 6px 24px rgba(0,0,0,0.6);
+  animation:stkPickerIn .16s ease-out;
+}
+#sticker-picker button {
+  width:46px; height:46px; border:0; border-radius:10px; padding:0;
+  background:rgba(255,255,255,0.05); font-size:28px; line-height:46px; cursor:pointer;
+  touch-action:manipulation;
+}
+#sticker-picker button:active { transform:scale(.88); background:rgba(243,207,114,0.18); }
+#sticker-picker.cooling button { opacity:.45; }
+@keyframes stkPickerIn { from { opacity:0; transform:translateY(8px) scale(.96); } to { opacity:1; transform:none; } }
 #teleport-stone-badge {
   position:absolute; top:-4px; right:-4px;
   background:#2d7bb8; color:#fff;
