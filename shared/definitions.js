@@ -3098,6 +3098,55 @@ function skillDamageMult(cls, key, advActive, skillLvl, skillPct) {
   return base * skillScaleMult(skillLvl, skillPct);
 }
 
+// ── перезарядки навыков, которые знает сервер ───────────────────────────────
+// Настоящие перезарядки жили только в SKILL_DEF/ADV_SKILL_DEF (js/
+// definitions.js, клиент), а сервер держал один общий порог 400 мс на урон
+// и 2 с на лечение. Модифицированный клиент кидал сильнейший навык каждые
+// 0.4 с и «Возврат» (полное лечение рунного бойца) каждые 2 — бессмертие.
+//
+// [базовый, продвинутый] в секундах, по слоту. Обязан совпадать с cd в
+// SKILL_DEF/ADV_SKILL_DEF — это проверяет dev/skillcd-check.js.
+const SKILL_CD_SEC = {
+  lev:         { Q: [18, 18], W: [12, 12], E: [20, 20], R: [15, 15] },
+  deathknight: { Q: [28, 28], W: [12, 12], E: [20, 20], R: [15, 15] },
+  ranger:      { Q: [6, 6],   W: [10, 10], E: [8, 8],   R: [20, 20] },
+  mage:        { Q: [5, 5],   W: [10, 10], E: [18, 18], R: [12, 12] },
+  warlock:     { Q: [8, 8],   W: [15, 15], E: [18, 18], R: [25, 25] },
+  runefighter: { Q: [20, 20], W: [16, 6],  E: [20, 30], R: [10, 60] },
+  assassin:    { Q: [20, 20], W: [8, 8],   E: [30, 30], R: [20, 20] },
+};
+// Базовые навыки, у которых перезарядка сокращается на секунду за уровень
+// (useSkill, js/player.js — ветки с _cooldownKeyFor): до этого минимума.
+const SKILL_CD_LEVEL_FLOOR_SEC = {
+  runefighter: { Q: 10, W: 6 },
+  assassin:    { Q: 10, E: 20, R: 10 },
+};
+// Самое большое сокращение перезарядки, какое бывает («Ясный разум» 10/10).
+const SKILL_CDR_MAX = 0.20;
+// Запас на задержку сети и дрожание таймеров: сервер пускает каст чуть
+// раньше, чем кончится перезарядка на клиенте, чтобы честный игрок никогда
+// не упёрся в отказ.
+const SKILL_CD_SERVER_SLACK = 0.9;
+
+// Через сколько миллисекунд после каста этого слота сервер примет следующий.
+// Не точная перезарядка игрока, а нижняя граница для любого честного клиента.
+function skillCooldownFloorMs(cls, key, advActive, skillLvl) {
+  const row = (SKILL_CD_SEC[cls] || {})[key];
+  if (!row) return 0;
+  let cd = row[advActive ? 1 : 0];
+  const floor = !advActive && (SKILL_CD_LEVEL_FLOOR_SEC[cls] || {})[key];
+  if (floor) cd = Math.max(floor, cd - Math.max(0, Math.floor(Number(skillLvl)) || 0));
+  return Math.floor(cd * 1000 * (1 - SKILL_CDR_MAX) * SKILL_CD_SERVER_SLACK);
+}
+
+// Сколько раз ОДИН каст может попасть по одной цели: серии ударов рунного
+// бойца и три стрелы егеря. Всё остальное — один раз.
+function skillMaxHitsPerTarget(cls, key, advActive) {
+  if (cls === 'runefighter' && key === 'Q') return advActive ? 5 : 3;
+  if (cls === 'ranger' && !advActive && (key === 'Q' || key === 'W')) return 3;
+  return 1;
+}
+
 // ── игнор защиты одним ударом ───────────────────────────────────────────────
 // «Смертоносность» (продвинутый Q ассасина) режет 50% защиты цели ТОЛЬКО для
 // своего собственного попадания — в отличие от «Охоты» (adv DK R), которая
@@ -3788,7 +3837,7 @@ if (typeof module !== 'undefined') module.exports = {
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
-  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, SKILL_SPEED_MAX_PCT,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,

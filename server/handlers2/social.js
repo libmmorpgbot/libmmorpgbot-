@@ -19,7 +19,7 @@ const progression = require('../db/repos/progression');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
-        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf,
+        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillCooldownFloorMs,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
         RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
@@ -449,6 +449,19 @@ module.exports = function registerSocial(s, safeOn, deps) {
   const HEAL_PARTY_CD_MS = 2000;
   const lastHealAt = new Map();   // key -> ms
 
+  // ── и настоящая перезарядка слота ────────────────────────────────────────
+  // Двух секунд выше хватало против спама сокета, но не против подделанного
+  // клиента: «Возврат» (полное лечение рунного бойца, перезарядка 30 с)
+  // нажимался каждые 2 с — бессмертие; 20% целителя и 30% «Прыжка за спину»
+  // — так же. Бафы и ускорения порога не имели вовсе. Теперь каждое из трёх
+  // действий ждёт skillCooldownFloorMs своего слота (shared/definitions.js —
+  // перезарядка без максимального сокращения и с запасом на сеть), счёт — по
+  // действию и клавише отдельно: «Истощение» рыцаря смерти — это и лечение,
+  // и баф одного нажатия, и одно не должно съедать другое.
+  const lastCastAt = new Map();   // 'heal:Q' -> ms
+  const castTooSoon = (kind, k, cls, rk, adv, lvl, now) =>
+    now - (lastCastAt.get(kind + ':' + k) || 0) < skillCooldownFloorMs(cls, rk, adv, lvl);
+
   // ── five refusals that were logged as a heal ─────────────────────────────
   // healParty is a WRITE_ACTION, so each of these bare returns wrote a row
   // saying the party was healed. The cooldown one is the worst: it is the
@@ -483,6 +496,9 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const b = skillBuffOf(cls, rk, adv);
     if (!b) fail('Этот навык не даёт бафа', 'not_buff');
+    const now = Date.now();
+    if (castTooSoon('buff', k, cls, rk, adv, lvl, now)) fail('Навык ещё перезаряжается', 'cooldown');
+    lastCastAt.set('buff:' + k, now);
     const sec = skillBuffSecOf(b, lvl);
     s.room.setSkillWindow(s.socket.id, 'buff', sec * 1000, {
       atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower, hp: b.hp,
@@ -514,6 +530,9 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const mult = skillHasteOf(cls, rk, adv);
     if (mult == null) fail('Этот навык не ускоряет атаку', 'not_haste');
     const def = SKILL_HASTE[cls][rk];
+    const now = Date.now();
+    if (castTooSoon('haste', k, cls, rk, adv, lvl, now)) fail('Навык ещё перезаряжается', 'cooldown');
+    lastCastAt.set('haste:' + k, now);
     const sec = skillBuffSecOf(def, lvl);
     s.room.setSkillWindow(s.socket.id, 'haste', sec * 1000, mult);
     return { mult, sec };
@@ -542,6 +561,15 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const rk  = isForeign ? st.foreignSkill.key : k;
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    if (castTooSoon('heal', k, cls, rk, adv, lvl, now)) fail('Навык ещё перезаряжается', 'cooldown');
+    // «Прыжок за спину» обещает лечение ПРИ ПОПАДАНИИ, а сервер лечил по
+    // одному нажатию — и без цели, и мимо. Удар прыжка клиент шлёт раньше
+    // этого запроса и тем же сокетом, так что к этому моменту комната уже
+    // знает, попал ли он.
+    if (cls === 'assassin' && rk === 'R' && adv && now - s.room.slotHitAt(s.socket.id, k) > 3000) {
+      fail('Прыжок не попал', 'no_hit');
+    }
+    lastCastAt.set('heal:' + k, now);
 
     // ── окна, а не разовое лечение ────────────────────────────────────────
     // «Бабочки» и вампиризм лечат не в момент нажатия, а некоторое время

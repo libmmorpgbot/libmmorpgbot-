@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { TILE, WALL, RACE10_LANE_HW } = require('./dungeon');
 const { floorEntry, FLOOR_IDS } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal,
+        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal, skillCooldownFloorMs, skillMaxHitsPerTarget,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
@@ -324,20 +324,17 @@ const ATTACK_RATE_FALLBACK = 1.2;
 // (несколько обращений к базе плюс gameStart), и короче, чем терпение игрока,
 // чей клиент смерть проспал: не дождавшись возрождения, объявление вернётся.
 const RESPAWN_ANNOUNCE_GRACE_MS = 3000;
-// Server-side minimum gap between two skill CASTS from the same player. The
-// real cooldowns are seconds long and enforced by the client; this only has to
-// be tight enough that spamming the event isn't worth anything.
-const SKILL_CD_MS = 400;
-// An AOE skill (_skillAOEMult/_skillDirMult, js/player.js) fires one
-// skillAttack/pvpSkillAttack event per enemy caught in its radius, all in the
-// same client-side pass — they land here within a few ms of each other, not
-// spread out. Hits arriving within this window of the current cast's first
-// hit are treated as the same cast and don't gate each other; a hit outside
-// the window starts a new cast and is judged against SKILL_CD_MS as before.
-// Without this, only the first enemy an AOE press touched ever took damage —
-// every other hit from the same cast landed inside the old floor and was
-// silently dropped.
-const SKILL_BURST_MS = 150;
+// SKILL_CD_MS (one 400ms floor shared by every slot) and SKILL_BURST_MS (a
+// 150ms "same cast" window) used to sit here. Both are replaced by the
+// per-slot _skillCastGate: the real cooldown of the slot, and a cast window
+// long enough for multi-hit chains and projectiles in flight. An AOE cast
+// still lands on every target it touches — each target is counted apart.
+// How long after a cast's first hit its remaining hits may still land: the
+// runefighter's 3-5 hit chain (120ms apart) and projectiles in flight (life
+// 1.5-2s). A hit inside the window, on a target this cast has not yet hit
+// its allowed number of times, belongs to the same cast; anything else is a
+// new cast and is judged against the slot's own cooldown (_skillCastGate).
+const SKILL_CAST_WINDOW_MS = 2000;
 // Upper bound on how many enemies one crowd-control packet may name (see
 // applySkillEffectMany).
 const MAX_CC_TARGETS = 64;
@@ -3407,6 +3404,53 @@ class Room {
     return !!(learned.E && active.E);
   }
 
+  // ── перезарядка навыка на сервере ─────────────────────────────────────────
+  // Заменяет общий порог SKILL_CD_MS/SKILL_BURST_MS для урона навыками. Тот
+  // был один на все слоты и ловил не то: пускал любой навык раз в 0.4 с (а
+  // настоящие перезарядки — 5-30 с), и при этом резал честные серии —
+  // третий удар «Сильного удара» (240 мс после первого) и третья стрела
+  // «Комбо-выстрела» (160 мс) приходили за окном в 150 мс и отбрасывались.
+  //
+  // Теперь каст — это запись на слот: когда начался и по кому сколько раз
+  // уже попал. Попадание в окне SKILL_CAST_WINDOW_MS, пока по этой цели не
+  // исчерпан skillMaxHitsPerTarget, — тот же каст. Иначе — новый, и он
+  // пускается только после skillCooldownFloorMs (настоящая перезарядка слота
+  // за вычетом максимального сокращения и запаса на сеть).
+  // targetKey — id моба или сокет игрока; у них разные пространства имён.
+  _skillCastGate(p, key, targetKey) {
+    const now = Date.now();
+    const casts = p._skillCasts || (p._skillCasts = {});
+    const c = casts[key];
+    const adv = this._advSlotActive(p, key);
+    const [cls, slotKey] = this._slotClassKey(p, key);
+    if (c && now - c.at <= SKILL_CAST_WINDOW_MS) {
+      const n = c.hits.get(targetKey) || 0;
+      if (n < skillMaxHitsPerTarget(cls, slotKey, adv)) { c.hits.set(targetKey, n + 1); return true; }
+    }
+    if (c && now - c.at < this._skillCdFloor(p, key, cls, slotKey, adv)) return false;
+    casts[key] = { at: now, hits: new Map([[targetKey, 1]]) };
+    return true;
+  }
+
+  _skillCdFloor(p, key, cls, slotKey, adv) {
+    let lvl;
+    if (key === FOREIGN_SKILL_KEY) {
+      const fs = this._foreignSkillOf(p);
+      lvl = fs ? fs.level : 0;
+    } else {
+      const levels = p._skillLevels || (p._sd && p._sd.skillLevels) || {};
+      lvl = levels[key];
+    }
+    return skillCooldownFloorMs(cls, slotKey, adv, lvl);
+  }
+
+  // Когда этот слот последний раз действительно попал (по мобу или игроку).
+  // Читает skillHeal: «Прыжок за спину» лечит только при попадании.
+  slotHitAt(socketId, key) {
+    const p = this.players.get(socketId);
+    return (p && p._slotHitAt && p._slotHitAt[key]) || 0;
+  }
+
   pvpSkillAttack(attackerSocketId, targetSocketId, key) {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
@@ -3416,16 +3460,6 @@ class Room {
     // but refuse the damage outright too.
     if (this.floor === FLOOR_IDS.left) return null;
     if (attacker.hp <= 0) return null;
-    // Same server-side floor as skillAttackEnemy — and it matters more here:
-    // this handler doesn't go through the attack limiter in server/index.js at
-    // all, so it sat in the 300 events/s bucket. See SKILL_BURST_MS above for why this
-    // isn't a flat per-hit gate.
-    const _nowCd = Date.now();
-    const _castStart = attacker._lastSkillAtk || 0;
-    if (_nowCd - _castStart > SKILL_BURST_MS) {
-      if (_nowCd - _castStart < SKILL_CD_MS) return null;
-      attacker._lastSkillAtk = _nowCd;
-    }
     if (target.hp <= 0) return null;
     if (this._inSafeZone(attacker.x, attacker.y)) return null;
     if (this._inSafeZone(target.x, target.y)) return null;
@@ -3444,12 +3478,15 @@ class Room {
     // refused outright rather than falling back to a default.
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
+    // The slot's own cooldown, judged server-side — see _skillCastGate.
+    if (!this._skillCastGate(attacker, key, 'p:' + targetSocketId)) return null;
     // Same defense-ignore as skillAttackEnemy — see SKILL_DEF_IGNORE.
     const _defIgnore2 = skillDefIgnoreOf(_slotCls, _slotKey, _advActivePvp);
     const _targetDef = _defIgnore2 > 0 ? Math.round(this._defOf(target) * (1 - _defIgnore2)) : this._defOf(target);
     const base = _pvpBase(this._atkOf(attacker), _targetDef, mult);
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
+    (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
     target.hp = Math.max(0, target.hp - dmg);
     this._vampGain(attacker, dmg);
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
@@ -5084,18 +5121,9 @@ class Room {
     // Dead attackers can't cast — attackEnemy has refused this for basic hits
     // for the same reason (a client that never noticed it died keeps firing).
     if (attacker.hp <= 0) return null;
-    // Real skill cooldowns (12–20s) live in the client, which makes them
-    // advisory. This is the server's own floor: without it the only limit was
-    // the socket-level 20 events/s. SKILL_CD_MS
-    // is far below any real cooldown, so legitimate play never reaches it; it
-    // exists purely to bound a modified client. See SKILL_BURST_MS above for
-    // why one AOE cast's several hits don't gate each other.
+    // Cooldown: judged per slot by _skillCastGate below, after the target
+    // checks — a refused target must not use up the cast.
     const now = Date.now();
-    const castStart = attacker._lastSkillAtk || 0;
-    if (now - castStart > SKILL_BURST_MS) {
-      if (now - castStart < SKILL_CD_MS) return null;
-      attacker._lastSkillAtk = now;
-    }
     const enemy = this._enemyMap.get(enemyId);
     if (!enemy || enemy.hp <= 0) return null;
     // Same instance-isolation rule attackEnemy applies — see its comment.
@@ -5129,6 +5157,7 @@ class Room {
     // taken from the packet. 0 = the active variant does no damage.
     const mult = this._skillMultFor(attacker, key);
     if (!(mult > 0)) return null;
+    if (!this._skillCastGate(attacker, key, 'e:' + enemyId)) return null;
     // Same defDown discount as attackEnemy above.
     let _effDef2 = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
     // «Смертоносность» (adv assassin Q) — ignores 50% of THIS hit's effective
@@ -5149,6 +5178,7 @@ class Room {
     enemy.hp = Math.max(0, enemy.hp - dmg);
     // Здесь, а не у клиента: dmg — уже посчитанное сервером число, с критом и
     // защитой цели, и никакого другого честного не существует.
+    (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
     this._vampGain(attacker, dmg);
     enemy.aggro = true;
     this._wakePack(enemy);
