@@ -974,7 +974,20 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // Respawn restores HP in the database as well as the room, because HP is
   // one of the few live values that is also persisted — a player who dies and
   // reconnects must not come back still dead.
-  safeOn('respawn', () => s.act('respawn', 'itemError', async (t, pid) => {
+  //
+  // ── отметка _respawnAt ставится ДО s.act ─────────────────────────────────
+  // Внутри обработчика она стояла «до первого await» — но s.act сам ждёт
+  // соединения из пула, прежде чем вообще вызвать обработчик. playerMove,
+  // который клиент шлёт вслед за 'respawn', успевал в это окно: комната ещё
+  // держала hp=0, переобъявляла смерть, и окно смерти открывалось второй раз.
+  // Здесь всё синхронно — отметка ложится раньше, чем придёт любой следующий
+  // пакет этого сокета. Только мёртвому: живому она ничего не значит.
+  safeOn('respawn', () => {
+    const _dead = s.room && s.room.players.get(s.socket.id);
+    if (_dead && _dead.hp <= 0) _dead._respawnAt = Date.now();
+    return s.act('respawn', 'itemError', _respawnFn);
+  });
+  const _respawnFn = async (t, pid) => {
     // ── only the dead may respawn ──────────────────────────────────────────
     // There was no check of any kind here. This handler is a full heal in the
     // room AND in player_progress, plus a free ride to floor 1, and it sits in
@@ -1090,7 +1103,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // standing where they died, on the floor they left.
     const at = s.room && s.room.players.get(s.socket.id);
     await players.savePosition(t, pid, floor, at ? at.x : 0, at ? at.y : 0);
-  }));
+  };
 
   // ── floors ───────────────────────────────────────────────────────────────
   // `target` is a floor KEY, which is what the portal table in the client
