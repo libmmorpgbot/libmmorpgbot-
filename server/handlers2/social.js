@@ -19,7 +19,7 @@ const progression = require('../db/repos/progression');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
-        SKILL_HASTE, skillHasteOf, skillBuffOf,
+        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
         RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
@@ -483,7 +483,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const b = skillBuffOf(cls, rk, adv);
     if (!b) fail('Этот навык не даёт бафа', 'not_buff');
-    const sec = b.sec + lvl;
+    const sec = skillBuffSecOf(b, lvl);
     s.room.setSkillWindow(s.socket.id, 'buff', sec * 1000, {
       atk: b.atk, def: b.def, critChance: b.critChance, critPower: b.critPower, hp: b.hp,
     });
@@ -514,7 +514,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const mult = skillHasteOf(cls, rk, adv);
     if (mult == null) fail('Этот навык не ускоряет атаку', 'not_haste');
     const def = SKILL_HASTE[cls][rk];
-    const sec = def.sec + lvl;
+    const sec = skillBuffSecOf(def, lvl);
     s.room.setSkillWindow(s.socket.id, 'haste', sec * 1000, mult);
     return { mult, sec };
   }));

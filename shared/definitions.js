@@ -3602,12 +3602,16 @@ const SKILL_BUFFS = {
          adv:  { atk: 1.25, sec: 5 } },                         // Безумие
   },
   ranger:  { E: { adv:  { critChance: 0.05, sec: 1200 } } },    // Баф Крит
-  mage:    { E: { base: { def: 1.50, sec: 3 },                  // Барьер
-                  adv:  { def: 1.80, sec: 3 } } },              // Вспышка
-  warlock: { E: { base: { def: 1.50, sec: 4 },                  // Тёмный щит
-                  adv:  { def: 1.50, sec: 4 } } },              // Жажда
-  lev:     { E: { base: { def: 1.80, sec: 10 },                 // Гнев мертвеца
-                  adv:  { def: 1.80, atk: 1.10, sec: 10 } } },  // Щит
+  // maxSec — потолок длительности защитных бафов: не дольше ~60% своей
+  // перезарядки. Без него «+1 с за уровень» доводил Щит танка до 20 с при
+  // перезарядке 20 с, то есть до +80% защиты НАВСЕГДА, а при уроне
+  // «атака минус защита» это делало танка неубиваемым обычными ударами.
+  mage:    { E: { base: { def: 1.50, sec: 3, maxSec: 10 },      // Барьер
+                  adv:  { def: 1.80, sec: 3, maxSec: 10 } } },  // Вспышка
+  warlock: { E: { base: { def: 1.50, sec: 4, maxSec: 10 },      // Тёмный щит
+                  adv:  { def: 1.50, sec: 4, maxSec: 10 } } },  // Жажда
+  lev:     { E: { base: { def: 1.80, sec: 10, maxSec: 12 },     // Гнев мертвеца
+                  adv:  { def: 1.80, atk: 1.10, sec: 10, maxSec: 12 } } },  // Щит
   assassin: {
     E: { base: { critChance: 0.50, sec: 5 },                     // Пронзание
          adv:  { critChance: 0.50, critPower: 0.50, sec: 5 } },  // Убийца
@@ -3630,11 +3634,18 @@ function skillBuffOf(charClass, key, adv) {
   return def || null;
 }
 
+// Длительность окна бафа/ускорения: базовые секунды плюс секунда за уровень
+// навыка, но не больше maxSec, если он задан. Одна функция на клиент и сервер.
+function skillBuffSecOf(def, skillLvl) {
+  const sec = (def.sec || 0) + Math.max(0, Math.floor(Number(skillLvl)) || 0);
+  return def.maxSec ? Math.min(sec, def.maxSec) : sec;
+}
+
 // Навыки, ускоряющие атаку. sec — длительность, плюс секунда за уровень
 // навыка (ровно как у клиента: _skillBuffSec(key) === уровень слота).
 const SKILL_HASTE = {
   ranger:  { R: { mult: 1.5, advMult: 2, sec: 5 } },   // «Скорость» / «Ускорение»
-  warlock: { E: { mult: 2, advOnly: true, sec: 4 } },  // «Жажда» — только продвинутая
+  warlock: { E: { mult: 2, advOnly: true, sec: 4, maxSec: 10 } },  // «Жажда» — только продвинутая, потолок как у её щита
 };
 
 // Во сколько раз этот навык ускоряет атаку, или null, если не ускоряет.
@@ -3774,7 +3785,7 @@ if (typeof module !== 'undefined') module.exports = {
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
-  SKILL_DEF_IGNORE, skillDefIgnoreOf, SKILL_SPEED_MAX_PCT,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,

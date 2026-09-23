@@ -199,6 +199,13 @@ function _skillMult(key) {
   return skillDamageMult(cls, key, _advActive(key), _skillLvl(key), (player && player.skillPct) || 0);
 }
 function _skillBuffSec(key)    { return _skillLvl(key); }
+// The same maxSec ceiling the server applies (skillBuffSecOf, shared/
+// definitions.js), so the HUD timer ends when the server's window does.
+function _cappedBuffSec(key, sec) {
+  const cls = (_foreignCastCtx && _foreignCastCtx.key === key) ? _foreignCastCtx.cls : (player && player.type);
+  const b = skillBuffOf(cls, key, _advActive(key));
+  return (b && b.maxSec) ? Math.min(sec, b.maxSec) : sec;
+}
 function _skillHealMult(key)   { return (1 + _skillLvl(key) * 0.01) * _skillPowerMult(); }
 function _skillMobRange(key)   { return _skillLvl(key) * 10; }
 
@@ -1122,13 +1129,13 @@ function _dispatchSkillEffect(cls, sk) {
         spawnAOE(player.x, player.y, 220, 'flash', '#c9a3ff');
         _skillAOEMult(220, _skillMult('E'), 'E'); netSpawnAoe(player.x, player.y, 220, 'flash', '#c9a3ff');
         _pvpSkillAOE(220, _skillMult('E'), 'E');
-        barrierTimer = 3 + _skillBuffSec('E');
+        barrierTimer = _cappedBuffSec('E', 3 + _skillBuffSec('E'));
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '✨ Вспышка!', '#f5c542');
         spawnBurst(player.x, player.y, '#f5c542', 14);
       } else { // Barrier — +50% DEF for 3s (+1s per level)
-        barrierTimer = 3 + _skillBuffSec('E');
+        barrierTimer = _cappedBuffSec('E', 3 + _skillBuffSec('E'));
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
         recompute();
         dmgNum(player.x, player.y - 40, '🔮 Барьер!', '#e8e');
@@ -1195,9 +1202,9 @@ function _dispatchSkillEffect(cls, sk) {
     } else if (sk.key === 'E') { // Тёмный щит / Жажда — +50% DEF self + party 4s (+1s per
       // level); advanced additionally grants ×2 attack speed for the same duration.
       const _advE3 = _advActive('E');
-      faithShieldTimer = 4 + _skillBuffSec('E');
+      faithShieldTimer = _cappedBuffSec('E', 4 + _skillBuffSec('E'));
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
-      if (_advE3) atkSpeedTimer = 4 + _skillBuffSec('E');
+      if (_advE3) atkSpeedTimer = _cappedBuffSec('E', 4 + _skillBuffSec('E'));
       recompute();
       // См. комментарий у «Ускорения» лучника выше.
       if (_advE3 && typeof netSkillHaste === 'function') netSkillHaste('E');
@@ -1251,9 +1258,9 @@ function _dispatchSkillEffect(cls, sk) {
     } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
       // level) either way; advanced additionally gives +10% ATK for the same duration.
       const _advE4 = _advActive('E');
-      guardTimer = 10 + _skillBuffSec('E');
+      guardTimer = _cappedBuffSec('E', 10 + _skillBuffSec('E'));
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
-      if (_advE4) levShieldAtkTimer = 10 + _skillBuffSec('E');
+      if (_advE4) levShieldAtkTimer = _cappedBuffSec('E', 10 + _skillBuffSec('E'));
       recompute();
       dmgNum(player.x, player.y - 40, _advE4 ? '🛡 Щит!' : '🛡 +80% DEF!', _advE4 ? '#f5c542' : '#e8e0cc');
       spawnBurst(player.x, player.y, _advE4 ? '#f5c542' : '#e8e0cc', 10);
