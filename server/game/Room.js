@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { TILE, WALL, RACE10_LANE_HW } = require('./dungeon');
 const { floorEntry, FLOOR_IDS } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal, skillCooldownFloorMs, skillMaxHitsPerTarget,
+        ENEMY_AOI_R, enhanceBonus, passiveBonusTotal, skillCooldownFloorMs, skillMaxHitsPerTarget, pvpDamageMult,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
@@ -241,11 +241,14 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
 // одинаково ведёт себя на 20-м и на 120-м уровне. Множитель навыка
 // применяется к удару, а в долю входит «голая» атака — иначе навык ×3 ещё и
 // пробивал бы защиту втрое лучше.
-function _pvpBase(atk, def, mult) {
+//
+// lvlMult — pvpDamageMult (shared/definitions.js): держит длину дуэли
+// примерно одинаковой на всех уровнях.
+function _pvpBase(atk, def, mult, lvlMult = 1) {
   atk = Math.max(0, Number(atk) || 0);
   def = Math.max(0, Number(def) || 0);
   const share = atk + def > 0 ? atk / (atk + def) : 1;
-  return Math.max(1, Math.round(atk * (mult || 1) * share) + Math.floor(Math.random() * 7) - 3);
+  return Math.max(1, Math.round(atk * (mult || 1) * share * lvlMult) + Math.floor(Math.random() * 7) - 3);
 }
 
 function _critDmg(base, critChance, critPower) {
@@ -3275,7 +3278,7 @@ class Room {
     if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 500 * 500) return null;
-    const base = _pvpBase(this._atkOf(attacker), this._defOf(target), 1);
+    const base = _pvpBase(this._atkOf(attacker), this._defOf(target), 1, pvpDamageMult(attacker.lvl, target.lvl));
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     // Apply the damage to the authoritative server-side HP right here — the
@@ -3483,7 +3486,7 @@ class Room {
     // Same defense-ignore as skillAttackEnemy — see SKILL_DEF_IGNORE.
     const _defIgnore2 = skillDefIgnoreOf(_slotCls, _slotKey, _advActivePvp);
     const _targetDef = _defIgnore2 > 0 ? Math.round(this._defOf(target) * (1 - _defIgnore2)) : this._defOf(target);
-    const base = _pvpBase(this._atkOf(attacker), _targetDef, mult);
+    const base = _pvpBase(this._atkOf(attacker), _targetDef, mult, pvpDamageMult(attacker.lvl, target.lvl));
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();

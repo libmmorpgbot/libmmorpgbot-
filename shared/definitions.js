@@ -3098,6 +3098,26 @@ function skillDamageMult(cls, key, advActive, skillLvl, skillPct) {
   return base * skillScaleMult(skillLvl, skillPct);
 }
 
+// ── длина PvP-боя ───────────────────────────────────────────────────────────
+// Урон от уровня растёт быстрее здоровья: атака почти вся из экипировки
+// (легендарное оружие одно даёт 65-120), а здоровье — +20 за уровень и
+// немного от брони. При одном и том же уроне по формуле дуэль шла ~9 с на
+// 15-40 уровне, ~5 с на 60-м и ~1.5 с на 120-м — на высоких уровнях бой
+// заканчивался раньше, чем в нём можно было что-то сделать.
+//
+// Множитель урона в PvP гасит этот рост: 1 до PVP_DMG_LVL_REF, дальше
+// (REF/уровень)^EXP — 0.50 на 60-м, 0.31 на 80-м, 0.21 на 100-м, 0.15 на
+// 120-м. По модели (dev-симуляция дуэлей 7×7 при одинаковой экипировке своего
+// уровня) медианная дуэль длится 8-10 с на любом уровне. Уровень — средний
+// из двух бойцов, чтобы удар A по B и B по A резался одинаково.
+const PVP_DMG_LVL_REF = 40;
+const PVP_DMG_LVL_EXP = 1.7;
+function pvpDamageMult(attackerLvl, targetLvl) {
+  const a = Math.max(1, Number(attackerLvl) || 1), t = Math.max(1, Number(targetLvl) || 1);
+  const lvl = (a + t) / 2;
+  return lvl <= PVP_DMG_LVL_REF ? 1 : Math.pow(PVP_DMG_LVL_REF / lvl, PVP_DMG_LVL_EXP);
+}
+
 // ── перезарядки навыков, которые знает сервер ───────────────────────────────
 // Настоящие перезарядки жили только в SKILL_DEF/ADV_SKILL_DEF (js/
 // definitions.js, клиент), а сервер держал один общий порог 400 мс на урон
@@ -3837,7 +3857,7 @@ if (typeof module !== 'undefined') module.exports = {
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
-  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
