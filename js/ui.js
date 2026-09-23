@@ -91,10 +91,6 @@ function updateInvUI() {
   _startInvPortraitAnim();
 
   // Шапка: имя и класс по центру, над кольцом.
-  const _bag = p.potionBag || {};
-  const _hudPtDef = ITEM_DEF.find(d => d.id === (p.hudPotion || 'pt1'));
-  const _hudCount = _bag[p.hudPotion || 'pt1'] || 0;
-  const _activeBufCount = Object.values(p.buffs || {}).filter(v => v > 0).length;
   document.getElementById('char-preview').innerHTML = `
     <div class="eq-ring-head">
       <div class="eq-ring-name">${_escHtml((typeof netUsername !== 'undefined' && netUsername) || p.charDef.name)}</div>
@@ -105,39 +101,13 @@ function updateInvUI() {
     </div>
   `;
 
-  // Под кольцом: БМ, полосы CP/HP, статы списком, золото и зелья.
-  const _bar = (cls, label, cur, max) => {
-    const pct = max > 0 ? Math.max(0, Math.min(100, cur / max * 100)) : 0;
-    return `<div class="eq-ring-bar ${cls}"><div style="width:${pct.toFixed(1)}%"></div>
-      <span>${label} ${Math.ceil(cur).toLocaleString('ru-RU')} / ${Math.floor(max).toLocaleString('ru-RU')}</span></div>`;
-  };
-  const _statRow = (name, val, color) =>
-    `<div class="eq-ring-stat"><span>${name}</span><i></i><b style="color:${color}">${val}</b></div>`;
+  // Под кольцом — только БМ.
   const _bm = typeof calcBM === 'function' ? calcBM(p) : 0;
   document.getElementById('eq-ring-info').innerHTML = `
     <div class="eq-ring-orn"></div>
     <div class="eq-ring-bm-lbl">${t('bmAbbrev')}</div>
     <div class="eq-ring-bm">${Number(_bm).toLocaleString('ru-RU')}</div>
     <div class="eq-ring-orn"></div>
-    <div class="eq-ring-bars">
-      ${p.maxCp > 0 ? _bar('cp', 'CP', p.cp || 0, p.maxCp) : ''}
-      ${_bar('hp', 'HP', p.hp, p.maxHp)}
-    </div>
-    <div class="eq-ring-stats">
-      ${_statRow(t('clanPerkAtk'), p.atk, '#f08a6a')}
-      ${_statRow(t('statDef'), p.def, '#7fb0f0')}
-      ${_statRow(t('statCritChance'), ((p.critChance || 0) * 100).toFixed(1) + '%', '#f3cf72')}
-      ${_statRow(t('statCritPower'), (p.critPower || 0).toFixed(2) + 'x', '#f3cf72')}
-      ${_statRow(t('statAtkSpeedAbbrev'), (p.atkSpeed || 0).toFixed(2), '#b07cf0')}
-      ${_statRow(t('statHpRegen'), (p.hpRegen || 0).toFixed(2), '#7fdc6a')}
-    </div>
-    <div class="eq-ring-foot">
-      <span style="color:#f0b44a">${iconHTML('coin', 13, '#f0b44a')} ${_hudNum(p.gold)}</span>
-      <span class="eq-ring-pot" onclick="openHpPicker()">
-        ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="16" height="16" style="image-rendering:pixelated" alt="">` : iconHTML('potion', 14, '#90d653')}
-        ×${_hudCount}${_activeBufCount > 0 ? ` <em>${_activeBufCount} ${t('buffCountSuffix')}</em>` : ''}
-      </span>
-    </div>
   `;
 
   // Inventory grid — materials stack by id
