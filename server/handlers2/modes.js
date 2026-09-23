@@ -272,8 +272,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       // hp is now applied server-side inside pvpAttack itself — the target's
       // client used to self-report "actual damage taken" separately, which let
       // a modified client always report 0 and become unkillable.
-      io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
-      s.socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+      io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp, cp: result.cp, maxCp: result.maxCp });
+      s.socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId, cp: result.cp, maxCp: result.maxCp });
       // Tallied unconditionally, not just on a kill — a tournament match the
       // clock decides needs every hit counted, not only a killing one.
       _trTrackDamage(s.socket.id, targetId, result.dmg);
@@ -289,8 +289,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_isPvpImmune(s.socket.id, targetId)) return;
       const result = s.room.pvpSkillAttack(s.socket.id, targetId, key);
       if (!result) return;
-      io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp });
-      s.socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId });
+      io.to(targetId).emit('pvpDamage', { dmg: result.dmg, hp: result.hp, cp: result.cp, maxCp: result.maxCp });
+      s.socket.emit('pvpHit', { x: result.x, y: result.y, dmg: result.dmg, isCrit: result.isCrit, targetId, cp: result.cp, maxCp: result.maxCp });
       _trTrackDamage(s.socket.id, targetId, result.dmg);
       if (result.hp <= 0) { io.to(targetId).emit('playerHurt', { id: targetId, hp: 0 }); _pvpEliminate(targetId, s.socket.id, s.room); }
     });

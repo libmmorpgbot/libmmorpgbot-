@@ -3118,6 +3118,16 @@ function pvpDamageMult(attackerLvl, targetLvl) {
   return lvl <= PVP_DMG_LVL_REF ? 1 : Math.pow(PVP_DMG_LVL_REF / lvl, PVP_DMG_LVL_EXP);
 }
 
+// ── CP (Combat Points) ──────────────────────────────────────────────────────
+// Второй запас «здоровья», который тратится только в PvP: удар игрока сперва
+// снимает CP и лишь остаток — HP. Монстры бьют мимо CP, прямо по здоровью.
+// Запас — PVP_CP_MULT от максимального здоровья. Восстанавливается сам, если
+// CP_REGEN_DELAY_MS по игроку не попадал другой игрок, — CP_REGEN_PCT_PER_SEC
+// от максимума в секунду; после смерти и на входе в PvP-режим — сразу полный.
+const PVP_CP_MULT = 10;
+const CP_REGEN_DELAY_MS = 10000;
+const CP_REGEN_PCT_PER_SEC = 0.05;
+
 // ── перезарядки навыков, которые знает сервер ───────────────────────────────
 // Настоящие перезарядки жили только в SKILL_DEF/ADV_SKILL_DEF (js/
 // definitions.js, клиент), а сервер держал один общий порог 400 мс на урон
@@ -3857,7 +3867,7 @@ if (typeof module !== 'undefined') module.exports = {
   FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
-  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,

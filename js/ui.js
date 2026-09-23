@@ -3407,8 +3407,20 @@ function drawHeader() {
   // this is the one pair of stats a player actually reads exact values off
   // of moment to moment. fontScale 0.7 makes room for the longer string —
   // see _hudBar's shrink-to-fit for the rest of that margin.
+  //
+  // CP (PvP-запас, см. PVP_CP_MULT) — отдельной полосой над HP, как только
+  // сервер прислал его (cpSync); до того три полосы не влезают, и раскладка
+  // остаётся прежней.
   const barX = infoX, barW = pRight - infoX;
-  _hudBar(barX, py + hud(42), barW, hud(12),
+  const hasCp = p.maxCp > 0;
+  if (hasCp) {
+    _hudBar(barX, py + hud(39), barW, hud(8),
+      Math.max(0, p.cp || 0) / p.maxCp,
+      '#8a6a10', '#f2d23c',
+      'CP ' + Math.ceil(Math.max(0, p.cp || 0)).toLocaleString() + ' / ' + Math.floor(p.maxCp).toLocaleString(),
+      null, 0.7);
+  }
+  _hudBar(barX, py + hud(hasCp ? 49 : 42), barW, hud(hasCp ? 10 : 12),
     p.maxHp ? p.hp / p.maxHp : 0,
     '#2f7a2a', '#5fd45a',
     Math.ceil(p.hp).toLocaleString() + ' / ' + Math.floor(p.maxHp).toLocaleString(),
@@ -3416,7 +3428,7 @@ function drawHeader() {
   // Floor the XP readout: party kills split their reward (result.xp / members
   // on the server), so xp is legitimately fractional and float addition turns
   // that into "858.9999999999418" on the bar.
-  _hudBar(barX, py + hud(58), barW, hud(10),
+  _hudBar(barX, py + hud(hasCp ? 61 : 58), barW, hud(hasCp ? 8 : 10),
     p.xpNext ? p.xp / p.xpNext : 0,
     '#8a5a12', '#f0a63c',
     Math.floor(p.xp).toLocaleString() + ' / ' + Math.floor(p.xpNext).toLocaleString(),
@@ -4863,12 +4875,15 @@ function drawTargetFrame() {
   if (!targetId || !player) return;
   const isOnline = !!(socket?.connected);
 
-  let name, hp, maxHp, color;
+  let name, hp, maxHp, color, cp = null, maxCp = 0;
   if (targetIsPlayer && isOnline) {
     const op = otherPlayers.get(targetId);
     if (!op) return;
     name = op.username || '?';
     hp = op.hp || 0; maxHp = op.maxHp || 1; color = '#f17e8b';
+    // Известно только по нашим попаданиям (pvpHit), и через CP_REGEN_DELAY_MS
+    // без ударов сервер начинает его восстанавливать — дальше число устарело.
+    if (op.maxCp > 0 && Date.now() - (op._cpAt || 0) < CP_REGEN_DELAY_MS) { cp = op.cp; maxCp = op.maxCp; }
   } else {
     const e = serverEnemiesMap.get(targetId);
     if (!e) return;
@@ -4899,6 +4914,9 @@ function drawTargetFrame() {
   _hudBar(bx + 9, by + 22, bw - 18, 12, pct,
     pct > 0.5 ? '#7a1b26' : '#7a1b26', pct > 0.5 ? '#e0475b' : '#e0475b',
     Math.ceil(hp) + ' / ' + maxHp);
+  if (maxCp > 0) {
+    _hudBar(bx + 9, by + 36, bw - 18, 5, Math.max(0, Math.min(1, cp / maxCp)), '#8a6a10', '#f2d23c', null);
+  }
 
   ctx.restore();
 }

@@ -3,6 +3,7 @@ const { TILE, WALL, RACE10_LANE_HW } = require('./dungeon');
 const { floorEntry, FLOOR_IDS } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ENEMY_AOI_R, enhanceBonus, passiveBonusTotal, skillCooldownFloorMs, skillMaxHitsPerTarget, pvpDamageMult,
+        PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC,
         ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel,
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
@@ -312,6 +313,12 @@ function _critDmg(base, critChance, critPower) {
 // хватает, чтобы расхождение не успевало вырасти до заметного, и это один
 // маленький пакет в секунду на игрока — и только пока он ранен.
 const HP_SYNC_EVERY_MS = 1000;
+
+// Недобитые CP уходящего игрока — по telegramId, на весь процесс (переход на
+// другой этаж — это другая комната). Без этого выход и вход посреди боя
+// возвращал полный запас. Запись живёт, пока запас не восстановился бы сам.
+const _cpCarry = new Map();
+const CP_CARRY_TTL_MS = CP_REGEN_DELAY_MS + Math.ceil(1000 / CP_REGEN_PCT_PER_SEC);
 // См. Room._attackAllowed.
 //
 // Сколько ударов может накопиться за паузу. Это ЕДИНСТВЕННОЕ послабление, и
@@ -1006,6 +1013,7 @@ class Room {
     const spot = lanes[lane];
     p.x = spot.entryX; p.y = spot.entryY;
     p.hp = p.maxHp;
+    p.cp = this._maxCpOf(p);
     p._fearLane = lane;
     p._raceLane = null;
     p._profileRev++;
@@ -1264,6 +1272,7 @@ class Room {
     const spot = lanes[lane];
     p.x = spot.entryX; p.y = spot.entryY;
     p.hp = p.maxHp;
+    p.cp = this._maxCpOf(p);
     p._coopLane = lane;
     p._raceLane = null;
     p._fearLane = null;
@@ -1490,6 +1499,7 @@ class Room {
     const spot = this._dungeon.spawn;
     p.x = spot.x; p.y = spot.y;
     p.hp = p.maxHp;
+    p.cp = this._maxCpOf(p);
     p._profileRev++;
     if (!this._farm2Members) this._farm2Members = new Set();
     this._farm2Members.add(socketId);
@@ -1986,6 +1996,7 @@ class Room {
       // синхронизация уехала бы тиком позже.
       this._petSkillTick(p, now);
       this._regenTick(p, dt, now);
+      this._cpTick(p, dt, now);
       const nowIn = this._inSafeZone(p.x, p.y);
       if (nowIn && !p._wasInSafeZone) (entered || (entered = new Set())).add(p.socketId);
       p._wasInSafeZone = nowIn;
@@ -3201,6 +3212,8 @@ class Room {
     const fearCarry = telegramId ? this._fearGraceClaim(telegramId, socketId) : null;
     const spawn = this.spawnPointFor();
     const carry = fearCarry || raceCarry;
+    let cpCarry = telegramId ? _cpCarry.get(telegramId) : null;
+    if (cpCarry) { _cpCarry.delete(telegramId); if (Date.now() - cpCarry.hitAt >= CP_CARRY_TTL_MS) cpCarry = null; }
     this.players.set(socketId, {
       socketId, username, type: null, telegramId: telegramId || null,
       clanName: clanName || null, clanIcon: clanIcon || null, clanAtkBonus: clanAtkBonus || 0,
@@ -3208,6 +3221,8 @@ class Room {
       x: carry ? carry.x : spawn.x, y: carry ? carry.y : spawn.y, facing: 'front', moving: false,
       hp: carry ? carry.hp : 200, maxHp: 200, atk: 5, def: 5,
       pvpMode: false, lastAtkSeq: 0,
+      // undefined — полный запас на первом же тике (_cpTick).
+      cp: cpCarry ? cpCarry.cp : undefined, _cpHitAt: cpCarry ? cpCarry.hitAt : 0,
       _raceLane: raceCarry ? raceCarry.lane : null,
       _fearLane: fearCarry ? fearCarry.lane : null,
       // Coop has no reconnect carry — a disconnect ends the run for both
@@ -3263,6 +3278,42 @@ class Room {
     if (p.pvpMode !== !!mode) { p.pvpMode = !!mode; p._profileRev++; }
   }
 
+  // ── CP ─────────────────────────────────────────────────────────────────────
+  // Запас на PvP: PVP_CP_MULT от максимального здоровья (shared/definitions.js).
+  // p.maxHp, а не _maxHpOf: бафф «Пульса» не должен раздувать и CP.
+  _maxCpOf(p) { return Math.floor((p.maxHp || 0) * PVP_CP_MULT); }
+
+  // Удар игрока по игроку: сперва CP, остаток — по здоровью.
+  _pvpHurt(target, dmg) {
+    const max = this._maxCpOf(target);
+    const cp = Number.isFinite(target.cp) ? Math.min(target.cp, max) : max;
+    const toCp = Math.min(cp, dmg);
+    target.cp = cp - toCp;
+    target._cpHitAt = Date.now();
+    if (dmg > toCp) target.hp = Math.max(0, target.hp - (dmg - toCp));
+  }
+
+  // Восстановление CP — зовётся из _tick рядом с _regenTick. Мёртвому — сразу
+  // полный запас: следующая жизнь начинается с полными CP. Живому — после
+  // CP_REGEN_DELAY_MS без PvP-попаданий, CP_REGEN_PCT_PER_SEC в секунду.
+  // Полоса уезжает клиенту раз в HP_SYNC_EVERY_MS и в момент заполнения.
+  _cpTick(p, dt, now) {
+    // До setPlayerChar maxHp — заглушка 200: не обрезать по ней унесённые CP.
+    if (!p.type) return;
+    const max = this._maxCpOf(p);
+    const before = p.cp;
+    if (!Number.isFinite(p.cp) || p.cp > max || p.hp <= 0) p.cp = max;
+    else if (p.cp < max && now - (p._cpHitAt || 0) >= CP_REGEN_DELAY_MS) {
+      p.cp = Math.min(max, p.cp + max * CP_REGEN_PCT_PER_SEC * dt);
+    }
+    const cp = Math.round(p.cp);
+    if (cp === p._cpSent && max === p._cpSentMax) return;
+    const filled = p.cp >= max && before < max;
+    if (!filled && max === p._cpSentMax && now - (p._cpSyncAt || 0) < HP_SYNC_EVERY_MS) return;
+    p._cpSyncAt = now; p._cpSent = cp; p._cpSentMax = max;
+    this.io.to(p.socketId).emit('cpSync', { cp, maxCp: max });
+  }
+
   pvpAttack(attackerSocketId, targetSocketId) {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
@@ -3285,9 +3336,9 @@ class Room {
     // target's client used to self-report "actual damage taken" afterwards
     // (pvpDamageTaken), which a modified client could always report as 0 to
     // become unkillable in PvP while still dealing full damage to others.
-    target.hp = Math.max(0, target.hp - dmg);
+    this._pvpHurt(target, dmg);
     this._vampGain(attacker, dmg);
-    return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
+    return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp, cp: Math.round(target.cp), maxCp: this._maxCpOf(target) };
   }
 
   // The multiplier for a cast by this player in slot `key`, derived from what
@@ -3490,9 +3541,9 @@ class Room {
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
-    target.hp = Math.max(0, target.hp - dmg);
+    this._pvpHurt(target, dmg);
     this._vampGain(attacker, dmg);
-    return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp };
+    return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp, cp: Math.round(target.cp), maxCp: this._maxCpOf(target) };
   }
 
   removePlayer(socketId) {
@@ -3509,6 +3560,11 @@ class Room {
     // window that elapses with no reconnect turns into a real release.
     const p = this.players.get(socketId);
     if (p && p._fearLane != null) this._fearGraceStart(p);
+    if (p && p.telegramId && Number.isFinite(p.cp) && p.hp > 0 && p.cp < this._maxCpOf(p)) {
+      const now = Date.now();
+      if (_cpCarry.size > 5000) for (const [k, v] of _cpCarry) if (now - v.hitAt >= CP_CARRY_TTL_MS) _cpCarry.delete(k);
+      _cpCarry.set(p.telegramId, { cp: p.cp, hitAt: p._cpHitAt || 0 });
+    }
     // Coop has no equivalent hold — a disconnect ends the run for both
     // participants immediately (_coopEjectOnDisconnect, server/index.js),
     // which releases this player's lane (and clears p._coopLane) before
@@ -4333,6 +4389,7 @@ class Room {
     const p = this.players.get(socketId);
     if (!p) return;
     p.hp = p.maxHp;
+    p.cp = this._maxCpOf(p);
     p.x = this._dungeon.spawn.x;
     p.y = this._dungeon.spawn.y;
   }
@@ -4367,6 +4424,7 @@ class Room {
       if (this._isWall(x, y)) { x = ar.cx; y = ar.cy; }
       p.x = x; p.y = y;
       p.hp = p.maxHp;
+      p.cp = this._maxCpOf(p);
       p.pvpMode = true;
       p._profileRev++;
       placed.push({ socketId: sid, x, y, hp: p.hp });
@@ -4411,6 +4469,7 @@ class Room {
         const x = spot.x, y = spot.y;
         p.x = x; p.y = y;
         p.hp = p.maxHp;
+        p.cp = this._maxCpOf(p);
         p.pvpMode = true;
         // Defensive: fearEnter's own registration-time check is what's meant
         // to keep these two from ever overlapping, but a deploy pulling
@@ -4454,6 +4513,7 @@ class Room {
     [[a, sidA, slot.a], [b, sidB, slot.b]].forEach(([p, sid, pos]) => {
       p.x = pos.x; p.y = pos.y;
       p.hp = p.maxHp;
+      p.cp = this._maxCpOf(p);
       p.pvpMode = true;
       // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
       // whoever is currently online never checked which private Fear hall
@@ -4574,6 +4634,7 @@ class Room {
       const x = spot.x, y = spot.y;
       p.x = x; p.y = y;
       p.hp = p.maxHp;
+      p.cp = this._maxCpOf(p);
       // Their lane for as long as the run lasts — read by _raceVisible on both
       // the targeting and the streaming side. Cleared when they leave, in
       // deathBattleReturn (every exit path goes through it) and removePlayer.
@@ -4803,6 +4864,7 @@ class Room {
     if (!gw || !gw.spawns || !gw.spawns.length) { this.respawnPlayer(socketId); return p ? { x: p.x, y: p.y } : null; }
     const spot = gw.spawns[Math.floor(Math.random() * gw.spawns.length)];
     p.hp = p.maxHp;
+    p.cp = this._maxCpOf(p);
     p.x = spot.x; p.y = spot.y;
     p._profileRev++;
     return { x: p.x, y: p.y };

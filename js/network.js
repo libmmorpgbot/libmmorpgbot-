@@ -1817,8 +1817,12 @@ function netConnect(onReady) {
     spawnBurst(player.x, player.y, '#ff4', 8);
   });
 
-  socket.on('pvpDamage', ({ dmg, hp }) => {
+  socket.on('pvpDamage', ({ dmg, hp, cp, maxCp }) => {
     if (!player || state !== 'playing') return;
+    // Удар игрока сперва снимает CP, остаток — HP (Room._pvpHurt); оба числа
+    // серверные.
+    if (cp != null) player.cp = Math.max(0, cp);
+    if (maxCp != null) player.maxCp = maxCp;
     // hp is the server's own authoritative post-hit value (Room.js applies
     // PvP damage server-side now) — trust it directly instead of computing
     // and self-reporting a damage number back.
@@ -1830,14 +1834,27 @@ function netConnect(onReady) {
     if (player.hp <= 0 && state === 'playing') { player.hp = 0; playerDie(); }
   });
 
-  socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId }) => {
+  // CP своего игрока: восстановление и полный запас после смерти/входа в
+  // режим считает комната (Room._cpTick) и присылает раз в секунду.
+  socket.on('cpSync', ({ cp, maxCp } = {}) => {
+    if (!player) return;
+    if (cp != null) player.cp = Math.max(0, cp);
+    if (maxCp != null) player.maxCp = maxCp;
+  });
+
+  socket.on('pvpHit', ({ x, y, dmg, targetId: hitTargetId, cp, maxCp }) => {
     if (dmg) {
       dmgNum(x, y - 24, dmg, '#f88');
       if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
     }
     spawnBurst(x, y, '#f44', 4);
     const _hitOp = hitTargetId ? otherPlayers.get(hitTargetId) : null;
-    if (_hitOp) _hitOp.hurtTimer = 0.1;
+    if (_hitOp) {
+      _hitOp.hurtTimer = 0.1;
+      // CP чужого игрока в потоке состояния нет — только то, что вернул наш
+      // же удар. Рамка цели показывает его, пока оно свежее (drawTargetFrame).
+      if (cp != null && maxCp) { _hitOp.cp = cp; _hitOp.maxCp = maxCp; _hitOp._cpAt = Date.now(); }
+    }
   });
 
   socket.on('enemyCC', ({ enemyId, enemyIds, type, duration }) => {
