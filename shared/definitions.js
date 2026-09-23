@@ -884,6 +884,8 @@ const _PASSIVE_BOOK_SRC = [
   ['ranger', 'bowatk', 'Меткий глаз'], ['ranger', 'bowdef', 'Чутьё следопыта'],
   ['mage', 'mageatk', 'Поток маны'], ['mage', 'magedef', 'Ледяной щит'],
   ['warlock', 'healatk', 'Тёмная жажда'], ['warlock', 'healdef', 'Оберег тьмы'],
+  ['runefighter', 'rfatk', 'Рунная ярость'], ['runefighter', 'rfdef', 'Рунная кожа'],
+  ['assassin', 'asatk', 'Клинок в тени'], ['assassin', 'asdef', 'Уклончивость'],
 ];
 // [passiveId, name] — universal passives, no class attached (PASSIVE_COMMON_DEF).
 const _PASSIVE_COMMON_BOOK_SRC = [
@@ -3391,6 +3393,17 @@ const PASSIVE_CLASS_DEF = {
   warlock: [
     { id:'healatk', name:'Тёмная жажда', img:'/images/passive/healatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
     { id:'healdef', name:'Оберег тьмы',  img:'/images/passive/healdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+  // Рунный боец и Ассасин пришли без своей пары — и в PvP недосчитывались до
+  // +30% атаки и +30% защиты против любого из пяти старых классов при тех же
+  // книгах и шмоте. Та же пара, те же проценты, что у всех.
+  runefighter: [
+    { id:'rfatk', name:'Рунная ярость', img:'/images/passive/rfatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'rfdef', name:'Рунная кожа',   img:'/images/passive/rfdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+  ],
+  assassin: [
+    { id:'asatk', name:'Клинок в тени', img:'/images/passive/asatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'asdef', name:'Уклончивость',  img:'/images/passive/asdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
   ],
 };
 

@@ -89,7 +89,8 @@ for (let lvl = 1; lvl <= MAX_MONSTER_LEVEL; lvl++) {
   shapes.add([levelSkillBookPool(lvl).length, levelClassPassivePool(lvl).length,
     levelUniversalPassivePool(lvl).length].join('/'));
 }
-eq([...shapes].join(' '), '5/5/1', 'на кожному рівні 5 навичкових + 5 класових пасивок + 1 універсальна');
+const _nCls = Object.keys(require('../shared/definitions').CHAR_DEF).length;
+eq([...shapes].join(' '), `${_nCls}/${_nCls}/1`, `на кожному рівні ${_nCls} навичкових + ${_nCls} класових пасивок + 1 універсальна`);
 
 // ── руда в карточке монстра ──────────────────────────────────────────────
 // Владелец: «на карте в карточках монстров добавь руду». _monsterDropBodyHtml

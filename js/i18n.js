@@ -1534,6 +1534,14 @@ const I18N_ADV_SKILLS = {
 
 // key: passive id -> {name, desc}
 const I18N_PASSIVES = {
+  rfatk:    { name: { en: 'Rune Fury',         uk: 'Рунна лють',       es: 'Furia Rúnica',        tr: 'Rün Öfkesi',       pt: 'Fúria Rúnica' },
+              desc: { en: '+3% attack per level', uk: '+3% атаки за рівень', es: '+3% de ataque por nivel', tr: 'Seviye başına +%3 saldırı', pt: '+3% de ataque por nível' } },
+  rfdef:    { name: { en: 'Rune Skin',         uk: 'Рунна шкіра',      es: 'Piel Rúnica',         tr: 'Rün Derisi',       pt: 'Pele Rúnica' },
+              desc: { en: '+3% defense per level', uk: '+3% захисту за рівень', es: '+3% de defensa por nivel', tr: 'Seviye başına +%3 savunma', pt: '+3% de defesa por nível' } },
+  asatk:    { name: { en: 'Shadow Blade',      uk: 'Клинок у тіні',    es: 'Hoja en la Sombra',   tr: 'Gölge Bıçağı',     pt: 'Lâmina na Sombra' },
+              desc: { en: '+3% attack per level', uk: '+3% атаки за рівень', es: '+3% de ataque por nivel', tr: 'Seviye başına +%3 saldırı', pt: '+3% de ataque por nível' } },
+  asdef:    { name: { en: 'Evasiveness',       uk: 'Ухильність',       es: 'Evasión',             tr: 'Kaçamaklık',       pt: 'Evasão' },
+              desc: { en: '+3% defense per level', uk: '+3% захисту за рівень', es: '+3% de defensa por nivel', tr: 'Seviye başına +%3 savunma', pt: '+3% de defesa por nível' } },
   tankatk:  { name: { en: 'Berserker Might',   uk: 'Міць берсерка',    es: 'Poder del Berserker', tr: 'Berserker Gücü',   pt: 'Poder do Berserker' },
               desc: { en: '+3% attack per level', uk: '+3% атаки за рівень', es: '+3% de ataque por nivel', tr: 'Seviye başına +%3 saldırı', pt: '+3% de ataque por nível' } },
   deftank:  { name: { en: 'Unbreakable',       uk: 'Незламність',      es: 'Inquebrantable',      tr: 'Yıkılmazlık',      pt: 'Inquebrável' },
@@ -1753,6 +1761,10 @@ const I18N_MATS = {
   book_pas_magedef: { en: 'Book: Ice Shield',      uk: 'Книга: Крижаний щит', es: 'Libro: Escudo de Hielo', tr: 'Kitap: Buz Kalkanı', pt: 'Livro: Escudo de Gelo' },
   book_pas_healatk: { en: 'Book: Dark Thirst',     uk: 'Книга: Темна спрага', es: 'Libro: Sed Oscura', tr: 'Kitap: Karanlık Susuzluk', pt: 'Livro: Sede Sombria' },
   book_pas_healdef: { en: 'Book: Dark Ward',       uk: 'Книга: Оберіг тьми', es: 'Libro: Amuleto Oscuro', tr: 'Kitap: Karanlık Muska', pt: 'Livro: Amuleto Sombrio' },
+  book_pas_rfatk:   { en: 'Book: Rune Fury',       uk: 'Книга: Рунна лють', es: 'Libro: Furia Rúnica', tr: 'Kitap: Rün Öfkesi', pt: 'Livro: Fúria Rúnica' },
+  book_pas_rfdef:   { en: 'Book: Rune Skin',       uk: 'Книга: Рунна шкіра', es: 'Libro: Piel Rúnica', tr: 'Kitap: Rün Derisi', pt: 'Livro: Pele Rúnica' },
+  book_pas_asatk:   { en: 'Book: Shadow Blade',    uk: 'Книга: Клинок у тіні', es: 'Libro: Hoja en la Sombra', tr: 'Kitap: Gölge Bıçağı', pt: 'Livro: Lâmina na Sombra' },
+  book_pas_asdef:   { en: 'Book: Evasiveness',     uk: 'Книга: Ухильність', es: 'Libro: Evasión', tr: 'Kitap: Kaçamaklık', pt: 'Livro: Evasão' },
   book_pas_allatkspeed: { en: 'Book: Swiftness',   uk: 'Книга: Стрімкість', es: 'Libro: Celeridad', tr: 'Kitap: Çeviklik', pt: 'Livro: Rapidez' },
   book_pas_allhp:       { en: 'Book: Vitality',    uk: 'Книга: Живучість', es: 'Libro: Vitalidad', tr: 'Kitap: Dayanıklılık', pt: 'Livro: Vitalidade' },
   book_pas_allcritdmg:  { en: 'Book: Blood Frenzy',uk: 'Книга: Кривава лють', es: 'Libro: Frenesí Sangriento', tr: 'Kitap: Kan Çılgınlığı', pt: 'Livro: Frenesi Sangrento' },
