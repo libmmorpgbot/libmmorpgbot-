@@ -67,54 +67,76 @@ function updateInvUI() {
   const p = player;
   const inv = p.inventory;
 
-  // Equipment diamond: left column = weapon/helmet/body/gloves/cloak, right
-  // column = boots/ring/belt/pet/artifact (EQ_SLOTS' own order, see
-  // js/definitions.js — first half/second half), with the animated portrait
-  // (eq-center-canvas) floating between them — see _startInvPortraitAnim
-  // below.
-  const _eqCellHtml = ({ slot, label, emptyIcon }) => {
+  // ── Кольцо снаряжения ────────────────────────────────────────────────────
+  // Одиннадцать слотов по кругу вокруг анимированного портрета
+  // (eq-center-canvas, _startInvPortraitAnim ниже), в порядке EQ_SLOTS по
+  // часовой стрелке от верха. Позиции — в процентах от квадрата .eq-ring, так
+  // что кольцо тянется под любую ширину экрана без пересчёта.
+  const _RING_R = 40; // радиус кольца, % от стороны
+  document.getElementById('eq-ring-slots').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }, i) => {
     const it = p.equipment[slot];
-    const rc = it ? (RARITY_COLOR[it.rarity] || '#aea599') : '';
-    const enhBadge = it && it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
-    return `<div class="eq-cell${it ? ' filled' : ''}" onclick="${it ? `openEqItemModal('${slot}')` : ''}"
-      title="${it ? it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it) : label}"
-      style="${it ? 'border-color:' + rc + '55;position:relative' : ''}">
-      <div class="cell-icon">${it ? _itemIcon(it, 34) : iconHTML(emptyIcon, 27, '#6c6354')}</div>
-      <div class="cell-lbl" style="${it ? 'color:' + rc : ''}">${it ? it.name : label}</div>
-      ${enhBadge}
+    const a = -Math.PI / 2 + i * 2 * Math.PI / EQ_SLOTS.length;
+    const pos = `left:${(50 + _RING_R * Math.cos(a)).toFixed(2)}%;top:${(50 + _RING_R * Math.sin(a)).toFixed(2)}%`;
+    if (!it) {
+      return `<div class="eq-rslot" title="${label}" style="${pos}">${iconHTML(emptyIcon, 22, '#6b5b3a')}</div>`;
+    }
+    const rc = RARITY_COLOR[it.rarity] || '#aea599';
+    return `<div class="eq-rslot filled" onclick="openEqItemModal('${slot}')"
+      title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}"
+      style="${pos};--rc:${rc}">
+      ${_itemIcon(it, 32)}
+      ${it.enhance ? `<span class="eq-rslot-enh">+${it.enhance}</span>` : ''}
     </div>`;
-  };
-  // Слотов стало одиннадцать (добавились крылья), и половина перестала быть
-  // целой. Округление вверх — решение, а не побочный эффект: слева шесть,
-  // справа пять. Без него slice(0, 5.5) молча отдавал то же самое, но по
-  // случайности, а не по правилу.
-  const _eqHalf = Math.ceil(EQ_SLOTS.length / 2);
-  document.getElementById('eq-col-left').innerHTML  = EQ_SLOTS.slice(0, _eqHalf).map(_eqCellHtml).join('');
-  document.getElementById('eq-col-right').innerHTML = EQ_SLOTS.slice(_eqHalf).map(_eqCellHtml).join('');
+  }).join('');
   _startInvPortraitAnim();
 
-  // Character preview
+  // Шапка: имя и класс по центру, над кольцом.
   const _bag = p.potionBag || {};
   const _hudPtDef = ITEM_DEF.find(d => d.id === (p.hudPotion || 'pt1'));
   const _hudCount = _bag[p.hudPotion || 'pt1'] || 0;
   const _activeBufCount = Object.values(p.buffs || {}).filter(v => v > 0).length;
   document.getElementById('char-preview').innerHTML = `
-    <div class="inv-char-row">
-      <div style="line-height:1">${iconHTML(p.charDef.icon, 40, p.charDef.color)}</div>
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:bold;color:${p.charDef.color}">${p.charDef.name}</div>
-        <div style="font-size:11px;color:#a2988a;margin-top:2px">${tVars('charLevelFmt', { lvl: p.lvl })}</div>
-        <div style="font-size:11px;color:#5d564b;margin-top:2px;display:flex;align-items:center;gap:3px">
-          ${iconHTML('heart',11,'#da4658')}${Math.ceil(p.hp)}/${p.maxHp} ·
-          <span style="color:#eaa742;font-weight:700">${t('bmAbbrev')} ${typeof calcBM==='function'?calcBM(p):0}</span> ·
-          ${iconHTML('coin',11,'#e3941d')}${Math.floor(p.gold)}
-        </div>
+    <div class="eq-ring-head">
+      <div class="eq-ring-name">${_escHtml((typeof netUsername !== 'undefined' && netUsername) || p.charDef.name)}</div>
+      <div class="eq-ring-sub">
+        ${p.charDef.iconImg ? `<img src="${p.charDef.iconImg}" width="18" height="18" alt="">` : iconHTML(p.charDef.icon, 16, p.charDef.color)}
+        <span style="color:${p.charDef.color}">${p.charDef.name}</span> · ${tVars('charLevelFmt', { lvl: p.lvl })}
       </div>
-      <div onclick="openHpPicker()" style="color:#98e456;text-align:right;font-weight:bold;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer">
-        ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="20" height="20" style="image-rendering:pixelated">` : iconHTML('potion',20,'#90d653')}
-        <span style="font-size:10px">×${_hudCount}</span>
-        ${_activeBufCount > 0 ? `<span style="font-size:9px;color:#e5a546">${_activeBufCount} ${t('buffCountSuffix')}</span>` : ''}
-      </div>
+    </div>
+  `;
+
+  // Под кольцом: БМ, полосы CP/HP, статы списком, золото и зелья.
+  const _bar = (cls, label, cur, max) => {
+    const pct = max > 0 ? Math.max(0, Math.min(100, cur / max * 100)) : 0;
+    return `<div class="eq-ring-bar ${cls}"><div style="width:${pct.toFixed(1)}%"></div>
+      <span>${label} ${Math.ceil(cur).toLocaleString('ru-RU')} / ${Math.floor(max).toLocaleString('ru-RU')}</span></div>`;
+  };
+  const _statRow = (name, val, color) =>
+    `<div class="eq-ring-stat"><span>${name}</span><i></i><b style="color:${color}">${val}</b></div>`;
+  const _bm = typeof calcBM === 'function' ? calcBM(p) : 0;
+  document.getElementById('eq-ring-info').innerHTML = `
+    <div class="eq-ring-orn"></div>
+    <div class="eq-ring-bm-lbl">${t('bmAbbrev')}</div>
+    <div class="eq-ring-bm">${Number(_bm).toLocaleString('ru-RU')}</div>
+    <div class="eq-ring-orn"></div>
+    <div class="eq-ring-bars">
+      ${p.maxCp > 0 ? _bar('cp', 'CP', p.cp || 0, p.maxCp) : ''}
+      ${_bar('hp', 'HP', p.hp, p.maxHp)}
+    </div>
+    <div class="eq-ring-stats">
+      ${_statRow(t('clanPerkAtk'), p.atk, '#f08a6a')}
+      ${_statRow(t('statDef'), p.def, '#7fb0f0')}
+      ${_statRow(t('statCritChance'), ((p.critChance || 0) * 100).toFixed(1) + '%', '#f3cf72')}
+      ${_statRow(t('statCritPower'), (p.critPower || 0).toFixed(2) + 'x', '#f3cf72')}
+      ${_statRow(t('statAtkSpeedAbbrev'), (p.atkSpeed || 0).toFixed(2), '#b07cf0')}
+      ${_statRow(t('statHpRegen'), (p.hpRegen || 0).toFixed(2), '#7fdc6a')}
+    </div>
+    <div class="eq-ring-foot">
+      <span style="color:#f0b44a">${iconHTML('coin', 13, '#f0b44a')} ${_hudNum(p.gold)}</span>
+      <span class="eq-ring-pot" onclick="openHpPicker()">
+        ${_hudPtDef && _hudPtDef.img ? `<img src="${_hudPtDef.img}" width="16" height="16" style="image-rendering:pixelated" alt="">` : iconHTML('potion', 14, '#90d653')}
+        ×${_hudCount}${_activeBufCount > 0 ? ` <em>${_activeBufCount} ${t('buffCountSuffix')}</em>` : ''}
+      </span>
     </div>
   `;
 
