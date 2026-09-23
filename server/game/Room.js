@@ -7,7 +7,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
-        SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT,
+        SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -3899,7 +3899,11 @@ class Room {
       while (now - p._butterAt >= 1000) {
         p._butterAt += 1000;
         if (p.hp >= p.maxHp) continue;
-        const tick = Math.max(1, Math.round(p.maxHp * BUTTERFLIES_TICK_PCT));
+        // С включённым ПК — BUTTERFLIES_TICK_PCT_PVP: окно 10 с + уровень при
+        // перезарядке 8 с держится непрерывно, и 5% в секунду перекрывали
+        // входящий урон почти любого класса — целитель в PvP не умирал.
+        const tickPct = p.pvpMode ? BUTTERFLIES_TICK_PCT_PVP : BUTTERFLIES_TICK_PCT;
+        const tick = Math.max(1, Math.round(p.maxHp * tickPct));
         p.hp = Math.min(p.maxHp, p.hp + tick);
         this.io.to(p.socketId).emit('skillHealTick', { amount: tick, kind: 'butterflies' });
       }

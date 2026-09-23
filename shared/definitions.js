@@ -3680,6 +3680,9 @@ const SKILL_SELF_HEAL = {
 // плюс секунда за уровень навыка.
 const BUTTERFLIES_SEC = 10;
 const BUTTERFLIES_TICK_PCT = 0.05;
+// Тот же тик у игрока с включённым ПК (Room._regenTick): в PvP «Бабочки»
+// висят без перерыва, и полные 5% в секунду делали целителя неубиваемым.
+const BUTTERFLIES_TICK_PCT_PVP = 0.02;
 
 // Вампиризм (Q Рыцаря Смерти): доля НАНЕСЁННОГО урона, возвращаемая здоровьем.
 // Переехали сюда из js/state.js — сервер применяет урон и, значит, он же
@@ -3864,7 +3867,7 @@ if (typeof module !== 'undefined') module.exports = {
   GRAM_MIN_WITHDRAW,
   SKILL_SELF_HEAL, SKILL_HASTE, skillHasteOf,
   SKILL_BUFFS, skillBuffOf,
-  BUTTERFLIES_SEC, BUTTERFLIES_TICK_PCT,
+  BUTTERFLIES_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
   VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
   SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,
   skillHealMult, skillSelfHealOf,
