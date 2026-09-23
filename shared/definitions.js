@@ -3467,12 +3467,12 @@ const PASSIVE_CLASS_DEF = {
   // +30% атаки и +30% защиты против любого из пяти старых классов при тех же
   // книгах и шмоте. Та же пара, те же проценты, что у всех.
   runefighter: [
-    { id:'rfatk', name:'Рунная ярость', img:'/images/passive/rfatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
-    { id:'rfdef', name:'Рунная кожа',   img:'/images/passive/rfdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+    { id:'rfatk', name:'Рунная ярость', img:'/images/passive/rfatk_v2.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'rfdef', name:'Рунная кожа',   img:'/images/passive/rfdef_v2.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
   ],
   assassin: [
-    { id:'asatk', name:'Клинок в тени', img:'/images/passive/asatk.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
-    { id:'asdef', name:'Уклончивость',  img:'/images/passive/asdef.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
+    { id:'asatk', name:'Клинок в тени', img:'/images/passive/asatk_v2.png', stat:'atkPct', perLevel:0.03, desc:'+3% атаки за уровень' },
+    { id:'asdef', name:'Уклончивость',  img:'/images/passive/asdef_v2.png', stat:'defPct', perLevel:0.03, desc:'+3% защиты за уровень' },
   ],
 };
 
