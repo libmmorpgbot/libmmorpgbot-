@@ -228,6 +228,26 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
   };
 }
 
+// ── урон игрока по игроку ──────────────────────────────────────────────────
+// PvP считал урон так же, как по мобам: атака минус защита. У мобов защита
+// растёт медленно (monsterDEFAtLevel) и вычитание работает, а у игроков
+// защита того же порядка, что и атака, — и разность уходила в ноль: танк под
+// своим щитом (DEF ×1.8) получал от обычного удара ровно 1, и всё решали
+// бафы защиты, а не бой.
+//
+// Здесь защита — доля, а не вычитаемое: удар режется в atk/(atk+def) раз.
+// Без защиты — полный урон, при защите, равной атаке, — половина, и никакая
+// защита не доводит удар до нуля. Формула не зависит от масштаба, поэтому
+// одинаково ведёт себя на 20-м и на 120-м уровне. Множитель навыка
+// применяется к удару, а в долю входит «голая» атака — иначе навык ×3 ещё и
+// пробивал бы защиту втрое лучше.
+function _pvpBase(atk, def, mult) {
+  atk = Math.max(0, Number(atk) || 0);
+  def = Math.max(0, Number(def) || 0);
+  const share = atk + def > 0 ? atk / (atk + def) : 1;
+  return Math.max(1, Math.round(atk * (mult || 1) * share) + Math.floor(Math.random() * 7) - 3);
+}
+
 function _critDmg(base, critChance, critPower) {
   const isCrit = Math.random() < (critChance || 0);
   // ── единственная воронка урона, и единственное место, где его округляют ──
@@ -3258,7 +3278,7 @@ class Room {
     if (this._inSafeZone(target.x, target.y)) return null;
     const dx = attacker.x - target.x, dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 500 * 500) return null;
-    const base = Math.max(1, this._atkOf(attacker) - this._defOf(target) + Math.floor(Math.random() * 7) - 3);
+    const base = _pvpBase(this._atkOf(attacker), this._defOf(target), 1);
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     // Apply the damage to the authoritative server-side HP right here — the
@@ -3427,7 +3447,7 @@ class Room {
     // Same defense-ignore as skillAttackEnemy — see SKILL_DEF_IGNORE.
     const _defIgnore2 = skillDefIgnoreOf(_slotCls, _slotKey, _advActivePvp);
     const _targetDef = _defIgnore2 > 0 ? Math.round(this._defOf(target) * (1 - _defIgnore2)) : this._defOf(target);
-    const base = Math.max(1, Math.round(this._atkOf(attacker) * mult) - _targetDef + Math.floor(Math.random() * 7) - 3);
+    const base = _pvpBase(this._atkOf(attacker), _targetDef, mult);
     const { dmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     target.hp = Math.max(0, target.hp - dmg);
