@@ -933,7 +933,12 @@ function update(dt, realDt) {
             if (ex * ex + ey * ey < r * r) { _hitOpId = _opId; break; }
           }
           if (_hitOpId) {
-            if (p.pvpMult) netPvpSkillAttack(_hitOpId, p.pvpMult);
+            // The slot, not the number, is what the server reads (see
+            // netPvpSkillAttack) — without pvpKey it looked up an unstudied
+            // slot `undefined` and refused every projectile skill hit, so
+            // Мульти-выстрел, Комбо-стрела and Ледяной шар/Молния dealt
+            // nothing at all to players.
+            if (p.pvpMult && p.pvpKey) netPvpSkillAttack(_hitOpId, p.pvpMult, p.pvpKey);
             spawnBurst(p.x, p.y, p.color, 5);
             continue;
           }

@@ -1003,10 +1003,11 @@ function _dispatchSkillEffect(cls, sk) {
         const dir = nearestEnemyDir();
         const base = Math.atan2(dir.dy, dir.dx);
         const dmgMult = _skillDmgMult('Q');
+        const _pvpKeyQ = _cooldownKeyFor('Q');
         [-0.35, 0, 0.35].forEach(off => {
           const ang = base + off;
           const p = { x: player.x, y: player.y, vx: Math.cos(ang)*380, vy: Math.sin(ang)*380,
-            color: '#8fbf5a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
+            color: '#8fbf5a', dmg: player.atk * dmgMult, pvpMult: dmgMult, pvpKey: _pvpKeyQ, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang };
           projs.push(p);
           netSpawnProj({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, color: '#8fbf5a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
         });
@@ -1038,11 +1039,14 @@ function _dispatchSkillEffect(cls, sk) {
         const dir = nearestEnemyDir();
         const ang = Math.atan2(dir.dy, dir.dx);
         const dmgMult = _skillDmgMult('W');
+        // Resolved now, not in the timeout: _foreignCastCtx only lives for the
+        // synchronous cast, and the arrows below fire after it is cleared.
+        const _pvpKeyW = _cooldownKeyFor('W');
         [0, 80, 160].forEach(delayMs => {
           setTimeout(() => {
             if (!player) return;
             projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
-              color: '#a8d47a', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
+              color: '#a8d47a', dmg: player.atk * dmgMult, pvpMult: dmgMult, pvpKey: _pvpKeyW, life: 1.5, size: 5, isPlayer: true, projType: 'arrow', angle: ang });
             netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*400, vy: Math.sin(ang)*400,
               color: '#a8d47a', size: 5, projType: 'arrow', angle: ang, life: 1.5 });
           }, delayMs);
@@ -1082,7 +1086,7 @@ function _dispatchSkillEffect(cls, sk) {
       const ang = Math.atan2(dir.dy, dir.dx);
       const dmgMult = _skillMult('Q'); // Урон молнии ×3 / Ледяной шар ×2
       projs.push({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340,
-        color: _advQ ? '#f5c542' : '#f60', dmg: player.atk * dmgMult, pvpMult: dmgMult, life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
+        color: _advQ ? '#f5c542' : '#f60', dmg: player.atk * dmgMult, pvpMult: dmgMult, pvpKey: _cooldownKeyFor('Q'), life: 2, size: 11, isPlayer: true, projType: 'ball', angle: ang });
       _skillDirMult(dir.dx, dir.dy, 160, 0.5, dmgMult, 'Q');
       netSpawnProj({ x: player.x, y: player.y, vx: Math.cos(ang)*340, vy: Math.sin(ang)*340, color: _advQ ? '#f5c542' : '#f60', size: 11, projType: 'ball', angle: ang, life: 2 });
       if (_advQ) { // + 3s stun (+1s per level) on the same target the shot is aimed at
