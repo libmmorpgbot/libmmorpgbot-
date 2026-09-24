@@ -930,6 +930,74 @@ function _playerTextures(charType, animKey) {
   return (_pTex[k] = arr);
 }
 
+// ── выгрузка того, что давно не показывалось ─────────────────────────────
+// Ленивая загрузка (ниже) решает, что грузить; это решает, что отпускать.
+// Без него память только росла: каждый класс, питомец и монстр, хоть раз
+// попавший в кадр за сессию, оставался навсегда — холстом в памяти и
+// текстурой на GPU. Прошёлся по хабу, сходил в данж, вернулся — и держишь всё
+// сразу. Лист, который не рисовали _SHEET_IDLE_MS, освобождается целиком
+// (текстура + холст); понадобится снова — подгрузится из кэша браузера, а
+// пока грузится, _fallbackTextures покажет стойку.
+//
+// Свой класс и своего питомца не трогаем никогда: их рисует ещё и 2D-интерфейс
+// (портрет в инвентаре, js/ui.js), который про эту выгрузку не знает.
+const _SHEET_IDLE_MS  = 60000;
+const _SHEET_SWEEP_MS = 5000;
+const _sheetSeen = new Map();   // 'p|type|key' · 'pet|id|key' · 'e|eid' -> ts последнего кадра
+let _sheetNow = 0, _sheetSweepAt = 0;
+function _seen(tag) { _sheetSeen.set(tag, _sheetNow); }
+
+function _freeTexSet(set) {
+  if (!set) return;
+  const list = Array.isArray(set) ? set : Object.values(set).flat();
+  const bt = list[0] && list[0].baseTexture;
+  // The frames share one BaseTexture; destroying it drops the GL texture and
+  // its entry in PIXI's BaseTexture cache, which is what held the canvas.
+  // Frames themselves are left to GC: a hidden pooled sprite may still point
+  // at one, and it gets a fresh texture before it is shown again.
+  try { if (bt && !bt.destroyed) bt.destroy(); } catch (e) { /* context already gone */ }
+}
+
+function _sweepSheets(now) {
+  if (now < _sheetSweepAt) return;
+  _sheetSweepAt = now + _SHEET_SWEEP_MS;
+  if (typeof state !== 'undefined' && state !== 'playing' && state !== 'dead') return;
+  if (typeof forgetSheet !== 'function') return;
+  const ownType = player && player.type;
+  const ownPet  = player && player.equipment && player.equipment.pet && player.equipment.pet.id;
+  // Adopt whatever is resident but was never drawn — a fallback idle that the
+  // real sheet overtook, a char-select preview, a full set some other path
+  // loaded — so it expires like everything else instead of staying forever.
+  const adopt = (kind, root, own) => Object.keys(root).forEach(id => {
+    if (id === own || !root[id]) return;
+    if (kind === 'e') { if (!_sheetSeen.has('e|' + id)) _sheetSeen.set('e|' + id, now); return; }
+    Object.keys(root[id]).forEach(key => {
+      const tag = kind + '|' + id + '|' + key;
+      if (!_sheetSeen.has(tag) && _sheetReady(root[id][key])) _sheetSeen.set(tag, now);
+    });
+  });
+  adopt('p', spriteCache, ownType);
+  adopt('pet', petSpriteCache, ownPet);
+  adopt('e', enemySpriteCache, null);
+  _sheetSeen.forEach((t, tag) => {
+    if (now - t < _SHEET_IDLE_MS) return;
+    const [kind, id, key] = tag.split('|');
+    if (kind === 'p') {
+      if (id === ownType) { _sheetSeen.delete(tag); return; }
+      _freeTexSet(_pTex[id + '|' + key]); delete _pTex[id + '|' + key];
+    } else if (kind === 'pet') {
+      if (id === ownPet) { _sheetSeen.delete(tag); return; }
+      _freeTexSet(_petTex[id + '|' + key]); delete _petTex[id + '|' + key];
+    } else if (kind === 'e') {
+      Object.keys(_eTex).forEach(k => {
+        if (k.startsWith(id + '|')) { _freeTexSet(_eTex[k]); delete _eTex[k]; }
+      });
+    } else { _sheetSeen.delete(tag); return; }
+    forgetSheet(kind, id, key);
+    _sheetSeen.delete(tag);
+  });
+}
+
 // Other players' sheets load one at a time, when first drawn (loadSpriteSheet,
 // js/sprites.js). Until the wanted one is in, show the same direction's idle,
 // then the front idle — a player who starts running for the first time keeps
@@ -1924,6 +1992,7 @@ function _updateEnemies(dt, pulse, bossGlow) {
     if (visIds && !e.isBoss && !visIds.has(e.id)) return;
     // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
     if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
+    _seen('e|' + e.eid);
     _visEnm++;
     const obj = _getEnemy(e.id);
     obj.ct.visible = true;
@@ -2090,6 +2159,7 @@ function _updateOtherPlayers(pulse, ts) {
       typeof loadSpriteSheet === 'function' ? loadSpriteSheet : null, p.type, want) : null;
     const key      = got ? got.key : want;
     const textures = got && got.tex;
+    if (got) _seen('p|' + p.type + '|' + key);
     const def      = SPRITE_DEF[p.type];
     let usedSprite = false;
     if (textures && def) {
@@ -2352,6 +2422,7 @@ function _updateOnePet(key, petId, ownerX, ownerY, ownerFacing, speed, dt) {
     typeof loadPetSheet === 'function' ? loadPetSheet : null, petId, want);
   const animKey = got ? got.key : want;
   const textures = got && got.tex;
+  if (got) _seen('pet|' + petId + '|' + animKey);
   if (textures && def) {
     const ad = def.anims[animKey];
     if (st._animKey !== animKey) { st._animKey = animKey; st._animFrame = 0; st._animTimer = 0; }
@@ -2497,6 +2568,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
 
   const pulse    = 0.5 + 0.5 * Math.sin(ts * 0.009);
   const bossGlow = 0.6 + 0.4 * Math.sin(ts * 0.006);
+  _sheetNow = ts;
 
   _layer('void', () => _updateVoid(camX, camY));
   _layer('tiles', () => _updateTiles(camX, camY));
@@ -2512,6 +2584,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _layer('player', () => _updatePlayer(dt, ts));
   _layer('dmg', () => _updateDmgNums());
   _layer('stickers', () => _updateStickers(camX, camY));
+  _layer('sheets', () => _sweepSheets(ts));
 
   _pixiApp.renderer.render(_pixiApp.stage);
   _gpuDrawsSnap = _gpuDraws; _gpuVertsSnap = _gpuVerts;

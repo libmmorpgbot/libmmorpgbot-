@@ -358,11 +358,39 @@ function _loadOneSheet(cacheRoot, id, def, key, cellH) {
   img.src = def.anims[key].src;
   cache[key] = img;
 }
+// The other half of pixi-world.js's _sweepSheets: forget a rasterized sheet
+// so the canvas can be collected and the next request loads it again (from
+// the browser's HTTP cache — no second download). The load promise goes too,
+// or a later full loadSprites/loadEnemySprites would think it is all there.
+function forgetSheet(kind, id, key) {
+  if (kind === 'e') {
+    delete enemySpriteCache[id];
+    delete _enemySpriteLoadPromises[id];
+    return;
+  }
+  const root  = kind === 'pet' ? petSpriteCache : spriteCache;
+  const proms = kind === 'pet' ? _petSpriteLoadPromises : _spriteLoadPromises;
+  if (root[id]) delete root[id][key];
+  delete proms[id];
+  _sheetRequested.delete(id + '|' + key);
+}
+// Phones that report 4 GB of RAM or less (navigator.deviceMemory — Android
+// WebViews report it, iOS doesn't, so iPhones keep full size) keep OTHER
+// players' sheets at 3/4 of the cell: under half the memory per sheet, a
+// barely softer sprite on someone else. Your own class is loaded by the full
+// loadSprites and keeps its size — if another player shares your class, they
+// share your sheets.
+const _LOW_MEM_DEVICE = (() => {
+  try { return !!navigator.deviceMemory && navigator.deviceMemory <= 4; } catch (e) { return false; }
+})();
+function _otherCellH(full) { return _LOW_MEM_DEVICE ? Math.max(64, Math.ceil(full * 0.75)) : full; }
 function loadSpriteSheet(charType, key) {
-  _loadOneSheet(spriteCache, charType, SPRITE_DEF[charType], key);
+  const def = SPRITE_DEF[charType];
+  _loadOneSheet(spriteCache, charType, def, key,
+    def ? _otherCellH(Math.min(_SPRITE_CELL_H, def.frameH || Infinity)) : undefined);
 }
 function loadPetSheet(petId, key) {
-  _loadOneSheet(petSpriteCache, petId, PET_SPRITE_DEF[petId], key, _petCellH());
+  _loadOneSheet(petSpriteCache, petId, PET_SPRITE_DEF[petId], key, _otherCellH(_petCellH()));
 }
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
