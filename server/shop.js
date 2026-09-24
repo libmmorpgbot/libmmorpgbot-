@@ -183,6 +183,11 @@ function _vipLevelItems(vipLevel, charClass) {
     case 8:  addWep('epic', 1); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); addBox('box_rare', 20); break;
     case 9:  addWep('epic', 8); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); addBox('box_rare', 25); break;
     case 10: addWep('legendary', 0); addBP(100); addStone('norm_stone', 100); addStone('bless_stone', 100); addBox('box_rare', 30); break;
+    case 11: addWep('legendary', 3);  addBP(120); addStone('norm_stone', 120); addStone('bless_stone', 120); addBox('box_rare', 35); break;
+    case 12: addWep('legendary', 5);  addBP(150); addStone('norm_stone', 150); addStone('bless_stone', 150); addBox('box_rare', 40); break;
+    case 13: addWep('legendary', 7);  addBP(180); addStone('norm_stone', 180); addStone('bless_stone', 180); addBox('box_rare', 45); break;
+    case 14: addWep('legendary', 9);  addBP(200); addStone('norm_stone', 200); addStone('bless_stone', 200); addBox('box_rare', 50); break;
+    case 15: addWep('legendary', 12); addBP(250); addStone('norm_stone', 250); addStone('bless_stone', 250); addBox('box_rare', 60); break;
     default: break;
   }
   return items;

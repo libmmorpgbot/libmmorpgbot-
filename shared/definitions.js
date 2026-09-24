@@ -3541,7 +3541,10 @@ function passiveBonusTotal(passiveLevels, cls) {
 
 // ── VIP System ────────────────────────────────────────────────────────────────
 // GRAM threshold to reach THIS level (counter resets after each level-up)
-const VIP_THRESHOLDS = [0, 1, 5, 10, 25, 50, 100, 150, 200, 300, 500];
+const VIP_THRESHOLDS = [0, 1, 5, 10, 25, 50, 100, 150, 200, 300, 500, 700, 1000, 1500, 2000, 3000];
+// Высший уровень — столько, сколько порогов. Клиент (VIP-панель) и сервер
+// (addVipSpend) читают его отсюда, отдельного «10» нигде больше нет.
+const VIP_MAX_LEVEL = VIP_THRESHOLDS.length - 1;
 
 // The running TOTAL a player must have deposited overall (since VIP 0) to be
 // AT each level — index i is VIP_THRESHOLDS[0]+...+VIP_THRESHOLDS[i]. Needed
@@ -3570,6 +3573,11 @@ const VIP_BONUSES = [
   { xp:75,  gold:75,  drop:30  }, // VIP 8
   { xp:90,  gold:90,  drop:40  }, // VIP 9
   { xp:100, gold:100, drop:100 }, // VIP 10
+  { xp:110, gold:110, drop:105 }, // VIP 11
+  { xp:120, gold:120, drop:110 }, // VIP 12
+  { xp:135, gold:135, drop:120 }, // VIP 13
+  { xp:150, gold:150, drop:135 }, // VIP 14
+  { xp:175, gold:175, drop:150 }, // VIP 15
 ];
 
 // ── Season ticket (GRAM shop) ───────────────────────────────────────────────
@@ -3898,7 +3906,7 @@ if (typeof module !== 'undefined') module.exports = {
   FOREIGN_SKILL_KEY,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
-  VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES,
+  VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES, VIP_MAX_LEVEL,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

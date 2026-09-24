@@ -6822,12 +6822,12 @@ function renderVipPanel() {
   const deposited = vip.deposited || 0;
   const pending   = vip.pending   || [];
   const bonuses   = typeof VIP_BONUSES    !== 'undefined' ? VIP_BONUSES    : null;
-  const thresholds= typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500];
+  const thresholds= typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500,700,1000,1500,2000,3000];
   const cumulative= typeof VIP_CUMULATIVE !== 'undefined' ? VIP_CUMULATIVE : _vipCumulative(thresholds);
   const bon       = bonuses ? (bonuses[level] || bonuses[0]) : { xp:0, gold:0, drop:0 };
 
   let progressHtml;
-  if (level < 10) {
+  if (level < thresholds.length - 1) {
     const needed   = thresholds[level + 1] || 1;
     // deposited is the LIFETIME total (server/db/repos/progression.js never
     // resets it); needed is only the delta for this one level-up. Progress
@@ -6863,7 +6863,7 @@ function renderVipPanel() {
 
 function _renderVipLevels(curLevel, pending, bonuses, cumulative) {
   let html = '';
-  for (let lvl = 1; lvl <= 10; lvl++) {
+  for (let lvl = 1; lvl < cumulative.length; lvl++) {
     const b         = bonuses ? (bonuses[lvl] || { xp:0, gold:0, drop:0 }) : { xp:0, gold:0, drop:0 };
     const isPending = pending.includes(lvl);
     const isDone    = curLevel >= lvl && !isPending;
@@ -6919,6 +6919,11 @@ function _vipItemDesc(lvl) {
     8:  wep('epic', 1) + pots(50) + norm(50) + bless(30) + gold(20000) + boxR(20),
     9:  wep('epic', 8) + pots(80) + norm(70) + bless(30) + boxR(25),
     10: wep('legendary', 0) + pots(100) + norm(100) + bless(100) + boxR(30),
+    11: wep('legendary', 3) + pots(120) + norm(120) + bless(120) + boxR(35),
+    12: wep('legendary', 5) + pots(150) + norm(150) + bless(150) + boxR(40),
+    13: wep('legendary', 7) + pots(180) + norm(180) + bless(180) + boxR(45),
+    14: wep('legendary', 9) + pots(200) + norm(200) + bless(200) + boxR(50),
+    15: wep('legendary', 12) + pots(250) + norm(250) + bless(250) + boxR(60),
   };
   const d = rows[lvl];
   return d ? `<div class="vip-items-row">${d}</div>` : '';
@@ -8647,11 +8652,11 @@ function _renderMarketVolumeTab(el) {
   const vip        = window._vipData || { level: 0, deposited: 0, pending: [] };
   const level      = vip.level     || 0;
   const deposited  = vip.deposited || 0;
-  const thresholds = typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500];
+  const thresholds = typeof VIP_THRESHOLDS !== 'undefined' ? VIP_THRESHOLDS : [0,1,5,10,25,50,100,150,200,300,500,700,1000,1500,2000,3000];
   const cumulative = typeof VIP_CUMULATIVE !== 'undefined' ? VIP_CUMULATIVE : _vipCumulative(thresholds);
 
   let vipProgressHtml;
-  if (level < 10) {
+  if (level < thresholds.length - 1) {
     const needed   = thresholds[level + 1] || 1;
     const progress = Math.max(0, deposited - cumulative[level]);
     const pct      = Math.min(100, (progress / needed) * 100).toFixed(1);
