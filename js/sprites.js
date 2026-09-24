@@ -284,6 +284,12 @@ Object.keys(PET_SPRITE_DEF).forEach(id => {
 });
 
 const petSpriteCache = {};
+// A pet is drawn at half a player's height (_PET_DISPLAY_SCALE, js/pixi-
+// world.js), so its cells only need half the player's cell — the source
+// frames are 320px, rasterized at the full player cell they took ~4x the
+// memory they could ever show.
+// A function, not a const: _SPRITE_CELL_H is declared further down this file.
+function _petCellH() { return Math.max(64, Math.ceil(_SPRITE_CELL_H * 0.5)); }
 const _petSpriteLoadPromises = {};
 
 // Mirrors loadSprites() below — its own cache/promise map so a pet's 8 sheets
@@ -309,7 +315,7 @@ function loadPetSprites(petId, onDone) {
         // tick() in finally, not after: a bad decode must still let this
         // pet's gate finish (see _queueRaster's own comment on the queue
         // itself) — cache[key] just stays the raw Image, same as onerror.
-        try { cache[key] = _rasterizeSheet(img, def.anims[key], def); } finally { tick(); }
+        try { cache[key] = _rasterizeSheet(img, def.anims[key], def, _petCellH()); } finally { tick(); }
       });
       if (img.decode) img.decode().then(raster, raster); else raster();
     };
@@ -318,6 +324,45 @@ function loadPetSprites(petId, onDone) {
   });
   if (total === 0) resolveReady();
   _petSpriteLoadPromises[petId].then(onDone);
+}
+
+// ── one sheet, on demand ─────────────────────────────────────────────────────
+// Other players' characters and pets used to load EVERY sheet the moment they
+// were seen — 25 per class, 8 per pet — whether or not that animation was ever
+// shown, and whether or not perf mode was even going to draw that player. In a
+// crowd that is every class and every pet at once, all of it resident as a
+// canvas plus a GPU texture for the rest of the session. These load one sheet
+// the first time it is actually drawn (see _otherPlayerTextures/_updateOnePet,
+// js/pixi-world.js), so a crowd standing still costs its idle sheets only.
+// Shares the caches with loadSprites/loadPetSprites: whichever gets there
+// first, the other finds the canvas and skips it.
+const _sheetRequested = new Set();
+function _loadOneSheet(cacheRoot, id, def, key, cellH) {
+  if (!def || !def.anims || !def.anims[key]) return;
+  const tag = id + '|' + key;
+  const cache = cacheRoot[id] = cacheRoot[id] || {};
+  if (cache[key] || _sheetRequested.has(tag)) return;
+  _sheetRequested.add(tag);
+  const img = new Image();
+  img.onload = () => {
+    const raster = () => _queueRaster(() => {
+      // Someone else (a full loadSprites for our own class) may have
+      // finished it first — keep theirs.
+      if (cache[key] && _sheetReady(cache[key])) return;
+      cache[key] = _rasterizeSheet(img, def.anims[key], def, cellH);
+    });
+    if (img.decode) img.decode().then(raster, raster); else raster();
+  };
+  // A failed sheet may be retried later rather than never.
+  img.onerror = () => { _sheetRequested.delete(tag); if (cache[key] === img) delete cache[key]; };
+  img.src = def.anims[key].src;
+  cache[key] = img;
+}
+function loadSpriteSheet(charType, key) {
+  _loadOneSheet(spriteCache, charType, SPRITE_DEF[charType], key);
+}
+function loadPetSheet(petId, key) {
+  _loadOneSheet(petSpriteCache, petId, PET_SPRITE_DEF[petId], key, _petCellH());
 }
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
@@ -822,8 +867,15 @@ function _queueRaster(job) {
   requestAnimationFrame(pump);
 }
 
+// Never above the source frame: the class sheets are 128px frames, and on a
+// DPR-3 phone _SPRITE_CELL_H is 180 — rasterizing "up" to it added no detail
+// (the GPU scales the same way at draw time) and cost twice the memory, as a
+// canvas AND as a texture. With every class and a dozen pets on screen in
+// the hub that was over a gigabyte, and Telegram's WebView answers that by
+// killing the page and loading it again — «в местах скопления игра сама
+// перезагружается».
 function _rasterizeSheet(img, ad, def, cellH) {
-  const targetH = cellH || _SPRITE_CELL_H;
+  const targetH = Math.min(cellH || _SPRITE_CELL_H, def.frameH || Infinity);
   const scale = targetH / def.frameH;
   const cw = Math.ceil(def.frameW * scale), ch = targetH;
   const rows = Math.ceil(ad.n / ad.cols);

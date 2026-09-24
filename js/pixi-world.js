@@ -930,6 +930,25 @@ function _playerTextures(charType, animKey) {
   return (_pTex[k] = arr);
 }
 
+// Other players' sheets load one at a time, when first drawn (loadSpriteSheet,
+// js/sprites.js). Until the wanted one is in, show the same direction's idle,
+// then the front idle — a player who starts running for the first time keeps
+// their body instead of blinking to a coloured circle for a frame or two.
+// Returns { tex, key } — key is the animation actually used, for its frame
+// count and cell size.
+function _fallbackTextures(getTex, load, id, key) {
+  const dir = key.split('-')[0];
+  const tries = [key, dir + '-idle', 'front-idle'];
+  for (let i = 0; i < tries.length; i++) {
+    const k = tries[i];
+    if (i > 0 && k === tries[i - 1]) continue;
+    const tex = getTex(id, k);
+    if (tex) return { tex, key: k };
+    if (typeof load === 'function') load(id, k);
+  }
+  return null;
+}
+
 function _petTextures(petId, animKey) {
   const k = petId + '|' + animKey;
   if (_petTex[k]) return _petTex[k];
@@ -2066,8 +2085,11 @@ function _updateOtherPlayers(pulse, ts) {
 
     // Sprite — always updated, the texture/frame changes with the walk/idle
     // animation every frame regardless of whether the Graphics layer redraws.
-    const key      = getOtherPlayerAnimKey(p);
-    const textures = _playerTextures(p.type, key);
+    const want     = getOtherPlayerAnimKey(p);
+    const got      = p.type ? _fallbackTextures(_playerTextures,
+      typeof loadSpriteSheet === 'function' ? loadSpriteSheet : null, p.type, want) : null;
+    const key      = got ? got.key : want;
+    const textures = got && got.tex;
     const def      = SPRITE_DEF[p.type];
     let usedSprite = false;
     if (textures && def) {
@@ -2325,8 +2347,11 @@ function _updateOnePet(key, petId, ownerX, ownerY, ownerFacing, speed, dt) {
   obj.gfx.endFill();
 
   const def = PET_SPRITE_DEF[petId];
-  const animKey = `${st.facing}-${st.moving ? 'run' : 'idle'}`;
-  const textures = _petTextures(petId, animKey);
+  const want = `${st.facing}-${st.moving ? 'run' : 'idle'}`;
+  const got = _fallbackTextures(_petTextures,
+    typeof loadPetSheet === 'function' ? loadPetSheet : null, petId, want);
+  const animKey = got ? got.key : want;
+  const textures = got && got.tex;
   if (textures && def) {
     const ad = def.anims[animKey];
     if (st._animKey !== animKey) { st._animKey = animKey; st._animFrame = 0; st._animTimer = 0; }

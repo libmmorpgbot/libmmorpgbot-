@@ -903,7 +903,7 @@ function netConnect(onReady) {
   socket.on('playerChar', ({ id, type }) => {
     if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
     otherPlayers.get(id).type = type;
-    loadSprites(type, () => {});
+    // Sheets load when first drawn — see loadSpriteSheet (js/sprites.js).
   });
 
   // Equipped pets of everyone already on the floor, sent as we join. A full
@@ -912,8 +912,8 @@ function netConnect(onReady) {
     otherPets = new Map();
     (pets || []).forEach(({ id, petId }) => {
       if (!petId) return;
+      // Sheets load when first drawn — see loadPetSheet (js/sprites.js).
       otherPets.set(id, petId);
-      if (typeof loadPetSprites === 'function') loadPetSprites(petId);
     });
   });
 
@@ -921,7 +921,6 @@ function netConnect(onReady) {
   socket.on('playerPet', ({ id, petId } = {}) => {
     if (petId) {
       otherPets.set(id, petId);
-      if (typeof loadPetSprites === 'function') loadPetSprites(petId);
     } else {
       otherPets.delete(id);
     }
@@ -1466,10 +1465,12 @@ function netConnect(onReady) {
           otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
             _buf: [{ x: p.x, y: p.y, t }],
             animFrame: 0, animTimer: 0, moving: !!p.moving });
-          if (p.type) loadSprites(p.type, () => {});
+          // Sheets load when first drawn — see loadSpriteSheet (js/sprites.js).
+          // Loading the whole class here (25 sheets) for everyone who walked
+          // into view, drawn or not, is what filled the memory in crowds.
         } else {
           const op = otherPlayers.get(p.id);
-          if (p.type && op.type !== p.type) { op.type = p.type; loadSprites(p.type, () => {}); }
+          if (p.type && op.type !== p.type) op.type = p.type;
           if (p.username !== undefined) op.username = p.username;
           if (p.clanName !== undefined && op.clanName !== p.clanName) { op.clanName = p.clanName; op._clanTagCanvas = null; }
           if (p.clanIcon !== undefined && op.clanIcon !== p.clanIcon) { op.clanIcon = p.clanIcon; op._clanTagCanvas = null; }
