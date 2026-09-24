@@ -67,47 +67,53 @@ function updateInvUI() {
   const p = player;
   const inv = p.inventory;
 
-  // ── Кольцо снаряжения ────────────────────────────────────────────────────
-  // Одиннадцать слотов по кругу вокруг анимированного портрета
-  // (eq-center-canvas, _startInvPortraitAnim ниже), в порядке EQ_SLOTS по
-  // часовой стрелке от верха. Позиции — в процентах от квадрата .eq-ring, так
-  // что кольцо тянется под любую ширину экрана без пересчёта.
-  const _RING_R = 40; // радиус кольца, % от стороны
-  document.getElementById('eq-ring-slots').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }, i) => {
+  // ── Кукла персонажа ─────────────────────────────────────────────────────
+  // Крупный анимированный портрет (eq-center-canvas, _startInvPortraitAnim
+  // ниже) между двумя колонками слотов: первая половина EQ_SLOTS слева
+  // (оружие…крылья), вторая справа. Округление вверх: слотов одиннадцать,
+  // слева шесть, справа пять.
+  const _eqCell = ({ slot, label, emptyIcon }) => {
     const it = p.equipment[slot];
-    const a = -Math.PI / 2 + i * 2 * Math.PI / EQ_SLOTS.length;
-    const pos = `left:${(50 + _RING_R * Math.cos(a)).toFixed(2)}%;top:${(50 + _RING_R * Math.sin(a)).toFixed(2)}%`;
     if (!it) {
-      return `<div class="eq-rslot" title="${label}" style="${pos}">${iconHTML(emptyIcon, 22, '#6b5b3a')}</div>`;
+      return `<div class="eq-dslot" title="${label}">${iconHTML(emptyIcon, 22, '#3d4f6b')}<span>${label}</span></div>`;
     }
     const rc = RARITY_COLOR[it.rarity] || '#aea599';
-    return `<div class="eq-rslot filled" onclick="openEqItemModal('${slot}')"
-      title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}"
-      style="${pos};--rc:${rc}">
-      ${_itemIcon(it, 32)}
-      ${it.enhance ? `<span class="eq-rslot-enh">+${it.enhance}</span>` : ''}
+    return `<div class="eq-dslot filled" onclick="openEqItemModal('${slot}')"
+      title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}" style="--rc:${rc}">
+      ${_itemIcon(it, 38)}
+      ${it.enhance ? `<b>+${it.enhance}</b>` : ''}
     </div>`;
-  }).join('');
+  };
+  const _eqHalf = Math.ceil(EQ_SLOTS.length / 2);
+  document.getElementById('eq-doll-left').innerHTML = EQ_SLOTS.slice(0, _eqHalf).map(_eqCell).join('');
+  document.getElementById('eq-doll-right').innerHTML = EQ_SLOTS.slice(_eqHalf).map(_eqCell).join('');
+  const _doll = document.getElementById('eq-doll');
+  if (_doll) _doll.style.setProperty('--cls', p.charDef.color || '#8fbf5a');
+  const _clsLbl = document.getElementById('eq-doll-cls');
+  if (_clsLbl) { _clsLbl.textContent = p.charDef.name; _clsLbl.style.color = p.charDef.color; }
   _startInvPortraitAnim();
 
-  // Шапка: имя и класс по центру, над кольцом.
+  // Шапка: аватар класса с уровнем, имя, класс и уровень строкой.
   document.getElementById('char-preview').innerHTML = `
-    <div class="eq-ring-head">
-      <div class="eq-ring-name">${_escHtml((typeof netUsername !== 'undefined' && netUsername) || p.charDef.name)}</div>
-      <div class="eq-ring-sub">
-        ${p.charDef.iconImg ? `<img src="${p.charDef.iconImg}" width="18" height="18" alt="">` : iconHTML(p.charDef.icon, 16, p.charDef.color)}
-        <span style="color:${p.charDef.color}">${p.charDef.name}</span> · ${tVars('charLevelFmt', { lvl: p.lvl })}
+    <div class="eq-doll-head">
+      <div class="eq-doll-ava" style="--cls:${p.charDef.color}">
+        ${p.charDef.iconImg ? `<img src="${p.charDef.iconImg}" width="38" height="38" alt="">` : iconHTML(p.charDef.icon, 30, p.charDef.color)}
+        <span>${p.lvl}</span>
+      </div>
+      <div style="min-width:0">
+        <div class="eq-doll-name">${_escHtml((typeof netUsername !== 'undefined' && netUsername) || p.charDef.name)}</div>
+        <div class="eq-doll-sub"><span style="color:${p.charDef.color}">${p.charDef.name}</span> · ${tVars('charLevelFmt', { lvl: p.lvl })}</div>
       </div>
     </div>
   `;
 
-  // Под кольцом — только БМ.
+  // Под куклой — только БМ, золотом между двумя линиями.
   const _bm = typeof calcBM === 'function' ? calcBM(p) : 0;
-  document.getElementById('eq-ring-info').innerHTML = `
-    <div class="eq-ring-orn"></div>
-    <div class="eq-ring-bm-lbl">${t('bmAbbrev')}</div>
-    <div class="eq-ring-bm">${Number(_bm).toLocaleString('ru-RU')}</div>
-    <div class="eq-ring-orn"></div>
+  document.getElementById('eq-bm').innerHTML = `
+    <div class="eq-bm-orn"></div>
+    <div class="eq-bm-lbl">${t('bmAbbrev')}</div>
+    <div class="eq-bm-val">${Number(_bm).toLocaleString('ru-RU')}</div>
+    <div class="eq-bm-orn"></div>
   `;
 
   // Inventory grid — materials stack by id

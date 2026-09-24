@@ -529,18 +529,21 @@
   <div id="inv-tab-content-0">
     <div id="char-preview"></div>
     <div class="panel-body" style="padding-top:4px">
-      <div class="sec-title eq-ring-hint" data-i18n="gearSectionHdr">Снаряжение (нажми для снятия)</div>
-      <!-- Кольцо снаряжения: портрет в центре, одиннадцать слотов по кругу
-           (updateInvUI расставляет их по углам), ниже БМ, CP/HP и статы. -->
-      <div class="eq-ring" id="eq-ring">
-        <div class="eq-ring-line"></div>
-        <div class="eq-ring-line inner"></div>
-        <div class="eq-ring-glow"></div>
-        <div class="eq-ring-pedestal"></div>
-        <canvas id="eq-center-canvas" width="200" height="200"></canvas>
-        <div id="eq-ring-slots"></div>
+      <div class="sec-title eq-doll-hint" data-i18n="gearSectionHdr">Снаряжение (нажми для снятия)</div>
+      <!-- Кукла персонажа: крупный анимированный портрет в центре, слоты
+           двумя колонками по бокам (updateInvUI: первая половина EQ_SLOTS
+           слева, вторая справа), под ней — БМ. -->
+      <div class="eq-doll" id="eq-doll">
+        <div class="eq-doll-col" id="eq-doll-left"></div>
+        <div class="eq-doll-center">
+          <div class="eq-doll-glow"></div>
+          <canvas id="eq-center-canvas" width="200" height="200"></canvas>
+          <div class="eq-doll-pedestal"></div>
+          <div class="eq-doll-cls" id="eq-doll-cls"></div>
+        </div>
+        <div class="eq-doll-col" id="eq-doll-right"></div>
       </div>
-      <div id="eq-ring-info"></div>
+      <div id="eq-bm"></div>
       <div class="sec-title" style="margin-top:14px" data-i18n="itemsSectionHdr">Предметы (нажми для экипировки)</div>
       <div class="inv-grid" id="inv-grid"></div>
     </div>
