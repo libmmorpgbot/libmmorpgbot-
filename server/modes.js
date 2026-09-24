@@ -478,14 +478,21 @@ function init(io) {
       if (!view) return null;
       const { query } = require('./db');
       const { rows } = await query(null, `
-        SELECT p.telegram_id FROM clan_members m JOIN players p ON p.id = m.player_id
+        SELECT p.id, p.telegram_id FROM clan_members m JOIN players p ON p.id = m.player_id
          WHERE m.clan_id = $1`, [clanId]);
       return {
         _id: clanId,
         storageUnlocked: view.storageUnlocked,
         storage: view.storage,
-        members: rows.map(r => ({ telegramId: r.telegram_id })),
+        members: rows.map(r => ({ telegramId: r.telegram_id, playerId: Number(r.id) })),
       };
+    },
+    // Полный вид хранилища для одного участника — ровно то, что отдаёт
+    // clanStorageSync (handlers2/social.js). Рассылка после дохода с замка
+    // шлёт его же, а не свою урезанную копию.
+    clanStorageViewFor: async (clanId, playerId) => {
+      const clans = require('./db/repos/clans');
+      return clans.storageView(null, clanId, playerId);
     },
   }));
   Object.assign(modes, createFear(shared));

@@ -18,7 +18,7 @@ const { FLOOR_IDS } = require('../game/floors');
 module.exports = function createGuildWar(deps) {
   const {
     io, playerFloorMap, _socketForTelegramId, notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
-    loadCastle, saveCastle, grantClanStorage, clanForStorage,
+    loadCastle, saveCastle, grantClanStorage, clanForStorage, clanStorageViewFor,
   } = deps;
 
   // ── Война гильдий (Guild War) ────────────────────────────────────────────────
@@ -116,31 +116,30 @@ module.exports = function createGuildWar(deps) {
     io.emit('guildWarState', _gwPublicState());
   }
 
-  // shardName/shardImg used to only exist inside io.on('connection', ...) (see
-  // the per-connection clan-storage handlers further down) — moved to module
-  // scope (unchanged) so the hourly income job below, which runs from a
-  // top-level setTimeout chain with no socket in scope, can reach them too.
-  const _gwShardName = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).name || id;
-  const _gwShardImg  = id => (UNIQUE_SHARDS.find(s => s.id === id) || {}).img || null;
-
   // Same $inc-then-$push pattern already inlined a few times elsewhere for
   // clan storage credit (e.g. the deposit/allocation-return handlers further
   // down) — factored out here since the income job needs it and there was no
   // shared top-level version yet.
 
   // Pushes a fresh clanStorage payload to every online member — top-level twin
-  // of the per-connection _clanStoragePush, needed for the same reason
-  // shardName/shardImg were moved up: no socket in scope inside the income job.
-  function _gwStoragePushToClan(clan) {
-    clan.members.forEach(m => {
+  // of the per-connection pushClanStorage (handlers2/social.js), needed
+  // because there is no socket in scope inside the income job.
+  //
+  // ── «хранилище клана закрыто», хотя оно открыто ────────────────────────────
+  // Здесь стояла своя, урезанная копия пакета: { storageUnlocked, storage }.
+  // Клиент (_clanStorageHTML, js/clans.js) читает поле `unlocked`, а не
+  // `storageUnlocked`, и заменяет пакетом ВСЁ состояние хранилища. Раз в час,
+  // когда клан-владелец замка получал осколки, у каждого его участника в сети
+  // вкладка показывала «закрыто» (а заодно теряла canUse, isLeader и раздачи)
+  // — до следующей синхронизации. Теперь каждому уходит тот же полный вид,
+  // что и по clanStorageSync: одна форма пакета на всю игру.
+  async function _gwStoragePushToClan(clan) {
+    for (const m of clan.members) {
       const target = _socketForTelegramId(m.telegramId);
-      if (!target) return;
-      target.emit('clanStorage', {
-        storageUnlocked: !!clan.storageUnlocked,
-        storage: (clan.storage || []).filter(e => e && e.qty > 0)
-          .map(e => ({ id: e.id, name: _gwShardName(e.id), img: _gwShardImg(e.id), qty: e.qty })),
-      });
-    });
+      if (!target || m.playerId == null) continue;
+      const view = await clanStorageViewFor(clan._id, m.playerId).catch(() => null);
+      if (view) target.emit('clanStorage', view);
+    }
   }
 
   // A random total of GUILD_WAR_SHARD_MIN..MAX shard units, each an
@@ -177,7 +176,7 @@ module.exports = function createGuildWar(deps) {
       await grantClanStorage(_gw.ownerClanId, id, qty);
     }
     const fresh = await clanForStorage(_gw.ownerClanId).catch(() => null);
-    if (fresh) _gwStoragePushToClan(fresh);
+    if (fresh) await _gwStoragePushToClan(fresh);
   }
 
   function _gwIncomeSafe() {
