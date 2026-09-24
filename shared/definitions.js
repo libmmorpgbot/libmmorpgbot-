@@ -3120,23 +3120,23 @@ function pvpDamageMult(attackerLvl, targetLvl) {
 
 // ── стикеры ─────────────────────────────────────────────────────────────────
 // Кнопка над телепортом: игрок выбирает стикер, он всплывает над его головой —
-// у него и у всех, кто рядом (handlers2/world.js, 'sticker'). Стикер собран
-// из арта самой игры (питомцы, зелья, сундуки, иконки навыков) и подписи;
-// anim — CSS-анимация картинки (.stk-a-*, index.html). id — то, что ходит по
-// сети и что сервер сверяет со списком.
+// у него и у всех, кто рядом (handlers2/world.js, 'sticker'). id — то, что
+// ходит по сети и что сервер сверяет со списком; img — анимированный WebP
+// (Noto Animated Emoji, CC BY 4.0, см. images/stickers/LICENSE.txt);
+// e — тот же эмодзи текстом, на случай если картинка не загрузилась.
 const STICKER_DEF = [
-  { id: 'gg',    img: '/images/props/trophy.png',          text: 'GG',       anim: 'shine' },
-  { id: 'hi',    img: '/images/pet/pet_nerb/icon.png',     text: 'ПРИВЕТ!',  anim: 'sway'  },
-  { id: 'heal',  img: '/images/potion/bighp.png',          text: 'ХИЛ!',     anim: 'wobble' },
-  { id: 'loot',  img: '/images/props/treasure_large.png',  text: 'ЛУТ!',     anim: 'bounce' },
-  { id: 'rip',   img: '/images/pet/pet_bone/icon.png',     text: 'RIP',      anim: 'drop'  },
-  { id: 'crit',  img: '/images/skill/wstun_v2.png',        text: 'КРИТ!',    anim: 'shake' },
-  { id: 'rage',  img: '/images/skill/adim_v2.png',         text: 'ГРРР!',    anim: 'shake' },
-  { id: 'fight', img: '/images/skill/rf_stronghit.png',    text: 'В БОЙ!',   anim: 'pulse' },
-  { id: 'rich',  img: '/images/material/libertybag.png',   text: 'БОГАЧ',    anim: 'bounce' },
-  { id: 'boss',  img: '/images/pet/pet_ogre/icon.png',     text: 'БОСС!',    anim: 'pulse' },
-  { id: 'lvlup', img: '/images/skill/rf_regen.png',        text: 'LVL UP!',  anim: 'rise'  },
-  { id: 'afk',   img: '/images/props/mushroom_spotted.png', text: 'AFK',     anim: 'sleep' },
+  { id: 'lol',   e: '😂', img: '/images/stickers/lol.webp'   },
+  { id: 'rage',  e: '😡', img: '/images/stickers/rage.webp'  },
+  { id: 'like',  e: '👍', img: '/images/stickers/like.webp'  },
+  { id: 'skull', e: '💀', img: '/images/stickers/skull.webp' },
+  { id: 'fire',  e: '🔥', img: '/images/stickers/fire.webp'  },
+  { id: 'love',  e: '❤️', img: '/images/stickers/love.webp'  },
+  { id: 'cool',  e: '😎', img: '/images/stickers/cool.webp'  },
+  { id: 'cry',   e: '😭', img: '/images/stickers/cry.webp'   },
+  { id: 'gg',    e: '🤝', img: '/images/stickers/gg.webp'    },
+  { id: 'clown', e: '🤡', img: '/images/stickers/clown.webp' },
+  { id: 'eyes',  e: '👀', img: '/images/stickers/eyes.webp'  },
+  { id: 'party', e: '🎉', img: '/images/stickers/party.webp' },
 ];
 // Сколько живёт стикер над головой и как часто можно слать новый.
 const STICKER_LIFE_MS = 3000;

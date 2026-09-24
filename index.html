@@ -529,20 +529,18 @@
   <div id="inv-tab-content-0">
     <div id="char-preview"></div>
     <div class="panel-body" style="padding-top:4px">
-      <!-- Кукла персонажа: крупный анимированный портрет в центре, слоты
-           двумя колонками по бокам (updateInvUI: первая половина EQ_SLOTS
-           слева, вторая справа), над ней — БМ. -->
-      <div id="eq-bm"></div>
-      <div class="eq-doll" id="eq-doll">
-        <div class="eq-doll-col" id="eq-doll-left"></div>
-        <div class="eq-doll-center">
-          <div class="eq-doll-glow"></div>
-          <div class="eq-doll-portrait"><canvas id="eq-center-canvas" width="128" height="128"></canvas></div>
-          <div class="eq-doll-pedestal"></div>
-          <div class="eq-doll-cls" id="eq-doll-cls"></div>
-        </div>
-        <div class="eq-doll-col" id="eq-doll-right"></div>
+      <div class="sec-title eq-ring-hint" data-i18n="gearSectionHdr">Снаряжение (нажми для снятия)</div>
+      <!-- Кольцо снаряжения: портрет в центре, одиннадцать слотов по кругу
+           (updateInvUI расставляет их по углам), ниже БМ, CP/HP и статы. -->
+      <div class="eq-ring" id="eq-ring">
+        <div class="eq-ring-line"></div>
+        <div class="eq-ring-line inner"></div>
+        <div class="eq-ring-glow"></div>
+        <div class="eq-ring-pedestal"></div>
+        <canvas id="eq-center-canvas" width="200" height="200"></canvas>
+        <div id="eq-ring-slots"></div>
       </div>
+      <div id="eq-ring-info"></div>
       <div class="sec-title" style="margin-top:14px" data-i18n="itemsSectionHdr">Предметы (нажми для экипировки)</div>
       <div class="inv-grid" id="inv-grid"></div>
     </div>
@@ -742,79 +740,26 @@
 #sticker-btn.on { background:radial-gradient(circle at 35% 30%, rgba(80,60,20,0.97), rgba(30,22,8,0.97)); }
 #sticker-picker {
   position:absolute; z-index:63; pointer-events:all;
-  display:grid; grid-template-columns:repeat(4, 58px); gap:6px; padding:8px;
-  border-radius:14px; background:rgba(12,10,6,0.95);
-  border:1px solid rgba(243,207,114,0.45);
-  box-shadow:0 6px 24px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.6);
+  display:grid; grid-template-columns:repeat(4, 46px); gap:6px; padding:8px;
+  border-radius:14px; background:rgba(10,12,18,0.94);
+  border:1px solid rgba(243,207,114,0.35);
+  box-shadow:0 6px 24px rgba(0,0,0,0.6);
   animation:stkPickerIn .16s ease-out;
 }
 #sticker-picker button {
-  width:58px; height:64px; border:0; border-radius:10px; padding:4px 0 0;
-  background:radial-gradient(circle at 50% 40%, rgba(243,207,114,0.10), rgba(255,255,255,0.03) 70%);
-  cursor:pointer; touch-action:manipulation;
-  display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+  width:46px; height:46px; border:0; border-radius:10px; padding:0;
+  background:rgba(255,255,255,0.05); cursor:pointer; touch-action:manipulation;
+  display:flex; align-items:center; justify-content:center;
 }
-#sticker-picker button:active { transform:scale(.9); background:rgba(243,207,114,0.2); }
-#sticker-picker.cooling button { opacity:.45; }
-#sticker-picker .stk-art { width:38px; height:38px; }
-#sticker-picker .stk-cap { font-size:9.5px; margin-top:-2px; }
-/* Стикеры над головами — DOM поверх мира, двигает их _updateStickers. */
+#sticker-picker img { width:40px; height:40px; pointer-events:none; }
+/* Стикеры над головами — <img> поверх мира, двигает их _updateStickers. */
 #sticker-layer { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
 #sticker-layer .stk {
   position:absolute; left:0; top:0; width:64px; height:64px;
-  display:flex; flex-direction:column; align-items:center; justify-content:flex-end;
   will-change:transform, opacity; user-select:none;
 }
-#sticker-layer .stk-art { width:46px; height:46px; }
-#sticker-layer .stk-cap { font-size:14px; }
-/* Картинка стикера: белый контур наклейки из четырёх теней плюс мягкая тень. */
-.stk-art { display:block; position:relative; }
-.stk-art img {
-  width:100%; height:100%; object-fit:contain; image-rendering:pixelated; pointer-events:none;
-  filter:drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff) drop-shadow(0 1.5px 0 #fff)
-         drop-shadow(0 -1.5px 0 #fff) drop-shadow(0 3px 3px rgba(0,0,0,.55));
-}
-/* Подпись — как урон и уровни в RPG: золото, тёмная обводка, чуть с наклоном. */
-.stk-cap {
-  font-family:var(--font-display); font-weight:900; font-size:12px; line-height:1;
-  color:#ffd866; letter-spacing:.02em; white-space:nowrap;
-  text-shadow:-1px -1px 0 #2a1600, 1px -1px 0 #2a1600, -1px 1px 0 #2a1600, 1px 1px 0 #2a1600,
-              0 2px 0 #2a1600, 0 0 6px rgba(255,190,60,.55);
-  transform:rotate(-5deg); margin-top:-4px; position:relative;
-}
-#sticker-layer .stk-cap { animation:stkCapIn .35s cubic-bezier(.3,1.8,.5,1) .12s both; }
-@keyframes stkCapIn { from { transform:rotate(-5deg) scale(0); } to { transform:rotate(-5deg) scale(1); } }
-/* Свои движения у каждого стикера (anim в STICKER_DEF). */
-.stk-a-bounce { animation:stkBounce .6s ease-in-out infinite; }
-.stk-a-shake  { animation:stkShake .14s linear infinite; }
-.stk-a-sway   { animation:stkSway 1s ease-in-out infinite; transform-origin:50% 90%; }
-.stk-a-pulse  { animation:stkPulse .7s ease-in-out infinite; }
-.stk-a-wobble { animation:stkWobble .9s ease-in-out infinite; transform-origin:50% 85%; }
-.stk-a-shine  { animation:stkShine 1.1s ease-in-out infinite; }
-.stk-a-drop   { animation:stkDrop .9s cubic-bezier(.3,1.6,.5,1) both; }
-.stk-a-rise   { animation:stkRise 1.2s ease-in-out infinite; }
-.stk-a-sleep  { animation:stkSleep 2s ease-in-out infinite; transform-origin:50% 90%; }
-.stk-a-sleep::after {
-  content:'z'; position:absolute; right:-6px; top:-4px;
-  font:900 12px var(--font-display); color:#cfe6ff; text-shadow:0 0 3px #000;
-  animation:stkZ 2s ease-in-out infinite;
-}
-@keyframes stkBounce { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-7px); } }
-@keyframes stkShake  { 0% { transform:translate(0,0) rotate(0); } 25% { transform:translate(-2px,1px) rotate(-6deg); }
-                       50% { transform:translate(2px,-1px) rotate(5deg); } 75% { transform:translate(-1px,-1px) rotate(-3deg); } }
-@keyframes stkSway   { 0%,100% { transform:rotate(-12deg); } 50% { transform:rotate(12deg); } }
-@keyframes stkPulse  { 0%,100% { transform:scale(1); } 50% { transform:scale(1.14); } }
-@keyframes stkWobble { 0%,100% { transform:rotate(0) scale(1,1); } 25% { transform:rotate(-8deg) scale(1.05,.95); }
-                       75% { transform:rotate(8deg) scale(.95,1.05); } }
-@keyframes stkShine  { 0%,100% { transform:translateY(0) rotate(-4deg); filter:brightness(1); }
-                       50% { transform:translateY(-4px) rotate(4deg); filter:brightness(1.45) drop-shadow(0 0 8px #ffd866); } }
-@keyframes stkDrop   { 0% { transform:translateY(-30px) rotate(-30deg); opacity:0; } 60% { opacity:1; }
-                       100% { transform:translateY(0) rotate(8deg); } }
-@keyframes stkRise   { 0%,100% { transform:translateY(0); filter:brightness(1); }
-                       50% { transform:translateY(-6px); filter:brightness(1.35) drop-shadow(0 0 10px #b07cf0); } }
-@keyframes stkSleep  { 0%,100% { transform:rotate(-4deg) scale(1); } 50% { transform:rotate(4deg) scale(1.04,.97); } }
-@keyframes stkZ      { 0% { opacity:0; transform:translate(0,4px) scale(.6); } 40% { opacity:1; }
-                       100% { opacity:0; transform:translate(6px,-12px) scale(1.2); } }
+#sticker-picker button:active { transform:scale(.88); background:rgba(243,207,114,0.18); }
+#sticker-picker.cooling button { opacity:.45; }
 @keyframes stkPickerIn { from { opacity:0; transform:translateY(8px) scale(.96); } to { opacity:1; transform:none; } }
 #teleport-stone-badge {
   position:absolute; top:-4px; right:-4px;

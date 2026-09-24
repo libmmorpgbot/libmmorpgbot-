@@ -67,53 +67,47 @@ function updateInvUI() {
   const p = player;
   const inv = p.inventory;
 
-  // ── Кукла персонажа ─────────────────────────────────────────────────────
-  // Крупный анимированный портрет (eq-center-canvas, _startInvPortraitAnim
-  // ниже) между двумя колонками слотов: первая половина EQ_SLOTS слева
-  // (оружие…крылья), вторая справа. Округление вверх: слотов одиннадцать,
-  // слева шесть, справа пять.
-  const _eqCell = ({ slot, label, emptyIcon }) => {
+  // ── Кольцо снаряжения ────────────────────────────────────────────────────
+  // Одиннадцать слотов по кругу вокруг анимированного портрета
+  // (eq-center-canvas, _startInvPortraitAnim ниже), в порядке EQ_SLOTS по
+  // часовой стрелке от верха. Позиции — в процентах от квадрата .eq-ring, так
+  // что кольцо тянется под любую ширину экрана без пересчёта.
+  const _RING_R = 40; // радиус кольца, % от стороны
+  document.getElementById('eq-ring-slots').innerHTML = EQ_SLOTS.map(({ slot, label, emptyIcon }, i) => {
     const it = p.equipment[slot];
+    const a = -Math.PI / 2 + i * 2 * Math.PI / EQ_SLOTS.length;
+    const pos = `left:${(50 + _RING_R * Math.cos(a)).toFixed(2)}%;top:${(50 + _RING_R * Math.sin(a)).toFixed(2)}%`;
     if (!it) {
-      return `<div class="eq-dslot" title="${label}">${iconHTML(emptyIcon, 22, '#3d4f6b')}<span>${label}</span></div>`;
+      return `<div class="eq-rslot" title="${label}" style="${pos}">${iconHTML(emptyIcon, 22, '#6b5b3a')}</div>`;
     }
     const rc = RARITY_COLOR[it.rarity] || '#aea599';
-    return `<div class="eq-dslot filled" onclick="openEqItemModal('${slot}')"
-      title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}" style="--rc:${rc}">
-      ${_itemIcon(it, 38)}
-      ${it.enhance ? `<b>+${it.enhance}</b>` : ''}
+    return `<div class="eq-rslot filled" onclick="openEqItemModal('${slot}')"
+      title="${it.name + (it.enhance ? ' +' + it.enhance : '') + ' — ' + statStr(it)}"
+      style="${pos};--rc:${rc}">
+      ${_itemIcon(it, 32)}
+      ${it.enhance ? `<span class="eq-rslot-enh">+${it.enhance}</span>` : ''}
     </div>`;
-  };
-  const _eqHalf = Math.ceil(EQ_SLOTS.length / 2);
-  document.getElementById('eq-doll-left').innerHTML = EQ_SLOTS.slice(0, _eqHalf).map(_eqCell).join('');
-  document.getElementById('eq-doll-right').innerHTML = EQ_SLOTS.slice(_eqHalf).map(_eqCell).join('');
-  const _doll = document.getElementById('eq-doll');
-  if (_doll) _doll.style.setProperty('--cls', p.charDef.color || '#8fbf5a');
-  const _clsLbl = document.getElementById('eq-doll-cls');
-  if (_clsLbl) { _clsLbl.textContent = p.charDef.name; _clsLbl.style.color = p.charDef.color; }
+  }).join('');
   _startInvPortraitAnim();
 
-  // Шапка: аватар класса с уровнем, имя, класс и уровень строкой.
+  // Шапка: имя и класс по центру, над кольцом.
   document.getElementById('char-preview').innerHTML = `
-    <div class="eq-doll-head">
-      <div class="eq-doll-ava" style="--cls:${p.charDef.color}">
-        ${p.charDef.iconImg ? `<img src="${p.charDef.iconImg}" width="38" height="38" alt="">` : iconHTML(p.charDef.icon, 30, p.charDef.color)}
-        <span>${p.lvl}</span>
-      </div>
-      <div style="min-width:0">
-        <div class="eq-doll-name">${_escHtml((typeof netUsername !== 'undefined' && netUsername) || p.charDef.name)}</div>
-        <div class="eq-doll-sub"><span style="color:${p.charDef.color}">${p.charDef.name}</span> · ${tVars('charLevelFmt', { lvl: p.lvl })}</div>
+    <div class="eq-ring-head">
+      <div class="eq-ring-name">${_escHtml((typeof netUsername !== 'undefined' && netUsername) || p.charDef.name)}</div>
+      <div class="eq-ring-sub">
+        ${p.charDef.iconImg ? `<img src="${p.charDef.iconImg}" width="18" height="18" alt="">` : iconHTML(p.charDef.icon, 16, p.charDef.color)}
+        <span style="color:${p.charDef.color}">${p.charDef.name}</span> · ${tVars('charLevelFmt', { lvl: p.lvl })}
       </div>
     </div>
   `;
 
-  // Над куклой — только БМ, золотом между двумя линиями.
+  // Под кольцом — только БМ.
   const _bm = typeof calcBM === 'function' ? calcBM(p) : 0;
-  document.getElementById('eq-bm').innerHTML = `
-    <div class="eq-bm-orn"></div>
-    <div class="eq-bm-lbl">${t('bmAbbrev')}</div>
-    <div class="eq-bm-val">${Number(_bm).toLocaleString('ru-RU')}</div>
-    <div class="eq-bm-orn"></div>
+  document.getElementById('eq-ring-info').innerHTML = `
+    <div class="eq-ring-orn"></div>
+    <div class="eq-ring-bm-lbl">${t('bmAbbrev')}</div>
+    <div class="eq-ring-bm">${Number(_bm).toLocaleString('ru-RU')}</div>
+    <div class="eq-ring-orn"></div>
   `;
 
   // Inventory grid — materials stack by id
@@ -151,19 +145,13 @@ function updateInvUI() {
 // головой — у себя сразу, у тех, кто рядом, через сервер ('sticker',
 // handlers2/world.js). Рисует _updateStickers (js/pixi-world.js).
 // Один активный стикер на игрока: новый заменяет прежний.
-// Рисуется не в PIXI, а DOM-элементом в #sticker-layer поверх мира: так
-// анимацию и белый контур наклейки делает CSS (.stk-*, index.html). el —
-// этот элемент, новый на каждый стикер, чтобы анимация шла с начала
-// (_updateStickers, js/pixi-world.js, двигает и снимает его).
+// Рисуется не в PIXI, а <img> в #sticker-layer поверх мира: анимированный
+// WebP в WebGL-текстуре замирает на первом кадре, а в <img> браузер крутит
+// его сам. el — этот <img>, новый на каждый стикер, чтобы анимация шла с
+// начала (_updateStickers, js/pixi-world.js, двигает и снимает его).
 let _stickerFx = [];          // { sid, self, def, t0, el }
 let _stickerSentAt = 0;
-const _STICKER_PICKER_W = 272; // 4×58 + 3×6 + 2×8 + рамка
-
-// Одна и та же разметка для панели выбора и для стикера над головой.
-function _stickerHtml(d) {
-  return `<span class="stk-art stk-a-${d.anim}"><img src="${d.img}" alt="" draggable="false"></span>` +
-    `<span class="stk-cap">${d.text}</span>`;
-}
+const _STICKER_PICKER_W = 222; // 4×46 + 3×6 + 2×8 + рамка
 
 function _stickerTogglePicker(force) {
   const pk = document.getElementById('sticker-picker');
@@ -173,7 +161,7 @@ function _stickerTogglePicker(force) {
   if (!open) { pk.style.display = 'none'; btn.classList.remove('on'); return; }
   if (!pk.dataset.built) {
     pk.innerHTML = STICKER_DEF.map(d =>
-      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.text}">${_stickerHtml(d)}</button>`).join('');
+      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.id}"><img src="${d.img}" alt="${d.e}" width="40" height="40" draggable="false"></button>`).join('');
     pk.dataset.built = '1';
   }
   // Справа от кнопки, низом по её низу. Кнопку можно перетащить к правому
@@ -219,9 +207,9 @@ function _stickerSpawn(sid, id, self) {
   const layer = document.getElementById('sticker-layer');
   let el = null;
   if (layer) {
-    el = document.createElement('div');
+    el = document.createElement('img');
     el.className = 'stk';
-    el.innerHTML = _stickerHtml(def);
+    el.src = def.img; el.alt = def.e; el.draggable = false;
     el.style.opacity = '0';
     layer.appendChild(el);
   }
@@ -338,11 +326,7 @@ function _drawInvPortraitFrame(canvas, dt) {
     const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
     const col = s.frame % animDef.cols;
     const row = Math.floor(s.frame / animDef.cols);
-    // Кадр один к одному, без сглаживания: крупным его делает CSS с
-    // image-rendering:pixelated, и пиксели остаются чёткими, а не мылом.
-    if (canvas.width !== fw || canvas.height !== fh) { canvas.width = fw; canvas.height = fh; }
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
+    ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, W, H);
     return;
   }
   // Sheet not loaded/rasterized yet (shouldn't normally happen — loadSprites
