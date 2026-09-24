@@ -2713,6 +2713,10 @@ function _drawGrassTuft(c, x, y, tx, ty, color) {
 
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
+  // Хаб (armEntries есть только у него) выложен лавовой текстурой вместо
+  // плиток — см. _hubLavaTex, js/themes.js. Особые зоны внутри этажа (башня,
+  // гильдвар, фарм, кооп) остаются при своих палитрах.
+  const lava = (dungeon.armEntries && typeof _hubLavaTex === 'function') ? _hubLavaTex() : null;
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
   const cv = document.createElement('canvas');
   cv.width = cv.height = _CHUNK_PX + _CHUNK_G * 2;
@@ -2773,6 +2777,7 @@ function _buildChunk(cx, cy) {
       const inCoop = !inTower && !inGw && !inFarm && _isCoopTile(tx, ty);
       const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : inCoop ? _COOP_WALL : th.wallColor;
       const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : inCoop ? mortarWallCoop : mortarWall;
+      if (lava && !inTower && !inGw && !inFarm && !inCoop) { c.fillStyle = lava.wall; c.fillRect(x, y, TILE, TILE); continue; }
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2805,6 +2810,7 @@ function _buildChunk(cx, cy) {
       const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inCoop ? _COOP_FLOOR_A : th.floorA;
       const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inCoop ? _COOP_FLOOR_B : th.floorB;
       const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inCoop ? mortarFloorCoop : mortarFloor;
+      if (lava && !inTower && !inGw && !inFarm && !inCoop) { c.fillStyle = lava.floor; c.fillRect(x, y, TILE, TILE); continue; }
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2869,7 +2875,7 @@ function _buildChunk(cx, cy) {
       const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
         : _isGuildWarTile(tx, ty) ? _GW_WALL
         : _isFarmZoneTile(tx, ty) ? _FARM_WALL
-        : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
+        : _isCoopTile(tx, ty) ? _COOP_WALL : lava ? _HUB_LAVA_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));
@@ -2881,7 +2887,30 @@ function _buildChunk(cx, cy) {
     }
   }
 
-  // 4. Shadows cast onto floor from walls above / beside
+  // 4. Shadows cast onto floor from walls above / beside. На сплошной
+  // текстуре (лава в хабе) — мягким градиентом: резкая полоса поверх неё
+  // читалась бы как ещё один шов.
+  if (lava) {
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      if (dungeon.grid[ty][tx] !== FLOOR) continue;
+      const x = tx * TILE, y = ty * TILE;
+      if (!isFloor(tx, ty - 1)) {
+        const g = c.createLinearGradient(0, y, 0, y + 22);
+        g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = g; c.fillRect(x, y, TILE, 22);
+      }
+      if (!isFloor(tx - 1, ty)) {
+        const g = c.createLinearGradient(x, 0, x + 14, 0);
+        g.addColorStop(0, 'rgba(0,0,0,0.4)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = g; c.fillRect(x, y, 14, TILE);
+      }
+      if (!isFloor(tx + 1, ty)) {
+        const g = c.createLinearGradient(x + TILE, 0, x + TILE - 14, 0);
+        g.addColorStop(0, 'rgba(0,0,0,0.4)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = g; c.fillRect(x + TILE - 14, y, 14, TILE);
+      }
+    }
+  } else {
   c.fillStyle = 'rgba(0,0,0,0.4)';
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
@@ -2897,6 +2926,7 @@ function _buildChunk(cx, cy) {
       if (!isFloor(tx - 1, ty)) c.fillRect(x, y, 4, TILE);
       if (!isFloor(tx + 1, ty)) c.fillRect(x + TILE - 4, y, 4, TILE);
     }
+  }
   }
 
   // 5. Floor props — painted clutter (crates, chests, boulders, stumps, etc.)
