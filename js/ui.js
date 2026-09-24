@@ -338,7 +338,11 @@ function _drawInvPortraitFrame(canvas, dt) {
     const fw = img.frameW || def.frameW, fh = img.frameH || def.frameH;
     const col = s.frame % animDef.cols;
     const row = Math.floor(s.frame / animDef.cols);
-    ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, W, H);
+    // Кадр один к одному, без сглаживания: крупным его делает CSS с
+    // image-rendering:pixelated, и пиксели остаются чёткими, а не мылом.
+    if (canvas.width !== fw || canvas.height !== fh) { canvas.width = fw; canvas.height = fh; }
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, col * fw, row * fh, fw, fh, 0, 0, fw, fh);
     return;
   }
   // Sheet not loaded/rasterized yet (shouldn't normally happen — loadSprites
