@@ -31,4 +31,5 @@ module.exports = [
   'js/pixi-world.js',
   'js/game.js',
   'js/npc.js',
+  'js/tutorial.js',
 ];

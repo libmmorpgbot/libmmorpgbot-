@@ -10084,6 +10084,7 @@ function _renderLangPicker() {
     <div class="gram-section-title" style="margin-bottom:10px">${t('langPickerTitle')}</div>
     <div class="lang-card-grid">${cards}</div>
     <div style="font-size:11px;color:#82745b;margin-top:12px;text-align:center">${t('langPickerHint')}</div>
+    ${typeof tutorialRestart === 'function' ? `<button class="lang-card" style="width:100%;margin-top:14px;justify-content:center" onclick="tutorialRestart()">${t('tutRestartBtn')}</button>` : ''}
   `;
 }
 

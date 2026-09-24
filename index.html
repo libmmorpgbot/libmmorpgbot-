@@ -446,6 +446,10 @@
 </button>
 <div id="sticker-picker" style="display:none"></div>
 <div id="sticker-layer" aria-hidden="true"></div>
+<!-- Обучение новичка (js/tutorial.js): карточка текущего шага и кольцо над
+     тем, куда нажать. -->
+<div id="tut-card" style="display:none"></div>
+<div id="tut-ring" style="display:none" aria-hidden="true"></div>
 <button id="teleport-btn" onclick="_useTeleportStone()" style="display:none" title="Камни телепортации">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="M5 21h14"/><line x1="12" y1="3" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="21"/><polyline points="9,8 12,11 15,8"/><polyline points="9,16 12,13 15,16"/></svg>
   <span id="teleport-stone-badge"></span>
@@ -758,6 +762,48 @@
 #sticker-picker .stk-cap { font-size:9.5px; margin-top:-2px; }
 /* Стикеры над головами — DOM поверх мира, двигает их _updateStickers. */
 #sticker-layer { position:absolute; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
+/* ── Обучение (js/tutorial.js) ── */
+#tut-card {
+  position:absolute; z-index:61; left:22%; right:8px; top:130px;
+  pointer-events:all; touch-action:manipulation;
+  padding:8px 10px 9px; border-radius:12px;
+  background:linear-gradient(170deg, rgba(37,28,12,0.95), rgba(12,10,6,0.95));
+  border:1px solid rgba(243,207,114,0.5);
+  box-shadow:0 6px 20px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,230,160,0.08);
+  color:#eadfc6; font-size:12px; line-height:1.35;
+  animation:stkPickerIn .2s ease-out;
+}
+#tut-card.tut-bottom { top:auto; left:8px; bottom:calc(var(--nav-h) + 8px); }
+#tut-card.tut-collapsed { right:auto; padding:6px 10px; }
+#tut-card .tut-head { display:flex; align-items:center; gap:6px; cursor:pointer; }
+#tut-card .tut-scroll { font-size:14px; }
+#tut-card .tut-title { flex:1; font-weight:700; color:#f3cf72; font-size:11.5px; letter-spacing:.3px; text-transform:uppercase; }
+#tut-card .tut-min { color:#b9a57a; font-size:12px; padding:0 2px; }
+#tut-card .tut-bar { height:3px; margin:6px 0 7px; border-radius:2px; background:rgba(255,255,255,0.08); overflow:hidden; }
+#tut-card .tut-bar i { display:block; height:100%; background:linear-gradient(90deg,#c9962f,#f3cf72); transition:width .4s; }
+#tut-card .tut-name { font-weight:700; font-size:13.5px; color:#fff3d6; margin-bottom:3px; }
+#tut-card .tut-prog { color:#7fd46a; font-weight:700; margin-left:4px; }
+#tut-card .tut-hint { margin-top:6px; color:#8fd0ff; font-weight:600; }
+#tut-card .tut-flash { animation:tutFlash .9s ease-out; }
+#tut-card .tut-btns { display:flex; gap:6px; margin-top:8px; }
+#tut-card .tut-btn {
+  flex:1; border:1px solid rgba(243,207,114,0.6); border-radius:8px; padding:6px 4px;
+  background:linear-gradient(180deg,#7a5a1c,#4a3410); color:#fff3d6; font-weight:700; font-size:11.5px;
+  cursor:pointer; touch-action:manipulation;
+}
+#tut-card .tut-btn:active { transform:scale(.96); }
+#tut-card .tut-btn-dim { flex:0 1 auto; background:transparent; border-color:rgba(185,165,122,0.35); color:#b9a57a; font-weight:500; }
+@keyframes tutFlash { 0% { background:rgba(127,212,106,0.35); } 100% { background:transparent; } }
+#tut-ring {
+  position:absolute; left:0; top:0; z-index:64; pointer-events:none; border-radius:50%;
+  border:3px solid #f3cf72; box-sizing:border-box;
+  box-shadow:0 0 14px 3px rgba(243,207,114,0.7), inset 0 0 12px rgba(243,207,114,0.45);
+  animation:tutPulse 1.1s ease-in-out infinite;
+}
+#tut-ring.tut-ring-edge { background:rgba(243,207,114,0.25); }
+/* Пока карточка стоит внизу поверх панели, панель прокручивается под неё. */
+body.tut-on .bpanel.open { padding-bottom:190px; }
+@keyframes tutPulse { 0%,100% { opacity:1; scale:1; } 50% { opacity:.55; scale:1.12; } }
 #sticker-layer .stk {
   position:absolute; left:0; top:0; width:64px; height:64px;
   display:flex; flex-direction:column; align-items:center; justify-content:flex-end;

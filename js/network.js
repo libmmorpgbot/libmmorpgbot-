@@ -4066,6 +4066,10 @@ function _finishOnlineStart() {
   let seenWhatsNew = false;
   try { seenWhatsNew = localStorage.getItem('whatsNewSeen') === WHATS_NEW_VERSION; } catch (_) {}
   if (!seenWhatsNew && typeof openWhatsNewModal === 'function') openWhatsNewModal();
+
+  // Обучение новичка (js/tutorial.js) — тот же единственный путь первого
+  // входа; у кого оно пройдено или кто уже не новичок, это no-op.
+  if (typeof tutorialStart === 'function') tutorialStart();
 }
 
 // ── Move throttle ─────────────────────────────────────────────
