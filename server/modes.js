@@ -555,7 +555,11 @@ function init(io) {
     const r10Handled  = (opts && opts.fearGrace)
       ? modes._race10HoldOnDisconnect(socketId, opts.telegramId)
       : modes._race10Eliminate(socketId);
-    const trHandled   = modes._trEliminate(socketId);
+    // Турнир: same hold as the tower — a reload mid-bracket used to be an
+    // instant loss (or a forfeit at the next deal, or a lost registration).
+    const trHandled   = (opts && opts.fearGrace)
+      ? modes._trHoldOnDisconnect(socketId, opts.telegramId)
+      : modes._trEliminate(socketId);
     const fearHandled = (opts && opts.fearGrace)
       ? modes._fearHoldOnDisconnect(socketId, opts.telegramId)
       : modes._fearEliminate(socketId);
@@ -742,6 +746,9 @@ function init(io) {
       // внутри его перехода.
       if (oldFloor === FLOOR_IDS.race10) { modes._race10ReleaseRun(socketId); return; }
       if (oldFloor === FLOOR_IDS.pvpArena) { modes._a3ReleaseRun(socketId); return; }
+      // Уйти из ямы посреди матча — техническое поражение, а не бой, который
+      // никто не может закончить (см. _trLeavePit, server/game/tournament.js).
+      if (oldFloor === FLOOR_IDS.tournament) { modes._trLeavePit(socketId); return; }
       if (oldFloor === FLOOR_IDS.farmZone2) {
         const run = modes._farm2.get(socketId);
         if (!run) return;

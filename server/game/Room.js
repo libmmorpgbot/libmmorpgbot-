@@ -4508,23 +4508,33 @@ class Room {
   tournamentDeploy(sidA, sidB) {
     const slot = this.tournamentSlot();
     if (!slot) return null;
-    const a = this.players.get(sidA), b = this.players.get(sidB);
-    if (!a || !b) return null;
-    [[a, sidA, slot.a], [b, sidB, slot.b]].forEach(([p, sid, pos]) => {
-      p.x = pos.x; p.y = pos.y;
-      p.hp = p.maxHp;
-      p.cp = this._maxCpOf(p);
-      p.pvpMode = true;
-      // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
-      // whoever is currently online never checked which private Fear hall
-      // they might still be occupying.
-      if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
-      p._profileRev++;
-    });
-    return {
-      a: { socketId: sidA, x: slot.a.x, y: slot.a.y, hp: a.hp },
-      b: { socketId: sidB, x: slot.b.x, y: slot.b.y, hp: b.hp },
-    };
+    if (!this.players.has(sidA) || !this.players.has(sidB)) return null;
+    const a = this.tournamentSeat(sidA, 'a'), b = this.tournamentSeat(sidB, 'b');
+    return (a && b) ? { a, b } : null;
+  }
+
+  // One side of the pit — what tournamentDeploy does for each of the pair,
+  // and on its own for the cases where the pair isn't seated together: one
+  // side mid-reconnect at the deal (their slot waits), and that side coming
+  // back (_trResumeOnLogin, server/game/tournament.js). `pos` defaults to
+  // the side's own slot; `hp` to full — a resume mid-fight passes the hp it
+  // left with, so a reload is not a free heal.
+  tournamentSeat(sid, side, { pos = null, hp = null } = {}) {
+    const slot = this.tournamentSlot();
+    const p = this.players.get(sid);
+    if (!slot || !p) return null;
+    const at = (pos && this.canStandAt(pos.x, pos.y)) ? pos : slot[side];
+    if (!at) return null;
+    p.x = at.x; p.y = at.y;
+    p.hp = (hp != null && hp > 0) ? Math.min(hp, p.maxHp) : p.maxHp;
+    p.cp = this._maxCpOf(p);
+    p.pvpMode = true;
+    // Same belt-and-suspenders as pvpArenaDeploy: a pair drawn from
+    // whoever is currently online never checked which private Fear hall
+    // they might still be occupying.
+    if (p._fearLane != null) { this.fearReleaseLane(p._fearLane); p._fearLane = null; }
+    p._profileRev++;
+    return { socketId: sid, x: p.x, y: p.y, hp: p.hp };
   }
 
   // Places a race10 entrant into their own lane's spawn point (array index =

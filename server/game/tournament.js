@@ -48,6 +48,16 @@ const TOURNAMENT_LB_ROUND_NEXUM = 5;
 const TOURNAMENT_FINAL_WIN_NEXUM = 100;
 const TOURNAMENT_FINAL_LOSE_NEXUM = 50;
 
+// How long a participant's place is held after their connection drops —
+// a page reload, a WebView the OS suspended, a Wi-Fi/LTE handover. Same
+// 45s every other held mode uses (FEAR_RECONNECT_GRACE_MS, Room.js;
+// RACE10_RECONNECT_GRACE_MS, race10.js). The whole state below used to be
+// keyed by socket id alone, so a reload was indistinguishable from walking
+// away: mid-match it was an instant loss written to the history, between
+// rounds a forfeit at the next deal, during registration a silently lost
+// slot. «Если перезагрузить игру — турнир засчитывает проигрыш».
+const TOURNAMENT_RECONNECT_GRACE_MS = 45000;
+
 module.exports = function createTournament(deps) {
   const {
     io, _findPlayerAnyFloor, _recordPvpHistory, _returnToHub, _socketTid,
@@ -93,6 +103,28 @@ module.exports = function createTournament(deps) {
     ubPool: [], lbPool: [],
     dropFromUB3: [], dropFromUB4: [],
     ubChampion: null, ubFinalLoser: null, lbSemiSurvivor: null, lbChampion: null,
+
+    // ── who a socket id belongs to ─────────────────────────────────────────
+    // socketId -> telegramId (string) for everyone registered or still in the
+    // bracket. A reconnect arrives on a NEW socket id; this is the only way to
+    // find the old one and move every map/pool below across (_trRekey).
+    tids: new Map(),
+    // telegramId -> { socketId, pos, timer } while that participant's
+    // connection is down and TOURNAMENT_RECONNECT_GRACE_MS hasn't run out.
+    held: new Map(),
+    // Knocked out of the bracket for good (a lower-bracket loss, or the grand
+    // final). The pools above aren't a clean membership list — several rounds
+    // leave stale entries behind (ubPool after round 5, lbPool after 8) — so
+    // "still in the tournament" is names minus this, never a pool lookup.
+    out: new Set(),
+    // socketId -> { room, side: 'a'|'b' } for the match currently dealt, so a
+    // reconnect can be put back into its own pit on its own side.
+    pitOf: new Map(),
+    // telegramId -> [{ amount, ref } | { season: true }] — round rewards owed
+    // to someone whose connection was down when their round was decided. The
+    // grant itself goes through the session's own closure (socket.data), so
+    // with no socket it's queued and paid the moment they're back.
+    pendingPay: new Map(),
 
     roundIndex: 0,          // 1..TOURNAMENT_TOTAL_ROUNDS while a round is in flight, else the last one played
     matchTag: new Map(),    // socketId -> which group this round's match belongs to (see _trBuildRoundGroups)
@@ -168,6 +200,7 @@ module.exports = function createTournament(deps) {
   function _trOpenWindow(openAt) {
     _tr.phase = 'reg';
     _tr.reg.clear();
+    _trClearIdentity();
     notifyEventStarted('tournament', openAt);
     clearTimeout(_tr.closeTimer);
     _tr.closeTimer = safeTimeout('trClose', _trCloseWindow, TOURNAMENT_WINDOW_MS);
@@ -185,6 +218,7 @@ module.exports = function createTournament(deps) {
       io.to(sid).emit('tournamentError', { msg: 'Регистрация на турнир закрылась — не набралось 32 человека' });
     });
     _tr.reg.clear();
+    _trClearIdentity();
     _trSchedule();
     _trBroadcast();
   }
@@ -193,8 +227,10 @@ module.exports = function createTournament(deps) {
   // server/handlers2/modes.js) — never waits out the rest of the window.
   function _trTryStart() {
     if (_tr.phase !== 'reg' || _tr.reg.size < TOURNAMENT_SIZE) return;
-    const ready = [..._tr.reg.keys()].filter(sid =>
-      io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
+    // Someone mid-reload when the 32nd slot fills still counts: their place
+    // is held (_trHoldOnDisconnect), and round 1 seats them the same way any
+    // later round does — the opponent goes in, their side waits for them.
+    const ready = [..._tr.reg.keys()].filter(sid => _trPresent(sid) || _trIsHeld(sid));
     // Same fix as arena3's _a3TryStart: prune whoever dropped between filling
     // the slot and this check, and broadcast the honest count. Leaving them
     // in `reg` kept the head count stuck at 32/32 forever — tournamentRegister
@@ -210,6 +246,8 @@ module.exports = function createTournament(deps) {
     _tr.names.clear();
     ready.slice(0, TOURNAMENT_SIZE).forEach(sid => _tr.names.set(sid, _tr.reg.get(sid)?.name || '?'));
     _tr.ubPool = [..._tr.names.keys()];
+    _tr.out.clear();
+    _tr.tids.forEach((_, sid) => { if (!_tr.names.has(sid)) _tr.tids.delete(sid); });
     _tr.lbPool = []; _tr.dropFromUB3 = []; _tr.dropFromUB4 = [];
     _tr.ubChampion = null; _tr.ubFinalLoser = null; _tr.lbSemiSurvivor = null; _tr.lbChampion = null;
     _tr.bracketHistory = []; // last tournament's bracket stays visible right up until this moment
@@ -275,8 +313,9 @@ module.exports = function createTournament(deps) {
 
   function _trEliminateList(list) {
     list.forEach(sid => {
+      _tr.out.add(sid);
       io.to(sid).emit('tournamentEliminated', {});
-      const tid = _socketTid(sid);
+      const tid = _tidOf(sid);
       if (tid) _recordPvpHistory(tid, 'lose', 'tournament', null);
     });
   }
@@ -366,16 +405,20 @@ module.exports = function createTournament(deps) {
     io.to(championSid).emit('tournamentChampion', { champion: true, name: champName });
     if (runnerUpSid) io.to(runnerUpSid).emit('tournamentChampion', { champion: false, name: champName });
     io.emit('chatMsg', { username: 'ТУРНИР', text: `🏆 Чемпион турнира: ${champName}!`, time: new Date().toISOString() });
-    const cTid = _socketTid(championSid);
+    const cTid = _tidOf(championSid);
     if (cTid) _recordPvpHistory(cTid, 'win', 'tournament', null);
     if (runnerUpSid) {
-      const rTid = _socketTid(runnerUpSid);
+      const rTid = _tidOf(runnerUpSid);
       if (rTid) _recordPvpHistory(rTid, 'lose', 'tournament', null);
     }
     _tr.phase = 'idle';
     _tr.ubPool = []; _tr.lbPool = []; _tr.dropFromUB3 = []; _tr.dropFromUB4 = [];
     _tr.ubChampion = null; _tr.ubFinalLoser = null; _tr.lbSemiSurvivor = null; _tr.lbChampion = null;
     _tr.roundIndex = 0;
+    // Holds end with the tournament — nothing is left to come back to. The
+    // pending rewards stay: someone whose final was decided while they were
+    // reloading still gets paid when they're back.
+    _trClearIdentity();
     _trSchedule();
     _trBroadcast();
   }
@@ -386,6 +429,7 @@ module.exports = function createTournament(deps) {
   function _trAfterRound(idx) {
     _trApplyRoundResults(idx);
     _tr.matches.clear(); _tr.matchTag.clear(); _tr.roundResults.clear(); _tr.dmg.clear();
+    _tr.pitOf.clear();
     if (idx >= TOURNAMENT_TOTAL_ROUNDS) return;
     clearTimeout(_tr.gapTimer);
     _tr.gapEndAt = Date.now() + TOURNAMENT_ROUND_GAP_MS;
@@ -394,12 +438,14 @@ module.exports = function createTournament(deps) {
   }
 
   // Deploys round `idx`'s matches onto the ring. A pair where one side has
-  // disconnected is decided as a forfeit on the spot — the pit isn't held
-  // open for someone who isn't coming back, and the survivor isn't made to
-  // sit out the full fight clock alone. The vanishingly rare case of BOTH
-  // sides being gone picks the first-listed as the "winner" purely so the
-  // bracket has someone to advance; there's no fair way to decide a fight
-  // nobody showed up to.
+  // disconnected for good (no socket, and no reconnect hold either) is decided
+  // as a forfeit on the spot — the pit isn't held open for someone who isn't
+  // coming back. A side that is only mid-reconnect (_trIsHeld) is NOT a
+  // forfeit: the match is dealt, the present side goes in, and the absent
+  // side's slot waits for _trResumeOnLogin — or for the grace to run out,
+  // which forfeits it then (_trGraceExpired). If neither side is here, the
+  // held one advances over the one who's gone; with nobody at all, the
+  // first-listed does, purely so the bracket has someone to advance.
   function _trStartRound(idx) {
     _tr.roundIndex = idx;
     _tr.gapEndAt = 0; // the gap this round was waiting out is over
@@ -421,10 +467,10 @@ module.exports = function createTournament(deps) {
         winnerId: null,
       };
       roundMatches.push(entry);
-      const aOk = io.sockets.sockets.get(a) && _findPlayerAnyFloor(a);
-      const bOk = io.sockets.sockets.get(b) && _findPlayerAnyFloor(b);
-      if (aOk && bOk) { toFight.push([a, b]); return; }
-      const winner = aOk ? a : b;
+      const aOk = _trPresent(a), bOk = _trPresent(b);
+      const aHeld = !aOk && _trIsHeld(a), bHeld = !bOk && _trIsHeld(b);
+      if ((aOk || aHeld) && (bOk || bHeld) && (aOk || bOk)) { toFight.push([a, b]); return; }
+      const winner = (aOk || (aHeld && !bOk)) ? a : b;
       const loser = winner === a ? b : a;
       _tr.roundResults.set(loser, winner);
       entry.winnerId = winner;
@@ -444,10 +490,29 @@ module.exports = function createTournament(deps) {
     toFight.forEach(([a, b]) => {
       const pitRoom = _createTournamentPitRoom();
       const slot = pitRoom.tournamentSlot();
-      const aJoined = !!(slot && io.sockets.sockets.get(a)?.data?._forceEnterLocation?.('tournament', { room: pitRoom, pos: slot.a }));
-      const bJoined = !!(slot && io.sockets.sockets.get(b)?.data?._forceEnterLocation?.('tournament', { room: pitRoom, pos: slot.b }));
-      const deployed = (aJoined && bJoined) ? pitRoom.tournamentDeploy(a, b) : null;
-      if (deployed) { placed.push(deployed); return; }
+      const aHeld = _trIsHeld(a), bHeld = _trIsHeld(b);
+      const aJoined = !!(slot && !aHeld && io.sockets.sockets.get(a)?.data?._forceEnterLocation?.('tournament', { room: pitRoom, pos: slot.a }));
+      const bJoined = !!(slot && !bHeld && io.sockets.sockets.get(b)?.data?._forceEnterLocation?.('tournament', { room: pitRoom, pos: slot.b }));
+      let deployed = null;
+      if (aJoined && bJoined) deployed = pitRoom.tournamentDeploy(a, b);
+      // One side mid-reconnect: seat the one who's here, reserve the other
+      // side's slot. A lone seat is fine HERE (unlike tournamentDeploy's own
+      // refusal) because the round can always end: the absent side either
+      // comes back, or its grace expires and forfeits it, or the clock runs
+      // out and _trConcludeRound gives it to whoever showed up.
+      else if (aJoined && bHeld) {
+        const seat = pitRoom.tournamentSeat(a, 'a');
+        if (seat) deployed = { a: seat, b: { socketId: b, absent: true } };
+      } else if (bJoined && aHeld) {
+        const seat = pitRoom.tournamentSeat(b, 'b');
+        if (seat) deployed = { a: { socketId: a, absent: true }, b: seat };
+      }
+      if (deployed) {
+        _tr.pitOf.set(a, { room: pitRoom, side: 'a' });
+        _tr.pitOf.set(b, { room: pitRoom, side: 'b' });
+        placed.push(deployed);
+        return;
+      }
       // The exact "кого-то вообще не забирает на арену" report: a pair that
       // passed the aOk/bOk check above (both looked connected and in the
       // world a moment ago) but still didn't end up fighting used to just
@@ -456,7 +521,7 @@ module.exports = function createTournament(deps) {
       // no elimination and no advancement.
       if (aJoined) _returnToHub(a);
       if (bJoined) _returnToHub(b);
-      const winner = aJoined ? a : b;
+      const winner = (aJoined || (aHeld && !bJoined)) ? a : b;
       const loser = winner === a ? b : a;
       _tr.roundResults.set(loser, winner);
       const entry = roundMatches.find(m => m.a.id === a && m.b.id === b);
@@ -472,14 +537,8 @@ module.exports = function createTournament(deps) {
       _tr.matches.set(a.socketId, { opponent: b.socketId });
       _tr.matches.set(b.socketId, { opponent: a.socketId });
       _tr.dmg.set(a.socketId, 0); _tr.dmg.set(b.socketId, 0);
-      io.to(a.socketId).emit('tournamentMatchStarted', {
-        x: a.x, y: a.y, hp: a.hp, opponent: _tr.names.get(b.socketId) || '?',
-        fightAt: _tr.fightAt, roundEndAt: _tr.roundEndAt, round: idx, totalRounds: TOURNAMENT_TOTAL_ROUNDS,
-      });
-      io.to(b.socketId).emit('tournamentMatchStarted', {
-        x: b.x, y: b.y, hp: b.hp, opponent: _tr.names.get(a.socketId) || '?',
-        fightAt: _tr.fightAt, roundEndAt: _tr.roundEndAt, round: idx, totalRounds: TOURNAMENT_TOTAL_ROUNDS,
-      });
+      if (!a.absent) _trEmitMatchStarted(a.socketId, a);
+      if (!b.absent) _trEmitMatchStarted(b.socketId, b);
     });
 
     clearTimeout(_tr.freezeTimer);
@@ -493,17 +552,29 @@ module.exports = function createTournament(deps) {
     _trBroadcast();
   }
 
+  function _trEmitMatchStarted(sid, at) {
+    const m = _tr.matches.get(sid);
+    io.to(sid).emit('tournamentMatchStarted', {
+      x: at.x, y: at.y, hp: at.hp, opponent: (m && _tr.names.get(m.opponent)) || '?',
+      fightAt: _tr.fightAt, roundEndAt: _tr.roundEndAt, round: _tr.roundIndex, totalRounds: TOURNAMENT_TOTAL_ROUNDS,
+    });
+  }
+
   // Ends one match: both sides go home (the ring is empty between rounds —
   // see the file header), the outcome is recorded for _trApplyRoundResults,
   // and both are dropped from `matches`/`dmg` so a stray late hit can't
   // re-trigger this. Never itself decides whether the ROUND is over — see
   // the two call sites (_trEliminate, _trConcludeRound) for that.
-  function _trResolveMatch(loserSid, winnerSid) {
+  function _trResolveMatch(loserSid, winnerSid, { loserLeaving = false } = {}) {
     if (!_tr.matches.has(loserSid)) return;
     _tr.matches.delete(loserSid); _tr.matches.delete(winnerSid);
     _tr.dmg.delete(loserSid); _tr.dmg.delete(winnerSid);
     _tr.roundResults.set(loserSid, winnerSid);
-    const spotL = _returnToHub(loserSid);
+    _tr.pitOf.delete(loserSid); _tr.pitOf.delete(winnerSid);
+    // loserLeaving: already on their way off the floor (_trLeavePit runs from
+    // inside their own forceFloor) — moving them again from in here would
+    // re-enter that same floor change.
+    const spotL = loserLeaving ? null : _returnToHub(loserSid);
     const spotW = _returnToHub(winnerSid);
     io.to(loserSid).emit('tournamentMatchResult', { won: false, x: spotL?.x, y: spotL?.y });
     io.to(winnerSid).emit('tournamentMatchResult', { won: true, x: spotW?.x, y: spotW?.y });
@@ -547,12 +618,37 @@ module.exports = function createTournament(deps) {
 
   function _trGrant(sid, amount, ref) {
     const sock = io.sockets.sockets.get(sid);
-    if (sock?.data?._trGrantReward) sock.data._trGrantReward(amount, ref).catch(() => {});
+    if (sock?.data?._trGrantReward) { sock.data._trGrantReward(amount, ref).catch(() => {}); return; }
+    _trQueuePay(sid, { amount, ref });
   }
 
   function _trAwardSeasonWin(sid) {
     const sock = io.sockets.sockets.get(sid);
-    sock?.data?._seasonAwardTournamentWin?.('tournament')?.catch?.(() => {});
+    if (sock?.data?._seasonAwardTournamentWin) { sock.data._seasonAwardTournamentWin('tournament')?.catch?.(() => {}); return; }
+    _trQueuePay(sid, { season: true });
+  }
+
+  // A round decided while this player's connection was down (a forfeit they
+  // won, a final lost on the clock) — paid when they're back, see
+  // _trResumeOnLogin. Only for someone we can name by account; mode-rewards'
+  // own idempotency key (account + ref) keeps a double delivery harmless.
+  function _trQueuePay(sid, item) {
+    const tid = _tr.tids.get(sid);
+    if (tid == null) return;
+    if (!_tr.pendingPay.has(tid)) _tr.pendingPay.set(tid, []);
+    _tr.pendingPay.get(tid).push(item);
+  }
+
+  function _trFlushPay(tid, sid) {
+    const items = _tr.pendingPay.get(tid);
+    if (!items) return;
+    const sock = io.sockets.sockets.get(sid);
+    if (!sock) return;
+    _tr.pendingPay.delete(tid);
+    items.forEach(it => {
+      if (it.season) sock.data?._seasonAwardTournamentWin?.('tournament')?.catch?.(() => {});
+      else sock.data?._trGrantReward?.(it.amount, it.ref)?.catch?.(() => {});
+    });
   }
 
   // The round's clock ran out (or the last live match just resolved and
@@ -570,8 +666,13 @@ module.exports = function createTournament(deps) {
       const m = _tr.matches.get(sid);
       if (!m) return;
       seen.add(sid); seen.add(m.opponent);
+      // Whoever is still off the ring when the clock runs out (mid-reconnect
+      // and never made it back) loses to whoever showed up — a coin flip on
+      // 0:0 damage would otherwise hand them a win they never fought for.
+      const mineHere = _trInPit(sid), theirsHere = _trInPit(m.opponent);
       const mine = _tr.dmg.get(sid) || 0, theirs = _tr.dmg.get(m.opponent) || 0;
-      const sidWins = mine === theirs ? Math.random() < 0.5 : mine > theirs;
+      const sidWins = mineHere !== theirsHere ? mineHere
+        : (mine === theirs ? Math.random() < 0.5 : mine > theirs);
       _trResolveMatch(sidWins ? m.opponent : sid, sidWins ? sid : m.opponent);
     });
     _trAfterRound(_tr.roundIndex);
@@ -623,8 +724,216 @@ module.exports = function createTournament(deps) {
     _tr.dmg.set(attackerId, (_tr.dmg.get(attackerId) || 0) + (Number(dmg) || 0));
   }
 
+  // ── reconnect: identity, hold, claim ─────────────────────────────────────
+  function _trClearIdentity() {
+    _tr.held.forEach(h => clearTimeout(h.timer));
+    _tr.held.clear();
+    _tr.tids.clear();
+    _tr.out.clear();
+    _tr.pitOf.clear();
+  }
+
+  function _tidOf(sid) {
+    const tid = _tr.tids.get(sid);
+    return tid != null ? tid : _socketTid(sid);
+  }
+
+  function _trSidOfTid(tid) {
+    if (tid == null) return null;
+    const want = String(tid);
+    for (const [sid, t] of _tr.tids) if (t === want) return sid;
+    return null;
+  }
+
+  function _trPresent(sid) {
+    return !!(io.sockets.sockets.get(sid) && _findPlayerAnyFloor(sid));
+  }
+
+  function _trIsHeld(sid) {
+    const tid = _tr.tids.get(sid);
+    const h = tid != null && _tr.held.get(tid);
+    return !!h && h.socketId === sid;
+  }
+
+  function _trInPit(sid) {
+    const seat = _tr.pitOf.get(sid);
+    return !!(seat && seat.room.players.has(sid));
+  }
+
+  // Registered and waiting, or dealt into the bracket and not yet knocked out.
+  function _trIsParticipant(sid) {
+    if (_tr.phase === 'reg') return _tr.reg.has(sid);
+    if (_tr.phase === 'live') return _tr.names.has(sid) && !_tr.out.has(sid);
+    return false;
+  }
+
+  // Registration from the handler (server/handlers2/modes.js) — records whose
+  // account this socket is, and folds a second tab/socket of the same account
+  // onto the one slot instead of taking two.
+  function _trRegister(sid, name, telegramId) {
+    const tid = telegramId != null ? String(telegramId) : null;
+    if (tid) {
+      const prev = _trSidOfTid(tid);
+      if (prev && prev !== sid) _trRekey(prev, sid);
+      const h = _tr.held.get(tid);
+      if (h) { clearTimeout(h.timer); _tr.held.delete(tid); }
+      _tr.tids.set(sid, tid);
+    }
+    _tr.reg.set(sid, { name });
+  }
+
+  function _trUnregister(sid) {
+    if (!_tr.reg.delete(sid)) return false;
+    _tr.tids.delete(sid);
+    return true;
+  }
+
+  // Moves every trace of oldSid onto newSid — registration, name, bracket
+  // pools, the match in flight (both directions), this round's results, the
+  // "Сетка" history. Safe no-op for anyone who isn't in the tournament.
+  function _trRekey(oldSid, newSid) {
+    if (!oldSid || !newSid || oldSid === newSid) return false;
+    if (!_tr.tids.has(oldSid) && !_tr.reg.has(oldSid) && !_tr.names.has(oldSid)) return false;
+    const swap = id => (id === oldSid ? newSid : id);
+    const moveKey = (map) => {
+      if (!map.has(oldSid)) return;
+      map.set(newSid, map.get(oldSid));
+      map.delete(oldSid);
+    };
+    [_tr.reg, _tr.names, _tr.tids, _tr.matchTag, _tr.dmg, _tr.pitOf, _tr.matches].forEach(moveKey);
+    _tr.matches.forEach(m => { if (m.opponent === oldSid) m.opponent = newSid; });
+    const rr = [..._tr.roundResults];
+    _tr.roundResults.clear();
+    rr.forEach(([l, w]) => _tr.roundResults.set(swap(l), swap(w)));
+    if (_tr.out.delete(oldSid)) _tr.out.add(newSid);
+    _tr.ubPool = _tr.ubPool.map(swap);
+    _tr.lbPool = _tr.lbPool.map(swap);
+    _tr.dropFromUB3 = _tr.dropFromUB3.map(swap);
+    _tr.dropFromUB4 = _tr.dropFromUB4.map(swap);
+    _tr.ubChampion = swap(_tr.ubChampion);
+    _tr.ubFinalLoser = swap(_tr.ubFinalLoser);
+    _tr.lbSemiSurvivor = swap(_tr.lbSemiSurvivor);
+    _tr.lbChampion = swap(_tr.lbChampion);
+    _tr.bracketHistory.forEach(r => r && r.matches.forEach(m => {
+      if (m.a.id === oldSid) m.a.id = newSid;
+      if (m.b.id === oldSid) m.b.id = newSid;
+      if (m.winnerId === oldSid) m.winnerId = newSid;
+    }));
+    _tr.held.forEach(h => { if (h.socketId === oldSid) h.socketId = newSid; });
+    return true;
+  }
+
+  // The disconnect side — called from modes._pvpEliminate INSTEAD OF
+  // _trEliminate when the socket closing is a disconnect (opts.fearGrace), not
+  // a death in the pit. Nothing is decided here: the participant keeps their
+  // registration / bracket place / match exactly as it was, and only if
+  // TOURNAMENT_RECONNECT_GRACE_MS passes with no reconnect does
+  // _trGraceExpired run what used to happen immediately.
+  function _trHoldOnDisconnect(socketId, telegramId) {
+    if (!_trIsParticipant(socketId)) return false;
+    let tid = _tr.tids.get(socketId);
+    if (tid == null && telegramId != null) { tid = String(telegramId); _tr.tids.set(socketId, tid); }
+    if (tid == null) return _trEliminate(socketId);
+    // Captured NOW, while the pit record still exists (this runs before the
+    // disconnect handler's own room.removePlayer — see server/app.js).
+    const seat = _tr.pitOf.get(socketId);
+    const p = seat && seat.room.players.get(socketId);
+    const pos = p ? { x: p.x, y: p.y, hp: p.hp } : null;
+    const prior = _tr.held.get(tid);
+    if (prior) clearTimeout(prior.timer);
+    const timer = safeTimeout('trGrace', () => _trGraceExpired(tid), TOURNAMENT_RECONNECT_GRACE_MS);
+    _tr.held.set(tid, { socketId, pos, timer });
+    return true;
+  }
+
+  function _trGraceExpired(tid) {
+    const h = _tr.held.get(tid);
+    if (!h) return;
+    _tr.held.delete(tid);
+    const sid = h.socketId;
+    if (_tr.phase === 'reg') {
+      if (_trUnregister(sid)) _trBroadcast();
+      return;
+    }
+    // Mid-match: the forfeit that a disconnect used to be immediately.
+    // Between rounds nothing to do here — the next deal sees them neither
+    // present nor held and forfeits them then, same as before.
+    if (_tr.matches.has(sid)) _trEliminate(sid);
+  }
+
+  // The login side — called once a (re)connecting socket has landed in the
+  // world (server/handlers2/world.js). Finds this account's old socket id —
+  // whether its disconnect already ran (held) or it is still lingering until
+  // socket.io's ping timeout notices — moves everything onto the new one, puts
+  // them back into their pit if their match is still on, pays anything owed,
+  // and tells the client where it stands. A no-op for anyone not in it.
+  function _trResumeOnLogin(telegramId, newSid) {
+    if (telegramId == null) return false;
+    const tid = String(telegramId);
+    const held = _tr.held.get(tid);
+    if (held) { clearTimeout(held.timer); _tr.held.delete(tid); }
+    const oldSid = _trSidOfTid(tid);
+    _trFlushPay(tid, newSid);
+    if (!oldSid) return false;
+    // The old record may still be standing in the pit (ping timeout not hit
+    // yet) — its exact position/hp is the one to resume at, same as a hold.
+    const oldSeat = _tr.pitOf.get(oldSid);
+    const oldRec = oldSeat && oldSeat.room.players.get(oldSid);
+    const pos = (held && held.pos) || (oldRec ? { x: oldRec.x, y: oldRec.y, hp: oldRec.hp } : null);
+    _trRekey(oldSid, newSid);
+
+    const sock = io.sockets.sockets.get(newSid);
+    if (_tr.matches.has(newSid)) {
+      const seat = _tr.pitOf.get(newSid);
+      const slot = seat && seat.room.tournamentSlot();
+      const spot = pos || (slot && slot[seat.side]) || null;
+      const entered = !!(seat && sock?.data?._forceEnterLocation?.('tournament', { room: seat.room, pos: spot && { x: spot.x, y: spot.y } }));
+      // Still in the countdown: full HP like everyone else got at the deal.
+      // Mid-fight: exactly what they had — a reload is not a free heal.
+      const hp = (pos && Date.now() >= _tr.fightAt) ? pos.hp : null;
+      const at = entered ? seat.room.tournamentSeat(newSid, seat.side, { pos: spot, hp }) : null;
+      if (!at) {
+        // Couldn't be put back — the match is theirs to lose, not to hang.
+        _trEliminate(newSid);
+      } else {
+        _trEmitMatchStarted(newSid, at);
+        if (Date.now() >= _tr.fightAt) io.to(newSid).emit('tournamentFight', { roundEndAt: _tr.roundEndAt });
+      }
+    }
+    _trSyncTo(newSid);
+    return true;
+  }
+
+  // One socket's view — the broadcast shape plus this socket's own flags.
+  function _trStateFor(sid) {
+    return {
+      ..._trPublicState(),
+      registered: _tr.phase === 'reg' && _tr.reg.has(sid),
+      inMatch: _tr.matches.has(sid),
+      inBracket: _tr.phase === 'live' && _trIsParticipant(sid),
+    };
+  }
+  function _trSyncTo(sid) {
+    io.to(sid).emit('tournamentState', _trStateFor(sid));
+  }
+
+  // Walking out of a live pit (a teleport stone, a portal — anything that goes
+  // through forceFloor/enterFloor off the tournament floor) mid-match is a
+  // forfeit. It used to leave the match hanging on someone who wasn't there:
+  // untouchable, and decided by the damage clock. _trResolveMatch sends both
+  // sides home itself, but deletes them from `matches` first, so this is a
+  // no-op on that path.
+  function _trLeavePit(socketId) {
+    const m = _tr.matches.get(socketId);
+    if (!m) return false;
+    _trResolveMatch(socketId, m.opponent, { loserLeaving: true });
+    if (_tr.matches.size === 0) _trConcludeRound();
+    return true;
+  }
+
   return {
     TOURNAMENT_TOTAL_ROUNDS,
+    _trRegister, _trUnregister, _trRekey, _trHoldOnDisconnect, _trResumeOnLogin, _trStateFor, _trLeavePit,
     _tr, _trNextOpenAt, _trPublicState, _trBroadcast, _trSchedule, _trOpenWindow, _trCloseWindow,
     _trTryStart, _trStartRound, _trEliminate, _trFrozen, _trAllies, _trEnemies, _trTrackDamage,
     _trRooms, _liveTrRooms,

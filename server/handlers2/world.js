@@ -141,7 +141,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Outside the transaction on purpose: this moves the connection between
     // two Rooms and pushes a second gameStart, none of which belongs inside a
     // database transaction, and it must not run at all if the login failed.
-    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); }
+    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); }
   });
 
   // ── a Страх run held across a disconnect ─────────────────────────────────
@@ -262,6 +262,18 @@ module.exports = function registerWorld(s, safeOn, deps) {
       roster: [...m._race10.alive.entries()].map(([id, r]) => ({ id, name: r.name, lane: r.lane })),
     });
     plog.log(s.playerId, 'race10Resume', { lane: run.lane });
+  }
+
+  // ── турнир, переживший перезагрузку ──────────────────────────────────────
+  // Всё решает _trResumeOnLogin (server/game/tournament.js): находит прежний
+  // socket id этого аккаунта, переносит на новый регистрацию, место в сетке и
+  // идущий матч, возвращает в свою яму и шлёт клиенту его состояние. Раньше
+  // перезагрузка была поражением: сразу в матче, на следующей раздаче между
+  // раундами или потерянной записью во время регистрации.
+  function _resumeTournament() {
+    const m = deps.modes || require('../modes').modes;
+    if (!m || typeof m._trResumeOnLogin !== 'function') return;
+    if (m._trResumeOnLogin(s.telegramId, s.socket.id)) plog.log(s.playerId, 'tournamentResume', {});
   }
 
   // ── бой 3х3, переживший реконнект ────────────────────────────────────────

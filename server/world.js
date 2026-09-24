@@ -246,6 +246,10 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
       // Без этого реконнект в окно регистрации терял запись молча, а мёртвый
       // socketId висел в очереди и завышал счётчик до ближайшего _a3TryStart.
       if (m && typeof m._a3Rekey === 'function') m._a3Rekey(_added.staleSocketId, session.socket.id);
+      // И для турнира: регистрация, место в сетке и идущий матч ключуются по
+      // socket id. Основной путь — _trResumeOnLogin (handlers2/world.js), он
+      // находит старый id по telegramId; это страховка на тот же случай.
+      if (m && typeof m._trRekey === 'function') m._trRekey(_added.staleSocketId, session.socket.id);
     }
     // The CLASS, without which the room has a player record with no `type`:
     // no sprite for anyone else to draw, no class multipliers in combat, and

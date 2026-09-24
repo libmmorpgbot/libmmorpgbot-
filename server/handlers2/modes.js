@@ -140,7 +140,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     _coop, _coopGroupOf, _createFearRoom, _db, _dbBroadcast, _dbPublicState,
     _dbReturnEntrant, _farm2, _farm2GroupOf, _fear, _fearStartWave,
     _race10, _race10Broadcast, _race10PublicState,
-    _tr, _trAllies, _trBroadcast, _trEnemies, _trPublicState, _trTryStart, _trTrackDamage,
+    _tr, _trAllies, _trBroadcast, _trEnemies, _trTryStart, _trTrackDamage,
+    _trRegister, _trUnregister, _trStateFor,
     ARENA3_MIN_LEVEL, FEAR_ATTEMPTS, FEAR_MIN_LEVEL, FEAR_START_DELAY_MS,
     RACE10_MIN_LEVEL,
   } = modes;
@@ -501,7 +502,11 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_tr.phase !== 'reg') return s.socket.emit('tournamentError', { msg: 'Регистрация на турнир открыта в 23:00 по Москве' });
       // Exact cap, not "at least" like arena3/race10 — the whole bracket below
       // is a fixed shape built for exactly 32, not a variable N.
-      if (_tr.reg.size >= TOURNAMENT_SIZE && !_tr.reg.has(s.socket.id)) {
+      // Своя же запись с прошлого соединения (вкладка, перезагрузка) — не
+      // новое место: _trRegister переносит её на этот сокет.
+      const ownSlot = _tr.reg.has(s.socket.id)
+        || [..._tr.tids].some(([sid, tid]) => tid === String(s.telegramId) && _tr.reg.has(sid));
+      if (_tr.reg.size >= TOURNAMENT_SIZE && !ownSlot) {
         return s.socket.emit('tournamentError', { msg: `Регистрация заполнена (${TOURNAMENT_SIZE}/${TOURNAMENT_SIZE})` });
       }
       const cp = s.room?.players.get(s.socket.id);
@@ -529,7 +534,7 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_farm2.has(s.socket.id) || _farm2GroupOf.has(s.socket.id)) {
         return s.socket.emit('tournamentError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
       }
-      _tr.reg.set(s.socket.id, { name: s.username });
+      _trRegister(s.socket.id, s.username, s.telegramId);
       s.socket.emit('tournamentRegistered', { registered: true });
       _trBroadcast();
       _trTryStart();
@@ -537,17 +542,13 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
 
     safeOn('tournamentUnregister', () => {
       if (_tr.phase !== 'reg') return;
-      if (!_tr.reg.delete(s.socket.id)) return;
+      if (!_trUnregister(s.socket.id)) return;
       s.socket.emit('tournamentRegistered', { registered: false });
       _trBroadcast();
     });
 
     safeOn('tournamentSync', () => {
-      s.socket.emit('tournamentState', {
-        ..._trPublicState(),
-        registered: _tr.reg.has(s.socket.id),
-        inMatch: _tr.matches.has(s.socket.id),
-      });
+      s.socket.emit('tournamentState', _trStateFor(s.socket.id));
     });
 
     // ── 10-Player Corridor Race ──────────────────────────────────────────────

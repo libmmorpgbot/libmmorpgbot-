@@ -4804,6 +4804,11 @@ function _initTournamentHandlers(s) {
     };
     if (st.registered !== undefined) _trRegistered = !!st.registered;
     if (st.inMatch !== undefined) _trInMatch = !!st.inMatch;
+    // Only on a per-socket sync (tournamentSync, or the server's own push
+    // after a reload — _trResumeOnLogin): a fresh page starts with _trAlive
+    // false, and without this the between-round timer and the panel's
+    // "you're in the bracket" never came back after a reload.
+    if (st.inBracket !== undefined) _trAlive = !!st.inBracket || !!st.registered;
     // Between-round countdown: still alive in the bracket, not fighting right
     // now, and the server has a real gap end time — reuses the same on-screen
     // widget the live fight clock does (showArena3Timer/hideArena3Timer).
