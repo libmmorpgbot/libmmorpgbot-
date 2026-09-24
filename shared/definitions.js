@@ -3573,11 +3573,12 @@ const VIP_BONUSES = [
   { xp:75,  gold:75,  drop:30  }, // VIP 8
   { xp:90,  gold:90,  drop:40  }, // VIP 9
   { xp:100, gold:100, drop:100 }, // VIP 10
-  { xp:110, gold:110, drop:105 }, // VIP 11
-  { xp:120, gold:120, drop:110 }, // VIP 12
-  { xp:135, gold:135, drop:120 }, // VIP 13
-  { xp:150, gold:150, drop:135 }, // VIP 14
-  { xp:175, gold:175, drop:150 }, // VIP 15
+  // Дальше +20% за уровень ко всем трём, последний — +50%.
+  { xp:120, gold:120, drop:120 }, // VIP 11
+  { xp:140, gold:140, drop:140 }, // VIP 12
+  { xp:160, gold:160, drop:160 }, // VIP 13
+  { xp:180, gold:180, drop:180 }, // VIP 14
+  { xp:230, gold:230, drop:230 }, // VIP 15
 ];
 
 // ── Season ticket (GRAM shop) ───────────────────────────────────────────────

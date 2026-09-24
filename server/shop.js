@@ -3,7 +3,7 @@
 //
 // Pure data and pure functions over the shared catalog: no models, no
 // sockets, no session state — same shape as server/inventory.js.
-const { CRAFT_MATS, BOX_DEF, SEASON_TICKET_GRAM_PRICE } = require('../shared/definitions');
+const { CRAFT_MATS, BOX_DEF, SEASON_TICKET_GRAM_PRICE, ITEM_DEF, UNIQUE_WEAPONS } = require('../shared/definitions');
 
 // ── VIP item data (server-side subset of js/definitions.js) ──────────────────
 const _VIP_WEAPONS = {
@@ -160,6 +160,26 @@ const _STONE_DEFS = {
   bless_stone: { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'     },
 };
 
+// ── награды VIP 11-15 ───────────────────────────────────────────────────────
+// Уникальное оружие (UNIQUE_WEAPONS) есть не у всех классов — у Рунного бойца
+// и Ассасина его нет, им идёт обычное классовое оружие той же редкости.
+const _VIP_CLASS_WEAPON = {
+  lev:         { epic: 'tw4', legendary: 'tw5' },
+  deathknight: { epic: 'sw4', legendary: 'sw5' },
+  ranger:      { epic: 'bw4', legendary: 'bw5' },
+  mage:        { epic: 'st4', legendary: 'st5' },
+  warlock:     { epic: 'st4', legendary: 'st5' },
+  runefighter: { epic: 'rf4', legendary: 'rf5' },
+  assassin:    { epic: 'as4', legendary: 'as5' },
+};
+function _vipUniqueWeaponId(charClass, rarity) {
+  const uq = UNIQUE_WEAPONS.find(w => w.rarity === rarity && (w.forClass || []).includes(charClass));
+  if (uq) return uq.id;
+  return (_VIP_CLASS_WEAPON[charClass] || _VIP_CLASS_WEAPON.lev)[rarity];
+}
+const _VIP_EPIC_PETS = ['pet_groot', 'pet_nerb', 'pet_vilord'];
+const _VIP_LEGENDARY_SET = ['hm5', 'ar5', 'gl5', 'bt5', 'rn5', 'nd5'];
+
 function _vipLevelItems(vipLevel, charClass) {
   const wepMap = _VIP_WEAPONS[charClass] || _VIP_WEAPONS.lev;
   const items = [];
@@ -167,6 +187,9 @@ function _vipLevelItems(vipLevel, charClass) {
   function addBP(qty)        { _VIP_BP.forEach(bp => items.push({ ...bp, qty })); }
   function addWep(rarity, enhance) {
     const w = wepMap[rarity]; if (w) items.push({ ...w, enhance: enhance || 0, qty: 1 });
+  }
+  function addDef(id, enhance) {
+    const d = ITEM_DEF.find(x => x.id === id); if (d) items.push({ ...d, enhance: enhance || 0, qty: 1 });
   }
   function addBox(id, qty) {
     if (qty <= 0) return;
@@ -183,11 +206,14 @@ function _vipLevelItems(vipLevel, charClass) {
     case 8:  addWep('epic', 1); addBP(50); addStone('norm_stone', 50); addStone('bless_stone', 30); addBox('box_rare', 20); break;
     case 9:  addWep('epic', 8); addBP(80); addStone('norm_stone', 70); addStone('bless_stone', 30); addBox('box_rare', 25); break;
     case 10: addWep('legendary', 0); addBP(100); addStone('norm_stone', 100); addStone('bless_stone', 100); addBox('box_rare', 30); break;
-    case 11: addWep('legendary', 3);  addBP(120); addStone('norm_stone', 120); addStone('bless_stone', 120); addBox('box_rare', 35); break;
-    case 12: addWep('legendary', 5);  addBP(150); addStone('norm_stone', 150); addStone('bless_stone', 150); addBox('box_rare', 40); break;
-    case 13: addWep('legendary', 7);  addBP(180); addStone('norm_stone', 180); addStone('bless_stone', 180); addBox('box_rare', 45); break;
-    case 14: addWep('legendary', 9);  addBP(200); addStone('norm_stone', 200); addStone('bless_stone', 200); addBox('box_rare', 50); break;
-    case 15: addWep('legendary', 12); addBP(250); addStone('norm_stone', 250); addStone('bless_stone', 250); addBox('box_rare', 60); break;
+    // 11 — уникальное эпическое оружие +0, 12 — эпические крылья, 13 — эпический
+    // питомец (случайный из трёх), 14 — легендарный сет из шести вещей,
+    // 15 — уникальное легендарное оружие.
+    case 11: addDef(_vipUniqueWeaponId(charClass, 'epic'), 0); addBP(120); addStone('norm_stone', 120); addStone('bless_stone', 120); addBox('box_rare', 35); break;
+    case 12: addDef('wing_e'); addBP(150); addStone('norm_stone', 150); addStone('bless_stone', 150); addBox('box_rare', 40); break;
+    case 13: addDef(_VIP_EPIC_PETS[Math.floor(Math.random() * _VIP_EPIC_PETS.length)]); addBP(180); addStone('norm_stone', 180); addStone('bless_stone', 180); addBox('box_rare', 45); break;
+    case 14: _VIP_LEGENDARY_SET.forEach(id => addDef(id)); addBP(200); addStone('norm_stone', 200); addStone('bless_stone', 200); addBox('box_rare', 50); break;
+    case 15: addDef(_vipUniqueWeaponId(charClass, 'legendary'), 0); addBP(250); addStone('norm_stone', 250); addStone('bless_stone', 250); addBox('box_rare', 60); break;
     default: break;
   }
   return items;

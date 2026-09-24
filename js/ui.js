@@ -6896,6 +6896,14 @@ function _vipItemDesc(lvl) {
   function wep(rarity, enhance) {
     return ri(`/images/wep/${wepPfx[rarity]}${wepSfx}.png`, enhance ? `+${enhance}` : '★', rarity);
   }
+  // Уникальное оружие своего класса (UNIQUE_WEAPONS); у кого его нет —
+  // обычное классовое той же редкости, как и выдаёт сервер (server/shop.js).
+  function uqWep(rarity) {
+    const cls = player?.type;
+    const uq = typeof UNIQUE_WEAPONS !== 'undefined'
+      ? UNIQUE_WEAPONS.find(w => w.rarity === rarity && (w.forClass || []).includes(cls)) : null;
+    return uq ? ri(uq.img, '★', rarity) : wep(rarity, 0);
+  }
   function bless(qty) { return ri('/images/bless.png',       `×${qty}`, 'rare');   }
   function norm(qty)  { return ri('/images/norm.png',        `×${qty}`, 'uncommon'); }
   function boxU(qty)  { return ri('/images/material/boxu.png', `×${qty}`, 'uncommon'); }
@@ -6919,11 +6927,13 @@ function _vipItemDesc(lvl) {
     8:  wep('epic', 1) + pots(50) + norm(50) + bless(30) + gold(20000) + boxR(20),
     9:  wep('epic', 8) + pots(80) + norm(70) + bless(30) + boxR(25),
     10: wep('legendary', 0) + pots(100) + norm(100) + bless(100) + boxR(30),
-    11: wep('legendary', 3) + pots(120) + norm(120) + bless(120) + boxR(35),
-    12: wep('legendary', 5) + pots(150) + norm(150) + bless(150) + boxR(40),
-    13: wep('legendary', 7) + pots(180) + norm(180) + bless(180) + boxR(45),
-    14: wep('legendary', 9) + pots(200) + norm(200) + bless(200) + boxR(50),
-    15: wep('legendary', 12) + pots(250) + norm(250) + bless(250) + boxR(60),
+    11: uqWep('epic') + pots(120) + norm(120) + bless(120) + boxR(35),
+    12: ri('/images/wings/epic.png', '★', 'epic') + pots(150) + norm(150) + bless(150) + boxR(40),
+    13: ri('/images/pet/pet_groot/icon.png', '?', 'epic') + pots(180) + norm(180) + bless(180) + boxR(45),
+    14: ['lh', 'lt', 'lg', 'lb'].map(k => ri(`/images/arm/${k}.png`, '★', 'legendary')).join('')
+        + ri('/images/acs/lr.png', '★', 'legendary') + ri('/images/acs/lp.png', '★', 'legendary')
+        + pots(200) + norm(200) + bless(200) + boxR(50),
+    15: uqWep('legendary') + pots(250) + norm(250) + bless(250) + boxR(60),
   };
   const d = rows[lvl];
   return d ? `<div class="vip-items-row">${d}</div>` : '';
