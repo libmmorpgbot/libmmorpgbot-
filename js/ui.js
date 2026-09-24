@@ -5757,11 +5757,15 @@ function closeInvItemModal() {
   // Карточки больше нет — значит и обновлять нечего. Без этого следующий
   // inventorySync открыл бы её заново поверх закрытого экрана.
   _openRuneRow = null;
-  // The reveal below can still be pending when the player dismisses the
-  // panel mid-animation (see _ENH_ANIM_MS) — it checks whether the overlay
-  // still exists before reopening anything, so a close here is enough to
-  // stop it; this just also retires the (now-destroyed) continue button's
-  // handle so nothing stale can be invoked through it.
+  // Отложенные шаги заточки (показ результата через _ENH_ANIM_MS и переход
+  // обратно к предмету через _ENH_RESULT_HOLD_MS) проверяли только, есть ли
+  // на экране ОКНО предмета. А окно есть и тогда, когда игрок уже закрыл
+  // заточку и открыл другой предмет (openInvItemModal/openEqItemModal сперва
+  // зовут эту функцию, потом строят новое): таймер старой попытки подменял
+  // новое окно прежним предметом — «начинаю точить другой, а открывается
+  // предыдущий». Номер попытки меняется при каждом закрытии, и шаг, чей
+  // номер устарел, больше ничего не трогает.
+  _enhGen++;
   _enhResultContinue = null;
 }
 
@@ -5946,6 +5950,7 @@ function onOpenBoxError(msg) {
 // панель вернётся к предмету.
 let _enhAnim = null;            // { kind:'inv'|'eq', key, at } — set while a request is in flight
 let _enhResultContinue = null;  // the one function the result view's button/timeout may call
+let _enhGen = 0;                // bumped on every modal close and every new attempt — see closeInvItemModal
 const _ENH_ANIM_MS = 1100;      // minimum time the "in progress" view stays up
 const _ENH_RESULT_HOLD_MS = 1600; // how long the result auto-advances after, if not tapped
 
@@ -6033,7 +6038,7 @@ function _beginEnhance(kind, key, stoneType) {
   if (!it) return;
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   if (_enhStoneQty(stoneId) <= 0) { dmgNum(player.x, player.y - 30, t('noStoneToast'), '#f17e8b'); return; }
-  _enhAnim = { kind, key, at: Date.now() };
+  _enhAnim = { kind, key, at: Date.now(), gen: ++_enhGen };
   const ov = document.getElementById('inv-item-modal-ov');
   const box = ov && ov.querySelector('.imod-box');
   if (box) {
@@ -6135,13 +6140,17 @@ function enhanceEqItem(slot, stoneType) {
 function onEnhanceResult({ id, slot, outcome, newEnhance, rowId } = {}) {
   if (!player) return;
   const startedAt = _enhAnim ? _enhAnim.at : null;
+  const gen = _enhAnim ? _enhAnim.gen : -1;
   _enhAnim = null;
   const wait = startedAt != null ? Math.max(0, _ENH_ANIM_MS - (Date.now() - startedAt)) : 0;
-  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId }), wait);
+  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, gen }), wait);
 }
 
-function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId }) {
+function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, gen }) {
   if (!player) return;
+  // Окно этой попытки уже закрыто (или вместо него открыт другой предмет) —
+  // цифра над персонажем ниже всё равно покажет итог, но окна не трогаем.
+  const live = gen === _enhGen;
   const iconName = outcome === 'success' ? 'checkCircle' : outcome === 'fail' ? 'xCircle' : 'burst';
   const iconColor = outcome === 'success' ? '#98e456' : outcome === 'fail' ? '#f17e8b' : '#eb4e61';
   const icon = iconHTML(iconName, 48, iconColor);
@@ -6153,9 +6162,11 @@ function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId }) {
   // floating-number feedback every other reward in the game uses.
   dmgNum(player.x, player.y - 30, text, outcome === 'success' ? '#e69419' : outcome === 'fail' ? '#f17e8b' : '#eb4e61');
 
+  if (!live) return;
+
   let done = false;
   const advance = () => {
-    if (done) return;
+    if (done || gen !== _enhGen) return;
     done = true;
     _enhResultContinue = null;
     // The player may have dismissed the panel while the animation/result
@@ -6202,8 +6213,9 @@ function onEnhanceError(msg) {
   // on. Back to the choice screen for whichever item was mid-attempt, same
   // as the animation would have led to on a real reply.
   if (_enhAnim) {
-    const { kind, key } = _enhAnim;
+    const { kind, key, gen } = _enhAnim;
     _enhAnim = null;
+    if (gen !== _enhGen) return; // окно этой попытки уже закрыто
     const it = kind === 'inv' ? player?.inventory[key] : player?.equipment[key];
     if (it) openEnhancePanel(kind, key);
     else closeInvItemModal();
