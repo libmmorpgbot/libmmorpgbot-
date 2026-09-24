@@ -145,13 +145,19 @@ function updateInvUI() {
 // головой — у себя сразу, у тех, кто рядом, через сервер ('sticker',
 // handlers2/world.js). Рисует _updateStickers (js/pixi-world.js).
 // Один активный стикер на игрока: новый заменяет прежний.
-// Рисуется не в PIXI, а <img> в #sticker-layer поверх мира: анимированный
-// WebP в WebGL-текстуре замирает на первом кадре, а в <img> браузер крутит
-// его сам. el — этот <img>, новый на каждый стикер, чтобы анимация шла с
-// начала (_updateStickers, js/pixi-world.js, двигает и снимает его).
+// Рисуется не в PIXI, а DOM-элементом в #sticker-layer поверх мира: так
+// анимацию и белый контур наклейки делает CSS (.stk-*, index.html). el —
+// этот элемент, новый на каждый стикер, чтобы анимация шла с начала
+// (_updateStickers, js/pixi-world.js, двигает и снимает его).
 let _stickerFx = [];          // { sid, self, def, t0, el }
 let _stickerSentAt = 0;
-const _STICKER_PICKER_W = 222; // 4×46 + 3×6 + 2×8 + рамка
+const _STICKER_PICKER_W = 272; // 4×58 + 3×6 + 2×8 + рамка
+
+// Одна и та же разметка для панели выбора и для стикера над головой.
+function _stickerHtml(d) {
+  return `<span class="stk-art stk-a-${d.anim}"><img src="${d.img}" alt="" draggable="false"></span>` +
+    `<span class="stk-cap">${d.text}</span>`;
+}
 
 function _stickerTogglePicker(force) {
   const pk = document.getElementById('sticker-picker');
@@ -161,7 +167,7 @@ function _stickerTogglePicker(force) {
   if (!open) { pk.style.display = 'none'; btn.classList.remove('on'); return; }
   if (!pk.dataset.built) {
     pk.innerHTML = STICKER_DEF.map(d =>
-      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.id}"><img src="${d.img}" alt="${d.e}" width="40" height="40" draggable="false"></button>`).join('');
+      `<button type="button" onclick="_stickerSend('${d.id}')" aria-label="${d.text}">${_stickerHtml(d)}</button>`).join('');
     pk.dataset.built = '1';
   }
   // Справа от кнопки, низом по её низу. Кнопку можно перетащить к правому
@@ -207,9 +213,9 @@ function _stickerSpawn(sid, id, self) {
   const layer = document.getElementById('sticker-layer');
   let el = null;
   if (layer) {
-    el = document.createElement('img');
+    el = document.createElement('div');
     el.className = 'stk';
-    el.src = def.img; el.alt = def.e; el.draggable = false;
+    el.innerHTML = _stickerHtml(def);
     el.style.opacity = '0';
     layer.appendChild(el);
   }
