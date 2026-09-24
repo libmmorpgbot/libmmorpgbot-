@@ -169,17 +169,17 @@ function _hubLavaTex() {
   // Пол: ячейки Вороного на торе (бесшовно), трещины между ними.
   const fl = document.createElement('canvas'); fl.width = fl.height = S;
   const fc = fl.getContext('2d'), fim = fc.createImageData(S, S), fd = fim.data;
-  // Камни крупные и редкие — 26 на текстуру, центры не ближе 72px друг к
-  // другу (с учётом повтора): частые трещины рябили, а слипшиеся центры
-  // давали пучки тонких трещин, расходящиеся «солнышком».
+  // 55 камней на текстуру (размер как у первого варианта; 26 крупных
+  // смотрелись плитами), центры не ближе 44px друг к другу с учётом
+  // повтора: слипшиеся центры давали пучки тонких трещин «солнышком».
   const pts = [];
-  for (let tries = 0; pts.length < 26 && tries < 6000; tries++) {
+  for (let tries = 0; pts.length < 55 && tries < 8000; tries++) {
     const x = rnd() * S, y = rnd() * S;
     let ok = true;
     for (const q of pts) {
       let dx = x - q[0], dy = y - q[1];
       dx -= Math.round(dx / S) * S; dy -= Math.round(dy / S) * S;
-      if (dx * dx + dy * dy < 72 * 72) { ok = false; break; }
+      if (dx * dx + dy * dy < 44 * 44) { ok = false; break; }
     }
     if (ok) pts.push([x, y, rnd()]);
   }
