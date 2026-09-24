@@ -107,7 +107,7 @@ function updateInvUI() {
     </div>
   `;
 
-  // Под куклой — только БМ, золотом между двумя линиями.
+  // Над куклой — только БМ, золотом между двумя линиями.
   const _bm = typeof calcBM === 'function' ? calcBM(p) : 0;
   document.getElementById('eq-bm').innerHTML = `
     <div class="eq-bm-orn"></div>
