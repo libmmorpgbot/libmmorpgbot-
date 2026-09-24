@@ -2713,10 +2713,9 @@ function _drawGrassTuft(c, x, y, tx, ty, color) {
 
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
-  // Хаб (armEntries есть только у него) выложен лавовой текстурой вместо
-  // плиток — см. _hubLavaTex, js/themes.js. Особые зоны внутри этажа (башня,
-  // гильдвар, фарм, кооп) остаются при своих палитрах.
-  const lava = (dungeon.armEntries && typeof _hubLavaTex === 'function') ? _hubLavaTex() : null;
+  // Страх выложен лавовой текстурой вместо плиток — см. _hubLavaTex,
+  // js/themes.js. Раньше так была выложена база; там снова обычные плитки.
+  const lava = (dungeonLvl === FEAR_FLOOR_ID && typeof _hubLavaTex === 'function') ? _hubLavaTex() : null;
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
   const cv = document.createElement('canvas');
   cv.width = cv.height = _CHUNK_PX + _CHUNK_G * 2;

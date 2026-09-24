@@ -2,6 +2,7 @@ const {
   generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
 } = require('./dungeon');
+const { FEAR_FLOOR_ID } = require('../../shared/definitions');
 
 // Every location the player can stand in is its own floor id + its own
 // generator, replacing the single generateOpenWorld() mega-grid. The hub,
@@ -11,7 +12,7 @@ const {
 // floor now.
 const FLOOR_IDS = {
   hub: 1, left: 2, top: 3, bottom: 4, right: 5,
-  guildWar: 6, farmZone: 7, arena: 8, pvpArena: 9, race10: 10, fear: 11, coop: 12,
+  guildWar: 6, farmZone: 7, arena: 8, pvpArena: 9, race10: 10, fear: FEAR_FLOOR_ID, coop: 12,
   // Private per-run instance, same shape as fear/coop — see
   // server/index.js's _createFarm2Room. Registered here purely so
   // generateFarmZone2's geometry template exists and FLOOR_IDS.farmZone2

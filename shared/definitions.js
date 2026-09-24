@@ -834,6 +834,9 @@ const QUEST_DEF = [
 // index.js (the UI's wave counter), so it lives here rather than being
 // duplicated in both.
 const FEAR_MAX_WAVE = 39;
+// Номер этажа Страха — server/game/floors.js берёт его отсюда (FLOOR_IDS.fear),
+// а клиент по нему узнаёт, что стоит в Страхе (лавовый пол, js/game.js).
+const FEAR_FLOOR_ID = 11;
 
 // ── Сотрудничество (Coop) event ──────────────────────────────────────────────
 // A private, 2-player-only co-op climb (server/game/dungeon.js's `coop`
@@ -3882,7 +3885,7 @@ if (typeof module !== 'undefined') module.exports = {
   migrateKeptSP,
   CLAN_LEVELS, clanAtkBonusPct, clanBonusOf,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
-  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
+  armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
   SEASON_END_AT, seasonActive,
   SEASON_ENHANCE_POINTS,
