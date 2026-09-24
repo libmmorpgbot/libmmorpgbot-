@@ -12,6 +12,9 @@
 //              FRIENDSHIP_LAUNCH_AT — иначе у всех, кто играет давно, тиры
 //              закрылись бы в момент выката одним запросом, за друзей,
 //              приглашённых до того, как эта награда вообще была придумана;
+//   закрытие  друг, зарегистрированный ПОСЛЕ FRIENDSHIP_CLOSED_AT, не считается
+//              и в список не попадает: набор закрыт, считаются только
+//              уже имеющиеся друзья;
 //   раз на тир один и тот же тир нельзя забрать дважды, и число, по которому
 //              сервер решает «хватит ли друзей», перепроверяется внутри
 //              claimFriendshipTier заново — а не доверяется тому, что панель
@@ -38,10 +41,14 @@ const made = [];
 let tgSeq = 0;
 const nextTg = () => `9990${Date.now()}${tgSeq++}`;
 
+// Регистрация — внутри окна [FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_CLOSED_AT):
+// «сейчас» уже после закрытия, и такой друг не считался бы вовсе.
+const IN_WINDOW = new Date((Date.parse(D.FRIENDSHIP_LAUNCH_AT) + Date.parse(D.FRIENDSHIP_CLOSED_AT)) / 2).toISOString();
 async function mk(nick) {
   const telegramId = nextTg();
   const { id } = await tx(t => players.ensure(t, telegramId, `${TAG}_${nick}`));
   made.push(id);
+  await query(null, 'UPDATE players SET created_at = $2::timestamptz WHERE id = $1', [id, IN_WINDOW]);
   return { id, telegramId };
 }
 
@@ -98,6 +105,15 @@ const claim = async (pid, tier) => {
   eq((await shop.friendshipStatus(null, ref.id)).count, 1,
     'друг, зарегистрированный до FRIENDSHIP_LAUNCH_AT, не считается даже прокачанным');
 
+  const late = await mk('late');
+  ok((await invite(late.id, ref.telegramId)).ok, 'friend после закрытия приглашён');
+  await setLevel(late.id, D.FRIENDSHIP_LEVEL + 10);
+  await setCreatedAt(late.id, new Date(Date.parse(D.FRIENDSHIP_CLOSED_AT) + 60000).toISOString());
+  eq((await shop.friendshipStatus(null, ref.id)).count, 1,
+    'друг, зарегистрированный после FRIENDSHIP_CLOSED_AT, не считается даже прокачанным');
+  const lateClaim = await claim(ref.id, 5);
+  eq(lateClaim.code, 'not_enough', 'и сервер не засчитывает его при получении тира');
+
   // ── список друзей ────────────────────────────────────────────────────────
   // Список — только НОВЫЕ друзья: тот, кто приглашён до FRIENDSHIP_LAUNCH_AT,
   // не должен появляться в нём вовсе, даже с пометкой «не считается» — иначе
@@ -112,6 +128,8 @@ const claim = async (pid, tier) => {
   eq(lowRow && lowRow.counts, true, 'и он отмечен как считающийся — уровень достигнут');
   ok(!withList.friends.some(f => f.username === `${TAG}_stale`),
     'друг, приглашённый до запуска, в списке отсутствует полностью');
+  ok(!withList.friends.some(f => f.username === `${TAG}_late`),
+    'друг, пришедший после закрытия, в списке отсутствует полностью');
 
   // ── первый тир ───────────────────────────────────────────────────────────
   console.log('  ── тир 1 ──');

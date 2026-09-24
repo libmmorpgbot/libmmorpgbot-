@@ -3437,6 +3437,11 @@ const MAIL_BONUS = {
 // боясь переадресовать уже сделанный когда-то claim.
 const FRIENDSHIP_LEVEL = 15;
 const FRIENDSHIP_LAUNCH_AT = '2026-09-05T00:00:00Z';
+// Набор закрыт: новые приглашённые больше не засчитываются. Считаются только
+// друзья, зарегистрированные ДО этого момента, — они по-прежнему закрывают
+// тиры, в том числе дорастая до FRIENDSHIP_LEVEL позже. Кто пришёл после, в
+// список не попадает вовсе, как и приглашённые до FRIENDSHIP_LAUNCH_AT.
+const FRIENDSHIP_CLOSED_AT = '2026-09-24T08:20:00Z';
 const FRIENDSHIP_TIERS = [
   { count: 1,   buffPotions: 3  },
   { count: 5,   buffPotions: 10, mats: { bless_stone: 3 } },
@@ -3897,7 +3902,7 @@ if (typeof module !== 'undefined') module.exports = {
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
-  FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
+  FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_CLOSED_AT, FRIENDSHIP_TIERS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,

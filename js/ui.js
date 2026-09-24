@@ -4847,8 +4847,8 @@ function _friendshipTierCard(def, status) {
 
 // Строка одного приглашённого друга: имя, уровень, и отметка — считается ли
 // он в тиры ПРЯМО СЕЙЧАС. Сервер уже не присылает сюда никого, кто приглашён
-// до FRIENDSHIP_LAUNCH_AT (friendshipStatus/_friendshipFriends, server/db/
-// repos/shop.js) — список только из новых друзей, как и обещает награда, —
+// до FRIENDSHIP_LAUNCH_AT или после FRIENDSHIP_CLOSED_AT (friendshipStatus/
+// _friendshipFriends, server/db/repos/shop.js) — только друзья из этого окна, —
 // так что «не считается» здесь означает ровно одно: друг ещё не дорос до
 // FRIENDSHIP_LEVEL.
 function _friendshipFriendRow(f) {

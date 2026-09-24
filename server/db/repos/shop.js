@@ -31,7 +31,7 @@ const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
-  FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_TIERS,
+  FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_CLOSED_AT, FRIENDSHIP_TIERS,
   seasonActive, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
@@ -404,6 +404,8 @@ async function referralsOf(db, playerId) {
 // button appeared should not instantly fill every tier at once — and who has
 // reached FRIENDSHIP_LEVEL, read live off player_progress rather than any
 // counter this table would otherwise have to keep in step by hand.
+// И не позже FRIENDSHIP_CLOSED_AT: набор закрыт, новые приглашённые не
+// засчитываются, считаются только уже имеющиеся друзья.
 async function _friendshipCount(db, telegramId) {
   const { rows } = await query(db, `
     SELECT count(*)::int AS n
@@ -411,7 +413,8 @@ async function _friendshipCount(db, telegramId) {
       JOIN player_progress pp ON pp.player_id = p.id
      WHERE p.referred_by = $1
        AND p.created_at >= $2::timestamptz
-       AND pp.lvl >= $3`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL]);
+       AND p.created_at <  $4::timestamptz
+       AND pp.lvl >= $3`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL, FRIENDSHIP_CLOSED_AT]);
   return rows[0].n;
 }
 
@@ -429,7 +432,8 @@ async function _friendshipFriends(db, telegramId) {
       JOIN player_progress pp ON pp.player_id = p.id
      WHERE p.referred_by = $1
        AND p.created_at >= $2::timestamptz
-     ORDER BY pp.lvl DESC, p.username`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL]);
+       AND p.created_at <  $4::timestamptz
+     ORDER BY pp.lvl DESC, p.username`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL, FRIENDSHIP_CLOSED_AT]);
   return rows.map(r => ({ username: r.username, lvl: r.lvl, counts: r.counts }));
 }
 
