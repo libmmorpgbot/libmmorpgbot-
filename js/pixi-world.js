@@ -20,8 +20,6 @@ let _projCt   = null;   // magic bolts (pooled sprites — three circles each wa
 let _playerCt = null;
 let _plAura = null;
 let _dmgNumCt = null;
-let _emberCt = null;   // хаб: искры над лавовым полом (_updateHubAtmo)
-let _vignSpr = null;   // хаб: тёплое затемнение по краям экрана, поверх мира
 let _petCt = null; // holds every player's pet follower (see _updatePets)
 let _decalCt = null;   // ground decals: teleport pads, level gates (below everything)
 let _wallCt  = null;   // zone barriers (above everything — they are walls, not floor)
@@ -245,7 +243,6 @@ function _hideRest(pool, used) {
 }
 
 const _dropSpr = []; let _dropN = 0;
-const _emberSpr = []; const _embers = [];
 const _projSpr = []; let _projN = 0;
 const _decSpr  = []; let _decN  = 0;
 const _wallSpr = []; let _wallN = 0;
@@ -435,7 +432,6 @@ function _dropGpuState() {
   _texGlow = null; _texDot = null;
   _texDisc = null; _texRing = null; _texRingThin = null; _texRingDash = null;
   _texGemFill = null; _texGemEdge = null;
-  _vignSpr = null; _emberSpr.length = 0; _embers.length = 0;
   _dropSpr.length = 0; _dropN = 0;
   _projSpr.length = 0; _projN = 0;
   _lightSpr.length = 0; _lightN = 0;
@@ -590,7 +586,6 @@ function pixiInit(canvasEl) {
   _decalCt  = new PIXI.Container();
   _wallCt   = new PIXI.Container();
   _dmgNumCt = new PIXI.Container();
-  _emberCt  = new PIXI.Container();
 
   // _voidSpr идёт ПЕРВЫМ ребёнком — под всеми тайлами. Он не часть мира и
   // не двигается вместе с ним: это фон за краем карты (см. _makeVoidSprite).
@@ -598,11 +593,10 @@ function pixiInit(canvasEl) {
     _voidSpr, _tileCt, _decalCt, _lightsCt, _aoeGfx,
     _npcCt, _dropCt, _partCt,
     _enemyCt, _otherPCt, _projGfx, _projCt,
-    _petCt, _playerCt, _wallCt, _emberCt, _dmgNumCt
+    _petCt, _playerCt, _wallCt, _dmgNumCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
-  _vignSpr = null; // строится лениво в _updateHubAtmo — текстура на текущем контексте
 
   // ── losing the context, and getting it back ──────────────────────────────
   // A WebView takes the GPU context away when it is backgrounded, when memory
@@ -1236,57 +1230,6 @@ function _glowSpr(x, y, r, tint, alpha, tex, texSize) {
   sp.scale.set(r * 2 / texSize);
   sp.tint = tint;
   sp.alpha = alpha;
-}
-
-// ── хаб: искры и тёплая виньетка ────────────────────────────
-// Над лавовым полом хаба (_hubLavaTex, js/themes.js) поднимаются искры:
-// маленькие аддитивные точки, рождаются внизу видимой области, всплывают с
-// покачиванием и гаснут. Пул фиксированный — на слабых устройствах
-// (_qualityTier > 0) вдвое меньше. Виньетка — один спрайт на весь экран с
-// заранее запечённым градиентом, между миром и HUD. Вне хаба всё скрыто.
-function _updateHubAtmo(dt, camX, camY) {
-  const onHub = !!(typeof dungeon !== 'undefined' && dungeon && dungeon.armEntries);
-  if (_vignSpr) _vignSpr.visible = onHub;
-  _emberCt.visible = onHub;
-  if (!onHub) return;
-  _ensureBaked();
-  if (!_vignSpr) {
-    const cv = document.createElement('canvas'); cv.width = cv.height = 256;
-    const c = cv.getContext('2d');
-    const g = c.createRadialGradient(128, 128, 70, 128, 128, 181);
-    g.addColorStop(0, 'rgba(40,6,0,0)'); g.addColorStop(1, 'rgba(40,6,0,0.75)');
-    c.fillStyle = g; c.fillRect(0, 0, 256, 256);
-    _vignSpr = new PIXI.Sprite(PIXI.Texture.from(cv));
-    _pixiApp.stage.addChild(_vignSpr);
-  }
-  _vignSpr.x = 0; _vignSpr.y = HEADER_H;
-  _vignSpr.width = W; _vignSpr.height = Math.max(1, H - HEADER_H);
-
-  const lite = (typeof _qualityTier !== 'undefined' && _qualityTier > 0);
-  const want = lite ? 24 : 48;
-  const vw = W / ZOOM, vh = (H - HEADER_H) / ZOOM;
-  while (_embers.length < want) {
-    _embers.push({ x: camX + Math.random() * vw, y: camY + Math.random() * vh, vy: 18 + Math.random() * 30,
-      ph: Math.random() * 6.28, life: Math.random() * 4, max: 3 + Math.random() * 3, s: 1.4 + Math.random() * 1.8 });
-  }
-  if (_embers.length > want) _embers.length = want;
-  const d = Math.min(dt, 0.05);
-  for (let i = 0; i < _embers.length; i++) {
-    const e = _embers[i];
-    e.life += d; e.y -= e.vy * d; e.ph += d * 2;
-    const out = e.x < camX - 20 || e.x > camX + vw + 20 || e.y < camY - 20 || e.y > camY + vh + 20;
-    if (e.life >= e.max || out) {
-      e.x = camX + Math.random() * vw; e.y = camY + vh * (0.3 + Math.random() * 0.7);
-      e.life = 0; e.max = 3 + Math.random() * 3; e.vy = 18 + Math.random() * 30;
-    }
-    const k = e.life / e.max, a = (k < 0.2 ? k / 0.2 : 1 - (k - 0.2) / 0.8) * 0.9;
-    const x = e.x + Math.sin(e.ph) * 6;
-    const sp = _takePooled(_emberSpr, i, _emberCt, _texDot, PIXI.BLEND_MODES.ADD);
-    if (sp.texture !== _texDot) sp.texture = _texDot;
-    sp.x = x; sp.y = e.y; sp.scale.set(e.s * 2 / 64);
-    sp.tint = k < 0.5 ? 0xffc070 : 0xff7a2a; sp.alpha = a;
-  }
-  _hideRest(_emberSpr, _embers.length);
 }
 
 // ── AOE rings ─────────────────────────────────────────────
@@ -2543,7 +2486,6 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _layer('pets', () => _updatePets(dt));
   _layer('player', () => _updatePlayer(dt, ts));
   _layer('dmg', () => _updateDmgNums());
-  _layer('atmo', () => _updateHubAtmo(dt, camX, camY));
   _layer('stickers', () => _updateStickers(camX, camY));
 
   _pixiApp.renderer.render(_pixiApp.stage);
