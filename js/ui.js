@@ -2126,7 +2126,7 @@ function _currentLocationBounds() {
   // понимал, в какой из двух половин стоит.
   const namedZones = [
     { z: dungeon.farmZone, zoneLabel: dungeon.farmZone && dungeon.farmZone.seasonWing ? 'farmSeasonLbl' : 'farmZoneLbl' },
-    { z: dungeon.farmHigh, zoneLabel: 'farmHighLbl' },
+    { z: dungeon.farmHigh, zoneLabel: dungeon.farmHigh && dungeon.farmHigh.seasonWing ? 'farmHighSeasonLbl' : 'farmHighLbl' },
     { z: dungeon.guildWar, zoneLabel: 'guildWarLbl' },
     { z: dungeon.race10,   zoneLabel: 'race10ArenaLbl' },
   ];
@@ -2307,7 +2307,7 @@ function _floorEnemyPool(n, localLvl) {
 function _floorUISignature() {
   const _b = (typeof _currentLocationBounds === 'function') ? _currentLocationBounds() : null;
   if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) return 'farm';
-  if (_b && _b.zoneLabel === 'farmHighLbl') return 'farmHigh';
+  if (_b && (_b.zoneLabel === 'farmHighLbl' || _b.zoneLabel === 'farmHighSeasonLbl')) return 'farmHigh';
   if (_b && _b.zoneLabel === 'dungeonLbl') return 'dungeon:' + _b.dungeonClass;
   return _currentArmIdx() || 'hub';
 }
@@ -2329,7 +2329,7 @@ function updateFloorUI() {
   // Крыло — те же виды и та же таблица дропа, что и первая зона, поэтому и
   // список тот же самый: своя копия расходилась бы с ней на первой же правке.
   if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
-  if (_b && _b.zoneLabel === 'farmHighLbl') { grid.innerHTML = _farmHighMonsterListHtml(); return; }
+  if (_b && (_b.zoneLabel === 'farmHighLbl' || _b.zoneLabel === 'farmHighSeasonLbl')) { grid.innerHTML = _farmHighMonsterListHtml(); return; }
   if (_b && _b.zoneLabel === 'dungeonLbl') { grid.innerHTML = _dungeonMonsterListHtml(_b.dungeonClass); return; }
 
   // Scoped to wherever the player actually is: the hub has no monsters at

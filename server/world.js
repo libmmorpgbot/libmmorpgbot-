@@ -25,6 +25,7 @@ const ZONE_LEVEL_REQ = {
   // Сезонное крыло — та же зона 20+, только за билетом; уровень с неё никто
   // не снимал, билет добавлен СВЕРХУ (TICKET_ONLY ниже), а не вместо.
   farmSeason: FARM_ENTRY_LEVEL,
+  farmHighSeason: FARM_HIGH_ENTRY_LEVEL,
   // Подземелье — тот же гейт, что у Фарм зоны 2 (её лут-таблицу и повторяет),
   // на входном этаже (зал телепортов); каждая из 7 классовых зон за ним
   // гейтится по классу (DUNGEON_CLASS_ZONE below), не по уровню повторно.
@@ -61,7 +62,7 @@ const DUNGEON_CLASS_ZONE = {
 // Отсутствие ctx — это ОТКАЗ, а не «пропустить проверку». Вызывающий, который
 // забыл передать билет, получит хаб, а не бесплатный вход в оплаченное крыло:
 // из двух способов ошибиться этот дешевле.
-const TICKET_ONLY = new Set([FLOOR_IDS.farmSeason]);
+const TICKET_ONLY = new Set([FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason]);
 
 const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [v, k]));
 
@@ -71,7 +72,7 @@ const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [
 // worse than the hub.
 const STANDABLE = new Set([
   FLOOR_IDS.hub, FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
-  FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
+  FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
   FLOOR_IDS.dungeon, FLOOR_IDS.dungeonLev, FLOOR_IDS.dungeonDeathknight, FLOOR_IDS.dungeonRanger,
   FLOOR_IDS.dungeonMage, FLOOR_IDS.dungeonWarlock, FLOOR_IDS.dungeonRunefighter, FLOOR_IDS.dungeonAssassin,
 ]);

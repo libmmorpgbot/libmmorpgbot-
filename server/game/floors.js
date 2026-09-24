@@ -1,5 +1,5 @@
 const {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
 } = require('./dungeon');
 
@@ -24,7 +24,7 @@ const FLOOR_IDS = {
   // занято Элитной зоной строкой выше — см. блок FARM_HIGH_* в
   // shared/definitions.js.
   farmHigh: 14,
-  // Сезонное крыло Фарм-зоны — ещё 4 комнаты, вход только с сезонным билетом
+  // Сезонное крыло Фарм-зоны — 8 комнат, вход только с сезонным билетом
   // (TICKET_ONLY, server/world.js). Свой этаж, потому что дверь в него должен
   // сторожить сервер, а барьеры внутри этажа здесь клиентские — разбор в
   // generateFarmSeason, server/game/dungeon.js.
@@ -49,6 +49,9 @@ const FLOOR_IDS = {
   dungeon: 18,
   dungeonLev: 19, dungeonDeathknight: 20, dungeonRanger: 21, dungeonMage: 22,
   dungeonWarlock: 23, dungeonRunefighter: 24, dungeonAssassin: 25,
+  // Сезонное крыло Фарм зоны 2 — то же, что farmSeason, только за Фарм зоной 2
+  // (generateFarmHighSeason, server/game/dungeon.js).
+  farmHighSeason: 26,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -70,6 +73,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.farmZone2, key: 'farmZone2', generate: () => generateFarmZone2() },
   { id: FLOOR_IDS.farmHigh, key: 'farmHigh', generate: () => generateFarmHigh() },
   { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
+  { id: FLOOR_IDS.farmHighSeason, key: 'farmHighSeason', generate: () => generateFarmHighSeason() },
   { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentPit() },
   { id: FLOOR_IDS.trial,     key: 'trial',     generate: () => generateTrial() },
   { id: FLOOR_IDS.dungeon,             key: 'dungeon',             generate: () => generateDungeonHub() },

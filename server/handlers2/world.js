@@ -71,7 +71,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     hub: 'Центральный зал', left: 'Левый коридор', top: 'Верхний коридор',
     bottom: 'Нижний коридор', right: 'Правый коридор',
     guildWar: 'Война гильдий', farmZone: 'Фарм-зона', farmHigh: 'Фарм зона 2',
-    farmZone2: 'Элитная фарм-зона', farmSeason: 'Сезонное крыло',
+    farmZone2: 'Элитная фарм-зона', farmSeason: 'Сезонное крыло', farmHighSeason: 'Сезонное крыло Фарм зоны 2',
     arena: 'Арена мирового босса', pvpArena: 'Арена 3×3', race10: 'Кровавая Башня',
     fear: 'Страх', coop: 'Сотрудничество', tournament: 'Турнир', trial: 'Испытание',
     dungeon: 'Подземелье',

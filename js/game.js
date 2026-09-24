@@ -1932,8 +1932,11 @@ function _buildArmGates() {
     : [];
   // Пад в сезонное крыло — только внутри первой Фарм-зоны, и только там, где
   // сервер его прислал.
+  // target — в какое крыло: у первой Фарм-зоны 'farmSeason' (поля нет), у
+  // Фарм зоны 2 — 'farmHighSeason'.
   _seasonPad = dungeon.seasonPad
-    ? { x: dungeon.seasonPad.x, y: dungeon.seasonPad.y, req: dungeon.seasonPad.req || 0 }
+    ? { x: dungeon.seasonPad.x, y: dungeon.seasonPad.y, req: dungeon.seasonPad.req || 0,
+        target: dungeon.seasonPad.target || 'farmSeason' }
     : null;
 
   // armEntries is a hub-only field (generateHub, server/game/dungeon.js) —
@@ -2090,7 +2093,9 @@ function _updateTeleportPads(dt) {
   // Клиентская проверка здесь — вежливость, а не охрана: пускает сервер.
   if (_seasonPad && dist(player.x, player.y, _seasonPad.x, _seasonPad.y) < TRIGGER_R) {
     if (_seasonTicketOn()) {
-      _requestEnterLocation('farmSeason', typeof t === 'function' ? t('farmSeasonLbl') : 'Сезонные комнаты');
+      const _hi = _seasonPad.target === 'farmHighSeason';
+      _requestEnterLocation(_seasonPad.target,
+        typeof t === 'function' ? t(_hi ? 'farmHighSeasonLbl' : 'farmSeasonLbl') : 'Сезонные комнаты');
     } else if (_seasonMsgCd <= 0) {
       _seasonMsgCd = 1.5;
       dmgNum(player.x, player.y - 40,
@@ -2283,7 +2288,8 @@ function _buildDecals(ts) {
   // Подпись возвратного пада называет то, куда он ведёт: из сезонного крыла —
   // назад в Фарм-зону, отовсюду ещё — в зал.
   (_returnPads || []).forEach(p => _pushRingPad(p.x, p.y, _PAD_R, false, 0xeb4e61, 0x4ee69a,
-    p.target === 'farmZone' ? (typeof t === 'function' ? t('farmZoneShort') : '\u0424\u0430\u0440\u043c') : hallLbl,
+    p.target === 'farmZone' ? (typeof t === 'function' ? t('farmZoneShort') : '\u0424\u0430\u0440\u043c')
+      : p.target === 'farmHigh' ? (typeof t === 'function' ? t('farmHighShort') : '\u0424\u0430\u0440\u043c 2') : hallLbl,
     '#f17e8b', '#8ff0c0'));
   // Пад в сезонное крыло — то же кольцо, что и у возврата, только запертое,
   // пока билета нет: замок в подписи и красный контур — тот же язык, которым

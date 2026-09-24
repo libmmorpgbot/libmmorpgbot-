@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// ── Сезонное крыло Фарм-зоны: ещё 4 комнаты, дверь за билетом ───────────────
+// ── Сезонные крылья Фарм-зон: по 8 комнат, дверь за билетом ─────────────────
 //
 //   node dev/farmseason-check.js
 //
@@ -9,6 +9,9 @@
 //   «в фарм зоне первой 20+ сделай ещё 4 комнаты, в которые могут войти только
 //    те у кого сезонный билет, пусть будет телепорт разделяющий комнаты, в
 //    который могут войти только с сезонным билетом»
+//
+//   и позже: «сделай в сезонной комнате 8 комнат, так же сделай в фарм зоне 2
+//    тоже такую же комнату с 8 комнатами»
 //
 // ── что здесь на самом деле проверяется ────────────────────────────────────
 // Не «нарисован ли замок». Крыло куплено за GRAM, и единственное утверждение,
@@ -24,8 +27,9 @@
 const {
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_ENTRY_LEVEL, FARM_MOBS_PER_ROOM, FARM_SPECIES,
   FARM_XP_MULT, seasonActive, SEASON_END_AT, TILE, FLOOR,
+  FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_SPECIES,
 } = require('../shared/definitions');
-const { generateFarmSeason, generateFarmZone } = require('../server/game/dungeon');
+const { generateFarmSeason, generateFarmZone, generateFarmHigh, generateFarmHighSeason } = require('../server/game/dungeon');
 const { FLOOR_IDS } = require('../server/game/floors');
 const world = require('../server/world');
 const { STANDABLE, resolveFloor, floorCtxOf, ticketOnlyFloor } = world;
@@ -124,11 +128,31 @@ eq(wing.returnPad.target, 'farmZone', 'возврат из крыла ведёт
 ok(!zone.returnPad.target, 'у первой зоны цели возврата нет — клиент читает хаб по умолчанию');
 
 // ════════════════════════════════════════════════════════════════════════════
-head('ещё четыре комнаты — и это те же комнаты');
+head('восемь комнат — и это те же комнаты');
 
-eq(wing.rooms.length, 4, 'в крыле четыре комнаты');
+eq(wing.rooms.length, 8, 'в крыле восемь комнат');
 eq(zone.rooms.length, 4, 'и первая зона осталась при своих четырёх — крыло ДОБАВЛЕНО, а не отрезано от неё');
-eq(wing.enemies.length, FARM_MOBS_PER_ROOM * 4, `${FARM_MOBS_PER_ROOM} монстров в каждой`);
+eq(wing.enemies.length, FARM_MOBS_PER_ROOM * 8, `${FARM_MOBS_PER_ROOM} монстров в каждой`);
+
+// До каждой комнаты можно дойти пешком от точки входа — коридоры, а не
+// отдельные острова. Обход в ширину по плиткам пола.
+function reachAll(d, label) {
+  const sx = Math.floor(d.spawn.x / TILE), sy = Math.floor(d.spawn.y / TILE);
+  const seen = new Set([sx + ',' + sy]); const q = [[sx, sy]];
+  while (q.length) {
+    const [x, y] = q.shift();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy, k = nx + ',' + ny;
+      if (seen.has(k) || !d.grid[ny] || d.grid[ny][nx] !== FLOOR) continue;
+      seen.add(k); q.push([nx, ny]);
+    }
+  }
+  const cut = d.rooms.filter(r => !seen.has(r.cx + ',' + r.cy));
+  eq(cut.length, 0, `${label}: от входа доходишь до всех ${d.rooms.length} комнат`);
+  const rx = Math.floor(d.returnPad.x / TILE), ry = Math.floor(d.returnPad.y / TILE);
+  ok(seen.has(rx + ',' + ry), `${label}: и до пада возврата`);
+}
+reachAll(wing, 'крыло Фарм-зоны');
 
 const outOfBand = wing.enemies.filter(e => e.rlvl < FARM_LVL_MIN || e.rlvl > FARM_LVL_MAX);
 eq(outOfBand.length, 0, `все уровни в полосе ${FARM_LVL_MIN}-${FARM_LVL_MAX} — та же, что у первой зоны`);
@@ -170,6 +194,54 @@ eq(wing.farmZone.seasonWing, true, 'и флаг, которым подпись �
 ok(!zone.farmZone.seasonWing, 'у первой зоны такого флага нет');
 eq(wing.farmZone.minLevel, FARM_ENTRY_LEVEL, 'уровневый порог тот же');
 ok(wing.rooms.every(r => r.isFarmZone && r.arm === 'farmZone'), 'комнаты крыла — комнаты фарм-зоны');
+
+// ════════════════════════════════════════════════════════════════════════════
+head('сезонное крыло Фарм зоны 2');
+
+const hi = generateFarmHigh();
+const hiWing = generateFarmHighSeason();
+const HI2 = { lvl: FARM_HIGH_ENTRY_LEVEL };
+const LOW2 = { lvl: FARM_HIGH_ENTRY_LEVEL - 1 };
+
+ok(FLOOR_IDS.farmHighSeason != null && FLOOR_IDS.farmHighSeason !== FLOOR_IDS.farmHigh, 'у крыла свой этаж, отдельный от Фарм зоны 2');
+ok(STANDABLE.has(FLOOR_IDS.farmHighSeason), 'на нём можно стоять');
+ok(ticketOnlyFloor('farmHighSeason'), 'этаж помечен как «только за билетом»');
+eq(resolveFloor(FLOOR_IDS.farmHighSeason, HI2, TICKET), FLOOR_IDS.farmHighSeason, 'с билетом и уровнем — пускает');
+eq(resolveFloor(FLOOR_IDS.farmHighSeason, HI2, NOPE), FLOOR_IDS.hub, 'без билета — разворачивает в хаб');
+eq(resolveFloor(FLOOR_IDS.farmHighSeason, LOW2, TICKET), FLOOR_IDS.hub, `билет не отменяет уровень ${FARM_HIGH_ENTRY_LEVEL}+`);
+eq(resolveFloor(FLOOR_IDS.farmHighSeason, HI2), FLOOR_IDS.hub, 'забыли спросить про билет — тоже отказ');
+
+ok(!!hi.seasonPad, 'в Фарм зоне 2 есть пад в её крыло');
+eq(hi.seasonPad && hi.seasonPad.target, 'farmHighSeason', 'и он ведёт именно в её крыло, а не в крыло первой зоны');
+eq(hi.seasonPad && hi.seasonPad.requiresTicket, true, 'с замком по билету');
+eq(hi.seasonPad && hi.seasonPad.req, FARM_HIGH_ENTRY_LEVEL, 'порог уровня — как у самой зоны');
+ok(walkable(hi, hi.seasonPad.x, hi.seasonPad.y), 'пад лежит на полу');
+ok(Math.hypot(hi.seasonPad.x - hi.returnPad.x, hi.seasonPad.y - hi.returnPad.y) > TRIGGER_R * 4, 'и стоит врозь с возвратом в хаб');
+ok(!hiWing.seasonPad, 'внутри крыла второго пада нет');
+eq(hiWing.returnPad.target, 'farmHigh', 'возврат из крыла ведёт обратно в Фарм зону 2');
+
+eq(hiWing.rooms.length, 8, 'в крыле восемь комнат');
+eq(hi.rooms.length, 4, 'сама Фарм зона 2 осталась при своих четырёх');
+eq(hiWing.enemies.length, FARM_HIGH_MOBS_PER_ROOM * 8, `${FARM_HIGH_MOBS_PER_ROOM} монстров в каждой`);
+reachAll(hiWing, 'крыло Фарм зоны 2');
+eq(hiWing.enemies.filter(e => e.rlvl < FARM_HIGH_LVL_MIN || e.rlvl > FARM_HIGH_LVL_MAX).length, 0,
+  `все уровни в полосе ${FARM_HIGH_LVL_MIN}-${FARM_HIGH_LVL_MAX}`);
+const hiSpawned = new Set(hiWing.enemies.map(e => e.eid));
+eq(FARM_HIGH_SPECIES.filter(sp => !hiSpawned.has(sp)).join(), '', 'встречаются все виды Фарм зоны 2');
+ok(hiWing.enemies.every(e => e.farmHigh === true && e.arm === 'farmHigh'),
+  'монстры помечены как монстры Фарм зоны 2 — дроп и задания идут по её таблицам');
+let hiMis = 0, hiCmp = 0;
+for (const e of hiWing.enemies) {
+  const twin = hi.enemies.find(x => x.rlvl === e.rlvl && x.eid === e.eid);
+  if (!twin) continue;
+  hiCmp++;
+  if (twin.maxHp !== e.maxHp || twin.atk !== e.atk || twin.xp !== e.xp || twin.gold !== e.gold) hiMis++;
+}
+ok(hiCmp > 0 && hiMis === 0, `hp/atk/опыт/золото совпадают с Фарм зоной 2 (${hiCmp} пар)`);
+const hiIds = new Set([...hi.enemies, ...wing.enemies, ...zone.enemies].map(e => e.id));
+eq(hiWing.enemies.filter(e => hiIds.has(e.id)).length, 0, 'id монстров не пересекаются с другими фарм-зонами');
+eq(hiWing.farmHigh && hiWing.farmHigh.seasonWing, true, 'флаг seasonWing — по нему клиент подписывает место');
+ok(!hi.farmHigh.seasonWing, 'у самой Фарм зоны 2 такого флага нет');
 
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (failures.length) console.log('  впали: ' + failures.join(' · '));
