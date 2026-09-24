@@ -223,22 +223,28 @@ function csHide() {
 }
 
 // ── First-launch language prompt ────────────────────────────────────────
-// Shown once, before this screen (csShow), on any device that hasn't picked
-// a language yet — see _showCharSelect (js/network.js) for the actual
-// (localStorage-only) condition. Picking a card here calls the exact same
+// First screen after the splash for an account with no character yet —
+// before the write-access gate and this screen (csShow); the condition is
+// _needsFirstLang (js/network.js). Picking a card here calls the exact same
 // setLang() the Profile → Язык picker uses (js/ui.js's _renderLangPicker),
-// so the choice persists exactly the same way and this device never asks
-// again.
+// so the choice persists exactly the same way.
 function _showFirstLangPicker(onDone) {
   const el = document.getElementById('first-lang-select');
   const grid = document.getElementById('fls-grid');
   if (!el || !grid || typeof I18N_LANGS === 'undefined') { onDone(); return; }
-  grid.innerHTML = I18N_LANGS.map(l => `
-    <button class="lang-card" onclick="_firstLangPick('${l.code}')">
+  // Переподключение, пока экран открыт, приносит свой authOk — экран не
+  // перерисовываем, только отдаём выбор новому продолжению.
+  window._firstLangDone = onDone;
+  if (el.style.display === 'flex') return;
+  // Язык Telegram — подсказка: его карточка первой и подсвечена.
+  let tg = '';
+  try { tg = String(window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code || '').slice(0, 2).toLowerCase(); } catch (_) {}
+  const langs = I18N_LANGS.slice().sort((a, b) => (b.code === tg) - (a.code === tg));
+  grid.innerHTML = langs.map(l => `
+    <button class="lang-card${l.code === tg ? ' active' : ''}" onclick="_firstLangPick('${l.code}')">
       <span class="lang-card-flag">${l.flag}</span>
       <span class="lang-card-name">${l.native}</span>
     </button>`).join('');
-  window._firstLangDone = onDone;
   el.style.display = 'flex';
 }
 

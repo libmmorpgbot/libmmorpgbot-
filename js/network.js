@@ -827,7 +827,10 @@ function netConnect(onReady) {
     // js/charselect.js) has started yet and there is nothing for this to fight
     // with. The callback reads _savedData at CALL time on purpose: a reconnect
     // while the gate is up replaces it, and the player must land on the newest.
-    _waGateIfNeeded(canMessage, () => _showCharSelect(_savedData));
+    //
+    // Язык — ещё раньше, первым экраном после заставки: новичок читает
+    // и экран разрешения, и выбор героя уже на своём языке (см. _needsFirstLang).
+    _firstLangThen(_savedData, () => _waGateIfNeeded(canMessage, () => _showCharSelect(_savedData)));
   });
 
   // `msg`, not `message`. Every error channel on this connection is
@@ -3352,35 +3355,45 @@ function _showCharSelect(savedData) {
     }
     selectChar(type);
   } else {
-    // First-ever visit to THIS device: nobody has picked a language here yet.
-    // savedData.lang can't answer that — the DB column defaults every
-    // account to 'ru' (001_core.sql) whether or not anyone ever chose it, so
-    // it is never absent and can't tell "explicitly Russian" apart from
-    // "never asked". localStorage can: it's unset only the very first time
-    // this browser opens the game. Ask before showing the class carousel,
-    // not after — picking one goes through setLang() (js/i18n.js), which
-    // persists it here too, so this device never asks again.
-    const hasLangPref = (() => {
-      try { return !!localStorage.getItem('lang'); } catch (_) { return false; }
-    })();
-    if (!hasLangPref && typeof _showFirstLangPicker === 'function') {
-      _showFirstLangPicker(() => csShow(savedData));
-    } else {
-      csShow(savedData);
-    }
+    // Язык к этому моменту уже спрошен — _firstLangThen в обработчике authOk,
+    // до экрана разрешения.
+    csShow(savedData);
   }
 }
 
-
-// What the client still owns. Everything else the character used to carry —
-// items, equipment, storage, gold, level, XP and the stats derived from it,
-// studied skills and passives, stat upgrades, quest progress, buffs, the potion
-// bag, bonusSP, empowers — is applied and persisted server-side as it happens,
-// and pinned there on the way in, so sending it would be sending a number
-// nobody reads.
+// ── выбор языка при первом входе ────────────────────────────────────────────
+// Спрашиваем у каждого, у кого ещё нет героя, — до экрана разрешения и до
+// выбора класса, чтобы всё дальнейшее новичок читал уже на своём языке.
 //
-// What is left is genuinely this side's: which class, where the player is, the
-// display preferences, and a couple of counters nothing is entitled to.
+// Раньше спрашивали только на устройстве, где localStorage 'lang' пуст, — и
+// только после экрана разрешения. Любой, кто хоть раз открывал игру на этом
+// телефоне (другой аккаунт, старый заход), язык не выбирал вовсе и начинал на
+// русском. savedData.lang ответить не может: колонка по умолчанию 'ru'
+// (001_core.sql) у всех, выбирал он её или нет. Поэтому помним «уже
+// спросили» отдельно для каждого аккаунта: закрыл игру на выборе героя —
+// второй раз не спросим.
+//
+// У кого герой есть, язык приходит с аккаунта (restoreFromSave) — не спрашиваем.
+function _langAskedKey() {
+  const id = _tgUserId();
+  return id ? `langAsked_${id}` : 'langAsked';
+}
+function _needsFirstLang(savedData) {
+  if (savedData && savedData.type) return false;
+  try {
+    if (!localStorage.getItem('lang')) return true;
+    return !localStorage.getItem(_langAskedKey());
+  } catch (_) { return false; }
+}
+function _firstLangThen(savedData, next) {
+  if (!_needsFirstLang(savedData) || typeof _showFirstLangPicker !== 'function') return next();
+  _showFirstLangPicker(() => {
+    try { localStorage.setItem(_langAskedKey(), '1'); } catch (_) {}
+    next();
+  });
+}
+
+
 function _buildSaveStats() {
   if (!player) return null;
   return {
