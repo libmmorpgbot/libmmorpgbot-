@@ -2711,11 +2711,20 @@ function _drawGrassTuft(c, x, y, tx, ty, color) {
   }
 }
 
+function _floorTexOfFloor() {
+  if (!dungeon || typeof _floorImgTex !== 'function') return null;
+  if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
+  if (dungeon.armEntries) return _floorImgTex('temple');
+  if (dungeon.farmZone || dungeon.farmHigh || dungeon.farmZone2) return _floorImgTex('lava');
+  return null;
+}
+
 function _buildChunk(cx, cy) {
   const th = getTheme(dungeonLvl);
-  // Страх выложен лавовой текстурой вместо плиток — см. _hubLavaTex,
-  // js/themes.js. Раньше так была выложена база; там снова обычные плитки.
-  const lava = (dungeonLvl === FEAR_FLOOR_ID && typeof _hubLavaTex === 'function') ? _hubLavaTex() : null;
+  // Сплошная текстура вместо плиток: Страх — нарисованная кодом лава
+  // (_hubLavaTex), база и фарм-зоны — готовые картинки (_floorImgTex); всё в
+  // js/themes.js. null — обычные плитки темы.
+  const lava = _floorTexOfFloor();
   const x0 = cx * _CHUNK_PX, y0 = cy * _CHUNK_PX;
   const cv = document.createElement('canvas');
   cv.width = cv.height = _CHUNK_PX + _CHUNK_G * 2;
@@ -2774,9 +2783,11 @@ function _buildChunk(cx, cy) {
       const inGw = !inTower && _isGuildWarTile(tx, ty);
       const inFarm = !inTower && !inGw && _isFarmZoneTile(tx, ty);
       const inCoop = !inTower && !inGw && !inFarm && _isCoopTile(tx, ty);
+      // Фарм-зоны — это клетки inFarm целиком, поэтому их текстура
+      // накрывает и их: особых зон внутри таких этажей нет.
+      if (lava && !inTower && !inGw && !inCoop) { c.fillStyle = lava.wall; c.fillRect(x, y, TILE, TILE); continue; }
       const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : inCoop ? _COOP_WALL : th.wallColor;
       const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : inCoop ? mortarWallCoop : mortarWall;
-      if (lava && !inTower && !inGw && !inFarm && !inCoop) { c.fillStyle = lava.wall; c.fillRect(x, y, TILE, TILE); continue; }
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2809,7 +2820,7 @@ function _buildChunk(cx, cy) {
       const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inCoop ? _COOP_FLOOR_A : th.floorA;
       const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inCoop ? _COOP_FLOOR_B : th.floorB;
       const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inCoop ? mortarFloorCoop : mortarFloor;
-      if (lava && !inTower && !inGw && !inFarm && !inCoop) { c.fillStyle = lava.floor; c.fillRect(x, y, TILE, TILE); continue; }
+      if (lava && !inTower && !inGw && !inCoop) { c.fillStyle = lava.floor; c.fillRect(x, y, TILE, TILE); continue; }
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -2871,10 +2882,11 @@ function _buildChunk(cx, cy) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      const wallBase = _isRace10Tile(tx, ty) ? _RACE10_WALL
+      const wallBase = lava ? (lava.wallBase || _HUB_LAVA_WALL)
+        : _isRace10Tile(tx, ty) ? _RACE10_WALL
         : _isGuildWarTile(tx, ty) ? _GW_WALL
         : _isFarmZoneTile(tx, ty) ? _FARM_WALL
-        : _isCoopTile(tx, ty) ? _COOP_WALL : lava ? _HUB_LAVA_WALL : th.wallColor;
+        : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));

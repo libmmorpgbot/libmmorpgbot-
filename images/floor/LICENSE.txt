@@ -1,0 +1,5 @@
+Floor textures — ambientCG (https://ambientcg.com), CC0 1.0 Universal.
+Public domain: free for commercial use, no attribution required.
+
+  temple_tiles.jpg  <- Tiles093 (1K Color), downscaled to 512px, brightness 0.85
+  lava.jpg          <- Lava002  (1K Color), downscaled to 512px, brightness 0.92

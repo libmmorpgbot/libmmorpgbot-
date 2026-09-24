@@ -145,6 +145,39 @@ function getTheme(lvl) {
 // зависит от холста чанка — _buildChunk сдвигает контекст на мировые
 // координаты, поэтому соседние чанки стыкуются без шва.
 const _HUB_LAVA_WALL = '#3a1d14';
+
+// Стены: кладка со сдвигом рядов, тон на кирпич, шум по поверхности. pal —
+// базовый цвет кирпича; паттерн один на цвет, кэшируется.
+const _brickWallCache = {};
+function _brickWallPattern(pal) {
+  const key = pal.join(',');
+  if (_brickWallCache[key]) return _brickWallCache[key];
+  const S = 480;
+  let seed = 41;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const g = []; for (let i = 0; i < 256; i++) g.push(rnd());
+  const n = (x, y) => {
+    const fx = x / S * 16, fy = y / S * 16, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    const at = (a, b) => g[(b & 15) * 16 + (a & 15)];
+    const a = at(x0, y0) + (at(x0 + 1, y0) - at(x0, y0)) * tx, b = at(x0, y0 + 1) + (at(x0 + 1, y0 + 1) - at(x0, y0 + 1)) * tx;
+    return a + (b - a) * ty;
+  };
+  const clamp = v => v < 0 ? 0 : v > 255 ? 255 : v;
+  const wl = document.createElement('canvas'); wl.width = wl.height = S;
+  const wc = wl.getContext('2d'), wim = wc.createImageData(S, S), wd = wim.data;
+  const bh = 20, bw = 40;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const row = Math.floor(y / bh), off = (row % 2) * bw / 2, col = Math.floor((x + off) / bw);
+    const lx = (x + off) % bw, ly = y % bh;
+    const shade = ((((row * 73856093) ^ (col * 19349663)) >>> 0) % 100) / 100;
+    let k = 0.75 + shade * 0.3 + (n(x, y) - 0.5) * 0.35;
+    if (ly < 2 || lx < 2) k = 0.42; else if (ly < 4) k += 0.12; else if (ly > bh - 3) k -= 0.15;
+    const i4 = (y * S + x) * 4;
+    wd[i4] = clamp(pal[0] * k); wd[i4 + 1] = clamp(pal[1] * k); wd[i4 + 2] = clamp(pal[2] * k); wd[i4 + 3] = 255;
+  }
+  wc.putImageData(wim, 0, 0);
+  return (_brickWallCache[key] = wc.createPattern(wl, 'repeat'));
+}
 let _hubLavaCache = null;
 function _hubLavaTex() {
   if (_hubLavaCache) return _hubLavaCache;
@@ -213,22 +246,43 @@ function _hubLavaTex() {
   }
   fc.putImageData(fim, 0, 0);
 
-  // Стены: кладка со сдвигом рядов, тон на кирпич, шум по поверхности.
-  const wl = document.createElement('canvas'); wl.width = wl.height = S;
-  const wc = wl.getContext('2d'), wim = wc.createImageData(S, S), wd = wim.data;
-  const pal = [66, 34, 26], bh = 20, bw = 40;
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const row = Math.floor(y / bh), off = (row % 2) * bw / 2, col = Math.floor((x + off) / bw);
-    const lx = (x + off) % bw, ly = y % bh;
-    const shade = ((((row * 73856093) ^ (col * 19349663)) >>> 0) % 100) / 100;
-    let k = 0.75 + shade * 0.3 + (fbm(x, y) - 0.5) * 0.35;
-    if (ly < 2 || lx < 2) k = 0.42; else if (ly < 4) k += 0.12; else if (ly > bh - 3) k -= 0.15;
-    const i4 = (y * S + x) * 4;
-    wd[i4] = clamp(pal[0] * k); wd[i4 + 1] = clamp(pal[1] * k); wd[i4 + 2] = clamp(pal[2] * k); wd[i4 + 3] = 255;
-  }
-  wc.putImageData(wim, 0, 0);
-
   const pc = document.createElement('canvas').getContext('2d');
-  _hubLavaCache = { floor: pc.createPattern(fl, 'repeat'), wall: pc.createPattern(wl, 'repeat') };
+  _hubLavaCache = { floor: pc.createPattern(fl, 'repeat'), wall: _brickWallPattern([66, 34, 26]) };
   return _hubLavaCache;
+}
+
+// ── Пол из готовых текстур ────────────────────────────────────────────────────
+// База — плитка храма, фарм-зоны — раскалённая лава. Фото-материалы
+// ambientCG (Tiles093, Lava002; CC0 — можно без указания автора), ужаты до
+// 512px и затемнены под палитру игры заранее: ctx.filter на старых iOS нет.
+// Картинка грузится при первом чанке такого этажа; пока её нет — обычные
+// плитки темы, а когда пришла, кэш чанков сбрасывается и пол перерисовывается.
+// Не загрузилась — так и остаются плитки темы, ничего не ломается.
+//
+// px — сколько мировых пикселей занимает один повтор текстуры (клетка — 40):
+// подобрано на глаз по размеру персонажа. brick — цвет кирпичной кладки стен
+// в тон полу (_brickWallPattern), wallBase — цвет их кромки над полом.
+const _FLOOR_IMG = {
+  temple: { src: '/images/floor/temple_tiles.jpg', px: 420, wallBase: '#38342f', brick: [60, 56, 52] },
+  lava:   { src: '/images/floor/lava.jpg',         px: 420, wallBase: '#3a1d14', brick: [66, 34, 26] },
+};
+const _floorImgCache = {};
+function _floorImgTex(key) {
+  const def = _FLOOR_IMG[key];
+  if (!def || typeof Image === 'undefined') return null;
+  const hit = _floorImgCache[key];
+  if (hit) return hit.tex;
+  const ent = _floorImgCache[key] = { tex: null };
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = def.px;
+    const c = cv.getContext('2d');
+    if (!c) return;
+    c.imageSmoothingQuality = 'high';
+    c.drawImage(img, 0, 0, def.px, def.px);
+    ent.tex = { floor: c.createPattern(cv, 'repeat'), wall: _brickWallPattern(def.brick), wallBase: def.wallBase };
+    if (typeof buildTileCanvas === 'function' && typeof dungeon !== 'undefined' && dungeon) buildTileCanvas();
+  };
+  img.src = def.src;
+  return null;
 }
