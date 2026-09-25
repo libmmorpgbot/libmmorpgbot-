@@ -55,17 +55,28 @@ function storageHasSpace() {
 // server/index.js). Splitting the move across a client edit and a later save
 // is what let one item be observed in both containers at once — the case the
 // census then read as duplication and rejected the whole set for.
-function moveToStorage(idx) {
-  if (!player || !player.inventory[idx]) return false;
-  if (!storageHasSpace()) return false;
-  netStorageDeposit(idx);
+// A stackable with a stack already on the other side merges into it and
+// needs no free slot — the server's moveQty/moveTo agree. Without this a full
+// storage refused even "add 10 more potions to the stack that's there".
+function _mergesInto(list, it) {
+  return !!it && _isStackable(it) &&
+    list.some(o => o.id === it.id && (o.enhance || 0) === (it.enhance || 0));
+}
+
+// qty — how many from a stack; omitted moves the whole row.
+function moveToStorage(idx, qty) {
+  const it = player && player.inventory[idx];
+  if (!it) return false;
+  if (!storageHasSpace() && !_mergesInto(player.storage, it)) return false;
+  netStorageDeposit(idx, qty);
   return true;
 }
 
-function moveToInventory(idx) {
-  if (!player || !player.storage[idx]) return false;
-  if (!invHasSpace()) return false;
-  netStorageWithdraw(idx);
+function moveToInventory(idx, qty) {
+  const it = player && player.storage[idx];
+  if (!it) return false;
+  if (!invHasSpace() && !_mergesInto(player.inventory, it)) return false;
+  netStorageWithdraw(idx, qty);
   return true;
 }
 

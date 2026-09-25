@@ -3814,3 +3814,47 @@ canvas { display:block; width:100%; height:100%; }
   font-family: ui-monospace, Consolas, monospace; font-size: 13px; font-weight: 700;
   color: #a9daff; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums;
 }
+
+/* ── Хранилище: сортировка и окно количества (js/npc.js) ─────────────── */
+.storage-sort-bar { align-items: center; margin: 0 0 6px; }
+.storage-sort-lbl { font-size: 12px; color: #899eb1; flex: 0 0 auto; }
+#storage-qty-modal {
+  position: fixed; inset: 0; z-index: 520;
+  background: rgba(0,0,0,0.72); backdrop-filter: blur(3px);
+  display: none; align-items: center; justify-content: center;
+}
+.stq-panel {
+  width: min(90%, 320px); padding: 18px 16px 16px;
+  background: linear-gradient(175deg, var(--leather-hi), var(--leather-lo) 85%);
+  border: 1px solid var(--gold-dim); border-radius: 10px;
+  box-shadow: 0 0 0 1px #000, 0 30px 50px -15px rgba(0,0,0,0.8);
+  color: #c1ccd5;
+}
+.stq-title { font-size: 16px; font-weight: 800; color: #ffcf8a; text-align: center; margin-bottom: 12px; letter-spacing: 1px; }
+.stq-item { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.stq-icon { width: 48px; height: 48px; border: 1px solid; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.3); flex: 0 0 auto; }
+.stq-name { font-size: 13px; font-weight: 700; }
+.stq-have { font-size: 12px; color: #899eb1; margin-top: 2px; }
+.stq-row { display: flex; gap: 8px; align-items: center; }
+.stq-step {
+  width: 44px; height: 40px; flex: 0 0 auto; font-size: 20px; font-weight: 700;
+  background: #0e1927; color: #c1ccd5; border: 1px solid #243e61; border-radius: 8px; cursor: pointer;
+  touch-action: manipulation;
+}
+.stq-input {
+  flex: 1 1 auto; min-width: 0; height: 40px; text-align: center; font-size: 17px; font-weight: 700;
+  background: rgba(0,0,0,.35); color: #ffcf8a; border: 1px solid rgba(193,204,213,.15); border-radius: 8px;
+  font-family: inherit;
+}
+.stq-input:focus { outline: none; border-color: rgba(235,170,73,.5); }
+.stq-range { width: 100%; margin: 14px 0 10px; accent-color: #ebab4b; }
+.stq-quick { display: flex; gap: 6px; margin-bottom: 14px; }
+.stq-quick button {
+  flex: 1; padding: 7px 0; font-size: 12px; font-weight: 600; cursor: pointer;
+  background: rgba(193,204,213,.05); color: #899eb1; border: 1px solid rgba(193,204,213,.12); border-radius: 8px;
+  touch-action: manipulation;
+}
+.stq-actions { display: flex; gap: 8px; }
+.stq-actions button { flex: 1; padding: 11px 0; font-size: 13px; font-weight: 700; border-radius: 8px; cursor: pointer; touch-action: manipulation; }
+.stq-cancel { background: #0e1927; color: #899eb1; border: 1px solid #243e61; }
+.stq-ok { background: linear-gradient(135deg, #b8782c, #ebab4b); color: #1a1208; border: 1px solid #ebab4b; }

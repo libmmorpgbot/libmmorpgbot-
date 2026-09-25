@@ -3630,8 +3630,28 @@ function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgr
 // chest is the server's job now; the answer comes back as inventorySync.
 function netEquipItem(idx)       { if (socket?.connected) socket.emit('equipItem', { idx }); }
 function netUnequipItem(slot)    { if (socket?.connected) socket.emit('unequipItem', { slot }); }
-function netStorageDeposit(idx)  { if (socket?.connected) socket.emit('storageDeposit', { idx }); }
-function netStorageWithdraw(idx) { if (socket?.connected) socket.emit('storageWithdraw', { idx }); }
+// idx is a position in the list the player saw — only a hint once the panel
+// is sorted differently from the server's order, so the row id and identity
+// travel with it (see resolveRow, server/db/repos/items.js). qty: how many
+// from a stack (the storage quantity modal); null means the whole row.
+// Written out as literals rather than built by a helper so
+// dev/request-shape-check.js can still read what these events carry.
+function netStorageDeposit(idx, qty) {
+  if (!socket?.connected) return;
+  const it = (player && player.inventory[idx]) || {};
+  socket.emit('storageDeposit', {
+    idx, rowId: it.rowId || null, id: it.id || null,
+    enhance: it.enhance != null ? it.enhance : null, qty: qty != null ? qty : null,
+  });
+}
+function netStorageWithdraw(idx, qty) {
+  if (!socket?.connected) return;
+  const it = (player && player.storage[idx]) || {};
+  socket.emit('storageWithdraw', {
+    idx, rowId: it.rowId || null, id: it.id || null,
+    enhance: it.enhance != null ? it.enhance : null, qty: qty != null ? qty : null,
+  });
+}
 // The merchant is the only shop priced in gold, so it is the only purchase
 // that had to move here for gold to become server-owned.
 function netBuyPotion(idx, qty)  { if (socket?.connected) socket.emit('buyPotion', { idx, qty }); }

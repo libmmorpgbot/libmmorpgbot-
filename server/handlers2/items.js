@@ -192,6 +192,16 @@ module.exports = function registerItems(s, safeOn) {
     }, { перебор: 'вся руна' }));
 
   // ── storage ──────────────────────────────────────────────────────────────
+  // Сколько штук переносить. Infinity — «вся строка»: moveQty при n >= qty
+  // делает обычный moveTo. Ноль, минус и мусор отсекаются здесь, чтобы
+  // «положить 0» не превратилось в «положить всё».
+  const _qtyOf = (ref) => {
+    if (ref == null || ref.qty == null) return Infinity;
+    const n = Math.floor(Number(ref.qty));
+    if (!Number.isSafeInteger(n) || n < 1) fail('Неверное количество', 'bad_qty');
+    return n;
+  };
+
   // ЧТО положили — а не только что положили. Строка «storageDeposit» без
   // предмета отвечает на вопрос «было ли действие» и не отвечает на «куда
   // делся мой меч», ради которого журнал и читают. Предмет читается ДО
@@ -201,11 +211,13 @@ module.exports = function registerItems(s, safeOn) {
     const row = await items.resolveRow(t, pid, ref, 'inventory');
     if (!row) fail('Предмет не найден — список обновлён', 'not_found');
     const moved = await _describeRow(t, pid, row, 'inventory');
-    if (!await items.moveTo(t, row, pid, 'storage')) {
+    // qty — сколько из купки (модальное окно на клиенте). Нет его — вся строка,
+    // как было всегда: старый клиент шлёт только позицию.
+    if (!await items.moveQty(t, row, pid, 'storage', _qtyOf(ref))) {
       throw Object.assign(new Error('no'), { userMessage: 'Предмет не найден' });
     }
     await push(t);
-    return moved;
+    return ref.qty != null ? { ...moved, qty: _qtyOf(ref) } : moved;
   }, r => r));
 
   // The index here counts into the STORAGE list, not the inventory — the two
@@ -215,11 +227,11 @@ module.exports = function registerItems(s, safeOn) {
     const row = await items.resolveRow(t, pid, ref, 'storage');
     if (!row) fail('Предмет не найден — список обновлён', 'not_found');
     const moved = await _describeRow(t, pid, row, 'storage');
-    if (!await items.moveTo(t, row, pid, 'inventory')) {
+    if (!await items.moveQty(t, row, pid, 'inventory', _qtyOf(ref))) {
       throw Object.assign(new Error('full'), { userMessage: 'Инвентарь полон' });
     }
     await push(t);
-    return moved;
+    return ref.qty != null ? { ...moved, qty: _qtyOf(ref) } : moved;
   }, r => r));
 
   // ── consumables ──────────────────────────────────────────────────────────

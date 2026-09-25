@@ -1495,6 +1495,58 @@ function _storageBody() {
   return tabs + (_storageTab === 'inv' ? _storageInvTab() : _storageStoTab());
 }
 
+// ── сортировка ──────────────────────────────────────────────────────────
+// Только порядок ПОКАЗА: сервер хранит свой (как положили), а ячейка несёт
+// индекс предмета в настоящем списке, так что нажатие попадает в тот
+// предмет, на который нажали, при любой сортировке. Выбор запоминается на
+// устройстве и общий для обеих вкладок.
+const _STORAGE_SORTS = ['new', 'type', 'rarity', 'name', 'qty'];
+let _storageSort = (() => {
+  try { const v = localStorage.getItem('liberty.storageSort'); return _STORAGE_SORTS.includes(v) ? v : 'new'; }
+  catch (e) { return 'new'; }
+})();
+const _STORAGE_RARITY_RANK = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
+
+function _setStorageSort(v) {
+  if (!_STORAGE_SORTS.includes(v)) return;
+  _storageSort = v;
+  try { localStorage.setItem('liberty.storageSort', v); } catch (e) { /* приватный режим */ }
+  document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
+}
+
+function _storageTypeRank(it) {
+  const cats = typeof _MARKET_CATEGORIES !== 'undefined' ? _MARKET_CATEGORIES : null;
+  if (!cats) return 0;
+  const i = cats.findIndex(c => c.match(it));
+  return i < 0 ? cats.length : i;
+}
+
+// [{ it, idx }] in display order; idx stays the position in the real list.
+function _storageSorted(list) {
+  const out = list.map((it, idx) => ({ it, idx }));
+  const rar  = e => (_STORAGE_RARITY_RANK[e.it.rarity] != null ? _STORAGE_RARITY_RANK[e.it.rarity] : 9);
+  const name = e => String(e.it.name || '');
+  const byName = (a, b) => name(a).localeCompare(name(b)) || (b.it.enhance || 0) - (a.it.enhance || 0) || a.idx - b.idx;
+  if (_storageSort === 'type') {
+    out.sort((a, b) => _storageTypeRank(a.it) - _storageTypeRank(b.it) || rar(a) - rar(b) || byName(a, b));
+  } else if (_storageSort === 'rarity') {
+    out.sort((a, b) => rar(a) - rar(b) || _storageTypeRank(a.it) - _storageTypeRank(b.it) || byName(a, b));
+  } else if (_storageSort === 'name') {
+    out.sort(byName);
+  } else if (_storageSort === 'qty') {
+    out.sort((a, b) => (b.it.qty || 1) - (a.it.qty || 1) || byName(a, b));
+  }
+  return out;
+}
+
+function _storageSortBar() {
+  const opts = _STORAGE_SORTS.map(k => `<option value="${k}"${_storageSort === k ? ' selected' : ''}>${t('storageSort_' + k)}</option>`).join('');
+  return `<div class="market-toolbar storage-sort-bar">
+    <span class="storage-sort-lbl">${t('storageSortLbl')}</span>
+    <select class="market-select" onchange="_setStorageSort(this.value)">${opts}</select>
+  </div>`;
+}
+
 function _storageItemCell(it, idx, onclickFn) {
   const rc = RARITY_COLOR[it.rarity] || '#aea599';
   const cnt = it.qty > 1 ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${it.qty}</span>` : '';
@@ -1508,16 +1560,16 @@ function _storageItemCell(it, idx, onclickFn) {
 
 function _storageInvTab() {
   if (!player.inventory.length) return '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageInvEmpty') : 'Инвентарь пуст') + '</div>';
-  let html = '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToStore') : 'Нажмите на предмет, чтобы положить в хранилище') + '</div><div class="craft-items-grid">';
-  player.inventory.forEach((it, idx) => { html += _storageItemCell(it, idx, '_doMoveToStorage'); });
+  let html = _storageSortBar() + '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToStore') : 'Нажмите на предмет, чтобы положить в хранилище') + '</div><div class="craft-items-grid">';
+  _storageSorted(player.inventory).forEach(({ it, idx }) => { html += _storageItemCell(it, idx, '_doMoveToStorage'); });
   html += '</div>';
   return html;
 }
 
 function _storageStoTab() {
   if (!player.storage.length) return '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageEmpty') : 'Хранилище пусто') + '</div>';
-  let html = '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToTake') : 'Нажмите на предмет, чтобы забрать') + '</div><div class="craft-items-grid">';
-  player.storage.forEach((it, idx) => { html += _storageItemCell(it, idx, '_doMoveToInventory'); });
+  let html = _storageSortBar() + '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToTake') : 'Нажмите на предмет, чтобы забрать') + '</div><div class="craft-items-grid">';
+  _storageSorted(player.storage).forEach(({ it, idx }) => { html += _storageItemCell(it, idx, '_doMoveToInventory'); });
   html += '</div>';
   return html;
 }
@@ -1526,18 +1578,118 @@ function _storageStoTab() {
 // inventory AND storage as full item objects, so flushing per tap would
 // re-upload all of it for every item of a bulk move. closeNpc flushes once
 // instead; see the note there for why the timing matters.
-function _doMoveToStorage(idx) {
+// A stack (qty > 1) asks how many first — _openStorageQty below; a single
+// item moves on the tap, as before: there is nothing to choose.
+function _doMoveToStorage(idx, qty) {
   if (!player) return;
-  if (!moveToStorage(idx)) { _shopMsg(typeof t === 'function' ? t('storageFull') : 'Хранилище полно!'); return; }
+  const it = player.inventory[idx];
+  if (!it) return;
+  if (qty == null && (it.qty || 1) > 1) { _openStorageQty('store', idx); return; }
+  if (!moveToStorage(idx, qty)) { _shopMsg(typeof t === 'function' ? t('storageFull') : 'Хранилище полно!'); return; }
   netSaveProgress();
   document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
 }
 
-function _doMoveToInventory(idx) {
+function _doMoveToInventory(idx, qty) {
   if (!player) return;
-  if (!moveToInventory(idx)) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
+  const it = player.storage[idx];
+  if (!it) return;
+  if (qty == null && (it.qty || 1) > 1) { _openStorageQty('take', idx); return; }
+  if (!moveToInventory(idx, qty)) { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
   netSaveProgress();
   document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
+}
+
+// ── сколько положить / забрать ──────────────────────────────────────────
+// Окно поверх панели: ползунок, поле ввода, −/+ и быстрые «1 · половина ·
+// все». Предмет запоминается по rowId, а не по индексу: пока окно открыто,
+// может прийти inventorySync и сдвинуть список — тогда индекс ищется заново,
+// а если предмета больше нет, окно закрывается.
+let _stQty = null;   // { mode: 'store'|'take', rowId, id, enhance, max, n }
+
+function _stQtyList(mode) { return mode === 'store' ? player.inventory : player.storage; }
+function _stQtyFind() {
+  if (!_stQty || !player) return -1;
+  const list = _stQtyList(_stQty.mode);
+  let i = _stQty.rowId ? list.findIndex(o => o.rowId === _stQty.rowId) : -1;
+  if (i < 0) i = list.findIndex(o => o.id === _stQty.id && (o.enhance || 0) === (_stQty.enhance || 0));
+  return i;
+}
+
+function _openStorageQty(mode, idx) {
+  const it = _stQtyList(mode)[idx];
+  if (!it) return;
+  const max = Math.max(1, it.qty || 1);
+  _stQty = { mode, rowId: it.rowId || null, id: it.id, enhance: it.enhance || 0, max, n: max };
+  let el = document.getElementById('storage-qty-modal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'storage-qty-modal';
+    el.addEventListener('click', e => { if (e.target === el) _closeStorageQty(); });
+    document.body.appendChild(el);
+  }
+  const rc = RARITY_COLOR[it.rarity] || '#aea599';
+  const title = mode === 'store' ? t('storageQtyStoreTitle') : t('storageQtyTakeTitle');
+  el.innerHTML = `<div class="stq-panel">
+    <div class="stq-title">${title}</div>
+    <div class="stq-item">
+      <div class="stq-icon" style="border-color:${rc}66">${_itemIcon(it, 40)}</div>
+      <div>
+        <div class="stq-name" style="color:${rc}">${it.name}${it.enhance ? ' +' + it.enhance : ''}</div>
+        <div class="stq-have">${tVars('storageQtyHave', { n: max })}</div>
+      </div>
+    </div>
+    <div class="stq-row">
+      <button class="stq-step" onclick="_stQtySet(_stQty.n - 1)">−</button>
+      <input id="stq-input" class="stq-input" type="number" inputmode="numeric" min="1" max="${max}" value="${max}"
+        oninput="_stQtySet(this.value, true)">
+      <button class="stq-step" onclick="_stQtySet(_stQty.n + 1)">+</button>
+    </div>
+    <input id="stq-range" class="stq-range" type="range" min="1" max="${max}" value="${max}" oninput="_stQtySet(this.value)">
+    <div class="stq-quick">
+      <button onclick="_stQtySet(1)">1</button>
+      <button onclick="_stQtySet(Math.ceil(_stQty.max / 2))">½</button>
+      <button onclick="_stQtySet(_stQty.max)">${t('storageQtyAll')}</button>
+    </div>
+    <div class="stq-actions">
+      <button class="stq-cancel" onclick="_closeStorageQty()">${t('storageQtyCancel')}</button>
+      <button id="stq-ok" class="stq-ok" onclick="_confirmStorageQty()">${title} · ${max}</button>
+    </div>
+  </div>`;
+  el.style.display = 'flex';
+}
+
+// fromInput: typing — an empty or half-typed field is left alone rather than
+// snapped to 1 under the player's fingers; the value is clamped on confirm.
+function _stQtySet(v, fromInput) {
+  if (!_stQty) return;
+  let n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) { if (fromInput) return; n = 1; }
+  n = Math.max(1, Math.min(_stQty.max, n));
+  _stQty.n = n;
+  const inp = document.getElementById('stq-input');
+  const rng = document.getElementById('stq-range');
+  const ok  = document.getElementById('stq-ok');
+  if (inp && (!fromInput || String(n) !== inp.value)) inp.value = n;
+  if (rng) rng.value = n;
+  if (ok) ok.textContent = (_stQty.mode === 'store' ? t('storageQtyStoreTitle') : t('storageQtyTakeTitle')) + ' · ' + n;
+}
+
+function _closeStorageQty() {
+  _stQty = null;
+  const el = document.getElementById('storage-qty-modal');
+  if (el) el.style.display = 'none';
+}
+
+function _confirmStorageQty() {
+  if (!_stQty) return;
+  const { mode } = _stQty;
+  const n = Math.max(1, Math.min(_stQty.max, _stQty.n || 1));
+  const idx = _stQtyFind();
+  _closeStorageQty();
+  if (idx < 0) { _shopMsg(t('storageQtyGone')); return; }
+  if (mode === 'store') _doMoveToStorage(idx, n);
+  else _doMoveToInventory(idx, n);
 }
 
 // The panel's cells carry raw indices into player.inventory / player.storage
@@ -1546,6 +1698,20 @@ function _doMoveToInventory(idx) {
 // index — the next tap moves an item the player never picked. Redraw instead.
 // No-op unless the storage NPC is actually on screen.
 function refreshStorageNpc() {
+  // The quantity window follows its item across a sync: a stack that shrank
+  // lowers the cap, one that vanished closes the window.
+  if (_stQty && player) {
+    const i = _stQtyFind();
+    const it = i >= 0 ? _stQtyList(_stQty.mode)[i] : null;
+    if (!it) _closeStorageQty();
+    else if ((it.qty || 1) !== _stQty.max) {
+      _stQty.max = Math.max(1, it.qty || 1);
+      const rng = document.getElementById('stq-range'), inp = document.getElementById('stq-input');
+      if (rng) rng.max = _stQty.max;
+      if (inp) inp.max = _stQty.max;
+      _stQtySet(_stQty.n);
+    }
+  }
   if (_openNpcId !== 'storage' || !player) return;
   document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
 }

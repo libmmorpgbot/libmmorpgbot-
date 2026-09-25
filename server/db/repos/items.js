@@ -970,6 +970,62 @@ async function moveTo(db, rowId, playerId, container, slot = null) {
   return true;
 }
 
+// ── часть купки ─────────────────────────────────────────────────────────────
+// «Положить 30 из 120» / «забрать 5 из 40». Для нештабелируемого предмета или
+// когда просят всё (и больше) — это ровно moveTo, со всеми его правилами.
+// Иначе купка делится: у исходной строки убавляется qty, а в месте назначения
+// n штук либо доливаются в уже лежащую там купку того же предмета и заточки,
+// либо ложатся новой строкой в конец списка (sort_seq по умолчанию —
+// следующий номер, см. миграцию 025).
+//
+// Журнал (item_ledger) не пишется намеренно: он считает, сколько предмета у
+// АККАУНТА, а перекладывание из сумки в хранилище этого числа не меняет —
+// moveTo по той же причине тоже молчит. reconcile сверяет суммы по
+// (player_id, item_id) без разбивки по контейнерам, и они сходятся.
+//
+// Возвращает false, если строки нет или в инвентаре нет места под новую
+// строку (доливка в существующую купку места не требует).
+async function moveQty(db, rowId, playerId, container, qty) {
+  if (container !== 'inventory' && container !== 'storage') {
+    throw new Error('items: moveQty only moves between inventory and storage');
+  }
+  const { rows } = await query(db, `
+    SELECT pi.qty, pi.item_id, pi.enhance, c.stackable
+      FROM player_items pi JOIN item_catalog c ON c.item_id = pi.item_id
+     WHERE pi.id = $1 AND pi.player_id = $2 ${await _noSocket(db, 'pi.')}
+     FOR UPDATE OF pi`, [rowId, playerId]);
+  if (!rows.length) return false;
+  const r = rows[0];
+  const n = Math.floor(Number(qty));
+  if (!r.stackable || !Number.isSafeInteger(n) || n >= r.qty) return moveTo(db, rowId, playerId, container);
+  if (n < 1) return false;
+
+  const { rows: into } = await query(db, `
+    SELECT id FROM player_items
+     WHERE player_id = $1 AND container = $2 AND item_id = $3 AND enhance = $4 AND id <> $5
+       ${await _noSocket(db)}
+     ORDER BY id LIMIT 1`, [playerId, container, r.item_id, r.enhance, rowId]);
+  if (!into.length && container === 'inventory' && await usedSlots(db, playerId) >= SERVER_INV_MAX) {
+    return false;
+  }
+
+  await query(db, 'UPDATE player_items SET qty = qty - $3 WHERE id = $1 AND player_id = $2',
+    [rowId, playerId, n]);
+  if (into.length) {
+    await query(db, 'UPDATE player_items SET qty = qty + $2 WHERE id = $1', [into[0].id, n]);
+  } else {
+    // Происхождение едет вместе с частью купки: это те же предметы, просто в
+    // другом месте.
+    const cols = ['player_id', 'container', 'item_id', 'enhance', 'qty'];
+    const sel  = ['player_id', '$2', 'item_id', 'enhance', '$3'];
+    if (await _hasSourceCols(db)) { cols.push('source', 'source_ref'); sel.push('source', 'source_ref'); }
+    await query(db, `
+      INSERT INTO player_items (${cols.join(', ')})
+      SELECT ${sel.join(', ')} FROM player_items WHERE id = $1`, [rowId, container, n]);
+  }
+  return true;
+}
+
 // Sends a row to the very end of its container's list — a single UPDATE, not
 // a new row. inventoryOf and resolveRow both order by sort_seq rather than
 // id: `id` means "created in this order, forever", and stays that way so
@@ -1126,7 +1182,7 @@ module.exports = {
   consumeMatching, countMatching, resolveRow,
   syncCatalog, lockPlayer, mergeStacks,
   inventoryOf, socketedRunesOf, usedSlots, hasRoomFor, assertNoRunes,
-  add, removeQty, removeRow, moveTo,
+  add, removeQty, removeRow, moveTo, moveQty,
   assertDestroyable, marketRefBlocksDelete,
   detachForListing, attachFromListing,
   ledger, reconcile, historyOfRow,
