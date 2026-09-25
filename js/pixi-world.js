@@ -968,10 +968,12 @@ function _sweepSheets(now) {
   // Adopt whatever is resident but was never drawn — a fallback idle that the
   // real sheet overtook, a char-select preview, a full set some other path
   // loaded — so it expires like everything else instead of staying forever.
+  const pinned = (id, key) => typeof isPinnedSheet === 'function' && isPinnedSheet(id, key);
   const adopt = (kind, root, own) => Object.keys(root).forEach(id => {
     if (id === own || !root[id]) return;
     if (kind === 'e') { if (!_sheetSeen.has('e|' + id)) _sheetSeen.set('e|' + id, now); return; }
     Object.keys(root[id]).forEach(key => {
+      if (pinned(id, key)) return;
       const tag = kind + '|' + id + '|' + key;
       if (!_sheetSeen.has(tag) && _sheetReady(root[id][key])) _sheetSeen.set(tag, now);
     });
@@ -982,6 +984,8 @@ function _sweepSheets(now) {
   _sheetSeen.forEach((t, tag) => {
     if (now - t < _SHEET_IDLE_MS) return;
     const [kind, id, key] = tag.split('|');
+    // Стойки, загруженные при входе (preloadAllSprites), держатся всегда.
+    if (kind !== 'e' && pinned(id, key)) { _sheetSeen.delete(tag); return; }
     if (kind === 'p') {
       if (id === ownType) { _sheetSeen.delete(tag); return; }
       _freeTexSet(_pTex[id + '|' + key]); delete _pTex[id + '|' + key];

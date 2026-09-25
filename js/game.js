@@ -1718,7 +1718,12 @@ function selectChar(type) {
   // persisted those defaults over the real save. restoreFromSave() itself
   // never reads .type, so just use whatever savedData exists.
   const savedStats = (typeof _savedData !== 'undefined' && _savedData) ? _savedData : null;
-  csStartLoading(type, () => { initNpcs(); _finishOnlineStart(); });
+  csStartLoading(type, () => {
+    initNpcs(); _finishOnlineStart();
+    // Все классы и питомцы — после того как мир уже на экране, чтобы вход не
+    // ждал чужих картинок. См. preloadAllSprites (js/sprites.js).
+    if (typeof preloadAllSprites === 'function') setTimeout(preloadAllSprites, 1500);
+  });
   // Gate the loading screen on BOTH player and floor-1 enemy sprites being decoded.
   const _floor1Eids = (FLOOR_ENEMIES[1]?.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);
   let _spritesPending = 1 + _floor1Eids.length;

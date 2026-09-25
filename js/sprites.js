@@ -374,16 +374,11 @@ function forgetSheet(kind, id, key) {
   delete proms[id];
   _sheetRequested.delete(id + '|' + key);
 }
-// Phones that report 4 GB of RAM or less (navigator.deviceMemory — Android
-// WebViews report it, iOS doesn't, so iPhones keep full size) keep OTHER
-// players' sheets at 3/4 of the cell: under half the memory per sheet, a
-// barely softer sprite on someone else. Your own class is loaded by the full
-// loadSprites and keeps its size — if another player shares your class, they
-// share your sheets.
-const _LOW_MEM_DEVICE = (() => {
-  try { return !!navigator.deviceMemory && navigator.deviceMemory <= 4; } catch (e) { return false; }
-})();
-function _otherCellH(full) { return _LOW_MEM_DEVICE ? Math.max(64, Math.ceil(full * 0.75)) : full; }
+// Other players' and pets' sheets are kept at 3/4 of the cell, on every
+// device: under half the memory per sheet, a barely softer sprite on someone
+// else. Your own class is loaded by the full loadSprites and keeps its size —
+// if another player shares your class, they share your sheets.
+function _otherCellH(full) { return Math.max(64, Math.ceil(full * 0.75)); }
 function loadSpriteSheet(charType, key) {
   const def = SPRITE_DEF[charType];
   _loadOneSheet(spriteCache, charType, def, key,
@@ -391,6 +386,57 @@ function loadSpriteSheet(charType, key) {
 }
 function loadPetSheet(petId, key) {
   _loadOneSheet(petSpriteCache, petId, PET_SPRITE_DEF[petId], key, _otherCellH(_petCellH()));
+}
+
+// ── всё при входе ────────────────────────────────────────────────────────────
+// Персонажи у всех одинаковые — семь классов и двенадцать питомцев, а не свой
+// набор на каждого игрока: сорок магов рисуются одним и тем же листом. Поэтому
+// после входа (preloadAllSprites зовётся из js/game.js, когда мир уже на
+// экране) грузится всё разом, в два слоя:
+//
+//   1. Стойки (все *-idle) каждого класса и питомца — сразу в память, готовыми
+//      к отрисовке, и закреплены: _sweepSheets (js/pixi-world.js) их не
+//      выгружает. Толпа, которая стоит, появляется мгновенно, и у любой другой
+//      анимации всегда есть готовая стойка, пока та подгружается.
+//   2. Всё остальное (бег, атака, смерть) — только скачивается в кэш браузера:
+//      это файлы, а не картинки в памяти, и памяти они не занимают. Когда
+//      анимация понадобится, лист берётся из кэша, без сети, за кадр.
+//
+// Держать в памяти ВСЁ сразу — ровно то, что вызывало перезагрузки в толпе,
+// поэтому в памяти только стойки. Картинки отдаются с кэшем на 30 дней
+// (server/static.js), так что скачивание происходит один раз, а не на каждый
+// вход. При включённой экономии трафика второй слой пропускается.
+const _pinnedSheets = new Set();   // 'id|key'
+function isPinnedSheet(id, key) { return _pinnedSheets.has(id + '|' + key); }
+let _preloadStarted = false;
+function preloadAllSprites() {
+  if (_preloadStarted) return;
+  _preloadStarted = true;
+  const rest = [];
+  Object.keys(SPRITE_DEF).forEach(type => {
+    Object.keys(SPRITE_DEF[type].anims).forEach(key => {
+      if (key.endsWith('-idle')) { _pinnedSheets.add(type + '|' + key); loadSpriteSheet(type, key); }
+      else rest.push(SPRITE_DEF[type].anims[key].src);
+    });
+  });
+  Object.keys(PET_SPRITE_DEF).forEach(petId => {
+    Object.keys(PET_SPRITE_DEF[petId].anims).forEach(key => {
+      if (key.endsWith('-idle')) { _pinnedSheets.add(petId + '|' + key); loadPetSheet(petId, key); }
+      else rest.push(PET_SPRITE_DEF[petId].anims[key].src);
+    });
+  });
+  let saveData = false;
+  try { saveData = !!(navigator.connection && navigator.connection.saveData); } catch (e) { /* нет API */ }
+  if (saveData || typeof fetch !== 'function') return;
+  // Три потока, по очереди, с низким приоритетом — не отнимать канал у игры.
+  let i = 0;
+  const next = () => {
+    if (i >= rest.length) return;
+    const url = rest[i++];
+    fetch(url, { cache: 'force-cache', priority: 'low' })
+      .then(r => r.arrayBuffer()).catch(() => {}).then(next);
+  };
+  for (let k = 0; k < 3; k++) next();
 }
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
