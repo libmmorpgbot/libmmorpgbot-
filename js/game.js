@@ -2715,6 +2715,8 @@ function _floorTexOfFloor() {
   if (!dungeon || typeof _floorImgTex !== 'function') return null;
   if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
   if (dungeon.armEntries) return _floorImgTex('temple');
+  // Первая локация — левый рукав, FLOOR_IDS.left в server/game/floors.js.
+  if (dungeonLvl === 2) return _floorImgTex('cathedral');
   if (dungeon.farmZone || dungeon.farmHigh || dungeon.farmZone2) return _floorImgTex('lava');
   return null;
 }
