@@ -693,9 +693,7 @@ function loadEnemySprites(eid, onDone) {
           // (same as the onerror branch below) instead of stalling this
           // enemy's gate forever.
           try {
-            enemySpriteCache[eid][key] = _outlineSheet(
-              _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH),
-              Math.max(1, Math.round(def.frameH / 64)));
+            enemySpriteCache[eid][key] = _rasterizeSheet(img, { n: sh.cols * 4, cols: sh.cols }, def, def.frameH);
           } finally { tick(); }
         });
         if (img.decode) img.decode().then(raster, raster); else raster();
@@ -842,96 +840,6 @@ function _rasterizeSheet(img, ad, def, cellH) {
   // Draw code reads frame size off the cache entry so canvas and Image
   // entries stay interchangeable.
   cv.frameW = cw; cv.frameH = ch;
-  return cv;
-}
-
-// Monsters used to melt into the floor: the sheets are dark creatures (rats,
-// zombies, liches) and both floors (temple stone, lava) are dark too, with no
-// edge between them. This bakes a readable silhouette into the rasterized
-// sheet, once, at load time — the per-frame cost is zero, it is the same
-// texture PIXI already draws:
-//   • the body is lifted a little (brightness/contrast), so it stops sitting
-//     at the floor's own value;
-//   • a dark 1-2 texel contour hugs the body — it separates the monster from
-//     the bright lava cracks and tile grout;
-//   • a faint warm rim just outside the contour separates it from the dark
-//     stone, where a dark line alone would vanish.
-// "Body" is alpha >= 128: the sheets' own baked drop shadow is alpha ~64-95,
-// so it is neither brightened nor outlined, and the rim never lands on it.
-// Dilation never crosses a frame's cell border, so an attack frame that
-// reaches its cell edge doesn't leave a sliver of contour in its neighbour.
-// getImageData throws on a tainted canvas (sheets served cross-origin without
-// CORS) — then the sheet is simply left as it was.
-const _MOB_BODY_ALPHA = 128;
-function _outlineSheet(cv, radius) {
-  const W = cv.width, H = cv.height;
-  const cw = cv.frameW || W, ch = cv.frameH || H;
-  const c = cv.getContext('2d');
-  let img;
-  try { img = c.getImageData(0, 0, W, H); } catch (e) { return cv; }
-  const d = img.data;
-  const N = W * H;
-  const lineR = radius, rimR = radius * 2;
-  // Chebyshev distance to the body, capped at rimR + 1 (= "far").
-  const FAR = 255;
-  const dist = new Uint8Array(N).fill(FAR);
-  // Frontier-based dilation: only body-edge texels seed it, so the cost is
-  // the body plus a thin band around it, not rimR full passes over the sheet.
-  let front = [];
-  for (let i = 0; i < N; i++) {
-    if (d[i * 4 + 3] < _MOB_BODY_ALPHA) continue;
-    dist[i] = 0;
-    // Seed only texels with a non-body 4-neighbour; the interior can't grow.
-    if (d[i * 4 - 1] < _MOB_BODY_ALPHA || d[i * 4 + 7] < _MOB_BODY_ALPHA ||
-        d[(i - W) * 4 + 3] < _MOB_BODY_ALPHA || d[(i + W) * 4 + 3] < _MOB_BODY_ALPHA ||
-        i < W || i >= N - W) front.push(i);
-    // Lift the body: mild contrast around mid-grey plus a small brightness push.
-    for (let k = 0; k < 3; k++) {
-      const v = (d[i * 4 + k] - 128) * 1.12 + 128 + 14;
-      d[i * 4 + k] = v < 0 ? 0 : v > 255 ? 255 : v;
-    }
-  }
-  const ring = [];
-  for (let step = 1; step <= rimR; step++) {
-    const next = [];
-    for (let f = 0; f < front.length; f++) {
-      const i = front[f], x = i % W, y = (i - x) / W;
-      const x0 = x - x % cw, y0 = y - y % ch;
-      for (let dy = -1; dy <= 1; dy++) {
-        const yy = y + dy;
-        if (yy < y0 || yy >= y0 + ch) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const xx = x + dx;
-          if (xx < x0 || xx >= x0 + cw) continue;
-          const j = yy * W + xx;
-          if (dist[j] !== FAR) continue;
-          dist[j] = step;
-          next.push(j);
-          ring.push(j);
-        }
-      }
-    }
-    front = next;
-  }
-  // Composite the contour/rim UNDER whatever is already there (the baked
-  // shadow's soft pixels), i.e. "destination-over" by hand.
-  for (let n = 0; n < ring.length; n++) {
-    const i = ring[n], s = dist[i];
-    const o = i * 4;
-    const da = d[o + 3] / 255;
-    let r, g, b, a;
-    if (s <= lineR) { r = 12; g = 8; b = 6; a = 0.92; }
-    else {
-      if (da > 0.08) continue; // never paint the rim onto the baked shadow
-      r = 255; g = 226; b = 170; a = 0.30;
-    }
-    const oa = da + a * (1 - da);
-    d[o]     = (d[o]     * da + r * a * (1 - da)) / oa;
-    d[o + 1] = (d[o + 1] * da + g * a * (1 - da)) / oa;
-    d[o + 2] = (d[o + 2] * da + b * a * (1 - da)) / oa;
-    d[o + 3] = oa * 255;
-  }
-  c.putImageData(img, 0, 0);
   return cv;
 }
 
