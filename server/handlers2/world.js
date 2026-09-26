@@ -457,11 +457,15 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const out = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (result.arm === 'coop') return out;
 
-    if (result.farmZone) out.items = loot._rollFarmZoneLoot(scratch, result.eid) || [];
-    else if (result.farmHigh) out.items = loot._rollFarmHighLoot(scratch, result.eid) || [];
-    else if (result.farmZone2) out.items = loot._rollFarm2Loot(scratch) || [];
-    else if (result.dungeon) out.items = loot._rollDungeonLoot(scratch, result.eid, result.dungeonClass) || [];
-    else out.items = loot._rollMobLoot(scratch, result.eid, result.rlvl) || [];
+    // Таблица той зоны, где убит монстр. Функцией, а не одним вызовом: бонус
+    // к дропу ниже бросает её же второй раз.
+    const rollTable = inv =>
+        result.farmZone  ? loot._rollFarmZoneLoot(inv, result.eid)
+      : result.farmHigh  ? loot._rollFarmHighLoot(inv, result.eid)
+      : result.farmZone2 ? loot._rollFarm2Loot(inv)
+      : result.dungeon   ? loot._rollDungeonLoot(inv, result.eid, result.dungeonClass)
+      : loot._rollMobLoot(inv, result.eid, result.rlvl);
+    out.items = rollTable(scratch) || [];
 
     // ── руда ────────────────────────────────────────────────────────────────
     // Единственная вещь, которая падает со всех подходящих монстров сразу, —
@@ -494,8 +498,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
       + ((s._roomStats && s._roomStats.gearDropPct) || 0);
     const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
     const extra = bonus + ticket;
-    if (!result.farmZone && !result.farmHigh && !result.farmZone2 && !result.dungeon && extra > 0 && rand() * 100 < extra) {
-      out.items.push(...(loot._rollMobLoot([], result.eid, result.rlvl) || []));
+    // Во всех зонах, а не только в коридорах: фарм-зоны и подземелье раньше
+    // были исключены, и бонус из панели там молча не значил ничего.
+    // Второй бросок идёт по таблице той же зоны (rollTable выше).
+    if (extra > 0 && rand() * 100 < extra) {
+      out.items.push(...(rollTable([]) || []));
     }
 
     if (result.isBoss && !result.farmZone2) {
