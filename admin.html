@@ -244,6 +244,7 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
     <button class="tab-btn" onclick="setTab('quests')">⭐ Квесты</button>
     <button class="tab-btn" onclick="setTab('suspicious')">🚨 Подозр.</button>
     <button class="tab-btn" onclick="setTab('referrals')">🔗 Рефералы</button>
+    <button class="tab-btn" onclick="setTab('tickets')">🎫 Билеты</button>
   </div>
 
   <div id="content">
@@ -544,6 +545,14 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
       </div>
     </div>
 
+    <!-- Season tickets -->
+    <div id="tab-tickets" class="tab-panel">
+      <div class="card">
+        <h3 id="tickets-title">Сезонный билет</h3>
+        <div id="tickets-list"><div class="loading-center"><div class="spinner"></div></div></div>
+      </div>
+    </div>
+
   </div><!-- /content -->
 </div><!-- /app -->
 
@@ -702,7 +711,7 @@ function setTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   const btns = document.querySelectorAll('.tab-btn');
-  const names = ['dashboard','players','gram','clans','chat','broadcast','market','quests','suspicious','referrals'];
+  const names = ['dashboard','players','gram','clans','chat','broadcast','market','quests','suspicious','referrals','tickets'];
   const idx = names.indexOf(name);
   if(idx>=0) btns[idx].classList.add('active');
   _currentTab = name;
@@ -714,6 +723,7 @@ function setTab(name) {
   else if (name==='quests') loadQuests();
   else if (name==='suspicious') loadSuspicious();
   else if (name==='referrals') loadReferrals();
+  else if (name==='tickets') loadTickets();
 }
 
 // ── Dashboard ─────────────────────────────────────────────
@@ -1745,6 +1755,31 @@ function openReferralPlayer(tid) {
   setTab('players');
   _currentPlayerId = tid;
   setTimeout(() => openPlayer(tid), 100);
+}
+
+// ── Season tickets ────────────────────────────────────────
+async function loadTickets() {
+  const el = document.getElementById('tickets-list');
+  el.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  try {
+    const r = await api('/admin/season-tickets');
+    const d = await r.json();
+    const rows = d.players || [];
+    document.getElementById('tickets-title').textContent =
+      `Сезонный билет — ${rows.length} ${d.seasonActive ? '' : '(сезон завершён, билеты не действуют)'}`;
+    if (!rows.length) { el.innerHTML = '<p style="color:var(--text2);text-align:center;padding:20px">Билет пока никто не купил</p>'; return; }
+    el.innerHTML = `<div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>#</th><th>Ник</th><th>Ур.</th><th>VIP</th><th>Куплен</th><th>GRAM</th></tr></thead>
+      <tbody>${rows.map((p,i)=>`<tr style="cursor:pointer" onclick="openReferralPlayer('${esc(p.telegramId)}')">
+        <td>${i+1}</td>
+        <td>${p.online ? '🟢 ' : ''}${esc(p.username)}${p.banned ? ' 🚫' : ''}<br><span style="color:var(--text2);font-size:11px">${esc(p.telegramId)}</span></td>
+        <td>${p.lvl}</td>
+        <td>${p.vip}</td>
+        <td>${fmtDate(p.boughtAt)}</td>
+        <td>${p.price == null ? '—' : fmt(p.price)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  } catch(e) { el.innerHTML = '<p style="color:var(--red)">Ошибка</p>'; }
 }
 
 // ── Utils ─────────────────────────────────────────────────

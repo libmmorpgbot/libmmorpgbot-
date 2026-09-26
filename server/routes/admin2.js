@@ -29,7 +29,7 @@ const progression = require('../db/repos/progression');
 const market = require('../db/repos/market');
 const plog = require('../db/repos/playerlog');
 const tgGame = require('../tg-game');
-const { ITEM_DEF, CRAFT_MATS, BOX_DEF } = require('../../shared/definitions');
+const { ITEM_DEF, CRAFT_MATS, BOX_DEF, seasonActive } = require('../../shared/definitions');
 
 const CATALOG = [...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF];
 
@@ -299,6 +299,43 @@ module.exports = function registerAdminRoutes(app, deps) {
         referrers: rows.map(r => ({
           username: r.username, telegramId: r.telegram_id,
           count: r.friends, bonusEarned: Number(r.gram),
+        })),
+      });
+    } catch (e) { fail(res, e, req); }
+  });
+
+  // ── у кого сезонный билет ─────────────────────────────────────────────
+  // Флаг живёт в player_vip.season_ticket, а ставит его только покупка в
+  // GRAM-магазине (buyPackage → grantSeasonTicket), поэтому дата покупки —
+  // это списание GRAM за пакет season_ticket в ledger. Тестовые аккаунты из
+  // dev/ скрыты тем же правилом, что и в /admin/players.
+  app.get('/admin/season-tickets', guard, async (req, res) => {
+    try {
+      const { rows } = await query(null, `
+        SELECT p.id, p.telegram_id, p.username, p.banned,
+               COALESCE(pr.lvl, 1) AS lvl, v.level AS vip,
+               buy.created_at AS bought_at, -buy.delta AS price
+          FROM player_vip v
+          JOIN players p ON p.id = v.player_id
+          LEFT JOIN player_progress pr ON pr.player_id = p.id
+          LEFT JOIN LATERAL (
+            SELECT l.created_at, l.delta FROM ledger l
+             WHERE l.player_id = p.id AND l.currency = 'gram' AND l.reason = 'gram_shop'
+               AND l.ref_type = 'package' AND l.ref_id = 'season_ticket' AND l.delta < 0
+             ORDER BY l.created_at DESC LIMIT 1
+          ) buy ON true
+         WHERE v.season_ticket
+           AND ($1 = '1' OR p.telegram_id ~ '^[0-9]+$')
+         ORDER BY buy.created_at DESC NULLS LAST, p.id`, [String(req.query.all || '')]);
+
+      const online = onlineTids();
+      res.json({
+        seasonActive: seasonActive(),
+        players: rows.map(r => ({
+          id: Number(r.id), telegramId: r.telegram_id, username: r.username,
+          banned: r.banned, lvl: r.lvl, vip: r.vip,
+          boughtAt: r.bought_at, price: r.price == null ? null : Number(r.price),
+          online: online.has(r.telegram_id),
         })),
       });
     } catch (e) { fail(res, e, req); }
