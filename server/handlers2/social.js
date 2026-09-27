@@ -18,6 +18,7 @@ const clans = require('../db/repos/clans');
 const progression = require('../db/repos/progression');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
+const chatMod = require('../chat-mod');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
         SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillCooldownFloorMs,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
@@ -314,9 +315,32 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (!msg) return;
     lastChatAt = now;
 
+    // Команды модерации (/mute, /ban, /unmute, /unban) в чат не пишутся:
+    // отправителю — ответ, всем — объявление, наказанному — новое состояние.
+    if (msg.startsWith('/')) {
+      const res = await chatMod.command(s.telegramId, s.username, msg, async (name) => {
+        const p = await chat.playerByUsername(t, name);
+        return p && p.telegramId ? { telegramId: p.telegramId, username: p.username } : null;
+      });
+      if (res) {
+        if (res.reply) s.socket.emit('chatError', { msg: res.reply });
+        if (res.announce) {
+          io.emit('chatMsg', { username: 'МОДЕРАЦИЯ', text: res.announce, time: new Date().toISOString(), role: 'system' });
+          io.to(`tg_${res.target.telegramId}`).emit('chatSanction', res.state);
+        }
+        return;
+      }
+    }
+
+    const blocked = chatMod.writeBlock(s.telegramId);
+    if (blocked) fail(blocked, 'chat_sanction');
+
     await query(t, `INSERT INTO chat_messages (player_id, username, text) VALUES ($1, $2, $3)`,
       [pid, s.username, msg]);
-    io.emit('chatMsg', { username: s.username, text: msg, time: new Date().toISOString() });
+    io.emit('chatMsg', {
+      username: s.username, text: msg, time: new Date().toISOString(),
+      role: chatMod.roleOf(s.telegramId),
+    });
   }));
 
   // The "translate" button on a chat bubble — global, clan and DM alike; this
@@ -349,11 +373,17 @@ module.exports = function registerSocial(s, safeOn, deps) {
   });
 
   safeOn('chatHistory', () => s.act('chatHistory', 'chatError', async (t) => {
+    // Состояние санкции — вместе с историей: клиенту после перезахода нужно
+    // знать, что он в муте/бане, раньше, чем он попробует писать.
+    s.socket.emit('chatSanction', chatMod.stateFor(s.telegramId));
+    if (chatMod.isBanned(s.telegramId)) return s.socket.emit('chatHistory', []);
     const { rows } = await query(t, `
-      SELECT username, text, created_at FROM chat_messages
-       ORDER BY id DESC LIMIT 50`);
+      SELECT m.username, m.text, m.created_at, p.telegram_id
+        FROM chat_messages m LEFT JOIN players p ON p.id = m.player_id
+       ORDER BY m.id DESC LIMIT 50`);
     s.socket.emit('chatHistory', rows.reverse().map(r => ({
       username: r.username, text: r.text, time: r.created_at,
+      role: chatMod.roleOf(r.telegram_id),
     })));
   }));
 

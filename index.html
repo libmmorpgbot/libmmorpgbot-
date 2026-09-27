@@ -46,7 +46,7 @@
     <!-- Shown only during maintenance (code: 'maintenance' on authError/kicked,
          js/network.js showAuthError) — gives the player somewhere to go while
          the game itself refuses every login. -->
-    <a id="auth-chat-link" class="auth-chat-link" href="https://t.me/+PrFI0HWtRi02NGU0" target="_blank" rel="noopener" style="display:none">Перейти в чат</a>
+    <a id="auth-chat-link" class="auth-chat-link" href="https://t.me/libbchat" target="_blank" rel="noopener" style="display:none">Перейти в чат</a>
   </div>
 </div>
 
@@ -992,6 +992,9 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 .chat-name { font-size:11px; font-weight:700; color:#f90; }
 .chat-name.is-me { color:#3ef07a; }
 .chat-name-clickable { cursor:pointer; touch-action:manipulation; }
+.chat-role { font-size:9px; font-weight:700; margin-left:4px; padding:0 4px; border-radius:3px; text-transform:lowercase; }
+.chat-role-mod { color:#3ef07a; border:1px solid #3ef07a; }
+.chat-role-admin { color:#ff4d4d; border:1px solid #ff4d4d; }
 .chat-name-clickable:active { text-decoration:underline; }
 .chat-time { font-size:10px; color:#3a3a5a; }
 .chat-text { font-size:13px; color:#c2cdd6; line-height:1.45; word-break:break-word; }
@@ -1314,7 +1317,11 @@ function _chatSend() {
     return;
   }
 
-  if (_chatTab === 'clan') {
+  // Команды модерации (/mute, /ban, /unmute, /unban, /modhelp) — всегда в
+  // общий канал: сервер разбирает их только там, из любой вкладки.
+  if (/^\/(mute|ban|unmute|unban|modhelp)\b/i.test(raw)) {
+    if (typeof netChat === 'function') netChat(raw);
+  } else if (_chatTab === 'clan') {
     if (typeof netClanChat === 'function') netClanChat(raw);
   } else if (_chatTab === 'dm') {
     if (_activeDmUser && typeof netPrivMsg === 'function') netPrivMsg(_activeDmUser, raw);

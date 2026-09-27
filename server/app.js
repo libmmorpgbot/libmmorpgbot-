@@ -1664,6 +1664,9 @@ async function boot() {
   });
   console.log(`workers: deposit scan every ${w.deposits}ms`);
 
+  // Муты и баны чата, пережившие перезапуск (server/chat-mod.js).
+  await require('./chat-mod').load();
+
   // 5. Only now.
   await new Promise(r => server.listen(PORT, r));
   console.log(`listening on ${PORT} · build ${version.COMMIT}`);

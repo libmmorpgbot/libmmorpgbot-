@@ -2123,8 +2123,25 @@ function netConnect(onReady) {
     spawnBurst(player.x, player.y, '#ff4', 6);
   });
 
-  socket.on('chatMsg', ({ username, text }) => {
-    _addChatMsg(username, text);
+  socket.on('chatMsg', ({ username, text, role }) => {
+    // Бан в чате: общий канал не показывается вовсе, кроме объявлений
+    // модерации — из них игрок и узнаёт, что бан снят.
+    if (_chatBanned() && role !== 'system') return;
+    _addChatMsg(username, text, role);
+  });
+
+  // Мут/бан в общем чате: { type: 'mute'|'ban', until } или null.
+  socket.on('chatSanction', (st) => {
+    const was = _chatSanction;
+    _chatSanction = (st && st.type && st.until) ? { type: st.type, until: Number(st.until) } : null;
+    if (_chatSanction) {
+      const left = Math.max(1, Math.round((_chatSanction.until - Date.now()) / 60000));
+      const what = _chatSanction.type === 'ban' ? 'Вы забанены в чате' : 'У вас мут в чате';
+      _chatChannelError(`${what} (${left} мин)`);
+      if (_chatSanction.type === 'ban') _setChannelHistory('global', _chatMsgs, _GLOBAL_CHAT_CAP, []);
+    } else if (was && was.type === 'ban') {
+      socket.emit('chatHistory');
+    }
   });
 
   // ── кто вообще ПРОСИТ историю ────────────────────────────────────────────
@@ -3711,6 +3728,10 @@ const _GLOBAL_CHAT_CAP = 50;
 // после переподключения история нужна снова — сообщения могли прийти, пока
 // связи не было.
 let _chatHistoryAsked = false;
+let _chatSanction = null;   // { type, until } — см. chatSanction выше
+function _chatBanned() {
+  return !!(_chatSanction && _chatSanction.type === 'ban' && _chatSanction.until > Date.now());
+}
 const _chatMsgs = [];
 const _clanChatMsgs = [];
 // Беседа keeps one entry PER partner (not a single overwritten thread) so
@@ -3804,7 +3825,16 @@ function _chatScrollIfAtBottom(el, wasAtBottom) {
   if (wasAtBottom) el.scrollTop = el.scrollHeight;
 }
 
-function _renderChatRow(el, username, text, time) {
+// Приписка роли рядом с ником: moderator — зелёным, admin — красным.
+// Роль ставит сервер (server/chat-mod.js); ник её подделать не может, потому
+// что это отдельное поле, а не часть текста.
+function _chatRoleTag(role) {
+  if (role === 'admin') return '<span class="chat-role chat-role-admin">admin</span>';
+  if (role === 'moderator') return '<span class="chat-role chat-role-mod">moderator</span>';
+  return '';
+}
+
+function _renderChatRow(el, username, text, time, role) {
   time = _hhmm(time);
   const myName = (typeof netUsername !== 'undefined' && netUsername) || '';
   const isMe = myName && username === myName;
@@ -3815,7 +3845,7 @@ function _renderChatRow(el, username, text, time) {
   // skips the data-user attribute the delegated click handler below reads.
   const nameAttr = isMe ? '' : ` data-user="${_escAttr(username)}"`;
   row.innerHTML = `<div class="chat-row-hdr">
-      <span class="chat-name${isMe ? ' is-me' : ' chat-name-clickable'}"${nameAttr}>${_escHtml(username)}</span>
+      <span class="chat-name${isMe ? ' is-me' : ' chat-name-clickable'}"${nameAttr}>${_escHtml(username)}</span>${_chatRoleTag(role)}
       <span class="chat-time">${time}</span>
       <button class="chat-translate-btn" onclick="_chatTranslateRow(this)" title="Перевести">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -3896,7 +3926,7 @@ function _renderActiveChatList() {
   const el = document.getElementById('chat-msgs');
   if (!el) return;
   el.innerHTML = '';
-  _chatListFor(_currentChatTab()).forEach(m => _renderChatRow(el, m.username, m.text, m.time));
+  _chatListFor(_currentChatTab()).forEach(m => _renderChatRow(el, m.username, m.text, m.time, m.role));
   el.scrollTop = el.scrollHeight;
 }
 
@@ -3916,8 +3946,8 @@ function _bumpChatUnread() {
 // _recordDmMessage for Беседа, which has to pick a specific conversation
 // rather than one shared array). If that channel is the one currently on
 // screen it's appended immediately; otherwise just bumps the unread badge.
-function _pushChatMsg(tabKey, list, cap, username, text, time) {
-  list.push({ username, text, time });
+function _pushChatMsg(tabKey, list, cap, username, text, time, role) {
+  list.push({ username, text, time, role });
   if (list.length > cap) list.shift();
 
   const activeTabKey = _currentChatTab();
@@ -3929,7 +3959,7 @@ function _pushChatMsg(tabKey, list, cap, username, text, time) {
       // Замеряется ДО вставки: после неё scrollHeight уже вырос, и «был ли
       // игрок внизу» ответить нечем.
       const atBottom = _chatAtBottom(el);
-      _renderChatRow(el, username, text, time);
+      _renderChatRow(el, username, text, time, role);
       while (el.children.length > cap) el.removeChild(el.firstChild);
       _chatScrollIfAtBottom(el, atBottom);
     }
@@ -3992,8 +4022,8 @@ function _chatChannelError(msg) {
   if (typeof _marketToast === 'function') _marketToast(msg, 'err');
 }
 
-function _addChatMsg(username, text) {
-  _pushChatMsg('global', _chatMsgs, _GLOBAL_CHAT_CAP, username, text, _nowHHMM());
+function _addChatMsg(username, text, role) {
+  _pushChatMsg('global', _chatMsgs, _GLOBAL_CHAT_CAP, username, text, _nowHHMM(), role);
 }
 
 // Shows the most recent chat line in the floating bubble above the chat

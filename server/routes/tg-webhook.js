@@ -208,11 +208,9 @@ function welcome(firstName, referrerName, playLink) {
       ? { text: '🎮 Играть сейчас', web_app: { url: gameUrl } }
       : { text: '🎮 Открыть игру', url: miniAppLink() });
 
-  const row2 = [];
-  const channel = process.env.TG_CHANNEL_URL || 'https://t.me/Libertymmo';
-  const chat = process.env.TG_CHAT_URL || 'https://t.me/+PrFI0HWtRi02NGU0';
-  if (channel) row2.push({ text: '📢 Канал', url: channel });
-  if (chat) row2.push({ text: '💬 Чат', url: chat });
+  // Одна кнопка — чат. Ссылка не из окружения: старый TG_CHAT_URL на
+  // сервере указывал бы на прежнюю группу.
+  const row2 = [{ text: '💬 Чат', url: 'https://t.me/libbchat' }];
 
   return { text: lines.join('\n'), buttons: row2.length ? [[play], row2] : [[play]] };
 }
