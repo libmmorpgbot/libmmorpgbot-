@@ -123,7 +123,10 @@ async function questState(db, playerId) {
 // correct, and was called with `result.enemyName` — a field no code path has
 // ever set. Every kill evaluated `if (undefined)` and moved on. Two players
 // spent a day at it: 174k gold earned, quest one of sixty still on zero.
-async function questOnKill(db, playerId, { eid, rlvl } = {}) {
+// `count` — сколько таких убийств засчитать разом. Онлайн это всегда одно;
+// больше приходит только от оффлайн-фарма (server/offline-farm.js), который
+// отдаёт убийства пачкой по виду.
+async function questOnKill(db, playerId, { eid, rlvl, count = 1 } = {}) {
   const st = await questState(db, playerId);
   if (!st) return null;
   const q = QUEST_DEF[Math.max(0, Math.floor(Number(st.questIdx)) || 0)];
@@ -135,7 +138,7 @@ async function questOnKill(db, playerId, { eid, rlvl } = {}) {
     // the whole quest chain to one language, because the client translates
     // those names and then cannot find its own counters. See the eids binding
     // in shared/definitions.js.
-    if ((q.eids || []).includes(eid)) return bumpQuest(db, playerId, eid, 1);
+    if ((q.eids || []).includes(eid)) return bumpQuest(db, playerId, eid, count);
     return null;
   }
 
@@ -349,13 +352,15 @@ async function addSeasonPoints(db, playerId, points, season = CURRENT_SEASON) {
 // checks seasonActive(): it is just a counter, same as questOnKill counts
 // kills unconditionally elsewhere in this file; the button below is the only
 // place a kill actually becomes points.
-async function bumpFarmKill(db, playerId, zone, season = CURRENT_SEASON) {
+// `by` — пачка убийств разом (оффлайн-фарм); онлайн всегда одно.
+async function bumpFarmKill(db, playerId, zone, season = CURRENT_SEASON, by = 1) {
+  const n = Math.max(1, Math.floor(Number(by)) || 1);
   const { rows } = await query(db, `
-    INSERT INTO player_season (player_id, season, quests) VALUES ($1, $2, jsonb_build_object($3::text, 1))
+    INSERT INTO player_season (player_id, season, quests) VALUES ($1, $2, jsonb_build_object($3::text, $4::int))
     ON CONFLICT (player_id, season) DO UPDATE
       SET quests = jsonb_set(player_season.quests, ARRAY[$3],
-                              to_jsonb(COALESCE((player_season.quests->>$3)::int, 0) + 1))
-    RETURNING quests->>$3 AS progress`, [playerId, season, zone]);
+                              to_jsonb(COALESCE((player_season.quests->>$3)::int, 0) + $4::int))
+    RETURNING quests->>$3 AS progress`, [playerId, season, zone, n]);
   return Number(rows[0].progress);
 }
 

@@ -40,12 +40,12 @@ cd "$ROOT"
 #
 # render-check и remote-motion в этот список не входят: им нужен браузер, а на
 # дроплете его нет. Они запускаются с машины разработчика — см. хвост вывода.
-PURE=(reachable gwstorage tutorial firstlang tournament tournament-reconnect skillcd bundle protocol request-shape bookpool prodfix heal skillbuff petskill teleport runes playerlog netsize death-drop spawn farmhigh farmseason craft-feedback)
+PURE=(reachable gwstorage tutorial firstlang tournament tournament-reconnect skillcd bundle protocol request-shape bookpool prodfix heal skillbuff petskill teleport runes playerlog netsize death-drop spawn farmhigh farmseason craft-feedback offline-farm)
 DB=(admin adminapi aggro alert api bonuses boot clans consumables craft drops
     enemysync enhance etl events exploit gram guildwar health item-ledger items
     kill market market-fix modes money panel party players progression pvp-history quest relog-attack stacks party-clan-log season-enhance
     referral reply-shape skills sql stats tgadmin visibility blackscreen dupname classchange mail friendship
-    login-perf adminperf box-loot xss storage-qty)
+    login-perf adminperf box-loot xss storage-qty offline-farm-db)
 SERVER=(play coop walk stream fanout snapshot)
 
 PORT="${ALLCHECK_PORT:-3178}"

@@ -3876,6 +3876,149 @@ function skillSelfHealOf(charClass, key, adv, skillLvl, skillPct, maxHp) {
   return Math.max(1, Math.round(maxHp * pct * skillHealMult(skillLvl, skillPct)));
 }
 
+// ── Оффлайн-фарм ──────────────────────────────────────────────────────────
+// Игрок выбирает локацию, выходит из игры, а при следующем входе получает то,
+// что успел бы нафармить там за это время. Сервер при этом НЕ крутит мир:
+// ни монстров, ни ударов — только считает темп по тем же числам, по которым
+// идёт настоящий бой, и прогоняет нужное число убийств через настоящие
+// таблицы наград (server/offline-farm.js).
+//
+// Темп — это «сколько секунд уходит на одного монстра», и складывается он из
+// трёх частей:
+//
+//   ttk    сколько его бить. Урон удара — тот же, что в Room.attackEnemy:
+//          max(1, atk − def монстра), в среднем умноженный на
+//          (1 + шанс крита × (сила крита − 1)); ударов в секунду — atkSpeed.
+//          ttk = hp монстра / (урон удара × atkSpeed).
+//   walk   сколько идти до следующего: OFFLINE_FARM_WALK_SEC.
+//   rest   сколько отдыхать, если монстр ранит сильнее, чем игрок успевает
+//          отрегенерировать. Монстр бьёт раз в OFFLINE_FARM_MOB_SWING_SEC (в
+//          Room.js — 1.4-2.0 с) на max(1, atk монстра − def игрока). Если за
+//          бой игрок теряет больше, чем восстанавливает, недостающее он
+//          доотдыхивает: пассивный реген + OFFLINE_FARM_REST_REGEN_PCT от
+//          макс. HP в секунду (это «попил банку / постоял в стороне»).
+//
+// Монстр, который убивает игрока быстрее, чем игрок его (урон за бой ≥
+// макс. HP), в оффлайне не фармится вовсе: живой игрок его бы тоже обходил.
+// Если таких в локации все — локация закрыта.
+//
+//   убийств в час = 3600 / среднее(ttk + walk + rest) × OFFLINE_FARM_EFFICIENCY
+//
+// Награда за каждое убийство — ровно онлайновая (опыт, золото, Liberty,
+// GRAM, дроп, руда, VIP/клан/билет/вещи), см. server/offline-farm.js.
+// Доступен с этого уровня VIP — число владельца. Проверяет сервер при запуске
+// (server/offline-farm.js), окно лишь показывает замок.
+const OFFLINE_FARM_VIP_MIN = 5;
+const OFFLINE_FARM_MAX_HOURS = 12;          // всё, что дольше, не засчитывается
+const OFFLINE_FARM_MIN_SEC = 60;            // меньше минуты — не фарм
+const OFFLINE_FARM_EFFICIENCY = 1;          // 100% онлайн-темпа — число владельца
+const OFFLINE_FARM_WALK_SEC = 2;            // от одного монстра до следующего
+const OFFLINE_FARM_MOB_SWING_SEC = 1.7;     // среднее окно удара монстра, Room.js: 1.4-2.0 с
+const OFFLINE_FARM_REST_REGEN_PCT = 0.02;   // отдых: +2% макс. HP в секунду сверх регена
+// Монстры коридоров и фарм-зон стоят пачками и потому ослаблены вдвое
+// (weakMult / FARM_WEAK_MULT в server/game/dungeon.js) — здесь то же самое.
+const OFFLINE_FARM_WEAK_MULT = 0.5;
+
+// Каждая комната коридора, кроме босса, и обе открытые фарм-зоны. Элитная
+// фарм-зона — только группой и с дневным лимитом, подземелье — классовое и
+// со своими правилами, поэтому их тут нет. Сезонные крылья повторяют таблицы
+// своих зон и отдельной строкой не нужны.
+//
+// reqLevel — тот же уровень, что пустил бы игрока в эту комнату в игре:
+// дверь рукава (ARM_LEVEL_REQ) и ворота перед парой комнат в коридоре
+// (generateArm: ARM_OFFSETS + pos*2+1 перед позицией pos ≥ 1).
+function offlineFarmLocations() {
+  const out = [];
+  for (let a = 1; a <= ARM_NAMES.length; a++) {
+    const dir = ARM_NAMES[a - 1];
+    const fe = FLOOR_ENEMIES[a];
+    const last = roomsInArm(a) - 1;              // последняя — комната босса
+    for (let L = 1; L <= last; L++) {
+      const lvl = ARM_OFFSETS[a - 1] + L;
+      const pos = Math.floor((L - 1) / 2);
+      const gate = pos >= 1 ? ARM_OFFSETS[a - 1] + pos * 2 + 1 : 0;
+      out.push({
+        id: `c:${dir}:${L}`, kind: 'corridor', arm: dir, lvl, minLvl: lvl, maxLvl: lvl,
+        reqLevel: Math.max(ARM_LEVEL_REQ[dir] || 0, gate),
+        species: [bandForLocalLevel(fe, L).eid], xpMult: 1,
+      });
+    }
+  }
+  out.push({
+    id: 'farmZone', kind: 'farmZone', minLvl: FARM_LVL_MIN, maxLvl: FARM_LVL_MAX,
+    reqLevel: FARM_ENTRY_LEVEL, species: FARM_SPECIES.slice(), xpMult: FARM_XP_MULT,
+  });
+  out.push({
+    id: 'farmHigh', kind: 'farmHigh', minLvl: FARM_HIGH_LVL_MIN, maxLvl: FARM_HIGH_LVL_MAX,
+    reqLevel: FARM_HIGH_ENTRY_LEVEL, species: FARM_HIGH_SPECIES.slice(), xpMult: FARM_HIGH_XP_MULT,
+  });
+  return out;
+}
+function offlineFarmLocation(id) {
+  return offlineFarmLocations().find(l => l.id === id) || null;
+}
+
+// Все монстры, которые могут встретиться в локации, — каждое сочетание вида и
+// уровня один раз (в фарм-зонах и то и другое выбирается равновероятно, как в
+// generateFarmZone), с теми же hp/atk/def/xp/gold, что им даёт генератор.
+function offlineFarmMobs(loc) {
+  if (!loc) return [];
+  const mobs = [];
+  for (const eid of loc.species) {
+    const d = ENEMY_DEF.find(e => e.eid === eid);
+    if (!d) continue;
+    for (let lvl = loc.minLvl; lvl <= loc.maxLvl; lvl++) {
+      const st = monsterStatsAtLevel(lvl, d.eType);
+      mobs.push({
+        eid, eType: d.eType, rlvl: lvl,
+        hp: Math.max(1, Math.floor(st.hp * OFFLINE_FARM_WEAK_MULT)),
+        atk: Math.floor(st.atk * OFFLINE_FARM_WEAK_MULT),
+        def: st.def,
+        xp: xpAtLevel(lvl) * (loc.xpMult || 1),
+        gold: goldAtLevel(lvl),
+      });
+    }
+  }
+  return mobs;
+}
+
+// Темп фарма в локации для данных характеристик игрока (блок repos/stats.js:
+// atk, def, maxHp, hpRegen, critChance, critPower, atkSpeed). Возвращает
+// { ok, killsPerHour, mobs } — mobs это те монстры, которых игрок в
+// состоянии бить (их и крутит расчёт наград), — или { ok:false, reason }.
+function offlineFarmRate(st, loc) {
+  const all = offlineFarmMobs(loc);
+  if (!all.length) return { ok: false, reason: 'no_mobs', killsPerHour: 0, mobs: [] };
+  const atk = Math.max(0, Number(st && st.atk) || 0);
+  const def = Math.max(0, Number(st && st.def) || 0);
+  const maxHp = Math.max(1, Number(st && st.maxHp) || 1);
+  const regen = Math.max(0, Number(st && st.hpRegen) || 0);
+  const cc = Math.min(0.80, Math.max(0, Number(st && st.critChance) || 0));
+  const cp = Math.max(1, Number(st && st.critPower) || 1.5);
+  const as = Math.max(0.1, Number(st && st.atkSpeed) || 1);
+  const restRate = regen + maxHp * OFFLINE_FARM_REST_REGEN_PCT;
+  const mobs = [];
+  let cycles = 0;
+  for (const m of all) {
+    const dps = Math.max(1, atk - m.def) * (1 + cc * (cp - 1)) * as;
+    const ttk = m.hp / dps;
+    const taken = Math.max(1, m.atk - def) * (ttk / OFFLINE_FARM_MOB_SWING_SEC);
+    if (taken >= maxHp) continue;                 // этот убьёт раньше
+    const deficit = Math.max(0, taken - regen * (ttk + OFFLINE_FARM_WALK_SEC));
+    const rest = restRate > 0 ? deficit / restRate : 0;
+    cycles += ttk + OFFLINE_FARM_WALK_SEC + rest;
+    mobs.push(m);
+  }
+  if (!mobs.length) return { ok: false, reason: 'too_strong', killsPerHour: 0, mobs: [] };
+  const secPerKill = cycles / mobs.length;
+  return {
+    ok: true, mobs, secPerKill,
+    killsPerHour: (3600 / secPerKill) * OFFLINE_FARM_EFFICIENCY,
+    // Доля монстров локации, которых игрок в состоянии бить: 1 — все.
+    reach: mobs.length / all.length,
+  };
+}
+
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
@@ -3991,4 +4134,7 @@ if (typeof module !== 'undefined') module.exports = {
   VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
   SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,
   skillHealMult, skillSelfHealOf,
+  OFFLINE_FARM_VIP_MIN, OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_MIN_SEC, OFFLINE_FARM_EFFICIENCY, OFFLINE_FARM_WALK_SEC,
+  OFFLINE_FARM_MOB_SWING_SEC, OFFLINE_FARM_REST_REGEN_PCT, OFFLINE_FARM_WEAK_MULT,
+  offlineFarmLocations, offlineFarmLocation, offlineFarmMobs, offlineFarmRate,
 };
