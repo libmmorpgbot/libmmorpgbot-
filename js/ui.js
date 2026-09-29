@@ -2423,9 +2423,14 @@ function _liveFarmEnemy(base) {
 // landed on the Фарм-зона panel and silently missed the monster panel, and
 // the two lists drifted apart until someone diffed the rendered HTML. It
 // lives at top level, once; the nested callers resolve to it.
-function _dropRow(icon, label, valHtml, color) {
+function _dropRow(icon, label, valHtml, color, bookId) {
   const st = color ? ` style="color:${color}"` : '';
-  return `<div class="fi-drop">
+  // Строка книги навыка открывает её карточку (openBookInfoModal): по одному
+  // названию не понять, что это за навык и какому классу он нужен.
+  const click = bookId
+    ? ` onclick="event.stopPropagation();openBookInfoModal('${bookId}')" style="cursor:pointer"`
+    : '';
+  return `<div class="fi-drop"${click}>
     <span class="fi-drop-icon">${icon}</span>
     <span class="fi-drop-lbl"${st}>${label}</span>
     <span class="fi-drop-val"${st}>${valHtml}</span>
@@ -2490,7 +2495,7 @@ function _farmSpeciesBookRows(eid) {
     const icon = def && def.img
       ? `<img src="${def.img}" style="width:20px;height:20px;border-radius:5px;image-rendering:pixelated">`
       : '📖';
-    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542');
+    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542', b.id);
   }).join('');
 }
 
@@ -2556,7 +2561,7 @@ function _farmHighBookRows(ids, chance, iconFor) {
   if (!pool.length) return '';
   const per = _pctSmall(chance / pool.length * 100);
   return pool.map(b => _dropRow(iconFor(b), b.name, per,
-    _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec')).join('');
+    _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec', b.id)).join('');
 }
 
 // Иконка книги — та же, что рисует её инвентарная запись: картинка самого
@@ -2713,7 +2718,7 @@ function _dungeonFullBookRows(ids, chance, iconFor) {
   const pool = (ids || []).map(id => (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === id)).filter(Boolean);
   if (!pool.length) return '';
   const per = _pctSmall(chance / pool.length * 100);
-  return pool.map(b => _dropRow(iconFor(b), b.name, per, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec')).join('');
+  return pool.map(b => _dropRow(iconFor(b), b.name, per, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec', b.id)).join('');
 }
 function _dungeonFullShardRows() {
   const pool = typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : [];
@@ -2947,8 +2952,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
         const className = (CHAR_DEF[b.forClass] || {}).name || b.forClass;
         const label = `${b.name} <span style="opacity:.6">(${className})</span>`;
         return isBoss
-          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / pool.length * 0.001 * zoneMult)}</b>`, '#98e456')
-          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / pool.length * zoneMult * 100)}</b>`);
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / pool.length * 0.001 * zoneMult)}</b>`, '#98e456', b.id)
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / pool.length * zoneMult * 100)}</b>`, '', b.id);
       }).join('');
       bookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('skillBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
@@ -2969,8 +2974,8 @@ function _monsterDropBodyHtml(e, floor, lvl) {
           ? `${b.name} <span style="opacity:.6">(${(CHAR_DEF[b.forClass] || {}).name || b.forClass})</span>`
           : `${b.name} <span style="opacity:.6">(${t('commonTag')})</span>`;
         return isBoss
-          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.001 * zoneMult)}</b>`, '#98e456')
-          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allPassiveBooks.length * zoneMult * 100)}</b>`);
+          ? _dropRow(_itemIcon(b, 16), label, `&times;2 · <b style="color:#98e456">${_pctText(100 / allPassiveBooks.length * 0.001 * zoneMult)}</b>`, '#98e456', b.id)
+          : _dropRow(_itemIcon(b, 16), label, `&times;1 · <b>${_pctText(0.00002 * Math.min(dropMult, 3) / allPassiveBooks.length * zoneMult * 100)}</b>`, '', b.id);
       }).join('');
       passiveBookSection = `<div class="fi-drops-hdr" style="margin-top:8px">${t('passiveBooksAllClassesHdr')}</div><div class="fi-drops">${rows}</div>`;
     }
@@ -5741,6 +5746,7 @@ function openInvItemModal(idx) {
 
   if (it.slot === 'box') { closeInvItemModal(); openBoxModal(idx); return; }
 
+  if (it.skillKey || it.advSkillKey || it.passiveId) { openBookInfoModal(it.id); return; }
   if (_isStackable(it) || it.slot === 'use') return;
 
   const rc    = RARITY_COLOR[it.rarity] || '#aea599';
@@ -5776,6 +5782,63 @@ function openInvItemModal(idx) {
     <div class="imod-btns">
       ${it.rarity === 'common' ? `<button class="imod-btn imod-sell" onclick="sellCommonItem(${idx})">${t('sellForFmt')}${iconHTML('coin',12,'#e3941d')}</button>` : ''}
     </div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+// ── Карточка книги навыка ───────────────────────────────────────────────────
+// Открывается из списков дропа и из инвентаря: какой навык учит книга, какого
+// он вида (обычный Q/W/E/R, вторая профессия, пассивка), какому классу нужен
+// и что делает. Всё берётся из тех же таблиц, что и сами навыки (SKILL_DEF,
+// ADV_SKILL_DEF, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF), — своих описаний тут
+// нет, разойтись им не с чем.
+function openBookInfoModal(bookId) {
+  const b = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === bookId);
+  if (!b) return;
+  let def = null, kind = '';
+  if (b.advSkillKey) {
+    def = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass]) || []).find(sk => sk.key === b.advSkillKey);
+    kind = `Навык второй профессии · клавиша ${b.advSkillKey}`;
+  } else if (b.skillKey) {
+    def = ((typeof SKILL_DEF !== 'undefined' && SKILL_DEF[b.forClass]) || []).find(sk => sk.key === b.skillKey);
+    kind = `Активный навык · клавиша ${b.skillKey}`;
+  } else if (b.passiveId) {
+    const pool = b.forClass
+      ? ((typeof PASSIVE_CLASS_DEF !== 'undefined' && PASSIVE_CLASS_DEF[b.forClass]) || [])
+      : (typeof PASSIVE_COMMON_DEF !== 'undefined' ? PASSIVE_COMMON_DEF : []);
+    def = pool.find(p => p.id === b.passiveId);
+    kind = 'Пассивный навык';
+  } else return;
+
+  const clsName = b.forClass ? ((CHAR_DEF[b.forClass] || {}).name || b.forClass) : 'Любой класс';
+  const clsColor = (b.forClass && _FARM_ADV_BOOK_CLASS_COLOR[b.forClass]) || '#d1ccc5';
+  const rc = RARITY_COLOR[b.rarity] || '#aea599';
+  const icon = b.passiveId
+    ? _itemIcon(b, 52)
+    : (def && def.img ? `<img src="${def.img}" style="width:52px;height:52px;border-radius:10px;image-rendering:pixelated">` : _itemIcon(b, 52));
+  const lines = [];
+  if (def && def.name) lines.push(`Навык: <b style="color:#e8dcc8">${_esc(def.name)}</b>`);
+  lines.push(`Класс: <b style="color:${clsColor}">${_esc(clsName)}</b>`);
+  if (def && def.desc) lines.push(_esc(def.desc));
+  if (def && def.cd) lines.push(`Перезарядка: ${def.cd} с`);
+  const mine = player && b.forClass && player.type === b.forClass;
+  if (player && b.forClass && !mine) lines.push('<span style="color:#e0806b">Не для вашего класса</span>');
+
+  closeInvItemModal();
+  const ov = document.createElement('div');
+  ov.id = 'inv-item-modal-ov';
+  ov.className = 'imod-overlay';
+  ov.onclick = closeInvItemModal;
+  ov.innerHTML = `<div class="imod-box" onclick="event.stopPropagation()">
+    <div class="imod-hdr">
+      <span class="imod-big-icon">${icon}</span>
+      <div class="imod-title-block">
+        <div class="imod-name" style="color:${rc}">${_esc(b.name)}</div>
+        <div class="imod-sub">${kind}</div>
+      </div>
+      <button class="npc-close" onclick="closeInvItemModal()" style="touch-action:manipulation">✕</button>
+    </div>
+    <div class="imod-stats">${lines.join('<br>')}</div>
   </div>`;
   document.getElementById('app').appendChild(ov);
 }
@@ -8034,7 +8097,7 @@ function _farm2AdvBookRows() {
     const icon = def && def.img
       ? `<img src="${def.img}" style="width:16px;height:16px;border-radius:4px;image-rendering:pixelated">`
       : iconHTML('book', 16, '#f5c542');
-    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542');
+    return _dropRow(icon, b.name, perBookPct, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#f5c542', b.id);
   }).join('');
 }
 
