@@ -2446,6 +2446,18 @@ function _pctSmall(v) {
   return v.toFixed(digits).replace(/0+$/, '').replace(/\.$/, '') + '%';
 }
 
+// Руда в зонах — тот же общий бросок поверх любой таблицы, что и в коридорах
+// (rollLoot, server/handlers2/world.js), по уровню монстра. Все зоны лежат
+// выше ORE_MIN_LEVEL целиком, так что уровня нижней границы зоны хватает.
+function _zoneOreRow(lvl) {
+  const ore = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'ore_common') : null;
+  const chance = typeof oreDropChance === 'function' ? oreDropChance(lvl) : 0;
+  if (!ore || !(chance > 0)) return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[ore.rarity] : null) || '#aea599';
+  return _dropRow(_mi(ore, 16), ore.name, _pctSmall(chance * 100), rc);
+}
+
 // Unlike the books below, a shard roll is independent PER SHARD (see
 // _rollFarmZoneLoot, server/index.js) — every shard in the killed species'
 // own subset (FARM_SPECIES_SHARDS, shared/definitions.js) has its own
@@ -2502,6 +2514,7 @@ function _farmDropBodyHtml(e) {
     ${(typeof FARM_LIBERTY_CHANCE !== 'undefined' && FARM_LIBERTY_CHANCE > 0)
       ? _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM_LIBERTY_CHANCE * 100), '#e8c15a')
       : ''}
+    ${_zoneOreRow(FARM_LVL_MIN)}
     ${_farmSpeciesShardRows(e.eid)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
@@ -2592,7 +2605,12 @@ function _farmHighShardRows(eid) {
 
 // Строки, одинаковые для всех видов зоны: опыт, золото, Liberty, оба камня
 // заточки и оба рецепта. Всё остальное поделено, и живёт в разделах ниже.
-function _farmHighZoneRows(e) {
+// Подземелье берёт эти же строки, но Liberty там не бросается вовсе (ветка
+// Liberty в server/handlers2/world.js знает только фарм-зоны), — отсюда
+// opts.liberty, а уровень для руды свой у каждой из двух зон.
+function _farmHighZoneRows(e, opts = {}) {
+  const liberty = opts.liberty !== false;
+  const oreLvl = opts.lvl || FARM_HIGH_LVL_MIN;
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
   const normStone  = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'norm_stone')  : null;
   const blessStone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'bless_stone') : null;
@@ -2601,9 +2619,10 @@ function _farmHighZoneRows(e) {
   return `
     ${_dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${e.xp}</b>`, '#b4eb84')}
     ${_dropRow('🪙', t('npcGoldLbl'), `${e.gold}g · 30%`)}
-    ${(typeof FARM_HIGH_LIBERTY_CHANCE !== 'undefined' && FARM_HIGH_LIBERTY_CHANCE > 0)
+    ${(liberty && typeof FARM_HIGH_LIBERTY_CHANCE !== 'undefined' && FARM_HIGH_LIBERTY_CHANCE > 0)
       ? _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM_HIGH_LIBERTY_CHANCE * 100), '#e8c15a')
       : ''}
+    ${_zoneOreRow(oreLvl)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  _pctSmall(FARM_HIGH_NORM_STONE_CHANCE * 100),  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, _pctSmall(FARM_HIGH_BLESS_STONE_CHANCE * 100), '#efc680') : ''}
     ${epicRec   ? _dropRow(_mi(epicRec, 16),   epicRec.name,   _pctSmall(FARM_HIGH_EPIC_RECIPE_CHANCE * 100), '#c98fef') : ''}
@@ -2718,7 +2737,7 @@ function _dungeonSpeciesBodyHtml(e, cls) {
       <span>DEF <b>${e.def || 0}</b></span>
       <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
     </div>
-    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e))}
+    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e, { liberty: false, lvl: DUNGEON_LVL }))}
     ${_dungeonFullGearRows()}
     ${sec(t('uniqueShardsHdr'), _dungeonFullShardRows())}
     ${sec(t('farmHighSkillBooksHdr'), _dungeonFullBookRows(_SKILL_BOOK_SRC.map(([c, k]) => `book_${c}_${k}`), FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
@@ -2811,6 +2830,15 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   const goldText = isBoss
     ? `<span style="color:#e6ac19">${e.gold}g</span>`
     : `${e.gold}g · 30%`;
+
+  // GRAM — только с монстров коридоров (myGram, server/handlers2/world.js):
+  // GRAM_DROP_CHANCE на убийство, GRAM_PER_LEVEL за каждый уровень монстра.
+  const gramRow = (typeof GRAM_DROP_CHANCE !== 'undefined' && GRAM_DROP_CHANCE > 0 && typeof GRAM_PER_LEVEL !== 'undefined')
+    ? `<div class="fi-drop">
+        <span class="fi-drop-lbl">GRAM</span>
+        <span class="fi-drop-val">${(lvl * GRAM_PER_LEVEL).toFixed(8).replace(/0+$/, '').replace(/\.$/, '')} · ${_pctText(GRAM_DROP_CHANCE * 100)}</span>
+      </div>`
+    : '';
 
   // XP: deterministic = level
   const xpFinal = e.xp;
@@ -2982,6 +3010,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
         <span class="fi-drop-lbl">${t('npcGoldLbl')}</span>
         <span class="fi-drop-val">${goldText}</span>
       </div>
+      ${gramRow}
       ${stoneRow}
     </div>
     ${recipeSection}
@@ -8041,6 +8070,9 @@ function _farm2DropRows() {
     epicRec     ? _dropRow(_itemIcon(epicRec, 16),     epicRec.name,     _pctSmall(FARM2_EPIC_RECIPE_CHANCE * 100),  '#c98fef') : '',
     legRec      ? _dropRow(_itemIcon(legRec, 16),      legRec.name,      _pctSmall(FARM2_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : '',
     _dropRow(iconHTML('star', 16, '#b4eb84'), t('clanPerkXp'), `<b style="color:#b4eb84">${FARM2_XP_PER_KILL}</b>`, '#b4eb84'),
+    // Золото — calcGoldDrop (shared/definitions.js): уровень монстра, 30%.
+    _dropRow('🪙', t('npcGoldLbl'), `${goldAtLevel(FARM2_LVL_MIN)}–${goldAtLevel(FARM2_LVL_MAX)}g · 30%`),
+    _zoneOreRow(FARM2_LVL_MIN),
     _farm2AdvBookRows(),
     _farm2UniqueWeaponRows(),
   ];
