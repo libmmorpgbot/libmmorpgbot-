@@ -134,7 +134,6 @@ node /srv/liberty/next/dev/env-quote.js /srv/liberty/env
 | `TG_BOT_USERNAME` | `LibertyMMORPGbot` | имя бота в ссылках |
 | `TG_MINIAPP_NAME` | — | имя мини-приложения |
 | `GAME_URL` | — | куда ведёт кнопка «Играть» |
-| `TG_MODERATOR_IDS` | — | telegram id модераторов чата сверх встроенных (через запятую) |
 | `TG_PENDING_REF_TTL_MS` | 7 суток | сколько ждёт непривязанный реферал |
 
 **Telegram: оповещения**

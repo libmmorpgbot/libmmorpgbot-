@@ -1,10 +1,8 @@
 'use strict';
 // ── Модерация общего чата ───────────────────────────────────────────────────
-// Две роли над обычным игроком:
-//   * admin     — те же TG_ADMIN_IDS, что у опс-бота (server/tg-ops.js);
-//   * moderator — список ниже плюс TG_MODERATOR_IDS из окружения.
-// Роль показывается рядом с ником в чате (клиент красит её сам), и только
-// эти двое могут выдавать санкции.
+// Одна роль над обычным игроком — admin: те же TG_ADMIN_IDS, что у опс-бота
+// (server/tg-ops.js). Роль показывается рядом с ником в чате (клиент красит
+// её сам), и только админ может выдавать санкции.
 //
 // Санкции две, обе на время:
 //   * mute — не может писать в общий чат;
@@ -18,20 +16,12 @@
 const ops = require('./tg-ops');
 const { query } = require('./db');
 
-const MODERATOR_IDS = new Set([
-  '982997755', '642914787', '3781848',
-  ...String(process.env.TG_MODERATOR_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
-]);
-
 function roleOf(tgId) {
   const id = String(tgId || '');
   if (!id) return null;
   if (ops.isAdmin(id)) return 'admin';
-  if (MODERATOR_IDS.has(id)) return 'moderator';
   return null;
 }
-const RANK = { admin: 2, moderator: 1 };
-const rank = tgId => RANK[roleOf(tgId)] || 0;
 
 // telegramId -> { type: 'mute'|'ban', until: ms, by: username }
 const sanctions = new Map();
@@ -127,7 +117,7 @@ function stateFor(tgId) {
 const HELP = 'Команды: /mute Ник 30 | /ban Ник 2h | /unmute Ник | /unban Ник '
   + '(срок: число минут или 30m, 2h, 1d)';
 
-// Команда модератора. Возвращает { reply } для отправителя и, если санкция
+// Команда админа. Возвращает { reply } для отправителя и, если санкция
 // изменилась, { announce, target: { telegramId }, state } для всех.
 // lookup(username) → { telegramId, username } | null.
 async function command(actorTg, actorName, text, lookup) {
@@ -143,7 +133,7 @@ async function command(actorTg, actorName, text, lookup) {
   if (!target) return { reply: `Игрок «${name}» не найден` };
   const tgt = String(target.telegramId);
   if (tgt === String(actorTg)) return { reply: 'Нельзя наказать самого себя' };
-  if (rank(tgt) >= rank(actorTg)) return { reply: 'Нельзя наказать модератора или администратора' };
+  if (roleOf(tgt)) return { reply: 'Нельзя наказать администратора' };
 
   if (cmd === '/unmute' || cmd === '/unban') {
     const s = active(tgt);
@@ -168,4 +158,4 @@ async function command(actorTg, actorName, text, lookup) {
   };
 }
 
-module.exports = { roleOf, command, writeBlock, isBanned, stateFor, load, parseDuration, MODERATOR_IDS };
+module.exports = { roleOf, command, writeBlock, isBanned, stateFor, load, parseDuration };

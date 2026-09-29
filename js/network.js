@@ -3863,12 +3863,11 @@ function _chatScrollIfAtBottom(el, wasAtBottom) {
   if (wasAtBottom) el.scrollTop = el.scrollHeight;
 }
 
-// Приписка роли рядом с ником: moderator — зелёным, admin — красным.
+// Приписка роли рядом с ником: admin — красным.
 // Роль ставит сервер (server/chat-mod.js); ник её подделать не может, потому
 // что это отдельное поле, а не часть текста.
 function _chatRoleTag(role) {
   if (role === 'admin') return '<span class="chat-role chat-role-admin">admin</span>';
-  if (role === 'moderator') return '<span class="chat-role chat-role-mod">moderator</span>';
   return '';
 }
 
