@@ -9431,7 +9431,7 @@ function _updateMarketFeePreview() {
     return;
   }
   const payout = p * (1 - MARKET_FEE_PCT);
-  el.textContent = tVars('feePreviewFmt', { n: payout.toFixed(2) });
+  el.textContent = tVars('feePreviewFmt', { n: payout.toFixed(2), pct: Math.round(MARKET_FEE_PCT * 100) });
   el.style.color = '#a3957c';
 }
 
