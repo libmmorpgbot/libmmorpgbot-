@@ -481,13 +481,18 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // сюда не доходит вовсе — оно вышло парой строк выше со своей
     // фиксированной наградой, и это не оплошность: у режима нет добычи по
     // построению.
-    if (rand() < oreDropChance(result.rlvl)) {
+    //
+    // Руда — часть дропа: бонус к дропу ниже бросает её второй раз вместе с
+    // таблицей зоны (rollOre там же), а не только таблицу.
+    const rollOre = () => {
+      if (rand() >= oreDropChance(result.rlvl)) return;
       const ore = CRAFT_MATS.find(m => m.id === 'ore_common');
       // Через ту же scratch-корзину и тот же список, что и остальная добыча:
       // дальше её разбирает репозиторий, и руда обязана проходить те же
       // проверки места, что и всё прочее.
       if (ore) out.items.push({ id: ore.id, name: ore.name, rarity: ore.rarity, qty: 1 });
-    }
+    };
+    rollOre();
 
     // VIP and the season ticket buy a second roll, not a better one — the same
     // table, one more chance at it.
@@ -500,9 +505,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const extra = bonus + ticket;
     // Во всех зонах, а не только в коридорах: фарм-зоны и подземелье раньше
     // были исключены, и бонус из панели там молча не значил ничего.
-    // Второй бросок идёт по таблице той же зоны (rollTable выше).
+    // Второй бросок идёт по таблице той же зоны (rollTable выше) и по руде.
     if (extra > 0 && rand() * 100 < extra) {
       out.items.push(...(rollTable([]) || []));
+      rollOre();
     }
 
     if (result.isBoss && !result.farmZone2) {
