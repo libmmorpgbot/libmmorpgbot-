@@ -83,9 +83,6 @@ const WRITE_ACTIONS = new Set([
   'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'buyTeleportStone', 'useTeleportStone',
   'seasonBurnBook', 'itemDisassemble',
   'enterLocation',
-  // Запуск оффлайн-фарма. Выдача (offlineFarmClaim) пишется своей строкой в
-  // finishLogin, server/app.js: через этот список она легла бы на каждый вход.
-  'offlineFarmStart',
 ]);
 
 // ── чего здесь БОЛЬШЕ НЕТ, и почему ─────────────────────────────────────────

@@ -199,22 +199,6 @@
   <span data-i18n="navCodexBtn">Кодекс</span>
 </button>
 
-<!-- Offline farm button (below Codex button) -->
-<button id="offline-farm-btn" onclick="openOfflineFarmPanel()" style="display:none">
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-  <span data-i18n="offlineFarmBtn">Оффлайн</span>
-</button>
-
-<!-- Offline farm overlay panel: pick a location, leave, collect on return.
-     Rates come from the server (offlineFarmInfo, server/offline-farm.js). -->
-<div id="offline-farm-panel" style="display:none">
-  <div class="vip-header">
-    <div class="vip-title" style="color:#7fb4e8"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span data-i18n="offlineFarmHdr">Оффлайн-фарм</span></div>
-    <button class="vip-close" onclick="closeOfflineFarmPanel()">✕</button>
-  </div>
-  <div id="offline-farm-panel-body" class="vip-body"></div>
-</div>
-
 <!-- Codex overlay panel: registering unique gear for a small permanent stat bonus -->
 <div id="codex-panel" style="display:none">
   <div class="vip-header">

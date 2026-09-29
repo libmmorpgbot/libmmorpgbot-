@@ -1343,8 +1343,6 @@ Object.assign(I18N_UI, {
   hudMenuBtn: { ru: 'Меню', en: 'Menu', uk: 'Меню', es: 'Menú', tr: 'Menü', pt: 'Menu' },
   navRatingBtn: { ru: 'Рейтинг', en: 'Rating', uk: 'Рейтинг', es: 'Clasificación', tr: 'Sıralama', pt: 'Classificação' },
   navCodexBtn: { ru: 'Кодекс', en: 'Codex', uk: 'Кодекс', es: 'Códice', tr: 'Kodeks', pt: 'Códex' },
-  offlineFarmBtn: { ru: 'Оффлайн', en: 'Offline', uk: 'Офлайн', es: 'Offline', tr: 'Çevrimdışı', pt: 'Offline' },
-  offlineFarmHdr: { ru: 'Оффлайн-фарм', en: 'Offline farming', uk: 'Офлайн-фарм', es: 'Farmeo offline', tr: 'Çevrimdışı farm', pt: 'Farm offline' },
   navMarketBtn: { ru: 'Маркет', en: 'Market', uk: 'Маркет', es: 'Mercado', tr: 'Pazar', pt: 'Mercado' },
   navShopBtn: { ru: 'Магазин', en: 'Shop', uk: 'Магазин', es: 'Tienda', tr: 'Mağaza', pt: 'Loja' },
   skillsHdrUpper: { ru: 'НАВЫКИ', en: 'SKILLS', uk: 'НАВИЧКИ', es: 'HABILIDADES', tr: 'YETENEKLER', pt: 'HABILIDADES' },

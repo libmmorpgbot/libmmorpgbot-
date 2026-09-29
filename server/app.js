@@ -44,7 +44,6 @@ const modesLib = require('./modes');
 const maintenance = require('./maintenance');
 const presence = require('./presence');
 const modeRewards = require('./mode-rewards');
-const offlineFarm = require('./offline-farm');
 let modesRuntime = null;
 const { verifyTelegramWebApp, verifyTelegramAuth, _safeUsername, refLink } = require('./security');
 
@@ -899,31 +898,6 @@ io.on('connection', (socket) => {
     try { party.claimGrace(s.telegramId, socket.id, s.username); }
     catch (err) { console.error('[login:party]', err); }
     socket.join(`tg_${s.telegramId}`);
-    // ── оффлайн-фарм: вернулся — значит забирает ────────────────────────
-    // ДО savedView и authOk: пакет входа должен уже нести опыт, золото и
-    // вещи, которые принёс фарм, а не то, с чем игрок уходил. Поэтому и
-    // res.state перечитывается — s.login собрал его до выдачи.
-    //
-    // Через s.act: транзакция, повтор при конфликте, строка в журнале игрока
-    // и алерт при сбое. Сбой не валит вход — запись остаётся в базе
-    // (транзакция откатилась целиком), и её заберёт следующий вход.
-    let offlineResult = null;
-    try {
-      offlineResult = await s.act('offlineFarmClaim', 'offlineFarmError',
-        (t, pid) => offlineFarm.claim(t, pid, s));
-      if (offlineResult) {
-        // Сам, а не через WRITE_ACTIONS: act проходит на КАЖДОМ входе, и
-        // строка «ничего не забрал» на каждый вход — это шум, а не журнал.
-        const o = offlineResult;
-        plog.log(s.playerId, 'offlineFarmClaim', {
-          loc: o.loc, sec: o.seconds, kills: o.kills, xp: o.xp, gold: o.gold,
-          nexum: o.nexum, gram: o.gram, items: o.items.length, lost: o.lost.length,
-        });
-        res.state = await s.fullState();
-      }
-    } catch (err) {
-      console.error('[login] offlineFarm:', err.message);
-    }
     // savedData is what the client rebuilds a character from — one function,
     // restoreFromSave, fed from this field and nothing else. Omitting it left
     // every returning player holding the client's own defaults: no gold, level
@@ -1047,21 +1021,6 @@ io.on('connection', (socket) => {
       walletEverLinked: !!wallet.everLinked,
       build: version.COMMIT,
     });
-
-    // Итог оффлайн-фарма — своим пакетом ПОСЛЕ authOk: клиент к этому
-    // моменту уже собрал персонажа из savedData, и окну «пока вас не было»
-    // есть куда лечь. Числа в authOk уже включают награду.
-    if (offlineResult) {
-      // refBonus — не этому игроку: в нём telegram id пригласившего, и
-      // клиенту он не уходит.
-      const { refBonus: rb, ...forClient } = offlineResult;
-      socket.emit('offlineFarmResult', forClient);
-      if (rb) {
-        io.to(`tg_${rb.referrerTelegramId}`).emit('seasonRefBonus', {
-          points: rb.points, friend: rb.friend, total: rb.total,
-        });
-      }
-    }
 
     // ── the season, at login ──────────────────────────────────────────────
     // The HUD's season-ticket chip needs BOTH `seasonTicketActive` (which
@@ -1456,7 +1415,6 @@ io.on('connection', (socket) => {
   require('./handlers2/modes')(s, safeOn, deps);
   require('./handlers2/coop')(s, safeOn, deps);
   require('./handlers2/trial')(s, safeOn, deps);
-  require('./handlers2/offline')(s, safeOn, deps);
 
   // Preferences: the ONLY place a client value reaches the database. Six
   // fields, none of which touches combat or the economy.

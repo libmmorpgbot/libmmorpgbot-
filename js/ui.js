@@ -3066,7 +3066,7 @@ const _TELEPORT_BTN_ID = 'teleport-btn';
 // to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
 // whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
 // only ever show while the menu is expanded.
-const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn', 'offline-farm-btn'];
+const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
 let _hudMenuExpanded = false;
 // hud-menu-btn's own visibility is tab-only (like chat); the seven behind it
 // need tab AND expanded — this is that second check, shared by every
@@ -5795,7 +5795,7 @@ function openInvItemModal(idx) {
 function openBookInfoModal(bookId) {
   const b = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === bookId);
   if (!b) return;
-  let def = null, kind = '';
+  let def, kind;
   if (b.advSkillKey) {
     def = ((typeof ADV_SKILL_DEF !== 'undefined' && ADV_SKILL_DEF[b.forClass]) || []).find(sk => sk.key === b.advSkillKey);
     kind = `Навык второй профессии · клавиша ${b.advSkillKey}`;
@@ -6357,179 +6357,6 @@ function showCodexBtn() {
   if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionCodexBtn(); }
 }
 
-// Под Кодексом, тем же шагом, что и вся колонка.
-function _positionOfflineFarmBtn() {
-  const codexBtn = document.getElementById('codex-btn');
-  const btn = document.getElementById('offline-farm-btn');
-  if (!btn || !codexBtn) return;
-  const cTop = parseFloat(codexBtn.style.top) || 0;
-  btn.style.top       = (cTop + 28 + 4) + 'px';
-  btn.style.left      = codexBtn.style.left;
-  btn.style.width     = codexBtn.style.width;
-  btn.style.right     = 'auto';
-  btn.style.transform = 'none';
-}
-
-function showOfflineFarmBtn() {
-  const btn = document.getElementById('offline-farm-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionOfflineFarmBtn(); }
-}
-
-// ── Оффлайн-фарм ────────────────────────────────────────────────────────────
-// Окно выбора: сервер присылает список локаций с темпом ДЛЯ ЭТОГО игрока
-// (offlineFarmInfo, server/offline-farm.js) — клиент ничего не считает сам,
-// только показывает. «Начать» — в два нажатия: после старта игра закрывается.
-const _OFARM_ARM_RU = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
-let _ofarmConfirm = null;   // id локации, на которой нажали «Начать» первый раз
-let _ofarmPending = null;   // итог фарма, пришедший до входа в мир
-let _ofarmLast = null;      // последний список локаций
-let _ofarmError = '';
-let _ofarmVipOk = true;      // хватает ли VIP для запуска (решает сервер, здесь — только вид)
-
-function openOfflineFarmPanel() {
-  const panel = document.getElementById('offline-farm-panel');
-  if (!panel || !player) return;
-  panel.style.display = 'flex';
-  _ofarmConfirm = null; _ofarmError = '';
-  const body = document.getElementById('offline-farm-panel-body');
-  if (body) body.innerHTML = '<div class="ofarm-hint">Загрузка…</div>';
-  if (typeof netOfflineFarmInfo === 'function') netOfflineFarmInfo();
-}
-
-function closeOfflineFarmPanel() {
-  const panel = document.getElementById('offline-farm-panel');
-  if (panel) panel.style.display = 'none';
-  _ofarmConfirm = null;
-}
-
-function offlineFarmShowError(msg) {
-  _ofarmError = msg || '';
-  _ofarmConfirm = null;
-  const panel = document.getElementById('offline-farm-panel');
-  if (panel && panel.style.display !== 'none' && _ofarmLast) renderOfflineFarmPanel(_ofarmLast);
-  else if (msg && player) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
-}
-
-function _ofarmLocName(l) {
-  if (l.kind === 'farmZone') return 'Фарм-зона';
-  if (l.kind === 'farmHigh') return 'Фарм зона 2';
-  return _OFARM_ARM_RU[l.arm] || 'Коридор';
-}
-function _ofarmLocSub(l) {
-  const lv = l.minLvl === l.maxLvl ? `ур. ${l.minLvl}` : `ур. ${l.minLvl}–${l.maxLvl}`;
-  if (l.kind !== 'corridor') return `Монстры ${lv}`;
-  const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(l.id) : null;
-  const d = loc && loc.species[0] ? ENEMY_DEF.find(e => e.eid === loc.species[0]) : null;
-  return `Комната ${lv}${d ? ' · ' + d.name : ''}`;
-}
-function _ofarmFmt(n) { return Math.round(n || 0).toLocaleString('ru-RU'); }
-
-function _ofarmRowHtml(l, bestId) {
-  const name = _ofarmLocName(l), sub = _ofarmLocSub(l);
-  if (!l.open) {
-    return `<div class="ofarm-row locked"><div class="ofarm-main"><div class="ofarm-name">${name}</div>
-      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Нужен ${l.reqLevel} уровень</div></div></div>`;
-  }
-  if (!l.ok) {
-    return `<div class="ofarm-row locked"><div class="ofarm-main"><div class="ofarm-name">${name}</div>
-      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Монстры слишком сильны — вы не переживёте бой</div></div></div>`;
-  }
-  const part = l.reach < 1 ? ` · по силам ${Math.round(l.reach * 100)}% монстров` : '';
-  const confirm = _ofarmConfirm === l.id;
-  return `<div class="ofarm-row${l.id === bestId ? ' best' : ''}">
-    <div class="ofarm-main">
-      <div class="ofarm-name">${name}${l.id === bestId ? ' · больше всего опыта' : ''}</div>
-      <div class="ofarm-sub">${sub}${part}</div>
-      <div class="ofarm-rate">≈ ${_ofarmFmt(l.killsPerHour)} убийств/ч · ${_ofarmFmt(l.xpPerHour)} опыта/ч · ${_ofarmFmt(l.goldPerHour)} золота/ч</div>
-    </div>
-    ${_ofarmVipOk ? `<button class="ofarm-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : 'Начать'}</button>` : ''}
-  </div>`;
-}
-
-function renderOfflineFarmPanel(data) {
-  _ofarmLast = data || _ofarmLast;
-  const body = document.getElementById('offline-farm-panel-body');
-  if (!body || !_ofarmLast) return;
-  const d = _ofarmLast;
-  const locs = d.locations || [];
-  const vipMin = d.vipMin || 5;
-  _ofarmVipOk = (d.vipLevel || 0) >= vipMin;
-  const ready = locs.filter(l => l.open && l.ok);
-  const best = ready.reduce((b, l) => (!b || l.xpPerHour > b.xpPerHour) ? l : b, null);
-  const bestId = best ? best.id : null;
-  const zones = locs.filter(l => l.kind !== 'corridor');
-  // Коридоры — только открытые и следующая закрытая комната: вся лестница из
-  // семидесяти шести строк новичку не нужна.
-  const corr = locs.filter(l => l.kind === 'corridor');
-  const openCorr = corr.filter(l => l.open).sort((a, b) => b.minLvl - a.minLvl);
-  const nextLocked = corr.filter(l => !l.open).sort((a, b) => a.reqLevel - b.reqLevel)[0];
-
-  body.innerHTML = `
-    <div class="ofarm-hint">Выберите локацию — игра закроется, а персонаж продолжит фармить там.
-      При следующем входе вы получите всё, что он успел добыть: опыт, золото, Liberty, GRAM и предметы,
-      с вашими бонусами VIP, клана и сезонного билета. Засчитывается до ${d.maxHours || 12} ч.
-      Темп считается по вашей атаке, скорости атаки, криту, защите и здоровью. Запуск — из центрального зала.</div>
-    ${_ofarmError ? `<div class="ofarm-err">${_escHtml(_ofarmError)}</div>` : ''}
-    ${_ofarmVipOk ? '' : `<div class="ofarm-err">Оффлайн-фарм доступен с VIP ${vipMin}. Ваш уровень — VIP ${d.vipLevel || 0}. Ниже видно, сколько вы бы фармили.</div>`}
-    <div class="ofarm-group">Фарм-зоны</div>
-    ${zones.map(l => _ofarmRowHtml(l, bestId)).join('')}
-    <div class="ofarm-group">Коридоры</div>
-    ${openCorr.map(l => _ofarmRowHtml(l, bestId)).join('')}
-    ${nextLocked ? _ofarmRowHtml(nextLocked, bestId) : ''}`;
-}
-
-function offlineFarmStartTap(id) {
-  if (_ofarmConfirm !== id) {
-    _ofarmConfirm = id; _ofarmError = '';
-    renderOfflineFarmPanel();
-    return;
-  }
-  _ofarmConfirm = null;
-  if (typeof netOfflineFarmStart === 'function') netOfflineFarmStart(id);
-}
-
-// Итог приходит сразу за authOk, а показывать его можно только в мире —
-// поэтому сначала запоминается, а показывается из _finishOnlineStart.
-function offlineFarmSetPending(res) {
-  _ofarmPending = res || null;
-  const btn = document.getElementById('hud-menu-btn');
-  if (btn && btn.dataset.shown === '1') offlineFarmShowPending();
-}
-
-function offlineFarmShowPending() {
-  const res = _ofarmPending;
-  if (!res) return;
-  _ofarmPending = null;
-  const panel = document.getElementById('offline-farm-panel');
-  const body = document.getElementById('offline-farm-panel-body');
-  if (!panel || !body) return;
-  const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(res.loc) : null;
-  const where = loc ? `${_ofarmLocName(loc)} · ${_ofarmLocSub({ ...loc, open: true })}` : '';
-  const h = Math.floor((res.seconds || 0) / 3600), m = Math.floor(((res.seconds || 0) % 3600) / 60);
-  const dur = (h ? `${h} ч ` : '') + `${m} мин`;
-  const line = (label, v) => `<div class="ofarm-sum-line"><span>${label}</span><b>${v}</b></div>`;
-  const itemTag = it => `<span class="ofarm-item">${_escHtml(it.name || it.id)}${(it.qty || 1) > 1 ? ' ×' + it.qty : ''}</span>`;
-  let html;
-  if (res.tooShort) {
-    html = `<div class="ofarm-hint">Оффлайн-фарм длился меньше минуты — награды нет.</div>`;
-  } else {
-    html = `
-      <div class="ofarm-hint">Пока вас не было${where ? ' (' + where + ')' : ''}, персонаж фармил ${dur}${res.capped ? ` — засчитан максимум` : ''}.</div>
-      <div class="ofarm-sum">
-        ${line('Убито монстров', _ofarmFmt(res.kills))}
-        ${line('Опыт', '+' + _ofarmFmt(res.xp))}
-        ${line('Золото', '+' + _ofarmFmt(res.gold))}
-        ${res.nexum ? line('Liberty', '+' + _ofarmFmt(res.nexum)) : ''}
-        ${res.gram ? line('GRAM', '+' + Number(res.gram).toFixed(7)) : ''}
-        ${res.levelsGained ? line('Новых уровней', '+' + res.levelsGained) : ''}
-      </div>
-      ${(res.items || []).length ? `<div class="ofarm-group">Добыча</div><div class="ofarm-items">${res.items.map(itemTag).join('')}</div>` : ''}
-      ${(res.lost || []).length ? `<div class="ofarm-group">Не влезло в сумку</div><div class="ofarm-items">${res.lost.map(itemTag).join('')}</div>` : ''}`;
-  }
-  body.innerHTML = html + `<button class="ofarm-go ofarm-ok" onclick="closeOfflineFarmPanel()">Отлично</button>`;
-  panel.style.display = 'flex';
-}
-
 // Сезон 2. Three tabs: Сезон (description + rewards), Задания (how to earn
 // points), Рейтинг (leaderboard, 5000+ points only). Points are server-owned
 // (see the season handlers in server/index.js) — everything here renders
@@ -6890,7 +6717,6 @@ function _positionHudColumn() {
   _positionEventsBtn();
   _positionSeasonBtn();
   _positionCodexBtn();
-  _positionOfflineFarmBtn();
 }
 
 function showTournamentHudBtn() {

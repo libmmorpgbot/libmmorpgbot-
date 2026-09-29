@@ -3680,67 +3680,6 @@ canvas { display:block; width:100%; height:100%; }
 .codex-total-label { font-size: 12px; font-weight: 700; color: #c9a6f0; }
 .codex-total-stats { font-size: 13px; font-weight: 800; color: #c1ccd5; text-align: right; }
 
-/* ── Offline farm: button + panel ─────────────────────────────────────────── */
-#offline-farm-btn {
-  position: absolute;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  background: rgba(9,15,23,.90);
-  border: 1px solid rgba(193,204,213,.08);
-  border-left: 3px solid #4a8fd4;
-  border-radius: 6px;
-  color: #7fb4e8;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: .4px;
-  cursor: pointer;
-  z-index: 50;
-  box-shadow: 0 2px 12px rgba(0,0,0,.55), inset 0 1px 0 rgba(193,204,213,.04);
-}
-#offline-farm-panel {
-  position: absolute;
-  inset: 0;
-  z-index: 120;
-  background: rgba(8,13,20,.97);
-  overflow: hidden;
-}
-#offline-farm-panel, #offline-farm-panel * { touch-action: pan-y; pointer-events: auto; }
-.ofarm-hint { font-size: 11.5px; color: #5797c4; line-height: 1.5; margin-bottom: 12px; }
-.ofarm-err {
-  font-size: 12px; color: #f17e8b; background: rgba(241,126,139,.08);
-  border: 1px solid rgba(241,126,139,.3); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
-}
-.ofarm-group { font-size: 11px; font-weight: 700; color: #899eb1; letter-spacing: .4px; margin: 14px 2px 6px; text-transform: uppercase; }
-.ofarm-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; border-radius: 10px; margin-bottom: 6px;
-  background: rgba(193,204,213,.04); border: 1px solid rgba(193,204,213,.08);
-}
-.ofarm-row.best { border-color: rgba(74,143,212,.55); background: rgba(74,143,212,.08); }
-.ofarm-row.locked { opacity: .5; }
-.ofarm-main { flex: 1; min-width: 0; }
-.ofarm-name { font-size: 12.5px; font-weight: 700; color: #c1ccd5; }
-.ofarm-sub { font-size: 11px; color: #5797c4; margin-top: 2px; }
-.ofarm-rate { font-size: 11px; color: #899eb1; margin-top: 3px; }
-.ofarm-go {
-  flex: none; background: linear-gradient(180deg, #2f6aa8, #1d4a7a); color: #e6f0fa;
-  border: 1px solid rgba(127,180,232,.4); border-radius: 8px; font-size: 11.5px; font-weight: 700;
-  padding: 8px 12px; cursor: pointer; font-family: inherit;
-}
-.ofarm-go.confirm { background: linear-gradient(180deg, #b8742a, #8a5217); border-color: rgba(235,170,73,.5); }
-.ofarm-sum {
-  padding: 12px 14px; border-radius: 10px; margin-bottom: 12px;
-  background: rgba(74,143,212,.08); border: 1px solid rgba(74,143,212,.3);
-}
-.ofarm-sum-line { display: flex; justify-content: space-between; font-size: 12.5px; color: #c1ccd5; padding: 3px 0; }
-.ofarm-sum-line b { color: #e6f0fa; }
-.ofarm-items { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.ofarm-item { font-size: 11px; padding: 4px 8px; border-radius: 6px; background: rgba(193,204,213,.06); color: #c1ccd5; }
-.ofarm-ok { width: 100%; margin-top: 8px; }
-
 /* ── Filter toolbar ────────────────────────────────────────────────────────── */
 .codex-toolbar { display: flex; gap: 6px; margin-bottom: 8px; }
 .codex-search {
@@ -3828,7 +3767,7 @@ canvas { display:block; width:100%; height:100%; }
    column is laid out top-down from _positionHudMenuBtn (js/ui.js), which
    chains each button off the one above it in steps of that height. */
 #hud-menu-btn, #rating-btn, #vip-btn, #market-btn,
-#gram-shop-btn, #events-btn, #season-btn, #codex-btn, #offline-farm-btn {
+#gram-shop-btn, #events-btn, #season-btn, #codex-btn {
   border-radius: 9px;
   background: linear-gradient(180deg, rgba(23,43,70,.93), rgba(10,20,33,.95));
   border-top: 1px solid rgba(108,182,240,.34);
@@ -3838,7 +3777,7 @@ canvas { display:block; width:100%; height:100%; }
   letter-spacing: .3px;
 }
 #hud-menu-btn:active, #rating-btn:active, #vip-btn:active, #market-btn:active,
-#gram-shop-btn:active, #events-btn:active, #season-btn:active, #codex-btn:active, #offline-farm-btn:active {
+#gram-shop-btn:active, #events-btn:active, #season-btn:active, #codex-btn:active {
   background: linear-gradient(180deg, rgba(40,76,118,.95), rgba(16,32,52,.96));
 }
 /* Ползунок прозрачности джойстика (Профиль → Звук). Дорожка тёмная, а
