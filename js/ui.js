@@ -4383,59 +4383,6 @@ function drawBuffStrip() {
 // ─────────────────────────────────────────────────────────
 //  PK / МИР BUTTON
 // ─────────────────────────────────────────────────────────
-// ── Фэнтези-плашка колонки HUD ─────────────────────────────────────────────
-// Одна форма на всю левую колонку (Мир/ПК, Профессия, Класс, Письмо, Бонус):
-// «кожа» с бронзовой рамкой и срезанными углами, тонкая золотая линия внутри.
-// opts.ready — золотая рамка с мягким пульсом и красный камень справа
-// («есть что забрать»); opts.danger — красная кожа (ПК включено).
-function _fantasyPlatePath(x, y, w, h, c) {
-  ctx.beginPath();
-  ctx.moveTo(x + c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + h - c);
-  ctx.lineTo(x + w - c, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + c);
-  ctx.closePath();
-}
-function _drawFantasyPlate(x, y, w, h, opts = {}) {
-  const c = hud(6);
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-  if (opts.ready) {
-    ctx.save();
-    ctx.shadowColor = `rgba(255,190,80,${(0.35 + 0.35 * pulse).toFixed(3)})`;
-    ctx.shadowBlur = hud(10);
-    _fantasyPlatePath(x, y, w, h, c); ctx.fillStyle = 'rgba(0,0,0,.01)'; ctx.fill();
-    ctx.restore();
-  }
-  const g = ctx.createLinearGradient(x, y, x, y + h);
-  if (opts.danger) { g.addColorStop(0, 'rgba(92,26,24,0.97)'); g.addColorStop(1, 'rgba(40,10,9,0.98)'); }
-  else { g.addColorStop(0, 'rgba(62,40,23,0.96)'); g.addColorStop(1, 'rgba(28,18,11,0.97)'); }
-  _fantasyPlatePath(x, y, w, h, c); ctx.fillStyle = g; ctx.fill();
-  // верхний блик кожи
-  const hl = ctx.createLinearGradient(x, y, x, y + h * 0.5);
-  hl.addColorStop(0, 'rgba(255,220,150,0.16)'); hl.addColorStop(1, 'rgba(255,220,150,0)');
-  _fantasyPlatePath(x, y, w, h * 0.5, c * 0.5); ctx.fillStyle = hl; ctx.fill();
-  // рамка
-  ctx.lineWidth = 1.5;
-  ctx.strokeStyle = opts.danger ? 'rgba(229,72,77,0.9)'
-    : opts.ready ? `rgba(255,207,86,${(0.75 + 0.25 * pulse).toFixed(3)})` : 'rgba(150,112,60,0.95)';
-  _fantasyPlatePath(x, y, w, h, c); ctx.stroke();
-  // внутренняя золотая линия
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(255,220,150,0.14)';
-  _fantasyPlatePath(x + 2.5, y + 2.5, w - 5, h - 5, Math.max(1, c - 2)); ctx.stroke();
-  if (opts.ready) {
-    // На углу рамки, а не внутри: колонка узкая, и внутри камень ложился на текст.
-    const gx = x + w - hud(1), gy = y + hud(1), r = hud(4);
-    ctx.save();
-    ctx.shadowColor = '#e5484d'; ctx.shadowBlur = hud(6) * (0.6 + 0.4 * pulse);
-    ctx.beginPath();
-    ctx.moveTo(gx, gy - r); ctx.lineTo(gx + r, gy); ctx.lineTo(gx, gy + r); ctx.lineTo(gx - r, gy);
-    ctx.closePath(); ctx.fillStyle = '#ff5a5f'; ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,220,180,.85)'; ctx.stroke();
-    ctx.restore();
-  }
-}
-// Текст и значок на плашке: тот же рисунок, что был, кремовым по коже.
-const _FANTASY_TXT = '#f3e2bd';
-
 function drawPvpButton() {
   if (!player) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
@@ -4444,10 +4391,20 @@ function drawPvpButton() {
 
   ctx.save();
 
-  _drawFantasyPlate(pb.x, pb.y, pb.w, pb.h, { danger: pvpMode });
+  ctx.fillStyle = pvpMode ? _uiBtnGrads.pvg1 : _uiBtnGrads.pvg0;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = pvpMode ? 'rgba(226,70,88,0.85)' : 'rgba(93,154,198,0.55)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+
+  if (pvpMode) {
+    ctx.strokeStyle = 'rgba(226,70,88,0.12)'; ctx.lineWidth = 4;
+    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+  }
 
   const pvpLabel = pvpMode ? t('pvpOnLabel') : t('pvpOffLabel');
-  const pvpColor = pvpMode ? '#ffb3b5' : _FANTASY_TXT;
+  const pvpColor = pvpMode ? '#ef6d7c' : 'rgba(224,188,127,0.9)';
   drawIconCtx(ctx, pvpMode ? 'pvpOn' : 'pvpOff', pb.x + pb.w / 2 - hud(14), pb.y + pb.h / 2, hud(12), pvpColor);
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
@@ -4468,9 +4425,20 @@ function drawProfessionButton() {
 
   ctx.save();
 
-  _drawFantasyPlate(pb.x, pb.y, pb.w, pb.h, { ready });
+  ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
 
-  const profColor = ready ? '#ffe3a0' : _FANTASY_TXT;
+  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(93,154,198,0.4)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
+
+  if (ready) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+    ctx.strokeStyle = `rgba(165,143,196,${(0.10 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
+  }
+
+  const profColor = ready ? '#cdb8ec' : 'rgba(224,188,127,0.9)';
   drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - hud(14), pb.y + pb.h / 2, hud(12), profColor);
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = profColor;
@@ -4496,9 +4464,13 @@ function drawClassChangeButton() {
 
   ctx.save();
 
-  _drawFantasyPlate(cb.x, cb.y, cb.w, cb.h);
+  ctx.fillStyle = _uiBtnGrads.pfg0;
+  roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(93,154,198,0.4)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
 
-  const col = _FANTASY_TXT;
+  const col = 'rgba(224,188,127,0.9)';
   drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - hud(14), cb.y + cb.h / 2, hud(12), col);
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = col;
@@ -4545,13 +4517,27 @@ function drawMailBonusButton() {
   // одной колонке, и различать их обязано что-то кроме подписи в 11 пикселей.
   // Та же бегущая полоса, но своей фазой — иначе кнопки пульсировали бы в
   // такт и читались как одна.
-  // Награду можно забрать, пока кнопка на экране, — значит, она всегда
-  // «готова»: золотая рамка и красный камень.
-  _drawFantasyPlate(mb.x, mb.y, mb.w, mb.h, { ready: true });
+  const sweep = (Math.sin(Date.now() / 1100 + Math.PI / 2) + 1) / 2;
+  const grad = ctx.createLinearGradient(mb.x, mb.y, mb.x + mb.w, mb.y + mb.h);
+  grad.addColorStop(0, '#17283e');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#233e60');
+  grad.addColorStop(sweep, '#4fc3ff');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#233e60');
+  grad.addColorStop(1, '#17283e');
+  ctx.fillStyle = grad;
+  roundRect(ctx, mb.x, mb.y, mb.w, mb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(79,195,255,0.7)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, mb.x, mb.y, mb.w, mb.h, 9); ctx.stroke();
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+  ctx.strokeStyle = `rgba(79,195,255,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, mb.x - 2, mb.y - 2, mb.w + 4, mb.h + 4, 11); ctx.stroke();
 
   drawIconCtx(ctx, 'mail', mb.x + mb.w / 2 - hud(16), mb.y + mb.h / 2, hud(12), '#bfe4ff');
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = _FANTASY_TXT;
+  ctx.fillStyle = '#bfe4ff';
   ctx.fillText(t('mailBonusBtn'), mb.x + mb.w / 2 - hud(7), mb.y + mb.h / 2);
 
   ctx.restore();
@@ -4691,12 +4677,30 @@ function drawStarterBonusButton() {
 
   ctx.save();
 
-  // Как и «Письмо»: пока кнопка видна, награду можно забрать.
-  _drawFantasyPlate(bb.x, bb.y, bb.w, bb.h, { ready: true });
+  // Warm amber, so it reads as a gift rather than as a second purchase button
+  // next to +Pack's emerald. Same sweeping band, half a cycle out of phase,
+  // so the two never pulse in lockstep.
+  const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
+  const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
+  grad.addColorStop(0, '#17283e');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#233e60');
+  grad.addColorStop(sweep, '#f0b44a');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#233e60');
+  grad.addColorStop(1, '#17283e');
+  ctx.fillStyle = grad;
+  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
+
+  ctx.strokeStyle = 'rgba(240,180,74,0.7)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.stroke();
+
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
+  ctx.strokeStyle = `rgba(240,180,74,${(0.10 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, bb.x - 2, bb.y - 2, bb.w + 4, bb.h + 4, 11); ctx.stroke();
 
   drawIconCtx(ctx, 'star', bb.x + bb.w / 2 - hud(16), bb.y + bb.h / 2, hud(12), '#ffe0a3');
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = _FANTASY_TXT;
+  ctx.fillStyle = '#ffe0a3';
   ctx.fillText(t('starterBonusBtn'), bb.x + bb.w / 2 - hud(7), bb.y + bb.h / 2);
 
   ctx.restore();
