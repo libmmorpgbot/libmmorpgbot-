@@ -9553,6 +9553,7 @@ function _startShopSaleTimer() {
     if (!els.length) { clearInterval(_shopSaleTick); _shopSaleTick = null; return; }
     const txt = _shopSaleLeftText();
     els.forEach(el => { el.textContent = txt; });
+    _fillShopSaleSegs();
     if (!seasonActive()) {
       clearInterval(_shopSaleTick); _shopSaleTick = null;
       document.getElementById('shop-sale-ov')?.remove();
@@ -9566,24 +9567,58 @@ function _startShopSaleTimer() {
 // ── Окно распродажи при входе ──────────────────────────────────────────────
 // Показывается на КАЖДОМ входе в игру, пока идёт сезон (_finishOnlineStart,
 // js/network.js — путь входа, а не переподключения и не перехода по этажам).
+// Отсчёт в окне — четыре ячейки (дни/часы/минуты/секунды), их заполняет тот
+// же общий таймер (_startShopSaleTimer), что и строку в магазине.
+function _fillShopSaleSegs() {
+  const segs = document.querySelectorAll('#shop-sale-ov .shop-sale-seg b');
+  if (!segs.length) return;
+  const s = Math.max(0, Math.floor((SEASON_END_AT - Date.now()) / 1000));
+  const vals = [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
+  segs.forEach((el, i) => { el.textContent = String(vals[i]).padStart(2, '0'); });
+}
+function _closeShopSaleModal() {
+  const ov = document.getElementById('shop-sale-ov');
+  if (!ov) return;
+  ov.classList.add('closing');
+  setTimeout(() => ov.remove(), 180);
+}
 function showShopSaleModal() {
   if (!seasonActive()) return;
   document.getElementById('shop-sale-ov')?.remove();
+  // Витрина — картинки из самих паков: легендарные крылья (Админский),
+  // эпический питомец (Допы), редкая шкатулка и Liberty (Элитный и выше).
+  const img = id => (ITEM_DEF.find(d => d.id === id) || {}).img;
+  const pet = (ITEM_DEF.find(d => d.slot === 'pet' && d.rarity === 'epic') || {}).img;
+  const shelf = [img('wing_l'), pet, '/images/material/boxr.png', '/images/nexum-coin_v2.png']
+    .filter(Boolean).map((src, i) => `<div class="shop-sale-item" style="animation-delay:${0.15 + i * 0.08}s"><img src="${src}" alt=""></div>`).join('');
+  const segLbl = ['д', 'ч', 'м', 'с'];
+  const segs = segLbl.map(u => `<div class="shop-sale-seg"><b>00</b><span>${u}</span></div>`).join('');
   const ov = document.createElement('div');
-  ov.className = 'market-modal-overlay';
+  ov.className = 'shop-sale-overlay';
   ov.id = 'shop-sale-ov';
-  ov.onclick = () => ov.remove();
+  ov.onclick = _closeShopSaleModal;
   ov.innerHTML = `
-    <div class="market-modal-sheet shop-sale-sheet" onclick="event.stopPropagation()">
-      <button class="shop-sale-close" onclick="document.getElementById('shop-sale-ov').remove()">✕</button>
-      <div class="shop-sale-big">-${SHOP_SEASON_SALE_PCT}%</div>
-      <div class="shop-sale-title">${t('shopSaleModalTitle')}</div>
+    <div class="shop-sale-card" onclick="event.stopPropagation()">
+      <div class="shop-sale-glow"></div>
+      <button class="shop-sale-close" onclick="_closeShopSaleModal()" aria-label="✕">✕</button>
+      <div class="shop-sale-ribbon">${t('shopSaleModalTitle')}</div>
+      <div class="shop-sale-big">-${SHOP_SEASON_SALE_PCT}<small>%</small></div>
+      <div class="shop-sale-shelf">${shelf}</div>
       <div class="shop-sale-text">${tVars('shopSaleModalText', { n: SHOP_SEASON_SALE_PCT })}</div>
-      <div class="shop-sale-left">${t('shopSaleBannerLbl')} <b class="shop-sale-timer">${_shopSaleLeftText()}</b></div>
-      <button class="gram-btn gram-btn-green" style="width:100%;padding:13px"
-        onclick="document.getElementById('shop-sale-ov').remove();openGramShopPanel()">${t('navShopBtn')}</button>
+      <div class="shop-sale-left">${t('shopSaleBannerLbl')}</div>
+      <div class="shop-sale-segs">${segs}</div>
+      <button class="shop-sale-go" onclick="_closeShopSaleModal();openGramShopPanel()">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        ${t('navShopBtn')}
+      </button>
     </div>`;
   document.body.appendChild(ov);
+  _fillShopSaleSegs();
+  // Общий таймер гаснет, когда на экране нет ни одного .shop-sale-timer, —
+  // скрытый элемент держит его живым, пока открыто окно.
+  const keep = document.createElement('span');
+  keep.className = 'shop-sale-timer'; keep.hidden = true;
+  ov.appendChild(keep);
   _startShopSaleTimer();
 }
 // Паки pkg1-pkg600 и наборы Усиления (rmat1-3) вернулись по просьбе
