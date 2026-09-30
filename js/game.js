@@ -1838,7 +1838,7 @@ const _TELEPORT_LABEL = new Proxy({}, { get: (_, dir) => _teleportLabel(dir) });
 // (the 4 arm pads + the Фарм-зона pad): walking up to it opens a modal
 // listing every destination instead of triggering a transition directly —
 // see _portalDestinations/_openPortalModal below.
-const _PORTAL_DX = 0; // tiles, hub-side (NPCs sit north, at dy -11)
+const _PORTAL_DX = 0; // tiles, hub-side (NPCs stand at the plaza's other road forks)
 const _PORTAL_DY = 7; // tiles south of spawn — closer in than the old arm-pad row (was 10)
 let _portalPad = null;          // hub-only: {x, y} — approach opens the modal
 let _portalDestinations = null; // hub-only: [{target, req, label}] — modal contents
@@ -2527,27 +2527,29 @@ function _updateRaceBarriers(dt) {
 // ─────────────────────────────────────────────────────────
 //  NPCs
 // ─────────────────────────────────────────────────────────
-// The hub has no physical exits anymore (see TELEPORT PADS above) — NPCs
-// just sit side by side north of spawn, clear of the teleport pad row south
-// of it. Called on every floor (re)load now that locations are separate
-// floors (js/network.js's _applyGameStart) — only the hub actually has
-// NPCs, so every other floor just clears the list. armEntries only exists
-// on the hub's own dungeon payload (server/game/dungeon.js's generateHub),
-// so its presence is what tells the two apart rather than a hardcoded floor
-// number.
+// Хаб — город (js/city.js): от площади под спавном крестом расходятся
+// улицы, и NPC стоят на развилках — там, где улица выходит с площади:
+// хранилище на северной, кузнец на восточной, торговец на западной. Южная
+// занята порталом. 8 клеток от центра — сразу за бордюром площади
+// (_CITY_PLAZA_R = 6.5), и это дальше радиуса разговора (65px), так что со
+// спавна ни один не цепляется. Called on every floor (re)load now that
+// locations are separate floors (js/network.js's _applyGameStart) — only the
+// hub actually has NPCs, so every other floor just clears the list.
+// armEntries only exists on the hub's own dungeon payload
+// (server/game/dungeon.js's generateHub), so its presence is what tells the
+// two apart rather than a hardcoded floor number.
+const _NPC_SPOTS = {
+  storage:   { dx: 0,         dy: -TILE * 8 },
+  craftsman: { dx:  TILE * 8, dy: 0 },
+  merchant:  { dx: -TILE * 8, dy: 0 },
+};
 function initNpcs() {
   if (!dungeon || !dungeon.armEntries) { npcs = []; nearNpc = null; return; }
   const sx = dungeon.spawn.x, sy = dungeon.spawn.y;
-  const offsets = [
-    { dx: -TILE * 4, dy: -TILE * 11 },
-    { dx:  TILE * 4, dy: -TILE * 11 },
-    { dx: 0,         dy: -TILE * 8  }, // storage — between merchant and craftsman, one row forward
-  ];
-  npcs = NPC_DEF.map((def, i) => ({
-    ...def,
-    x: sx + offsets[i].dx,
-    y: sy + offsets[i].dy,
-  }));
+  npcs = NPC_DEF.map(def => {
+    const o = _NPC_SPOTS[def.id] || { dx: 0, dy: -TILE * 8 };
+    return { ...def, x: sx + o.dx, y: sy + o.dy };
+  });
 }
 
 

@@ -161,6 +161,14 @@ function _cityLayout() {
     const a = Math.PI / 4 + k * Math.PI / 2;
     L.lamps.push({ x: cx + Math.cos(a) * (L.plazaR + T * 0.4), y: cy + Math.sin(a) * (L.plazaR + T * 0.4) });
   }
+  // Лавки за NPC — там же, где их ставит initNpcs (js/game.js, _NPC_SPOTS):
+  // прилавок сразу за спиной, чтобы NPC стоял перед своей лавкой.
+  L.stalls = [];
+  if (typeof _NPC_SPOTS !== 'undefined') {
+    for (const id of Object.keys(_NPC_SPOTS)) {
+      L.stalls.push({ kind: id, x: cx + _NPC_SPOTS[id].dx, y: cy + _NPC_SPOTS[id].dy });
+    }
+  }
   return (_cityCache = L);
 }
 
@@ -414,6 +422,12 @@ function cityDrawStructures(c, L, x0, y0, x1, y1, own, torchList) {
   for (const t of L.trees) {
     if (!_cityHit({ x0: t.x - t.r - 6, y0: t.y - t.r - 6, x1: t.x + t.r + 10, y1: t.y + t.r + 12 }, x0, y0, x1, y1)) continue;
     _cityTree(c, t.x, t.y, t.r, t.k);
+  }
+
+  // лавки NPC
+  for (const st of L.stalls) {
+    if (!_cityHit({ x0: st.x - 90, y0: st.y - 170, x1: st.x + 90, y1: st.y + 10 }, x0, y0, x1, y1)) continue;
+    _cityStall(c, st, own, torchList);
   }
 
   // фонари
@@ -755,4 +769,134 @@ function _cityRRect(c, x, y, w, h, r) {
   c.arcTo(x, y + h, x, y, r);
   c.arcTo(x, y, x + w, y, r);
   c.closePath();
+}
+
+// ── Лавки NPC ────────────────────────────────────────────
+// Навес на столбах над прилавком, всё смотрит вниз, на игрока. (x, y) —
+// точка, где стоит NPC: прилавок заканчивается чуть выше неё, и спрайт
+// NPC, нарисованный поверх пола, оказывается прямо перед лавкой.
+const _CITY_STALL = {
+  merchant:  { a: '#d9822b', b: '#f1e3c4', sign: '#d9822b' },
+  craftsman: { a: '#3b4a63', b: '#6a7a94', sign: '#8888ff' },
+  storage:   { a: '#3d7a3a', b: '#d9d1b0', sign: '#44cc44' },
+};
+function _cityStall(c, st, own, torchList) {
+  const sty = _CITY_STALL[st.kind] || _CITY_STALL.merchant;
+  const W = 132, x = st.x - W / 2;
+  const yb = st.y - 14;          // низ прилавка
+  const yt = yb - 104;           // верх задней стенки
+  // тень
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.fillRect(x + 6, yt + 10, W, yb - yt);
+  // задняя стенка из досок
+  c.fillStyle = '#5a3c24';
+  c.fillRect(x + 6, yt, W - 12, 70);
+  c.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let px = x + 6; px < x + W - 6; px += 12) c.fillRect(px, yt, 2, 70);
+
+  // товар на полках за прилавком
+  if (st.kind === 'merchant') {
+    c.fillStyle = '#3e2816'; c.fillRect(x + 10, yt + 34, W - 20, 4);
+    const cols = ['#e04848', '#4a8fe0', '#4ac06a', '#e0c048', '#b060e0'];
+    for (let k = 0; k < 9; k++) {
+      const bx = x + 18 + k * 12.5;
+      c.fillStyle = cols[k % cols.length];
+      c.beginPath(); c.arc(bx, yt + 28, 5, 0, Math.PI * 2); c.fill();
+      c.fillRect(bx - 1.5, yt + 18, 3, 6);
+      c.fillStyle = 'rgba(255,255,255,0.5)'; c.fillRect(bx - 3, yt + 25, 2, 2);
+    }
+  } else if (st.kind === 'craftsman') {
+    // горн: каменная печь с огнём
+    const fx = x + W - 34, fy = yt + 12;
+    c.fillStyle = '#4a4540'; _cityRRect(c, fx - 22, fy, 44, 56, 6); c.fill();
+    c.fillStyle = '#2a2622'; _cityRRect(c, fx - 14, fy + 20, 28, 24, 10); c.fill();
+    const fg = c.createRadialGradient(fx, fy + 38, 2, fx, fy + 34, 16);
+    fg.addColorStop(0, '#ffe08a'); fg.addColorStop(0.5, '#ff8a2e'); fg.addColorStop(1, 'rgba(160,40,10,0.2)');
+    c.fillStyle = fg; _cityRRect(c, fx - 12, fy + 24, 24, 18, 8); c.fill();
+    if (fx >= own.x0 && fx < own.x1 && fy + 30 >= own.y0 && fy + 30 < own.y1) torchList.push({ x: fx, y: fy + 30 });
+    // инструменты на стене
+    c.strokeStyle = '#8a8f99'; c.lineWidth = 3;
+    for (let k = 0; k < 3; k++) {
+      const hx = x + 22 + k * 18;
+      c.beginPath(); c.moveTo(hx, yt + 12); c.lineTo(hx, yt + 40); c.stroke();
+    }
+    c.fillStyle = '#8a8f99'; c.fillRect(x + 16, yt + 10, 12, 6); c.fillRect(x + 34, yt + 38, 8, 6);
+  } else {
+    // сундуки и бочки
+    const chest = (cx0, cy0, w) => {
+      c.fillStyle = '#6a4326'; c.fillRect(cx0, cy0, w, 20);
+      c.fillStyle = '#7d5230'; c.fillRect(cx0, cy0 - 6, w, 8);
+      c.fillStyle = '#c9a452'; c.fillRect(cx0, cy0 + 2, w, 3); c.fillRect(cx0 + w / 2 - 3, cy0 + 4, 6, 7);
+    };
+    chest(x + 14, yt + 44, 30); chest(x + 50, yt + 44, 34); chest(x + 20, yt + 22, 26);
+    c.fillStyle = '#5d3a20'; _cityRRect(c, x + W - 36, yt + 20, 22, 44, 8); c.fill();
+    c.fillStyle = '#2a2018'; c.fillRect(x + W - 36, yt + 30, 22, 3); c.fillRect(x + W - 36, yt + 52, 22, 3);
+  }
+
+  // навес: полосатая ткань с фестонами
+  const ay0 = yt - 8, ay1 = yt + 46;
+  c.save();
+  c.beginPath(); c.rect(x - 4, ay0, W + 8, ay1 - ay0 + 10); c.clip();
+  const sw = 16;
+  for (let k = 0, px = x - 4; px < x + W + 4; px += sw, k++) {
+    c.fillStyle = k & 1 ? sty.b : sty.a;
+    c.fillRect(px, ay0, sw, ay1 - ay0);
+    c.beginPath(); c.arc(px + sw / 2, ay1, sw / 2, 0, Math.PI); c.fill();
+  }
+  const sh = c.createLinearGradient(0, ay0, 0, ay1);
+  sh.addColorStop(0, 'rgba(255,255,255,0.18)'); sh.addColorStop(1, 'rgba(0,0,0,0.22)');
+  c.fillStyle = sh; c.fillRect(x - 4, ay0, W + 8, ay1 - ay0);
+  c.restore();
+  c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(x - 4, ay0, W + 8, 3);
+
+  // столбы
+  c.fillStyle = '#4a3122';
+  c.fillRect(x + 2, ay1, 6, yb - ay1); c.fillRect(x + W - 8, ay1, 6, yb - ay1);
+
+  // прилавок
+  const ct = yb - 30;
+  c.fillStyle = '#7d5230'; c.fillRect(x, ct, W, 8);
+  c.fillStyle = '#5e3c22'; c.fillRect(x + 4, ct + 8, W - 8, yb - ct - 8);
+  c.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let px = x + 4; px < x + W - 4; px += 14) c.fillRect(px, ct + 8, 2, yb - ct - 8);
+  c.fillStyle = 'rgba(255,230,190,0.18)'; c.fillRect(x, ct, W, 2);
+  // на прилавке
+  if (st.kind === 'merchant') {
+    c.fillStyle = '#8a5a2e'; c.fillRect(x + 14, ct - 8, 26, 9);
+    c.fillStyle = '#e04848'; for (let k = 0; k < 3; k++) { c.beginPath(); c.arc(x + 19 + k * 8, ct - 9, 3.5, 0, Math.PI * 2); c.fill(); }
+    c.fillStyle = '#e0c048'; for (let k = 0; k < 4; k++) { c.beginPath(); c.arc(x + W - 32 + k * 5, ct - 3 - (k & 1) * 2, 3, 0, Math.PI * 2); c.fill(); }
+  } else if (st.kind === 'craftsman') {
+    // наковальня
+    const axc = x + 34;
+    c.fillStyle = '#2e3136'; c.fillRect(axc - 6, ct - 8, 12, 8);
+    c.fillStyle = '#4d535c';
+    c.beginPath(); c.moveTo(axc - 20, ct - 16); c.lineTo(axc + 16, ct - 16); c.lineTo(axc + 10, ct - 8); c.lineTo(axc - 14, ct - 8); c.closePath(); c.fill();
+    c.fillStyle = '#7b828d'; c.fillRect(axc - 20, ct - 17, 36, 3);
+    c.fillStyle = '#a8adb5'; c.fillRect(x + W - 50, ct - 5, 22, 4); c.fillRect(x + W - 30, ct - 8, 5, 10);
+  } else {
+    c.fillStyle = '#d9d1b0'; c.fillRect(x + 20, ct - 5, 30, 6);
+    c.fillStyle = '#8a5a2e'; c.fillRect(x + W - 44, ct - 12, 22, 13);
+    c.fillStyle = '#c9a452'; c.fillRect(x + W - 36, ct - 8, 6, 5);
+  }
+
+  // вывеска над навесом
+  const sx = st.x, sy = ay0 - 14;
+  c.fillStyle = '#2a2018'; c.fillRect(sx - 1.5, sy + 10, 3, 10);
+  c.fillStyle = '#3e2816';
+  c.beginPath(); c.arc(sx, sy, 15, 0, Math.PI * 2); c.fill();
+  c.fillStyle = sty.sign;
+  c.beginPath(); c.arc(sx, sy, 12, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#1a1410';
+  if (st.kind === 'merchant') {
+    c.beginPath(); c.arc(sx, sy + 2, 6, 0, Math.PI * 2); c.fill();
+    c.fillRect(sx - 2.5, sy - 8, 5, 6);
+  } else if (st.kind === 'craftsman') {
+    c.save(); c.translate(sx, sy); c.rotate(-Math.PI / 4);
+    c.fillRect(-1.5, -3, 3, 12); c.fillRect(-6, -7, 12, 5);
+    c.restore();
+  } else {
+    c.fillRect(sx - 7, sy - 4, 14, 10);
+    c.fillStyle = sty.sign; c.fillRect(sx - 7, sy - 1, 14, 2);
+    c.fillStyle = '#1a1410'; c.fillRect(sx - 7, sy - 7, 14, 4);
+  }
 }
