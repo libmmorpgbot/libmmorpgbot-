@@ -14,6 +14,7 @@ module.exports = [
   'js/state.js',
   'js/icons.js',
   'js/themes.js',
+  'js/city.js',
   'js/definitions.js',
   'js/i18n.js',
   'js/tonconnect.js',

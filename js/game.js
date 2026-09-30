@@ -2085,7 +2085,7 @@ function _updateTeleportPads(dt) {
     if (dist(player.x, player.y, p.x, p.y) >= TRIGGER_R) return;
     const home = p.target === 'farmZone'
       ? (typeof t === 'function' ? t('farmZoneLbl') : 'Фарм зона')
-      : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+      : (typeof t === 'function' ? t('centralHall') : 'Город');
     _requestEnterLocation(p.target || 'hub', home);
   });
   // ── пад в сезонное крыло ─────────────────────────────────────────────────
@@ -2288,7 +2288,7 @@ function _buildDecals(ts) {
 
   // ── teleport pads ──
   if (_portalPad) _pushSwirlPad(_portalPad.x, _portalPad.y, typeof t === 'function' ? t('portalLbl') : '\u{1F300} \u0422\u0435\u043b\u0435\u043f\u043e\u0440\u0442', 'blue');
-  const hallLbl = typeof t === 'function' ? t('hallShort') : '\u0417\u0430\u043b';
+  const hallLbl = typeof t === 'function' ? t('hallShort') : 'Город';
   // Подпись возвратного пада называет то, куда он ведёт: из сезонного крыла —
   // назад в Фарм-зону, отовсюду ещё — в зал.
   (_returnPads || []).forEach(p => _pushRingPad(p.x, p.y, _PAD_R, false, 0xeb4e61, 0x4ee69a,
@@ -2879,6 +2879,11 @@ function _buildChunk(cx, cy) {
     }
   }
 
+  // Хаб оформлен городом (js/city.js): улицы, площадь и скверы — поверх пола.
+  const city = typeof _cityLayout === 'function' ? _cityLayout() : null;
+  const cX0 = x0 - TILE, cY0 = y0 - TILE, cX1 = x0 + _CHUNK_PX + TILE, cY1 = y0 + _CHUNK_PX + TILE;
+  if (city) cityDrawGround(c, city, cX0, cY0, cX1, cY1);
+
   // 3. Wall "cliff face" strip above floor (top-down depth cue) — beveled
   // gradient (dark at top fading to base wallColor) with a soft highlight
   // line along the very top edge for a lit-edge depth cue.
@@ -2950,7 +2955,7 @@ function _buildChunk(cx, cy) {
   const ptx0 = cx * _CHUNK_T, pty0 = cy * _CHUNK_T;
   const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
   const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
-  if (th.drawFloorProp) {
+  if (th.drawFloorProp && !city) {
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
         if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -2966,8 +2971,11 @@ function _buildChunk(cx, cy) {
   // the iron bracket is baked into this static texture; the flickering flame
   // and its warm light pooling onto the floor are animated live every frame
   // (see _updateLights in pixi-world.js) off the anchor points collected here.
+  // В городе вместо факелов на стенах — дома, стена с воротами и фонари
+  // (у них свои огоньки, они попадают в тот же список).
   const torchList = [];
-  for (let ty = pty0; ty <= pty1; ty++) {
+  if (city) cityDrawStructures(c, city, cX0, cY0, cX1, cY1, { x0, y0, x1: x0 + _CHUNK_PX, y1: y0 + _CHUNK_PX }, torchList);
+  else for (let ty = pty0; ty <= pty1; ty++) {
     for (let tx = ptx0; tx <= ptx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL || !isFloor(tx, ty + 1)) continue;
       if (_tileHash(tx, ty, 90) >= 0.05) continue;
@@ -3041,7 +3049,7 @@ function playerDie() {
   if (info && player) {
     const _dRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
     const _dLoc = (_dRoom?.arm && typeof _armLabel === 'function')
-      ? `${_armLabel(_dRoom.arm)} ${typeof t === 'function' ? t('corridorSuffix') : 'коридор'} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Центральный зал');
+      ? `${_armLabel(_dRoom.arm)} ${typeof t === 'function' ? t('corridorSuffix') : 'коридор'} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Город');
     info.innerHTML =
       `<span class="death-stat">${_dLoc}</span>` +
       `<span class="death-stat">${Math.floor(player.gold)} <span class="death-lbl">${typeof t === 'function' ? t('deathGoldLbl') : 'золота'}</span> · ${player.kills} <span class="death-lbl">${typeof t === 'function' ? t('deathKillsLbl') : 'убийств'}</span></span>`;

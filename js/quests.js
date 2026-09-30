@@ -356,7 +356,7 @@ function _questProgHtml(q, isCur) {
       <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${Math.min(100, Math.round(best / q.enhance * 100))}%"></div></div></div>`;
   }
   if (q.type === 'enter_zone') {
-    return `<div class="quest-prog">${typeof t === 'function' ? t('questEnterFarmZone') : 'Зайди в Фарм-зону через портал в Зале'}</div>`;
+    return `<div class="quest-prog">${typeof t === 'function' ? t('questEnterFarmZone') : 'Зайди в Фарм-зону через портал в Городе'}</div>`;
   }
   return '';
 }
