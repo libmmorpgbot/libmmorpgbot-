@@ -31,7 +31,6 @@ const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
-  FRIENDSHIP_LEVEL, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_CLOSED_AT, FRIENDSHIP_TIERS,
   seasonActive, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
@@ -292,9 +291,7 @@ async function claimStarterBonus(db, playerId) {
   // stays available to every account that has not claimed it yet (old players
   // who simply never pressed «Бонус» included), but the buff is the part that
   // shipped for NEW players specifically — an account registered before
-  // NEWBIE_BUFF_LAUNCH_AT gets the kit as always and no buff. Same reasoning,
-  // same column, as FRIENDSHIP_LAUNCH_AT's `p.created_at >= $2` a screen up in
-  // this file. The EXISTS makes the UPDATE itself a no-op for an old account
+  // NEWBIE_BUFF_LAUNCH_AT gets the kit as always and no buff. The EXISTS makes the UPDATE itself a no-op for an old account
   // rather than a second query deciding whether to run it — one round trip,
   // and nothing to race.
   const { rowCount: buffGranted } = await query(db, `
@@ -397,131 +394,7 @@ async function referralsOf(db, playerId) {
   };
 }
 
-// ── Дружба ───────────────────────────────────────────────────────────────
-// How many of this player's invited friends count toward a tier: joined
-// AFTER the feature shipped (FRIENDSHIP_LAUNCH_AT), not merely invited before
-// it — an old friend who was already above FRIENDSHIP_LEVEL the day this
-// button appeared should not instantly fill every tier at once — and who has
-// reached FRIENDSHIP_LEVEL, read live off player_progress rather than any
-// counter this table would otherwise have to keep in step by hand.
-// И не позже FRIENDSHIP_CLOSED_AT: набор закрыт, новые приглашённые не
-// засчитываются, считаются только уже имеющиеся друзья.
-async function _friendshipCount(db, telegramId) {
-  const { rows } = await query(db, `
-    SELECT count(*)::int AS n
-      FROM players p
-      JOIN player_progress pp ON pp.player_id = p.id
-     WHERE p.referred_by = $1
-       AND p.created_at >= $2::timestamptz
-       AND p.created_at <  $4::timestamptz
-       AND pp.lvl >= $3`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL, FRIENDSHIP_CLOSED_AT]);
-  return rows[0].n;
-}
-
-// Friends invited SINCE this reward shipped, only — one from before
-// FRIENDSHIP_LAUNCH_AT is excluded outright rather than merely marked as not
-// counting: the whole point of the cutoff is that those invites predate the
-// reward, and listing them next to the new ones (even greyed out) reads as
-// "this broke for my old friends" instead of "this is for friends invited
-// from now on". `counts` here therefore only still has to ask about the
-// level — every row already passed the date half of _friendshipCount's test.
-async function _friendshipFriends(db, telegramId) {
-  const { rows } = await query(db, `
-    SELECT p.username, pp.lvl, (pp.lvl >= $3) AS counts
-      FROM players p
-      JOIN player_progress pp ON pp.player_id = p.id
-     WHERE p.referred_by = $1
-       AND p.created_at >= $2::timestamptz
-       AND p.created_at <  $4::timestamptz
-     ORDER BY pp.lvl DESC, p.username`, [telegramId, FRIENDSHIP_LAUNCH_AT, FRIENDSHIP_LEVEL, FRIENDSHIP_CLOSED_AT]);
-  return rows.map(r => ({ username: r.username, lvl: r.lvl, counts: r.counts }));
-}
-
-// What the panel shows: the friend list, how many of them qualify, and which
-// tiers are already claimed/claimable — the qualifying count is the SAME
-// number the claim below checks, so the button a player taps promises
-// exactly what the server will grant it for.
-async function friendshipStatus(db, playerId) {
-  const { rows: me } = await query(db, 'SELECT telegram_id FROM players WHERE id = $1', [playerId]);
-  if (!me.length) return { count: 0, tiers: [], friends: [] };
-  const friends = await _friendshipFriends(db, me[0].telegram_id);
-  const count = friends.reduce((n, f) => n + (f.counts ? 1 : 0), 0);
-
-  const { rows: claimedRows } = await query(db,
-    'SELECT tier FROM player_friendship_claims WHERE player_id = $1', [playerId]);
-  const claimed = new Set(claimedRows.map(r => Number(r.tier)));
-
-  return {
-    count,
-    friends,
-    tiers: FRIENDSHIP_TIERS.map(td => ({
-      count: td.count,
-      claimed: claimed.has(td.count),
-      claimable: !claimed.has(td.count) && count >= td.count,
-    })),
-  };
-}
-
-// Grants one tier's reward, once. The claim is recorded with an
-// ON CONFLICT DO NOTHING INSERT rather than a read-then-write — two taps
-// racing on the same tier both attempt it, and only one INSERT can win —
-// and, exactly like the starter kit and the mail bonus above, it is recorded
-// BEFORE the grant so the transaction rolls the row back with the grant on
-// any failure instead of leaving a claim that paid out nothing.
-async function claimFriendshipTier(db, playerId, tierCount) {
-  const tier = FRIENDSHIP_TIERS.find(td => td.count === Number(tierCount));
-  if (!tier) err('bad_tier', 'Награда не найдена');
-
-  await items.lockPlayer(db, playerId);
-
-  const { rows: me } = await query(db, 'SELECT telegram_id FROM players WHERE id = $1', [playerId]);
-  if (!me.length) err('no_player', 'Игрок не найден');
-  const count = await _friendshipCount(db, me[0].telegram_id);
-  if (count < tier.count) {
-    err('not_enough', `Нужно друзей ${FRIENDSHIP_LEVEL}+ уровня: ${tier.count} (сейчас ${count})`);
-  }
-
-  const list = [];
-  if (tier.buffPotions) for (const bp of _VIP_BP) list.push({ itemId: bp.id, qty: tier.buffPotions, enhance: 0 });
-  for (const [id, qty] of Object.entries(tier.mats || {})) list.push({ itemId: id, qty, enhance: 0 });
-  if (tier.wing) list.push({ itemId: tier.wing, qty: 1, enhance: 0 });
-
-  const room = await _roomForAll(db, playerId, list);
-  if (!room.fits) {
-    const { SERVER_INV_MAX } = require('../../anticheat');
-    err('no_room', `Нужно ${room.need} свободных мест в инвентаре (занято ${room.used}/${SERVER_INV_MAX})`);
-  }
-
-  const { rowCount } = await query(db, `
-    INSERT INTO player_friendship_claims (player_id, tier) VALUES ($1, $2)
-    ON CONFLICT DO NOTHING`, [playerId, tier.count]);
-  if (!rowCount) err('already', 'Награда уже получена');
-
-  const granted = await _grantAll(db, playerId, list);
-
-  // Deterministic idem keys, not crypto.randomUUID like the GRAM shop's —
-  // there is exactly one legitimate credit per (player, tier) ever, so the
-  // same key doubling as its own replay guard is a feature: a transaction
-  // retried after a serialization conflict must credit this exactly once,
-  // not once per attempt.
-  if (tier.nexum > 0) {
-    await money.credit(db, playerId, 'nexum', tier.nexum, {
-      reason: 'friendship', refType: 'tier', refId: String(tier.count),
-      idemKey: `friendship_nexum:${playerId}:${tier.count}`,
-    });
-  }
-  if (tier.gram > 0) {
-    await money.credit(db, playerId, 'gram', tier.gram, {
-      reason: 'friendship', refType: 'tier', refId: String(tier.count),
-      idemKey: `friendship_gram:${playerId}:${tier.count}`,
-    });
-  }
-
-  return { tier: tier.count, granted, nexum: tier.nexum || 0, gram: tier.gram || 0 };
-}
-
 module.exports = {
   buyPackage, claimStarterBonus, claimMailBonus, referralsOf,
-  friendshipStatus, claimFriendshipTier,
   _packageContents, _roomForAll, ShopError,
 };

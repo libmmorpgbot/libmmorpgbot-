@@ -150,16 +150,6 @@ function getStarterBonusBtnPos() {
   return { x: mb.x, y: mb.y + mb.h + 6, w: mb.w, h: mb.h };
 }
 
-// Directly below Бонус, same column — opens the friend-invite reward tiers
-// (openFriendshipPanel, js/ui.js). Unconditional like Класс/Профессия rather
-// than gated on an availability flag: unlike Письмо/Бонус this is not a
-// once-ever claim, it stays useful as new tiers open up, so the slot (and
-// the party list layout below it) never has to shift.
-function getFriendshipBtnPos() {
-  const bb = getStarterBonusBtnPos();
-  return { x: bb.x, y: bb.y + bb.h + 6, w: bb.w, h: bb.h };
-}
-
 function getPartyLeaveBtnPos() {
   const bh = hud(26), gap = 4;
   const startY = _partyHudStartY();
@@ -173,8 +163,8 @@ function getPartyLeaveBtnPos() {
 // slot whether or not the button is currently drawn, so the list does not
 // jump the moment the kit is claimed.
 function _partyHudStartY() {
-  const fr = getFriendshipBtnPos();
-  return fr.y + fr.h + 6;
+  const bb = getStarterBonusBtnPos();
+  return bb.y + bb.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -683,17 +673,6 @@ function _checkStarterBonusBtnTouch(cx, cy) {
   return false;
 }
 
-// Unconditional, unlike the two checks above — see getFriendshipBtnPos.
-function _checkFriendshipBtnTouch(cx, cy) {
-  const fb = getFriendshipBtnPos();
-  if (cx >= fb.x && cx <= fb.x + fb.w && cy >= fb.y && cy <= fb.y + fb.h) {
-    if (typeof openFriendshipPanel === 'function') openFriendshipPanel();
-    return true;
-  }
-  return false;
-}
-
-
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
   const lb = getPartyLeaveBtnPos();
@@ -852,7 +831,6 @@ function onTS(e) {
     if (_checkClassChangeBtnTouch(p.x, p.y)) continue;
     if (_checkMailBonusBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
-    if (_checkFriendshipBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -947,7 +925,6 @@ function onMD(e) {
   if (_checkClassChangeBtnTouch(p.x, p.y)) return;
   if (_checkMailBonusBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
-  if (_checkFriendshipBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;
