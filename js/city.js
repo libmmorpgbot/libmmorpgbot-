@@ -32,6 +32,82 @@ const _CITY_WALL_W  = 2;    // толщина крепостной стены, �
 const _CITY_ROOFS = ['#8e3b2c', '#7a4a2a', '#3f5566', '#4e5d3a', '#6e3440', '#855a2e'];
 const _CITY_PLASTER = ['#c9b58f', '#b9a27c', '#cfc0a0', '#a89378', '#bfae8e'];
 
+// ── Стили города ─────────────────────────────────────────
+// Планировка одна, а палитра и мелкие детали — по стилю. overlay — тёмная
+// вуаль поверх всего чанка; то, что должно светиться сквозь неё (окна,
+// фонари, вода, светлячки), рисуется через _cityGlow и доигрывается уже
+// после вуали, поэтому ночью горит, а не гаснет вместе со всем остальным.
+const _CITY_STYLE_BASE = {
+  roofs: _CITY_ROOFS, plaster: _CITY_PLASTER, beam: '#4a3122', plinth: '#6b6358',
+  win: ['#f3c66b'], winOff: '#2d3a48', winLitP: 0.7, winGlow: 'rgba(255,190,90,0.22)',
+  cobbleBase: '#2f2a26', cobble: [98, 90, 80], curb: '#8d8578',
+  plaza: [150, 138, 118], mosaicBg: '#2d3d52', goldLine: '#c9a452', gold: '#e2c26a', gold2: '#b08d3e',
+  lawn: ['#1f3a1d', '#2e5a28', '#3d6e2f', '#335f28'], blade: ['rgba(120,180,90,0.7)', 'rgba(30,70,25,0.6)'],
+  flowers: ['#e8d36a', '#e98aa6', '#f2f0e6', '#b48ae8'], flowerP: 0.22, graves: false, fireflies: null,
+  water: ['#6fc3e8', '#2f7fb0', '#1d4e76'], waterGlow: null,
+  tree: ['#2f5a26', '#3b6e30', '#4d8a3c'], treeOut: ['#1e3a1c', '#27482a', '#2f5530'], fruit: '#d8494a', deadTrees: false,
+  outside: '#1b2a17', outsideBlobs: ['rgba(40,64,30,0.6)', 'rgba(14,22,12,0.5)'],
+  stoneBase: '#5d5850', stone: [112, 106, 96], merlon: '#8a8377', towerRoof: ['#7b8ea3', '#2c3947'],
+  banner: '#7d1f2a', band: '#26221e', lampGlass: 'rgba(255,200,110,0.55)',
+  overlay: null, gables: false, boards: false,
+};
+const _CITY_STYLES = {
+  classic: {},
+  // Ночь: всё то же, но глубоко-синяя вуаль и тёплые окна сквозь неё.
+  night: {
+    overlay: 'rgba(8,12,34,0.58)', winLitP: 0.8, win: ['#ffcf73', '#ffb95a'],
+    winGlow: 'rgba(255,180,80,0.30)', lampGlass: '#ffd98a',
+    water: ['#7fd8ff', '#2a86c0', '#123a66'], waterGlow: 'rgba(90,190,255,0.35)',
+    fireflies: '#d8ff7a', flowerP: 0.12,
+  },
+  // Готика: чёрный камень, бордовые и сланцевые крыши, острые щипцы с
+  // витражной розой, кровавая вода, розы в скверах.
+  gothic: {
+    overlay: 'rgba(28,6,20,0.42)',
+    roofs: ['#2a2a33', '#3a1c24', '#232830', '#44202a', '#2e2430'],
+    plaster: ['#4a4448', '#3e393d', '#524a4c', '#453d42'], beam: '#16121a', plinth: '#2a262a',
+    win: ['#c0303a', '#8a3ad0', '#d05a2a'], winLitP: 0.75, winGlow: 'rgba(200,40,70,0.28)', winOff: '#15121a',
+    cobbleBase: '#141216', cobble: [70, 66, 72], curb: '#5a5460',
+    plaza: [92, 86, 96], mosaicBg: '#2a0e16', goldLine: '#8a1f2e', gold: '#c0303a', gold2: '#6e1420',
+    lawn: ['#0e1a12', '#15261a', '#1d3322', '#172b1c'], blade: ['rgba(60,100,70,0.6)', 'rgba(10,25,15,0.6)'],
+    flowers: ['#b0102a', '#8a0a20', '#d0203a'], flowerP: 0.3,
+    water: ['#d0203a', '#7a0a1e', '#3a0410'], waterGlow: 'rgba(220,30,60,0.28)',
+    tree: ['#142418', '#1c3020', '#26402a'], treeOut: ['#0c160e', '#122016', '#18281c'], fruit: null,
+    outside: '#0c120e', outsideBlobs: ['rgba(30,40,34,0.6)', 'rgba(4,8,6,0.5)'],
+    stoneBase: '#2c2830', stone: [70, 64, 74], merlon: '#5a5460', towerRoof: ['#4a3a50', '#140e18'],
+    banner: '#9a0e22', band: '#100e12', lampGlass: '#ff8a6a', gables: true,
+  },
+  // Некрополь: пепел и тлен, кладбища вместо скверов, мёртвые деревья,
+  // заколоченные окна, зелёный призрачный свет.
+  necro: {
+    overlay: 'rgba(10,22,18,0.45)',
+    roofs: ['#3a3a36', '#44403a', '#33363a', '#3c3630'], plaster: ['#6a665c', '#5c584f', '#726c60'],
+    beam: '#2a241e', plinth: '#3a3630',
+    win: ['#7dff9a', '#5ae08a'], winLitP: 0.3, winGlow: 'rgba(90,255,140,0.26)', winOff: '#12140f', boards: true,
+    cobbleBase: '#1c1d1a', cobble: [80, 82, 74], curb: '#5e605a',
+    plaza: [104, 106, 96], mosaicBg: '#0f2418', goldLine: '#4a8a5a', gold: '#7dff9a', gold2: '#2e6a3e',
+    lawn: ['#1f1c16', '#2c2820', '#35302a', '#2e2a22'], blade: ['rgba(100,96,70,0.6)', 'rgba(20,18,12,0.6)'],
+    flowers: ['#6a6a5a'], flowerP: 0.0, graves: true, fireflies: '#8affb0',
+    water: ['#9affb8', '#2a9a5a', '#0a3a22'], waterGlow: 'rgba(90,255,150,0.35)',
+    tree: ['#2a2620', '#3a3228', '#4a4034'], treeOut: ['#1c1a16', '#26221c', '#302a22'], fruit: null, deadTrees: true,
+    outside: '#141612', outsideBlobs: ['rgba(40,40,32,0.6)', 'rgba(8,8,6,0.5)'],
+    stoneBase: '#3a3a36', stone: [84, 84, 78], merlon: '#6a6a62', towerRoof: ['#4a5a4e', '#161c18'],
+    banner: '#2e4a36', band: '#161612', lampGlass: '#9affb8',
+  },
+};
+let _cityStyleKey = 'classic';
+let CS = _CITY_STYLE_BASE;
+function _cityUseStyle() { CS = Object.assign({}, _CITY_STYLE_BASE, _CITY_STYLES[_cityStyleKey] || {}); }
+// Переключение стиля: чанки строятся заново.
+function citySetStyle(key) {
+  if (!_CITY_STYLES[key]) return;
+  _cityStyleKey = key;
+  if (typeof buildTileCanvas === 'function') buildTileCanvas();
+}
+// Светящееся: рисуется сразу и ещё раз поверх вуали, если она есть.
+let _cityGlows = [];
+function _cityGlow(c, fn) { fn(c); if (CS.overlay) _cityGlows.push(fn); }
+
 function _cityHash(a, b, salt) {
   let h = (a * 374761393 + b * 668265263 + salt * 2246822519) | 0;
   h = Math.imul(h ^ (h >>> 15), 1274126177);
@@ -181,6 +257,8 @@ function _cityHit(o, x0, y0, x1, y1) {
 // прямоугольник чанка с запасом; всё, что его не задевает, пропускается.
 function cityDrawGround(c, L, x0, y0, x1, y1) {
   const T = TILE;
+  _cityUseStyle();
+  _cityGlows = [];
   // улицы
   const roads = [
     { x0: L.roadV.x0, x1: L.roadV.x1, y0: L.fy0 - (_CITY_HOUSE_D + _CITY_WALL_W) * T, y1: L.fy1 + (_CITY_HOUSE_D + _CITY_WALL_W) * T, v: true },
@@ -203,7 +281,7 @@ function cityDrawGround(c, L, x0, y0, x1, y1) {
 function _cityCobbles(c, r, x0, y0, x1, y1) {
   const T = TILE;
   const ax0 = Math.max(r.x0, x0), ay0 = Math.max(r.y0, y0), ax1 = Math.min(r.x1, x1), ay1 = Math.min(r.y1, y1);
-  c.fillStyle = '#2f2a26';
+  c.fillStyle = CS.cobbleBase;
   c.fillRect(ax0, ay0, ax1 - ax0, ay1 - ay0);
   // Булыжник: по 3×3 камня на клетку, у каждого свой оттенок и сдвиг.
   const s = T / 3;
@@ -217,7 +295,7 @@ function _cityCobbles(c, r, x0, y0, x1, y1) {
       const x = gx * s + off + 1.5 + (h - 0.5) * 2, y = gy * s + 1.5 + (_cityHash(gx, gy, 62) - 0.5) * 2;
       const w = s - 3, hh = s - 3;
       const k = 0.78 + h * 0.34;
-      const base = [98 * k, 90 * k, 80 * k].map(v => Math.round(v));
+      const base = CS.cobble.map(v => Math.round(v * k));
       c.fillStyle = `rgb(${base[0]},${base[1]},${base[2]})`;
       _cityRRect(c, x, y, w, hh, 4); c.fill();
       c.fillStyle = 'rgba(255,240,210,0.10)';
@@ -231,7 +309,7 @@ function _cityCobbles(c, r, x0, y0, x1, y1) {
 
 function _cityCurbs(c, r, L) {
   // бордюр вдоль улицы — светлая полоса по краю
-  c.fillStyle = '#8d8578';
+  c.fillStyle = CS.curb;
   if (r.v) {
     c.fillRect(r.x0 - 3, r.y0, 5, r.y1 - r.y0);
     c.fillRect(r.x1 - 2, r.y0, 5, r.y1 - r.y0);
@@ -250,7 +328,7 @@ function _cityPlaza(c, L) {
   // бордюр и тень
   c.fillStyle = 'rgba(0,0,0,0.35)';
   c.beginPath(); c.arc(x, y + 3, R + 8, 0, Math.PI * 2); c.fill();
-  c.fillStyle = '#8d8578';
+  c.fillStyle = CS.curb;
   c.beginPath(); c.arc(x, y, R + 7, 0, Math.PI * 2); c.fill();
   c.fillStyle = '#5c554c';
   c.beginPath(); c.arc(x, y, R + 2, 0, Math.PI * 2); c.fill();
@@ -265,7 +343,7 @@ function _cityPlaza(c, L) {
     for (let j = 0; j < cnt; j++) {
       const a0 = j / cnt * Math.PI * 2 + off, a1 = (j + 1) / cnt * Math.PI * 2 + off;
       const k = 0.8 + _cityHash(j, n, 71) * 0.3;
-      c.fillStyle = `rgb(${Math.round(150 * k)},${Math.round(138 * k)},${Math.round(118 * k)})`;
+      c.fillStyle = `rgb(${Math.round(CS.plaza[0] * k)},${Math.round(CS.plaza[1] * k)},${Math.round(CS.plaza[2] * k)})`;
       c.beginPath();
       c.arc(x, y, rr + ring / 2 - 2, a0 + 0.02, a1 - 0.02);
       c.arc(x, y, rr - ring / 2 + 1, a1 - 0.02, a0 + 0.02, true);
@@ -274,9 +352,9 @@ function _cityPlaza(c, L) {
   }
   // мозаика в центре — роза ветров
   const mr = 50;
-  c.fillStyle = '#2d3d52';
+  c.fillStyle = CS.mosaicBg;
   c.beginPath(); c.arc(x, y, mr, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = '#c9a452'; c.lineWidth = 4;
+  c.strokeStyle = CS.goldLine; c.lineWidth = 4;
   c.beginPath(); c.arc(x, y, mr - 3, 0, Math.PI * 2); c.stroke();
   c.lineWidth = 2;
   c.beginPath(); c.arc(x, y, mr - 11, 0, Math.PI * 2); c.stroke();
@@ -290,8 +368,8 @@ function _cityPlaza(c, L) {
     }
   };
   star(4, mr - 13, 10, Math.PI / 4, '#8a7a55', '#6b5e40');
-  star(4, mr - 7, 12, -Math.PI / 2, '#e2c26a', '#b08d3e');
-  c.fillStyle = '#e2c26a';
+  star(4, mr - 7, 12, -Math.PI / 2, CS.gold, CS.gold2);
+  c.fillStyle = CS.gold;
   c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 2); c.fill();
   c.restore();
 }
@@ -301,12 +379,12 @@ function _cityLawn(c, q, x0, y0, x1, y1) {
   // живая изгородь по краю, внутри — трава
   c.fillStyle = 'rgba(0,0,0,0.3)';
   _cityRRect(c, q.x0 - 2, q.y0 + 2, w + 4, h + 4, 18); c.fill();
-  c.fillStyle = '#1f3a1d';
+  c.fillStyle = CS.lawn[0];
   _cityRRect(c, q.x0, q.y0, w, h, 16); c.fill();
-  c.fillStyle = '#2e5a28';
+  c.fillStyle = CS.lawn[1];
   _cityRRect(c, q.x0 + 4, q.y0 + 2, w - 8, h - 8, 14); c.fill();
   const g = c.createLinearGradient(0, q.y0, 0, q.y1);
-  g.addColorStop(0, '#3d6e2f'); g.addColorStop(1, '#335f28');
+  g.addColorStop(0, CS.lawn[2]); g.addColorStop(1, CS.lawn[3]);
   c.fillStyle = g;
   _cityRRect(c, q.x0 + 10, q.y0 + 10, w - 20, h - 20, 10); c.fill();
   // травинки и цветы — только в клетках, которые задевают чанк
@@ -315,15 +393,25 @@ function _cityLawn(c, q, x0, y0, x1, y1) {
   const ty0 = Math.max(Math.floor((q.y0 + 10) / T), Math.floor(y0 / T)), ty1 = Math.min(Math.ceil((q.y1 - 10) / T), Math.ceil(y1 / T));
   c.save();
   _cityRRect(c, q.x0 + 10, q.y0 + 10, w - 20, h - 20, 10); c.clip();
-  const flowers = ['#e8d36a', '#e98aa6', '#f2f0e6', '#b48ae8'];
+  const flowers = CS.flowers;
   for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
     for (let k = 0; k < 3; k++) {
       const gx = tx * T + _cityHash(tx, ty, 80 + k) * T, gy = ty * T + _cityHash(tx, ty, 83 + k) * T;
-      c.strokeStyle = k === 0 ? 'rgba(120,180,90,0.7)' : 'rgba(30,70,25,0.6)';
+      c.strokeStyle = CS.blade[k === 0 ? 0 : 1];
       c.lineWidth = 2;
       c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx - 2, gy - 5); c.moveTo(gx, gy); c.lineTo(gx + 2, gy - 6); c.stroke();
     }
-    if (_cityHash(tx, ty, 90) < 0.22) {
+    if (CS.graves && _cityHash(tx, ty, 97) < 0.16) _cityGrave(c, tx * T + 8 + _cityHash(tx, ty, 98) * (T - 16), ty * T + 14 + _cityHash(tx, ty, 99) * (T - 18), tx, ty);
+    if (CS.fireflies && _cityHash(tx, ty, 94) < 0.1) {
+      const ffx = tx * T + _cityHash(tx, ty, 88) * T, ffy = ty * T + _cityHash(tx, ty, 89) * T;
+      _cityGlow(c, g => {
+        const rg = g.createRadialGradient(ffx, ffy, 0, ffx, ffy, 9);
+        rg.addColorStop(0, CS.fireflies); rg.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = rg; g.fillRect(ffx - 9, ffy - 9, 18, 18);
+        g.fillStyle = '#ffffff'; g.fillRect(ffx - 1, ffy - 1, 2, 2);
+      });
+    }
+    if (_cityHash(tx, ty, 90) < CS.flowerP) {
       const fx = tx * T + _cityHash(tx, ty, 91) * T, fy = ty * T + _cityHash(tx, ty, 92) * T;
       c.fillStyle = flowers[Math.floor(_cityHash(tx, ty, 93) * flowers.length)];
       for (let k = 0; k < 3; k++) { c.beginPath(); c.arc(fx + (k - 1) * 4, fy + (k & 1) * 3, 2.2, 0, Math.PI * 2); c.fill(); }
@@ -347,7 +435,7 @@ function _cityFountain(c, f) {
   c.fillStyle = '#7d7466';
   c.beginPath(); c.arc(x, y, r - 7, 0, Math.PI * 2); c.fill();
   const wg = c.createRadialGradient(x - r * 0.3, y - r * 0.3, 4, x, y, r - 9);
-  wg.addColorStop(0, '#6fc3e8'); wg.addColorStop(0.6, '#2f7fb0'); wg.addColorStop(1, '#1d4e76');
+  wg.addColorStop(0, CS.water[0]); wg.addColorStop(0.6, CS.water[1]); wg.addColorStop(1, CS.water[2]);
   c.fillStyle = wg;
   c.beginPath(); c.arc(x, y, r - 9, 0, Math.PI * 2); c.fill();
   // блики и круги на воде
@@ -358,8 +446,18 @@ function _cityFountain(c, f) {
   c.beginPath(); c.arc(x, y, 18, 0, Math.PI * 2); c.fill();
   c.fillStyle = '#c9bfab';
   c.beginPath(); c.arc(x, y - 2, 14, 0, Math.PI * 2); c.fill();
-  c.fillStyle = '#5fb4de';
+  c.fillStyle = CS.water[1];
   c.beginPath(); c.arc(x, y - 2, 9, 0, Math.PI * 2); c.fill();
+  if (CS.waterGlow) {
+    _cityGlow(c, g => {
+      const rg = g.createRadialGradient(x, y, r * 0.3, x, y, r + 30);
+      rg.addColorStop(0, CS.waterGlow); rg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = rg; g.beginPath(); g.arc(x, y, r + 30, 0, Math.PI * 2); g.fill();
+      g.fillStyle = CS.water[0]; g.globalAlpha = 0.5;
+      g.beginPath(); g.arc(x, y, r - 9, 0, Math.PI * 2); g.fill();
+      g.globalAlpha = 1;
+    });
+  }
   c.fillStyle = '#e6f6ff';
   c.beginPath(); c.arc(x - 2, y - 5, 3, 0, Math.PI * 2); c.fill();
 }
@@ -370,6 +468,7 @@ function _cityFountain(c, f) {
 // чанка, иначе на стыке фонарь горел бы дважды.
 function cityDrawStructures(c, L, x0, y0, x1, y1, own, torchList) {
   const T = TILE;
+  _cityUseStyle();
   // за стеной — трава и лес
   const outer = [
     { x0: -1e5, y0: -1e5, x1: 1e5, y1: L.wy0 }, { x0: -1e5, y0: L.wy1, x1: 1e5, y1: 1e5 },
@@ -385,7 +484,7 @@ function cityDrawStructures(c, L, x0, y0, x1, y1, own, torchList) {
   for (const b of band) {
     if (!_cityHit(b, x0, y0, x1, y1)) continue;
     const ax0 = Math.max(b.x0, x0), ay0 = Math.max(b.y0, y0);
-    c.fillStyle = '#26221e';
+    c.fillStyle = CS.band;
     c.fillRect(ax0, ay0, Math.min(b.x1, x1) - ax0, Math.min(b.y1, y1) - ay0);
   }
   // улица продолжается через проём к воротам
@@ -450,17 +549,25 @@ function cityDrawStructures(c, L, x0, y0, x1, y1, own, torchList) {
       drawProp(c, props[Math.floor(_cityHash(tx, ty, 96) * props.length)], tx * T + T / 2, ty * T + T - 6);
     }
   }
+
+  // вуаль стиля и всё светящееся поверх неё
+  if (CS.overlay) {
+    c.fillStyle = CS.overlay;
+    c.fillRect(x0, y0, x1 - x0, y1 - y0);
+    for (const fn of _cityGlows) fn(c);
+  }
+  _cityGlows = [];
 }
 
 function _cityOutside(c, o, x0, y0, x1, y1) {
   const T = TILE;
   const ax0 = Math.max(o.x0, x0), ay0 = Math.max(o.y0, y0), ax1 = Math.min(o.x1, x1), ay1 = Math.min(o.y1, y1);
   if (ax1 <= ax0 || ay1 <= ay0) return;
-  c.fillStyle = '#1b2a17';
+  c.fillStyle = CS.outside;
   c.fillRect(ax0, ay0, ax1 - ax0, ay1 - ay0);
   const tx0 = Math.floor(ax0 / T), ty0 = Math.floor(ay0 / T), tx1 = Math.ceil(ax1 / T), ty1 = Math.ceil(ay1 / T);
   for (let ty = ty0; ty < ty1; ty++) for (let tx = tx0; tx < tx1; tx++) {
-    c.fillStyle = _cityHash(tx, ty, 101) < 0.5 ? 'rgba(40,64,30,0.6)' : 'rgba(14,22,12,0.5)';
+    c.fillStyle = CS.outsideBlobs[_cityHash(tx, ty, 101) < 0.5 ? 0 : 1];
     c.beginPath(); c.arc(tx * T + _cityHash(tx, ty, 102) * T, ty * T + _cityHash(tx, ty, 103) * T, 8 + _cityHash(tx, ty, 104) * 8, 0, Math.PI * 2); c.fill();
   }
   // Деревья за стеной: центр берётся из клетки на сетке 2×2, чтобы крона,
@@ -491,14 +598,14 @@ function _cityWalls(c, L, x0, y0, x1, y1) {
     c.save();
     c.beginPath(); c.rect(s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0); c.clip();
     // верх стены — каменная кладка
-    c.fillStyle = '#5d5850';
+    c.fillStyle = CS.stoneBase;
     c.fillRect(ax0, ay0, ax1 - ax0, ay1 - ay0);
     const bw = 26, bh = 13;
     for (let y = Math.floor(ay0 / bh) * bh; y < ay1; y += bh) {
       const row = Math.round(y / bh), off = (row & 1) ? bw / 2 : 0;
       for (let x = Math.floor((ax0 - off) / bw) * bw + off; x < ax1; x += bw) {
         const k = 0.85 + _cityHash(Math.round(x), row, 121) * 0.3;
-        c.fillStyle = `rgb(${Math.round(112 * k)},${Math.round(106 * k)},${Math.round(96 * k)})`;
+        c.fillStyle = `rgb(${Math.round(CS.stone[0] * k)},${Math.round(CS.stone[1] * k)},${Math.round(CS.stone[2] * k)})`;
         c.fillRect(x + 1, y + 1, bw - 2, bh - 2);
       }
     }
@@ -510,7 +617,7 @@ function _cityWalls(c, L, x0, y0, x1, y1) {
       c.fillRect(ax0, my - 12, ax1 - ax0, 24);
       for (let x = Math.floor(ax0 / (m + gap)) * (m + gap); x < ax1; x += m + gap) {
         for (const yy of [s.y0 + 2, s.y1 - 14]) {
-          c.fillStyle = '#8a8377'; c.fillRect(x, yy, m, 12);
+          c.fillStyle = CS.merlon; c.fillRect(x, yy, m, 12);
           c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x, yy + 9, m, 3);
         }
       }
@@ -525,7 +632,7 @@ function _cityWalls(c, L, x0, y0, x1, y1) {
       c.fillRect(mx - 12, ay0, 24, ay1 - ay0);
       for (let y = Math.floor(ay0 / (m + gap)) * (m + gap); y < ay1; y += m + gap) {
         for (const xx of [s.x0 + 2, s.x1 - 14]) {
-          c.fillStyle = '#8a8377'; c.fillRect(xx, y, 12, m);
+          c.fillStyle = CS.merlon; c.fillRect(xx, y, 12, m);
           c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(xx, y + m - 3, 12, 3);
         }
       }
@@ -547,7 +654,7 @@ function _cityGate(c, L, g) {
     c.strokeStyle = '#3c3a38'; c.lineWidth = 3;
     for (let x = ox + 18; x < ox + rw - 10; x += 16) { c.beginPath(); c.moveTo(x, oy + 12); c.lineTo(x, oy + ww); c.stroke(); }
     for (let y = oy + 30; y < oy + ww; y += 16) { c.beginPath(); c.moveTo(ox + 8, y); c.lineTo(ox + rw - 8, y); c.stroke(); }
-    c.fillStyle = '#8a8377'; c.fillRect(ox - 6, oy, rw + 12, 8);
+    c.fillStyle = CS.merlon; c.fillRect(ox - 6, oy, rw + 12, 8);
   } else {
     const ox = g.x - ww / 2, oy = g.y - rw / 2;
     c.fillStyle = '#4a443c'; c.fillRect(ox, oy - 6, ww, rw + 12);
@@ -575,13 +682,13 @@ function _cityTower(c, x, y, r) {
   c.beginPath(); c.ellipse(x, y + r * 0.55, r, r * 0.5, 0, 0, Math.PI); c.fill();
   c.fillStyle = '#6f695e';
   c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
-  c.fillStyle = '#8a8377';
+  c.fillStyle = CS.merlon;
   for (let k = 0; k < 12; k++) {
     const a = k / 12 * Math.PI * 2;
     c.beginPath(); c.arc(x + Math.cos(a) * (r - 5), y + Math.sin(a) * (r - 5), 5, 0, Math.PI * 2); c.fill();
   }
   const rg = c.createRadialGradient(x - r * 0.3, y - r * 0.5, 2, x, y, r - 6);
-  rg.addColorStop(0, '#7b8ea3'); rg.addColorStop(1, '#2c3947');
+  rg.addColorStop(0, CS.towerRoof[0]); rg.addColorStop(1, CS.towerRoof[1]);
   c.fillStyle = rg;
   c.beginPath(); c.arc(x, y, r - 9, 0, Math.PI * 2); c.fill();
   c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = 2;
@@ -595,7 +702,7 @@ function _cityTower(c, x, y, r) {
 
 function _cityBanner(c, x, y) {
   c.fillStyle = '#2a2018'; c.fillRect(x - 12, y - 2, 24, 4);
-  c.fillStyle = '#7d1f2a';
+  c.fillStyle = CS.banner;
   c.beginPath(); c.moveTo(x - 10, y); c.lineTo(x + 10, y); c.lineTo(x + 10, y + 26); c.lineTo(x, y + 20); c.lineTo(x - 10, y + 26); c.closePath(); c.fill();
   c.fillStyle = '#e2c26a';
   c.beginPath(); c.moveTo(x, y + 5); c.lineTo(x + 5, y + 11); c.lineTo(x, y + 17); c.lineTo(x - 5, y + 11); c.closePath(); c.fill();
@@ -606,8 +713,8 @@ function _cityHouse(c, h, own, torchList) {
   const { x, y, w } = h;
   const H = h.h;
   const r1 = _cityHash(h.i, h.s, 201), r2 = _cityHash(h.i, h.s, 202), r3 = _cityHash(h.i, h.s, 203);
-  const roof = _CITY_ROOFS[Math.floor(r1 * _CITY_ROOFS.length)];
-  const wall = _CITY_PLASTER[Math.floor(r2 * _CITY_PLASTER.length)];
+  const roof = CS.roofs[Math.floor(r1 * CS.roofs.length)];
+  const wall = CS.plaster[Math.floor(r2 * CS.plaster.length)];
   const fh = Math.min(h.big ? 46 : 38, H * 0.42);      // высота фасада
   const rh = H - fh;                                    // крыша над ним
   const pad = 3;
@@ -621,13 +728,13 @@ function _cityHouse(c, h, own, torchList) {
   c.fillStyle = wall;
   c.fillRect(fx, fy, fw, fh);
   // фахверк: балки по краям и под крышей
-  const beam = '#4a3122';
+  const beam = CS.beam;
   c.fillStyle = beam;
   c.fillRect(fx, fy, 5, fh); c.fillRect(fx + fw - 5, fy, 5, fh);
   c.fillRect(fx, fy, fw, 4);
   c.fillRect(fx, fy + fh - 5, fw, 5);
   // цоколь
-  c.fillStyle = '#6b6358';
+  c.fillStyle = CS.plinth;
   c.fillRect(fx, fy + fh - 7, fw, 7);
   // дверь и окна по ширине дома
   const slots = Math.max(2, Math.round(fw / 34));
@@ -652,15 +759,34 @@ function _cityHouse(c, h, own, torchList) {
     } else {
       const ww = 14, wh = Math.min(15, fh - 16), wy = fy + 9;
       c.fillStyle = beam; c.fillRect(sx - ww / 2 - 3, wy - 3, ww + 6, wh + 6);
-      const lit = _cityHash(h.i * 13 + k, h.s, 211) < 0.7;
-      c.fillStyle = lit ? '#f3c66b' : '#2d3a48';
-      c.fillRect(sx - ww / 2, wy, ww, wh);
-      if (lit) { c.fillStyle = 'rgba(255,236,170,0.6)'; c.fillRect(sx - ww / 2, wy, ww, 4); }
-      c.fillStyle = beam; c.fillRect(sx - 1, wy, 2, wh); c.fillRect(sx - ww / 2, wy + wh / 2 - 1, ww, 2);
+      const lit = _cityHash(h.i * 13 + k, h.s, 211) < CS.winLitP;
+      if (lit) {
+        const col = CS.win[Math.floor(_cityHash(h.i * 13 + k, h.s, 214) * CS.win.length)];
+        _cityGlow(c, g => {
+          if (CS.overlay) {
+            const rg = g.createRadialGradient(sx, wy + wh / 2, 2, sx, wy + wh / 2, 26);
+            rg.addColorStop(0, CS.winGlow); rg.addColorStop(1, 'rgba(0,0,0,0)');
+            g.fillStyle = rg; g.fillRect(sx - 26, wy + wh / 2 - 26, 52, 52);
+          }
+          g.fillStyle = col; g.fillRect(sx - ww / 2, wy, ww, wh);
+          g.fillStyle = 'rgba(255,240,200,0.45)'; g.fillRect(sx - ww / 2, wy, ww, 4);
+          g.fillStyle = beam; g.fillRect(sx - 1, wy, 2, wh); g.fillRect(sx - ww / 2, wy + wh / 2 - 1, ww, 2);
+        });
+      } else {
+        c.fillStyle = CS.winOff; c.fillRect(sx - ww / 2, wy, ww, wh);
+        c.fillStyle = beam; c.fillRect(sx - 1, wy, 2, wh); c.fillRect(sx - ww / 2, wy + wh / 2 - 1, ww, 2);
+        if (CS.boards) {
+          c.fillStyle = '#5a4630';
+          c.save(); c.translate(sx, wy + wh / 2);
+          c.rotate(0.35); c.fillRect(-ww / 2 - 3, -2.5, ww + 6, 5);
+          c.rotate(-0.7); c.fillRect(-ww / 2 - 3, -2.5, ww + 6, 5);
+          c.restore();
+        }
+      }
       // ящик с цветами под окном
-      if (_cityHash(h.i * 13 + k, h.s, 212) < 0.45) {
+      if (!CS.boards && _cityHash(h.i * 13 + k, h.s, 212) < 0.45) {
         c.fillStyle = '#5a3a22'; c.fillRect(sx - ww / 2 - 2, wy + wh + 3, ww + 4, 4);
-        c.fillStyle = _cityHash(k, h.i, 213) < 0.5 ? '#e0607a' : '#e8d36a';
+        c.fillStyle = CS.flowers[Math.floor(_cityHash(k, h.i, 213) * CS.flowers.length)];
         for (let j = 0; j < 4; j++) { c.beginPath(); c.arc(sx - ww / 2 + 2 + j * 4, wy + wh + 2, 2, 0, Math.PI * 2); c.fill(); }
       }
     }
@@ -705,12 +831,35 @@ function _cityHouse(c, h, own, torchList) {
   c.fillStyle = 'rgba(0,0,0,0.35)';
   c.fillRect(fx, ry + rH + 2, fw, 4);
 
+  // готика: острый щипец над фасадом с витражной розой
+  if (CS.gables && fw >= 60) {
+    const gx = fx + fw * (0.3 + _cityHash(h.i, h.s, 207) * 0.4), gw = Math.min(56, fw * 0.5), gt = fy - 46;
+    c.fillStyle = _cityShade(roof, -0.35);
+    c.beginPath(); c.moveTo(gx - gw / 2 - 4, fy + 2); c.lineTo(gx, gt - 6); c.lineTo(gx + gw / 2 + 4, fy + 2); c.closePath(); c.fill();
+    c.fillStyle = wall;
+    c.beginPath(); c.moveTo(gx - gw / 2, fy + 2); c.lineTo(gx, gt); c.lineTo(gx + gw / 2, fy + 2); c.closePath(); c.fill();
+    c.fillStyle = beam; c.fillRect(gx - 1.5, gt - 16, 3, 12); c.fillRect(gx - 5, gt - 12, 10, 3);
+    const rcol = CS.win[Math.floor(_cityHash(h.i, h.s, 208) * CS.win.length)];
+    _cityGlow(c, g => {
+      const ry0 = fy - 14;
+      if (CS.overlay) {
+        const rg = g.createRadialGradient(gx, ry0, 2, gx, ry0, 22);
+        rg.addColorStop(0, CS.winGlow); rg.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = rg; g.fillRect(gx - 22, ry0 - 22, 44, 44);
+      }
+      g.fillStyle = beam; g.beginPath(); g.arc(gx, ry0, 9, 0, Math.PI * 2); g.fill();
+      g.fillStyle = rcol; g.beginPath(); g.arc(gx, ry0, 7, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = beam; g.lineWidth = 1.5;
+      for (let j = 0; j < 4; j++) { const a = j * Math.PI / 4; g.beginPath(); g.moveTo(gx - Math.cos(a) * 7, ry0 - Math.sin(a) * 7); g.lineTo(gx + Math.cos(a) * 7, ry0 + Math.sin(a) * 7); g.stroke(); }
+    });
+  }
+
   // труба
   if (_cityHash(h.i, h.s, 204) < 0.6) {
     const chx = rx + rw * (0.2 + _cityHash(h.i, h.s, 205) * 0.6), chy = ry + 2;
     c.fillStyle = '#6b3b2e'; c.fillRect(chx - 6, chy - 12, 12, 18);
     c.fillStyle = '#4a2820'; c.fillRect(chx - 6, chy - 3, 12, 3);
-    c.fillStyle = '#8a8377'; c.fillRect(chx - 8, chy - 14, 16, 4);
+    c.fillStyle = CS.merlon; c.fillRect(chx - 8, chy - 14, 16, 4);
     c.fillStyle = '#1a1512'; c.fillRect(chx - 4, chy - 13, 8, 2);
   }
   // слуховое окно на больших крышах
@@ -719,16 +868,18 @@ function _cityHouse(c, h, own, torchList) {
     c.fillStyle = _cityShade(roof, -0.3);
     c.beginPath(); c.moveTo(dx - 14, dy + 20); c.lineTo(dx, dy); c.lineTo(dx + 14, dy + 20); c.closePath(); c.fill();
     c.fillStyle = wall; c.fillRect(dx - 9, dy + 12, 18, 14);
-    c.fillStyle = '#f3c66b'; c.fillRect(dx - 5, dy + 15, 10, 9);
+    const dcol = CS.win[0];
+    _cityGlow(c, g => { g.fillStyle = dcol; g.fillRect(dx - 5, dy + 15, 10, 9); });
   }
 }
 
 function _cityTree(c, x, y, r, k, dark) {
   c.fillStyle = 'rgba(0,0,0,0.35)';
   c.beginPath(); c.ellipse(x + 5, y + r * 0.55, r * 0.95, r * 0.5, 0, 0, Math.PI * 2); c.fill();
+  if (CS.deadTrees) { _cityDeadTree(c, x, y, r, k, dark); return; }
   c.fillStyle = '#4a3322';
   c.fillRect(x - 3, y, 6, r * 0.55);
-  const base = dark ? ['#1e3a1c', '#27482a', '#2f5530'] : ['#2f5a26', '#3b6e30', '#4d8a3c'];
+  const base = dark ? CS.treeOut : CS.tree;
   const blobs = 5;
   for (let j = 0; j < blobs; j++) {
     const a = j / blobs * Math.PI * 2 + _cityHash(k, j, 301) * 0.8;
@@ -740,8 +891,8 @@ function _cityTree(c, x, y, r, k, dark) {
   c.beginPath(); c.arc(x, y - r * 0.4, r * 0.62, 0, Math.PI * 2); c.fill();
   c.fillStyle = base[2];
   c.beginPath(); c.arc(x - r * 0.18, y - r * 0.58, r * 0.34, 0, Math.PI * 2); c.fill();
-  if (!dark && _cityHash(k, 7, 302) < 0.5) {
-    c.fillStyle = '#d8494a';
+  if (!dark && CS.fruit && _cityHash(k, 7, 302) < 0.5) {
+    c.fillStyle = CS.fruit;
     for (let j = 0; j < 4; j++) { c.beginPath(); c.arc(x + (_cityHash(k, j, 303) - 0.5) * r, y - r * 0.4 + (_cityHash(k, j, 304) - 0.5) * r * 0.8, 2.5, 0, Math.PI * 2); c.fill(); }
   }
 }
@@ -753,11 +904,18 @@ function _cityLamp(c, x, y) {
   c.fillRect(x - 5, y - 4, 10, 5);         // основание
   c.fillRect(x - 2, y - 38, 4, 36);        // столб
   c.fillRect(x - 7, y - 46, 14, 3);        // крышка фонаря
-  c.fillStyle = 'rgba(255,200,110,0.55)';
-  c.fillRect(x - 5, y - 43, 10, 9);        // стекло
-  c.fillStyle = '#1f1c1a';
-  c.fillRect(x - 6, y - 34, 12, 2);
-  c.fillRect(x - 1, y - 43, 2, 9);
+  _cityGlow(c, g => {
+    g.fillStyle = CS.lampGlass;
+    g.fillRect(x - 5, y - 43, 10, 9);        // стекло
+    g.fillStyle = '#1f1c1a';
+    g.fillRect(x - 6, y - 34, 12, 2);
+    g.fillRect(x - 1, y - 43, 2, 9);
+    if (CS.overlay) {
+      const rg = g.createRadialGradient(x, y - 30, 2, x, y - 10, 70);
+      rg.addColorStop(0, 'rgba(255,200,120,0.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = rg; g.fillRect(x - 70, y - 80, 140, 150);
+    }
+  });
 }
 
 function _cityRRect(c, x, y, w, h, r) {
@@ -781,7 +939,9 @@ const _CITY_STALL = {
   storage:   { a: '#3d7a3a', b: '#d9d1b0', sign: '#44cc44' },
 };
 function _cityStall(c, st, own, torchList) {
-  const sty = _CITY_STALL[st.kind] || _CITY_STALL.merchant;
+  const base = _CITY_STALL[st.kind] || _CITY_STALL.merchant;
+  // в тёмных стилях навес приглушён, иначе светится ярче фонарей
+  const sty = CS.overlay ? { a: _cityShade(base.a, -0.35), b: _cityShade(base.b, -0.45), sign: base.sign } : base;
   const W = 132, x = st.x - W / 2;
   const yb = st.y - 14;          // низ прилавка
   const yt = yb - 104;           // верх задней стенки
@@ -812,7 +972,14 @@ function _cityStall(c, st, own, torchList) {
     c.fillStyle = '#2a2622'; _cityRRect(c, fx - 14, fy + 20, 28, 24, 10); c.fill();
     const fg = c.createRadialGradient(fx, fy + 38, 2, fx, fy + 34, 16);
     fg.addColorStop(0, '#ffe08a'); fg.addColorStop(0.5, '#ff8a2e'); fg.addColorStop(1, 'rgba(160,40,10,0.2)');
-    c.fillStyle = fg; _cityRRect(c, fx - 12, fy + 24, 24, 18, 8); c.fill();
+    _cityGlow(c, g => {
+      g.fillStyle = fg; _cityRRect(g, fx - 12, fy + 24, 24, 18, 8); g.fill();
+      if (CS.overlay) {
+        const rg = g.createRadialGradient(fx, fy + 34, 4, fx, fy + 34, 60);
+        rg.addColorStop(0, 'rgba(255,140,50,0.3)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = rg; g.fillRect(fx - 60, fy - 26, 120, 120);
+      }
+    });
     if (fx >= own.x0 && fx < own.x1 && fy + 30 >= own.y0 && fy + 30 < own.y1) torchList.push({ x: fx, y: fy + 30 });
     // инструменты на стене
     c.strokeStyle = '#8a8f99'; c.lineWidth = 3;
@@ -899,4 +1066,36 @@ function _cityStall(c, st, own, torchList) {
     c.fillStyle = sty.sign; c.fillRect(sx - 7, sy - 1, 14, 2);
     c.fillStyle = '#1a1410'; c.fillRect(sx - 7, sy - 7, 14, 4);
   }
+}
+
+// ── Некрополь: надгробия и мёртвые деревья ───────────────
+function _cityGrave(c, x, y, tx, ty) {
+  const kind = _cityHash(tx, ty, 120);
+  c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x - 7, y + 1, 16, 4);
+  c.fillStyle = '#3a342a'; c.fillRect(x - 8, y - 1, 16, 5);   // холмик
+  if (kind < 0.55) {
+    c.fillStyle = '#6e6c64'; _cityRRect(c, x - 6, y - 16, 12, 16, 5); c.fill();
+    c.fillStyle = '#8a887e'; c.fillRect(x - 5, y - 15, 3, 13);
+    c.fillStyle = '#4a4840'; c.fillRect(x - 3, y - 11, 6, 1.5); c.fillRect(x - 3, y - 8, 6, 1.5);
+  } else {
+    c.fillStyle = '#5e5c54'; c.fillRect(x - 1.5, y - 18, 4, 18); c.fillRect(x - 6, y - 13, 14, 4);
+  }
+}
+
+function _cityDeadTree(c, x, y, r, k, dark) {
+  c.strokeStyle = dark ? '#3e382e' : '#6a5a48';
+  c.lineCap = 'round';
+  c.lineWidth = 6;
+  c.beginPath(); c.moveTo(x, y + r * 0.5); c.lineTo(x, y - r * 0.4); c.stroke();
+  const br = (bx, by, a, len, w, d) => {
+    const ex = bx + Math.cos(a) * len, ey = by + Math.sin(a) * len;
+    c.lineWidth = w; c.beginPath(); c.moveTo(bx, by); c.lineTo(ex, ey); c.stroke();
+    if (d > 0) {
+      br(ex, ey, a - 0.5 - _cityHash(k, d, 131) * 0.3, len * 0.65, w * 0.6, d - 1);
+      br(ex, ey, a + 0.45 + _cityHash(k, d, 132) * 0.3, len * 0.6, w * 0.6, d - 1);
+    }
+  };
+  br(x, y - r * 0.4, -Math.PI / 2 - 0.5, r * 0.55, 4, 2);
+  br(x, y - r * 0.4, -Math.PI / 2 + 0.55, r * 0.5, 4, 2);
+  c.lineCap = 'butt';
 }
