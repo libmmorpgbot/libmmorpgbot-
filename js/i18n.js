@@ -1345,6 +1345,10 @@ Object.assign(I18N_UI, {
   navCodexBtn: { ru: 'Кодекс', en: 'Codex', uk: 'Кодекс', es: 'Códice', tr: 'Kodeks', pt: 'Códex' },
   navMarketBtn: { ru: 'Маркет', en: 'Market', uk: 'Маркет', es: 'Mercado', tr: 'Pazar', pt: 'Mercado' },
   navShopBtn: { ru: 'Магазин', en: 'Shop', uk: 'Магазин', es: 'Tienda', tr: 'Mağaza', pt: 'Loja' },
+  // Распродажа −30% до конца сезона (shopSaleOn, shared/definitions.js).
+  shopSaleBannerLbl: { ru: 'Скидка до конца сезона:', en: 'Sale ends with the season in', uk: 'Знижка до кінця сезону:', es: 'Oferta hasta el fin de temporada:', tr: 'Sezon sonuna kadar indirim:', pt: 'Promoção até o fim da temporada:' },
+  shopSaleModalTitle: { ru: 'Распродажа в магазине!', en: 'Shop sale!', uk: 'Розпродаж у магазині!', es: '¡Rebajas en la tienda!', tr: 'Mağazada indirim!', pt: 'Promoção na loja!' },
+  shopSaleModalText: { ru: 'Все паки со скидкой {n}% до конца сезона. Наборы Усиления — по обычной цене.', en: 'Every pack is {n}% off until the season ends. Empowerment sets stay at full price.', uk: 'Усі паки зі знижкою {n}% до кінця сезону. Набори Посилення — за звичайною ціною.', es: 'Todos los packs con {n}% de descuento hasta el fin de temporada. Los packs de Potenciación mantienen su precio.', tr: 'Sezon sonuna kadar tüm paketlerde %{n} indirim. Güçlendirme setleri normal fiyatında.', pt: 'Todos os pacotes com {n}% de desconto até o fim da temporada. Os kits de Fortalecimento mantêm o preço normal.' },
   skillsHdrUpper: { ru: 'НАВЫКИ', en: 'SKILLS', uk: 'НАВИЧКИ', es: 'HABILIDADES', tr: 'YETENEKLER', pt: 'HABILIDADES' },
   gearSectionHdr: { ru: 'Снаряжение (нажми для снятия)', en: 'Equipment (tap to unequip)', uk: 'Спорядження (натисни, щоб зняти)', es: 'Equipo (toca para desequipar)', tr: 'Ekipman (çıkarmak için dokun)', pt: 'Equipamento (toque para desequipar)' },
   itemsSectionHdr: { ru: 'Предметы (нажми для экипировки)', en: 'Items (tap to equip)', uk: 'Предмети (натисни, щоб одягнути)', es: 'Objetos (toca para equipar)', tr: 'Eşyalar (kuşanmak için dokun)', pt: 'Itens (toque para equipar)' },

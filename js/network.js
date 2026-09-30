@@ -4089,6 +4089,9 @@ function _finishOnlineStart() {
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
   if (typeof showCodexBtn === 'function') showCodexBtn();
+  // Распродажа до конца сезона — окно на каждом входе в игру (showShopSaleModal,
+  // js/ui.js). С задержкой: пусть сначала встанет HUD и мир под окном.
+  if (typeof showShopSaleModal === 'function') setTimeout(showShopSaleModal, 800);
 
   // ── АВТО включается само у тех, кому оно доступно ────────────────────────
   // Кнопка AUTO открыта с VIP 2 (AUTO_ATTACK_VIP_MIN, js/input.js), но

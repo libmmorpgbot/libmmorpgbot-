@@ -609,6 +609,22 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 const SEASON_END_AT = Date.UTC(2026, 9, 1, 15, 0, 0); // 1 Oct 2026, 18:00 MSK (UTC+3)
 function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 
+// ── Скидка в магазине GRAM до конца сезона ─────────────────────────────────
+// −30% на все паки, пока идёт сезон (seasonActive выше). Кроме наборов
+// Усиления (rmat1-3): у них в описании стоит noSale, и скидка на них не
+// распространяется. Одна функция на сервер и клиент: сервер списывает ровно
+// shopPkgPrice (buyPackage, server/db/repos/shop.js), клиент по ней же
+// рисует цену и решает, хватает ли баланса, — разойтись им нечем.
+const SHOP_SEASON_SALE_PCT = 30;
+function shopSaleOn(pkg, now = Date.now()) {
+  return !!pkg && !pkg.noSale && seasonActive(now);
+}
+function shopPkgPrice(pkg, now = Date.now()) {
+  if (!shopSaleOn(pkg, now)) return pkg.gram;
+  // Сотые GRAM, а не float: 65 × 0.7 даёт 45.49999…, а списывать надо 45.5.
+  return Math.round(pkg.gram * (100 - SHOP_SEASON_SALE_PCT)) / 100;
+}
+
 // ── Заточка (enhance) ────────────────────────────────────────────────────
 // Flat now, on purpose: any item, any rarity, any stone (normal or safe),
 // as long as the roll actually succeeded — a miss costs the stone and pays
@@ -3887,7 +3903,7 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
-  SEASON_END_AT, seasonActive,
+  SEASON_END_AT, seasonActive, SHOP_SEASON_SALE_PCT, shopSaleOn, shopPkgPrice,
   SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BOOK_BURN_POINTS, DISASSEMBLE_LIBERTY,

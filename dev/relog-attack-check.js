@@ -61,11 +61,9 @@ process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 delete process.env.MOVE_GUARD;
 
 const { pool, close } = require('../server/db');
-const money = require('../server/db/repos/money');
 const progression = require('../server/db/repos/progression');
 const app = require('../server/app');
 const { wipeItemsAll } = require('./fixtures');
-const { SEASON_TICKET_GRAM_PRICE } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -135,14 +133,13 @@ async function seasonTicket() {
   const pid = Number(rows[0].id);
   made.push(pid);
 
-  // Купівля справжнім шляхом: gramShopBuy → shop.buyPackage → grantSeasonTicket.
-  // Викликати репозиторій напряму означало б не перевірити саме ту ділянку, де
-  // за білет уже сплачено.
-  await money.credit(null, pid, 'gram', SEASON_TICKET_GRAM_PRICE + 5,
-    { reason: 'seed', idemKey: `${TAG}:gram` });
+  // Білет більше не продається в магазині GRAM (знятий з продажу), але вже
+  // куплені працюють далі — тож видаємо його тим самим записом, що й колись
+  // покупка (grantSeasonTicket), і перевіряємо, що він переживає перезахід.
+  await progression.grantSeasonTicket(null, pid);
   c1.sock.emit('gramShopBuy', { pkgId: 'season_ticket' });
-  const bought = await once(c1.sock, 'gramShopResult', 12000).catch(() => null);
-  ok(!!bought && bought.pkgId === 'season_ticket', 'покупка білета пройшла');
+  const refused = await once(c1.sock, 'gramShopError', 12000).catch(() => null);
+  ok(!!refused, 'купити білет у магазині вже не можна');
 
   const vip = await progression.vipOf(null, pid);
   ok(vip.seasonTicket === true,

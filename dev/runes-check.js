@@ -338,8 +338,13 @@ console.log('\n  ── руда ──');
   const wSrc = fs.readFileSync(path.join(ROOT, 'server/handlers2/world.js'), 'utf8');
   const lootFn = wSrc.slice(wSrc.indexOf('function rollLoot(result)'),
     wSrc.indexOf('// ── what a clan point means'));
-  ok(/rand\(\) < oreDropChance\(result\.rlvl\)/.test(lootFn),
+  ok(/rand\(\) (<|>=) oreDropChance\(result\.rlvl\)/.test(lootFn),
     'руда бросается одной ставкой, с уровнем ИМЕННО этого монстра (result.rlvl)');
+  // Руда — часть дропа: бонус к дропу (VIP, билет, вещи) бросает её второй раз
+  // вместе с таблицей зоны.
+  const extraRoll = lootFn.slice(lootFn.indexOf('if (extra > 0'));
+  ok(/rollTable\(\[\]\)[\s\S]{0,120}rollOre\(\)/.test(extraRoll),
+    'бонус к дропу бросает и руду, а не только таблицу');
   ok(lootFn.indexOf("result.arm === 'coop'") < lootFn.indexOf('oreDropChance'),
     'сотрудничество выходит раньше — у него добычи нет по построению');
   ok(lootFn.indexOf('_rollMobLoot') < lootFn.indexOf('oreDropChance'),
