@@ -3868,19 +3868,33 @@ canvas { display:block; width:100%; height:100%; }
    left border is deliberately not touched, and the height stays 28px: the
    column is laid out top-down from _positionHudMenuBtn (js/ui.js), which
    chains each button off the one above it in steps of that height. */
+/* Фэнтези-рамки — тот же вид, что у левой колонки на холсте
+   (_drawFantasyPlate, js/ui.js): тёмная кожа, бронзовая рамка, тонкая
+   золотая линия внутри. Срезанных углов (clip-path) здесь нет намеренно:
+   он обрезал бы значки, торчащие за край кнопки (−30% у «Магазина»).
+   Цветная полоса слева у каждой кнопки остаётся своей — как метка. */
 #hud-menu-btn, #rating-btn, #vip-btn, #market-btn,
 #gram-shop-btn, #events-btn, #season-btn, #codex-btn {
-  border-radius: 9px;
-  background: linear-gradient(180deg, rgba(23,43,70,.93), rgba(10,20,33,.95));
-  border-top: 1px solid rgba(108,182,240,.34);
-  border-right: 1px solid rgba(108,182,240,.34);
-  border-bottom: 1px solid rgba(108,182,240,.34);
-  box-shadow: 0 2px 12px rgba(0,0,0,.5), inset 0 1px 0 rgba(150,210,255,.12);
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, rgba(255,220,150,.14), rgba(255,220,150,0) 50%),
+    linear-gradient(180deg, rgba(62,40,23,.96), rgba(28,18,11,.97));
+  border-top: 1px solid rgba(150,112,60,.95);
+  border-right: 1px solid rgba(150,112,60,.95);
+  border-bottom: 1px solid rgba(150,112,60,.95);
+  box-shadow: 0 3px 10px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.45), inset 0 0 0 2px rgba(255,220,150,.12);
+  color: #f3e2bd;
+  text-shadow: 0 1px 1px rgba(0,0,0,.7);
   letter-spacing: .3px;
 }
 #hud-menu-btn:active, #rating-btn:active, #vip-btn:active, #market-btn:active,
 #gram-shop-btn:active, #events-btn:active, #season-btn:active, #codex-btn:active {
-  background: linear-gradient(180deg, rgba(40,76,118,.95), rgba(16,32,52,.96));
+  background: linear-gradient(180deg, rgba(92,60,32,.97), rgba(40,26,14,.98));
+}
+#hud-menu-btn.expanded {
+  border-top-color: #ffcf56; border-right-color: #ffcf56; border-bottom-color: #ffcf56;
+  color: #ffe3a0;
+  box-shadow: 0 0 10px rgba(255,190,80,.35), inset 0 0 0 1px rgba(0,0,0,.45), inset 0 0 0 2px rgba(255,220,150,.2);
 }
 /* Ползунок прозрачности джойстика (Профиль → Звук). Дорожка тёмная, а
    заполнение синее — чтобы значение читалось без числа рядом. */
