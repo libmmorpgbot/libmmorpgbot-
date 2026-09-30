@@ -9643,13 +9643,6 @@ const _GRAM_SHOP_PKGS_UI = [
     boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
   { id:'rmat3', gram:80, noSale:true, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
     boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
-  // 4 активные книги (по классу) + зелёное (uncommon) оружие — mirror of
-  // server/shop.js's books_weapon_pkg. skillBooks/weapon are already fully
-  // rendered generically by _gramShopPkgHtml/_shopExtraRewardRows below.
-  { id:'books_weapon_pkg', gram:5, get label() { return t('gramPkgLabel_books_weapon'); }, color:'#8bd66a', skillBooks:{ each:1 }, weapon:'uncommon' },
-  // Все зелья бафов по 1 штуке + 50 000 золота — mirror of server/shop.js's
-  // potions_gold_pkg.
-  { id:'potions_gold_pkg', gram:1, get label() { return t('gramPkgLabel_potions_gold'); }, color:'#f1c40f', potions:1, gold:50000 },
   // Мешок Либерти — mirror of server/shop.js's liberty_bag_pkg; that copy is
   // what actually validates and grants, this one only draws the card. Now
   // credits Liberty (nexum) directly instead of granting the liberty_bag

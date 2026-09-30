@@ -120,12 +120,6 @@ const _GRAM_SHOP_PKGS = [
   { id:'rmat1', gram:25, noSale:true, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
   { id:'rmat2', gram:40, noSale:true, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
   { id:'rmat3', gram:80, noSale:true, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
-  // 4 активные книги (Q/W/E/R, по 1 каждая) под класс покупателя + оружие
-  // uncommon-редкости («зелёное», см. RARITY_COLOR в js/definitions.js) под
-  // тот же класс.
-  { id:'books_weapon_pkg', gram:5, skillBooks:{ each:1 }, weapon:'uncommon' },
-  // Все 6 зелий бафов по 1 штуке + 50 000 золота.
-  { id:'potions_gold_pkg', gram:1, potions:1, gold:50000 },
   // Мешок Либерти — раньше выдавал сам бокс liberty_bag (shared/
   // definitions.js BOX_DEF, nexumCost:600/nexumReward:500 через крафт-
   // станцию); теперь начисляет Liberty (nexum) напрямую вместо бокса —
