@@ -29,14 +29,15 @@ function _zh(a, b, salt) {
 function _zShade(hex, t) { return typeof _cityShade === 'function' ? _cityShade(hex, t) : hex; }
 function _zVar(hex, tx, ty, salt, amt) { return _zShade(hex, (_zh(tx, ty, salt) - 0.5) * amt); }
 
-// Сейчас во всех коридорах и во всех их комнатах — канализация (выбор
-// владельца). Остальные темы ниже оставлены готовыми: вернуть смену темы
-// по ходу коридора — вписать сюда пары, например left: ['sewer', 'hellcellar'].
+// Сейчас у каждого коридора одна тема на всю длину (выбор владельца:
+// локации 1, 20, 40 и 60 уровня должны отличаться друг от друга). Чтобы
+// тема менялась по ходу коридора, вписать вторую, например
+// left: ['sewer', 'hellcellar'].
 const _ZONE_ARMS = {
-  left:   ['sewer', 'sewer'],
-  top:    ['sewer', 'sewer'],
-  bottom: ['sewer', 'sewer'],
-  right:  ['sewer', 'sewer'],
+  left:   ['sewer', 'sewer'],         // с 1 ур.
+  top:    ['orccamp', 'orccamp'],     // с 20 ур.
+  bottom: ['vampire', 'vampire'],     // с 40 ур.
+  right:  ['inferno', 'inferno'],     // с 60 ур.
 };
 
 let _zoneCache = null, _zoneCacheFor = null;
