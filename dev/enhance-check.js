@@ -175,8 +175,10 @@ async function main() {
   // row came first. Enhance again and it took the other. Both climbed, one
   // click apart, and the player watched every copy rise together.
   //
-  // Blessed stones throughout: a blessed failure changes nothing, so what this
-  // measures is which ROW moved and nothing else.
+  // Blessed stones throughout: a blessed failure never burns the item, so
+  // nothing disappears from under the comparison. A failure does drop the
+  // level by one (floored at +0), which is why the loop below stops at the
+  // first success — the named row is then at +1, the other must still be +0.
   console.log('');
   console.log('  ── дві однакові речі ──');
   const d = await mk('d');
@@ -201,10 +203,9 @@ async function main() {
     items.resolveRow(t, d, { rowId: target, id: GEAR }, 'inventory'));
   eq(named, target, 'resolveRow повертає саме той рядок, який назвали');
 
-  let moved = 0;
-  for (let i = 0; i < 12 && moved < 3; i++) {
+  for (let i = 0; i < 25; i++) {
     const res = await txRetry(t => craft.enhance(t, d, target, 'bless'));
-    if (res.outcome === 'success') moved++;
+    if (res.outcome === 'success') break;
   }
 
   const after = await bothRows(d);
@@ -232,6 +233,45 @@ async function main() {
   eq(stale, eRows[0].id,
     'застарілий rowId відкочується на впізнання, а не відмовляє');
 
+
+  // ── безпечний камінь: промах знімає одну заточку, не нижче +0 ──────────
+  // Рішення власника: раніше промах безпечного каменя не змінював нічого.
+  // Тепер предмет лишається цілим, але рівень падає на 1. Кидок випадковий,
+  // тож на +14 (шанс 10%) пробуємо, доки не випаде промах.
+  console.log('');
+  console.log('  ── безпечний камінь: −1 при промаху ──');
+  const f = await mk('f');
+  await tx(t => items.add(t, f, GEAR));
+  await tx(t => items.add(t, f, 'bless_stone', { qty: 200 }));
+  const fRow = (await bothRows(f))[0].id;
+  const setEnh = n => pool().query('UPDATE player_items SET enhance = $1 WHERE id = $2', [n, fRow]);
+  const enhOf = async () => (await pool().query('SELECT enhance FROM player_items WHERE id = $1', [fRow])).rows[0].enhance;
+
+  let high = null;
+  for (let i = 0; i < 60 && !high; i++) {
+    await setEnh(14);
+    const r = await txRetry(t => craft.enhance(t, f, fRow, 'bless'));
+    if (r.outcome === 'fail') high = r;
+  }
+  ok(!!high, 'на +14 безпечний камінь хоч раз промахнувся');
+  if (high) {
+    eq(high.to, 13, 'промах на +14 повертає to = 13');
+    eq(await enhOf(), 13, 'і в базі предмет тепер +13, а не +14');
+  }
+
+  let low = null;
+  for (let i = 0; i < 120 && !low; i++) {
+    await setEnh(0);
+    const r = await txRetry(t => craft.enhance(t, f, fRow, 'bless'));
+    if (r.outcome === 'fail') low = r;
+  }
+  ok(!!low, 'на +0 безпечний камінь хоч раз промахнувся');
+  if (low) {
+    eq(low.to, 0, 'промах на +0 не опускає нижче нуля');
+    eq(await enhOf(), 0, 'у базі предмет лишився +0');
+  }
+  const fLeft = (await pool().query('SELECT count(*)::int AS n FROM player_items WHERE id = $1', [fRow])).rows[0].n;
+  eq(fLeft, 1, 'безпечний камінь предмет не спалює');
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

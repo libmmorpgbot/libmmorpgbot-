@@ -117,9 +117,18 @@ async function enhance(db, playerId, rowId, stoneType) {
     return { outcome: 'success', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance + 1, rate };
   }
   if (stoneType === 'bless') {
-    // Nothing moved — a blessed stone's miss leaves the enhancement exactly
-    // where it was, so there is no rating to rewrite.
-    return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance, rate };
+    // Безопасный камень: предмет не горит, но заточка падает на 1 (не ниже
+    // +0) — решение владельца, раньше промах не менял ничего. GREATEST в
+    // самом UPDATE, а не проверка выше: строка уже заперта FOR UPDATE, и
+    // значение, которое падает, — то, что лежит в базе, а не то, что
+    // прочитали. Рейтинг пересчитывается, только если вещь надета и уровень
+    // действительно сдвинулся.
+    const to = Math.max(0, it.enhance - 1);
+    if (to !== it.enhance) {
+      await query(db, 'UPDATE player_items SET enhance = GREATEST(enhance - 1, 0) WHERE id = $1', [rowId]);
+      if (worn) await require('./stats').refreshBm(db, playerId);
+    }
+    return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to, rate };
   }
   // Burned. The row is deleted, which is what makes the loss real rather than
   // a flag some later read has to remember to honour.

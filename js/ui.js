@@ -6033,16 +6033,16 @@ function enhanceEqItem(slot, stoneType) {
 // number over the character, easy to miss if the modal was covering them.
 // Held back to _ENH_ANIM_MS so the animation always gets to play out, then
 // handed to _revealEnhanceResult for the actual ✅/❌/💥.
-function onEnhanceResult({ id, slot, outcome, newEnhance, rowId } = {}) {
+function onEnhanceResult({ id, slot, outcome, newEnhance, rowId, from } = {}) {
   if (!player) return;
   const startedAt = _enhAnim ? _enhAnim.at : null;
   const gen = _enhAnim ? _enhAnim.gen : -1;
   _enhAnim = null;
   const wait = startedAt != null ? Math.max(0, _ENH_ANIM_MS - (Date.now() - startedAt)) : 0;
-  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, gen }), wait);
+  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, gen }), wait);
 }
 
-function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, gen }) {
+function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, gen }) {
   if (!player) return;
   // Окно этой попытки уже закрыто (или вместо него открыт другой предмет) —
   // цифра над персонажем ниже всё равно покажет итог, но окна не трогаем.
@@ -6051,8 +6051,11 @@ function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, gen }) {
   const iconColor = outcome === 'success' ? '#98e456' : outcome === 'fail' ? '#f17e8b' : '#eb4e61';
   const icon = iconHTML(iconName, 48, iconColor);
   const cls  = outcome === 'success' ? 'success' : outcome === 'fail' ? 'fail' : 'burn';
+  // Промах безопасного камня снимает одну заточку — говорим, до какой.
+  const dropped = outcome === 'fail' && Number.isFinite(from) && Number.isFinite(newEnhance) && newEnhance < from;
   const text = outcome === 'success' ? tVars('enhSuccessToast', { n: newEnhance })
-    : outcome === 'burned' ? t('itemBurnedToast') : t('enhFailedToast');
+    : outcome === 'burned' ? t('itemBurnedToast')
+    : dropped ? tVars('enhFailedDownToast', { n: newEnhance }) : t('enhFailedToast');
   // Kept alongside the in-modal indicator, not replaced by it — a player
   // who has already closed the panel (see below) still gets the same
   // floating-number feedback every other reward in the game uses.

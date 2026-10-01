@@ -81,7 +81,7 @@ const pointsOf = async pid => {
   const GEAR = ITEM_DEF.find(d => d.id === 'nd3');
   eq(GEAR.rarity, 'rare', 'подопытный предмет редкий (хотя это больше не важно)');
 
-  const rowId = await tx(async (t) => {
+  let rowId = await tx(async (t) => {
     await items.lockPlayer(t, pid);
     await items.add(t, pid, 'norm_stone', { qty: 60, source: 'test' });
     return items.add(t, pid, GEAR.id, { qty: 1, source: 'test' });
@@ -101,7 +101,11 @@ const pointsOf = async pid => {
     sock.emit('enhanceItem', { rowId, stoneType: 'norm' });
     const r = await done;
     if (r && r.outcome === 'success') wins++;
-    if (r && r.outcome === 'burn') break;      // вещь сгорела — точить нечего
+    // Вещь сгорела (на +0 это 20%) — даём новую и точим дальше: проверка про
+    // очки за удачу, а не про то, повезёт ли с первой вещью.
+    if (r && r.outcome === 'burned') {
+      rowId = await tx(async (t) => { await items.lockPlayer(t, pid); return items.add(t, pid, GEAR.id, { qty: 1, source: 'test' }); });
+    }
     await wait(250);
   }
   await wait(700);
@@ -115,16 +119,20 @@ const pointsOf = async pid => {
 
   // Безопасный камень в Сезоне 3 платит ТАК ЖЕ, как обычный — флэт-правило
   // не смотрит на тип камня (в отличие от Сезона 2, где бросал 0).
-  await tx(async (t) => {
+  // Свежая вещь на +0: та, что выше, могла сгореть на обычном камне или
+  // уйти высоко, где шанс мал, — тогда безопасный камень точил бы пустоту
+  // или почти наверняка промахивался (а промах теперь ещё и снимает −1).
+  const rowIdB = await tx(async (t) => {
     await items.lockPlayer(t, pid);
     await items.add(t, pid, 'bless_stone', { qty: 10, source: 'test' });
+    return items.add(t, pid, GEAR.id, { qty: 1, source: 'test' });
   });
   await wait(300);
   const beforeB = await pointsOf(pid);
   let winsB = 0;
   for (let i = 0; i < 10 && winsB < 1; i++) {
     const done = once(sock, 'enhanceResult', 8000).catch(() => null);
-    sock.emit('enhanceItem', { rowId, stoneType: 'bless' });
+    sock.emit('enhanceItem', { rowId: rowIdB, stoneType: 'bless' });
     const r = await done;
     if (r && r.outcome === 'success') winsB++;
     await wait(250);
