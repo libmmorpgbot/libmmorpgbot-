@@ -19,6 +19,7 @@
 // доигрывается поверх неё.
 
 let _zonesEnabled = true;
+const _ZONE_DECO_SHARE = 1 / 3;   // доля клеток пола, на которых вообще есть декор
 
 function _zh(a, b, salt) {
   let h = (a * 374761393 + b * 668265263 + salt * 2246822519) | 0;
@@ -107,7 +108,10 @@ function zonesDrawDecor(c, Z, tx0, ty0, tx1, ty1, ptx0, pty0, ptx1, pty1, torchL
   for (let ty = pty0; ty <= pty1; ty++) for (let tx = ptx0; tx <= ptx1; tx++) {
     const st = _zoneStage(Z, tx, ty);
     const x = tx * T, y = ty * T;
-    if (isFloor(tx, ty)) st.deco(c, x, y, tx, ty, ctx);
+    // Предметов на полу — втрое меньше, чем задают темы (просьба владельца):
+    // декор остаётся лишь на трети клеток, выбранных хэшем, без своего
+    // отдельного порога в каждой теме.
+    if (isFloor(tx, ty)) { if (_zh(tx, ty, 77) < _ZONE_DECO_SHARE) st.deco(c, x, y, tx, ty, ctx); }
     else if (isFloor(tx, ty + 1) && st.wallDeco) st.wallDeco(c, x, y, tx, ty, ctx);
   }
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
