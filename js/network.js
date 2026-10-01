@@ -2652,6 +2652,10 @@ function netConnect(onReady) {
     if (typeof onSeasonWinners === 'function') onSeasonWinners();
   });
 
+  socket.on('seasonPrizeClaimed', ({ gram } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(tVars('seasonPrizeClaimedToast', { n: gram || 0 }), 'ok');
+  });
+
   // Items are already gone via the inventorySync that preceded this.
   socket.on('seasonBurned', ({ burned, points, total } = {}) => {
     if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
@@ -2695,6 +2699,8 @@ function netConnect(onReady) {
   // season panel can be told "no" about.
   socket.on('seasonError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+    // Отказ «Забрать» — вернуть кнопку, которую нажатие выключило.
+    if (typeof onSeasonWinners === 'function') onSeasonWinners();
   });
 
   // An admin moved this account's season points by hand. The session's own
@@ -5325,6 +5331,7 @@ function netClaimQuest(idx) {
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
 function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'); }
+function netSeasonClaimPrize() { if (socket?.connected) socket.emit('seasonClaimPrize'); }
 // The farm-zone kill quests' claim button. `zone` is 'farm' or 'farm2' —
 // the server maps it to the right jsonb key/target/rate itself.
 function netSeasonClaimFarmKills(zone) {

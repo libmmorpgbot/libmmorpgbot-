@@ -24,7 +24,7 @@ const {
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
   FOREIGN_SKILL_KEY,
-  SEASON_RATING_MIN_POINTS,
+  SEASON_RATING_MIN_POINTS, PAST_SEASON,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
@@ -321,9 +321,19 @@ module.exports = function registerProgression(s, safeOn) {
   // credited riding along on each cash row. Fetched on demand like
   // seasonRating above, for the same reason: it is a database query, not
   // something worth pushing to everyone on every tick.
-  safeOn('seasonWinners', () => s.act('seasonWinners', 'seasonError', async (t) => {
-    const list = await progression.seasonWinners(t, progression.CURRENT_SEASON);
-    s.socket.emit('seasonWinnersData', { list });
+  safeOn('seasonWinners', () => s.act('seasonWinners', 'seasonError', async (t, pid) => {
+    const list = await progression.seasonWinners(t, PAST_SEASON, pid);
+    s.socket.emit('seasonWinnersData', { list, season: PAST_SEASON });
+  }));
+
+  // Победитель прошлого сезона забирает свою награду в GRAM. После — список
+  // приходит заново, и кнопки в его строке больше нет.
+  safeOn('seasonClaimPrize', () => s.act('seasonClaimPrize', 'seasonError', async (t, pid) => {
+    const res = await progression.claimSeasonPrize(t, pid, PAST_SEASON);
+    await s.pushBalances(t);
+    s.socket.emit('seasonPrizeClaimed', res);
+    const list = await progression.seasonWinners(t, PAST_SEASON, pid);
+    s.socket.emit('seasonWinnersData', { list, season: PAST_SEASON });
   }));
 
   // ── season ───────────────────────────────────────────────────────────────

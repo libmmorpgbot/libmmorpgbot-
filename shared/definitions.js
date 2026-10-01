@@ -755,6 +755,15 @@ const SEASON_PRIZES = [
   { place: 15, usd: 5   }, { place: 16, usd: 5  }, { place: 17, usd: 5  }, { place: 18, usd: 5  },
   { place: 19, usd: 5   }, { place: 20, usd: 5  },
 ];
+// ── Сезон 4: Баланс — награды прошлого (3-го) сезона ──────────────────────
+// SEASON_PRIZES выше — таблица 3-го сезона в USDT. Победители забирают её
+// сами, кнопкой в панели «Сезон» (claimSeasonPrize, progression.js), уже в
+// GRAM по курсу 1 GRAM = 1.56 USDT. `gram` в SEASON_PRIZES намеренно не
+// добавлен: тогда distributeSeasonPrizes начислял бы их фоном, без кнопки.
+const PAST_SEASON = 3;
+const GRAM_USDT_RATE = 1.56;
+function seasonPrizeGram(usd) { return Math.round((Number(usd) || 0) / GRAM_USDT_RATE * 100) / 100; }
+
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
 // the client to add them to its own inventory (see the claimQuest handler,
@@ -3861,7 +3870,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_TOURNAMENT_WIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
-  SEASON_RATING_MIN_POINTS, SEASON_PRIZES,
+  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, seasonPrizeGram,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

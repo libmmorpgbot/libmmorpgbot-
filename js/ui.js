@@ -6174,8 +6174,10 @@ function openSeasonPanel() {
   const panel = document.getElementById('season-panel');
   if (!panel) return;
   panel.style.display = 'flex';
+  // Сезон 4 — одна вкладка: карточка сезона и победители прошлого.
+  _seasonTab = 'season';
   if (typeof netSeasonSync === 'function') netSeasonSync();
-  if (_seasonTab === 'rating' && typeof netSeasonRating === 'function') netSeasonRating();
+  if (typeof netSeasonWinners === 'function') netSeasonWinners();
   _renderSeasonBody();
 }
 
@@ -6235,27 +6237,40 @@ function _seasonPrizesHTML() {
     </div>`;
 }
 
-// ── "Сезон" tab: description + countdown + rewards ─────────────────────────
+// ── «Сезон» — карточка Сезона 4 и победители прошлого сезона ─────────────
+// Список — с сервера (seasonWinnersData). Кнопка «Забрать» только в строке
+// самого игрока (mine) и только пока награда не получена (claimed).
 function _seasonInfoHTML() {
-  const st = _seasonState || {};
-  const left = Math.max(0, (st.endAt || 0) - Date.now());
-  const ended = !st.active || left <= 0;
+  const w = _seasonWinners;
+  const list = (w && w.list) || [];
+  const rows = list.map(x => {
+    const pc = x.place <= 3 ? ' p' + x.place : '';
+    const prize = x.prizeGram != null ? `${x.prizeGram} GRAM` : '—';
+    const btn = x.mine && !x.claimed && x.prizeGram != null
+      ? `<button class="db-action" style="margin:0 0 0 8px;padding:4px 10px;width:auto;font-size:12px" onclick="_seasonClaimPrize(this)">${t('seasonClaimBtn')}</button>`
+      : '';
+    return `<div class="season-row${x.mine ? ' me' : ''}">
+      <span class="season-place${pc}">${x.place}</span>
+      <span class="season-name">${_esc(x.username)}</span>
+      <span class="season-prize">${prize}</span>${btn}
+    </div>`;
+  }).join('');
+  const fallback = w === null ? t('seasonLoading') : t('seasonNoPlayers');
   return `
     <div style="padding:16px">
       <div class="season-card">
         <div class="season-card-rule"><span>✦ LIBERTY ✦</span></div>
         <div class="season-card-title">${t('season2Title')}</div>
         <div class="season-card-sub">${t('season2Desc')}</div>
-        <div class="db-countdown">${st.points || 0}</div>
-        <div class="db-phase">${t('seasonPointsLbl')}</div>
-        <div class="db-count">${ended ? t('seasonEnded') : tVars('seasonEndsIn', { t: _fmtEventEta(left) })}</div>
-        ${ended ? `
-          <div class="db-count">${t('seasonNextStart')}</div>
-          <button class="db-action" style="margin-top:10px" onclick="_openSeasonWinners()">${t('seasonWinnersBtn')}</button>
-        ` : ''}
       </div>
-      ${_seasonPrizesHTML()}
+      <div class="db-rewards-hdr">${tVars('seasonPastWinnersHdr', { n: (w && w.season) || 3 })}</div>
+      ${rows || `<div class="db-phase">${fallback}</div>`}
     </div>`;
+}
+
+function _seasonClaimPrize(btn) {
+  if (btn) btn.disabled = true;
+  if (typeof netSeasonClaimPrize === 'function') netSeasonClaimPrize();
 }
 
 // ── "Итоги сезона" — the screen the button above opens once the season is
@@ -6305,6 +6320,7 @@ function _renderSeasonWinners() {
 
 function onSeasonWinners() {
   if (document.getElementById('season-winners-ov')) _renderSeasonWinners();
+  if (_seasonPanelOpen() && _seasonTab === 'season') _renderSeasonBody();
 }
 
 // ── "Задания" tab: every way to earn points, plus the burn controls ────────
