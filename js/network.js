@@ -1074,7 +1074,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d, rxAt) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            deathBattle: dbs, race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs, farm2: f2 } = payload;
+            race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs, farm2: f2 } = payload;
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
@@ -1152,13 +1152,6 @@ function netConnect(onReady) {
       nextAt:  (evb && evb.nextAt) || 0,
     };
     if (typeof setEventBossCountdown === 'function') setEventBossCountdown(evb && evb.spawnAt || 0);
-    // Death battle: same idea — joining mid-registration shows the live
-    // countdown and whether this account is already signed up.
-    if (dbs) {
-      _dbState = { phase: dbs.phase, startAt: dbs.startAt, nextAt: dbs.nextAt, count: dbs.count };
-      _dbRegistered = !!dbs.registered;
-      if (typeof onDeathBattleState === 'function') onDeathBattleState();
-    }
     // Кровавая Башня: same idea — joining before/during the 20:30 MSK,
     // 5-minute window shows the live phase and countdown instead of "not
     // known yet".
@@ -4575,7 +4568,7 @@ function _initEventBossHandlers(s) {
     if (code === 'no_room') _worldDropBagFull = true;
     if (typeof _marketToast === 'function') _marketToast(msg, 'err');
   });
-  _initDeathBattleHandlers(s);
+  _initReturnHandler(s);
   _initArena3Handlers(s);
   _initTournamentHandlers(s);
   _initRace10Handlers(s);
@@ -4585,109 +4578,15 @@ function _initEventBossHandlers(s) {
   _initGuildWarHandlers(s);
 }
 
-// ── Death Battle (Битва на смерть) ──────────────────────────────────────────
-// The server owns the whole round (schedule, who is in, who is out, the
-// prize); everything here just mirrors that into the UI and moves the local
-// camera/player to wherever the server says they now are.
-function _initDeathBattleHandlers(s) {
-  s.on('deathBattleState', st => {
-    _dbState = { phase: st.phase, startAt: st.startAt, nextAt: st.nextAt, count: st.count };
-    if (st.registered !== undefined) _dbRegistered = !!st.registered;
-    if (st.phase !== 'reg') _dbRegistered = false;
-    if (st.phase !== 'live') _dbInFight = false;
-    if (typeof onDeathBattleState === 'function') onDeathBattleState();
-  });
-
-  s.on('deathBattleRegistered', ({ registered }) => {
-    _dbRegistered = !!registered;
-    if (typeof onDeathBattleState === 'function') onDeathBattleState();
-    if (typeof dmgNum === 'function' && player) {
-      dmgNum(player.x, player.y - 40, registered ? t('dbSignedUpToast') : t('dbLeftToast'), registered ? '#8fc95c' : '#f07886');
-    }
-  });
-
-  s.on('deathBattleError', ({ msg }) => {
-    if (typeof _marketToast === 'function') _marketToast(msg, 'err');
-  });
-
-  s.on('deathBattleCancelled', () => {
-    _dbInFight = false;
-    _dbFightAt = 0;
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbCancelledMsg'), '#f0b25a');
-  });
-
-  // The round begins: the server has already moved this player into the arena,
-  // healed them and switched PvP on server-side — mirror all three locally so
-  // the client doesn't fight its own authoritative state.
-  s.on('deathBattleStarted', ({ x, y, hp, total, fightAt }) => {
-    if (!player) return;
-    _dbInFight = true;
-    _dbRegistered = false;
-    _dbFightAt = fightAt || 0;
-    if (hp) player.hp = hp;
-    pvpMode = true;
-    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbArenaLbl'));
-    else { player.x = x; player.y = y; }
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('dbStartedFmt', { n: total }), '#e8574f');
-    if (typeof Sound !== 'undefined') Sound.bossSpawn();
-    if (typeof showDeathBattleFreeze === 'function') showDeathBattleFreeze(_dbFightAt);
-    if (typeof onDeathBattleState === 'function') onDeathBattleState();
-  });
-
-  // Countdown is over — the server has lifted the freeze for everyone at once.
-  s.on('deathBattleFight', () => {
-    _dbFightAt = 0;
-    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('dbFightMsg'), '#e8574f');
-    if (typeof Sound !== 'undefined') Sound.bossSpawn();
-  });
-
-  s.on('deathBattleEliminated', ({ left, x, y }) => {
-    _dbInFight = false;
-    _dbFightAt = 0;
-    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
-    pvpMode = false;
-    if (player && x != null && y != null) {
-      // Lands back wherever this player actually was before the battle —
-      // the server has already moved this connection onto that floor by the
-      // time this event arrives (see _dbReturnEntrant, server/index.js), so
-      // this is just the visual catch-up, same idea as deathBattleStarted's
-      // own _teleportTo above — hence its own label rather than centralHall.
-      if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbReturnPrevLbl'));
-      else { player.x = x; player.y = y; }
-    }
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('dbEliminatedFmt', { n: left }), '#f07886');
-    if (typeof onDeathBattleState === 'function') onDeathBattleState();
-  });
-
-  s.on('deathBattleWon', ({ gram, items, delivered }) => {
-    _dbInFight = false;
-    _dbFightAt = 0;
-    if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
-    pvpMode = false;
-    // The server owns the prize and its inventorySync has already arrived
-    // with it. delivered:false means it had no live inventory to put it in —
-    // mirroring it locally would be forging items the server never granted,
-    // which the save path now rejects.
-    if (gram) window._gramBalance = (window._gramBalance || 0) + gram;
-    if (typeof updateInvUI === 'function') updateInvUI();
-    netSaveProgress();
-    if (typeof showDeathBattleWin === 'function') showDeathBattleWin(gram, items || []);
-    if (typeof onDeathBattleState === 'function') onDeathBattleState();
-  });
-
+// ── возврат в город после события ──────────────────────────────────────────
+// Арена 3×3, Кровавая Башня, Страх, Сотрудничество и Элитная фарм-зона шлют
+// одно и то же событие, когда сервер уже вернул игрока в город: здесь только
+// догоняет картинка. Имя события осталось от «Битвы на смерть», которая его
+// когда-то завела; самой битвы больше нет.
+function _initReturnHandler(s) {
   s.on('deathBattleReturned', ({ x, y }) => {
     if (!player) return;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('centralHall'));
-    else { player.x = x; player.y = y; }
-  });
-
-  // Death-battle winner closing the reward modal — own event (not the
-  // shared deathBattleReturned above) since this lands the winner back at
-  // their own pre-battle spot, not the hub.
-  s.on('deathBattleReturnedPrev', ({ x, y }) => {
-    if (!player) return;
-    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('dbReturnPrevLbl'));
     else { player.x = x; player.y = y; }
   });
 }
@@ -5400,10 +5299,6 @@ function _initFarm2Handlers(s) {
   });
 }
 
-function netDeathBattleRegister()   { if (socket?.connected) socket.emit('deathBattleRegister'); }
-function netDeathBattleUnregister() { if (socket?.connected) socket.emit('deathBattleUnregister'); }
-function netDeathBattleReturn()     { if (socket?.connected) socket.emit('deathBattleReturn'); }
-function netDeathBattleSync()       { if (socket?.connected) socket.emit('deathBattleSync'); }
 
 function netPickupWorldDrop(id) {
   if (socket?.connected) socket.emit('pickupWorldDrop', { id });

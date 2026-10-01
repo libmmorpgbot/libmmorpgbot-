@@ -4398,44 +4398,6 @@ class Room {
     p.y = this._dungeon.spawn.y;
   }
 
-  // ── Death Battle (Битва на смерть) ────────────────────────────────────────
-  // Drops every entrant onto its own point of a ring inside the event arena —
-  // its own floor now (server/game/floors.js), sealed off the same way the
-  // world boss's own use of it already is, so PvP works there and nobody can
-  // wander in mid-round. Everyone is healed and flipped into PvP here rather
-  // than client-side: the server owns hp and pvpMode, and a client that
-  // ignored the request would otherwise be an unkillable participant.
-  // Callers (server/index.js's _dbStart) force each entrant's own connection
-  // onto this floor before calling this — _dbPrevFloor/_dbPrevX/_dbPrevY
-  // (where they actually were, for the return trip) are captured by that
-  // caller too, from the floor they were really on, since by the time this
-  // runs everyone here already has this floor's own default spawn position,
-  // not their real previous one.
-  deathBattleDeploy(socketIds) {
-    const ar = this._dungeon.arena;
-    if (!ar) return [];
-    const placed = [];
-    const n = Math.max(1, socketIds.length);
-    // Arena is 40 tiles across; 13 tiles from the centre keeps the whole ring
-    // clear of the walls whatever the entrant count.
-    const R = 13 * TILE;
-    socketIds.forEach((sid, i) => {
-      const p = this.players.get(sid);
-      if (!p) return;
-      const ang = (i / n) * Math.PI * 2;
-      let x = ar.cx + Math.cos(ang) * R;
-      let y = ar.cy + Math.sin(ang) * R;
-      if (this._isWall(x, y)) { x = ar.cx; y = ar.cy; }
-      p.x = x; p.y = y;
-      p.hp = p.maxHp;
-      p.cp = this._maxCpOf(p);
-      p.pvpMode = true;
-      p._profileRev++;
-      placed.push({ socketId: sid, x, y, hp: p.hp });
-    });
-    return placed;
-  }
-
   // Places a 3v3 match: one side per base, one player per lane, full HP and
   // PvP on. Returns what was actually placed so the caller only counts players
   // who really made it in. Falls back to the arena centre if a lane spawn ever

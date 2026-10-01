@@ -112,7 +112,6 @@ const I18N_UI = {
   hudElSticker:      { ru: 'Стикеры', en: 'Stickers', uk: 'Стікери', es: 'Pegatinas', tr: 'Çıkartmalar', pt: 'Figurinhas' },
   hudElTeleport:     { ru: 'Телепорт', en: 'Teleport', uk: 'Телепорт', es: 'Teletransporte', tr: 'Işınlanma', pt: 'Teletransporte' },
 
-  // ── Death Battle (Битва на смерть) ──────────────────────
   // ── Events panel (События) ──────────────────────────────────────────────
   eventsBtn:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },
   eventsHdr:    { ru: 'События', en: 'Events', uk: 'Події', es: 'Eventos', tr: 'Etkinlikler', pt: 'Eventos' },
@@ -122,10 +121,9 @@ const I18N_UI = {
   eventWeekdays:{ ru: 'Вс,Пн,Вт,Ср,Чт,Пт,Сб', en: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat', uk: 'Нд,Пн,Вт,Ср,Чт,Пт,Сб', es: 'Dom,Lun,Mar,Mié,Jue,Vie,Sáb', tr: 'Paz,Pzt,Sal,Çar,Per,Cum,Cmt', pt: 'Dom,Seg,Ter,Qua,Qui,Sex,Sáb' },
   // One-line "what it is · when it runs" subtitle for each row in the events
   // list (index.html's #events-tab-list) — the schedule half is static text
-  // mirroring the real windows server/index.js runs them on (DEATH_BATTLE_/
+  // mirroring the real windows server/index.js runs them on (
   // ARENA3_/RACE10_/GUILD_WAR_*_DAYS_MSK/HOURS_MSK, shared/definitions.js),
   // not a live countdown (that's what the event's own detail page is for).
-  eventSubBattle:   { ru: 'Схватка на выживание без союзников', en: 'Free-for-all survival duel', uk: 'Бій на виживання без союзників', es: 'Duelo de supervivencia sin aliados', tr: 'Müttefiksiz hayatta kalma düellosu', pt: 'Duelo de sobrevivência sem aliados' },
   eventSubA3:       { ru: 'Командный бой 3 на 3', en: '3v3 team battle', uk: 'Командний бій 3 на 3', es: 'Batalla en equipo 3 contra 3', tr: '3v3 takım savaşı', pt: 'Batalha em equipe 3x3' },
   eventSubRace10:   { ru: 'Забег через коридоры с монстрами', en: 'Corridor run past waves of monsters', uk: 'Забіг крізь коридори з монстрами', es: 'Carrera por pasillos con monstruos', tr: 'Canavar dolu koridorlarda yarış', pt: 'Corrida por corredores com monstros' },
   eventSubFear:     { ru: 'Волны монстров на выживание', en: 'Survive endless waves of monsters', uk: 'Хвилі монстрів на виживання', es: 'Oleadas de monstruos, sobrevive', tr: 'Canavar dalgalarına karşı hayatta kal', pt: 'Ondas de monstros, sobreviva' },
@@ -136,10 +134,9 @@ const I18N_UI = {
   // Schedule line (third row on each event card) — same fixed windows the
   // eventSub* strings above used to carry after their own "·", split into
   // its own row now that the card has room for one. Mirrors the real
-  // windows server/index.js runs them on (DEATH_BATTLE_/ARENA3_/RACE10_/
+  // windows server/index.js runs them on (ARENA3_/RACE10_/
   // GUILD_WAR_*_DAYS_MSK/HOURS_MSK, shared/definitions.js), not a live
   // countdown (that's what the event's own detail page is for).
-  eventSchedBattle:   { ru: 'Вт, Чт, Сб в 10:00 МСК', en: 'Tue, Thu, Sat at 10:00 MSK', uk: 'Вт, Чт, Сб о 10:00 МСК', es: 'Mar, Jue, Sáb a las 10:00 MSK', tr: 'Sal, Per, Cmt 10:00 MSK', pt: 'Ter, Qui, Sáb às 10:00 MSK' },
   eventSchedA3:       { ru: 'Ежедневно 21:00–22:00 МСК', en: 'Daily 21:00–22:00 MSK', uk: 'Щодня 21:00–22:00 МСК', es: 'Todos los días 21:00–22:00 MSK', tr: 'Her gün 21:00–22:00 MSK', pt: 'Todos os dias 21:00–22:00 MSK' },
   eventSchedRace10:   { ru: 'Ежедневно в 20:30 МСК', en: 'Daily at 20:30 MSK', uk: 'Щодня о 20:30 МСК', es: 'Todos los días a las 20:30 MSK', tr: 'Her gün 20:30 MSK', pt: 'Todos os dias às 20:30 MSK' },
   eventSchedFear:     { ru: 'Доступно всегда', en: 'Always available', uk: 'Доступно завжди', es: 'Siempre disponible', tr: 'Her zaman açık', pt: 'Sempre disponível' },
@@ -459,36 +456,14 @@ const I18N_UI = {
   wbDropUncommonWeapon: { ru: 'Случайное uncommon оружие', en: 'Random uncommon weapon', uk: 'Випадкова uncommon зброя', es: 'Arma uncommon aleatoria', tr: 'Rastgele uncommon silah', pt: 'Arma uncommon aleatória' },
   wbDropCommonItems: { ru: 'Случайные common предметы', en: 'Random common items', uk: 'Випадкові common предмети', es: 'Objetos common aleatorios', tr: 'Rastgele common eşyalar', pt: 'Itens common aleatórios' },
 
-  dbBtn:        { ru: 'Битва', en: 'Battle', uk: 'Битва', es: 'Batalla', tr: 'Savaş', pt: 'Batalha' },
-  dbBtnOpen:    { ru: 'Битва · набор!', en: 'Battle · open!', uk: 'Битва · набір!', es: '¡Batalla · abierta!', tr: 'Savaş · kayıt!', pt: 'Batalha · aberta!' },
-  dbPhaseReg:   { ru: 'До начала битвы', en: 'Battle starts in', uk: 'До початку битви', es: 'La batalla empieza en', tr: 'Savaşa kalan', pt: 'A batalha começa em' },
-  dbPhaseIdle:  { ru: 'До следующей битвы', en: 'Next battle in', uk: 'До наступної битви', es: 'Próxima batalla en', tr: 'Sonraki savaşa', pt: 'Próxima batalha em' },
-  dbPhaseLive:  { ru: 'Битва идёт', en: 'Battle in progress', uk: 'Битва триває', es: 'Batalla en curso', tr: 'Savaş sürüyor', pt: 'Batalha em andamento' },
+  // Общие подписи событий — префикс db остался от удалённой «Битвы на смерть».
+  dbBtnOpen:    { ru: 'События · набор!', en: 'Events · open!', uk: 'Події · набір!', es: '¡Eventos · abiertos!', tr: 'Etkinlik · kayıt!', pt: 'Eventos · abertos!' },
   dbJoinBtn:    { ru: 'Записаться', en: 'Sign up', uk: 'Записатися', es: 'Inscribirse', tr: 'Kaydol', pt: 'Inscrever-se' },
   dbLeaveBtn:   { ru: 'Отменить запись', en: 'Cancel sign-up', uk: 'Скасувати запис', es: 'Cancelar inscripción', tr: 'Kaydı iptal et', pt: 'Cancelar inscrição' },
   dbClosedBtn:  { ru: 'Регистрация закрыта', en: 'Registration closed', uk: 'Реєстрацію закрито', es: 'Inscripción cerrada', tr: 'Kayıt kapalı', pt: 'Inscrição encerrada' },
-  dbSignedUpFmt:{ ru: 'Записалось: {n}', en: 'Signed up: {n}', uk: 'Записалось: {n}', es: 'Inscritos: {n}', tr: 'Kayıtlı: {n}', pt: 'Inscritos: {n}' },
-  dbAliveFmt:   { ru: 'В живых: {n}', en: 'Alive: {n}', uk: 'Живих: {n}', es: 'Vivos: {n}', tr: 'Hayatta: {n}', pt: 'Vivos: {n}' },
   dbRulesHdr:   { ru: 'Правила:', en: 'Rules:', uk: 'Правила:', es: 'Reglas:', tr: 'Kurallar:', pt: 'Regras:' },
-  dbRule1:      { ru: 'Вторник, четверг, суббота — в 10:00 по Москве', en: 'Tuesday, Thursday, Saturday at 10:00 Moscow time', uk: 'Вівторок, четвер, субота — о 10:00 за Москвою', es: 'Martes, jueves y sábado a las 10:00 hora de Moscú', tr: 'Salı, perşembe, cumartesi 10:00 Moskova saati', pt: 'Terça, quinta e sábado às 10:00 horário de Moscou' },
-  dbRule2:      { ru: 'Регистрация открыта за 5 минут до начала', en: 'Registration opens 5 minutes before the start', uk: 'Реєстрація відкрита за 5 хвилин до початку', es: 'La inscripción abre 5 minutos antes', tr: 'Kayıt başlamadan 5 dakika önce açılır', pt: 'A inscrição abre 5 minutos antes' },
-  dbRule3:      { ru: 'Всех переносит на арену с включённым ПК', en: 'Everyone is moved to the arena with PvP on', uk: 'Усіх переносить на арену з увімкненим ПК', es: 'Todos van a la arena con PvP activado', tr: 'Herkes PvP açık şekilde arenaya taşınır', pt: 'Todos vão para a arena com PvP ligado' },
-  dbRule5:      { ru: 'Первые 30 секунд никто не может двигаться', en: 'Nobody can move for the first 30 seconds', uk: 'Перші 30 секунд ніхто не може рухатися', es: 'Nadie puede moverse durante los primeros 30 segundos', tr: 'İlk 30 saniye kimse hareket edemez', pt: 'Ninguém pode se mover nos primeiros 30 segundos' },
-  dbRule4:      { ru: 'Последний выживший забирает награду', en: 'The last survivor takes the prize', uk: 'Останній вцілілий забирає нагороду', es: 'El último superviviente se lleva el premio', tr: 'Son hayatta kalan ödülü alır', pt: 'O último sobrevivente leva o prêmio' },
-  dbRewardsHdr: { ru: 'Награда победителю:', en: 'Winner takes:', uk: 'Нагорода переможцю:', es: 'El ganador se lleva:', tr: 'Kazananın ödülü:', pt: 'O vencedor leva:' },
   dbFreezeLbl:  { ru: 'Приготовьтесь', en: 'Get ready', uk: 'Приготуйтеся', es: 'Prepárate', tr: 'Hazır ol', pt: 'Prepare-se' },
   dbFightMsg:   { ru: '⚔️ БОЙ!', en: '⚔️ FIGHT!', uk: '⚔️ БІЙ!', es: '⚔️ ¡LUCHA!', tr: '⚔️ SAVAŞ!', pt: '⚔️ LUTEM!' },
-  dbArenaLbl:   { ru: 'Арена битвы', en: 'Battle arena', uk: 'Арена битви', es: 'Arena de batalla', tr: 'Savaş arenası', pt: 'Arena de batalha' },
-  dbStartedFmt: { ru: '⚔️ Битва началась! Бойцов: {n}', en: '⚔️ The battle has begun! Fighters: {n}', uk: '⚔️ Битва почалася! Бійців: {n}', es: '⚔️ ¡La batalla ha comenzado! Luchadores: {n}', tr: '⚔️ Savaş başladı! Dövüşçüler: {n}', pt: '⚔️ A batalha começou! Lutadores: {n}' },
-  dbEliminatedFmt: { ru: '💀 Вы выбыли. Осталось: {n}', en: '💀 You are out. Remaining: {n}', uk: '💀 Ви вибули. Залишилось: {n}', es: '💀 Estás fuera. Quedan: {n}', tr: '💀 Elendiniz. Kalan: {n}', pt: '💀 Você está fora. Restam: {n}' },
-  dbCancelledMsg: { ru: 'Битва отменена — мало участников', en: 'Battle cancelled — not enough players', uk: 'Битву скасовано — мало учасників', es: 'Batalla cancelada: pocos jugadores', tr: 'Savaş iptal edildi — yeterli oyuncu yok', pt: 'Batalha cancelada — poucos jogadores' },
-  dbSignedUpToast: { ru: '⚔️ Вы записаны на битву', en: '⚔️ You are signed up', uk: '⚔️ Вас записано на битву', es: '⚔️ Estás inscrito', tr: '⚔️ Kaydoldunuz', pt: '⚔️ Você está inscrito' },
-  dbLeftToast:  { ru: 'Запись на битву отменена', en: 'Sign-up cancelled', uk: 'Запис на битву скасовано', es: 'Inscripción cancelada', tr: 'Kayıt iptal edildi', pt: 'Inscrição cancelada' },
-  dbPvpLockedToast: { ru: 'В битве ПК отключить нельзя', en: 'PvP cannot be turned off in a battle', uk: 'У битві ПК вимкнути не можна', es: 'No puedes desactivar PvP en la batalla', tr: 'Savaşta PvP kapatılamaz', pt: 'Não é possível desligar o PvP na batalha' },
-  dbWinTitle:   { ru: 'ПОБЕДА', en: 'VICTORY', uk: 'ПЕРЕМОГА', es: 'VICTORIA', tr: 'ZAFER', pt: 'VITÓRIA' },
-  dbWinSub:     { ru: 'Вы последний выживший', en: 'You are the last survivor', uk: 'Ви останній вцілілий', es: 'Eres el último superviviente', tr: 'Son hayatta kalansın', pt: 'Você é o último sobrevivente' },
-  dbWinClose:   { ru: 'Забрать награду', en: 'Claim reward', uk: 'Забрати нагороду', es: 'Reclamar recompensa', tr: 'Ödülü al', pt: 'Receber recompensa' },
-  dbReturnPrevLbl: { ru: 'Прежнее место', en: 'Previous spot', uk: 'Попереднє місце', es: 'Lugar anterior', tr: 'Önceki konum', pt: 'Local anterior' },
   langPickerHint:    { ru: 'Изменения применяются сразу', en: 'Changes apply immediately', uk: 'Зміни застосовуються одразу', es: 'Los cambios se aplican de inmediato', tr: 'Değişiklikler hemen uygulanır', pt: 'As alterações se aplicam imediatamente' },
 
   // ── Character select ──

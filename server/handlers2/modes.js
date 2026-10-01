@@ -137,8 +137,7 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
   const { io, modes } = deps;
   const {
     _a3, _a3Allies, _a3Broadcast, _a3Enemies, _a3PublicState, _a3TryStartSafe,
-    _coop, _coopGroupOf, _createFearRoom, _db, _dbBroadcast, _dbPublicState,
-    _dbReturnEntrant, _farm2, _farm2GroupOf, _fear, _fearStartWave,
+    _coop, _coopGroupOf, _createFearRoom, _farm2, _farm2GroupOf, _fear, _fearStartWave,
     _race10, _race10Broadcast, _race10PublicState,
     _tr, _trAllies, _trBroadcast, _trEnemies, _trTryStart, _trTrackDamage,
     _trRegister, _trUnregister, _trStateFor,
@@ -196,9 +195,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
   // 1500-per-5s bucket, while the sanctioned way home (useTeleportStone)
   // destroys a bought item (TELEPORT_STONE_PRICE, shared/definitions.js) and
   // refuses outright if the caller is dead or already in the hub.
-  // deathBattleReturn was the only one of the six
-  // that was gated, and it says so in as many words: "not a free teleport
-  // home".
   //
   // What makes the gate cheap is that the modes already move the player
   // themselves: _fearFinish, _coopFinish, _farm2Finish, _a3Eliminate,
@@ -250,10 +246,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       // the party/clan override for the one opponent sharing your own room.
       if (_trAllies(attackerId, targetId)) return true;
       if (_trEnemies(attackerId, targetId)) return false;
-      // A death battle is a free-for-all: party and clan protection would let
-      // allied entrants refuse to fight and stall the round forever, so both are
-      // suspended for as long as the two of them are in the same live round.
-      if (_db.phase === 'live' && _db.alive.has(attackerId) && _db.alive.has(targetId)) return false;
       const aParty = playerParty.get(attackerId);
       const tParty = playerParty.get(targetId);
       if (aParty && aParty === tParty) return true;
@@ -302,7 +294,7 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     // composed into a permanent stun-lock: emit this every ~5s at any player
     // ANYWHERE on the floor and they can neither move nor attack, because the
     // client re-applies with Math.max(stunTimer, duration). Decisive in
-    // arena3, in the death battle and in the guild war, and worse than it
+    // arena3 and in the guild war, and worse than it
     // sounds — the effect is applied ONLY by the victim's own client and is
     // modelled nowhere in Room state, so a modified client is immune to it
     // while every honest player is not.
@@ -374,60 +366,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       s.emitNearby(target.x, target.y, 'pvpPlayerCC', { targetId, type, duration: dur }, true);
     });
 
-    // ── Death Battle (Битва на смерть) ─────────────────────────────────────────
-    safeOn('deathBattleRegister', () => {
-      if (!s.authed) return;
-      if (_db.phase !== 'reg') return s.socket.emit('deathBattleError', { msg: 'Регистрация закрыта' });
-      const cp = s.room?.players.get(s.socket.id);
-      if (!cp) return s.socket.emit('deathBattleError', { msg: 'Выберите персонажа' });
-      if (_fear.has(s.socket.id)) return s.socket.emit('deathBattleError', { msg: 'Вы сейчас в Страхе' });
-      // Checked against the QUEUE too, not just live participation — same
-      // reasoning as fearEnter's own cross-checks (see its comment): arena3/
-      // race10 registration opens minutes before the match actually deploys,
-      // so a player who queued there and then also queued here could get
-      // deployed into arena3/race10 while still holding a death-battle slot,
-      // or the reverse. This was the one direction that never got the
-      // treatment — arena3Register/race10Register already check .reg here.
-      if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
-        return s.socket.emit('deathBattleError', { msg: 'Вы сейчас на арене 3х3' });
-      }
-      if (_race10.queue.has(s.socket.id) || (_race10.live && _race10.alive.has(s.socket.id))) {
-        return s.socket.emit('deathBattleError', { msg: 'Вы сейчас в Кровавой Башне' });
-      }
-      // Сотрудничество / Элитная фарм-зона — the two instanced modes that were
-      // never checked here (or in arena3Register/race10Register below), even
-      // though coopGroupCreate/farm2GroupCreate have always checked THIS
-      // direction. That asymmetry is not harmless: both run on a private Room
-      // per party (_createCoopRoom/_createFarm2Room), and _findPlayerAnyFloor —
-      // the "still has a character in the world" filter every deploy runs — only
-      // ever looks at getRoom(floor), which for those floor ids returns the
-      // shared, permanently-empty boot-time Room, never the party's instance. So
-      // a player who signed up from inside a run was silently dropped at deploy
-      // time: registered, waited out the whole countdown, and simply never got
-      // thrown in, with no error ever shown. The same shape as the race10/arena3
-      // queue gap fearEnter's own cross-checks were added to close.
-      //
-      // The group (lobby) maps are checked alongside the live-run ones for the
-      // same reason the arena3/race10 QUEUES are: a lobby that starts while this
-      // registration is still pending lands in exactly the same place.
-      if (_coop.has(s.socket.id) || _coopGroupOf.has(s.socket.id)) {
-        return s.socket.emit('deathBattleError', { msg: 'Вы сейчас в Сотрудничестве' });
-      }
-      if (_farm2.has(s.socket.id) || _farm2GroupOf.has(s.socket.id)) {
-        return s.socket.emit('deathBattleError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
-      }
-      _db.reg.set(s.socket.id, { name: s.username, tid: s.telegramId });
-      s.socket.emit('deathBattleRegistered', { registered: true });
-      _dbBroadcast();
-    });
-
-    safeOn('deathBattleUnregister', () => {
-      if (_db.phase !== 'reg') return;
-      if (!_db.reg.delete(s.socket.id)) return;
-      s.socket.emit('deathBattleRegistered', { registered: false });
-      _dbBroadcast();
-    });
-
     // ── 3v3 Arena ─────────────────────────────────────────────────────────────
     safeOn('arena3Register', async () => {
       if (!s.authed) return;
@@ -435,11 +373,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_a3.phase !== 'reg') return s.socket.emit('arena3Error', { msg: 'Арена 3х3 открыта с 21:00 до 22:00 по Москве' });
       const cp = s.room?.players.get(s.socket.id);
       if (!cp) return s.socket.emit('arena3Error', { msg: 'Выберите персонажа' });
-      // Signing up for both at once would have the death battle yank someone out
-      // of a running 3v3 (or the reverse) mid-fight.
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('arena3Error', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       // Кровавая Башня's 5-minute registration (20:30) and its own 15-minute
       // overrun grace period normally wrap up well before this window opens at
       // 21:00, but an admin can force-open either one off-schedule, so a race
@@ -456,7 +389,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_fear.has(s.socket.id)) {
         return s.socket.emit('arena3Error', { msg: 'Вы сейчас в Страхе' });
       }
-      // See deathBattleRegister for why these two were missing and what it cost.
+      // Сотрудничество и Элитная фарм-зона идут на своих приватных комнатах:
+      // без этой проверки запись отсюда терялась бы при старте молча.
       if (_coop.has(s.socket.id) || _coopGroupOf.has(s.socket.id)) {
         return s.socket.emit('arena3Error', { msg: 'Вы сейчас в Сотрудничестве' });
       }
@@ -518,9 +452,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       // Same cross-mode checks every other queue applies — a bracket that
       // yanks someone out of another live event mid-fight (or the reverse)
       // is worse than refusing the sign-up outright.
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('tournamentError', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('tournamentError', { msg: 'Вы сейчас на арене 3х3' });
       }
@@ -558,9 +489,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_race10.phase !== 'reg') return s.socket.emit('race10Error', { msg: 'Кровавая Башня открыта в 20:30 по Москве, всего на 5 минут' });
       const cp = s.room?.players.get(s.socket.id);
       if (!cp) return s.socket.emit('race10Error', { msg: 'Выберите персонажа' });
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('race10Error', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       // Checked against the QUEUE too, not just live participation — mirrors
       // the check arena3Register now runs the other way (see its comment):
       // without this, queuing here AND for arena3 let both windows' deploys
@@ -571,7 +499,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_fear.has(s.socket.id)) {
         return s.socket.emit('race10Error', { msg: 'Вы сейчас в Страхе' });
       }
-      // See deathBattleRegister for why these two were missing and what it cost.
+      // Сотрудничество и Элитная фарм-зона идут на своих приватных комнатах:
+      // без этой проверки запись отсюда терялась бы при старте молча.
       if (_coop.has(s.socket.id) || _coopGroupOf.has(s.socket.id)) {
         return s.socket.emit('race10Error', { msg: 'Вы сейчас в Сотрудничестве' });
       }
@@ -623,9 +552,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('fearError', { msg: 'Выберите персонажа' });
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('fearError', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       // Checked against the QUEUE too, not just live participation: race10/
       // arena3 registration opens minutes before the match actually deploys
       // (race10Register/arena3Register), and neither of those two checked Fear
@@ -828,24 +754,6 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       }
       const spot = _returnToHub(s.socket.id);
       if (spot) s.socket.emit('deathBattleReturned', spot);
-    });
-
-    // Sent once the winner closes the reward modal — everyone else was already
-    // sent back (to wherever they each were, see _dbReturnEntrant) the
-    // moment they were eliminated; the winner is left standing in the arena
-    // until this. Own event name (not the shared 'deathBattleReturned'
-    // arena3Return/race10Return use) so the client can label this teleport
-    // correctly — it lands somewhere different (the winner's own pre-battle
-    // spot) from what that event means for those other two.
-    safeOn('deathBattleReturn', () => {
-      if (_db.winnerId !== s.socket.id) return; // see _db.winnerId — not a free teleport home
-      _db.winnerId = null;
-      const spot = _dbReturnEntrant(s.socket.id);
-      if (spot) s.socket.emit('deathBattleReturnedPrev', spot);
-    });
-
-    safeOn('deathBattleSync', () => {
-      s.socket.emit('deathBattleState', { ..._dbPublicState(), registered: _db.reg.has(s.socket.id) });
     });
 
     // ── как играется у людей на самом деле ────────────────────────────────

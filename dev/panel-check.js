@@ -287,15 +287,6 @@ async function main() {
   // nothing, so the only assertion worth making is about the state after.
   console.log('\n  ── події: натиснули і перевірили, що щось сталося ──');
 
-  const dbBefore = await api('/admin/death-battle');
-  const dbPress = await api('/admin/death-battle', { method: 'POST' });
-  eq(dbPress.status, 200, 'битва на смерть: кнопку прийнято');
-  const dbAfter = await api('/admin/death-battle');
-  eq(dbAfter.body.phase, 'reg', `реєстрація відкрилась (було '${dbBefore.body.phase}')`);
-  ok(dbAfter.body.startAt > Date.now() + 60000,
-    `старт у майбутньому (${Math.round((dbAfter.body.startAt - Date.now()) / 1000)}с) — `
-    + 'з викликом без аргументу тут був NaN, і бій стартував миттєво з порожнім списком');
-
   const r10Press = await api('/admin/race10/open', {
     // Without this the route clears today's race10 attempts for every real
     // player in the database. A test must not write to live player state.
@@ -324,16 +315,13 @@ async function main() {
   // The old shape answered {ok:true}. The new one names what is missing.
   console.log('\n  ── зникла функція режиму ──');
   const modes = require('../server/modes').modes;
-  // Back to idle first: the registration opened a few assertions ago, and the
-  // "уже открыта" guard answers before the missing-name check is reached —
-  // which is what the first run of this found, and it is the guard working.
-  if (modes._db) modes._db.phase = 'idle';
-  const saved = modes._dbOpenReg;
-  delete modes._dbOpenReg;
-  const broken = await api('/admin/death-battle', { method: 'POST' });
-  modes._dbOpenReg = saved;
+  const saved = modes._race10OpenWindow;
+  delete modes._race10OpenWindow;
+  const broken = await api('/admin/race10/open', {
+    method: 'POST', body: JSON.stringify({ restoreAttempts: false }) });
+  modes._race10OpenWindow = saved;
   ok(broken.status >= 400, `кнопка без реалізації відповідає помилкою (${broken.status})`);
-  ok(/_dbOpenReg/.test(broken.body && broken.body.error || ''),
+  ok(/_race10OpenWindow/.test(broken.body && broken.body.error || ''),
     `і називає, чого бракує (${broken.body && broken.body.error})`);
 
   // ── the panel's own item protocol ────────────────────────────────────────

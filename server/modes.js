@@ -1,12 +1,12 @@
 'use strict';
-// ── The event modes: 3v3, death battle, race, fear, co-op, elite farm ───────
+// ── The event modes: 3v3, race, fear, co-op, elite farm ─────────────────────
 //
-// The six factories under server/game/ are kept exactly as they are. That is
+// The factories under server/game/ are kept exactly as they are. That is
 // the point of this file: they hold hours of tuning — freeze windows, scatter
 // radii, elimination ordering, reconnect grace — and none of that had anything
 // to do with the database. Checked before touching them:
 //
-//   arena3.js  race10.js  death-battle.js  fear.js  coop.js  farm2.js
+//   arena3.js  race10.js  fear.js  coop.js  farm2.js
 //     require: shared/definitions, game/floors, game/Room  — no Mongo
 //
 // So this is a wiring layer, not a rewrite. What it replaces is ~200 lines of
@@ -54,7 +54,6 @@ async function _pidOf(telegramId) {
 
 const createArena3 = require('./game/arena3');
 const createRace10 = require('./game/race10');
-const createDeathBattle = require('./game/death-battle');
 const createFear = require('./game/fear');
 const createCoop = require('./game/coop');
 const createFarm2 = require('./game/farm2');
@@ -151,7 +150,7 @@ function safeTimeout(name, fn, ms) {
 }
 
 // ── announcements ───────────────────────────────────────────────────────────
-// These two are called by EVERY mode — arena, the Tower, the death battle, the
+// These two are called by EVERY mode — arena, the Tower, the
 // guild war — whenever its registration window opens.
 //
 // The rewrite pointed both at 'eventBossAnnounce' / 'eventBossSpawned', which
@@ -424,7 +423,6 @@ function init(io) {
     _race10AttemptsLeft: (sid) => attemptsLeft(sid, 'race10'),
     _lockRace10Daily: (sid) => takeAttempt(sid, 'race10'),
   }));
-  Object.assign(modes, createDeathBattle(shared));
 
   // The castle. Its persistence is handed in — see the comment at the top of
   // game/guildwar.js for why that file no longer reaches for a model itself.
@@ -538,17 +536,16 @@ function init(io) {
   modes._pvpFrozen = (socketId) => {
     const until = modes._teleportFrozen.get(socketId) || 0;
     if (until > Date.now()) return true;
-    return !!(modes._dbFrozen(socketId) || modes._a3Frozen(socketId) || modes._race10Frozen(socketId) || modes._trFrozen(socketId));
+    return !!(modes._a3Frozen(socketId) || modes._race10Frozen(socketId) || modes._trFrozen(socketId));
   };
 
   // Order matters and is unchanged: whichever mode claims the elimination
   // handles it, and only a death that NO mode claimed is an open-world kill
   // worth writing to the duel history.
   modes._pvpEliminate = (socketId, killerSocketId, room, opts) => {
-    const dbHandled   = modes._dbEliminate(socketId, killerSocketId);
     const a3Handled   = modes._a3Eliminate(socketId, killerSocketId);
     // Кровавая Башня runs up to RACE10_MAX_MS — long enough that a disconnect
-    // ending it on the spot (as arena3/the death battle still do; those are
+    // ending it on the spot (as arena3 still does; that one is
     // short) cost a tunnel blip the whole day's one attempt, with no way
     // back in. On a genuine disconnect this holds the run instead, same
     // opts.fearGrace Fear and coop already read below.
@@ -566,7 +563,7 @@ function init(io) {
     const coopHandled = (opts && opts.fearGrace)
       ? modes._coopEjectOnDisconnect(socketId)
       : modes._coopEliminate(socketId);
-    if (killerSocketId && !dbHandled && !a3Handled && !r10Handled && !trHandled && !fearHandled && !coopHandled) {
+    if (killerSocketId && !a3Handled && !r10Handled && !trHandled && !fearHandled && !coopHandled) {
       const victim = room && room.players.get(socketId);
       const killer = room && room.players.get(killerSocketId);
       recordPvpHistory(socketId, { kind: 'death', mode: 'open_pvp', opponent: killer && killer.username });
@@ -655,8 +652,8 @@ function init(io) {
 
   // ── and the other three, which nobody was arming ─────────────────────────
   // The world boss above and the guild war (armed from server/app.js) each
-  // schedule themselves at boot. The 3v3 arena, Кровавая Башня and the death
-  // battle do not: _a3Schedule, _race10Schedule and _dbSchedule are called
+  // schedule themselves at boot. The 3v3 arena and Кровавая Башня do not:
+  // _a3Schedule and _race10Schedule are called
   // ONLY from inside their own close/finish handlers.
   //
   // Which never runs. A window that never opens never closes, so it never
@@ -672,7 +669,6 @@ function init(io) {
   for (const [name, fn] of [
     ['arena3', modes._a3Schedule],
     ['race10', modes._race10Schedule],
-    ['deathBattle', modes._dbSchedule],
     ['tournament', modes._trSchedule],
   ]) {
     if (typeof fn !== 'function') {

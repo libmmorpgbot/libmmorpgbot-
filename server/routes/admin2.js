@@ -1243,7 +1243,7 @@ module.exports = function registerAdminRoutes(app, deps) {
     res.json(modes._race10PublicState ? modes._race10PublicState() : {}));
 
   // ── the world boss ───────────────────────────────────────────────────────
-  // This route was wired to _dbPublicState / _dbOpenReg — the DEATH BATTLE.
+  // This route was once wired to the (since removed) death battle's handlers.
   // Two different events under one old name, so the panel's "Мировой босс"
   // card reported the death battle's registration state and its button opened
   // that registration. The card even reads `dropsOnGround`, which only the
@@ -1262,31 +1262,6 @@ module.exports = function registerAdminRoutes(app, deps) {
     if (r && r.error) throw Object.assign(new Error(r.error), { userMessage: r.error });
     return r;
   }, 'world_boss_summon');
-
-  // ── the death battle ─────────────────────────────────────────────────────
-  // Its own route now, under its own name.
-  //
-  // _dbOpenReg takes the ABSOLUTE moment the round starts, and this called it
-  // with no argument at all. `_db.startAt` became undefined; the start timer
-  // was armed for `Math.max(0, undefined - Date.now())`, which is NaN, which
-  // setTimeout treats as zero — so pressing the button opened registration and
-  // started the battle in the same tick, with nobody in it. The panel showed a
-  // countdown from `(undefined || 0)`, i.e. nothing.
-  // From shared/definitions, the same value the scheduled window uses — not a
-  // number typed here that would drift the day the other one changes.
-  const { DEATH_BATTLE_REG_MS: DB_REG_MS } = require('../../shared/definitions');
-  app.get('/admin/death-battle', guard, (req, res) =>
-    res.json(modes._dbPublicState ? modes._dbPublicState() : {}));
-  modeCtl('/admin/death-battle', () => {
-    if (modes._db && modes._db.phase !== 'idle') {
-      throw Object.assign(new Error('busy'), {
-        userMessage: modes._db.phase === 'reg' ? 'Регистрация уже открыта' : 'Битва уже идёт',
-      });
-    }
-    const startAt = Date.now() + DB_REG_MS;
-    need('_dbOpenReg')(startAt);
-    return { startAt, regMs: DB_REG_MS };
-  }, 'death_battle_open');
 
   app.get('/admin/guildwar', guard, (req, res) => res.json(deps.guildWarState ? deps.guildWarState() : {}));
   modeCtl('/admin/guildwar/open',  () => need('_gwOpenWindow')(Date.now()), 'guildwar_open');

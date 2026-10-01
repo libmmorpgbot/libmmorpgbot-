@@ -1070,8 +1070,6 @@ class Session {
       eventBoss: m.eventBossState
         ? { ...m.eventBossState(), drops: r.worldDropSnapshot ? r.worldDropSnapshot() : [] }
         : null,
-      deathBattle: m._dbPublicState
-        ? { ...m._dbPublicState(), registered: !!(m._db && m._db.reg.has(sid)) } : null,
       race10: m._race10PublicState
         ? { ...m._race10PublicState(), registered: !!(m._race10 && m._race10.queue.has(sid)) } : null,
       arena3: m._a3PublicState

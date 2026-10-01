@@ -426,7 +426,6 @@ function _gwUnselectable(id) {
 function _openWorldAllyUnselectable(id) {
   if (typeof _a3InMatch !== 'undefined' && _a3InMatch) return false;
   if (typeof _trInMatch !== 'undefined' && _trInMatch) return false;
-  if (typeof _dbInFight !== 'undefined' && _dbInFight) return false;
   if (player && typeof _isGuildWarTile === 'function' &&
       _isGuildWarTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE))) return false;
   if (typeof partyMembers !== 'undefined' && partyMembers.some(m => m.id === id)) return true;
@@ -603,12 +602,6 @@ function _checkTargetBtnTouch(cx, cy) {
 function _checkPvpBtnTouch(cx, cy) {
   const pb = getPvpBtnPos();
   if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
-    // PvP is not optional inside a death battle — letting an entrant switch it
-    // off would make them unkillable and stall the round.
-    if (typeof _dbInFight !== 'undefined' && _dbInFight) {
-      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, t('dbPvpLockedToast'), '#f88');
-      return true;
-    }
     if (!pvpMode && typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) {
       if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, 'Нельзя в безопасной зоне', '#f88');
       return true;

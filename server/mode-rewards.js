@@ -4,7 +4,6 @@
 // The six mode factories under server/game/ are kept verbatim from the old
 // build, and they pay their winners by reaching into the winner's connection:
 //
-//   const won = s?.data?._dbGrantWin ? await s.data._dbGrantWin() : null;
 //   const paid = await s.data._race10GrantReward(won);
 //   const reward = winnerSocket?.data?._grantCoopBossReward ? await … : null;
 //
@@ -44,7 +43,6 @@ const progression = require('./db/repos/progression');
 const plog = require('./db/repos/playerlog');
 const ops = require('./tg-ops');
 const {
-  DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
   race10Rewards, race10Liberty,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS, SEASON_TOURNAMENT_WIN_POINTS,
 } = require('../shared/definitions');
@@ -85,7 +83,7 @@ async function credit(t, pid, currency, amount, ref) {
 }
 
 // Grants a list of catalog-shaped items, reporting what did not fit. The list
-// comes from shared/definitions (deathBattleRewards, race10Rewards): each entry
+// comes from shared/definitions (race10Rewards): each entry
 // is a fully-formed item, so nothing here has to know what any of them are.
 async function grantItems(t, pid, list) {
   // The lock items.js requires of anything that mutates items. Mode payouts
@@ -202,29 +200,6 @@ function attach(socket, s) {
   // Tournament round wins — every round is one opponent beaten, grand final
   // included, so a single flat rate covers every call site in tournament.js.
   socket.data._seasonAwardTournamentWin = _awardSeason(SEASON_TOURNAMENT_WIN_POINTS, 'win');
-
-  // Death battle: GRAM plus a fixed item set.
-  socket.data._dbGrantWin = async () => {
-    const id = pid();
-    if (!id) return null;
-    const ref = 'deathbattle';
-    try {
-      return await tx(async (t) => {
-        const bal = await credit(t, id, 'gram', DEATH_BATTLE_GRAM_REWARD, ref);
-        const g = await grantItems(t, id, deathBattleRewards());
-        const { given, missed } = g;
-        await s.pushBalances(t);
-        if (given.length) await s.pushItems(t);
-        _recordPayout(id, ref, { currency: 'gram', amount: DEATH_BATTLE_GRAM_REWARD, ...g });
-        // `delivered` is what the winner's result screen prints — it means
-        // "all of it fit", not "something was granted".
-        return {
-          gram: DEATH_BATTLE_GRAM_REWARD, balance: bal && bal.balance,
-          items: given, missed, delivered: missed.length === 0,
-        };
-      });
-    } catch (err) { return _report('deathbattle', err, id); }
-  };
 
   // 3v3 arena: Liberty only. Returns the amount, which is what the mode puts
   // in its own end-of-match packet.

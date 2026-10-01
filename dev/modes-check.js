@@ -208,12 +208,6 @@ async function main() {
       `немає: ${missing.join(', ')}`);
   };
 
-  a.sock.emit('deathBattleSync');
-  const dbState = await once(a.sock, 'deathBattleState');
-  shape(dbState, 'битва на смерть', ['phase', 'startAt', 'nextAt', 'count', 'registered']);
-  ok(typeof dbState.phase === 'string' && Number.isFinite(dbState.nextAt) && dbState.nextAt > Date.now(),
-    `битва на смерть: фаза '${dbState.phase}', наступний старт через ${Math.round((dbState.nextAt - Date.now()) / 60000)} хв`);
-
   a.sock.emit('arena3Sync');
   const a3State = await once(a.sock, 'arena3State');
   shape(a3State, 'арена 3х3', ['phase', 'nextAt', 'queued', 'needed', 'live',
@@ -402,9 +396,6 @@ async function main() {
   // the teleport home that useTeleportStone destroys a bought item to perform
   // (TELEPORT_STONE_PRICE, shared/definitions.js) — and which useTeleportStone
   // refuses outright to a dead player.
-  // deathBattleReturn was the only one of the six that was gated, and its own
-  // line says why in as many words: "not a free teleport home".
-  //
   // The legitimate half is asserted right after the exploit half, because the
   // gate is worth nothing if it also breaks the button it is guarding: every
   // mode's finish (_fearFinish, _coopFinish, _farm2Finish, _a3Eliminate,

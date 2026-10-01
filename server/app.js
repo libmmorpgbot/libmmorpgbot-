@@ -1606,7 +1606,7 @@ async function boot() {
 
   if (modesRuntime._gwSchedule) modesRuntime._gwSchedule();
   if (modesRuntime._gwIncomeSchedule) modesRuntime._gwIncomeSchedule();
-  console.log('modes: arena3, death battle, race, fear, co-op, elite farm, guild war');
+  console.log('modes: arena3, race, fear, co-op, elite farm, guild war');
 
   // 2d. The admin panel, now that the modes it reports on exist.
   mountAdmin();

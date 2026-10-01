@@ -309,7 +309,7 @@ async function mk(nick) {
 
     // Предупреждение «за 30 минут» начинается раньше на длительность прохода —
     // иначе последний в очереди получает его за двадцать восемь.
-    const SITES = ['server/game/arena3.js', 'server/game/death-battle.js',
+    const SITES = ['server/game/arena3.js',
                    'server/game/guildwar.js', 'server/game/race10.js', 'server/modes.js'];
     for (const f of SITES) {
       const src = fs.readFileSync(path.join(ROOT, f), 'utf8');

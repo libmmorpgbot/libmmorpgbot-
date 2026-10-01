@@ -233,11 +233,6 @@ let _clanStorage = null;
 // or not in a clan.
 let _clanActivity = null;
 
-// Death Battle (Битва на смерть) — scheduled free-for-all, see the handlers
-// in js/network.js and the panel in js/ui.js.
-let _dbState = { phase: 'idle', startAt: 0, nextAt: 0, count: 0 };
-let _dbRegistered = false;
-let _dbInFight = false;
 // 3v3 arena. _a3Team is 'A' or 'B' while in a match, and _a3Mates holds the
 // socket ids of everyone in it by side, so nameplates can colour allies and
 // opponents differently — the server already refuses friendly fire, this is
@@ -256,7 +251,8 @@ let _a3Score = { a: 3, b: 3 };
 let _a3RoundEndAt = 0;
 // While set and still in the future, this client is standing in the arena
 // waiting out the pre-fight countdown: movement and attacks are blocked here
-// as well as on the server (see _dbFrozen).
+// as well as on the server. Общая для арены 3×3, турнира и Кровавой Башни
+// (имя осталось от удалённой «Битвы на смерть»).
 let _dbFightAt = 0;
 
 // Турнир (32-player double elimination) — see js/network.js's

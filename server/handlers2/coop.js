@@ -32,7 +32,7 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
   const {
     _a3, _coop, _coopGroupBroadcastList, _coopGroupDissolve, _coopGroupOf,
     _coopGroupOpenList, _coopGroupPush, _coopGroupStateFor, _coopGroups,
-    _createCoopRoom, _createFarm2Room, _db, _farm2, _farm2CascadeCheck,
+    _createCoopRoom, _createFarm2Room, _farm2, _farm2CascadeCheck,
     _farm2Finish, _farm2GroupBroadcastList, _farm2GroupDissolve, _farm2GroupOf,
     _farm2GroupOpenList, _farm2GroupPush, _farm2GroupStateFor, _farm2Groups,
     _farm2Starting, _fear, _race10,
@@ -109,9 +109,6 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('coopError', { msg: 'Выберите персонажа' });
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('coopError', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('coopError', { msg: 'Вы сейчас на арене 3х3' });
       }
@@ -123,8 +120,8 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       }
       // ── the cross-check every other mode has and these two did not ─────────
       // farm2GroupCreate/farm2GroupJoin have always checked Сотрудничество
-      // (`_coop`/`_coopGroupOf`, below); deathBattleRegister, arena3Register and
-      // race10Register all check Элитная фарм-зона (handlers2/modes.js:170, 217,
+      // (`_coop`/`_coopGroupOf`, below); arena3Register and
+      // race10Register both check Элитная фарм-зона (handlers2/modes.js:170, 217,
       // 276). Only these two coop handlers checked neither, and the cost was not
       // theirs to pay.
       //
@@ -139,7 +136,7 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       // deploy that then fails destroyed their run for nothing at all.
       //
       // The group (lobby) map is checked alongside the live-run one for the same
-      // reason deathBattleRegister checks both: a lobby that starts while this
+      // reason arena3Register checks its queue: a lobby that starts while this
       // registration is pending lands in exactly the same place.
       if (_farm2.has(s.socket.id) || _farm2GroupOf.has(s.socket.id)) {
         return s.socket.emit('coopError', { msg: 'Вы сейчас в Элитной фарм-зоне' });
@@ -168,9 +165,6 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('coopError', { msg: 'Выберите персонажа' });
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('coopError', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('coopError', { msg: 'Вы сейчас на арене 3х3' });
       }
@@ -521,9 +515,6 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('farm2Error', { msg: 'Выберите персонажа' });
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('farm2Error', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('farm2Error', { msg: 'Вы сейчас на арене 3х3' });
       }
@@ -560,9 +551,6 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('farm2Error', { msg: 'Выберите персонажа' });
-      if (_db.reg.has(s.socket.id) || _db.alive.has(s.socket.id)) {
-        return s.socket.emit('farm2Error', { msg: 'Вы уже записаны на битву на смерть' });
-      }
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('farm2Error', { msg: 'Вы сейчас на арене 3х3' });
       }

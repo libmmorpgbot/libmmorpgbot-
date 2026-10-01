@@ -181,8 +181,8 @@
   <span id="gram-shop-btn-discount" class="gram-shop-btn-discount-badge" style="display:none">-30%</span>
 </button>
 
-<!-- Events button (below GRAM Shop button) — the death battle and the world
-     boss both live behind this one entry point. -->
+<!-- Events button (below GRAM Shop button) — every scheduled event lives
+     behind this one entry point. -->
 <button id="events-btn" onclick="openEventsPanel()" style="display:none">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>
   <span id="events-btn-text" data-i18n="eventsBtn">События</span>
@@ -224,7 +224,7 @@
   <div id="season-panel-body" class="vip-body"></div>
 </div>
 
-<!-- Events overlay panel: list of events (Битва, 3х3, Кровавая Башня, Страх,
+<!-- Events overlay panel: list of events (3х3, Кровавая Башня, Страх,
      Сотрудничество, Мировой босс, Война гильдий) → tapping one navigates to
      that event's own page (openEventDetail/showEventsList, js/ui.js), not a
      same-screen tab swap — the back arrow returns to this list. -->
@@ -233,7 +233,6 @@
     <button class="vip-back" id="events-back-btn" onclick="showEventsList()"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,18 9,12 15,6"/></svg></button>
     <div class="vip-title" id="events-panel-title">
       <span class="events-title-home" style="color:#e8574f"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><span data-i18n="eventsHdr">События</span></span>
-      <span class="events-title-detail" id="etitle-battle" style="color:#e8574f"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="8" r="5"/><path d="M9 17v-2a3 3 0 0 1 6 0v2"/><line x1="9" y1="21" x2="15" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span data-i18n="dbBtn">Битва</span></span>
       <span class="events-title-detail" id="etitle-a3" style="color:#5b8def"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg><span data-i18n="a3Tab">3х3</span></span>
       <span class="events-title-detail" id="etitle-race10" style="color:#eb4e61"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg><span data-i18n="race10Tab">Кровавая Башня</span></span>
       <span class="events-title-detail" id="etitle-fear" style="color:#8a6fbf"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 2a7 7 0 0 0-7 7v12l2.5-2.5L10 21l2-2 2 2 2.5-2.5L19 21V9a7 7 0 0 0-7-7z"/><circle cx="9.5" cy="10" r="1"/><circle cx="14.5" cy="10" r="1"/></svg><span data-i18n="fearTab">Страх</span></span>
@@ -246,15 +245,7 @@
     <button class="vip-close" onclick="closeEventsPanel()">✕</button>
   </div>
   <div class="event-tab-list" id="events-tab-list">
-    <button class="event-tab-item active" id="etab-battle" onclick="openEventDetail('battle')" style="--cc:#e8574f; --art:url('/images/events/battle.jpg')">
-      <span class="event-tab-text">
-        <span class="event-tab-label" data-i18n="dbBtn">Битва</span>
-        <span class="event-tab-sub" data-i18n="eventSubBattle">Схватка на выживание без союзников</span>
-        <span class="event-tab-sched"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg><span data-i18n="eventSchedBattle">Вт, Чт, Сб в 10:00 МСК</span></span>
-      </span>
-      <svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>
-    </button>
-    <button class="event-tab-item" id="etab-a3" onclick="openEventDetail('a3')" style="--cc:#5b8def; --art:url('/images/events/a3.jpg')">
+    <button class="event-tab-item active" id="etab-a3" onclick="openEventDetail('a3')" style="--cc:#5b8def; --art:url('/images/events/a3.jpg')">
       <span class="event-tab-text">
         <span class="event-tab-label" data-i18n="a3Tab">3х3</span>
         <span class="event-tab-sub" data-i18n="eventSubA3">Командный бой 3 на 3</span>
@@ -344,17 +335,6 @@
     <div class="db-win-sub" id="race10-result-sub"></div>
     <div class="db-rewards" id="race10-result-rewards"></div>
     <button class="db-win-btn" onclick="closeRace10Result()" data-i18n="a3ResultClose">В мир</button>
-  </div>
-</div>
-
-<!-- Death Battle victory modal -->
-<div id="db-win-modal" style="display:none">
-  <div class="db-win-panel">
-    <div class="db-win-crown">👑</div>
-    <div class="db-win-title" data-i18n="dbWinTitle">ПОБЕДА</div>
-    <div class="db-win-sub" data-i18n="dbWinSub">Вы последний выживший</div>
-    <div class="db-rewards" id="db-win-rewards"></div>
-    <button class="db-win-btn" onclick="closeDeathBattleWin()" data-i18n="dbWinClose">Забрать награду</button>
   </div>
 </div>
 

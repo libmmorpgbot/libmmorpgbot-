@@ -1944,7 +1944,8 @@ function uniqueSetBonusFor(count) {
   }
   return out;
 }
-const BOSS_SCROLL_CHANCE = 0.10;
+// 1% — снижено в 10 раз (было 10%) по просьбе владельца.
+const BOSS_SCROLL_CHANCE = 0.01;
 const BOSS_SCROLL_MIN_QTY = 1;
 const BOSS_SCROLL_MAX_QTY = 2;
 
@@ -2854,28 +2855,9 @@ function rollEventBossDrops(rand) {
   return out;
 }
 
-// ── Death Battle (Битва на смерть) ──────────────────────────────────────────
-// Scheduled free-for-all: registration opens DEATH_BATTLE_REG_MS before each
-// start time, then everyone who signed up is scattered across the same arena
-// the event boss uses, forced into PvP, and fights until one player is left.
-// Times are Moscow (UTC+3, no DST) hours — nextEventStartAt below converts to
-// UTC itself, so this stays readable.
-// Вторник, четверг, суббота — раз в день, в 10:00.
-const DEATH_BATTLE_DAYS_MSK = [2, 4, 6];
-const DEATH_BATTLE_HOURS_MSK = [10];
-const DEATH_BATTLE_MSK_OFFSET_H = 3;
-const DEATH_BATTLE_REG_MS = 5 * 60 * 1000;
-// Everyone lands in the arena frozen for this long — nobody can move or
-// attack — so the round starts from a standstill instead of handing the win to
-// whoever's client finished loading the teleport first.
-const DEATH_BATTLE_FREEZE_MS = 30 * 1000;
-// Without at least two entrants there is nobody to fight, so the round is
-// cancelled rather than handing someone a free win.
-const DEATH_BATTLE_MIN_PLAYERS = 2;
-// A round that somehow never resolves (everyone hiding, a stuck client) is
-// force-ended here so the schedule can't wedge.
-const DEATH_BATTLE_MAX_MS = 20 * 60 * 1000;
-const DEATH_BATTLE_GRAM_REWARD = 0.05;
+// Московское время — UTC+3 без перехода на летнее время; по нему заданы
+// расписания всех событий (nextEventStartAt ниже).
+const MSK_OFFSET_H = 3;
 
 // Smallest GRAM withdrawal the bot will take. Shared so the server's refusal
 // and the client's input/validation/hint can't drift apart — they were three
@@ -2883,9 +2865,7 @@ const DEATH_BATTLE_GRAM_REWARD = 0.05;
 const GRAM_MIN_WITHDRAW = 1;
 
 // ── World boss schedule ─────────────────────────────────────────────────────
-// Понедельник, среда, пятница, воскресенье в 20:00 по Москве. Deliberately
-// interleaved with the death battle's days so the two never land on the same
-// evening. The boss still has to be summoned — the schedule just does what an
+// Понедельник, среда, пятница, воскресенье в 20:00 по Москве. The boss still has to be summoned — the schedule just does what an
 // admin used to do by hand (see scheduleEventBoss in server/index.js), which
 // means an admin summon on an off day still works exactly as before.
 const WORLD_BOSS_DAYS_MSK  = [1, 3, 5, 0];
@@ -2947,12 +2927,11 @@ const TOURNAMENT_MIN_LEVEL = 15;
 
 // One fight lasts a minute. If both sides are still standing when it runs
 // out, whoever dealt more damage over the minute advances — a bracket match
-// cannot end in "nobody wins" the way an open death-battle round can, since
-// there is always a next round waiting on exactly one of the two.
+// cannot end in "nobody wins", since there is always a next round waiting on
+// exactly one of the two.
 const TOURNAMENT_FIGHT_MS = 60 * 1000;
 // Grace before the clock actually starts, once a round's players have all
-// landed on the ring — same idea as DEATH_BATTLE_FREEZE_MS, shorter because
-// this is a 1v1 stare-down rather than a scatter of up to 32 strangers.
+// landed on the ring, so the fight starts from a standstill.
 const TOURNAMENT_COUNTDOWN_MS = 15 * 1000;
 // How long the ring sits empty between rounds, once every match from the
 // round just finished — win, loss or timeout — has been decided.
@@ -2968,7 +2947,7 @@ const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;
 // Shared so the client's countdown and the server's timers can't disagree.
 // `days` are Moscow weekdays, 0 = воскресенье .. 6 = суббота.
 function nextEventStartAt(days, hours, from = Date.now()) {
-  const OFF = DEATH_BATTLE_MSK_OFFSET_H * 3600000;
+  const OFF = MSK_OFFSET_H * 3600000;
   const msk = new Date(from + OFF);
   let best = Infinity;
   // A full week ahead plus today, so a schedule with a single weekday still
@@ -2984,19 +2963,7 @@ function nextEventStartAt(days, hours, from = Date.now()) {
   return best === Infinity ? 0 : best;
 }
 
-// The winner's prize, built the same way as rollEventBossDrops: every entry is
-// a fully-formed inventory item, so the granting code never has to know what
-// any of them are.
-function deathBattleRewards() {
-  const out = [];
-  const add = (base, qty) => { if (base) out.push({ ...base, qty }); };
-  add(CRAFT_MATS.find(m => m.id === 'bless_stone'), 1);   // 1 безопасная заточка
-  add(CRAFT_MATS.find(m => m.id === 'key_rare'), 10);     // 10 редких ключей
-  ITEM_DEF.filter(i => i.slot === 'buff_potion').forEach(bp => add(bp, 1)); // все 6 банок бафа
-  return out;
-}
-
-// Кровавая Башня payout, built the same way deathBattleRewards is: every entry
+// Кровавая Башня payout, built the same way as rollEventBossDrops: every entry
 // is a fully-formed inventory item, so the granting code never has to know what
 // any of them are.
 //
@@ -3967,9 +3934,7 @@ if (typeof module !== 'undefined') module.exports = {
   roomDropMult, roomKeyChance, roomEnchantStoneChance,
   DROP_GROWTH_MAX_ROOM_LEVEL, dropGrowthRoomLevel, dropGrowthLevel,
   EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
-  DEATH_BATTLE_DAYS_MSK, DEATH_BATTLE_HOURS_MSK, DEATH_BATTLE_MSK_OFFSET_H,
-  DEATH_BATTLE_REG_MS, DEATH_BATTLE_FREEZE_MS,
-  DEATH_BATTLE_MIN_PLAYERS, DEATH_BATTLE_MAX_MS, DEATH_BATTLE_GRAM_REWARD, deathBattleRewards,
+  MSK_OFFSET_H,
   RACE10_LIBERTY, RACE10_LIBERTY_WINNER, race10Rewards, race10Liberty,
   WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK, EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,

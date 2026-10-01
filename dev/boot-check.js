@@ -314,7 +314,7 @@ async function main() {
   // the character select with a live socket behind it. Found by opening the
   // game in a browser; kept honest by the list below.
   for (const k of ['floor', 'mapVersion', 'spawn', 'enemies', 'bossStatus',
-                   'deathBattle', 'race10', 'arena3', 'guildWar']) {
+                   'race10', 'arena3', 'guildWar']) {
     ok(k in start, `gameStart несе '${k}' — клієнт читає його одним деструктуруванням`);
   }
   ok(start.spawn && Number.isFinite(start.spawn.x) && Number.isFinite(start.spawn.y),

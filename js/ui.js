@@ -6954,11 +6954,10 @@ function showMarketBtn() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  EVENTS (События) — Битва + Мировой босс
+//  EVENTS (События)
 // ─────────────────────────────────────────────────────────
-// One entry point for both scheduled events; each is a tab inside the panel.
-// The server owns both schedules (shared/definitions.js DEATH_BATTLE_*/
-// WORLD_BOSS_*) and pushes their state, so everything here just renders what
+// One entry point for every scheduled event; each is a page inside the panel.
+// The server owns the schedules (shared/definitions.js) and pushes their state, so everything here just renders what
 // arrived and counts the seconds down locally.
 function _positionEventsBtn() {
   const shopBtn = document.getElementById('gram-shop-btn');
@@ -7014,7 +7013,7 @@ function _fmtEventWhen(at) {
   return `${days[d.getDay()]}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-let _eventTab = 'battle';
+let _eventTab = 'a3';
 // 'list' — the event picker (events-tab-list) fills the whole panel.
 // 'detail' — a single event's own page (openEventDetail's target) instead,
 // reached by tapping a row in the list; the back arrow (showEventsList)
@@ -7025,7 +7024,6 @@ function openEventsPanel() {
   const panel = document.getElementById('events-panel');
   if (!panel) return;
   panel.style.display = 'flex';
-  if (typeof netDeathBattleSync === 'function') netDeathBattleSync();
   if (typeof netArena3Sync === 'function') netArena3Sync();
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
@@ -7079,7 +7077,7 @@ function _renderEventsBody() {
                  : _eventTab === 'farm2'     ? _farm2BodyHTML()
                  : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
                  : _eventTab === 'tournament'? _tournamentBodyHTML()
-                 : _deathBattleBodyHTML();
+                 : _arena3BodyHTML();
 }
 
 // ── 3v3 arena tab ───────────────────────────────────────────────────────────
@@ -7341,7 +7339,7 @@ function onTournamentRatingError(msg) {
 
 // ── Кровавая Башня tab (10-player corridor race) ────────────────────────────
 // Open every day at 20:30 MSK for 5 minutes (see _race10Schedule,
-// server/index.js) — same reg/idle phase shape as _deathBattleBodyHTML
+// server/index.js) — same reg/idle phase shape as _arena3BodyHTML
 // above, plus the queue count and team-less damage race once open.
 function _race10BodyHTML() {
   const st = (typeof _race10State !== 'undefined' && _race10State) || { phase: 'idle', nextAt: 0, queued: 0, startAt: 0, capacity: 0, minLevel: 10, reward: 10 };
@@ -8013,107 +8011,18 @@ function _worldBossDropRows() {
   return rows.join('');
 }
 
-// ─────────────────────────────────────────────────────────
-//  DEATH BATTLE (Битва на смерть)
-// ─────────────────────────────────────────────────────────
-// Scheduled free-for-all (shared/definitions.js DEATH_BATTLE_*). The server
-// drives every transition and pushes them as deathBattleState; this panel just
-// renders whatever _dbState currently says and counts the seconds down locally
-// so an open panel stays live without extra traffic.
 // Called from the network handlers on every server push — keeps the Events
-// button's highlight and (if open) the panel in step with the round.
-// Shared by the death battle and race10 (Кровавая Башня) pushes — either
-// one's registration window opening should highlight the Events button, and
-// whichever closes last shouldn't clobber the other's still-open state.
+// button's highlight in step with whichever registration window is open
+// (Кровавая Башня, арена 3×3).
 function _updateEventsBtnHighlight() {
   const btn = document.getElementById('events-btn');
   if (!btn) return;
-  const dbOpen = typeof _dbState !== 'undefined' && _dbState.phase === 'reg';
   const raceOpen = typeof _race10State !== 'undefined' && _race10State.phase === 'reg';
   const a3Open = typeof _a3State !== 'undefined' && _a3State.phase === 'reg';
-  const open = dbOpen || raceOpen || a3Open;
+  const open = raceOpen || a3Open;
   btn.classList.toggle('db-open', open);
   const label = document.getElementById('events-btn-text');
   if (label) label.textContent = open ? t('dbBtnOpen') : t('eventsBtn');
-}
-
-function onDeathBattleState() {
-  _updateEventsBtnHighlight();
-  if (_eventsPanelOpen() && _eventTab === 'battle') _renderEventsBody();
-}
-
-function _deathBattleBodyHTML() {
-  const st = (typeof _dbState !== 'undefined' && _dbState) || { phase: 'idle', nextAt: 0, startAt: 0, count: 0 };
-  const reg  = st.phase === 'reg';
-  const live = st.phase === 'live';
-  const target = reg ? st.startAt : st.nextAt;
-  const left = Math.max(0, (target || 0) - Date.now());
-
-  let phaseTxt, countTxt, action;
-  if (live) {
-    phaseTxt = t('dbPhaseLive');
-    countTxt = tVars('dbAliveFmt', { n: st.count });
-    action = `<button class="db-action" disabled>${t('dbPhaseLive')}</button>`;
-  } else if (reg) {
-    phaseTxt = t('dbPhaseReg');
-    countTxt = tVars('dbSignedUpFmt', { n: st.count });
-    action = _dbRegistered
-      ? `<button class="db-action db-leave" onclick="netDeathBattleUnregister()">${t('dbLeaveBtn')}</button>`
-      : `<button class="db-action" onclick="netDeathBattleRegister()">${t('dbJoinBtn')}</button>`;
-  } else {
-    phaseTxt = t('dbPhaseIdle');
-    countTxt = '';
-    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
-  }
-
-  // Idle counts down to a start that can be days away (вт/чт/сб), so it gets
-  // the long-form ETA and the weekday; a live round stays on m:ss.
-  const timeTxt = (reg || live) ? _fmtBossTime(left) : _fmtEventEta(left);
-  const whenTxt = (!reg && !live && st.nextAt) ? _fmtEventWhen(st.nextAt) : countTxt;
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${timeTxt}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${whenTxt ? `<div class="db-count">${whenTxt}</div>` : ''}
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${t('dbRule1')}</li>
-          <li>${t('dbRule2')}</li>
-          <li>${t('dbRule3')}</li>
-          <li>${t('dbRule5')}</li>
-          <li>${t('dbRule4')}</li>
-        </ul>
-      </div>
-      <div class="db-rewards-hdr">${t('dbRewardsHdr')}</div>
-      <div class="db-rewards">${_dbRewardRows()}</div>
-    </div>`;
-}
-
-// One row per prize, shared by the panel's "what you can win" list and the
-// winner's modal so the two can't drift apart. Called with no arguments it
-// reads the canonical prize list straight out of shared/definitions.js, which
-// is the same function the server grants from.
-function _dbRewardRows(gram, items) {
-  const g = gram !== undefined ? gram
-    : (typeof DEATH_BATTLE_GRAM_REWARD !== 'undefined' ? DEATH_BATTLE_GRAM_REWARD : 0);
-  const list = items || (typeof deathBattleRewards === 'function' ? deathBattleRewards() : []);
-  const rows = [];
-  if (g) {
-    rows.push(`<div class="db-reward-row">
-      <img src="/images/gram-icon.png" alt="">
-      <span>GRAM</span><span class="db-reward-qty">+${g}</span></div>`);
-  }
-  list.forEach(it => {
-    // Items carry their own inventory icon; the emoji is only a stand-in for a
-    // prize that somehow has no art rather than a broken image.
-    const icon = it.img ? `<img src="${it.img}" alt="">` : '<span class="db-reward-fallback">🎁</span>';
-    rows.push(`<div class="db-reward-row">
-      ${icon}<span>${it.name || it.id}</span><span class="db-reward-qty">×${it.qty || 1}</span></div>`);
-  });
-  return rows.join('');
 }
 
 // One ticker for the whole Events panel — both tabs count down, and only the
@@ -8127,23 +8036,13 @@ if (typeof setInterval === 'function') {
   setInterval(() => { if (_tournamentPanelOpen() && _tourTab === 'reg') _renderTournamentPanelBody(); }, 1000);
 }
 
-// Victory modal. The prize is already granted server-side by the time this
-// shows; closing it is what sends the winner back to the hub.
-function showDeathBattleWin(gram, items) {
-  const modal = document.getElementById('db-win-modal');
-  const list  = document.getElementById('db-win-rewards');
-  if (!modal || !list) return;
-  list.innerHTML = _dbRewardRows(gram, items || []);
-  modal.style.display = 'flex';
-}
-
 // Pre-fight countdown overlay. Everyone is standing on their start point,
 // frozen, until this hits zero — big and centred so it's unmissable, and
 // pointer-events:none so it can't swallow a joystick touch the instant the
 // freeze lifts. Built lazily like the event-boss banner.
 //
-// Shared by Death Battle's pre-fight freeze and Fear's pre-wave-1 grace
-// window (FEAR_START_DELAY_MS on the server) — a player can never be in
+// Shared by the PvP events' pre-fight freeze (arena 3×3, tournament,
+// Кровавая Башня) and Fear's pre-wave-1 grace window (FEAR_START_DELAY_MS on the server) — a player can never be in
 // both at once, so one DOM node/timer pair is safe to reuse rather than
 // forking a near-identical copy.
 let _dbFreezeTick = null;
@@ -8188,12 +8087,6 @@ function showFearCountdown(readyAt) { showFreezeCountdown(readyAt, t('fearFreeze
 function hideFearCountdown() { hideFreezeCountdown(); }
 function showCoopCountdown(readyAt) { showFreezeCountdown(readyAt, t('coopFreezeLbl')); }
 function hideCoopCountdown() { hideFreezeCountdown(); }
-
-function closeDeathBattleWin() {
-  const modal = document.getElementById('db-win-modal');
-  if (modal) modal.style.display = 'none';
-  if (typeof netDeathBattleReturn === 'function') netDeathBattleReturn();
-}
 
 function openMarketPanel() {
   const panel = document.getElementById('market-panel');
