@@ -42,7 +42,7 @@
 const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor,
+  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, UPGRADE_STEP,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -53,6 +53,7 @@ const LOAD_SQL = `
     pr.char_class, pr.lvl, pr.xp, pr.hp, pr.codex, pr.buffs,
     pr.upg_atk, pr.upg_def, pr.upg_hp, pr.upg_atk_speed,
     pr.upg_crit_chance, pr.upg_crit_power, pr.upg_hp_regen,
+    pr.upg_cp, pr.upg_xp, pr.upg_drop,
     COALESCE((
       SELECT json_agg(json_build_object(
                'id', i.item_id, 'slot', i.slot, 'enhance', i.enhance,
@@ -214,9 +215,9 @@ function compute(row) {
   const baseDef = cd.baseDef + lvl;
   const baseMaxHp = cd.baseHP + lvl * 20;
 
-  let a = baseAtk + row.upg_atk * 1;
-  let d = baseDef + row.upg_def * 1;
-  let h = baseMaxHp + row.upg_hp * 10;
+  let a = baseAtk + row.upg_atk * UPGRADE_STEP.atk;
+  let d = baseDef + row.upg_def * UPGRADE_STEP.def;
+  let h = baseMaxHp + row.upg_hp * UPGRADE_STEP.hp;
 
   // Codex — flat, right after upgrades, exactly where recompute() puts it.
   // Absent from the server's old computeStats entirely, which is half of why
@@ -282,6 +283,9 @@ function compute(row) {
   critPowerAdd += rune('critPowerPct');
   xpPct        += rune('xpPct');
   dropPct      += rune('dropPct');
+  // Улучшения «Бонус к опыту» и «Бонус к дропу» — в долях, как и всё здесь.
+  xpPct        += (row.upg_xp   || 0) * UPGRADE_STEP.xp;
+  dropPct      += (row.upg_drop || 0) * UPGRADE_STEP.drop;
   atkPct       += rune('atkPct');
   extraCrit    += rune('critChancePct');
   // Скорость атаки — доля от БАЗОВОЙ скорости класса, как у пассивок и у
@@ -351,10 +355,12 @@ function compute(row) {
     maxHp: h,
     // Capped at 0.80 like recompute(): without it, enough crit gear makes every
     // hit a crit and the stat stops meaning anything.
-    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + row.upg_crit_chance * 0.01 + extraCrit),
-    critPower:  1.5 + lvl * 0.015 + row.upg_crit_power * 0.03 + pt.critPowerFlat + critPowerAdd,
-    atkSpeed:   (cd.atkSpeed || 0) * (1 + lvl * 0.015) + row.upg_atk_speed * 0.05 + extraAS,
-    hpRegen:    lvl * 0.02 + row.upg_hp_regen * 0.1 + pt.hpRegenFlat + regenBuff,
+    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + row.upg_crit_chance * UPGRADE_STEP.critChance + extraCrit),
+    critPower:  1.5 + lvl * 0.015 + row.upg_crit_power * UPGRADE_STEP.critPower + pt.critPowerFlat + critPowerAdd,
+    atkSpeed:   (cd.atkSpeed || 0) * (1 + lvl * 0.015) + row.upg_atk_speed * UPGRADE_STEP.atkSpeed + extraAS,
+    hpRegen:    lvl * 0.02 + row.upg_hp_regen * UPGRADE_STEP.hpRegen + pt.hpRegenFlat + regenBuff,
+    // Прибавка к запасу CP от улучшения «ЦП» (Room._maxCpOf).
+    cpFlat:     (row.upg_cp || 0) * UPGRADE_STEP.cp,
     // Крылья — единственный слот, который двигает скорость бега. Считается
     // здесь, потому что от неё зависит, догонит ли игрока моб: это знание
     // комнаты, а не украшение в панели.
@@ -362,8 +368,10 @@ function compute(row) {
     skillPct,
     // Проценты добычи — в процентах, как VIP и клан рядом с ними в пути
     // награды: 0.20 здесь становится 20 там, и складывается с прочими.
-    gearXpPct:   Math.round(xpPct * 100),
-    gearDropPct: Math.round(dropPct * 100),
+    // До десятых процента, а не до целого: улучшения дают по +0.1% за очко,
+    // и округление до целого съедало бы их целиком.
+    gearXpPct:   Math.round(xpPct * 1000) / 10,
+    gearDropPct: Math.round(dropPct * 1000) / 10,
     // Проценты к шансу Liberty — только с рун (оружейная строка «Шанс
     // Liberty»). В процентах, как два поля выше, и складывается там же, где
     // с ними: путь награды за убийство.
@@ -393,7 +401,7 @@ async function of(db, playerId) {
 function battlePower(st, upgrades) {
   const u = upgrades || {};
   const extras = ((u.critChance || 0) + (u.critPower || 0) +
-                  (u.hpRegen || 0) + (u.atkSpeed || 0)) * 8;
+                  (u.hpRegen || 0) + (u.atkSpeed || 0) + (u.cp || 0) + (u.xp || 0) + (u.drop || 0)) * 8;
   return Math.round(st.level * 50 + st.atk * 5 + st.def * 3 + st.maxHp * 0.5 + extras);
 }
 
@@ -421,6 +429,7 @@ async function refreshBm(db, playerId) {
   const bm = battlePower(st, {
     critChance: row.upg_crit_chance, critPower: row.upg_crit_power,
     hpRegen: row.upg_hp_regen, atkSpeed: row.upg_atk_speed,
+    cp: row.upg_cp || 0, xp: row.upg_xp || 0, drop: row.upg_drop || 0,
   });
   await query(db, 'UPDATE players SET bm = $2, updated_at = now() WHERE id = $1', [playerId, bm]);
   return { bm, stats: st };

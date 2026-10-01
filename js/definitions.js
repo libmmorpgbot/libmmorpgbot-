@@ -10,14 +10,19 @@
 // stating prices the game had not charged in a long time: the kind of lie that
 // gets believed the first time someone reprices upgrades and edits the table
 // instead of the formula.
+// Числа в desc — из UPGRADE_STEP (shared/definitions.js), по которой
+// считают и сервер, и recompute().
 const UPGRADE_DEF = {
-  atk:        { label:'Атака',       icon:'sword',      desc:'+1 ATK'       },
-  def:        { label:'Защита',      icon:'shield',     desc:'+1 DEF'       },
-  hp:         { label:'Здоровье',    icon:'heart',      desc:'+10 MaxHP'    },
-  atkSpeed:   { label:'Скор. атаки', icon:'lightning',  desc:'+0.05 уд/с'  },
-  critChance: { label:'Шанс крита',  icon:'star',       desc:'+1%'          },
-  critPower:  { label:'Сила крита',  icon:'flame',      desc:'+3%'          },
-  hpRegen:    { label:'Реген HP',    icon:'hpPlus',     desc:'+0.1/сек'     },
+  atk:        { label:'Атака',         icon:'sword',      desc:'+3 ATK'       },
+  def:        { label:'Защита',        icon:'shield',     desc:'+3 DEF'       },
+  hp:         { label:'Здоровье',      icon:'heart',      desc:'+30 MaxHP'    },
+  atkSpeed:   { label:'Скор. атаки',   icon:'lightning',  desc:'+0.01 уд/с'  },
+  critChance: { label:'Шанс крита',    icon:'star',       desc:'+0.3%'        },
+  critPower:  { label:'Сила крита',    icon:'flame',      desc:'+0.3%'        },
+  hpRegen:    { label:'Реген HP',      icon:'hpPlus',     desc:'+1/сек'       },
+  cp:         { label:'ЦП',            icon:'barrier',    desc:'+200 CP'      },
+  xp:         { label:'Бонус к опыту', icon:'book',       desc:'+0.1%'        },
+  drop:       { label:'Бонус к дропу', icon:'chest',      desc:'+0.1%'        },
 };
 
 // Story quest chain: one linear track (player.questIdx) spanning all 4
@@ -265,6 +270,6 @@ function calcBM(p) {
   if (!p) return 0;
   const upg = p.upgrades || {};
   const extras = ((upg.critChance || 0) + (upg.critPower || 0) +
-    (upg.hpRegen || 0) + (upg.atkSpeed || 0)) * 8;
+    (upg.hpRegen || 0) + (upg.atkSpeed || 0) + (upg.cp || 0) + (upg.xp || 0) + (upg.drop || 0)) * 8;
   return Math.round((p.lvl || p.level || 1) * 50 + (p.atk || 0) * 5 + (p.def || 0) * 3 + (p.maxHp || 100) * 0.5 + extras);
 }

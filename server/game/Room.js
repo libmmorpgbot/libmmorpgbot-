@@ -9,7 +9,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
-        petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS } = require('../../shared/definitions');
+        petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP } = require('../../shared/definitions');
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
@@ -187,9 +187,9 @@ function _statsFinite(s, who, where) {
 // just clobbered it.
 function computeStats(sd, cd, type, clanAtkBonusPct) {
   const u = sd.upgrades || {};
-  let a = (sd.baseAtk   ?? cd.baseAtk) + (u.atk || 0) * 1;
-  let d = (sd.baseDef   ?? cd.baseDef) + (u.def || 0) * 1;
-  let h = (sd.baseMaxHp ?? cd.baseHP)  + (u.hp  || 0) * 10;
+  let a = (sd.baseAtk   ?? cd.baseAtk) + (u.atk || 0) * UPGRADE_STEP.atk;
+  let d = (sd.baseDef   ?? cd.baseDef) + (u.def || 0) * UPGRADE_STEP.def;
+  let h = (sd.baseMaxHp ?? cd.baseHP)  + (u.hp  || 0) * UPGRADE_STEP.hp;
   let hpPct = 0, extraCrit = 0, extraAS = 0;
   Object.values(sd.equipment || {}).forEach(it => {
     if (!it) return;
@@ -220,12 +220,14 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
     atk: a,
     def: d,
     maxHp: h,
-    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit),
-    critPower:  1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + pt.critPowerFlat,
+    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * UPGRADE_STEP.critChance + extraCrit),
+    critPower:  1.5 + lvl * 0.015 + (u.critPower  || 0) * UPGRADE_STEP.critPower + pt.critPowerFlat,
     // Permanent-only — mirrors recompute() (js/player.js) minus its buff/skill
     // timer terms, same as every other field here (see the file header note).
-    atkSpeed: (cd.atkSpeed || 0) * (1 + lvl * 0.015) + (u.atkSpeed || 0) * 0.05 + extraAS,
-    hpRegen:  lvl * 0.02 + (u.hpRegen || 0) * 0.1 + pt.hpRegenFlat,
+    atkSpeed: (cd.atkSpeed || 0) * (1 + lvl * 0.015) + (u.atkSpeed || 0) * UPGRADE_STEP.atkSpeed + extraAS,
+    hpRegen:  lvl * 0.02 + (u.hpRegen || 0) * UPGRADE_STEP.hpRegen + pt.hpRegenFlat,
+    // Прибавка к запасу CP от улучшения «ЦП» — см. _maxCpOf.
+    cpFlat:   (u.cp || 0) * UPGRADE_STEP.cp,
   };
 }
 
@@ -3281,7 +3283,8 @@ class Room {
   // ── CP ─────────────────────────────────────────────────────────────────────
   // Запас на PvP: PVP_CP_MULT от максимального здоровья (shared/definitions.js).
   // p.maxHp, а не _maxHpOf: бафф «Пульса» не должен раздувать и CP.
-  _maxCpOf(p) { return Math.floor((p.maxHp || 0) * PVP_CP_MULT); }
+  // Запас CP: доля от здоровья плюс плоская прибавка улучшения «ЦП».
+  _maxCpOf(p) { return Math.floor((p.maxHp || 0) * PVP_CP_MULT) + (p.cpFlat || 0); }
 
   // Удар игрока по игроку: сперва CP, остаток — по здоровью.
   _pvpHurt(target, dmg) {
@@ -3598,6 +3601,7 @@ class Room {
       p.maxHp      = s.maxHp;
       p.critChance = s.critChance;
       p.critPower  = s.critPower;
+      p.cpFlat     = s.cpFlat || 0;
       // hp === 0 is meaningful (the player died) and must not be confused with
       // "no hp in this save" — a truthy check treated 0 as missing data and
       // handed back a full heal, so anyone who reconnected (a backgrounded
@@ -4924,6 +4928,8 @@ class Room {
     p.atkSpeed = st.atkSpeed;
     p.hpRegen = st.hpRegen;
     p.skillPct = st.skillPct || 0;
+    // Только если пришло: Session.moveRoom передаёт неполный набор полей.
+    if (Number.isFinite(st.cpFlat)) p.cpFlat = st.cpFlat;
     // Skill levels and the advanced-skill flags, which decide whether a cast
     // does ANY damage at all (_skillMultFor). They used to be read off the
     // client-authored save blob, which this build stopped filling — see the

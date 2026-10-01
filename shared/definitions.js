@@ -3251,7 +3251,20 @@ const SKILL_SPEED_MAX_PCT = 1.0; // «Бегство»: ×2 скорости —
 // The stat-upgrade slots (UPGRADE_DEF, js/definitions.js) and what the next
 // point in one costs. Shared so the server can charge it: upgradeStats used to
 // deduct the gold and raise the level client-side and let the save carry both.
-const UPGRADE_KEYS = ['atk', 'def', 'hp', 'atkSpeed', 'critChance', 'critPower', 'hpRegen'];
+const UPGRADE_KEYS = ['atk', 'def', 'hp', 'atkSpeed', 'critChance', 'critPower', 'hpRegen', 'cp', 'xp', 'drop'];
+// Сколько даёт одно очко в каждом слоте. Одна таблица на клиент и сервер:
+// панель печатает из неё подписи, а бой и награда считают по ней же, —
+// раньше множители были вписаны числами в три разных файла.
+const UPGRADE_STEP = {
+  atk: 3, def: 3, hp: 30,
+  atkSpeed: 0.01,          // удара в секунду
+  critChance: 0.003,       // доля: +0.3%
+  critPower: 0.003,        // доля: +0.3%
+  hpRegen: 1,              // HP в секунду
+  cp: 200,                 // к запасу CP
+  xp: 0.001,               // доля: +0.1% к опыту
+  drop: 0.001,             // доля: +0.1% к шансу выпадения
+};
 function upgradeCost(level) { return 300 * (Math.max(0, Math.floor(Number(level)) || 0) + 1); }
 
 // ── Quest progress ──────────────────────────────────────────────────────────
@@ -3892,7 +3905,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
-  skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, upgradeCost,
+  skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, UPGRADE_STEP, upgradeCost,
   FOREIGN_SKILL_KEY,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,

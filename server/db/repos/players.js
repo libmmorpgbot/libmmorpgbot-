@@ -529,6 +529,7 @@ function _upgradesOf(r) {
     atk: r.upg_atk, def: r.upg_def, hp: r.upg_hp,
     critChance: r.upg_crit_chance, critPower: r.upg_crit_power,
     atkSpeed: r.upg_atk_speed, hpRegen: r.upg_hp_regen,
+    cp: r.upg_cp || 0, xp: r.upg_xp || 0, drop: r.upg_drop || 0,
   };
 }
 
@@ -860,6 +861,7 @@ async function grantXp(db, playerId, amount) {
 const UPG_COL = {
   atk: 'upg_atk', def: 'upg_def', hp: 'upg_hp', atkSpeed: 'upg_atk_speed',
   critChance: 'upg_crit_chance', critPower: 'upg_crit_power', hpRegen: 'upg_hp_regen',
+  cp: 'upg_cp', xp: 'upg_xp', drop: 'upg_drop',
 };
 
 async function spendUpgrade(db, playerId, key) {
@@ -885,7 +887,8 @@ async function spendUpgrade(db, playerId, key) {
   const { rows } = await query(db, `
     SELECT lvl, bonus_sp, kept_sp, upg_epoch,
            upg_atk, upg_def, upg_hp, upg_atk_speed,
-           upg_crit_chance, upg_crit_power, upg_hp_regen
+           upg_crit_chance, upg_crit_power, upg_hp_regen,
+           upg_cp, upg_xp, upg_drop
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) return null;
   const r = rows[0];
@@ -1079,7 +1082,8 @@ async function resetUpgrades(db, playerId, cost) {
   const { rows } = await query(db, `
     SELECT lvl, bonus_sp, kept_sp, upg_epoch,
            upg_atk + upg_def + upg_hp + upg_atk_speed
-         + upg_crit_chance + upg_crit_power + upg_hp_regen AS spent
+         + upg_crit_chance + upg_crit_power + upg_hp_regen
+         + upg_cp + upg_xp + upg_drop AS spent
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) throw Object.assign(new Error('Игрок не найден'), { code: 'no_player' });
   if (Number(rows[0].spent) <= 0) {
@@ -1144,6 +1148,7 @@ async function resetUpgrades(db, playerId, cost) {
     UPDATE player_progress
        SET upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
            upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
+           upg_cp = 0, upg_xp = 0, upg_drop = 0,
            bonus_sp  = bonus_sp + $2,
            kept_sp   = 0,
            upg_epoch = upg_epoch + 1,

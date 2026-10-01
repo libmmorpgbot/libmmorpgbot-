@@ -35,6 +35,7 @@ module.exports = function registerTrial(s, safeOn, deps) {
       char_class: type, lvl: TRIAL_LEVEL, xp: 0, hp: 999999, codex: {}, buffs: {},
       upg_atk: 0, upg_def: 0, upg_hp: 0, upg_atk_speed: 0,
       upg_crit_chance: 0, upg_crit_power: 0, upg_hp_regen: 0,
+      upg_cp: 0, upg_xp: 0, upg_drop: 0,
       equipped: [], passives: {},
       skill_levels: Object.fromEntries(skillKeys.map(k => [k, SKILL_MAX_LEVEL])),
       adv_learned: Object.fromEntries(skillKeys.map(k => [k, true])),

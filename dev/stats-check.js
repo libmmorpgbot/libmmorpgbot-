@@ -22,7 +22,7 @@ const craft = require('../server/db/repos/craft');
 const { wipeItemsAll } = require('./fixtures');
 const {
   CHAR_DEF, ITEM_DEF, enhanceBonus, upgradeCost, xpToNext, passivesForClass,
-  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_MAX, empowerCostFor,
+  EMPOWER_LEVEL, EMPOWER_BONUS_SP, EMPOWER_MAX, empowerCostFor, UPGRADE_STEP,
 } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
@@ -131,11 +131,11 @@ async function main() {
   await money.credit(null, withUpg, 'gold', threePoints + 10000,
     { reason: 'seed', idemKey: `${TAG}:upg-gold` });
   for (let i = 0; i < 3; i++) await tx(t => players.spendUpgrade(t, withUpg, 'atk'));
-  eq((await stats.of(null, withUpg)).atk, base + 3, '3 витрачені очки дали рівно +3 ATK');
+  eq((await stats.of(null, withUpg)).atk, base + 3 * UPGRADE_STEP.atk, `3 витрачені очки дали рівно +${3 * UPGRADE_STEP.atk} ATK`);
   eq(Number((await money.balancesOf(null, withUpg)).gold), 10000,
     `три очки коштували рівно ${threePoints} золота`);
   await tx(t => players.spendUpgrade(t, withUpg, 'atk'));   // over budget, refused
-  eq((await stats.of(null, withUpg)).atk, base + 3, 'очко понад бюджет нічого не додало');
+  eq((await stats.of(null, withUpg)).atk, base + 3 * UPGRADE_STEP.atk, 'очко понад бюджет нічого не додало');
   eq(Number((await money.balancesOf(null, withUpg)).gold), 10000,
     'і золота за нього не взяли — відмова по бюджету списань не робить');
 

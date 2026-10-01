@@ -290,9 +290,9 @@ function _skillDirMult(dx, dy, r, arcDot, mult, key) {
 
 function recompute() {
   const u = player.upgrades || {};
-  let a = player.baseAtk + (u.atk || 0) * 1;
-  let d = player.baseDef + (u.def || 0) * 1;
-  let h = player.baseMaxHp + (u.hp || 0) * 10;
+  let a = player.baseAtk + (u.atk || 0) * UPGRADE_STEP.atk;
+  let d = player.baseDef + (u.def || 0) * UPGRADE_STEP.def;
+  let h = player.baseMaxHp + (u.hp || 0) * UPGRADE_STEP.hp;
   // Кодекс предметов — small, flat, permanent bonus from registered items
   // (server-authoritative, see codexSync/js/network.js). Applies regardless
   // of what's currently equipped, so it sits with the base stats above
@@ -442,7 +442,7 @@ function recompute() {
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
-  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * 0.05 + extraAS;
+  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * UPGRADE_STEP.atkSpeed + extraAS;
   if (typeof atkSpeedTimer !== 'undefined' && atkSpeedTimer > 0) {
     // ×2 instead of ranger's own ×1.5 for "Ускорение" (adv ranger R); warlock
     // never sets atkSpeedTimer at all except via "Жажда" (adv warlock E), so
@@ -462,11 +462,11 @@ function recompute() {
   const _pierceCritChance = (typeof pierceTimer !== 'undefined' && pierceTimer > 0) ? 0.50 : 0;
   const _killerCritChance = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
   const _killerCritPower  = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
-  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * 0.01 + extraCrit + _critChanceBuff + _pierceCritChance + _killerCritChance);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * 0.03 + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower
+  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * UPGRADE_STEP.critChance + extraCrit + _critChanceBuff + _pierceCritChance + _killerCritChance);
+  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * UPGRADE_STEP.critPower + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower
     + ((_petSk && _petSk.critPower) || 0);
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
-  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * 0.1 + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
+  player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * UPGRADE_STEP.hpRegen + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);
   player.cdrPct     = pt ? Math.min(0.80, pt.cdrPct) : 0;
   // Крылья — единственный предмет, который двигает скорость бега. Строка
   // собирала её из базовой и пассивок, и бонус предмета сюда не попадал:

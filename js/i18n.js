@@ -1674,19 +1674,25 @@ const I18N_EQ_SLOT_LABELS = {
 
 const I18N_UPGRADES = {
   atk:        { label: { en: 'Attack',       uk: 'Атака',           es: 'Ataque',           tr: 'Saldırı',          pt: 'Ataque' },
-                desc:  { en: '+1 ATK', uk: '+1 АТК', es: '+1 ATQ', tr: '+1 SLD', pt: '+1 ATQ' } },
+                desc:  { en: '+3 ATK', uk: '+3 АТК', es: '+3 ATQ', tr: '+3 SLD', pt: '+3 ATQ' } },
   def:        { label: { en: 'Defense',      uk: 'Захист',          es: 'Defensa',          tr: 'Savunma',          pt: 'Defesa' },
-                desc:  { en: '+1 DEF', uk: '+1 ЗАХ', es: '+1 DEF', tr: '+1 SAV', pt: '+1 DEF' } },
+                desc:  { en: '+3 DEF', uk: '+3 ЗАХ', es: '+3 DEF', tr: '+3 SAV', pt: '+3 DEF' } },
   hp:         { label: { en: 'Health',       uk: 'Здоров\'я',       es: 'Salud',            tr: 'Can',              pt: 'Vida' },
-                desc:  { en: '+10 MaxHP', uk: '+10 Макс.HP', es: '+10 HP Máx.', tr: '+10 Maks.HP', pt: '+10 HP Máx.' } },
+                desc:  { en: '+30 MaxHP', uk: '+30 Макс.HP', es: '+30 HP Máx.', tr: '+30 Maks.HP', pt: '+30 HP Máx.' } },
   atkSpeed:   { label: { en: 'Attack Spd.',  uk: 'Швид. атаки',     es: 'Vel. Ataque',      tr: 'Sld. Hızı',        pt: 'Vel. Ataque' },
-                desc:  { en: '+0.05 hits/s', uk: '+0.05 удар/с', es: '+0.05 golpes/s', tr: '+0.05 vuruş/s', pt: '+0.05 golpes/s' } },
+                desc:  { en: '+0.01 hits/s', uk: '+0.01 удар/с', es: '+0.01 golpes/s', tr: '+0.01 vuruş/s', pt: '+0.01 golpes/s' } },
   critChance: { label: { en: 'Crit Chance',  uk: 'Шанс криту',      es: 'Prob. Crítico',    tr: 'Kritik Şansı',     pt: 'Chance Crítico' },
-                desc:  { en: '+1%', uk: '+1%', es: '+1%', tr: '+%1', pt: '+1%' } },
+                desc:  { en: '+0.3%', uk: '+0.3%', es: '+0.3%', tr: '+%0.3', pt: '+0.3%' } },
   critPower:  { label: { en: 'Crit Power',   uk: 'Сила криту',      es: 'Poder Crítico',    tr: 'Kritik Gücü',      pt: 'Poder Crítico' },
-                desc:  { en: '+3%', uk: '+3%', es: '+3%', tr: '+%3', pt: '+3%' } },
+                desc:  { en: '+0.3%', uk: '+0.3%', es: '+0.3%', tr: '+%0.3', pt: '+0.3%' } },
   hpRegen:    { label: { en: 'HP Regen',     uk: 'Реген HP',        es: 'Regen. HP',        tr: 'HP Yenilenme',     pt: 'Regen. HP' },
-                desc:  { en: '+0.1/sec', uk: '+0.1/сек', es: '+0.1/s', tr: '+0.1/sn', pt: '+0.1/s' } },
+                desc:  { en: '+1/sec', uk: '+1/сек', es: '+1/s', tr: '+1/sn', pt: '+1/s' } },
+  cp:         { label: { en: 'CP',           uk: 'ЦП',              es: 'CP',               tr: 'CP',               pt: 'CP' },
+                desc:  { en: '+200 CP', uk: '+200 CP', es: '+200 CP', tr: '+200 CP', pt: '+200 CP' } },
+  xp:         { label: { en: 'XP Bonus',     uk: 'Бонус до досвіду', es: 'Bono de EXP',     tr: 'XP Bonusu',        pt: 'Bônus de XP' },
+                desc:  { en: '+0.1%', uk: '+0.1%', es: '+0.1%', tr: '+%0.1', pt: '+0.1%' } },
+  drop:       { label: { en: 'Drop Bonus',   uk: 'Бонус до дропу',  es: 'Bono de botín',    tr: 'Düşme Bonusu',     pt: 'Bônus de drop' },
+                desc:  { en: '+0.1%', uk: '+0.1%', es: '+0.1%', tr: '+%0.1', pt: '+0.1%' } },
 };
 
 const I18N_CLAN_LEVELS = {
