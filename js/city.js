@@ -95,7 +95,7 @@ const _CITY_STYLES = {
     banner: '#2e4a36', band: '#161612', lampGlass: '#9affb8',
   },
 };
-let _cityStyleKey = 'classic';
+let _cityStyleKey = 'night';
 let CS = _CITY_STYLE_BASE;
 function _cityUseStyle() { CS = Object.assign({}, _CITY_STYLE_BASE, _CITY_STYLES[_cityStyleKey] || {}); }
 // Переключение стиля: чанки строятся заново.
