@@ -248,20 +248,6 @@ function _cityLayout() {
   return (_cityCache = L);
 }
 
-// Эмблема в центре площади: грузится один раз, после загрузки чанки
-// строятся заново. Не загрузилась — остаётся роза ветров.
-let _cityEmblem = null, _cityEmblemReq = false;
-function _cityEmblemImg() {
-  if (_cityEmblem) return _cityEmblem;
-  if (!_cityEmblemReq && typeof Image !== 'undefined') {
-    _cityEmblemReq = true;
-    const img = new Image();
-    img.onload = () => { _cityEmblem = img; if (typeof buildTileCanvas === 'function') buildTileCanvas(); };
-    img.src = '/images/city/emblem.jpg';
-  }
-  return null;
-}
-
 function _cityHit(o, x0, y0, x1, y1) {
   return o.x1 > x0 && o.x0 < x1 && o.y1 > y0 && o.y0 < y1;
 }
@@ -364,57 +350,24 @@ function _cityPlaza(c, L) {
       c.closePath(); c.fill();
     }
   }
-  // В центре — круглая эмблема Liberty (images/city/emblem.jpg) в золотой
-  // оправе. Пока картинка не пришла — прежняя роза ветров; когда пришла,
-  // чанки перестраиваются (_cityEmblemImg). Рисуется через _cityGlow: ночью
-  // эмблема не тонет в вуали, а светится, как окна и фонари.
-  const emb = _cityEmblemImg();
-  if (emb) {
-    // Размер — как у прежней розы ветров (круг 50px вместе с оправой).
-    const er = 42;
-    c.fillStyle = 'rgba(0,0,0,0.5)';
-    c.beginPath(); c.arc(x + 2, y + 3, er + 8, 0, Math.PI * 2); c.fill();
-    _cityGlow(c, g => {
-      g.fillStyle = CS.goldLine;
-      g.beginPath(); g.arc(x, y, er + 7, 0, Math.PI * 2); g.fill();
-      g.fillStyle = CS.gold2;
-      g.beginPath(); g.arc(x, y, er + 3, 0, Math.PI * 2); g.fill();
-      g.save();
-      g.beginPath(); g.arc(x, y, er, 0, Math.PI * 2); g.clip();
-      // Фон под картинкой — её же тёмно-красный, а сама она чуть меньше
-      // круга и сдвинута так, что слово LIBERTY (оно выше середины картинки)
-      // стоит по центру и целиком влезает в круг.
-      g.fillStyle = '#1e0806'; g.fillRect(x - er, y - er, er * 2, er * 2);
-      const d = er * 2 * 0.96;
-      g.drawImage(emb, x - d / 2, y - d * 0.44, d, d);
-      g.restore();
-      g.strokeStyle = CS.gold; g.lineWidth = 1.5;
-      g.beginPath(); g.arc(x, y, er + 5, 0, Math.PI * 2); g.stroke();
-    });
-    c.restore();
-    return;
-  }
-  // мозаика в центре — роза ветров
+  // В центре — тёмный круг размером с прежнюю розу ветров и надпись
+  // LIBERTY золотыми буквами с тёмной обводкой. Рисуется через _cityGlow:
+  // ночью надпись не тонет в вуали, а светится, как окна и фонари.
   const mr = 50;
   c.fillStyle = CS.mosaicBg;
   c.beginPath(); c.arc(x, y, mr, 0, Math.PI * 2); c.fill();
-  c.strokeStyle = CS.goldLine; c.lineWidth = 4;
-  c.beginPath(); c.arc(x, y, mr - 3, 0, Math.PI * 2); c.stroke();
-  c.lineWidth = 2;
-  c.beginPath(); c.arc(x, y, mr - 11, 0, Math.PI * 2); c.stroke();
-  const star = (n, ro, ri, rot, fillA, fillB) => {
-    for (let j = 0; j < n; j++) {
-      const a = rot + j / n * Math.PI * 2, da = Math.PI / n;
-      c.fillStyle = fillA;
-      c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * ro, y + Math.sin(a) * ro); c.lineTo(x + Math.cos(a + da) * ri, y + Math.sin(a + da) * ri); c.closePath(); c.fill();
-      c.fillStyle = fillB;
-      c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a) * ro, y + Math.sin(a) * ro); c.lineTo(x + Math.cos(a - da) * ri, y + Math.sin(a - da) * ri); c.closePath(); c.fill();
-    }
-  };
-  star(4, mr - 13, 10, Math.PI / 4, '#8a7a55', '#6b5e40');
-  star(4, mr - 7, 12, -Math.PI / 2, CS.gold, CS.gold2);
-  c.fillStyle = CS.gold;
-  c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 2); c.fill();
+  _cityGlow(c, g => {
+    g.save();
+    g.font = 'bold 18px Georgia, "Times New Roman", serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const tg = g.createLinearGradient(0, y - 11, 0, y + 11);
+    tg.addColorStop(0, '#fff1c4'); tg.addColorStop(0.5, CS.gold); tg.addColorStop(1, CS.gold2);
+    g.lineWidth = 4; g.strokeStyle = 'rgba(20,10,4,0.85)';
+    g.strokeText('LIBERTY', x, y + 1);
+    g.fillStyle = tg;
+    g.fillText('LIBERTY', x, y + 1);
+    g.restore();
+  });
   c.restore();
 }
 
