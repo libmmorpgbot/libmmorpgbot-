@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────────────────
 //  ОФОРМЛЕНИЕ КОРИДОРОВ ПРОКАЧКИ
 // ─────────────────────────────────────────────────────────
-// Каждый из четырёх коридоров (generateArm, server/game/dungeon.js) получает
-// свою тему под монстров, которые в нём живут, и тема меняется по ходу:
+// Каждый из четырёх коридоров (generateArm, server/game/dungeon.js) может
+// получить свою тему под монстров, которые в нём живут, и тема меняется по ходу
+// (что включено сейчас — см. _ZONE_ARMS):
 // первая половина коридора — одна, ближе к боссу — другая. Граница между
 // ними размыта по клеткам, чтобы смена читалась как переход, а не шов.
 //
@@ -17,7 +18,7 @@
 // вуаль у каждой темы своя; то, что светится (лава, свечи, огни на болоте),
 // доигрывается поверх неё.
 
-let _zonesEnabled = false;
+let _zonesEnabled = true;
 
 function _zh(a, b, salt) {
   let h = (a * 374761393 + b * 668265263 + salt * 2246822519) | 0;
@@ -28,11 +29,14 @@ function _zh(a, b, salt) {
 function _zShade(hex, t) { return typeof _cityShade === 'function' ? _cityShade(hex, t) : hex; }
 function _zVar(hex, tx, ty, salt, amt) { return _zShade(hex, (_zh(tx, ty, salt) - 0.5) * amt); }
 
+// Сейчас во всех коридорах и во всех их комнатах — канализация (выбор
+// владельца). Остальные темы ниже оставлены готовыми: вернуть смену темы
+// по ходу коридора — вписать сюда пары, например left: ['sewer', 'hellcellar'].
 const _ZONE_ARMS = {
-  left:   ['sewer', 'hellcellar'],
-  top:    ['swamp', 'orccamp'],
-  bottom: ['crypt', 'vampire'],
-  right:  ['deadwood', 'inferno'],
+  left:   ['sewer', 'sewer'],
+  top:    ['sewer', 'sewer'],
+  bottom: ['sewer', 'sewer'],
+  right:  ['sewer', 'sewer'],
 };
 
 let _zoneCache = null, _zoneCacheFor = null;
