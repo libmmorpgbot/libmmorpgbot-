@@ -262,9 +262,22 @@ function _hubLavaTex() {
 // px — сколько мировых пикселей занимает один повтор текстуры (клетка — 40):
 // подобрано на глаз по размеру персонажа. brick — цвет кирпичной кладки стен
 // в тон полу (_brickWallPattern), wallBase — цвет их кромки над полом.
+// wall/wallPx — вместо кладки из кода стены тоже картинкой.
+//
+// Коридоры прокачки (dun1..dun60 — с какого уровня открываются) — у каждого
+// свой пол и свои стены, тоже ambientCG CC0, запечены так же (512px, объём
+// из карты AO, затемнение и тон заранее):
+//   dun1  PavingStones138 / Bricks075B  — булыжник с мхом, замшелая кладка
+//   dun20 Ground085 / Planks037A        — каменистая земля, частокол из досок
+//   dun40 Tiles140 / Bricks066          — тёмные плиты склепа, каменные блоки
+//   dun60 Lava001 / Rock035             — корка с лавовыми прожилками, чёрная порода
 const _FLOOR_IMG = {
   temple: { src: '/images/floor/temple_tiles.jpg', px: 420, wallBase: '#38342f', brick: [60, 56, 52] },
   lava:   { src: '/images/floor/lava.jpg',         px: 420, wallBase: '#3a1d14', brick: [66, 34, 26] },
+  dun1:   { src: '/images/floor/dun1_floor.jpg',  px: 320, wall: '/images/floor/dun1_wall.jpg',  wallPx: 280, wallBase: '#2a2f28' },
+  dun20:  { src: '/images/floor/dun20_floor.jpg', px: 360, wall: '/images/floor/dun20_wall.jpg', wallPx: 240, wallBase: '#3a2a1c' },
+  dun40:  { src: '/images/floor/dun40_floor.jpg', px: 300, wall: '/images/floor/dun40_wall.jpg', wallPx: 280, wallBase: '#2a2028' },
+  dun60:  { src: '/images/floor/dun60_floor.jpg', px: 400, wall: '/images/floor/dun60_wall.jpg', wallPx: 320, wallBase: '#2a1612' },
 };
 const _floorImgCache = {};
 function _floorImgTex(key) {
@@ -273,16 +286,43 @@ function _floorImgTex(key) {
   const hit = _floorImgCache[key];
   if (hit) return hit.tex;
   const ent = _floorImgCache[key] = { tex: null };
-  const img = new Image();
-  img.onload = () => {
-    const cv = document.createElement('canvas'); cv.width = cv.height = def.px;
+  // Пол и (если есть) стены грузятся параллельно; текстура готова, когда
+  // пришло всё, — иначе чанки успели бы запечься с полом, но без стен.
+  const pattern = (img, px) => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = px;
     const c = cv.getContext('2d');
-    if (!c) return;
+    if (!c) return null;
     c.imageSmoothingQuality = 'high';
-    c.drawImage(img, 0, 0, def.px, def.px);
-    ent.tex = { floor: c.createPattern(cv, 'repeat'), wall: _brickWallPattern(def.brick), wallBase: def.wallBase };
-    if (typeof buildTileCanvas === 'function' && typeof dungeon !== 'undefined' && dungeon) buildTileCanvas();
+    c.drawImage(img, 0, 0, px, px);
+    return c.createPattern(cv, 'repeat');
   };
-  img.src = def.src;
+  const load = src => new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = src; });
+  Promise.all([load(def.src), def.wall ? load(def.wall) : null]).then(([fl, wl]) => {
+    const floor = pattern(fl, def.px);
+    const wall = wl ? pattern(wl, def.wallPx || def.px) : _brickWallPattern(def.brick);
+    if (!floor || !wall) return;
+    ent.tex = { floor, wall, wallBase: def.wallBase };
+    if (typeof buildTileCanvas === 'function' && typeof dungeon !== 'undefined' && dungeon) buildTileCanvas();
+  }).catch(() => {});
   return null;
+}
+
+// ── Предметы на полу коридоров прокачки ──────────────────────────────────────
+// Рисованные спрайты из PROP_DEF, своя подборка на каждый коридор. Плотность
+// выше, чем у старых тем (1 на 70 клеток пола против 1 на 120): на фото-полу
+// пустые комнаты смотрятся голо.
+const _ARM_PROPS = {
+  dun1:  _floorProps(70, [{ key: 'barrel_small' }, { key: 'barrel_slime' }, { key: 'slime_small' }, { key: 'crate_single' }, { key: 'bone_small' }, { key: 'jug' }, { key: 'slime_medium' }]),
+  dun20: _floorProps(70, [{ key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'bone_long' }, { key: 'crate_stack' }, { key: 'barrel_large' }, { key: 'spikes_row' }, { key: 'trap_bear' }, { key: 'stump' }]),
+  dun40: _floorProps(70, [{ key: 'bone_skull' }, { key: 'pillar' }, { key: 'crystal_purple' }, { key: 'chest_banded' }, { key: 'bone_small' }, { key: 'bone_long' }, { key: 'bone_ribcage' }]),
+  dun60: _floorProps(70, [{ key: 'boulder' }, { key: 'bone_ribcage' }, { key: 'bone_skull' }, { key: 'spikes_row' }, { key: 'trap_spike' }, { key: 'crystal_blue' }, { key: 'crystal_purple' }]),
+};
+// Какой коридор сейчас загружен: по названию ветки в его комнатах
+// (generateArm, server/game/dungeon.js), а не по номеру этажа.
+const _ARM_DECOR = { left: 'dun1', top: 'dun20', bottom: 'dun40', right: 'dun60' };
+function _armDecorKey() {
+  const d = typeof dungeon !== 'undefined' ? dungeon : null;
+  if (!d || !d.corridorGates || !d.rooms) return null;
+  const r = d.rooms.find(x => x.arm);
+  return (r && _ARM_DECOR[r.arm]) || null;
 }

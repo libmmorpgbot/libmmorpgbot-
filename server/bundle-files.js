@@ -15,7 +15,6 @@ module.exports = [
   'js/icons.js',
   'js/themes.js',
   'js/city.js',
-  'js/zones.js',
   'js/definitions.js',
   'js/i18n.js',
   'js/tonconnect.js',
