@@ -3,7 +3,7 @@
 //
 // Pure data and pure functions over the shared catalog: no models, no
 // sockets, no session state — same shape as server/inventory.js.
-const { CRAFT_MATS, BOX_DEF, ITEM_DEF, UNIQUE_WEAPONS, shopPkgPrice } = require('../shared/definitions');
+const { CRAFT_MATS, BOX_DEF, SEASON_TICKET_GRAM_PRICE, ITEM_DEF, UNIQUE_WEAPONS } = require('../shared/definitions');
 
 // ── VIP item data (server-side subset of js/definitions.js) ──────────────────
 const _VIP_WEAPONS = {
@@ -63,11 +63,8 @@ const _VIP_BP = [
 // has: what the client shows and gates "afford" on must match what actually
 // gets charged, or a card reads as affordable/priced at one number and the
 // purchase bills another.
-//
-// Сейчас снова идёт распродажа до конца сезона: −30% на всё, кроме наборов
-// Усиления (noSale) — см. shopPkgPrice в shared/definitions.js.
 function pkgPrice(pkg) {
-  return shopPkgPrice(pkg);
+  return pkg.gram;
 }
 // skillBooks grants skill books for the buyer's OWN class (see charClass
 // below) — `random: N` picks N books independently at random (can repeat),
@@ -78,48 +75,17 @@ function pkgPrice(pkg) {
 // an old pkg300 receipt already did before this list ever grew that large —
 // which is also why the packages added back below use fresh ids rather than
 // reusing one of the retired ones.
-//
-// Паки pkg1-pkg600, Допы (extrapkg1-6) и наборы Усиления (rmat1-3) вернулись
-// по просьбе владельца — в том же составе и с теми же id, что до f835fd5, так
-// что старые чеки снова подписываются именем пака. Сезонный билет из продажи
-// убран: купленные билеты работают, как работали (флаг в player_vip), но
-// новый купить нельзя.
 const _GRAM_SHOP_PKGS = [
-  { id:'pkg1',   gram:1,   gold:10000,  potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
-  { id:'pkg5',   gram:5,   gold:5000,   potions:10,  armor:'uncommon', weapon:'uncommon', bonusSP:0,  skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:20,  gold:7000,   potions:20,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:5 }, enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, gold:50000,  potions:50,  armor:'rare',     weapon:'rare',     bonusSP:5,  skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
-  { id:'pkg100', gram:180, gold:100000, potions:100, armor:'rare',     weapon:'rare',     bonusSP:10, skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  // Top tier — the full epic gear set (6 armor slots + the class weapon),
-  // both at +8, plus a heavy stack of everything else the smaller packages
-  // hand out.
-  { id:'pkg600', gram:600, potions:200, armor:'epic', weapon:'epic', bonusSP:20,
-    skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
-    stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
-    enhance:8, nexum:20000 },
-  // Допы — pet+cloak+artifact+wings+rune (js/ui.js's _SPECIAL_PET_PKGS_UI).
-  // No `enhance` on the first five: rarity is the reward, every item comes
-  // out at +0. classCloak/classArtifact only exist up to rare, so the top
-  // two stay at rare there.
-  { id:'extrapkg1', gram:30,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'common',   classCloak:'common', classArtifact:'common', wings:'common',   rune:'common' },
-  { id:'extrapkg2', gram:65,  gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon' },
-  { id:'extrapkg3', gram:220, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'rare',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
-  { id:'extrapkg4', gram:370, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'rare',     rune:'rare' },
-  { id:'extrapkg5', gram:550, gold:0, potions:0, armor:null, weapon:null, bonusSP:0, skillBooks:null,
-    petChoice:'epic',     classCloak:'rare',   classArtifact:'rare',   wings:'epic',     rune:'epic' },
-  // Админский — a single item, legendary wings, deliberately pre-enhanced.
-  { id:'extrapkg6', gram:700, wings:'legendary', enhance:10 },
-  // Усиление — pure material packs (the same pkg.boxes/pkg.stones handling;
-  // `stones` resolves any CRAFT_MATS id). Id'ы rmat1-3 — со времён
-  // Перерождения, они записаны в чеках прошлых покупок. noSale: сезонная
-  // скидка на них не действует (shopPkgPrice).
-  { id:'rmat1', gram:25, noSale:true, boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
-  { id:'rmat2', gram:40, noSale:true, boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
-  { id:'rmat3', gram:80, noSale:true, boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
+  // Сезонный билет — grants no items, just flips a status flag (gramShopBuy's
+  // own seasonTicket branch) that boosts kill rewards for as long as the
+  // current season runs (see shared/definitions.js's SEASON_TICKET_* section).
+  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },
+  // 4 активные книги (Q/W/E/R, по 1 каждая) под класс покупателя + оружие
+  // uncommon-редкости («зелёное», см. RARITY_COLOR в js/definitions.js) под
+  // тот же класс.
+  { id:'books_weapon_pkg', gram:5, skillBooks:{ each:1 }, weapon:'uncommon' },
+  // Все 6 зелий бафов по 1 штуке + 50 000 золота.
+  { id:'potions_gold_pkg', gram:1, potions:1, gold:50000 },
   // Мешок Либерти — раньше выдавал сам бокс liberty_bag (shared/
   // definitions.js BOX_DEF, nexumCost:600/nexumReward:500 через крафт-
   // станцию); теперь начисляет Liberty (nexum) напрямую вместо бокса —

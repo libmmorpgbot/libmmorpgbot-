@@ -21,7 +21,7 @@
 const adminAuth = require('../admin-auth');
 const ops = require('../tg-ops');
 const ton = require('../ton');
-const { query, tx } = require('../db');
+const { query, tx, hasColumn } = require('../db');
 const money = require('../db/repos/money');
 const items = require('../db/repos/items');
 const players = require('../db/repos/players');
@@ -29,7 +29,7 @@ const progression = require('../db/repos/progression');
 const market = require('../db/repos/market');
 const plog = require('../db/repos/playerlog');
 const tgGame = require('../tg-game');
-const { ITEM_DEF, CRAFT_MATS, BOX_DEF, seasonActive } = require('../../shared/definitions');
+const { ITEM_DEF, CRAFT_MATS, BOX_DEF, seasonActive, SEASON_TICKET_SEASON } = require('../../shared/definitions');
 
 const CATALOG = [...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF];
 
@@ -311,6 +311,8 @@ module.exports = function registerAdminRoutes(app, deps) {
   // dev/ скрыты тем же правилом, что и в /admin/players.
   app.get('/admin/season-tickets', guard, async (req, res) => {
     try {
+      // Только билеты текущего сезона билета (миграция 035).
+      const ticketCol = await hasColumn('player_vip', 'season_ticket_season');
       const { rows } = await query(null, `
         SELECT p.id, p.telegram_id, p.username, p.banned,
                COALESCE(pr.lvl, 1) AS lvl, v.level AS vip,
@@ -325,6 +327,7 @@ module.exports = function registerAdminRoutes(app, deps) {
              ORDER BY l.created_at DESC LIMIT 1
           ) buy ON true
          WHERE v.season_ticket
+           ${ticketCol ? 'AND v.season_ticket_season = ' + Number(SEASON_TICKET_SEASON) : ''}
            AND ($1 = '1' OR p.telegram_id ~ '^[0-9]+$')
          ORDER BY buy.created_at DESC NULLS LAST, p.id`, [String(req.query.all || '')]);
 

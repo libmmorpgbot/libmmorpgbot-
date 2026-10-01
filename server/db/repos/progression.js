@@ -18,7 +18,7 @@
 // because absence is what "not claimed" already means, and the primary key is
 // what makes a second claim impossible rather than merely checked-for.
 
-const { query, tx } = require('../index');
+const { query, tx, hasColumn } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
@@ -31,6 +31,7 @@ const {
   SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS, CRAFT_MATS,
+  SEASON_TICKET_SEASON,
 } = require('../../../shared/definitions');
 
 class ProgressionError extends Error {
@@ -297,13 +298,21 @@ async function claimVip(db, playerId, itemsForTier) {
   return { tiers, granted, level: rows[0].level };
 }
 
+// Билет — только если куплен на ТЕКУЩИЙ сезон билета (SEASON_TICKET_SEASON).
+// До миграции 035 колонки нет: тогда билета нет ни у кого (3-й сезон кончился).
+async function _ticketColOk() { return hasColumn('player_vip', 'season_ticket_season'); }
+
 async function vipOf(db, playerId) {
+  const colOk = await _ticketColOk();
   const { rows } = await query(db,
-    'SELECT level, deposited, pending, season_ticket FROM player_vip WHERE player_id = $1', [playerId]);
+    `SELECT level, deposited, pending, season_ticket,
+            ${colOk ? 'season_ticket_season' : '0 AS season_ticket_season'}
+       FROM player_vip WHERE player_id = $1`, [playerId]);
   if (!rows.length) return { level: 0, deposited: 0, pending: [], seasonTicket: false };
   return {
     level: rows[0].level, deposited: Number(rows[0].deposited),
-    pending: rows[0].pending.map(Number), seasonTicket: rows[0].season_ticket,
+    pending: rows[0].pending.map(Number),
+    seasonTicket: !!rows[0].season_ticket && Number(rows[0].season_ticket_season) === SEASON_TICKET_SEASON,
   };
 }
 
@@ -323,11 +332,12 @@ async function vipOf(db, playerId) {
 // точно так же: строка есть и билет уже стоит — ноль строк, второй платёж
 // отбивается.
 async function grantSeasonTicket(db, playerId) {
+  if (!await _ticketColOk()) err('ticket_soon', 'Билет станет доступен после обновления сервера');
   const { rowCount } = await query(db, `
-    INSERT INTO player_vip (player_id, season_ticket) VALUES ($1, true)
+    INSERT INTO player_vip (player_id, season_ticket, season_ticket_season) VALUES ($1, true, $2)
     ON CONFLICT (player_id) DO UPDATE
-       SET season_ticket = true, updated_at = now()
-     WHERE NOT player_vip.season_ticket`, [playerId]);
+       SET season_ticket = true, season_ticket_season = $2, updated_at = now()
+     WHERE player_vip.season_ticket_season IS DISTINCT FROM $2`, [playerId, SEASON_TICKET_SEASON]);
   return rowCount === 1;
 }
 

@@ -4277,10 +4277,12 @@ function drawBuffStrip() {
 
   // Season ticket — shown alongside potion buffs (same chip style) whenever
   // this account owns it and the season is still running.
-  if (typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive &&
-      typeof _seasonState !== 'undefined' && _seasonState.active) {
-    const _stLeft = Math.max(0, (_seasonState.endAt || 0) - Date.now());
-    if (_stLeft > 0) chips.push({ kind:'pot', img:'/images/season_ticket.png?v=2', label: _fmtChipEta(_stLeft), color:'#ffcf56' });
+  // Билет 4 сезона: пока у сезона нет даты конца (SEASON_TICKET_END_AT = 0),
+  // вместо таймера — «S4».
+  if (typeof _seasonTicketOn === 'function' && _seasonTicketOn()) {
+    const _stLeft = SEASON_TICKET_END_AT ? Math.max(0, SEASON_TICKET_END_AT - Date.now()) : 0;
+    chips.push({ kind:'pot', img:'/images/season_ticket.png?v=2',
+      label: _stLeft > 0 ? _fmtChipEta(_stLeft) : 'S' + SEASON_TICKET_SEASON, color:'#ffcf56' });
   }
 
   // Skill buffs
@@ -9226,139 +9228,42 @@ function _clearPendingSell() {
 // ─────────────────────────────────────────────────────────
 //  GRAM SHOP PANEL
 // ─────────────────────────────────────────────────────────
-// Цена — shopPkgPrice (shared/definitions.js), та же функция, по которой
-// списывает сервер (pkgPrice, server/shop.js): до конца сезона −30% на всё,
-// кроме наборов Усиления (noSale).
+// Plain nominal price — the end-of-season -30% sale that used to run here
+// (for as long as seasonActive() held) was removed at the owner's request.
+// server/shop.js's own pkgPrice(pkg) is what actually gets charged; this
+// copy only decides what to show/gate "afford" on, and the two must keep
+// matching.
 function pkgPrice(pkg) {
-  return shopPkgPrice(pkg);
+  return pkg.gram;
 }
-// Price line for the shop cards and confirm modals below. While the sale is
-// on: the crossed-out nominal price, the discounted one and a red −30% chip.
-function packPriceHtml(pkg, color) {
-  const c = color || '#8bd66a';
-  if (!shopSaleOn(pkg)) return `<span style="color:${c}">${pkg.gram} GRAM</span>`;
-  return `<span style="text-decoration:line-through;color:#7a7368;margin-right:5px">${pkg.gram}</span>`
-    + `<span style="color:${c}">${pkgPrice(pkg)} GRAM</span>`
-    + `<span class="gram-shop-sale-chip">-${SHOP_SEASON_SALE_PCT}%</span>`;
+// Price line for the shop cards and confirm modals below.
+function packPriceHtml(gram, color) {
+  return `<span style="color:${color || '#8bd66a'}">${gram} GRAM</span>`;
 }
-// «19ч 04:12» — отсчёт до конца сезона (= конца скидки), с секундами: он
-// тикает на глазах, пока открыт магазин или окно распродажи.
-function _shopSaleLeftText() {
-  const s = Math.max(0, Math.floor((SEASON_END_AT - Date.now()) / 1000));
-  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60), sec = s % 60;
-  const p2 = n => String(n).padStart(2, '0');
-  return (d > 0 ? `${d}д ` : '') + `${p2(h)}:${p2(m)}:${p2(sec)}`;
-}
-function _shopSaleBannerHtml() {
-  if (!seasonActive()) return '';
-  return `<div class="gram-shop-sale-banner">
-    <span class="gram-shop-sale-chip">-${SHOP_SEASON_SALE_PCT}%</span>
-    <span>${t('shopSaleBannerLbl')}</span>
-    <b class="shop-sale-timer">${_shopSaleLeftText()}</b>
-  </div>`;
-}
-// Один таймер на все видимые отсчёты (.shop-sale-timer): в магазине и в окне
-// распродажи. Сам себя гасит, когда ни одного не осталось на экране, а по
-// концу сезона перерисовывает магазин — цены возвращаются к полным.
-let _shopSaleTick = null;
-function _startShopSaleTimer() {
-  if (_shopSaleTick) return;
-  _shopSaleTick = setInterval(() => {
-    const els = document.querySelectorAll('.shop-sale-timer');
-    if (!els.length) { clearInterval(_shopSaleTick); _shopSaleTick = null; return; }
-    const txt = _shopSaleLeftText();
-    els.forEach(el => { el.textContent = txt; });
-    _fillShopSaleSegs();
-    if (!seasonActive()) {
-      clearInterval(_shopSaleTick); _shopSaleTick = null;
-      document.getElementById('shop-sale-ov')?.remove();
-      const panel = document.getElementById('gram-shop-panel');
-      if (panel && panel.style.display !== 'none') _renderGramShopPanel();
-      showGramShopBtn();
-    }
-  }, 1000);
-}
-
-// ── Окно распродажи при входе ──────────────────────────────────────────────
-// Показывается на КАЖДОМ входе в игру, пока идёт сезон (_finishOnlineStart,
-// js/network.js — путь входа, а не переподключения и не перехода по этажам).
-// Отсчёт в окне — четыре ячейки (дни/часы/минуты/секунды), их заполняет тот
-// же общий таймер (_startShopSaleTimer), что и строку в магазине.
-function _fillShopSaleSegs() {
-  const segs = document.querySelectorAll('#shop-sale-ov .shop-sale-seg b');
-  if (!segs.length) return;
-  const s = Math.max(0, Math.floor((SEASON_END_AT - Date.now()) / 1000));
-  const vals = [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
-  segs.forEach((el, i) => { el.textContent = String(vals[i]).padStart(2, '0'); });
-}
-function _closeShopSaleModal() {
-  const ov = document.getElementById('shop-sale-ov');
-  if (!ov) return;
-  ov.classList.add('closing');
-  setTimeout(() => ov.remove(), 180);
-}
-function showShopSaleModal() {
-  if (!seasonActive()) return;
-  document.getElementById('shop-sale-ov')?.remove();
-  // Витрина — картинки из самих паков: легендарные крылья (Админский),
-  // эпический питомец (Допы), редкая шкатулка и Liberty (Элитный и выше).
-  const img = id => (ITEM_DEF.find(d => d.id === id) || {}).img;
-  const pet = (ITEM_DEF.find(d => d.slot === 'pet' && d.rarity === 'epic') || {}).img;
-  const shelf = [img('wing_l'), pet, '/images/material/boxr.png', '/images/nexum-coin_v2.png']
-    .filter(Boolean).map((src, i) => `<div class="shop-sale-item" style="animation-delay:${0.15 + i * 0.08}s"><img src="${src}" alt=""></div>`).join('');
-  const segLbl = ['д', 'ч', 'м', 'с'];
-  const segs = segLbl.map(u => `<div class="shop-sale-seg"><b>00</b><span>${u}</span></div>`).join('');
-  const ov = document.createElement('div');
-  ov.className = 'shop-sale-overlay';
-  ov.id = 'shop-sale-ov';
-  ov.onclick = _closeShopSaleModal;
-  ov.innerHTML = `
-    <div class="shop-sale-card" onclick="event.stopPropagation()">
-      <div class="shop-sale-glow"></div>
-      <button class="shop-sale-close" onclick="_closeShopSaleModal()" aria-label="✕">✕</button>
-      <div class="shop-sale-ribbon">${t('shopSaleModalTitle')}</div>
-      <div class="shop-sale-big">-${SHOP_SEASON_SALE_PCT}<small>%</small></div>
-      <div class="shop-sale-shelf">${shelf}</div>
-      <div class="shop-sale-text">${tVars('shopSaleModalText', { n: SHOP_SEASON_SALE_PCT })}</div>
-      <div class="shop-sale-left">${t('shopSaleBannerLbl')}</div>
-      <div class="shop-sale-segs">${segs}</div>
-      <button class="shop-sale-go" onclick="_closeShopSaleModal();openGramShopPanel()">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-        ${t('navShopBtn')}
-      </button>
-    </div>`;
-  document.body.appendChild(ov);
-  _fillShopSaleSegs();
-  // Общий таймер гаснет, когда на экране нет ни одного .shop-sale-timer, —
-  // скрытый элемент держит его живым, пока открыто окно.
-  const keep = document.createElement('span');
-  keep.className = 'shop-sale-timer'; keep.hidden = true;
-  ov.appendChild(keep);
-  _startShopSaleTimer();
-}
-// Паки pkg1-pkg600 и наборы Усиления (rmat1-3) вернулись по просьбе
-// владельца — те же id и состав, что до их снятия, так что старые чеки снова
-// подписываются именем пака. Зеркало server/shop.js _GRAM_SHOP_PKGS: там
-// проверка и выдача, здесь только карточка. Сезонный билет из продажи убран.
+// Every earlier package (pkg1-pkg600, rmat1-3) was removed here at the
+// owner's request, mirroring server/shop.js's own _GRAM_SHOP_PKGS. The ones
+// below use fresh ids rather than reusing a retired one, so an old receipt
+// still falls back to the generic «Пакет» label instead of picking up a
+// new, unrelated definition.
 const _GRAM_SHOP_PKGS_UI = [
-  { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
-  { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
-  { id:'pkg100', gram:180, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  { id:'pkg600', gram:600, get label() { return t('gramPkgLabel_pkg600'); }, potions:200, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#c084fc',
-    skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
-    stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
-    enhance:8, nexum:20000 },
-  // Усиление tab — pure material packs. noSale: сезонная скидка на них не
-  // действует (shopPkgPrice), как и на сервере.
-  { id:'rmat1', gram:25, noSale:true, get label() { return t('empowerMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
-  { id:'rmat2', gram:40, noSale:true, get label() { return t('empowerMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
-  { id:'rmat3', gram:80, noSale:true, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
-    boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
+  // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
+  // branch): x2 xp, +60% bonus-loot re-roll chance, x2 Liberty drop chance,
+  // for as long as the current season is running. Own reward-row rendering
+  // in _shopExtraRewardRows (pkg.seasonTicket branch) since none of the
+  // usual reward kinds (armor/weapon/potions/...) apply.
+  // gram reads the shared constant rather than repeating the number: this
+  // array only exists to draw the card, and a price change to
+  // SEASON_TICKET_GRAM_PRICE (shared/definitions.js) — what the server
+  // actually charges — used to need a second, easy-to-forget edit here to
+  // keep the card from quoting a stale price.
+  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
+  // 4 активные книги (по классу) + зелёное (uncommon) оружие — mirror of
+  // server/shop.js's books_weapon_pkg. skillBooks/weapon are already fully
+  // rendered generically by _gramShopPkgHtml/_shopExtraRewardRows below.
+  { id:'books_weapon_pkg', gram:5, get label() { return t('gramPkgLabel_books_weapon'); }, color:'#8bd66a', skillBooks:{ each:1 }, weapon:'uncommon' },
+  // Все зелья бафов по 1 штуке + 50 000 золота — mirror of server/shop.js's
+  // potions_gold_pkg.
+  { id:'potions_gold_pkg', gram:1, get label() { return t('gramPkgLabel_potions_gold'); }, color:'#f1c40f', potions:1, gold:50000 },
   // Мешок Либерти — mirror of server/shop.js's liberty_bag_pkg; that copy is
   // what actually validates and grants, this one only draws the card. Now
   // credits Liberty (nexum) directly instead of granting the liberty_bag
@@ -9384,23 +9289,18 @@ function _stoneOrMatLabel(id) {
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionGramShopBtn(); }
-  const badge = document.getElementById('gram-shop-btn-discount');
-  if (badge) badge.style.display = seasonActive() ? 'block' : 'none';
 }
 
 // ─────────────────────────────────────────────────────────
 //  "Допы" TAB PACKAGES (GRAM shop) — pet+cloak+artifact+wings+rune bundles.
-//  Mirror of the same-id entries in server/shop.js's _GRAM_SHOP_PKGS (that's
-//  what actually validates and grants them — this copy only draws the
-//  cards). Вернулись вместе с вкладкой «Допы» по просьбе владельца.
-const _SPECIAL_PET_PKGS_UI = [
-  { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
-  { id:'extrapkg2', gram:65,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
-  { id:'extrapkg3', gram:220, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
-  { id:'extrapkg4', gram:370, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
-  { id:'extrapkg5', gram:550, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
-  { id:'extrapkg6', gram:700, get label() { return t('shopTierAdmin'); },     wings:'legendary', enhance:10, color:'#c084fc' },
-];
+//  Removed at the owner's request, along with their server/shop.js
+//  _GRAM_SHOP_PKGS entries (extrapkg1-6) — the GRAM shop now sells only the
+//  season ticket. Left empty rather than deleted, along with the render/
+//  picker functions below: switchShopTab('pets') still exists as a reachable
+//  code path (nothing currently links to it, since the "Допы" tab button is
+//  gone from index.html) and an empty array is what makes it render nothing
+//  instead of throwing.
+const _SPECIAL_PET_PKGS_UI = [];
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
 // coin icon) used by _gramShopPkgHtml below.
@@ -9472,9 +9372,9 @@ function _openSeasonTicketInfo() {
 function _renderSeasonTicketInfo() {
   const existing = document.getElementById('season-ticket-info-ov');
   if (existing) existing.remove();
-  const st = _seasonState || {};
-  const left = Math.max(0, (st.endAt || 0) - Date.now());
-  const durationLine = (st.active && left > 0) ? tVars('seasonEndsIn', { t: _fmtEventEta(left) }) : t('seasonEnded');
+  const left = SEASON_TICKET_END_AT ? Math.max(0, SEASON_TICKET_END_AT - Date.now()) : 0;
+  const durationLine = !SEASON_TICKET_END_AT ? tVars('seasonTicketWholeSeason', { n: SEASON_TICKET_SEASON })
+    : left > 0 ? tVars('seasonEndsIn', { t: _fmtEventEta(left) }) : t('seasonEnded');
   const ov = document.createElement('div');
   ov.className = 'market-modal-overlay';
   ov.id = 'season-ticket-info-ov';
@@ -9542,7 +9442,7 @@ function _specialPetPkgHtml(pkg, bal) {
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${packPriceHtml(pkg)}</div>
+        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -9598,7 +9498,7 @@ function _renderPetPicker() {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:10px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg, pkg.color)}</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="_petPicker=null;document.getElementById('pet-picker-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="font-size:12px;color:#b2a288;margin-bottom:8px">${t('petPickerHint')}</div>
@@ -9677,8 +9577,7 @@ function _renderGramShopPanel() {
   } else {
     body = _GRAM_SHOP_PKGS_UI.filter(pkg => !pkg.shopTab).map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   }
-  el.innerHTML = balBar + (_shopTab === 'empower' ? '' : _shopSaleBannerHtml()) + body;
-  _startShopSaleTimer();
+  el.innerHTML = balBar + body;
 }
 
 function _gramShopPkgHtml(pkg, bal) {
@@ -9718,7 +9617,7 @@ function _gramShopPkgHtml(pkg, bal) {
     <div class="gram-shop-card-head">
       <div>
         <div class="gram-shop-title" style="color:${pkg.color}">${pkg.label}</div>
-        <div class="gram-shop-price">${packPriceHtml(pkg)}</div>
+        <div class="gram-shop-price">${packPriceHtml(pkg.gram)}</div>
       </div>
       <button class="gram-shop-buy-btn${canAfford ? '' : ' disabled'}"
         style="border-color:${pkg.color};color:${canAfford ? pkg.color : '#645f57'}"
@@ -9800,7 +9699,7 @@ function openGramShopConfirm(pkgId) {
   ov.innerHTML = `
     <div class="market-modal-sheet" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;margin-bottom:14px">
-        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg, pkg.color)}</div>
+        <div style="font-size:16px;font-weight:800;color:${pkg.color}">${pkg.label} — ${packPriceHtml(pkg.gram, pkg.color)}</div>
         <button onclick="document.getElementById('gram-shop-confirm-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.8">
@@ -9808,7 +9707,7 @@ function openGramShopConfirm(pkgId) {
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('costLbl')}</span>
-        <span style="font-weight:700">${packPriceHtml(pkg, pkg.color)}</span>
+        <span style="font-weight:700">${packPriceHtml(pkg.gram, pkg.color)}</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:16px">
         <span style="color:#b2a288">${t('yourBalanceLbl')}</span>

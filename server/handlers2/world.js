@@ -36,7 +36,7 @@ const loot = require('../game/loot');
 const { query } = require('../db');
 const {
   CHAR_DEF, FEAR_MAX_WAVE,
-  VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
+  VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
   FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
@@ -501,7 +501,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // лучшая таблица — ровно как VIP и билет рядом.
     const bonus = ((VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {}).drop || 0)
       + ((s._roomStats && s._roomStats.gearDropPct) || 0);
-    const ticket = (s.seasonTicket && seasonActive()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
+    const ticket = (s.seasonTicket && seasonTicketPeriodOn()) ? (SEASON_TICKET_DROP_PCT || 0) : 0;
     const extra = bonus + ticket;
     // Во всех зонах, а не только в коридорах: фарм-зоны и подземелье раньше
     // были исключены, и бонус из панели там молча не значил ничего.
@@ -624,7 +624,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Additive between the two, applied to the share this player receives so a
     // party member's VIP is theirs and not the group's.
     const vipB = VIP_BONUSES[s.vipLevel || 0] || VIP_BONUSES[0] || {};
-    const ticketOn = !!(s.seasonTicket && seasonActive());
+    const ticketOn = !!(s.seasonTicket && seasonTicketPeriodOn());
     // The clan's two thirds of the same idea. CLAN_LEVELS lists gold, xp and
     // atk at every level; only atk had a reader, so the tags the clan panel
     // prints — "+15% золото", "+10% опыт" — were decoration. Additive with VIP
@@ -857,7 +857,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
         const mNow = Date.now();
         const mBuff = t2 => Number((mProg.buffs || {})[t2] || 0) > mNow;
         const mVip = VIP_BONUSES[mate.vipLevel || 0] || VIP_BONUSES[0] || {};
-        const mTicket = !!(mate.seasonTicket && seasonActive());
+        const mTicket = !!(mate.seasonTicket && seasonTicketPeriodOn());
         // Their own clan too, for the same reason as their own VIP: a member
         // of a level 10 clan grouped with someone clanless keeps their bonus,
         // and does not lend it out.
@@ -1172,7 +1172,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       //              Спрашивается тем же resolveFloor с заведомо выданным
       //              билетом: если и так не пускает, дело не в билете;
       //   билет    — всё остальное.
-      const seasonOver = ticketOnlyFloor(want) && !seasonActive();
+      const seasonOver = ticketOnlyFloor(want) && !seasonTicketPeriodOn();
       const closed = seasonOver || want === floorIdOf('guildWar') || want === floorIdOf('arena');
       const lowLevel = resolveFloor(want, prog, { seasonTicket: true }) !== want;
       const ticket = !closed && !lowLevel;

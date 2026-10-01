@@ -1855,7 +1855,7 @@ let _seasonMsgCd = 0; // троттлинг надписи «нужен биле
 // они разойдутся, игрок увидит открытый пад и отказ за ним.
 function _seasonTicketOn() {
   const has = typeof _seasonTicketActive !== 'undefined' && _seasonTicketActive;
-  const on = typeof seasonActive !== 'function' || seasonActive();
+  const on = typeof seasonTicketPeriodOn !== 'function' || seasonTicketPeriodOn();
   return !!(has && on);
 }
 // Event-boss arena pad (see _evtArenaOpen) and the Guild War pad just below —

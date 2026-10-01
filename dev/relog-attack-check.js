@@ -61,9 +61,11 @@ process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 delete process.env.MOVE_GUARD;
 
 const { pool, close } = require('../server/db');
+const money = require('../server/db/repos/money');
 const progression = require('../server/db/repos/progression');
 const app = require('../server/app');
 const { wipeItemsAll } = require('./fixtures');
+const { SEASON_TICKET_GRAM_PRICE } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -113,7 +115,10 @@ function client() {
   return c;
 }
 // Умова з drawBuffStrip (js/ui.js), слово в слово по змісту.
-const chipVisible = c => !!(c.ticket && c.season.active && ((c.season.endAt || 0) - Date.now()) > 0);
+// Значок билета = билет куплен на текущий сезон билета и срок билета идёт
+// (_seasonTicketOn, js/game.js; seasonTicketPeriodOn — shared/definitions.js).
+const { seasonTicketPeriodOn } = require('../shared/definitions');
+const chipVisible = c => !!(c.ticket && seasonTicketPeriodOn());
 
 async function login(c) {
   await once(c.sock, 'connect');
@@ -133,13 +138,14 @@ async function seasonTicket() {
   const pid = Number(rows[0].id);
   made.push(pid);
 
-  // Білет більше не продається в магазині GRAM (знятий з продажу), але вже
-  // куплені працюють далі — тож видаємо його тим самим записом, що й колись
-  // покупка (grantSeasonTicket), і перевіряємо, що він переживає перезахід.
-  await progression.grantSeasonTicket(null, pid);
+  // Купівля справжнім шляхом: gramShopBuy → shop.buyPackage → grantSeasonTicket.
+  // Викликати репозиторій напряму означало б не перевірити саме ту ділянку, де
+  // за білет уже сплачено.
+  await money.credit(null, pid, 'gram', SEASON_TICKET_GRAM_PRICE + 5,
+    { reason: 'seed', idemKey: `${TAG}:gram` });
   c1.sock.emit('gramShopBuy', { pkgId: 'season_ticket' });
-  const refused = await once(c1.sock, 'gramShopError', 12000).catch(() => null);
-  ok(!!refused, 'купити білет у магазині вже не можна');
+  const bought = await once(c1.sock, 'gramShopResult', 12000).catch(() => null);
+  ok(!!bought && bought.pkgId === 'season_ticket', 'покупка білета пройшла');
 
   const vip = await progression.vipOf(null, pid);
   ok(vip.seasonTicket === true,
@@ -156,9 +162,7 @@ async function seasonTicket() {
     'authOk після перезаходу каже, що білет є (без цього значка нема ніде)');
   ok(c2.unprompted >= 1,
     'сезон приїхав САМ, без запиту панелі — це і є «потрібно в сезон зайти»');
-  eq(c2.season.active, true, 'і каже, що сезон іде');
-  ok((c2.season.endAt || 0) > Date.now(),
-    `і коли він закінчується (${new Date(c2.season.endAt || 0).toISOString()})`);
+  ok(seasonTicketPeriodOn(), 'термін білета 4 сезону йде');
   ok(chipVisible(c2),
     'значок білета видно ОДРАЗУ після входу, а не після відкриття панелі');
 

@@ -609,22 +609,6 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 const SEASON_END_AT = Date.UTC(2026, 9, 1, 15, 0, 0); // 1 Oct 2026, 18:00 MSK (UTC+3)
 function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
 
-// ── Скидка в магазине GRAM до конца сезона ─────────────────────────────────
-// −30% на все паки, пока идёт сезон (seasonActive выше). Кроме наборов
-// Усиления (rmat1-3): у них в описании стоит noSale, и скидка на них не
-// распространяется. Одна функция на сервер и клиент: сервер списывает ровно
-// shopPkgPrice (buyPackage, server/db/repos/shop.js), клиент по ней же
-// рисует цену и решает, хватает ли баланса, — разойтись им нечем.
-const SHOP_SEASON_SALE_PCT = 30;
-function shopSaleOn(pkg, now = Date.now()) {
-  return !!pkg && !pkg.noSale && seasonActive(now);
-}
-function shopPkgPrice(pkg, now = Date.now()) {
-  if (!shopSaleOn(pkg, now)) return pkg.gram;
-  // Сотые GRAM, а не float: 65 × 0.7 даёт 45.49999…, а списывать надо 45.5.
-  return Math.round(pkg.gram * (100 - SHOP_SEASON_SALE_PCT)) / 100;
-}
-
 // ── Заточка (enhance) ────────────────────────────────────────────────────
 // Flat now, on purpose: any item, any rarity, any stone (normal or safe),
 // as long as the roll actually succeeded — a miss costs the stone and pays
@@ -3612,7 +3596,14 @@ const COOP_LIBERTY_CHANCE = 0.1;
 const GRAM_DROP_CHANCE = 0.075;
 const GRAM_PER_LEVEL = 0.0000001;
 
-const SEASON_TICKET_GRAM_PRICE = 10.5; // was 15 — 30% off by request
+// Билет 4 сезона. Владение — по номеру сезона (player_vip.season_ticket_
+// season = SEASON_TICKET_SEASON): билет прошлого сезона здесь не действует.
+// Действует весь сезон: SEASON_TICKET_END_AT = 0 — дата конца не назначена.
+// Когда назначат — поставить её сюда, и билет погаснет в этот момент.
+const SEASON_TICKET_SEASON = 4;
+const SEASON_TICKET_END_AT = 0;
+function seasonTicketPeriodOn(now = Date.now()) { return !SEASON_TICKET_END_AT || now < SEASON_TICKET_END_AT; }
+const SEASON_TICKET_GRAM_PRICE = 15;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
 const SEASON_TICKET_DROP_PCT = 60;     // +60 to the bonus loot re-roll chance
 const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop chance — x2
@@ -3858,7 +3849,7 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
-  SEASON_END_AT, seasonActive, SHOP_SEASON_SALE_PCT, shopSaleOn, shopPkgPrice,
+  SEASON_END_AT, seasonActive,
   SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BOOK_BURN_POINTS, DISASSEMBLE_LIBERTY,
@@ -3886,6 +3877,7 @@ if (typeof module !== 'undefined') module.exports = {
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES, VIP_MAX_LEVEL,
+  SEASON_TICKET_SEASON, SEASON_TICKET_END_AT, seasonTicketPeriodOn,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

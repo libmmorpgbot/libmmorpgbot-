@@ -11,7 +11,7 @@
 
 const Room = require('./game/Room');
 const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
-const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, DUNGEON_ENTRY_LEVEL, seasonActive } = require('../shared/definitions');
+const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, DUNGEON_ENTRY_LEVEL, seasonActive, seasonTicketPeriodOn } = require('../shared/definitions');
 
 const floorRooms = new Map();
 
@@ -155,7 +155,7 @@ function resolveFloor(floorId, progress, ctx = {}) {
   if (f === FLOOR_IDS.hub) return FLOOR_IDS.hub;
   const need = ZONE_LEVEL_REQ[FLOOR_KEY[f]] || 0;
   if ((progress && progress.lvl ? progress.lvl : 1) < need) return FLOOR_IDS.hub;
-  if (TICKET_ONLY.has(f) && !(ctx.seasonTicket && seasonActive())) return FLOOR_IDS.hub;
+  if (TICKET_ONLY.has(f) && !(ctx.seasonTicket && seasonTicketPeriodOn())) return FLOOR_IDS.hub;
   const wantClass = DUNGEON_CLASS_ZONE[f];
   if (wantClass && (!progress || progress.charClass !== wantClass)) return FLOOR_IDS.hub;
   if (!_timedZoneOpen(f)) return FLOOR_IDS.hub;
