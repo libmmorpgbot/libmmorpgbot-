@@ -147,9 +147,16 @@ const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
 // переживший применение миграции 029 без перезапуска, до конца своей жизни
 // грузил характеристики запросом без рун: руны стояли в гнёздах и не давали
 // ничего. Общая функция запоминает только «да» и переспрашивает «нет».
+// То же самое для улучшений «ЦП», «опыт», «дроп» (миграция 034): до неё
+// колонок нет, и запрос, который их спрашивает, ронял вход каждому игроку —
+// игра висела на загрузке. До миграции эти три читаются как нули.
+const _UPG_NEW_COLS = 'pr.upg_cp, pr.upg_xp, pr.upg_drop,';
+const _UPG_NEW_ZERO = '0 AS upg_cp, 0 AS upg_xp, 0 AS upg_drop,';
 async function load(db, playerId) {
   const runesOk = await hasColumn('player_items', 'socket_of');
-  const sql = runesOk ? LOAD_SQL_WITH_RUNES : LOAD_SQL_NO_RUNES;
+  const upgOk = await hasColumn('player_progress', 'upg_cp');
+  let sql = runesOk ? LOAD_SQL_WITH_RUNES : LOAD_SQL_NO_RUNES;
+  if (!upgOk) sql = sql.replace(_UPG_NEW_COLS, _UPG_NEW_ZERO);
   const { rows } = await query(db, sql, [playerId]);
   return rows.length ? rows[0] : null;
 }

@@ -863,6 +863,11 @@ const UPG_COL = {
   critChance: 'upg_crit_chance', critPower: 'upg_crit_power', hpRegen: 'upg_hp_regen',
   cp: 'upg_cp', xp: 'upg_xp', drop: 'upg_drop',
 };
+// Три слота из миграции 034. Пока её нет, колонок нет: их не читаем и не
+// пишем, а покупку в этих слотах вежливо отклоняем — иначе запросы ниже
+// падали бы на несуществующей колонке.
+const _UPG_NEW_KEYS = new Set(['cp', 'xp', 'drop']);
+async function _hasNewUpgCols() { return hasColumn('player_progress', 'upg_cp'); }
 
 async function spendUpgrade(db, playerId, key) {
   // Object.hasOwn for the same reason as PREF_FIELDS above: `UPG_COL['constructor']`
@@ -870,6 +875,11 @@ async function spendUpgrade(db, playerId, key) {
   const col = Object.hasOwn(UPG_COL, key) ? UPG_COL[key] : null;
   if (!col) throw new Error(`players: unknown upgrade ${key}`);
   if (!UPGRADE_KEYS.includes(key)) throw new Error(`players: ${key} is not in UPGRADE_KEYS`);
+  const newCols = await _hasNewUpgCols();
+  if (_UPG_NEW_KEYS.has(key) && !newCols) {
+    throw Object.assign(new Error('upgrade columns missing'),
+      { code: 'not_ready', userMessage: 'Это улучшение станет доступно после обновления сервера' });
+  }
 
   // The players row, before player_progress. This function now ends by writing
   // players.bm, and the kill path takes those two locks the other way round
@@ -887,8 +897,8 @@ async function spendUpgrade(db, playerId, key) {
   const { rows } = await query(db, `
     SELECT lvl, bonus_sp, kept_sp, upg_epoch,
            upg_atk, upg_def, upg_hp, upg_atk_speed,
-           upg_crit_chance, upg_crit_power, upg_hp_regen,
-           upg_cp, upg_xp, upg_drop
+           upg_crit_chance, upg_crit_power, upg_hp_regen
+           ${newCols ? ', upg_cp, upg_xp, upg_drop' : ''}
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) return null;
   const r = rows[0];
@@ -1078,12 +1088,13 @@ async function resetUpgrades(db, playerId, cost) {
   // players row is taken before player_progress and the lock order stays the
   // one every other path uses.
   await require('./items').lockPlayer(db, playerId);
+  const newCols = await _hasNewUpgCols();
 
   const { rows } = await query(db, `
     SELECT lvl, bonus_sp, kept_sp, upg_epoch,
            upg_atk + upg_def + upg_hp + upg_atk_speed
          + upg_crit_chance + upg_crit_power + upg_hp_regen
-         + upg_cp + upg_xp + upg_drop AS spent
+         ${newCols ? '+ upg_cp + upg_xp + upg_drop' : ''} AS spent
       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) throw Object.assign(new Error('Игрок не найден'), { code: 'no_player' });
   if (Number(rows[0].spent) <= 0) {
@@ -1148,7 +1159,7 @@ async function resetUpgrades(db, playerId, cost) {
     UPDATE player_progress
        SET upg_atk = 0, upg_def = 0, upg_hp = 0, upg_atk_speed = 0,
            upg_crit_chance = 0, upg_crit_power = 0, upg_hp_regen = 0,
-           upg_cp = 0, upg_xp = 0, upg_drop = 0,
+           ${newCols ? 'upg_cp = 0, upg_xp = 0, upg_drop = 0,' : ''}
            bonus_sp  = bonus_sp + $2,
            kept_sp   = 0,
            upg_epoch = upg_epoch + 1,
