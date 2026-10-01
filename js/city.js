@@ -370,20 +370,26 @@ function _cityPlaza(c, L) {
   // эмблема не тонет в вуали, а светится, как окна и фонари.
   const emb = _cityEmblemImg();
   if (emb) {
-    const er = 84;
+    // Размер — как у прежней розы ветров (круг 50px вместе с оправой).
+    const er = 42;
     c.fillStyle = 'rgba(0,0,0,0.5)';
-    c.beginPath(); c.arc(x + 3, y + 5, er + 10, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(x + 2, y + 3, er + 8, 0, Math.PI * 2); c.fill();
     _cityGlow(c, g => {
       g.fillStyle = CS.goldLine;
-      g.beginPath(); g.arc(x, y, er + 9, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(x, y, er + 7, 0, Math.PI * 2); g.fill();
       g.fillStyle = CS.gold2;
-      g.beginPath(); g.arc(x, y, er + 4, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(x, y, er + 3, 0, Math.PI * 2); g.fill();
       g.save();
       g.beginPath(); g.arc(x, y, er, 0, Math.PI * 2); g.clip();
-      g.drawImage(emb, x - er, y - er, er * 2, er * 2);
+      // Фон под картинкой — её же тёмно-красный, а сама она чуть меньше
+      // круга и сдвинута так, что слово LIBERTY (оно выше середины картинки)
+      // стоит по центру и целиком влезает в круг.
+      g.fillStyle = '#1e0806'; g.fillRect(x - er, y - er, er * 2, er * 2);
+      const d = er * 2 * 0.96;
+      g.drawImage(emb, x - d / 2, y - d * 0.44, d, d);
       g.restore();
-      g.strokeStyle = CS.gold; g.lineWidth = 2;
-      g.beginPath(); g.arc(x, y, er + 6.5, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = CS.gold; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(x, y, er + 5, 0, Math.PI * 2); g.stroke();
     });
     c.restore();
     return;
