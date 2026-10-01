@@ -639,6 +639,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
 
     const beforeSelf = healer.hp;
     s.room.setPlayerHp(s.socket.id, Math.min(healer.maxHp, healer.hp + amount));
+    // Лечащий навык восстанавливает и CP — тем же числом.
+    if (typeof s.room.restoreCp === 'function') s.room.restoreCp(s.socket.id, amount);
     const self = Math.round(healer.hp - beforeSelf);
 
     // ── и группа, если навык её лечит ─────────────────────────────────────
@@ -663,6 +665,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
             && !s.room.arePlayersNear(s.socket.id, sid)) continue;
         const before = p.hp;
         s.room.setPlayerHp(sid, Math.min(p.maxHp, p.hp + amount));
+        if (typeof s.room.restoreCp === 'function') s.room.restoreCp(sid, amount);
         const healed = Math.round(p.hp - before);
         if (healed > 0) { reached++; total += healed; }
         if (healed > 0) deps.io.to(sid).emit('healPartyMember', { amount: healed });

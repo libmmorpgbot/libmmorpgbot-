@@ -38,6 +38,8 @@ function mkRoom(inSafe = false) {
     io: { to: (sid) => ({ emit: (ev, p) => sent.push({ sid, ev, p }) }) },
     _inSafeZone: () => inSafe,
     _maxHpOf: RoomClass.prototype._maxHpOf, _buffAgg: RoomClass.prototype._buffAgg,
+    _maxCpOf: RoomClass.prototype._maxCpOf, _gainCp: RoomClass.prototype._gainCp,
+    restoreCp: RoomClass.prototype.restoreCp,
     players: new Map(),
   };
 }
@@ -517,6 +519,50 @@ console.log('\n  ── цвета цифр ──');
     }
   }
   ok(blue.length === 0, 'синего текста не осталось нигде', blue.join(', '));
+}
+
+// ── лечащие навыки восстанавливают и CP ────────────────────────────────────
+console.log('\n  ── лечение навыками восстанавливает CP ──');
+{
+  const room = mkRoom(false);
+  const p = { socketId: 's', type: 'warlock', hp: 500, maxHp: 1000, hpRegen: 0, cp: 100 };
+  room.players.set('s', p);
+  const max = room._maxCpOf(p);
+  ok(room.restoreCp('s', 50) === 50 && p.cp === 150, 'разовое лечение: +CP тем же числом', p.cp);
+  ok(p._cpSyncAt === 0, 'разовое лечение синхронизирует полосу сразу', p._cpSyncAt);
+  room.restoreCp('s', 1e9);
+  ok(p.cp === max, 'выше максимума CP не уходит', p.cp);
+  p.cp = undefined;
+  ok(room.restoreCp('s', 50) === 0 && p.cp === undefined, 'нетронутый запас не трогается', p.cp);
+  p.cp = 100; p.hp = 0;
+  ok(room.restoreCp('s', 50) === 0 && p.cp === 100, 'мёртвому CP не лечится', p.cp);
+  p.hp = 1000;
+
+  // Бабочки: тик лечит CP и при полном здоровье.
+  p.cp = 100;
+  setWin.call(room, 's', 'butterflies', 2000);
+  let now = p._butterAt;
+  for (let i = 0; i < 80; i++) { now += 25; regen.call(room, p, 0.025, now); }
+  ok(p.hp === 1000 && p.cp === 200, 'Бабочки: два тика по 50 CP при полном HP', p.cp);
+
+  // Вампиризм.
+  p.cp = 100; p._vampUntil = Date.now() + 5000; p._vampPct = D.VAMPIRISM_PCT;
+  vamp.call(room, p, 200);
+  ok(p.cp === 120, 'вампиризм: +CP долей урона', p.cp);
+
+  // «Регенерация» рунного бойца — только сама ставка навыка, не пассивная.
+  const q = { socketId: 'r', type: 'runefighter', hp: 1000, maxHp: 1000, hpRegen: 5, cp: 100 };
+  setWin.call(room, 'r', 'regen', 0, 0);
+  q._regenHotUntil = Date.now() + 10000; q._regenHotRate = 10;
+  regen.call(room, q, 1, Date.now());
+  ok(Math.round(q.cp) === 110, 'Регенерация: +ставка CP в секунду', q.cp);
+  q._regenHotUntil = 0; q.cp = 100;
+  regen.call(room, q, 1, Date.now());
+  ok(q.cp === 100, 'пассивный реген CP не лечит', q.cp);
+
+  // И оба вызова в обработчике навыка — себя и группу.
+  const soc = fs.readFileSync(path.join(ROOT, 'server/handlers2/social.js'), 'utf8');
+  ok((soc.match(/restoreCp\(/g) || []).length === 2, 'skillHeal: CP себе и группе');
 }
 
 console.log('');

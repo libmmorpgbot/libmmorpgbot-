@@ -3286,6 +3286,26 @@ class Room {
   // Запас CP: доля от здоровья плюс плоская прибавка улучшения «ЦП».
   _maxCpOf(p) { return Math.floor((p.maxHp || 0) * PVP_CP_MULT) + (p.cpFlat || 0); }
 
+  // Лечащие навыки восстанавливают и CP — тем же числом, что и здоровье.
+  // Не ждёт CP_REGEN_DELAY_MS: это навык, а не пассивное восстановление.
+  // CP не число — значит запас ещё не тронут и полон (см. _cpTick).
+  // urgent — разовое лечение: полоса уезжает клиенту следующим же тиком,
+  // а не через HP_SYNC_EVERY_MS. Тики («Бабочки», вампиризм) идут общим
+  // потоком _cpTick.
+  _gainCp(p, amount, urgent) {
+    if (!p || !p.type || p.hp <= 0 || !(amount > 0)) return 0;
+    const max = this._maxCpOf(p);
+    if (!Number.isFinite(p.cp) || p.cp >= max) return 0;
+    const before = p.cp;
+    p.cp = Math.min(max, p.cp + amount);
+    if (urgent) p._cpSyncAt = 0;
+    return p.cp - before;
+  }
+
+  restoreCp(socketId, amount) {
+    return this._gainCp(this.players.get(socketId), amount, true);
+  }
+
   // Удар игрока по игроку: сперва CP, остаток — по здоровью.
   _pvpHurt(target, dmg) {
     const max = this._maxCpOf(target);
@@ -3978,6 +3998,7 @@ class Room {
 
     const before = p.hp;
     if (rate > 0 && !full) p.hp = Math.min(cap, p.hp + rate * dt);
+    if (p._regenHotUntil > now) this._gainCp(p, (p._regenHotRate || 0) * dt);
 
     // «Бабочки» — не ставка в секунду, а тик РАЗ в секунду, и накопитель нужен
     // именно поэтому: комната тикает сорок раз в секунду, и размазать 5% по
@@ -3998,12 +4019,14 @@ class Room {
       // лечить. Это и есть разница между «пропустил тик» и «отложил десять».
       while (now - p._butterAt >= 1000) {
         p._butterAt += 1000;
-        if (p.hp >= p.maxHp) continue;
         // С включённым ПК — BUTTERFLIES_TICK_PCT_PVP: окно 10 с + уровень при
         // перезарядке 8 с держится непрерывно, и 5% в секунду перекрывали
         // входящий урон почти любого класса — целитель в PvP не умирал.
         const tickPct = p.pvpMode ? BUTTERFLIES_TICK_PCT_PVP : BUTTERFLIES_TICK_PCT;
         const tick = Math.max(1, Math.round(p.maxHp * tickPct));
+        // CP — тем же тиком, даже при полном здоровье.
+        this._gainCp(p, tick);
+        if (p.hp >= p.maxHp) continue;
         p.hp = Math.min(p.maxHp, p.hp + tick);
         this.io.to(p.socketId).emit('skillHealTick', { amount: tick, kind: 'butterflies' });
       }
@@ -4043,6 +4066,7 @@ class Room {
     if (!attacker || attacker.hp <= 0 || !(dmg > 0)) return;
     if (!(attacker._vampUntil > Date.now())) return;
     const heal = Math.max(1, Math.round(dmg * (attacker._vampPct || 0)));
+    this._gainCp(attacker, heal);
     const before = attacker.hp;
     attacker.hp = Math.min(attacker.maxHp, attacker.hp + heal);
     const got = Math.round(attacker.hp - before);
