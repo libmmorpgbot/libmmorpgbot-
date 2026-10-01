@@ -248,6 +248,20 @@ function _cityLayout() {
   return (_cityCache = L);
 }
 
+// Эмблема в центре площади: грузится один раз, после загрузки чанки
+// строятся заново. Не загрузилась — остаётся роза ветров.
+let _cityEmblem = null, _cityEmblemReq = false;
+function _cityEmblemImg() {
+  if (_cityEmblem) return _cityEmblem;
+  if (!_cityEmblemReq && typeof Image !== 'undefined') {
+    _cityEmblemReq = true;
+    const img = new Image();
+    img.onload = () => { _cityEmblem = img; if (typeof buildTileCanvas === 'function') buildTileCanvas(); };
+    img.src = '/images/city/emblem.jpg';
+  }
+  return null;
+}
+
 function _cityHit(o, x0, y0, x1, y1) {
   return o.x1 > x0 && o.x0 < x1 && o.y1 > y0 && o.y0 < y1;
 }
@@ -349,6 +363,30 @@ function _cityPlaza(c, L) {
       c.arc(x, y, rr - ring / 2 + 1, a1 - 0.02, a0 + 0.02, true);
       c.closePath(); c.fill();
     }
+  }
+  // В центре — круглая эмблема Liberty (images/city/emblem.jpg) в золотой
+  // оправе. Пока картинка не пришла — прежняя роза ветров; когда пришла,
+  // чанки перестраиваются (_cityEmblemImg). Рисуется через _cityGlow: ночью
+  // эмблема не тонет в вуали, а светится, как окна и фонари.
+  const emb = _cityEmblemImg();
+  if (emb) {
+    const er = 84;
+    c.fillStyle = 'rgba(0,0,0,0.5)';
+    c.beginPath(); c.arc(x + 3, y + 5, er + 10, 0, Math.PI * 2); c.fill();
+    _cityGlow(c, g => {
+      g.fillStyle = CS.goldLine;
+      g.beginPath(); g.arc(x, y, er + 9, 0, Math.PI * 2); g.fill();
+      g.fillStyle = CS.gold2;
+      g.beginPath(); g.arc(x, y, er + 4, 0, Math.PI * 2); g.fill();
+      g.save();
+      g.beginPath(); g.arc(x, y, er, 0, Math.PI * 2); g.clip();
+      g.drawImage(emb, x - er, y - er, er * 2, er * 2);
+      g.restore();
+      g.strokeStyle = CS.gold; g.lineWidth = 2;
+      g.beginPath(); g.arc(x, y, er + 6.5, 0, Math.PI * 2); g.stroke();
+    });
+    c.restore();
+    return;
   }
   // мозаика в центре — роза ветров
   const mr = 50;
