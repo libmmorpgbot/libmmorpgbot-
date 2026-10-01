@@ -97,7 +97,7 @@ const SKILL_DEF = {
     { key:'R', name:'Рывок света',    icon:'dash',       img:'/images/skill/wrivok_v2.png',  cd:15, desc:'Прыгает к цели нанося урон', auto:false },
   ],
   deathknight: [
-    { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim_v2.png',      cd:28, desc:'Вампиризм 10% от удара на 10 сек' },
+    { key:'Q', name:'Вампиризм',    icon:'drop',       img:'/images/skill/adim_v2.png',      cd:28, desc:'Вампиризм 10% от удара на 10 сек (HP и ЦП)' },
     { key:'W', name:'Вихрь клинка', icon:'whirlwind',  img:'/images/skill/asmertudar.png', cd:12, desc:'АОЕ урон, радиус 110'          },
     { key:'E', name:'Ярость',       icon:'battleCry',  img:'/images/skill/ainvidible_v2.png', cd:20, desc:'+20% атака на 5 сек'           },
     { key:'R', name:'Кувырок',      icon:'roll',       img:'/images/skill/audarteni.png',  cd:15, desc:'Прыгает к цели нанося урон', auto:false },
@@ -115,15 +115,15 @@ const SKILL_DEF = {
     { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 360px по направлению', auto:false },
   ],
   warlock: [
-    { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP'                    },
+    { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP и столько же ЦП'                    },
     { key:'W', name:'Оковы тьмы',       icon:'iceNova', img:'/images/skill/socepinenie.png',  cd:15, desc:'Удерживает цель на месте 3 сек'},
     { key:'E', name:'Тёмный щит',       icon:'barrier', img:'/images/skill/sshit.png',        cd:18, desc:'+50% защита себе и пати 4 сек' },
-    { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  img:'/images/skill/spartyheal.png',   cd:25, desc:'+10% maxHP себе и +10% пати'   },
+    { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  img:'/images/skill/spartyheal.png',   cd:25, desc:'+10% maxHP себе и +10% пати, и столько же ЦП'   },
   ],
   runefighter: [
     { key:'Q', name:'Сильный удар', icon:'sword',    img:'/images/skill/rf_stronghit.png', cd:20, desc:'3 удара подряд'                    },
     { key:'W', name:'Встряска',     icon:'whirlwind',img:'/images/skill/rf_shake.png',     cd:16, desc:'АОЕ ×3 урона, радиус 150'          },
-    { key:'E', name:'Регенерация',  icon:'hpPlus',   img:'/images/skill/rf_regen.png',     cd:20, desc:'+5 HP/сек на 10 сек'               },
+    { key:'E', name:'Регенерация',  icon:'hpPlus',   img:'/images/skill/rf_regen.png',     cd:20, desc:'+5 HP и ЦП/сек на 10 сек'               },
     { key:'R', name:'Замедление',   icon:'roll',     img:'/images/skill/rf_slam.png',      cd:10, desc:'Прыжок ×2 урона + замедление 50% на 3 сек', auto:false },
   ],
   assassin: [
@@ -157,7 +157,7 @@ const ADV_SKILL_DEF = {
     { key:'R', name:'Рывок',       icon:'dash',       img:'/images/skill/adv/adv_rivok.png',       cd:15, desc:'Прыгает к цели, замедляя её на 30% на 10 сек', auto:false },
   ],
   deathknight: [
-    { key:'Q', name:'Истощение', icon:'drop',      img:'/images/skill/adv/adv_istoshenie.png', cd:28, desc:'Вампиризм 15% + атака +20% на 10 сек' },
+    { key:'Q', name:'Истощение', icon:'drop',      img:'/images/skill/adv/adv_istoshenie.png', cd:28, desc:'Вампиризм 15% (HP и ЦП) + атака +20% на 10 сек' },
     { key:'W', name:'Жадность',  icon:'battleCry', img:'/images/skill/adv/adv_jadnost.png',    cd:12, desc:'+5% крит. урона на 20 минут' },
     { key:'E', name:'Безумие',   icon:'battleCry', img:'/images/skill/adv/adv_bezumie.png',    cd:20, desc:'+25% атака, обычные удары наносят АОЕ урон, на 5 сек' },
     { key:'R', name:'Охота',     icon:'roll',      img:'/images/skill/adv/adv_oxota.png',      cd:15, desc:'Прыгает к цели, снимая 20% её защиты на 10 сек', auto:false },
@@ -176,18 +176,18 @@ const ADV_SKILL_DEF = {
     { key:'Q', name:'Урон молнии',  icon:'fireball', img:'/images/skill/adv/adv_uronmolnii.png',  cd:5,  desc:'Снаряд ×3 урона + стан 3 сек' },
     { key:'W', name:'Разряд',       icon:'iceNova',  img:'/images/skill/adv/adv_razryad.png',     cd:10, desc:'АОЕ урон ×3, радиус 220' },
     { key:'E', name:'Вспышка',      icon:'barrier',  img:'/images/skill/adv/adv_vspishka.png',    cd:18, desc:'АОЕ урон ×2, радиус 220 + защита +80% на 3 сек' },
-    { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 360px + восстанавливает 20% здоровья', auto:false },
+    { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 360px + восстанавливает 20% здоровья и столько же ЦП', auto:false },
   ],
   warlock: [
-    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду' },
+    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду и столько же ЦП' },
     { key:'W', name:'Колючие оковы',  icon:'iceNova', img:'/images/skill/adv/adv_koluchieokovi.png', cd:15, desc:'Удерживает цель 3 сек, нанося ×3 урона' },
     { key:'E', name:'Жажда',          icon:'barrier', img:'/images/skill/adv/adv_jajda.png',         cd:18, desc:'+50% защита себе и пати, ×2 скорость атаки, на 4 сек' },
-    { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати' },
+    { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати, и столько же ЦП' },
   ],
   runefighter: [
     { key:'Q', name:'Удар в череп', icon:'skull',    img:'/images/skill/adv/adv_rf_skullhit.png', cd:20, desc:'5 ударов подряд' },
     { key:'W', name:'Сокрушение',   icon:'whirlwind',img:'/images/skill/adv/adv_rf_crush.png',    cd:6,  desc:'АОЕ ×4 урона, радиус 220' },
-    { key:'E', name:'Возврат',      icon:'heart',    img:'/images/skill/adv/adv_rf_return.png',   cd:30, desc:'Восстанавливает всё здоровье' },
+    { key:'E', name:'Возврат',      icon:'heart',    img:'/images/skill/adv/adv_rf_return.png',   cd:30, desc:'Восстанавливает всё здоровье и столько же ЦП' },
     // Base R ("Замедление") is a leap and carries auto:false — this
     // advanced replacement is a stationary self-buff instead, so auto must
     // be explicitly re-enabled here (see the same override on ranger's adv
@@ -203,7 +203,7 @@ const ADV_SKILL_DEF = {
     // this advanced replacement displaces the character instead, so auto
     // must be explicitly disabled here (see the lev/deathknight/mage R
     // slots above, all auto:false for the same reason).
-    { key:'R', name:'Прыжок за спину',icon:'roll',   img:'/images/skill/adv/adv_as_backstab.png', cd:20, desc:'Прыжок за спину врагу ×2 урона + восстанавливает 30% здоровья', auto:false },
+    { key:'R', name:'Прыжок за спину',icon:'roll',   img:'/images/skill/adv/adv_as_backstab.png', cd:20, desc:'Прыжок за спину врагу ×2 урона + восстанавливает 30% здоровья и столько же ЦП', auto:false },
   ],
 };
 
