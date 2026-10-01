@@ -2793,7 +2793,21 @@ function _buildChunk(cx, cy) {
       const inCoop = !inTower && !inGw && !inFarm && _isCoopTile(tx, ty);
       // Фарм-зоны — это клетки inFarm целиком, поэтому их текстура
       // накрывает и их: особых зон внутри таких этажей нет.
-      if (lava && !inTower && !inGw && !inCoop) { c.fillStyle = lava.wall; c.fillRect(x, y, TILE, TILE); continue; }
+      if (lava && !inTower && !inGw && !inCoop) {
+        c.fillStyle = lava.wall; c.fillRect(x, y, TILE, TILE);
+        // Толща стены темнеет вглубь: у прохода — как есть, через клетку —
+        // темнее, дальше — почти тень. Так стена читается массой с высотой,
+        // а не заливкой того же тона, что и пол.
+        if (lava.relief) {
+          let d = 3;
+          for (let r = 1; r <= 2 && d === 3; r++) {
+            for (let oy = -r; oy <= r && d === 3; oy++) for (let ox = -r; ox <= r; ox++) if (isFloor(tx + ox, ty + oy)) { d = r; break; }
+          }
+          c.fillStyle = `rgba(0,0,0,${[0, 0.07, 0.15, 0.22][d]})`;
+          c.fillRect(x, y, TILE, TILE);
+        }
+        continue;
+      }
       const wallBase = inTower ? _RACE10_WALL : inGw ? _GW_WALL : inFarm ? _FARM_WALL : inCoop ? _COOP_WALL : th.wallColor;
       const mortar = inTower ? mortarWallRace10 : inGw ? mortarWallGw : inFarm ? mortarWallFarm : inCoop ? mortarWallCoop : mortarWall;
       c.fillStyle = _shadeHexColor(wallBase, (_tileHash(tx, ty, 10) - 0.5) * 0.15);
@@ -2900,6 +2914,18 @@ function _buildChunk(cx, cy) {
         : _isGuildWarTile(tx, ty) ? _GW_WALL
         : _isFarmZoneTile(tx, ty) ? _FARM_WALL
         : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
+      if (lava && lava.relief) {
+        // Передняя грань стены: та же фактура, затемнённая книзу, и светлая
+        // кромка по верху — стена встаёт над полом, как в играх с видом сверху.
+        const fx = tx * TILE, fy = ty * TILE + TILE - 24;
+        c.fillStyle = lava.wall; c.fillRect(fx, fy, TILE, 24);
+        const fg = c.createLinearGradient(0, fy, 0, fy + 24);
+        fg.addColorStop(0, 'rgba(0,0,0,0.25)'); fg.addColorStop(1, 'rgba(0,0,0,0.6)');
+        c.fillStyle = fg; c.fillRect(fx, fy, TILE, 24);
+        c.fillStyle = 'rgba(255,255,255,0.16)'; c.fillRect(fx, fy, TILE, 2);
+        c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(fx, fy - 2, TILE, 2);
+        continue;
+      }
       const x = tx * TILE, y = ty * TILE + TILE - 10;
       const grad = c.createLinearGradient(0, y, 0, y + 10);
       grad.addColorStop(0, _shadeHexColor(wallBase, -0.5));

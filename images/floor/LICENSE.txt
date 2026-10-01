@@ -13,3 +13,13 @@ Leveling corridors (512px, ambient occlusion multiplied in, darkened and tinted)
   dun40_wall.jpg   <- Bricks066       (1K Color + AO), brightness 0.24, purple tint
   dun60_floor.jpg  <- Lava001         (1K Color),      brightness 0.5
   dun60_wall.jpg   <- Rock035         (1K Color + AO), brightness 0.62, red tint
+
+Leveling corridors, fantasy set (same processing):
+  fan1_floor.jpg   <- Grass004           (1K Color + AO), brightness 0.98
+  fan1_wall.jpg    <- Moss002            (1K Color + AO), brightness 0.42
+  fan20_floor.jpg  <- ScatteredLeaves009 (1K Color + AO), brightness 0.9
+  fan20_wall.jpg   <- Moss002            (1K Color + AO), brightness 0.48, autumn tint
+  fan40_floor.jpg  <- PavingStones150    (1K Color + AO), brightness 0.8
+  fan40_wall.jpg   <- Rock063            (1K Color + AO), brightness 0.6
+  fan60_floor.jpg  <- Ice003             (1K Color),      brightness 0.92, blue tint
+  fan60_wall.jpg   <- Rock026            (1K Color + AO), brightness 0.62, blue tint

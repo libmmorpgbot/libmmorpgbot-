@@ -278,6 +278,15 @@ const _FLOOR_IMG = {
   dun20:  { src: '/images/floor/dun20_floor.jpg', px: 360, wall: '/images/floor/dun20_wall.jpg', wallPx: 240, wallBase: '#3a2a1c' },
   dun40:  { src: '/images/floor/dun40_floor.jpg', px: 300, wall: '/images/floor/dun40_wall.jpg', wallPx: 280, wallBase: '#2a2028' },
   dun60:  { src: '/images/floor/dun60_floor.jpg', px: 400, wall: '/images/floor/dun60_wall.jpg', wallPx: 320, wallBase: '#2a1612' },
+  // Фентези-набор: светлее и ярче; стены — кроны и скалы, а не кладка.
+  //   fan1  Grass004 / Moss002             — зелёная долина, стены — кусты и кроны
+  //   fan20 ScatteredLeaves009 / Moss002   — осенний лес, кроны в рыжем тоне
+  //   fan40 PavingStones150 / Rock063      — эльфийские руины, замшелые скалы
+  //   fan60 Ice003 / Rock026               — ледяное царство, снежные скалы
+  fan1:   { src: '/images/floor/fan1_floor.jpg',  px: 300, wall: '/images/floor/fan1_wall.jpg',  wallPx: 220, wallBase: '#2c4220' },
+  fan20:  { src: '/images/floor/fan20_floor.jpg', px: 300, wall: '/images/floor/fan20_wall.jpg', wallPx: 220, wallBase: '#5a3214' },
+  fan40:  { src: '/images/floor/fan40_floor.jpg', px: 340, wall: '/images/floor/fan40_wall.jpg', wallPx: 300, wallBase: '#3a4430' },
+  fan60:  { src: '/images/floor/fan60_floor.jpg', px: 360, wall: '/images/floor/fan60_wall.jpg', wallPx: 300, wallBase: '#56677a' },
 };
 const _floorImgCache = {};
 function _floorImgTex(key) {
@@ -301,7 +310,9 @@ function _floorImgTex(key) {
     const floor = pattern(fl, def.px);
     const wall = wl ? pattern(wl, def.wallPx || def.px) : _brickWallPattern(def.brick);
     if (!floor || !wall) return;
-    ent.tex = { floor, wall, wallBase: def.wallBase };
+    // relief — стены коридоров рисуются с высотой: видимая грань над
+    // полом и толща, темнеющая вглубь (_buildChunk, js/game.js).
+    ent.tex = { floor, wall, wallBase: def.wallBase, relief: !!def.wall };
     if (typeof buildTileCanvas === 'function' && typeof dungeon !== 'undefined' && dungeon) buildTileCanvas();
   }).catch(() => {});
   return null;
@@ -315,14 +326,28 @@ const _ARM_PROPS = {
   dun1:  _floorProps(70, [{ key: 'barrel_small' }, { key: 'barrel_slime' }, { key: 'slime_small' }, { key: 'crate_single' }, { key: 'bone_small' }, { key: 'jug' }, { key: 'slime_medium' }]),
   dun20: _floorProps(70, [{ key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'bone_long' }, { key: 'crate_stack' }, { key: 'barrel_large' }, { key: 'spikes_row' }, { key: 'trap_bear' }, { key: 'stump' }]),
   dun40: _floorProps(70, [{ key: 'bone_skull' }, { key: 'pillar' }, { key: 'crystal_purple' }, { key: 'chest_banded' }, { key: 'bone_small' }, { key: 'bone_long' }, { key: 'bone_ribcage' }]),
+  fan1:  _floorProps(60, [{ key: 'bush1' }, { key: 'bush2' }, { key: 'mushroom_spotted' }, { key: 'stump' }, { key: 'branch1' }, { key: 'signpost' }, { key: 'boulder' }]),
+  fan20: _floorProps(60, [{ key: 'stump' }, { key: 'branch1' }, { key: 'branch2' }, { key: 'mushroom_spotted' }, { key: 'bush2' }, { key: 'boulder' }]),
+  fan40: _floorProps(60, [{ key: 'pillar' }, { key: 'vine1' }, { key: 'vine2' }, { key: 'chest_round' }, { key: 'boulder' }, { key: 'crystal_green' }, { key: 'bush1' }]),
+  fan60: _floorProps(60, [{ key: 'crystal_blue' }, { key: 'boulder' }, { key: 'crystal_purple' }, { key: 'chest_banded' }, { key: 'crystal_blue' }]),
   dun60: _floorProps(70, [{ key: 'boulder' }, { key: 'bone_ribcage' }, { key: 'bone_skull' }, { key: 'spikes_row' }, { key: 'trap_spike' }, { key: 'crystal_blue' }, { key: 'crystal_purple' }]),
 };
 // Какой коридор сейчас загружен: по названию ветки в его комнатах
 // (generateArm, server/game/dungeon.js), а не по номеру этажа.
-const _ARM_DECOR = { left: 'dun1', top: 'dun20', bottom: 'dun40', right: 'dun60' };
+// Два набора: мрачные подземелья и фентези. Какой стоит — _armStyleSet.
+const _ARM_DECOR_SETS = {
+  dark:    { left: 'dun1', top: 'dun20', bottom: 'dun40', right: 'dun60' },
+  fantasy: { left: 'fan1', top: 'fan20', bottom: 'fan40', right: 'fan60' },
+};
+let _armStyleSet = 'dark';
+function armSetStyle(key) {
+  if (!_ARM_DECOR_SETS[key]) return;
+  _armStyleSet = key;
+  if (typeof buildTileCanvas === 'function') buildTileCanvas();
+}
 function _armDecorKey() {
   const d = typeof dungeon !== 'undefined' ? dungeon : null;
   if (!d || !d.corridorGates || !d.rooms) return null;
   const r = d.rooms.find(x => x.arm);
-  return (r && _ARM_DECOR[r.arm]) || null;
+  return (r && _ARM_DECOR_SETS[_armStyleSet][r.arm]) || null;
 }
