@@ -2723,7 +2723,9 @@ function _floorTexOfFloor() {
   if (dungeon.armEntries) return _floorImgTex('temple');
   const arm = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
   if (arm) return _floorImgTex(arm);
-  if (dungeon.farmZone || dungeon.farmHigh || dungeon.farmZone2) return _floorImgTex('lava');
+  // Фарм-зоны, оформленные кодом (js/zones.js), лаву-фото не берут.
+  if ((dungeon.farmZone || dungeon.farmHigh || dungeon.farmZone2)
+      && !(typeof _zoneLayout === 'function' && _zoneLayout())) return _floorImgTex('lava');
   return null;
 }
 

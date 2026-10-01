@@ -39,19 +39,34 @@ const _ZONE_ARMS = {
   bottom: ['ossuary', 'ossuary'],     // с 40 ур.
   right:  ['emberhall', 'emberhall'], // с 60 ур.
 };
+// Фарм-зоны — в том же стиле, со своими темами.
+const _ZONE_FARMS = {
+  farmZone:  ['frostvault', 'frostvault'],    // Фарм-зона и её сезонное крыло
+  farmHigh:  ['crystalmine', 'crystalmine'],  // Фарм зона 2 и её сезонное крыло
+  farmZone2: ['goldvault', 'goldvault'],      // Элитная фарм-зона
+};
 
 let _zoneCache = null, _zoneCacheFor = null;
 function _zoneLayout() {
   if (!_zonesEnabled) return null;
   const d = typeof dungeon !== 'undefined' ? dungeon : null;
-  if (!d || !d.corridorGates || !d.rooms) return null;
+  if (!d || !d.rooms) return null;
   if (_zoneCacheFor === d) return _zoneCache;
   _zoneCacheFor = d;
-  const r0 = d.rooms.find(r => r.arm);
-  const stages = r0 && _ZONE_ARMS[r0.arm];
+  // Коридор прокачки — по названию ветки в его комнатах; фарм-зоны — по
+  // своему полю в данных этажа (сезонное крыло несёт то же поле, что и его
+  // зона, поэтому выглядит так же).
+  let stages = null;
+  if (d.corridorGates) {
+    const r0 = d.rooms.find(r => r.arm);
+    stages = r0 && _ZONE_ARMS[r0.arm];
+  } else if (d.farmZone2) stages = _ZONE_FARMS.farmZone2;
+  else if (d.farmHigh) stages = _ZONE_FARMS.farmHigh;
+  else if (d.farmZone) stages = _ZONE_FARMS.farmZone;
   if (!stages) return (_zoneCache = null);
   let x0 = 1e9, x1 = -1e9;
   for (const r of d.rooms) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + r.size); }
+  if (x1 <= x0) { x0 = 0; x1 = d.w; }
   return (_zoneCache = { stages, x0, x1 });
 }
 function zonesToggle(on) {
@@ -577,6 +592,142 @@ const _ZONE_ST = {
         const row = 1 + Math.floor(_zh(tx, ty, 61) * 2), sy = y + row * 13 + 12;
         ctx.glow(g => { g.fillStyle = '#ff5a14'; g.fillRect(x + 4, sy, TILE - 8, 2); });
       } else if (h < 0.26) _zTorch(c, x, y, ctx);
+    },
+  },
+
+  // Ледяные катакомбы (Фарм-зона): промёрзший кирпич, наледь, иней,
+  // сосульки на стенах, холодный голубой свет.
+  frostvault: {
+    wall: '#2a3440', overlay: 'rgba(4,10,24,0.32)',
+    floor(c, x, y, tx, ty) { _zBricks(c, x, y, tx, ty, '#46525e', '#1a2028', 20, 10, 0.2); },
+    wallTile(c, x, y, tx, ty) {
+      _zBricks(c, x, y, tx, ty, '#2a3440', '#11161d', 26, 13, 0.2);
+      if (_zh(tx, ty, 50) < 0.25) { c.fillStyle = 'rgba(200,230,255,0.18)'; c.fillRect(x, y + 13 * Math.floor(_zh(tx, ty, 51) * 3), TILE, 3); }
+    },
+    deco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 1);
+      if (h < 0.1) {
+        // наледь
+        const px = x + 20, py = y + 21;
+        _zBlob(c, px, py, 16, 9, 'rgba(170,215,240,0.45)');
+        _zBlob(c, px - 4, py - 2, 8, 3, 'rgba(240,250,255,0.5)');
+      } else if (h < 0.2) {
+        // иней по кирпичам
+        c.fillStyle = 'rgba(230,245,255,0.35)';
+        for (let k = 0; k < 6; k++) c.fillRect(x + _zh(tx, ty, 10 + k) * 36, y + _zh(tx, ty, 20 + k) * 36, 3, 2);
+      } else if (h < 0.23) {
+        const cx = x + 20, cy = y + 20;
+        ctx.glow(g => {
+          _zRadial(g, cx, cy, 22, 'rgba(120,200,255,0.3)');
+          g.fillStyle = '#bfe8ff';
+          g.beginPath(); g.moveTo(cx, cy - 9); g.lineTo(cx + 5, cy); g.lineTo(cx, cy + 9); g.lineTo(cx - 5, cy); g.closePath(); g.fill();
+        });
+      } else if (h < 0.27) {
+        c.fillStyle = '#c8d4dc'; c.save(); c.translate(x + 20, y + 20); c.rotate(_zh(tx, ty, 2) * 3);
+        c.fillRect(-8, -1.5, 16, 3); _zBlob(c, -8, 0, 2.6, 2.6, '#c8d4dc'); _zBlob(c, 8, 0, 2.6, 2.6, '#c8d4dc'); c.restore();
+      }
+    },
+    wallDeco(c, x, y, tx, ty, ctx) {
+      // сосульки по нижнему краю стены
+      if (_zh(tx, ty, 60) < 0.45) {
+        c.fillStyle = 'rgba(200,235,255,0.75)';
+        for (let k = 0; k < 4; k++) {
+          const ix = x + 4 + k * 9 + _zh(tx, ty, 61 + k) * 4, il = 6 + _zh(tx, ty, 65 + k) * 10;
+          c.beginPath(); c.moveTo(ix - 2.5, y + 26); c.lineTo(ix + 2.5, y + 26); c.lineTo(ix, y + 26 + il); c.closePath(); c.fill();
+        }
+      } else if (_zh(tx, ty, 60) < 0.5) _zTorch(c, x, y, ctx);
+    },
+  },
+
+  // Кристальные шахты (Фарм зона 2): тёмный сине-зелёный кирпич, кристаллы
+  // разных цветов, рельсы вагонеток, фонари на стенах.
+  crystalmine: {
+    wall: '#1e2a2c', overlay: 'rgba(2,12,14,0.34)',
+    floor(c, x, y, tx, ty) { _zBricks(c, x, y, tx, ty, '#34403f', '#121817', 20, 10, 0.22); },
+    wallTile(c, x, y, tx, ty) { _zBricks(c, x, y, tx, ty, '#1e2a2c', '#0b1011', 26, 13, 0.22); },
+    deco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 1);
+      if (h < 0.09) {
+        const cx = x + 12 + _zh(tx, ty, 2) * 16, cy = y + 26;
+        const cols = [['#5ae0d0', 'rgba(90,224,208,0.35)'], ['#b07aff', 'rgba(176,122,255,0.35)'], ['#6ab8ff', 'rgba(106,184,255,0.35)']];
+        const [col, glow] = cols[Math.floor(_zh(tx, ty, 3) * 3)];
+        _zBlob(c, cx, cy + 2, 10, 3, 'rgba(0,0,0,0.45)');
+        ctx.glow(g => {
+          _zRadial(g, cx, cy - 8, 26, glow);
+          g.fillStyle = col;
+          for (let k = -1; k <= 1; k++) {
+            const hh = 14 - Math.abs(k) * 4;
+            g.beginPath(); g.moveTo(cx + k * 5 - 3, cy); g.lineTo(cx + k * 6, cy - hh); g.lineTo(cx + k * 5 + 3, cy); g.closePath(); g.fill();
+          }
+          g.fillStyle = 'rgba(255,255,255,0.6)'; g.fillRect(cx - 1, cy - 12, 1.5, 7);
+        });
+      } else if (h < 0.15) {
+        // кусок рельсов
+        c.fillStyle = '#3a2a1c'; for (let k = 0; k < 4; k++) c.fillRect(x + 4 + k * 10, y + 12, 5, 18);
+        c.fillStyle = '#6a6a70'; c.fillRect(x, y + 15, TILE, 3); c.fillRect(x, y + 25, TILE, 3);
+      } else if (h < 0.21) {
+        c.fillStyle = '#4a4440';
+        for (let k = 0; k < 4; k++) _zBlob(c, x + 10 + _zh(tx, ty, 4 + k) * 20, y + 12 + _zh(tx, ty, 8 + k) * 18, 4 + _zh(tx, ty, 12 + k) * 3, 3, '#4a4440');
+      }
+    },
+    wallDeco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 60);
+      if (h < 0.08) _zTorch(c, x, y, ctx);
+      else if (h < 0.22) {
+        const cx = x + 12 + _zh(tx, ty, 61) * 16, cy = y + 34;
+        ctx.glow(g => {
+          _zRadial(g, cx, cy - 6, 18, 'rgba(90,224,208,0.3)');
+          g.fillStyle = '#5ae0d0';
+          g.beginPath(); g.moveTo(cx - 4, cy); g.lineTo(cx, cy - 14); g.lineTo(cx + 4, cy); g.closePath(); g.fill();
+        });
+      }
+    },
+  },
+
+  // Сокровищница (Элитная фарм-зона): чёрно-бурый кирпич с золотыми
+  // прожилками, россыпи монет, золотые урны, золотые знамёна на стенах.
+  goldvault: {
+    wall: '#261e14', overlay: 'rgba(14,8,0,0.30)',
+    floor(c, x, y, tx, ty) {
+      _zBricks(c, x, y, tx, ty, '#3a3024', '#14100a', 20, 10, 0.22);
+      if (_zh(tx, ty, 9) < 0.15) { c.fillStyle = 'rgba(220,180,80,0.35)'; c.fillRect(x, y + 10 * Math.floor(_zh(tx, ty, 8) * 4) + 9, TILE, 1.5); }
+    },
+    wallTile(c, x, y, tx, ty) { _zBricks(c, x, y, tx, ty, '#261e14', '#0d0a06', 26, 13, 0.22); },
+    deco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 1);
+      if (h < 0.1) {
+        const n = 3 + Math.floor(_zh(tx, ty, 2) * 5);
+        const pts = [];
+        for (let k = 0; k < n; k++) pts.push([x + 8 + _zh(tx, ty, 10 + k) * 24, y + 10 + _zh(tx, ty, 20 + k) * 22]);
+        ctx.glow(g => {
+          _zRadial(g, x + 20, y + 22, 18, 'rgba(255,200,80,0.18)');
+          for (const [px, py] of pts) { _zBlob(g, px, py, 3.2, 2.4, '#e8b840'); _zBlob(g, px - 0.8, py - 0.6, 1.4, 1, '#fff0b0'); }
+        });
+      } else if (h < 0.12) {
+        // золотая урна
+        const ux = x + 20, uy = y + 30;
+        _zBlob(c, ux + 2, uy + 2, 9, 3, 'rgba(0,0,0,0.45)');
+        ctx.glow(g => {
+          const ug = g.createLinearGradient(ux - 8, 0, ux + 8, 0);
+          ug.addColorStop(0, '#8a6420'); ug.addColorStop(0.5, '#f0cc60'); ug.addColorStop(1, '#8a6420');
+          g.fillStyle = ug;
+          g.beginPath(); g.ellipse(ux, uy - 9, 8, 9, 0, 0, Math.PI * 2); g.fill();
+          g.fillRect(ux - 4, uy - 22, 8, 6); g.fillRect(ux - 6, uy - 1, 12, 3);
+        });
+      } else if (h < 0.17) {
+        c.fillStyle = '#5a3a20'; c.fillRect(x + 10, y + 14, 20, 14);
+        c.fillStyle = '#c9a452'; c.fillRect(x + 10, y + 18, 20, 2); c.fillRect(x + 18, y + 20, 4, 5);
+      }
+    },
+    wallDeco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 60);
+      if (h < 0.1) {
+        const bx = x + 20, by = y + 12;
+        c.fillStyle = '#2a2018'; c.fillRect(bx - 10, by - 2, 20, 3);
+        c.fillStyle = '#6a1a20';
+        c.beginPath(); c.moveTo(bx - 8, by); c.lineTo(bx + 8, by); c.lineTo(bx + 8, by + 24); c.lineTo(bx, by + 19); c.lineTo(bx - 8, by + 24); c.closePath(); c.fill();
+        ctx.glow(g => { g.fillStyle = '#e8b840'; g.beginPath(); g.moveTo(bx, by + 5); g.lineTo(bx + 4, by + 10); g.lineTo(bx, by + 15); g.lineTo(bx - 4, by + 10); g.closePath(); g.fill(); });
+      } else if (h < 0.17) _zTorch(c, x, y, ctx);
     },
   },
 };
