@@ -2901,6 +2901,9 @@ function _buildChunk(cx, cy) {
   const city = typeof _cityLayout === 'function' ? _cityLayout() : null;
   const cX0 = x0 - TILE, cY0 = y0 - TILE, cX1 = x0 + _CHUNK_PX + TILE, cY1 = y0 + _CHUNK_PX + TILE;
   if (city) cityDrawGround(c, city, cX0, cY0, cX1, cY1);
+  // Коридоры прокачки — своя тема на каждый (js/zones.js).
+  const zone = !city && typeof _zoneLayout === 'function' ? _zoneLayout() : null;
+  if (zone) zonesDrawGround(c, zone, tx0, ty0, tx1, ty1);
 
   // 3. Wall "cliff face" strip above floor (top-down depth cue) — beveled
   // gradient (dark at top fading to base wallColor) with a soft highlight
@@ -2909,12 +2912,13 @@ function _buildChunk(cx, cy) {
     for (let tx = tx0; tx <= tx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL) continue;
       if (!isFloor(tx, ty + 1)) continue;
-      const wallBase = lava ? (lava.wallBase || _HUB_LAVA_WALL)
+      const wallBase = zone ? zoneWallColor(zone, tx, ty)
+        : lava ? (lava.wallBase || _HUB_LAVA_WALL)
         : _isRace10Tile(tx, ty) ? _RACE10_WALL
         : _isGuildWarTile(tx, ty) ? _GW_WALL
         : _isFarmZoneTile(tx, ty) ? _FARM_WALL
         : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
-      if (lava && lava.relief) {
+      if (lava && lava.relief && !zone) {
         // Передняя грань стены: та же фактура, затемнённая книзу, и светлая
         // кромка по верху — стена встаёт над полом, как в играх с видом сверху.
         const fx = tx * TILE, fy = ty * TILE + TILE - 24;
@@ -2987,7 +2991,7 @@ function _buildChunk(cx, cy) {
   const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
   const armKey = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
   const floorProp = (armKey && _ARM_PROPS[armKey]) || th.drawFloorProp;
-  if (floorProp && !city) {
+  if (floorProp && !city && !zone) {
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
         if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -3007,6 +3011,7 @@ function _buildChunk(cx, cy) {
   // (у них свои огоньки, они попадают в тот же список).
   const torchList = [];
   if (city) cityDrawStructures(c, city, cX0, cY0, cX1, cY1, { x0, y0, x1: x0 + _CHUNK_PX, y1: y0 + _CHUNK_PX }, torchList);
+  else if (zone) zonesDrawDecor(c, zone, tx0, ty0, tx1, ty1, ptx0, pty0, ptx1, pty1, torchList);
   else for (let ty = pty0; ty <= pty1; ty++) {
     for (let tx = ptx0; tx <= ptx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL || !isFloor(tx, ty + 1)) continue;

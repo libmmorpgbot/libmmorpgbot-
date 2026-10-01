@@ -346,6 +346,8 @@ function armSetStyle(key) {
   if (typeof buildTileCanvas === 'function') buildTileCanvas();
 }
 function _armDecorKey() {
+  // Коридоры, оформленные кодом (js/zones.js), фото-текстуры не берут.
+  if (typeof _zonesEnabled !== 'undefined' && _zonesEnabled) return null;
   const d = typeof dungeon !== 'undefined' ? dungeon : null;
   if (!d || !d.corridorGates || !d.rooms) return null;
   const r = d.rooms.find(x => x.arm);
