@@ -3173,6 +3173,9 @@ const PVP_CP_MULT = 10;
 // Каждый обычный удар — +10% замедления цели (монстра или игрока в PvP), до
 // потолка; каждый удар заново ставит 10 секунд. Монстров замедляет сервер
 // (Room._tick), игроку замедление присылается ('pvpPlayerCC' type 'slowPct').
+// Рыцарь Смерти: каждый обычный удар с шансом 20% — микростан цели на 0.3 с.
+const DK_MICROSTUN_CHANCE = 0.20;
+const DK_MICROSTUN_SEC = 0.3;
 const ATK_SLOW_CLASSES = ['lev', 'deathknight'];
 const ATK_SLOW_STEP = 0.10;
 const ATK_SLOW_MAX = 0.50;
@@ -3972,6 +3975,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_TICKET_SEASON, SEASON_TICKET_END_AT, seasonTicketPeriodOn,
   SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, seasonDayKey, seasonWeekKey,
   ATK_SLOW_CLASSES, ATK_SLOW_STEP, ATK_SLOW_MAX, ATK_SLOW_SEC, atkSlowStack,
+  DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

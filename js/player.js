@@ -1312,7 +1312,15 @@ function _dispatchSkillEffect(cls, sk) {
         else { const fv = _facingVec(); _rdx = fv.dx; _rdy = fv.dy; }
       }
       const len = Math.hypot(_rdx, _rdy) || 1;
-      _dashTo(player.x + (_rdx / len) * 280, player.y + (_rdy / len) * 280);
+      // К цели — ровно до неё, а не на фиксированные 280 px: ближняя цель
+      // перепрыгивалась насквозь. Останавливается на дистанции удара (размер
+      // цели + зазор); без цели — прежний прыжок на 280 px.
+      let _rDist = 280;
+      if (_chargeTarget || _chargePvpTarget) {
+        const _gap = (_chargeTarget ? (_chargeTarget.size || 16) : 16) + 14;
+        _rDist = Math.max(0, Math.min(280, len - _gap));
+      }
+      if (_rDist > 0) _dashTo(player.x + (_rdx / len) * _rDist, player.y + (_rdy / len) * _rDist);
       if (_chargePvpTarget) {
         netPvpSkillAttack(_chargePvpTarget.id, _skillMult('R'), 'R');
         if (_advR5) { _chargePvpTarget.op.slowTimer = 10; netPvpSkillCC(_chargePvpTarget.id, 'slow', 10); }

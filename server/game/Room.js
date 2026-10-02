@@ -10,7 +10,8 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
-        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf } = require('../../shared/definitions');
+        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
+        DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -3374,6 +3375,10 @@ class Room {
       target._atkSlowUntil = _t + ATK_SLOW_SEC * 1000;
       this._emitRoom('pvpPlayerCC', { targetId: targetSocketId, type: 'slowPct', pct: target._atkSlowPct, duration: ATK_SLOW_SEC });
     }
+    // Рыцарь Смерти: микростан и в PvP — стан ставит себе клиент цели.
+    if (attacker.type === 'deathknight' && Math.random() < DK_MICROSTUN_CHANCE) {
+      this._emitRoom('pvpPlayerCC', { targetId: targetSocketId, type: 'stun', duration: DK_MICROSTUN_SEC });
+    }
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp, cp: Math.round(target.cp), maxCp: this._maxCpOf(target) };
   }
 
@@ -5180,6 +5185,10 @@ class Room {
       const _t = Date.now();
       enemy._atkSlowPct = atkSlowStack(enemy._atkSlowPct, enemy._atkSlowUntil, _t);
       enemy._atkSlowUntil = _t + ATK_SLOW_SEC * 1000;
+    }
+    // Рыцарь Смерти: микростан 0.3 с с шансом 20% на каждый обычный удар.
+    if (attacker.type === 'deathknight' && Math.random() < DK_MICROSTUN_CHANCE) {
+      enemy.stunTimer = Math.max(enemy.stunTimer || 0, DK_MICROSTUN_SEC);
     }
     // Splash always lands at exactly 50% of what the same hit would have
     // dealt directly — flat, not reduced further by anything above.

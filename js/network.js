@@ -1888,8 +1888,9 @@ function netConnect(onReady) {
         dmgNum(player.x, player.y - 40, `-${Math.round(player.atkSlowPct * 100)}%`, '#ffcf6b');
       } else if (type === 'stun') {
         player.stunTimer = Math.max(player.stunTimer || 0, duration);
-        dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('stunToast') : 'СТАН!', '#ff8');
-        spawnBurst(player.x, player.y, '#ff8', 6);
+        // Микростан Рыцаря Смерти (0.3 с) — без крупной надписи на каждый раз.
+        if (duration >= 1) dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('stunToast') : 'СТАН!', '#ff8');
+        spawnBurst(player.x, player.y, '#ff8', duration >= 1 ? 6 : 3);
       } else if (type === 'slow') {
         player.slowTimer = Math.max(player.slowTimer || 0, duration);
         dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('slowToast') : 'ЗАМЕДЛЕНИЕ!', '#ffcf6b');
