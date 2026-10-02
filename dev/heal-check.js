@@ -528,7 +528,7 @@ console.log('\n  ── лечение навыками восстанавлив
   const p = { socketId: 's', type: 'warlock', hp: 500, maxHp: 1000, hpRegen: 0, cp: 100 };
   room.players.set('s', p);
   const max = room._maxCpOf(p);
-  ok(room.restoreCp('s', 50) === 50 && p.cp === 150, 'разовое лечение: +CP тем же числом', p.cp);
+  ok(room.restoreCp('s', 50) === 500 && p.cp === 600, 'разовое лечение: +CP в 10 раз больше HP', p.cp);
   ok(p._cpSyncAt === 0, 'разовое лечение синхронизирует полосу сразу', p._cpSyncAt);
   room.restoreCp('s', 1e9);
   ok(p.cp === max, 'выше максимума CP не уходит', p.cp);
@@ -543,19 +543,19 @@ console.log('\n  ── лечение навыками восстанавлив
   setWin.call(room, 's', 'butterflies', 2000);
   let now = p._butterAt;
   for (let i = 0; i < 80; i++) { now += 25; regen.call(room, p, 0.025, now); }
-  ok(p.hp === 1000 && p.cp === 200, 'Бабочки: два тика по 50 CP при полном HP', p.cp);
+  ok(p.hp === 1000 && p.cp === 1100, 'Бабочки: два тика по 500 CP (×10) при полном HP', p.cp);
 
   // Вампиризм.
   p.cp = 100; p._vampUntil = Date.now() + 5000; p._vampPct = D.VAMPIRISM_PCT;
   vamp.call(room, p, 200);
-  ok(p.cp === 120, 'вампиризм: +CP долей урона', p.cp);
+  ok(p.cp === 300, 'вампиризм: +CP ×10 от возврата HP', p.cp);
 
   // «Регенерация» рунного бойца — только сама ставка навыка, не пассивная.
   const q = { socketId: 'r', type: 'runefighter', hp: 1000, maxHp: 1000, hpRegen: 5, cp: 100 };
   setWin.call(room, 'r', 'regen', 0, 0);
   q._regenHotUntil = Date.now() + 10000; q._regenHotRate = 10;
   regen.call(room, q, 1, Date.now());
-  ok(Math.round(q.cp) === 110, 'Регенерация: +ставка CP в секунду', q.cp);
+  ok(Math.round(q.cp) === 200, 'Регенерация: ставка ×10 CP в секунду', q.cp);
   q._regenHotUntil = 0; q.cp = 100;
   regen.call(room, q, 1, Date.now());
   ok(q.cp === 100, 'пассивный реген CP не лечит', q.cp);

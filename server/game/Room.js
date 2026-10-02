@@ -3303,7 +3303,9 @@ class Room {
     const max = this._maxCpOf(p);
     if (!Number.isFinite(p.cp) || p.cp >= max) return 0;
     const before = p.cp;
-    p.cp = Math.min(max, p.cp + amount);
+    // ЦП восстанавливается в PVP_CP_MULT (10) раз больше, чем здоровье: запас
+    // ЦП во столько же раз больше запаса здоровья.
+    p.cp = Math.min(max, p.cp + amount * PVP_CP_MULT);
     if (urgent) p._cpSyncAt = 0;
     return p.cp - before;
   }
