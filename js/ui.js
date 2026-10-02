@@ -954,11 +954,8 @@ function _ccRenderPicker() {
   const body = document.getElementById('cc-body');
   if (!body || !player) return;
   const cur = player.type;
-  // Рунный боец и Ассасин не предлагаются сменой — их можно взять только
-  // новым персонажем (или опробовать), сервер откажет и без этого фильтра
-  // (changeClass, server/handlers2/economy.js), но список не должен обещать
-  // то, что оплаченная смена потом отменит отказом.
-  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur && c !== 'runefighter' && c !== 'assassin');
+  // Все классы, кроме текущего — Рунный боец и Ассасин тоже.
+  const classes = Object.keys(CHAR_DEF).filter(c => c !== cur);
   body.innerHTML = `
     <div style="font-size:16px;font-weight:800;color:#e5aa52;margin-bottom:14px">Смена класса</div>
     ${classes.map(c => _ccClassCard(c)).join('')}

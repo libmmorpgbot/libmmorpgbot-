@@ -187,11 +187,9 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     return rows[0].n;
   };
 
-  // Рунный боец и Ассасин — новые классы. Их разыгрывают только на новом
-  // персонаже (или в пробной версии), а не сменой уже прокачанного — так
-  // решил владелец. Отказ ДО сухого прогона: он ничего не стоит, и это самая
-  // дешёвая проверка из всех — типа не существующего вовсе не бывает здесь.
-  const CLASS_CHANGE_EXCLUDED = ['runefighter', 'assassin'];
+  // Сменой можно взять любой класс, Рунного бойца и Ассасина тоже (раньше
+  // они были только для нового персонажа — владелец открыл).
+  const CLASS_CHANGE_EXCLUDED = [];
 
   safeOn('changeClass', ({ type, pay } = {}) =>
     s.act('changeClass', 'classChangeError', async (t, pid) => {
