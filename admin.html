@@ -465,9 +465,10 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
             <label><input type="radio" name="bc-target" value="chat"> В игровой чат</label>
           </div>
           <div style="font-size:12px;color:var(--text2);line-height:1.5">
-            В бот доходит только тем, кто разрешил ему писать при входе в игру.
-            Отправка идёт в фоне (около 25 сообщений в секунду), итог придёт
-            операторам в Telegram.
+            В бот — всем игрокам; доходит тем, кто хоть раз нажимал START в боте
+            (остальных Telegram не пропустит, они будут в итоге строкой «не открыт чат»).
+            До 4000 символов, любые символы. Отправка идёт в фоне (около 25 сообщений
+            в секунду), итог придёт операторам в Telegram.
           </div>
           <textarea id="bc-text" placeholder="Текст сообщения..."></textarea>
           <button class="btn btn-primary" onclick="doBroadcast()">Отправить</button>

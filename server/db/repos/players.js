@@ -229,6 +229,16 @@ async function canMessage(db, playerId) {
 // выбор, что и в canMessage выше, и в ту же безопасную сторону: рассылка,
 // которая не ушла никому, — видимая осечка (панель скажет «0 получателей»), а
 // рассылка всем, кто ничего не разрешал, — это тысячи 403 и жалоба на спам.
+// Все игроки, кому бот может попробовать написать: не забаненные, с
+// настоящим (числовым) telegram id — тестовые аккаунты dev/ отсеиваются.
+async function broadcastTargetsAll(db) {
+  const { rows } = await query(db, `
+    SELECT telegram_id FROM players
+     WHERE NOT banned AND telegram_id ~ '^[0-9]+$'
+     ORDER BY id`);
+  return rows.map(r => String(r.telegram_id));
+}
+
 async function broadcastTargets(db) {
   if (!await _hasWriteAccessCols(db)) return [];
   const { rows } = await query(db, `
@@ -1218,7 +1228,7 @@ async function idByTelegram(db, telegramId) {
 module.exports = {
   realPlayerSql,
   idByTelegram,
-  byTelegramId, ensure, setUsername, registerReferral, changeClass,
+  byTelegramId, ensure, setUsername, registerReferral, changeClass, broadcastTargetsAll,
   canMessage, setWriteAccess, broadcastTargets,
   tonAddressOf, setTonAddress, clearTonAddress,
   progressOf, prefsOf, skillsOf,

@@ -79,7 +79,7 @@ async function _api(method, body) {
 // unsolicited: a reply to the /start the player just typed is Telegram's own
 // definition of solicited, needs no grant, and gating it would answer the
 // first message anybody ever sends the bot with silence.
-async function send(chatId, html, { buttons = null, disablePreview = true } = {}) {
+async function send(chatId, html, { buttons = null, disablePreview = true, quiet = false } = {}) {
   if (!chatId) return { ok: false, skipped: true, description: 'нет чата' };
 
   if (!isLive()) {
@@ -122,8 +122,12 @@ async function send(chatId, html, { buttons = null, disablePreview = true } = {}
   console.error(`[tg-game] ${chatId}: НЕ ОТПРАВЛЕНО (${desc})`);
   // A bot that cannot write to anyone is a bot whose token was revoked or
   // whose messages are malformed, and both look like silence from outside.
-  ops.alert('tg.game.send', 'Игровой бот не смог отправить сообщение', desc,
-    { чат: String(chatId) }).catch(() => {});
+  // quiet — массовая рассылка: она сама присылает итог с первой ошибкой, и
+  // сообщение операторам на КАЖДОГО получателя завалило бы канал.
+  if (!quiet) {
+    ops.alert('tg.game.send', 'Игровой бот не смог отправить сообщение', desc,
+      { чат: String(chatId) }).catch(() => {});
+  }
   return { ok: false, description: desc };
 }
 

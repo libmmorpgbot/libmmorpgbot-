@@ -355,6 +355,14 @@ async function handleUpdate(upd, io) {
     }
   }
 
+  // START в боте — это и есть разрешение боту писать игроку (так это
+  // понимает Telegram). Отмечаем его, если игрок уже есть: иначе он не
+  // попадал в рассылки, пока не нажмёт «Разрешить» во всплывающем окне игры.
+  try {
+    const known = await players.byTelegramId(null, fromId);
+    if (known) await players.setWriteAccess(null, known.id, true);
+  } catch (err) { console.error('[tg-webhook] разрешение писать:', err.message); }
+
   const w = welcome(firstName, referrerName, playLink);
   await tgGame.send(fromId, w.text, { buttons: w.buttons });
 }

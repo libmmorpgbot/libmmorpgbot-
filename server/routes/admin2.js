@@ -29,6 +29,7 @@ const progression = require('../db/repos/progression');
 const market = require('../db/repos/market');
 const plog = require('../db/repos/playerlog');
 const tgGame = require('../tg-game');
+const { _tgEsc } = require('../security');
 const { ITEM_DEF, CRAFT_MATS, BOX_DEF, seasonActive, SEASON_TICKET_SEASON } = require('../../shared/definitions');
 
 const CATALOG = [...ITEM_DEF, ...CRAFT_MATS, ...BOX_DEF];
@@ -908,10 +909,15 @@ module.exports = function registerAdminRoutes(app, deps) {
 
   app.post('/admin/broadcast', guard, csrf, async (req, res) => {
     try {
-      const text = String((req.body || {}).text || '').trim().slice(0, 200);
-      if (!text) return deny(res, req, 400, 'Пустое сообщение');
       const target = String((req.body || {}).target || 'all');
       if (!BROADCAST_TARGETS.has(target)) return deny(res, req, 400, 'Неизвестный адресат');
+      // В игровой чат — строка чата (200), в бот — сообщение Telegram (до 4096,
+      // берём 4000). Раньше обрезалось до 200 молча и для бота.
+      const text = String((req.body || {}).text || '').trim().slice(0, target === 'chat' ? 200 : 4000);
+      if (!text) return deny(res, req, 400, 'Пустое сообщение');
+      if (target !== 'chat' && !tgGame.isLive()) {
+        return deny(res, req, 503, 'Отправка через бота выключена на сервере (OPS_LIVE / TG_BOT_TOKEN)');
+      }
 
       await adminAuth.audit(who(req), 'broadcast', { meta: { by: who(req), text, target } });
 
@@ -923,7 +929,10 @@ module.exports = function registerAdminRoutes(app, deps) {
         return res.json({ ok: true, via: 'chat', sent });
       }
 
-      let tids = await players.broadcastTargets(null);
+      // Всем игрокам, а не только давшим разрешение во всплывающем окне игры:
+      // боту можно писать каждому, кто нажимал START, а кто не нажимал —
+      // Telegram откажет, и это попадёт в итог строкой «не открыт чат».
+      let tids = await players.broadcastTargetsAll(null);
       if (target === 'online') {
         const on = onlineTids();
         tids = tids.filter(t => on.has(t));
@@ -955,10 +964,12 @@ module.exports = function registerAdminRoutes(app, deps) {
       (async () => {
         const r = { sent: 0, blocked: 0, failed: 0 };
         for (const tid of tids) {
-          const out = await tgGame.send(tid, text);
+          // Текст админа — обычный текст, а бот шлёт HTML: «<», «>», «&» без
+          // экранирования Telegram отклонял у ВСЕХ получателей.
+          const out = await tgGame.send(tid, _tgEsc(text), { quiet: true });
           if (out && out.ok) r.sent++;
           else if (out && out.blocked) r.blocked++;
-          else r.failed++;
+          else { r.failed++; if (!r.err && out) r.err = String(out.description || '').slice(0, 200); }
           await new Promise(done => setTimeout(done, BC_GAP_MS));
         }
         ops.alert('admin.broadcast', 'Рассылка через бота завершена', text, {
@@ -967,6 +978,7 @@ module.exports = function registerAdminRoutes(app, deps) {
           // Не ошибка: человек не нажимал START или заблокировал бота.
           'не открыт чат': r.blocked,
           ошибок: r.failed,
+          ...(r.err ? { 'первая ошибка': r.err } : {}),
         }).catch(() => {});
       })().catch(err => {
         ops.alertError('admin.broadcast', 'Рассылка через бота оборвалась', err,
