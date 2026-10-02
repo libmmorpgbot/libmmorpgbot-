@@ -606,8 +606,16 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // the same `seasonPoints2` field/`player_season` table as Season 2 — only
 // the season NUMBER changes (CURRENT_SEASON, server/db/repos/progression.js)
 // — so last season's already-paid totals never carry over as a head start.
-const SEASON_END_AT = Date.UTC(2026, 9, 1, 15, 0, 0); // 1 Oct 2026, 18:00 MSK (UTC+3)
-function seasonActive(now = Date.now()) { return now < SEASON_END_AT; }
+// Сезон 4: гонка очков идёт, дата конца не назначена (0). Когда назначат —
+// поставить её сюда: seasonActive() погаснет в этот момент, и
+// distributeSeasonPrizes сработает сам. 3-й сезон кончился
+// Date.UTC(2026, 9, 1, 15) — 1 Oct 2026, 18:00 MSK.
+const SEASON_END_AT = 0;
+function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_END_AT; }
+// Письмо-подарок (claimMailBonus) было акцией 3-го сезона и закрыто вместе с
+// ним — к сезону 4 не относится.
+const MAIL_BONUS_END_AT = Date.UTC(2026, 9, 1, 15, 0, 0);
+function mailBonusOn(now = Date.now()) { return now < MAIL_BONUS_END_AT; }
 
 // ── Заточка (enhance) ────────────────────────────────────────────────────
 // Flat now, on purpose: any item, any rarity, any stone (normal or safe),
@@ -3849,7 +3857,7 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   QUEST_DEF,
-  SEASON_END_AT, seasonActive,
+  SEASON_END_AT, seasonActive, MAIL_BONUS_END_AT, mailBonusOn,
   SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BOOK_BURN_POINTS, DISASSEMBLE_LIBERTY,

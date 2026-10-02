@@ -4495,7 +4495,7 @@ function drawClassChangeButton() {
 // после конца 3-го сезона кнопка обязана исчезнуть сама, а не ждать, пока
 // игрок нажмёт и получит отказ.
 function _mailBonusAvailable() {
-  const on = typeof seasonActive !== 'function' || seasonActive();
+  const on = typeof mailBonusOn !== 'function' || mailBonusOn();
   return !!player && !player.mailBonus && on;
 }
 
@@ -6176,8 +6176,10 @@ function openSeasonPanel() {
   const panel = document.getElementById('season-panel');
   if (!panel) return;
   panel.style.display = 'flex';
-  // Сезон 4 — одна вкладка: карточка сезона и победители прошлого.
-  _seasonTab = 'season';
+  // Сезон 4: «Сезон» (карточка и победители прошлого) и «Задания».
+  if (_seasonTab !== 'season' && _seasonTab !== 'tasks') _seasonTab = 'season';
+  document.querySelectorAll('#season-panel .rating-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('stab-' + _seasonTab)?.classList.add('active');
   if (typeof netSeasonSync === 'function') netSeasonSync();
   if (typeof netSeasonWinners === 'function') netSeasonWinners();
   _renderSeasonBody();
@@ -6379,6 +6381,8 @@ function _seasonTasksHTML() {
 
   return `
     <div style="padding:16px">
+      <div class="db-countdown">${st.points || 0}</div>
+      <div class="db-phase" style="margin-bottom:12px">${t('seasonPointsLbl')}</div>
       <div class="db-rules">
         <ul>
           <li>${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 50 })}</li>

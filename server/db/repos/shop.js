@@ -31,7 +31,7 @@ const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
-  seasonActive, seasonShopPoints, rollRuneStats,
+  seasonActive, mailBonusOn, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
   _VIP_BP, pkgPrice, _GRAM_SHOP_PKGS, _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _WING_ID, _STONE_DEFS,
@@ -327,7 +327,7 @@ async function claimStarterBonus(db, playerId) {
 // условным UPDATE до выдачи, потому что задвоенная награда хуже потерянной, —
 // а потерянной она быть не может, транзакция откатит флаг вместе с выдачей.
 async function claimMailBonus(db, playerId) {
-  if (!seasonActive()) err('season_over', 'Сезон завершён');
+  if (!mailBonusOn()) err('season_over', 'Сезон завершён');
   await items.lockPlayer(db, playerId);
   const vip = await progression.vipOf(db, playerId);
   const hasTicket = !!vip.seasonTicket;
