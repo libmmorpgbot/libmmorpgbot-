@@ -9,7 +9,9 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
-        petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP } = require('../../shared/definitions');
+        petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
+        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack } = require('../../shared/definitions');
+const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
 // The fastest a player can legitimately move: the quickest class, with the
@@ -2120,7 +2122,7 @@ class Room {
           e.hp = e.maxHp;
           e.x = e.spawnX; e.y = e.spawnY;
           e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
-          e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0;
+          e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0; e._atkSlowUntil = 0;
           e._shp = -1;
           delete e.respawnTimer;
           if (e.isBoss) this.io.to(`floor_${this.floor}`).emit('bossStatus', { arm: e.arm, alive: true });
@@ -2248,7 +2250,10 @@ class Room {
         const atkReach = e.atkRange || (e.size + 20);
         const chaseStopD = e.atkRange ? Math.max(e.atkRange - 20, e.size + 14) : e.size + 14;
         if (!e.stationary && closestD > chaseStopD) {
-          const spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
+          // Замедление навыка (×0.35) и складное от ударов Танка/РС — берётся
+          // сильнейшее.
+          let spdMult = (e.slowTimer || 0) > 0 ? 0.35 : 1;
+          if ((e._atkSlowUntil || 0) > now) spdMult = Math.min(spdMult, 1 - (e._atkSlowPct || 0));
           const nx = (closest.x - e.x) / closestD;
           const ny = (closest.y - e.y) / closestD;
           const evx = nx * e.spd * spdMult * dt, evy = ny * e.spd * spdMult * dt;
@@ -3361,6 +3366,14 @@ class Room {
     // become unkillable in PvP while still dealing full damage to others.
     this._pvpHurt(target, dmg);
     this._vampGain(attacker, dmg);
+    // Обычный удар Танка и Рыцаря Смерти замедляет и игрока: +10% на 10 с.
+    // Двигается игрок сам, поэтому сервер присылает ему итоговый процент.
+    if (_ATK_SLOW_CLS.has(attacker.type)) {
+      const _t = Date.now();
+      target._atkSlowPct = atkSlowStack(target._atkSlowPct, target._atkSlowUntil, _t);
+      target._atkSlowUntil = _t + ATK_SLOW_SEC * 1000;
+      this._emitRoom('pvpPlayerCC', { targetId: targetSocketId, type: 'slowPct', pct: target._atkSlowPct, duration: ATK_SLOW_SEC });
+    }
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp, cp: Math.round(target.cp), maxCp: this._maxCpOf(target) };
   }
 
@@ -4800,7 +4813,7 @@ class Room {
       e.hp = e.maxHp;
       e.x = e.spawnX; e.y = e.spawnY;
       e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
-      e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0;
+      e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0; e._atkSlowUntil = 0;
       e._shp = -1;
       delete e.respawnTimer;
     });
@@ -5148,6 +5161,12 @@ class Room {
     const _effDef = (enemy.defDownTimer || 0) > 0 ? Math.round(enemy.def * 0.8) : enemy.def;
     const base = Math.max(1, this._atkOf(attacker) - _effDef + Math.floor(Math.random() * 7) - 3);
     const { dmg: _rawDmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
+    // Обычный удар Танка и Рыцаря Смерти: +10% замедления на 10 с (до 50%).
+    if (_ATK_SLOW_CLS.has(attacker.type)) {
+      const _t = Date.now();
+      enemy._atkSlowPct = atkSlowStack(enemy._atkSlowPct, enemy._atkSlowUntil, _t);
+      enemy._atkSlowUntil = _t + ATK_SLOW_SEC * 1000;
+    }
     // Splash always lands at exactly 50% of what the same hit would have
     // dealt directly — flat, not reduced further by anything above.
     const dmg = splash ? Math.max(1, Math.round(_rawDmg * 0.5)) : _rawDmg;

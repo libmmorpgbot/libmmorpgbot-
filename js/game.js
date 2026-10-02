@@ -479,7 +479,8 @@ function update(dt, realDt) {
     if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen() &&
         !(typeof _teleportCasting === 'function' && _teleportCasting())) {
       const inp = inputDir();
-      const _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
+      let _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
+      if ((player.atkSlowTimer || 0) > 0) _spdMult = Math.min(_spdMult, 1 - (player.atkSlowPct || 0));
       if (inp.len > 0) {
         player._chasing = false;
         // Manual joystick input cancels a manually-armed sustained attack
@@ -1086,6 +1087,7 @@ function update(dt, realDt) {
   if (invisTimer > 0) { invisTimer -= realDt; if (invisTimer <= 0) { invisTimer = 0; if (typeof netPlayerInvis === 'function') netPlayerInvis(false); } }
   if ((player.stunTimer || 0) > 0) { player.stunTimer -= realDt; if (player.stunTimer <= 0) player.stunTimer = 0; }
   if ((player.slowTimer || 0) > 0) { player.slowTimer -= realDt; if (player.slowTimer <= 0) player.slowTimer = 0; }
+  if ((player.atkSlowTimer || 0) > 0) { player.atkSlowTimer -= realDt; if (player.atkSlowTimer <= 0) { player.atkSlowTimer = 0; player.atkSlowPct = 0; } }
   if (skillFlash) { skillFlash.timer -= dt; if (skillFlash.timer <= 0) skillFlash = null; }
   if (typeof tickQuestNotif === 'function') tickQuestNotif(dt);
 

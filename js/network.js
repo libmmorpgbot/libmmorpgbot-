@@ -1874,10 +1874,15 @@ function netConnect(onReady) {
     if (enemyIds) enemyIds.forEach(_applyCC);
   });
 
-  socket.on('pvpPlayerCC', ({ targetId, type, duration }) => {
+  socket.on('pvpPlayerCC', ({ targetId, type, duration, pct }) => {
     if (targetId === socket.id) {
       if (!player || state !== 'playing') return;
-      if (type === 'stun') {
+      if (type === 'slowPct') {
+        // Удары Танка/Рыцаря Смерти: складное замедление, процент — с сервера.
+        player.atkSlowPct = Number(pct) || 0;
+        player.atkSlowTimer = duration;
+        dmgNum(player.x, player.y - 40, `-${Math.round(player.atkSlowPct * 100)}%`, '#ffcf6b');
+      } else if (type === 'stun') {
         player.stunTimer = Math.max(player.stunTimer || 0, duration);
         dmgNum(player.x, player.y - 40, typeof t === 'function' ? t('stunToast') : 'СТАН!', '#ff8');
         spawnBurst(player.x, player.y, '#ff8', 6);

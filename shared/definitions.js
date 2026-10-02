@@ -3169,6 +3169,19 @@ const STICKER_COOLDOWN_MS = 2500;
 // CP_REGEN_DELAY_MS по игроку не попадал другой игрок, — CP_REGEN_PCT_PER_SEC
 // от максимума в секунду; после смерти и на входе в PvP-режим — сразу полный.
 const PVP_CP_MULT = 10;
+// ── Замедление обычными ударами Танка и Рыцаря Смерти ─────────────────────
+// Каждый обычный удар — +10% замедления цели (монстра или игрока в PvP), до
+// потолка; каждый удар заново ставит 10 секунд. Монстров замедляет сервер
+// (Room._tick), игроку замедление присылается ('pvpPlayerCC' type 'slowPct').
+const ATK_SLOW_CLASSES = ['lev', 'deathknight'];
+const ATK_SLOW_STEP = 0.10;
+const ATK_SLOW_MAX = 0.50;
+const ATK_SLOW_SEC = 10;
+// Новое значение замедления цели после ещё одного удара.
+function atkSlowStack(prevPct, prevUntil, now = Date.now()) {
+  const live = (prevUntil || 0) > now ? (prevPct || 0) : 0;
+  return Math.min(ATK_SLOW_MAX, Math.round((live + ATK_SLOW_STEP) * 100) / 100);
+}
 const CP_REGEN_DELAY_MS = 10000;
 const CP_REGEN_PCT_PER_SEC = 0.05;
 
@@ -3920,6 +3933,7 @@ if (typeof module !== 'undefined') module.exports = {
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES, VIP_MAX_LEVEL,
   SEASON_TICKET_SEASON, SEASON_TICKET_END_AT, seasonTicketPeriodOn,
   SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, seasonDayKey, seasonWeekKey,
+  ATK_SLOW_CLASSES, ATK_SLOW_STEP, ATK_SLOW_MAX, ATK_SLOW_SEC, atkSlowStack,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
