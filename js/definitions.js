@@ -179,7 +179,7 @@ const ADV_SKILL_DEF = {
     { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 360px + восстанавливает 20% здоровья и столько же ЦП', auto:false },
   ],
   warlock: [
-    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду и столько же ЦП; урон ×2 по площади (радиус 200)' },
+    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:16, desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду и столько же ЦП; урон ×2 по площади (радиус 200)' },
     { key:'W', name:'Колючие оковы',  icon:'iceNova', img:'/images/skill/adv/adv_koluchieokovi.png', cd:15, desc:'Удерживает цель 3 сек, нанося ×3 урона' },
     { key:'E', name:'Жажда',          icon:'barrier', img:'/images/skill/adv/adv_jajda.png',         cd:18, desc:'+50% защита себе и пати, ×2 скорость атаки, на 4 сек' },
     { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати, и столько же ЦП; урон ×3 по площади (радиус 220)' },
