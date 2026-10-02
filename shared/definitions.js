@@ -3488,8 +3488,8 @@ const ADV_SKILL_STUDY_COST = 5;
 // изучение даёт 1 уровень, каждое улучшение — книга продвинутого навыка и
 // бросок шанса. Сила, длительность и лечение продвинутого варианта считаются
 // от ЕГО уровня (slotSkillLevel), а не от уровня обычного навыка в слоте.
-const ADV_SKILL_UPGRADE_COST = 1;
-const ADV_SKILL_UPGRADE_CHANCE = 0.5;
+const ADV_SKILL_UPGRADE_COST = 2;   // как у обычных: 2 книги, шанс 30%
+const ADV_SKILL_UPGRADE_CHANCE = 0.30;
 function slotSkillLevel(sk, key) {
   sk = sk || {};
   const adv = !!((sk.advSkillLearned || {})[key] && (sk.advSkillActive || {})[key]);
