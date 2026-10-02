@@ -1457,13 +1457,13 @@ const I18N_SKILLS = {
   },
   warlock: {
     Q: { name: { en: 'Dark Heal',      uk: 'Темне зцілення', es: 'Curación Oscura', tr: 'Karanlık Şifa',   pt: 'Cura Sombria' },
-         desc: { en: '+20% maxHP and as much CP', uk: '+20% від макс. HP і стільки ж ЦП', es: '+20% de HP máx. y la misma cantidad de CP', tr: '+%20 maksimum HP ve aynı miktarda CP', pt: '+20% do HP máximo e a mesma quantidade de CP' } },
+         desc: { en: '+20% maxHP and as much CP, AOE damage ×1.5 (radius 150)', uk: '+20% від макс. HP і стільки ж ЦП, урон ×1.5 по площі (радіус 150)', es: '+20% de HP máx. y la misma cantidad de CP, daño en área ×1.5 (radio 150)', tr: '+%20 maksimum HP ve aynı miktarda CP, alan hasarı ×1.5 (yarıçap 150)', pt: '+20% do HP máximo e a mesma quantidade de CP, dano em área ×1.5 (raio 150)' } },
     W: { name: { en: 'Chains of Darkness', uk: 'Кайдани темряви', es: 'Cadenas de Oscuridad', tr: 'Karanlık Zincirleri', pt: 'Correntes das Trevas' },
          desc: { en: 'Roots target in place for 3s', uk: 'Утримує ціль на місці 3 сек', es: 'Inmoviliza al objetivo durante 3s', tr: 'Hedefi 3sn boyunca yerinde tutar', pt: 'Prende o alvo no lugar por 3s' } },
     E: { name: { en: 'Dark Shield',    uk: 'Темний щит',    es: 'Escudo Oscuro',    tr: 'Karanlık Kalkan', pt: 'Escudo Sombrio' },
          desc: { en: '+50% defense to self and party for 4s', uk: '+50% захисту собі й паті на 4 сек', es: '+50% de defensa a ti y al grupo durante 4s', tr: '4sn boyunca kendine ve gruba +%50 savunma', pt: '+50% de defesa para você e o grupo por 4s' } },
     R: { name: { en: 'Dark Prayer',    uk: 'Темна молитва', es: 'Oración Oscura',   tr: 'Karanlık Dua',    pt: 'Oração Sombria' },
-         desc: { en: '+10% maxHP to self and +10% to party and as much CP', uk: '+10% макс. HP собі та +10% паті і стільки ж ЦП', es: '+10% de HP máx. a ti y +10% al grupo y la misma cantidad de CP', tr: 'Kendine +%10, grubuna +%10 maksimum HP ve aynı miktarda CP', pt: '+10% do HP máximo para você e +10% para o grupo e a mesma quantidade de CP' } },
+         desc: { en: '+10% maxHP to self and +10% to party and as much CP; AOE damage ×2 (radius 180)', uk: '+10% макс. HP собі та +10% паті і стільки ж ЦП; урон ×2 по площі (радіус 180)', es: '+10% de HP máx. a ti y +10% al grupo y la misma cantidad de CP; daño en área ×2 (radio 180)', tr: 'Kendine +%10, grubuna +%10 maksimum HP ve aynı miktarda CP; alan hasarı ×2 (yarıçap 180)', pt: '+10% do HP máximo para você e +10% para o grupo e a mesma quantidade de CP; dano em área ×2 (raio 180)' } },
   },
   runefighter: {
     Q: { name: { en: 'Strong Strike', uk: 'Сильний удар', es: 'Golpe Fuerte', tr: 'Güçlü Vuruş', pt: 'Golpe Forte' },
@@ -1534,13 +1534,13 @@ const I18N_ADV_SKILLS = {
   },
   warlock: {
     Q: { name: { en: 'Butterflies', uk: 'Метелики', es: 'Mariposas', tr: 'Kelebekler', pt: 'Borboletas' },
-         desc: { en: 'Summons butterflies for 10s — heal 5% HP per second and as much CP', uk: 'Викликає метеликів на 10 сек — лікують 5% HP щосекунди і стільки ж ЦП', es: 'Invoca mariposas durante 10s — curan 5% de HP por segundo y la misma cantidad de CP', tr: '10sn boyunca kelebekler çağırır — saniyede %5 HP iyileştirir ve aynı miktarda CP', pt: 'Invoca borboletas por 10s — curam 5% de HP por segundo e a mesma quantidade de CP' } },
+         desc: { en: 'Summons butterflies for 10s — heal 5% HP per second and as much CP; AOE damage ×2 (radius 200)', uk: 'Викликає метеликів на 10 сек — лікують 5% HP щосекунди і стільки ж ЦП; урон ×2 по площі (радіус 200)', es: 'Invoca mariposas durante 10s — curan 5% de HP por segundo y la misma cantidad de CP; daño en área ×2 (radio 200)', tr: '10sn boyunca kelebekler çağırır — saniyede %5 HP iyileştirir ve aynı miktarda CP; alan hasarı ×2 (yarıçap 200)', pt: 'Invoca borboletas por 10s — curam 5% de HP por segundo e a mesma quantidade de CP; dano em área ×2 (raio 200)' } },
     W: { name: { en: 'Thorned Chains', uk: 'Колючі кайдани', es: 'Cadenas Espinosas', tr: 'Dikenli Zincirler', pt: 'Correntes Espinhosas' },
          desc: { en: 'Roots target for 3s, dealing ×3 damage', uk: 'Утримує ціль 3 сек, завдаючи ×3 урону', es: 'Inmoviliza al objetivo 3s, infligiendo ×3 daño', tr: 'Hedefi 3sn tutar, ×3 hasar verir', pt: 'Prende o alvo por 3s, causando ×3 de dano' } },
     E: { name: { en: 'Thirst', uk: 'Спрага', es: 'Sed', tr: 'Susuzluk', pt: 'Sede' },
          desc: { en: '+50% defense to self and party, ×2 attack speed, for 4s', uk: '+50% захисту собі й паті, ×2 швидкості атаки, на 4 сек', es: '+50% de defensa a ti y al grupo, ×2 velocidad de ataque, durante 4s', tr: 'Kendine ve gruba +%50 savunma, ×2 saldırı hızı, 4sn', pt: '+50% de defesa para você e o grupo, ×2 de velocidade de ataque, por 4s' } },
     R: { name: { en: 'Healing', uk: 'Зцілення', es: 'Curación', tr: 'İyileştirme', pt: 'Cura' },
-         desc: { en: 'Heals 20% HP to self and party and as much CP', uk: 'Лікує 20% HP собі й паті і стільки ж ЦП', es: 'Cura 20% de HP a ti y al grupo y la misma cantidad de CP', tr: 'Kendine ve gruba %20 HP iyileştirir ve aynı miktarda CP', pt: 'Cura 20% de HP para você e o grupo e a mesma quantidade de CP' } },
+         desc: { en: 'Heals 20% HP to self and party and as much CP; AOE damage ×3 (radius 220)', uk: 'Лікує 20% HP собі й паті і стільки ж ЦП; урон ×3 по площі (радіус 220)', es: 'Cura 20% de HP a ti y al grupo y la misma cantidad de CP; daño en área ×3 (radio 220)', tr: 'Kendine ve gruba %20 HP iyileştirir ve aynı miktarda CP; alan hasarı ×3 (yarıçap 220)', pt: 'Cura 20% de HP para você e o grupo e a mesma quantidade de CP; dano em área ×3 (raio 220)' } },
   },
   runefighter: {
     Q: { name: { en: 'Skull Strike', uk: 'Удар у череп', es: 'Golpe al Cráneo', tr: 'Kafatası Darbesi', pt: 'Golpe no Crânio' },

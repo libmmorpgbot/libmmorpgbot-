@@ -3072,10 +3072,12 @@ const SKILL_DMG_MULT = {
     R: { base: null, adv: null },  // Teleport / Перенесение
   },
   warlock: {
-    Q: { base: null, adv: null },
+    // Навыки исцеления бьют и по площади вокруг Целителя (радиусы —
+    // WARLOCK_HEAL_AOE_R, js/player.js): лечение и урон одним нажатием.
+    Q: { base: 1.5,  adv: 2    },  // Тёмное исцеление / Бабочки — AOE
     W: { base: null, adv: 3    },  // Оковы тьмы stun only / Колючие оковы also hit
     E: { base: null, adv: null },  // Тёмный щит / Жажда
-    R: { base: null, adv: null },  // Тёмная молитва / Исцеление
+    R: { base: 2,    adv: 3    },  // Тёмная молитва / Исцеление — AOE
   },
   lev: {
     Q: { base: 2,    adv: 3    },  // Пинок / Молот гнева

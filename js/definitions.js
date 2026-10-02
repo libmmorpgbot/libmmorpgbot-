@@ -115,10 +115,10 @@ const SKILL_DEF = {
     { key:'R', name:'Телепорт',     icon:'teleport', img:'/images/skill/mteleport.png', cd:12, desc:'Рывок 360px по направлению', auto:false },
   ],
   warlock: [
-    { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP и столько же ЦП'                    },
+    { key:'Q', name:'Тёмное исцеление', icon:'hpPlus',  img:'/images/skill/sheal.png',        cd:8,  desc:'+20% maxHP и столько же ЦП, урон ×1.5 по площади (радиус 150)'                    },
     { key:'W', name:'Оковы тьмы',       icon:'iceNova', img:'/images/skill/socepinenie.png',  cd:15, desc:'Удерживает цель на месте 3 сек'},
     { key:'E', name:'Тёмный щит',       icon:'barrier', img:'/images/skill/sshit.png',        cd:18, desc:'+50% защита себе и пати 4 сек' },
-    { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  img:'/images/skill/spartyheal.png',   cd:25, desc:'+10% maxHP себе и +10% пати, и столько же ЦП'   },
+    { key:'R', name:'Тёмная молитва',   icon:'hpPlus',  img:'/images/skill/spartyheal.png',   cd:25, desc:'+10% maxHP себе и +10% пати, и столько же ЦП; урон ×2 по площади (радиус 180)'   },
   ],
   runefighter: [
     { key:'Q', name:'Сильный удар', icon:'sword',    img:'/images/skill/rf_stronghit.png', cd:20, desc:'3 удара подряд'                    },
@@ -179,10 +179,10 @@ const ADV_SKILL_DEF = {
     { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 360px + восстанавливает 20% здоровья и столько же ЦП', auto:false },
   ],
   warlock: [
-    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду и столько же ЦП' },
+    { key:'Q', name:'Бабочки',        icon:'hpPlus',  img:'/images/skill/adv/adv_babochki.png',      cd:8,  desc:'Призывает бабочек на 10 сек — лечат 5% HP в секунду и столько же ЦП; урон ×2 по площади (радиус 200)' },
     { key:'W', name:'Колючие оковы',  icon:'iceNova', img:'/images/skill/adv/adv_koluchieokovi.png', cd:15, desc:'Удерживает цель 3 сек, нанося ×3 урона' },
     { key:'E', name:'Жажда',          icon:'barrier', img:'/images/skill/adv/adv_jajda.png',         cd:18, desc:'+50% защита себе и пати, ×2 скорость атаки, на 4 сек' },
-    { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати, и столько же ЦП' },
+    { key:'R', name:'Исцеление',      icon:'hpPlus',  img:'/images/skill/adv/adv_iscelenie.png',     cd:25, desc:'Лечит 20% HP себе и пати, и столько же ЦП; урон ×3 по площади (радиус 220)' },
   ],
   runefighter: [
     { key:'Q', name:'Удар в череп', icon:'skull',    img:'/images/skill/adv/adv_rf_skullhit.png', cd:20, desc:'5 ударов подряд' },

@@ -1172,7 +1172,18 @@ function _dispatchSkillEffect(cls, sk) {
       }
     }
   } else if (cls === 'warlock') {
+    // Навыки исцеления Целителя ещё и бьют по площади вокруг него.
+    // [обычный, продвинутый] радиус; множитель — SKILL_DMG_MULT.warlock.
+    const WARLOCK_HEAL_AOE_R = { Q: [150, 200], R: [180, 220] };
+    const _healAoe = (key, color) => {
+      const r = WARLOCK_HEAL_AOE_R[key][_advActive(key) ? 1 : 0];
+      spawnAOE(player.x, player.y, r, 'shockwave', color);
+      _skillAOEMult(r, _skillMult(key), key);
+      netSpawnAoe(player.x, player.y, r, 'shockwave', color);
+      _pvpSkillAOE(r, _skillMult(key), key);
+    };
     if (sk.key === 'Q') {
+      _healAoe('Q', _advActive('Q') ? '#f5c542' : '#a855e0');
       if (_advActive('Q')) { // Бабочки — summon for 10s, healing 5% maxHP/sec (+1s per level)
         // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
         // им и место: раньше их отсчитывал кадр, и сервер о них не знал.
@@ -1233,6 +1244,7 @@ function _dispatchSkillEffect(cls, sk) {
       dmgNum(player.x, player.y - 50, _advR4 ? 'Исцеление!' : 'Молитва!', _advR4 ? '#f5c542' : '#a855e0');
       spawnBurst(player.x, player.y, _advR4 ? '#f5c542' : '#a855e0', 14);
       if (typeof netSkillHeal === 'function') netSkillHeal('R');
+      _healAoe('R', _advR4 ? '#f5c542' : '#a855e0');
     }
   } else if (cls === 'lev') {
     if (sk.key === 'Q') { // Пинок / Молот гнева — single target, base ×2 + 3s
