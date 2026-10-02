@@ -838,7 +838,10 @@ function useSkill(idx) {
   if (typeof _dbFrozen === 'function' && _dbFrozen()) return;
   const skills = SKILL_DEF[player.type];
   if (!skills || !skills[idx]) return;
-  const sk = skills[idx];
+  // Активный вариант слота — продвинутый, если он включён. Раньше здесь был
+  // всегда обычный навык, и перезарядка продвинутого (cd в ADV_SKILL_DEF:
+  // «Бабочки» 16 с, «Пульс» 60 с ...) на клиенте не применялась вовсе.
+  const sk = (typeof _activeSkillDef === 'function' && _activeSkillDef(player.type, idx)) || skills[idx];
   if (_skillLvl(sk.key) <= 0) {
     dmgNum(player.x, player.y - 38, '🔒 Навык не изучен', '#f17e8b');
     return;
