@@ -3262,7 +3262,10 @@ function skillMaxHitsPerTarget(cls, key, advActive) {
 // «Разряд» (продвинутый W мага): каждый, в кого попал, теряет 20% защиты на
 // несколько секунд — монстр (enemy.defDownTimer, тот же механизм, что у
 // «Охоты» Рыцаря Смерти) и игрок в PvP (p._defDownUntil, Room._defOf).
-const SKILL_DEF_DOWN = { mage: { W: { adv: { pct: 0.20, sec: 5 } } } };
+const SKILL_DEF_DOWN = {
+  mage:     { W: { adv: { pct: 0.20, sec: 5 } } },   // «Разряд»
+  assassin: { W: { adv: { pct: 0.20, sec: 5 } } },   // «Крик»
+};
 function skillDefDownOf(cls, key, advActive) {
   const row = (SKILL_DEF_DOWN[cls] || {})[key];
   return (row && (advActive ? row.adv : row.base)) || null;

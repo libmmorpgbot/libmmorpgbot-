@@ -197,7 +197,7 @@ const ADV_SKILL_DEF = {
   ],
   assassin: [
     { key:'Q', name:'Смертоносность', icon:'skull',  img:'/images/skill/adv/adv_as_deadly.png',   cd:20, desc:'Удар ×3 урона, игнорируя 50% защиты цели' },
-    { key:'W', name:'Крик',           icon:'wind',   img:'/images/skill/adv/adv_as_scream.png',   cd:8,  desc:'АОЕ ×3 урона, радиус 250' },
+    { key:'W', name:'Крик',           icon:'wind',   img:'/images/skill/adv/adv_as_scream.png',   cd:8,  desc:'АОЕ ×3 урона, радиус 250; снимает 20% защиты с поражённых на 5 сек' },
     { key:'E', name:'Убийца',         icon:'star',   img:'/images/skill/adv/adv_as_killer.png',   cd:30, desc:'+50% шанс крита и +50% силы крита на 5 сек' },
     // Base R ("Бегство") is a stationary speed buff with no auto override —
     // this advanced replacement displaces the character instead, so auto

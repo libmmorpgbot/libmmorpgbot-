@@ -1561,7 +1561,7 @@ const I18N_ADV_SKILLS = {
     Q: { name: { en: 'Deadliness', uk: 'Смертоносність', es: 'Letalidad', tr: 'Ölümcüllük', pt: 'Mortalidade' },
          desc: { en: '×3 damage strike, ignoring 50% of the target\'s defense', uk: 'Удар ×3 урону, ігноруючи 50% захисту цілі', es: 'Golpe ×3 daño, ignorando 50% de la defensa del objetivo', tr: 'Hedefin savunmasının %50\'sini yok sayan ×3 hasarlı vuruş', pt: 'Golpe ×3 de dano, ignorando 50% da defesa do alvo' } },
     W: { name: { en: 'Scream', uk: 'Крик', es: 'Grito', tr: 'Çığlık', pt: 'Grito' },
-         desc: { en: 'AOE ×3 damage, radius 250', uk: 'АОЕ ×3 урону, радіус 250', es: 'Daño en área ×3, radio 250', tr: 'Alan hasarı ×3, yarıçap 250', pt: 'Dano em área ×3, raio 250' } },
+         desc: { en: 'AOE ×3 damage, radius 250; strips 20% defense from targets hit for 5s', uk: 'АОЕ ×3 урону, радіус 250; знімає 20% захисту з уражених на 5 с', es: 'Daño en área ×3, radio 250; quita un 20% de defensa a los alcanzados durante 5 s', tr: 'Alan hasarı ×3, yarıçap 250; vurulanların savunmasını 5 sn boyunca %20 düşürür', pt: 'Dano em área ×3, raio 250; tira 20% da defesa dos atingidos por 5 s' } },
     E: { name: { en: 'Killer', uk: 'Вбивця', es: 'Asesino', tr: 'Katil', pt: 'Assassino' },
          desc: { en: '+50% crit chance and +50% crit power for 5s', uk: '+50% шансу криту та +50% сили криту на 5 сек', es: '+50% de probabilidad crítica y +50% de poder crítico durante 5s', tr: '5sn boyunca +%50 kritik şansı ve +%50 kritik gücü', pt: '+50% de chance crítica e +50% de poder crítico por 5s' } },
     R: { name: { en: 'Backstab', uk: 'Удар у спину', es: 'Puñalada Trasera', tr: 'Sırtından Vurma', pt: 'Ataque pelas Costas' },
