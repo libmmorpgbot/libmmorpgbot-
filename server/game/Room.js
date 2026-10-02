@@ -10,7 +10,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
-        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped } = require('../../shared/definitions');
+        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -3584,6 +3584,12 @@ class Room {
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
     this._pvpHurt(target, dmg);
+    // «Разряд»: −20% защиты и игроку (Room._defOf), продлевается попаданием.
+    const _defDownP = skillDefDownOf(_slotCls, _slotKey, _advActivePvp);
+    if (_defDownP) {
+      target._defDownUntil = Math.max(target._defDownUntil || 0, Date.now() + _defDownP.sec * 1000);
+      target._defDownPct = _defDownP.pct;
+    }
     this._vampGain(attacker, dmg);
     return { dmg, isCrit, x: target.x, y: target.y, hp: target.hp, cp: Math.round(target.cp), maxCp: this._maxCpOf(target) };
   }
@@ -4322,6 +4328,7 @@ class Room {
   _defOf(p) {
     let d = (p.def || 0) * this._buffAgg(p).def;
     if (this._petBuffOn(p)) d *= (p._petBuffDef || 1);
+    if ((p._defDownUntil || 0) > Date.now()) d *= 1 - (p._defDownPct || 0);
     return d;
   }
   // «Пульс» (Rune Fighter R adv) — the one skill buffing maxHP. p.maxHp
@@ -5292,6 +5299,9 @@ class Room {
     // Здесь, а не у клиента: dmg — уже посчитанное сервером число, с критом и
     // защитой цели, и никакого другого честного не существует.
     (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
+    // «Разряд»: −20% защиты попавшему на SKILL_DEF_DOWN.sec (продлевается).
+    const _defDown = skillDefDownOf(_slotCls, _slotKey, _advActiveNow);
+    if (_defDown) enemy.defDownTimer = Math.max(enemy.defDownTimer || 0, _defDown.sec);
     this._vampGain(attacker, dmg);
     enemy.aggro = true;
     this._wakePack(enemy);

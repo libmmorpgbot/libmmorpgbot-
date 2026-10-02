@@ -1529,7 +1529,7 @@ const I18N_ADV_SKILLS = {
     Q: { name: { en: 'Lightning Damage', uk: 'Урон блискавки', es: 'Daño de Rayo', tr: 'Yıldırım Hasarı', pt: 'Dano de Raio' },
          desc: { en: 'Projectile ×3 damage + 3s stun', uk: 'Снаряд ×3 урону + оглушення 3 сек', es: 'Proyectil ×3 daño + 3s de aturdimiento', tr: 'Mermi ×3 hasar + 3sn sersemletme', pt: 'Projétil ×3 de dano + atordoamento de 3s' } },
     W: { name: { en: 'Discharge', uk: 'Розряд', es: 'Descarga', tr: 'Boşalım', pt: 'Descarga' },
-         desc: { en: 'AOE damage ×3, radius 220', uk: 'АОЕ урон ×3, радіус 220', es: 'Daño en área ×3, radio 220', tr: 'Alan hasarı ×3, yarıçap 220', pt: 'Dano em área ×3, raio 220' } },
+         desc: { en: 'AOE damage ×3, radius 220; strips 20% defense from targets hit for 5s', uk: 'АОЕ урон ×3, радіус 220; знімає 20% захисту з уражених на 5 с', es: 'Daño en área ×3, radio 220; quita un 20% de defensa a los alcanzados durante 5 s', tr: 'Alan hasarı ×3, yarıçap 220; vurulanların savunmasını 5 sn boyunca %20 düşürür', pt: 'Dano em área ×3, raio 220; tira 20% da defesa dos atingidos por 5 s' } },
     E: { name: { en: 'Flash', uk: 'Спалах', es: 'Destello', tr: 'Parlama', pt: 'Clarão' },
          desc: { en: 'AOE damage ×2, radius 220 + defense +80% for 3s', uk: 'АОЕ урон ×2, радіус 220 + захист +80% на 3 сек', es: 'Daño en área ×2, radio 220 + defensa +80% durante 3s', tr: 'Alan hasarı ×2, yarıçap 220 + savunma +%80, 3sn', pt: 'Dano em área ×2, raio 220 + defesa +80% por 3s' } },
     R: { name: { en: 'Transference', uk: 'Перенесення', es: 'Transferencia', tr: 'Aktarım', pt: 'Transferência' },

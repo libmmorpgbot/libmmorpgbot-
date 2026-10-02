@@ -3248,6 +3248,14 @@ function skillMaxHitsPerTarget(cls, key, advActive) {
 // ЛЮБОГО следующего удара от кого угодно. Здесь дебаффу неоткуда взяться:
 // эффект — свойство самого навыка, а не цели, так что своя маленькая таблица
 // вместо ещё одного args-параметра на attackEnemy/pvpSkillAttack.
+// «Разряд» (продвинутый W мага): каждый, в кого попал, теряет 20% защиты на
+// несколько секунд — монстр (enemy.defDownTimer, тот же механизм, что у
+// «Охоты» Рыцаря Смерти) и игрок в PvP (p._defDownUntil, Room._defOf).
+const SKILL_DEF_DOWN = { mage: { W: { adv: { pct: 0.20, sec: 5 } } } };
+function skillDefDownOf(cls, key, advActive) {
+  const row = (SKILL_DEF_DOWN[cls] || {})[key];
+  return (row && (advActive ? row.adv : row.base)) || null;
+}
 const SKILL_DEF_IGNORE = {
   assassin: { Q: { adv: 0.5 } },
 };
@@ -3955,6 +3963,7 @@ if (typeof module !== 'undefined') module.exports = {
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel, SKILL_CD_ADV_LEVEL_FLOOR_SEC,
+  SKILL_DEF_DOWN, skillDefDownOf,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, UPGRADE_STEP, upgradeCost, UPGRADE_MAX, upgLvlCapped,
   FOREIGN_SKILL_KEY,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
