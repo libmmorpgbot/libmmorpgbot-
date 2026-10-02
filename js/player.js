@@ -1191,6 +1191,9 @@ function _dispatchSkillEffect(cls, sk) {
         // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
         // им и место: раньше их отсчитывал кадр, и сервер о них не знал.
         butterfliesTimer = 10 + _skillBuffSec('Q');
+        // Перезарядка: 16 с на 1 уровне, −1 с за каждое улучшение (не меньше 7),
+        // как на сервере (SKILL_CD_ADV_LEVEL_FLOOR_SEC).
+        player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(7, sk.cd - (_skillLvl('Q') - 1)) * (1 - (player.cdrPct || 0));
         _butterfliesTickAcc = 0;
         if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         dmgNum(player.x, player.y - 40, '🦋 Бабочки!', '#f5c542');

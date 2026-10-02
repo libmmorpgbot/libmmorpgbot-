@@ -3217,12 +3217,19 @@ const SKILL_CD_SERVER_SLACK = 0.9;
 
 // Через сколько миллисекунд после каста этого слота сервер примет следующий.
 // Не точная перезарядка игрока, а нижняя граница для любого честного клиента.
+// Продвинутые навыки, у которых перезарядка падает с уровнем: −1 с за каждое
+// улучшение (уровень 1 — полная перезарядка), не ниже порога.
+const SKILL_CD_ADV_LEVEL_FLOOR_SEC = {
+  warlock: { Q: 7 },   // «Бабочки»: 16 с на 1 уровне → 7 с на 10-м
+};
 function skillCooldownFloorMs(cls, key, advActive, skillLvl) {
   const row = (SKILL_CD_SEC[cls] || {})[key];
   if (!row) return 0;
   let cd = row[advActive ? 1 : 0];
   const floor = !advActive && (SKILL_CD_LEVEL_FLOOR_SEC[cls] || {})[key];
   if (floor) cd = Math.max(floor, cd - Math.max(0, Math.floor(Number(skillLvl)) || 0));
+  const advFloor = advActive && (SKILL_CD_ADV_LEVEL_FLOOR_SEC[cls] || {})[key];
+  if (advFloor) cd = Math.max(advFloor, cd - Math.max(0, (Math.floor(Number(skillLvl)) || 1) - 1));
   return Math.floor(cd * 1000 * (1 - SKILL_CDR_MAX) * SKILL_CD_SERVER_SLACK);
 }
 
@@ -3947,7 +3954,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
-  ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel,
+  ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel, SKILL_CD_ADV_LEVEL_FLOOR_SEC,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, UPGRADE_STEP, upgradeCost, UPGRADE_MAX, upgLvlCapped,
   FOREIGN_SKILL_KEY,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,

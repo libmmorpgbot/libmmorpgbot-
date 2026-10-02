@@ -3532,7 +3532,10 @@ class Room {
       lvl = fs ? fs.level : 0;
     } else {
       const levels = p._skillLevels || (p._sd && p._sd.skillLevels) || {};
-      lvl = levels[key];
+      // Продвинутый вариант — его собственный уровень (перезарядка «Бабочек»
+      // падает с ним, SKILL_CD_ADV_LEVEL_FLOOR_SEC).
+      lvl = adv ? Math.max(1, Math.floor(Number((p._advLevels || (p._sd && p._sd.advSkillLevels) || {})[key])) || 1)
+                : levels[key];
     }
     return skillCooldownFloorMs(cls, slotKey, adv, lvl);
   }
