@@ -87,7 +87,9 @@ canvas { display:block; width:100%; height:100%; }
 .splash-bg {
   position:absolute; inset:0;
   width:100%; height:100%;
-  object-fit:cover; object-position:center;
+  /* contain, а не cover: на узких телефонах cover срезал края логотипа
+     LIBERTY. Поля по краям — под тёмный фон самой картинки. */
+  object-fit:contain; object-position:center; background:#070504;
   pointer-events:none;
 }
 
@@ -337,7 +339,7 @@ canvas { display:block; width:100%; height:100%; }
    сети, и на зависшей загрузке. */
 .csl-art {
   position:absolute; inset:0; width:100%; height:100%;
-  object-fit:cover; object-position:center;
+  object-fit:contain; object-position:center; background:#070504;
   /* Никаких pointer-events: под ним нет ничего, что можно нажать, а перехват
      касания на экране загрузки читается как зависание. */
   pointer-events:none; user-select:none;
