@@ -249,6 +249,23 @@
   .all-classes { margin-top: 14px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; }
   .all-classes .ico { font-size: 26px; }
 
+  /* ЦП ×10 */
+  .cp-card { margin-top: 14px; padding: 18px; display: flex; gap: 18px; align-items: center; position: relative; overflow: hidden;
+    border-color: rgba(126,224,192,.45);
+    background: radial-gradient(ellipse 260px 160px at 0% 50%, rgba(126,224,192,.16), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel)); }
+  .cp-x { flex-shrink: 0; width: 86px; height: 86px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif); font-size: 30px; font-weight: 700; color: #0b0805;
+    background: radial-gradient(circle at 35% 30%, #c8ffe9, #3fae8c 70%); box-shadow: 0 0 26px rgba(126,224,192,.45);
+    animation: beat 2.4s ease-in-out infinite; }
+  @keyframes beat { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.08); } 24% { transform: scale(1); } 36% { transform: scale(1.05); } }
+  .cp-body h3 { margin: 0 0 6px; font-family: var(--serif); color: var(--gold-bright); font-size: 19px; }
+  .cp-body b { color: var(--green); }
+  .cp-ex { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .cp-ex span { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; padding: 5px 11px 5px 6px; border-radius: 20px;
+    background: rgba(126,224,192,.08); border: 1px solid rgba(126,224,192,.30); }
+  .cp-ex img { width: 22px; height: 22px; border-radius: 5px; }
+  @media (max-width: 720px) { .cp-card { flex-direction: column; text-align: center; } .cp-ex { justify-content: center; } }
+
   /* вторая профессия */
   .prof { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .prof .card { padding: 18px; }
@@ -479,7 +496,19 @@
         <div class="chg"><div class="sk"><img src="/images/skill/adv/adv_as_scream.png" alt="" class="px"></div><div><b>Крик</b> снимает <b>20% защиты</b> с поражённых на 5 сек.</div></div>
       </div>
     </div>
-    <div class="card all-classes"><div class="ico">❤️</div><div>Все лечащие навыки теперь восстанавливают и <b>ЦП</b> — в 10 раз больше, чем здоровья.</div></div>
+    <div class="card cp-card">
+      <div class="cp-x">×10</div>
+      <div class="cp-body">
+        <h3>❤️ Лечение восстанавливает ЦП</h3>
+        <div>Все лечащие навыки восстанавливают и <b>ЦП</b> — <b>в 10 раз больше</b>, чем здоровья. Запас ЦП тоже в 10 раз больше здоровья, так что лечение одинаково заметно для обоих.</div>
+        <div class="cp-ex stagger">
+          <span><img src="/images/skill/sheal.png" alt="" class="px">+200 HP → <b>+2000 ЦП</b></span>
+          <span><img src="/images/skill/adv/adv_babochki.png" alt="" class="px">Бабочки: каждый тик ×10 ЦП</span>
+          <span><img src="/images/skill/adim_v2.png" alt="" class="px">Вампиризм: +20 HP → <b>+200 ЦП</b></span>
+          <span>🌿 Регенерация: +5 HP и <b>+50 ЦП</b>/сек</span>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- вторая профессия -->
