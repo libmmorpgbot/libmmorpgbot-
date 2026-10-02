@@ -622,12 +622,12 @@ function mailBonusOn(now = Date.now()) { return now < MAIL_BONUS_END_AT; }
 // as long as the roll actually succeeded — a miss costs the stone and pays
 // nothing, the task is to enhance, not to attempt. Season 2's slot/rarity/
 // stone-type table is gone; every successful enhance is worth the same.
-const SEASON_ENHANCE_POINTS = 5;
+const SEASON_ENHANCE_POINTS = 0;   // Сезон 4: задание снято
 
 // ── Вторая профессия ──────────────────────────────────────────────────────
 // Crafting (successfully) an advanced skill book — craftAdvSkillBook,
 // server/index.js.
-const SEASON_ADV_BOOK_POINTS = 300;
+const SEASON_ADV_BOOK_POINTS = 0;  // Сезон 4: задание снято
 
 // ── Сжигание ──────────────────────────────────────────────────────────────
 // Books (skill/passive/advanced-skill — all stackable materials): a flat
@@ -651,13 +651,14 @@ const DISASSEMBLE_LIBERTY = { uncommon: [1, 2], rare: [5, 10], epic: [10, 20] };
 // shipped in seasonState so the season panel can name them alongside every
 // other source. Sized against their neighbours: below the referral bonus for
 // turning up, between the advanced book and an empowerment for taking the win.
-const SEASON_EVENT_POINTS = 40;
-const SEASON_EVENT_WIN_POINTS = 400;
-const SEASON_REF_POINTS = 200;
+// Сезон 4: эти задания сняты — очки 0, addSeasonPoints ничего не пишет.
+const SEASON_EVENT_POINTS = 0;
+const SEASON_EVENT_WIN_POINTS = 0;
+const SEASON_REF_POINTS = 0;
 const SEASON_REF_LEVEL  = 20;
 
 // ── Усиление ──────────────────────────────────────────────────────────────
-const SEASON_EMPOWER_POINTS = 500;
+const SEASON_EMPOWER_POINTS = 0;   // Сезон 4: задание снято
 
 // ── Покупка в магазине ────────────────────────────────────────────────────
 // Any GRAM shop purchase (server/shop.js's _GRAM_SHOP_PKGS — packages, pets,
@@ -665,7 +666,7 @@ const SEASON_EMPOWER_POINTS = 500;
 // with what was actually paid, floored to whole GRAM — a purchase under 1
 // GRAM earns nothing, 1 earns SEASON_SHOP_POINTS_PER_GRAM, 2 earns double,
 // and so on.
-const SEASON_SHOP_POINTS_PER_GRAM = 100;
+const SEASON_SHOP_POINTS_PER_GRAM = 0; // Сезон 4: задание снято
 function seasonShopPoints(price) {
   return Math.max(0, Math.floor(Number(price) || 0)) * SEASON_SHOP_POINTS_PER_GRAM;
 }
@@ -681,8 +682,9 @@ function seasonShopPoints(price) {
 // final POINTS total to a whole number before writing it (player_season.
 // points is bigint), so a 0.1-GRAM sale (perGram 10) correctly nets exactly
 // 1 point rather than being silently discarded.
-const SEASON_MARKET_BUY_POINTS_PER_GRAM = 50;
-const SEASON_MARKET_SELL_POINTS_PER_GRAM = 10;
+// Сезон 4: постоянная награда — только покупка, +10 за каждый GRAM.
+const SEASON_MARKET_BUY_POINTS_PER_GRAM = 10;
+const SEASON_MARKET_SELL_POINTS_PER_GRAM = 0;
 function seasonMarketPoints(price, perGram) {
   return Math.max(0, Number(price) || 0) * perGram;
 }
@@ -693,7 +695,7 @@ function seasonMarketPoints(price, perGram) {
 // only, awarded from server/game/tournament.js's _trPayRoundReward through
 // the same socket.data._seasonAward* closure factory mode-rewards.js already
 // built for death-battle's entry/win points.
-const SEASON_TOURNAMENT_WIN_POINTS = 20;
+const SEASON_TOURNAMENT_WIN_POINTS = 0; // Сезон 4: задание снято
 
 // ── Фарм-зоны ─────────────────────────────────────────────────────────────
 // Repeatable: kill the target count in a zone, then press the claim button
@@ -723,6 +725,35 @@ const SEASON_FARM2_KILL_POINTS = 15;
 // is higher-level than both, so it continues that at +5 again.
 const SEASON_FARM_HIGH_KILL_TARGET = 5000;
 const SEASON_FARM_HIGH_KILL_POINTS = 20;
+
+// ── Сезон 4: ежедневные и еженедельные задания ──────────────────────────
+// Счётчики живут в player_season.quests (строка 4-го сезона): d — день,
+// w — неделя, у каждого свой ключ периода (seasonDayKey/seasonWeekKey, по
+// Москве). Сменился ключ — счётчики с нуля. Очки начисляются сами в момент,
+// когда счётчик дошёл до цели (bumpSeasonTask, progression.js), один раз за
+// период. target у mbuy/msell — в GRAM.
+const SEASON_DAILY_TASKS = [
+  { id: 'chat',  target: 10, points: 30 },   // сообщения в общий чат
+  { id: 'mbuy',  target: 3,  points: 100 },  // купить на маркете на 3 GRAM
+  { id: 'msell', target: 3,  points: 100 },  // продать на маркете на 3 GRAM
+];
+const SEASON_WEEKLY_TASKS = [
+  { id: 'kill1',    target: 100000, points: 300 },  // 1 этаж (левый коридор)
+  { id: 'kill2',    target: 100000, points: 300 },  // 2 этаж (верхний коридор)
+  { id: 'killFarm', target: 100000, points: 300 },  // фарм зона
+  { id: 'potAtk',   target: 10,     points: 50 },   // скрафтить зелье атаки
+  { id: 'tower',    target: 3,      points: 200 },  // участие в Кровавой Башне
+  { id: 'boss',     target: 3,      points: 200 },  // удары по мировому боссу
+];
+// Дата по Москве: 'YYYY-MM-DD'. Неделя — понедельник этой недели.
+function seasonDayKey(now = Date.now()) {
+  return new Date(now + MSK_OFFSET_H * 3600000).toISOString().slice(0, 10);
+}
+function seasonWeekKey(now = Date.now()) {
+  const d = new Date(now + MSK_OFFSET_H * 3600000);
+  const dow = (d.getUTCDay() + 6) % 7;            // 0 = понедельник
+  return new Date(d.getTime() - dow * 86400000).toISOString().slice(0, 10);
+}
 
 // ── Рейтинг ───────────────────────────────────────────────────────────────
 // Season 2's floor (5000) was sized against a much bigger economy — a single
@@ -3886,6 +3917,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES, VIP_MAX_LEVEL,
   SEASON_TICKET_SEASON, SEASON_TICKET_END_AT, seasonTicketPeriodOn,
+  SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, seasonDayKey, seasonWeekKey,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,

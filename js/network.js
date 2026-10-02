@@ -2667,6 +2667,16 @@ function netConnect(onReady) {
   });
 
   // A repeatable event task paid out (3v3 / death battle / world boss).
+  // Сезон 4: задание выполнено — очки уже начислены. Состояние вкладки
+  // перечитываем с сервера, чтобы задание отметилось выполненным.
+  socket.on('seasonTaskDone', ({ task, points, total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof _marketToast === 'function' && points) {
+      _marketToast(tVars('seasonTaskDoneToast', { name: t('seasonTask_' + task), n: points }), 'ok');
+    }
+    if (typeof netSeasonSync === 'function') netSeasonSync();
+  });
+
   socket.on('seasonEventDone', ({ points, total } = {}) => {
     if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
     if (typeof showEventBossBanner === 'function' && points) {

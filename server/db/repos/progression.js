@@ -31,7 +31,7 @@ const {
   SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS, CRAFT_MATS,
-  SEASON_TICKET_SEASON,
+  SEASON_TICKET_SEASON, SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, seasonDayKey, seasonWeekKey,
 } = require('../../../shared/definitions');
 
 class ProgressionError extends Error {
@@ -376,6 +376,8 @@ async function bumpFarmKill(db, playerId, zone, season = CURRENT_SEASON) {
 // (unlike the plain counter above): two claims arriving together must not
 // both read the same progress and both think they earned the same cycle.
 async function claimFarmKillPoints(db, playerId, zone, target, pointsPerCycle, season = CURRENT_SEASON) {
+  // Сезон 4: фарм-задания 3-го сезона сняты.
+  err('task_removed', 'В 4 сезоне этого задания нет');
   if (!seasonActive()) err('season_over', 'Сезон завершён');
   await query(db, `
     INSERT INTO player_season (player_id, season) VALUES ($1, $2)
@@ -394,6 +396,65 @@ async function claimFarmKillPoints(db, playerId, zone, target, pointsPerCycle, s
      WHERE player_id = $1 AND season = $2
     RETURNING points`, [playerId, season, zone, remaining, points]);
   return { cycles, points, remaining, total: Number(out[0].points) };
+}
+
+// ── Сезон 4: ежедневные и еженедельные задания ──────────────────────────
+// quests.d / quests.w = { k: ключ периода, <id>: прогресс, done: [id...] }.
+// Ключ сменился (новый день / новая неделя) — период начинается с нуля.
+// Дошёл счётчик до цели — очки начисляются здесь же, в той же записи, и id
+// попадает в done: второй раз за период не заплатит. FOR UPDATE — два
+// начисления подряд (убийство и доля пати в одной транзакции, два удара)
+// не прочитают один и тот же прогресс.
+const _TASK_DEFS = {};
+for (const d of SEASON_DAILY_TASKS) _TASK_DEFS[d.id] = { ...d, period: 'd' };
+for (const d of SEASON_WEEKLY_TASKS) _TASK_DEFS[d.id] = { ...d, period: 'w' };
+
+function _taskPeriod(q, period, now) {
+  const k = period === 'd' ? seasonDayKey(now) : seasonWeekKey(now);
+  const cur = q && q[period];
+  return (cur && cur.k === k) ? { ...cur, done: Array.isArray(cur.done) ? cur.done : [] } : { k, done: [] };
+}
+
+async function bumpSeasonTask(db, playerId, taskId, amount = 1, now = Date.now(), season = CURRENT_SEASON) {
+  const def = _TASK_DEFS[taskId];
+  const n = Number(amount) || 0;
+  if (!def || !(n > 0) || !seasonActive(now)) return null;
+  await query(db, `
+    INSERT INTO player_season (player_id, season) VALUES ($1, $2)
+    ON CONFLICT (player_id, season) DO NOTHING`, [playerId, season]);
+  const { rows } = await query(db, `
+    SELECT quests FROM player_season WHERE player_id = $1 AND season = $2 FOR UPDATE`, [playerId, season]);
+  const q = rows[0]?.quests || {};
+  const per = _taskPeriod(q, def.period, now);
+  if (per.done.includes(taskId)) return { taskId, done: true, completed: false, progress: def.target };
+  // GRAM — дробный; остальное — целые. Округление до 8 знаков, как баланс.
+  const progress = Math.round((Number(per[taskId] || 0) + n) * 1e8) / 1e8;
+  per[taskId] = Math.min(progress, def.target);
+  const completed = progress >= def.target;
+  if (completed) per.done = [...per.done, taskId];
+  const { rows: out } = await query(db, `
+    UPDATE player_season
+       SET quests = jsonb_set(COALESCE(quests, '{}'::jsonb), ARRAY[$3], $4::jsonb),
+           points = points + $5
+     WHERE player_id = $1 AND season = $2
+    RETURNING points`, [playerId, season, def.period, JSON.stringify(per), completed ? def.points : 0]);
+  return {
+    taskId, completed, done: completed, progress: per[taskId],
+    points: completed ? def.points : 0, total: Number(out[0].points),
+  };
+}
+
+// Что рисует вкладка «Задания»: каждое задание с целью, очками и прогрессом
+// текущего дня / недели.
+function seasonTasksOf(quests, now = Date.now()) {
+  const list = (defs, period) => {
+    const per = _taskPeriod(quests || {}, period, now);
+    return defs.map(d => ({
+      id: d.id, target: d.target, points: d.points,
+      progress: Number(per[d.id] || 0), done: per.done.includes(d.id),
+    }));
+  };
+  return { daily: list(SEASON_DAILY_TASKS, 'd'), weekly: list(SEASON_WEEKLY_TASKS, 'w') };
 }
 
 // The referral bonus: paid once, when an invited friend crosses the level
@@ -642,6 +703,8 @@ async function disassembleItem(db, playerId, rowId) {
 // Books are stackable, so they are addressed by id and count rather than by
 // row, and they pay a flat rate whichever book it is.
 async function burnBooks(db, playerId, itemId, qty) {
+  // Сезон 4: сжигание книг снято.
+  err('task_removed', 'В 4 сезоне сжигания нет');
   if (!seasonActive()) err('season_over', 'Сезон завершён');
   const def = CRAFT_MATS.find(m => m.id === itemId);
   if (!def || !(def.skillKey || def.passiveId || def.advSkillKey)) {
@@ -718,6 +781,8 @@ async function seasonState(db, playerId) {
       target: SEASON_FARM_HIGH_KILL_TARGET, points: SEASON_FARM_HIGH_KILL_POINTS,
       progress: Number((mine.quests || {}).farmHighKills || 0),
     },
+    // Сезон 4: ежедневные и еженедельные задания (seasonTasksOf).
+    tasks: seasonTasksOf(mine.quests),
   };
 }
 
@@ -771,7 +836,7 @@ module.exports = {
   claimSpecialQuest, claimedSpecialQuests,
   bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,
-  addSeasonPoints, bumpFarmKill, claimFarmKillPoints,
+  addSeasonPoints, bumpFarmKill, claimFarmKillPoints, bumpSeasonTask, seasonTasksOf,
   paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
   distributeSeasonPrizes, seasonWinners, claimSeasonPrize,
   takeAttempt, attemptsLeft, spendSeconds, secondsLeft,

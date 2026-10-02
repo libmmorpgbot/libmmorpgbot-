@@ -27,6 +27,7 @@ const players = require('../db/repos/players');
 const stats = require('../db/repos/stats');
 const consumables = require('../db/repos/consumables');
 const progression = require('../db/repos/progression');
+const seasonTasks = require('../season-tasks');
 const clans = require('../db/repos/clans');
 const plog = require('../db/repos/playerlog');
 const ops = require('../tg-ops');
@@ -62,6 +63,17 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // it is cleared with the handlers when the socket goes.
   let teleportTimer = null;
   const { io, enterFloor, floorIdOf, resolveFloor, floorCtxOf, ticketOnlyFloor } = deps;
+
+  // Сезон 4: какое еженедельное задание двигает это убийство. Этаж — комната,
+  // где стоит игрок (у доли пати — своя комната участника).
+  async function _seasonKillTask(t, sess, result) {
+    const floor = sess && sess.room && sess.room.floor;
+    if (result.farmZone) return seasonTasks.bumpIn(t, sess, 'killFarm', 1);
+    if (result.farmZone2 || result.farmHigh || result.dungeon) return null;
+    if (floor === floorIdOf('left')) return seasonTasks.bumpIn(t, sess, 'kill1', 1);
+    if (floor === floorIdOf('top')) return seasonTasks.bumpIn(t, sess, 'kill2', 1);
+    return null;
+  }
 
   // ── как локация называется в журнале ────────────────────────────────────
   // Числовой этаж в ленте админки не говорит ничего: «этаж 14» надо ещё
@@ -743,15 +755,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // seasonClaimFarmKills (server/handlers2/progression.js) is what turns
       // completed cycles into season points, so this runs unconditionally
       // and never checks seasonActive() itself.
-      if (result.farmZone) await progression.bumpFarmKill(t, pid, 'farmKills');
-      else if (result.farmZone2) await progression.bumpFarmKill(t, pid, 'farm2Kills');
-      // "Фарм зона 2" as players see it — a THIRD, separate zone from
-      // farmZone2 just above (which, despite the name, is the Элитная
-      // фарм-зона — see shared/definitions.js's "ВНИМАНИЕ ПРО ИМЕНА"
-      // comment). Room.js already returned this flag on every kill; nothing
-      // ever read it here, so every kill in this zone paid zero season
-      // points no matter how many were farmed.
-      else if (result.farmHigh) await progression.bumpFarmKill(t, pid, 'farmHighKills');
+      // Сезон 4, еженедельные: убийства на 1 этаже (левый коридор), на 2
+      // этаже (верхний) и в фарм зоне. Фарм-задания 3-го сезона сняты.
+      await _seasonKillTask(t, s, result);
       let refBonus = null;
       // The stats.refreshBm that used to be here has moved into
       // players.grantXp. It was the only refresh in the build, and it sat on
@@ -878,9 +884,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
         // party of up to FARM2_PARTY_SIZE, so whichever member's client
         // actually lands the kill was the only one whose farm2Kills counter
         // ever moved — «в элитной фарм зоне квест не считается сезонный».
-        if (result.farmZone) await progression.bumpFarmKill(t, pid, 'farmKills');
-        else if (result.farmZone2) await progression.bumpFarmKill(t, pid, 'farm2Kills');
-        else if (result.farmHigh) await progression.bumpFarmKill(t, pid, 'farmHighKills');
+        await _seasonKillTask(t, mate, result);
         await mate.pushBalances(t);
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
         mate.socket.emit('enemyKilled', {
@@ -953,6 +957,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
       return;
     }
     if (res.immune) { s.socket.emit('guildWarError', { msg: immuneMsg(res) }); return; }
+    // Сезон 4, еженедельное: ударить мирового босса 3 раза.
+    if (typeof enemyId === 'string' && enemyId.startsWith('evtboss_') && res.dmg > 0) {
+      seasonTasks.bumpSoon(s, 'boss', 1);
+    }
     // Every mode's stake in this hit — wave counters, the race tally, co-op
     // stages, the floor boss's respawn clock. Only the race boss's death
     // claims the hit outright.

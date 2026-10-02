@@ -26,6 +26,7 @@
 // knows both.
 
 const progression = require('./db/repos/progression');
+const seasonTasks = require('./season-tasks');
 const players = require('./db/repos/players');
 const plog = require('./db/repos/playerlog');
 const money = require('./db/repos/money');
@@ -421,7 +422,12 @@ function init(io) {
   Object.assign(modes, createRace10({
     ...shared,
     _race10AttemptsLeft: (sid) => attemptsLeft(sid, 'race10'),
-    _lockRace10Daily: (sid) => takeAttempt(sid, 'race10'),
+    // Списанная попытка = участие в Башне. Сезон 4, еженедельное: 3 раза.
+    _lockRace10Daily: async (sid) => {
+      const ok = await takeAttempt(sid, 'race10');
+      if (ok) seasonTasks.bumpSoon(sessionOf(sid), 'tower', 1);
+      return ok;
+    },
   }));
 
   // The castle. Its persistence is handed in — see the comment at the top of

@@ -16,6 +16,7 @@
 
 const clans = require('../db/repos/clans');
 const progression = require('../db/repos/progression');
+const seasonTasks = require('../season-tasks');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const chatMod = require('../chat-mod');
@@ -337,6 +338,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
 
     await query(t, `INSERT INTO chat_messages (player_id, username, text) VALUES ($1, $2, $3)`,
       [pid, s.username, msg]);
+    // Сезон 4, ежедневное: 10 сообщений в общий чат.
+    await seasonTasks.bumpIn(t, s, 'chat', 1);
     io.emit('chatMsg', {
       username: s.username, text: msg, time: new Date().toISOString(),
       role: chatMod.roleOf(s.telegramId),

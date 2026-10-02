@@ -6366,50 +6366,46 @@ function _seasonClaimFarm(zone) {
   if (typeof netSeasonClaimFarmKills === 'function') netSeasonClaimFarmKills(zone);
 }
 
+// Сезон 4: постоянная награда, ежедневные и еженедельные задания. Прогресс и
+// цели — с сервера (seasonState.tasks); очки приходят сами, когда задание
+// выполнено (seasonTaskDone), кнопки нет.
+function _seasonTaskRowHTML(x) {
+  const isGram = x.id === 'mbuy' || x.id === 'msell';
+  const cur = Math.min(x.progress || 0, x.target);
+  const fmt = n => isGram ? (Math.floor(n * 100) / 100) : Number(n).toLocaleString('ru-RU');
+  const pct = Math.max(0, Math.min(100, Math.round((cur / Math.max(1e-9, x.target)) * 100)));
+  return `
+    <div style="margin-top:10px;padding:10px;border:1px solid rgba(209,204,197,.14);border-radius:10px${x.done ? ';opacity:.6' : ''}">
+      <div style="display:flex;gap:8px;align-items:baseline">
+        <span style="flex:1;font-size:13px;color:#d9cfbe">${t('seasonTask_' + x.id)}</span>
+        <span style="font-size:12px;font-weight:700;color:#ffcf56;white-space:nowrap">+${x.points}</span>
+      </div>
+      <div class="cs-sbar" style="margin-top:6px">
+        <div class="cs-sbtrack"><div class="cs-sbfill" style="width:${pct}%;background:${x.done ? '#7ee0c0' : '#50af95'}"></div></div>
+        <span class="cs-sbv">${x.done ? '✓' : `${fmt(cur)} / ${fmt(x.target)}`}</span>
+      </div>
+    </div>`;
+}
+
 function _seasonTasksHTML() {
   const st = _seasonState || {};
-  const ended = !st.active;
-
-  const bookStacks = _seasonBookStacks();
-  const bookRows = bookStacks.map(s => `
-    <div class="season-book-row">
-      <span class="season-book-name">${_esc(s.name)}</span>
-      <span class="season-book-qty">× ${s.qty}</span>
-      <button class="imod-btn imod-sell" style="border-color:#50af95;color:#7ee0c0"
-              onclick="_seasonBurnBookConfirm('${s.id}')">${tVars('seasonBurnBtn', { n: s.qty * (st.bookBurnPoints || 60) })}</button>
-    </div>`).join('');
-
+  const tasks = st.tasks || { daily: [], weekly: [] };
   return `
     <div style="padding:16px">
       <div class="db-countdown">${st.points || 0}</div>
       <div class="db-phase" style="margin-bottom:12px">${t('seasonPointsLbl')}</div>
       <div class="db-rules">
-        <ul>
-          <li>${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 50 })}</li>
-          <li>${tVars('seasonMarketSellFmt', { n: st.marketSellPointsPerGram || 10 })}</li>
-          <li>${tVars('season2ShopFmt', { n: st.shopPointsPerGram || 100 })}</li>
-          <li>${tVars('seasonEnhanceFmt', { n: st.enhancePoints || 5 })}</li>
-          <li>${tVars('seasonTournamentWinFmt', { n: st.tournamentWinPoints || 20 })}</li>
-          <li>${tVars('season2AdvBookFmt', { n: st.advBookPoints || 300 })}</li>
-          <li>${tVars('season2EmpowerFmt', { n: st.empowerPoints || 500 })}</li>
-          <li>${tVars('seasonRefTask', { lv: (st.ref || {}).level || 20, n: (st.ref || {}).points || 200 })}</li>
-        </ul>
-        <div class="imod-enh-chance">${t('seasonRefNote')}</div>
+        <b>${t('seasonTasksPermHdr')}</b>
+        <ul><li>${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 10 })}</li></ul>
       </div>
       <div class="db-rules">
-        <b>${t('seasonFarmQuestsHdr')}</b>
-        ${_seasonFarmQuestHTML(t('farmZoneLbl'), st.farm, 'farm')}
-        ${_seasonFarmQuestHTML(t('farm2Lbl'), st.farm2, 'farm2')}
-        ${_seasonFarmQuestHTML(t('farmHighLbl'), st.farmHigh, 'farmHigh')}
+        <b>${t('seasonTasksDailyHdr')}</b>
+        ${(tasks.daily || []).map(_seasonTaskRowHTML).join('')}
       </div>
-      ${ended || !bookRows ? '' : `<div class="db-rules">
-        ${t('seasonBurnHdr')}
-        <ul>
-          <li>${tVars('season2BurnBookFmt', { n: st.bookBurnPoints || 60 })}</li>
-          <li>${t('seasonBurnNote')}</li>
-        </ul>
-        <div style="margin-top:10px">${bookRows}</div>
-      </div>`}
+      <div class="db-rules">
+        <b>${t('seasonTasksWeeklyHdr')}</b>
+        ${(tasks.weekly || []).map(_seasonTaskRowHTML).join('')}
+      </div>
     </div>`;
 }
 

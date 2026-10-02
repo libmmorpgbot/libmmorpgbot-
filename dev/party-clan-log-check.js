@@ -190,7 +190,7 @@ async function mk(nick) {
     ok(/addSeasonPoints\(t, pid, SEASON_ENHANCE_POINTS\)/.test(h), 'обработчик заточки начисляет SEASON_ENHANCE_POINTS');
     ok(h.indexOf('addSeasonPoints(t, pid, SEASON_ENHANCE_POINTS)') > h.indexOf("res.outcome === 'success'"),
       'очки только за УДАВШУЮСЯ заточку');
-    ok(D.SEASON_ENHANCE_POINTS > 0, 'константа задана и положительна');
+    ok(D.SEASON_ENHANCE_POINTS === 0, 'Сезон 4: задание на заточку снято — очков 0');
   }
 
   // ═══ 3. Журнал ═════════════════════════════════════════════════════════

@@ -18,6 +18,7 @@ const market = require('../db/repos/market');
 const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
 const progression = require('../db/repos/progression');
+const seasonTasks = require('../season-tasks');
 const players = require('../db/repos/players');
 const { query } = require('../db');
 const crypto = require('crypto');
@@ -144,6 +145,8 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   safeOn('craftBuffPotion', ({ itemId } = {}) => s.act('craftBuffPotion', 'craftBuffPotionError', async (t, pid) => {
     if (typeof itemId !== 'string' || !itemId) fail('Не выбрано зелье', 'bad_item');
     const res = await craft.craftBuffPotion(t, pid, itemId);
+    // Сезон 4, еженедельное: скрафтить зелье атаки 10 раз.
+    if (itemId === 'bp_atk') await seasonTasks.bumpIn(t, s, 'potAtk', 1);
     await pushAll(t);
     s.socket.emit('buffPotionCrafted', {
       itemId, qty: res.qty, newNexumBalance: await nexumOf(t, pid),
@@ -467,6 +470,10 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const id = rowId(listingId);
     if (!id) fail('Лот не найден — список обновлён', 'bad_listing');
     const res = await market.buy(t, pid, id);
+    // Сезон 4, ежедневные: купить и продать на маркете на 3 GRAM. Продавец
+    // может быть не в сети — его счётчик двигается по id, уведомление ниже.
+    await seasonTasks.bumpIn(t, s, 'mbuy', res.price);
+    const sellerTask = await progression.bumpSeasonTask(t, res.sellerId, 'msell', res.price);
     await pushAll(t);
     // Buying counts toward VIP, and the panel reads its level from this reply.
     const vip = await progression.vipOf(t, pid);
@@ -480,6 +487,9 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // already correct in the database either way — this is a notification,
     // not the payment.
     const sellerSock = deps.socketForPlayerId && deps.socketForPlayerId(res.sellerId);
+    if (sellerSock && sellerTask && sellerTask.completed) {
+      sellerSock.emit('seasonTaskDone', { task: 'msell', points: sellerTask.points, total: sellerTask.total });
+    }
     if (sellerSock) {
       // item and price too: the seller's toast names what sold and for how
       // much, and without them it read "Продано: undefined за undefined".
