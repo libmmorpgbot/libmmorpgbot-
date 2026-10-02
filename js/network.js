@@ -5350,7 +5350,7 @@ function netClaimQuest(idx) {
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
 function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'); }
-function netSeasonClaimPrize() { if (socket?.connected) socket.emit('seasonClaimPrize'); }
+function netSeasonClaimPrize(season) { if (socket?.connected) socket.emit('seasonClaimPrize', { season }); }
 // The farm-zone kill quests' claim button. `zone` is 'farm' or 'farm2' —
 // the server maps it to the right jsonb key/target/rate itself.
 function netSeasonClaimFarmKills(zone) {

@@ -256,6 +256,8 @@ const I18N_UI = {
     pt: 'Nesta temporada equilibramos os personagens, mas este não é o resultado final: a perfeição é impossível e a excelência leva tempo. Bom jogo na temporada 4!',
   },
   advUpgradeBtnFmt: { ru: 'Улучшить · шанс {p}% · у вас {n}', en: 'Upgrade · {p}% chance · you have {n}', uk: 'Покращити · шанс {p}% · у вас {n}', es: 'Mejorar · {p}% de probabilidad · tienes {n}', tr: 'Geliştir · %{p} şans · sende {n}', pt: 'Melhorar · {p}% de chance · você tem {n}' },
+  seasonPrizesHdrFmt: { ru: 'Награды {n} сезона', en: 'Season {n} rewards', uk: 'Нагороди {n} сезону', es: 'Premios de la temporada {n}', tr: '{n}. sezon ödülleri', pt: 'Recompensas da temporada {n}' },
+  seasonPrizesNote: { ru: 'Награда в GRAM забирается во вкладке «Сезон» после окончания сезона', en: 'Claim the GRAM reward in the Season tab once the season ends', uk: 'Нагороду в GRAM забирають у вкладці «Сезон» після завершення сезону', es: 'Reclama el premio en GRAM en la pestaña Temporada cuando termine', tr: 'GRAM ödülü sezon bitince Sezon sekmesinden alınır', pt: 'Resgate o prêmio em GRAM na aba Temporada quando a temporada terminar' },
   seasonTaskDoneLbl:  { ru: 'Выполнено', en: 'Completed', uk: 'Виконано', es: 'Completada', tr: 'Tamamlandı', pt: 'Concluída' },
   seasonRatingHdrFmt: { ru: 'Рейтинг {n} сезона', en: 'Season {n} rating', uk: 'Рейтинг {n} сезону', es: 'Clasificación de la temporada {n}', tr: '{n}. sezon sıralaması', pt: 'Classificação da temporada {n}' },
   seasonTasksPermHdr:   { ru: 'Постоянная награда', en: 'Permanent reward', uk: 'Постійна нагорода', es: 'Recompensa permanente', tr: 'Kalıcı ödül', pt: 'Recompensa permanente' },

@@ -784,6 +784,14 @@ const SEASON_PRIZES = [
 // GRAM по курсу 1 GRAM = 1.56 USDT. `gram` в SEASON_PRIZES намеренно не
 // добавлен: тогда distributeSeasonPrizes начислял бы их фоном, без кнопки.
 const PAST_SEASON = 3;
+// Сезон 4 платит так же: те же места и суммы (SEASON_PRIZES), в GRAM по
+// курсу, кнопкой «Забрать» после конца сезона. Показывается последний
+// завершённый сезон; забрать можно за любой завершённый из PRIZE_SEASONS.
+const PRIZE_SEASONS = [3, 4];
+function prizeSeasonShown(now = Date.now()) { return seasonActive(now) ? 3 : 4; }
+function prizeSeasonClaimable(season, now = Date.now()) {
+  return PRIZE_SEASONS.includes(season) && (season < 4 || !seasonActive(now));
+}
 const GRAM_USDT_RATE = 1.56;
 function seasonPrizeGram(usd) { return Math.round((Number(usd) || 0) / GRAM_USDT_RATE * 100) / 100; }
 
@@ -3954,7 +3962,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_TOURNAMENT_WIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
-  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, seasonPrizeGram,
+  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, seasonPrizeGram, PRIZE_SEASONS, prizeSeasonShown, prizeSeasonClaimable,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,

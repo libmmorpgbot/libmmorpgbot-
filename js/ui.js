@@ -6299,6 +6299,23 @@ function _seasonInfoHTML() {
     </div>`;
 }
 
+// Награды 4 сезона — те же места и суммы, что в 3-м (SEASON_PRIZES), в GRAM
+// по курсу; забираются кнопкой во вкладке «Сезон» после конца сезона.
+function _s4PrizesHTML() {
+  const prizes = ((_seasonState || {}).prizes) || (typeof SEASON_PRIZES !== 'undefined' ? SEASON_PRIZES : []);
+  if (!prizes.length) return '';
+  const groups = _seasonPrizeGroups(prizes);
+  const medal = p => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : '🏅';
+  const gram = usd => (typeof seasonPrizeGram === 'function') ? seasonPrizeGram(usd) : '';
+  return `<div class="s4-sec-hdr"><span>🎁 ${tVars('seasonPrizesHdrFmt', { n: 4 })}</span></div>
+    ${groups.map(g => `<div class="s4-row${g.from <= 3 ? ' top' : ''}">
+      <span class="s4-place">${medal(g.from)}</span>
+      <span class="s4-name">${g.from === g.to ? tVars('seasonPlaceFmt', { n: g.from }) : tVars('seasonPlaceRangeFmt', { a: g.from, b: g.to })}</span>
+      <span class="s4-gram">${gram(g.usd)} GRAM</span>
+    </div>`).join('')}
+    <div class="s4-empty" style="padding:8px 0 0">${t('seasonPrizesNote')}</div>`;
+}
+
 // Сколько осталось до конца сезона (SEASON_END_AT, shared/definitions.js).
 function _s4EndsHTML() {
   const end = typeof SEASON_END_AT !== 'undefined' ? SEASON_END_AT : 0;
@@ -6309,7 +6326,7 @@ function _s4EndsHTML() {
 
 function _seasonClaimPrize(btn) {
   if (btn) btn.disabled = true;
-  if (typeof netSeasonClaimPrize === 'function') netSeasonClaimPrize();
+  if (typeof netSeasonClaimPrize === 'function') netSeasonClaimPrize((_seasonWinners && _seasonWinners.season) || 3);
 }
 
 // ── "Итоги сезона" — the screen the button above opens once the season is
@@ -6504,6 +6521,7 @@ function _seasonRatingHTML() {
     ${podium || `<div class="s4-empty">${t('seasonNoPlayers')}</div>`}
     ${rest}
     ${meOutside ? `<div class="s4-me-sep">···</div>${row(r.me)}` : ''}
+    ${_s4PrizesHTML()}
   </div>`;
 }
 

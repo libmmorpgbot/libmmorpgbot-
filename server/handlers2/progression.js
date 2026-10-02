@@ -24,7 +24,7 @@ const {
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST, ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
   FOREIGN_SKILL_KEY,
-  SEASON_RATING_MIN_POINTS, PAST_SEASON,
+  SEASON_RATING_MIN_POINTS, PAST_SEASON, prizeSeasonShown, prizeSeasonClaimable,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
@@ -343,18 +343,23 @@ module.exports = function registerProgression(s, safeOn) {
   // seasonRating above, for the same reason: it is a database query, not
   // something worth pushing to everyone on every tick.
   safeOn('seasonWinners', () => s.act('seasonWinners', 'seasonError', async (t, pid) => {
-    const list = await progression.seasonWinners(t, PAST_SEASON, pid);
-    s.socket.emit('seasonWinnersData', { list, season: PAST_SEASON });
+    const season = prizeSeasonShown();
+    const list = await progression.seasonWinners(t, season, pid);
+    s.socket.emit('seasonWinnersData', { list, season });
   }));
 
   // Победитель прошлого сезона забирает свою награду в GRAM. После — список
   // приходит заново, и кнопки в его строке больше нет.
-  safeOn('seasonClaimPrize', () => s.act('seasonClaimPrize', 'seasonError', async (t, pid) => {
-    const res = await progression.claimSeasonPrize(t, pid, PAST_SEASON);
+  safeOn('seasonClaimPrize', ({ season } = {}) => s.act('seasonClaimPrize', 'seasonError', async (t, pid) => {
+    // Сезон — тот, чей список у игрока на экране; сервер сам решает, можно ли.
+    const want = Number(season) || prizeSeasonShown();
+    if (!prizeSeasonClaimable(want)) fail('Награды этого сезона пока недоступны', 'not_ended');
+    const res = await progression.claimSeasonPrize(t, pid, want);
     await s.pushBalances(t);
     s.socket.emit('seasonPrizeClaimed', res);
-    const list = await progression.seasonWinners(t, PAST_SEASON, pid);
-    s.socket.emit('seasonWinnersData', { list, season: PAST_SEASON });
+    const shown = prizeSeasonShown();
+    const list = await progression.seasonWinners(t, shown, pid);
+    s.socket.emit('seasonWinnersData', { list, season: shown });
   }));
 
   // ── season ───────────────────────────────────────────────────────────────
