@@ -198,10 +198,15 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
   // (Здоровье переносит вызывающий — sendGameStart, handlers2/world.js: там
   // оно ставится ПОСЛЕ статов, а здесь maxHp ещё классовый базовый.)
   let carryWindows = null;
+  let carryPet = null;
   if (session.room && session.room !== room) {
     if (typeof session.room.skillWindowsOf === 'function') {
       carryWindows = session.room.skillWindowsOf(session.socket.id);
     }
+    // Питомец едет вместе с окнами: пока новая запись без него, тик питомца
+    // обнулял его таймер, и следующий баф откладывался на полный период.
+    const _old = session.room.players && session.room.players.get(session.socket.id);
+    carryPet = (_old && _old.petId) || null;
     // Same rule as forceFloor's: walking off an instanced floor ends the run
     // that was happening on it. Without this a player who left Страх by any
     // route other than dying kept a run record that silently refused every
@@ -268,6 +273,12 @@ function enterFloor(session, wantedFloor, progress, { force = false } = {}) {
     session.floor = target;
     // Окна навыков — сразу, вместе с классом: до первого тика новой комнаты,
     // чтобы вампиризм не потерял ни одного удара на пороге.
+    if (carryPet && typeof room.setPlayerPet === 'function') {
+      room.setPlayerPet(session.socket.id, carryPet);
+      // Остальные на этаже видят питомца по 'playerPet'; syncPet его больше не
+      // пришлёт — для него питомец уже на месте.
+      session.socket.to(`floor_${target}`).emit('playerPet', { id: session.socket.id, petId: carryPet });
+    }
     if (carryWindows) room.restoreSkillWindows(session.socket.id, carryWindows);
   }
 

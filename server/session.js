@@ -1139,6 +1139,12 @@ class Session {
     dest.addPlayer(this.socket.id, this.username, clan && clan.name, clan && clan.icon,
       (clan && clan.atkBonus) || 0, this.telegramId, clan && clan.clanId);
     dest.setPlayerChar(this.socket.id, was.type);
+    // Питомец — тоже из старой записи. setPlayerChar без сохранения ставит
+    // petId = null, и во всех событиях и режимах (Башня, Страх, Сотрудничество,
+    // Элитная фарм-зона, арена, война гильдий, возврат в хаб) комната считала,
+    // что питомца нет: его навык и баф там не работали вовсе. Выставляется до
+    // restoreSkillWindows ниже, чтобы перенесённый баф питомца не сбросился.
+    if (was.petId) dest.setPlayerPet(this.socket.id, was.petId);
     // ── THE WHOLE STAT BLOCK, not the nine fields somebody typed out ────────
     // This is where every skill in every instanced mode did ZERO damage.
     //
@@ -1204,6 +1210,7 @@ class Session {
 
     this.socket.to(`floor_${target}`).emit('playerJoined', { id: this.socket.id, username: this.username });
     this.socket.to(`floor_${target}`).emit('playerChar', { id: this.socket.id, type: was.type });
+    if (was.petId) this.socket.to(`floor_${target}`).emit('playerPet', { id: this.socket.id, petId: was.petId });
 
     // The client rebuilds a floor from gameStart and nothing else, so a move it
     // did not ask for still has to arrive as one. Sent after the fact, because
@@ -1225,6 +1232,9 @@ class Session {
         // Whatever moved them last sends its own gameStart.
         if (seq !== this._moveSeq || this.room !== dest) return;
         this._applyStats(state.stats, dest);
+        // Питомец по экипировке из базы — на случай, если его сменили, пока
+        // шёл переход.
+        this.syncPet(state.items && state.items.equipment);
         this._emitRaw('gameStart', { ...state, ...this.worldPayload(target, dest) });
       })
       .catch(err => console.error('[session] forceFloor push:', err.message));
