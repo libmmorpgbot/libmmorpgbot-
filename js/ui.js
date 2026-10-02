@@ -6299,19 +6299,18 @@ function _seasonInfoHTML() {
     </div>`;
 }
 
-// Награды 4 сезона — те же места и суммы, что в 3-м (SEASON_PRIZES), в GRAM
-// по курсу; забираются кнопкой во вкладке «Сезон» после конца сезона.
+// Награды 4 сезона — те же места и суммы, что в 3-м (SEASON_PRIZES), в USDT;
+// выплата — в GRAM по курсу кнопкой во вкладке «Сезон» после конца сезона.
 function _s4PrizesHTML() {
   const prizes = ((_seasonState || {}).prizes) || (typeof SEASON_PRIZES !== 'undefined' ? SEASON_PRIZES : []);
   if (!prizes.length) return '';
   const groups = _seasonPrizeGroups(prizes);
   const medal = p => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : '🏅';
-  const gram = usd => (typeof seasonPrizeGram === 'function') ? seasonPrizeGram(usd) : '';
   return `<div class="s4-sec-hdr"><span>🎁 ${tVars('seasonPrizesHdrFmt', { n: 4 })}</span></div>
     ${groups.map(g => `<div class="s4-row${g.from <= 3 ? ' top' : ''}">
       <span class="s4-place">${medal(g.from)}</span>
       <span class="s4-name">${g.from === g.to ? tVars('seasonPlaceFmt', { n: g.from }) : tVars('seasonPlaceRangeFmt', { a: g.from, b: g.to })}</span>
-      <span class="s4-gram">${gram(g.usd)} GRAM</span>
+      <span class="s4-gram">${g.usd} USDT</span>
     </div>`).join('')}
     <div class="s4-empty" style="padding:8px 0 0">${t('seasonPrizesNote')}</div>`;
 }
