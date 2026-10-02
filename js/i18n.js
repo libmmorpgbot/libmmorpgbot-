@@ -255,6 +255,7 @@ const I18N_UI = {
     tr: 'Bu sezon karakterleri dengeledik, ama bu son nokta değil: mükemmellik imkânsız, iyisi ise zaman ister. 4. sezonda iyi oyunlar!',
     pt: 'Nesta temporada equilibramos os personagens, mas este não é o resultado final: a perfeição é impossível e a excelência leva tempo. Bom jogo na temporada 4!',
   },
+  advUpgradeBtnFmt: { ru: 'Улучшить · шанс {p}% · у вас {n}', en: 'Upgrade · {p}% chance · you have {n}', uk: 'Покращити · шанс {p}% · у вас {n}', es: 'Mejorar · {p}% de probabilidad · tienes {n}', tr: 'Geliştir · %{p} şans · sende {n}', pt: 'Melhorar · {p}% de chance · você tem {n}' },
   seasonTaskDoneLbl:  { ru: 'Выполнено', en: 'Completed', uk: 'Виконано', es: 'Completada', tr: 'Tamamlandı', pt: 'Concluída' },
   seasonRatingHdrFmt: { ru: 'Рейтинг {n} сезона', en: 'Season {n} rating', uk: 'Рейтинг {n} сезону', es: 'Clasificación de la temporada {n}', tr: '{n}. sezon sıralaması', pt: 'Classificação da temporada {n}' },
   seasonTasksPermHdr:   { ru: 'Постоянная награда', en: 'Permanent reward', uk: 'Постійна нагорода', es: 'Recompensa permanente', tr: 'Kalıcı ödül', pt: 'Recompensa permanente' },

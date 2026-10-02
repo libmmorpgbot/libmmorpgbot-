@@ -591,11 +591,14 @@ async function prefsOf(db, playerId) {
 async function skillsOf(db, playerId) {
   const { rows } = await query(db,
     `SELECT kind, key, level FROM player_skills WHERE player_id = $1`, [playerId]);
-  const out = { skillLevels: {}, passiveLevels: {}, advSkillLearned: {}, advSkillActive: {} };
+  const out = { skillLevels: {}, passiveLevels: {}, advSkillLearned: {}, advSkillActive: {}, advSkillLevels: {} };
   for (const r of rows) {
     if (r.kind === 'skill') out.skillLevels[r.key] = r.level;
     else if (r.kind === 'passive') out.passiveLevels[r.key] = r.level;
-    else if (r.kind === 'adv_learned') out.advSkillLearned[r.key] = r.level > 0;
+    else if (r.kind === 'adv_learned') {
+      out.advSkillLearned[r.key] = r.level > 0;
+      if (r.level > 0) out.advSkillLevels[r.key] = r.level;     // уровень продвинутого навыка
+    }
     else if (r.kind === 'adv_active') out.advSkillActive[r.key] = r.level > 0;
   }
   return out;
@@ -978,7 +981,7 @@ async function spendUpgrade(db, playerId, key) {
 // client cannot address has nothing to roll back.
 async function setSkillLevel(db, playerId, kind, key, level) {
   const max = kind === 'passive' ? PASSIVE_MAX_LEVEL
-            : kind === 'skill'   ? SKILL_MAX_LEVEL : 1;
+            : (kind === 'skill' || kind === 'adv_learned') ? SKILL_MAX_LEVEL : 1;
   const lv = Math.max(0, Math.min(max, Math.floor(Number(level) || 0)));
   await query(db, `
     INSERT INTO player_skills (player_id, kind, key, level) VALUES ($1, $2, $3, $4)
@@ -992,7 +995,7 @@ async function setSkillLevel(db, playerId, kind, key, level) {
 // max" without treating it as an error.
 async function bumpSkill(db, playerId, kind, key) {
   const max = kind === 'passive' ? PASSIVE_MAX_LEVEL
-            : kind === 'skill'   ? SKILL_MAX_LEVEL : 1;
+            : (kind === 'skill' || kind === 'adv_learned') ? SKILL_MAX_LEVEL : 1;
   const { rows } = await query(db, `
     INSERT INTO player_skills (player_id, kind, key, level) VALUES ($1, $2, $3, 1)
     ON CONFLICT (player_id, kind, key) DO UPDATE

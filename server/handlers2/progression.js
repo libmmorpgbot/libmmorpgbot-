@@ -21,7 +21,7 @@ const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, EMPOWER_LEVEL, EMPOWER_BONUS_SP,
   EMPOWER_MAX, empowerCostFor, UPGRADE_RESET_COST, SKILL_UPGRADE_CHANCE,
   SEASON_EMPOWER_POINTS, seasonActive,
-  SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST,
+  SKILL_STUDY_COST, SKILL_UPGRADE_COST, ADV_SKILL_STUDY_COST, ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE,
   skillBookId, advSkillBookId, passiveBookId, _vipLevelItems,
   FOREIGN_SKILL_KEY,
   SEASON_RATING_MIN_POINTS, PAST_SEASON,
@@ -159,6 +159,27 @@ module.exports = function registerProgression(s, safeOn) {
     }
     await players.setSkillLevel(t, pid, 'adv_learned', key, 1);
     await s.pushItems(t); await pushAfterStat(t);
+  }));
+
+  // Улучшение продвинутого навыка: 1-10, как обычный. Книга продвинутого
+  // навыка тратится на попытку; уровень растёт при удаче (ADV_SKILL_UPGRADE_
+  // CHANCE). Ответ — тот же 'upgradeRolled', что у обычного навыка.
+  safeOn('upgradeAdvSkill', ({ key } = {}) => s.act('upgradeAdvSkill', 'progressError', async (t, pid) => {
+    if (!SLOTS.has(key)) fail('Неизвестный навык', 'bad_slot');
+    const prog = await players.progressOf(t, pid);
+    if (!prog.charClass) fail('Сначала выберите класс', 'no_class');
+    const cur = await players.skillsOf(t, pid);
+    if (!cur.advSkillLearned[key]) fail('Продвинутый навык не изучен', 'not_learned');
+    if ((cur.advSkillLevels[key] || 1) >= SKILL_MAX_LEVEL) fail('Уже максимальный уровень', 'maxed');
+    await items.lockPlayer(t, pid);
+    if (!await items.removeQty(t, pid, advSkillBookId(prog.charClass, key), ADV_SKILL_UPGRADE_COST)) {
+      fail(`Нужно книг продвинутого навыка: ${ADV_SKILL_UPGRADE_COST}`, 'no_book');
+    }
+    const success = require('crypto').randomInt(1e6) / 1e6 < ADV_SKILL_UPGRADE_CHANCE;
+    let level = null;
+    if (success) level = (await players.bumpSkill(t, pid, 'adv_learned', key)).level;
+    await s.pushItems(t); await pushAfterStat(t);
+    s.socket.emit('upgradeRolled', { kind: 'adv:' + key, ok: success, level });
   }));
 
   // Which variant is active decides which damage multiplier the server applies

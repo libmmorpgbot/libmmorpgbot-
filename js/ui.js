@@ -1420,6 +1420,16 @@ function updateSkillsUI() {
             advBtnLabel = advActive ? t('advSwitchToBaseBtn') : t('advSwitchToAdvBtn');
             advBtnAction = `toggleAdvSkill('${sk.key}')`;
           }
+          // Уровень продвинутого навыка 1-10 и кнопка улучшения (книга
+          // продвинутого навыка за попытку, шанс ADV_SKILL_UPGRADE_CHANCE).
+          const advLvl = advLearned ? Math.max(1, (player.advSkillLevels || {})[sk.key] || 1) : 0;
+          const advMaxed = advLvl >= SKILL_MAX_LEVEL;
+          const advDots = advLearned ? Array.from({ length: SKILL_MAX_LEVEL }, (_, i) =>
+            `<span class="sk-dot${i < advLvl ? ' filled' : ''}"></span>`).join('') : '';
+          const advUpgCan = advLearned && !advMaxed && advBookCount >= ADV_SKILL_UPGRADE_COST;
+          const advUpgBtn = advLearned && !advMaxed
+            ? `<button class="skill-upg-btn adv-btn${advUpgCan ? '' : ' disabled'}" onclick="upgradeAdvSkill('${sk.key}')">${iconHTML('book', 12, '#f5c542')} ${ADV_SKILL_UPGRADE_COST} · ${tVars('advUpgradeBtnFmt', { p: Math.round(ADV_SKILL_UPGRADE_CHANCE * 100), n: advBookCount })}</button>`
+            : '';
           advHtml = `<div class="adv-skill-box${advActive ? ' active' : ''}">
             <div class="adv-skill-hdr">${iconHTML('star', 11, '#f5c542')} ${t('advSkillHdr')}${advActive ? `<span class="adv-skill-active-badge">${t('advActiveLbl')}</span>` : ''}</div>
             <div class="skill-upg-top">
@@ -1428,11 +1438,13 @@ function updateSkillsUI() {
                 ${!advLearned ? `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">${iconHTML('lock', 15, '#d1ccc5')}</div>` : ''}
               </div>
               <div class="skill-upg-info">
-                <div class="skill-upg-name" style="color:#f5c542">${adv.name}</div>
+                <div class="skill-upg-name" style="color:#f5c542">${adv.name}${advLearned ? `<span class="skill-upg-lvl"> ${advMaxed ? t('maxAbbrev') : t('levelAbbrev') + advLvl}</span>` : ''}</div>
                 <div class="skill-upg-desc">${adv.desc}</div>
                 <div class="skill-upg-type">${!advLearned ? advBookName : ''}</div>
               </div>
             </div>
+            ${advLearned ? `<div class="sk-dots">${advDots}</div>` : ''}
+            ${advUpgBtn}
             <button class="skill-upg-btn adv-btn${advBtnDisabled ? ' disabled' : ''}" onclick="${advBtnAction}">${advBtnLabel}</button>
           </div>`;
         }
@@ -1581,6 +1593,16 @@ function learnAdvSkill(key) {
     return;
   }
   netLearnAdvSkill(key);
+}
+
+function upgradeAdvSkill(key) {
+  if (!player || !(player.advSkillLearned || {})[key]) return;
+  if (((player.advSkillLevels || {})[key] || 1) >= SKILL_MAX_LEVEL) return;
+  if (countMaterial(_advSkillBookId(player.type, key)) < ADV_SKILL_UPGRADE_COST) {
+    dmgNum(player.x, player.y - 30, t('needAdvSkillBookToast'), '#f17e8b');
+    return;
+  }
+  netUpgradeAdvSkill(key);
 }
 
 // Free toggle between a slot's base and advanced version — no cost either

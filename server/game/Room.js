@@ -3437,9 +3437,12 @@ class Room {
     // one without spending a single book. studySkill writes level 1, so zero
     // means unstudied and nothing else.
     const levels = p._skillLevels || sd.skillLevels || {};
-    const lvl = Math.max(0, Math.floor(Number(levels[key])) || 0);
-    if (lvl <= 0) return 0;
-    return skillDamageMult(p.type || sd.type, key, this._advSlotActive(p, key), lvl, skillPct);
+    if (!((Math.floor(Number(levels[key])) || 0) > 0)) return 0;
+    // Продвинутый вариант — от СВОЕГО уровня (slotSkillLevel).
+    const adv = this._advSlotActive(p, key);
+    const lvl = adv ? Math.max(1, Math.floor(Number((p._advLevels || sd.advSkillLevels || {})[key])) || 1)
+                    : Math.floor(Number(levels[key])) || 0;
+    return skillDamageMult(p.type || sd.type, key, adv, lvl, skillPct);
   }
 
   // Is this slot's advanced ("вторая профессия") variant the one that would
@@ -4942,6 +4945,7 @@ class Room {
     // (Session.moveRoom) cannot blank them.
     if (st.skillLevels) p._skillLevels = st.skillLevels;
     if (st.advSkillLearned) p._advLearned = st.advSkillLearned;
+    if (st.advSkillLevels) p._advLevels = st.advSkillLevels;
     if (st.advSkillActive) p._advActive = st.advSkillActive;
     // 'in', not truthy: unlike the three above, this field is legitimately
     // null (no fifth slot learned) — a truthy guard would apply a REAL null

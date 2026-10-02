@@ -23,7 +23,7 @@ const chatMod = require('../chat-mod');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
         SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillCooldownFloorMs,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
-        RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY } = require('../../shared/definitions');
+        RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY, slotSkillLevel } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
 const party = require('../party');
 const players = require('../db/repos/players');
@@ -525,7 +525,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (isForeign && !st.foreignSkill) fail('Навык не изучен', 'not_learned');
     const cls = isForeign ? st.foreignSkill.cls : st.charClass;
     const rk  = isForeign ? st.foreignSkill.key : k;
-    const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : slotSkillLevel(sk, k);
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const b = skillBuffOf(cls, rk, adv);
     if (!b) fail('Этот навык не даёт бафа', 'not_buff');
@@ -558,7 +558,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     if (isForeign && !st.foreignSkill) fail('Навык не изучен', 'not_learned');
     const cls = isForeign ? st.foreignSkill.cls : st.charClass;
     const rk  = isForeign ? st.foreignSkill.key : k;
-    const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : slotSkillLevel(sk, k);
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
     const mult = skillHasteOf(cls, rk, adv);
     if (mult == null) fail('Этот навык не ускоряет атаку', 'not_haste');
@@ -593,7 +593,7 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const cls = isForeign ? st.foreignSkill.cls : st.charClass;
     const rk  = isForeign ? st.foreignSkill.key : k;
     const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
-    const lvl = isForeign ? (st.foreignSkill.level || 0) : (sk.skillLevels[k] || 0);
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : slotSkillLevel(sk, k);
     if (castTooSoon('heal', k, cls, rk, adv, lvl, now)) fail('Навык ещё перезаряжается', 'cooldown');
     // «Прыжок за спину» обещает лечение ПРИ ПОПАДАНИИ, а сервер лечил по
     // одному нажатию — и без цели, и мимо. Удар прыжка клиент шлёт раньше

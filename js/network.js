@@ -1383,6 +1383,7 @@ function netConnect(onReady) {
       player.passiveLevels = { ...(payload.passiveLevels || {}) };
       player.advSkillLearned = { Q: false, W: false, E: false, R: false, ...(payload.advSkillLearned || {}) };
       player.advSkillActive = { Q: false, W: false, E: false, R: false, ...(payload.advSkillActive || {}) };
+      player.advSkillLevels = { ...(payload.advSkillLevels || {}) };
       // Reset rather than left stale: this reuses the same `player` object a
       // real session may already have set foreignSkill on, and a trial
       // build has no fifth-slot ability of its own.
@@ -1874,7 +1875,10 @@ function netConnect(onReady) {
     if (enemyIds) enemyIds.forEach(_applyCC);
   });
 
-  socket.on('pvpPlayerCC', ({ targetId, type, duration, pct }) => {
+  socket.on('pvpPlayerCC', (cc) => {
+    const { targetId, type, duration } = cc || {};
+    // pct есть только у 'slowPct' (удары Танка/Рыцаря Смерти, Room.pvpAttack).
+    const pct = cc && cc.pct;
     if (targetId === socket.id) {
       if (!player || state !== 'playing') return;
       if (type === 'slowPct') {
@@ -2508,6 +2512,7 @@ function netConnect(onReady) {
     if (data.passiveLevels)   player.passiveLevels   = { ...data.passiveLevels };
     if (data.advSkillLearned) player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...data.advSkillLearned };
     if (data.advSkillActive)  player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...data.advSkillActive };
+    if (data.advSkillLevels)  player.advSkillLevels  = { ...data.advSkillLevels };
     // foreignSkill is NOT read here — it isn't a player_skills field at all
     // (it lives on the equipped weapon's legendary rune), so it never rides
     // progressSync. See xpSync's handler below, and pushStats, server/
@@ -3638,6 +3643,7 @@ function netUpgradeForeignSkill() { if (socket?.connected) socket.emit('upgradeF
 function netLearnPassive(id)     { if (socket?.connected) socket.emit('learnPassive', { id }); }
 function netUpgradePassive(id)   { if (socket?.connected) socket.emit('upgradePassive', { id }); }
 function netLearnAdvSkill(key)   { if (socket?.connected) socket.emit('learnAdvSkill', { key }); }
+function netUpgradeAdvSkill(key) { if (socket?.connected) socket.emit('upgradeAdvSkill', { key }); }
 function netToggleAdvSkill(key)  { if (socket?.connected) socket.emit('toggleAdvSkill', { key }); }
 
 // Consumes an inventory item into one slot of one codex set. A request, not

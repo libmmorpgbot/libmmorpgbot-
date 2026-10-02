@@ -3484,6 +3484,18 @@ const SKILL_STUDY_COST     = 1;
 const SKILL_UPGRADE_COST   = 2;
 const SKILL_UPGRADE_CHANCE = 0.30;
 const ADV_SKILL_STUDY_COST = 5;
+// Продвинутый навык (вторая профессия) качается сам, 1-10, как обычный:
+// изучение даёт 1 уровень, каждое улучшение — книга продвинутого навыка и
+// бросок шанса. Сила, длительность и лечение продвинутого варианта считаются
+// от ЕГО уровня (slotSkillLevel), а не от уровня обычного навыка в слоте.
+const ADV_SKILL_UPGRADE_COST = 1;
+const ADV_SKILL_UPGRADE_CHANCE = 0.5;
+function slotSkillLevel(sk, key) {
+  sk = sk || {};
+  const adv = !!((sk.advSkillLearned || {})[key] && (sk.advSkillActive || {})[key]);
+  if (adv) return Math.max(1, Math.floor(Number((sk.advSkillLevels || {})[key])) || 1);
+  return Math.max(0, Math.floor(Number((sk.skillLevels || {})[key])) || 0);
+}
 
 // Every class+slot and every passive has its OWN book (CRAFT_MATS below) — a
 // generic book would not say which of the abilities it is for.
@@ -3935,6 +3947,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
+  ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, UPGRADE_STEP, upgradeCost, UPGRADE_MAX, upgLvlCapped,
   FOREIGN_SKILL_KEY,
   MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,

@@ -88,6 +88,11 @@ const LOAD_SQL = `
        WHERE s.player_id = pr.player_id AND s.kind = 'adv_learned' AND s.level > 0
     ), '{}'::json) AS adv_learned,
     COALESCE((
+      SELECT json_object_agg(s.key, s.level)
+        FROM player_skills s
+       WHERE s.player_id = pr.player_id AND s.kind = 'adv_learned' AND s.level > 0
+    ), '{}'::json) AS adv_levels,
+    COALESCE((
       SELECT json_object_agg(s.key, true)
         FROM player_skills s
        WHERE s.player_id = pr.player_id AND s.kind = 'adv_active' AND s.level > 0
@@ -387,6 +392,7 @@ function compute(row) {
     // player's numbers is also the moment their skills should reach the Room.
     skillLevels: row.skill_levels || {},
     advSkillLearned: row.adv_learned || {},
+    advSkillLevels: row.adv_levels || {},
     advSkillActive: row.adv_active || {},
     // The fifth, independent slot — null unless the currently-equipped
     // weapon carries a legendary rune with a bonusSkill roll. { key, level,

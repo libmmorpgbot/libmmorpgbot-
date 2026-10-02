@@ -190,7 +190,10 @@ function _cooldownKeyFor(key) {
 // ── Skill level helpers ───────────────────────────────────────
 function _skillLvl(key) {
   if (_foreignCastCtx && _foreignCastCtx.key === key) return (player && player.foreignSkill && player.foreignSkill.level) || 0;
-  return (player && player.skillLevels && player.skillLevels[key]) || 0;
+  // Продвинутый вариант — от СВОЕГО уровня (slotSkillLevel, shared/definitions.js),
+  // как и на сервере.
+  return (typeof slotSkillLevel === 'function' && player) ? slotSkillLevel(player, key)
+    : ((player && player.skillLevels && player.skillLevels[key]) || 0);
 }
 // Сила навыков from equipment (recompute() above). Multiplies the magnitude
 // of a skill — its damage and its healing — on top of the +1%/level the skill
@@ -1627,6 +1630,7 @@ function restoreFromSave(data) {
   // other loadout choice — see _activeSkillDef, js/player.js.
   player.advSkillLearned = { Q:false, W:false, E:false, R:false, ...(data.advSkillLearned || {}) };
   player.advSkillActive  = { Q:false, W:false, E:false, R:false, ...(data.advSkillActive || {}) };
+  player.advSkillLevels  = { ...(data.advSkillLevels || {}) };
   // The fifth, independent slot — null unless the equipped weapon's
   // legendary rune currently carries one. See FOREIGN_SKILL_KEY,
   // shared/definitions.js.

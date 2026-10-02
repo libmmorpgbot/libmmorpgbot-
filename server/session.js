@@ -340,6 +340,7 @@ function _statsFromRoomRecord(p) {
     // p._advLearned, p._advActive and p._foreignSkill, and setPlayerStats is
     // what fills those.
     skillLevels: p._skillLevels, advSkillLearned: p._advLearned, advSkillActive: p._advActive,
+    advSkillLevels: p._advLevels,
     foreignSkill: p._foreignSkill,
   };
 }
@@ -962,6 +963,7 @@ class Session {
       passiveLevels: skills.passiveLevels || {},
       advSkillLearned: skills.advSkillLearned || {},
       advSkillActive: skills.advSkillActive || {},
+      advSkillLevels: skills.advSkillLevels || {},
       // The fifth, independent slot — not a skills.* field: it comes from
       // stats.of() (the equipped weapon's legendary rune, repos/runes.js),
       // null unless that rune currently carries one. See FOREIGN_SKILL_KEY,
