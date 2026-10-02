@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Liberty — Обновления</title>
 <!--
-  Список обновлений (патчноуты). Новый патч — новый <article class="patch">
-  СВЕРХУ списка в <main>, и строка в оглавлении #patch-list. Оформление —
-  то же, что у guide.html (палитра и шрифты оттуда).
+  Страница обновлений. Сверху — витрина последнего патча (шапка + разделы),
+  ниже — список прошлых патчей (#older). Новый патч: перенести текущую
+  витрину вниз отдельным <article class="old-patch">, а сверху собрать новую.
+  Палитра и шрифты — как в guide.html. Картинки — из /images (игровые иконки)
+  и /images/patches (скриншоты патча).
 -->
 <style>
   :root {
@@ -15,7 +17,7 @@
     --panel: #17130b;
     --panel-raised: #201a10;
     --hairline: rgba(196,153,74,0.22);
-    --hairline-strong: rgba(196,153,74,0.4);
+    --hairline-strong: rgba(196,153,74,0.42);
     --gold: #e3941d;
     --gold-bright: #f4d8a7;
     --arcane: #a58fc4;
@@ -24,6 +26,13 @@
     --muted: #9a8e7a;
     --green: #7ee0c0;
     --red: #e07a7a;
+
+    --c-tank: #9aa3ab;
+    --c-dk: #a58fc4;
+    --c-mage: #66aaff;
+    --c-heal: #c47a92;
+    --c-rune: #a86b3f;
+    --c-assassin: #8f7fb0;
 
     --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -36,14 +45,15 @@
     -webkit-font-smoothing: antialiased; overflow-x: hidden;
   }
   a { color: var(--gold-bright); }
+  img { display: block; }
+  .px { image-rendering: pixelated; }
 
+  /* ── Верхняя панель ─────────────────────────────────────────── */
   .topbar {
     position: sticky; top: 0; z-index: 40;
-    display: flex; align-items: center; gap: 14px;
-    padding: 14px 22px;
-    background: linear-gradient(180deg, rgba(24,18,9,0.97), rgba(13,10,4,0.97));
-    border-bottom: 1px solid var(--hairline-strong);
-    backdrop-filter: blur(6px);
+    display: flex; align-items: center; gap: 14px; padding: 12px 20px;
+    background: linear-gradient(180deg, rgba(24,18,9,0.96), rgba(13,10,4,0.96));
+    border-bottom: 1px solid var(--hairline-strong); backdrop-filter: blur(6px);
   }
   .emblem {
     width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
@@ -55,94 +65,253 @@
   .brandline { display: flex; flex-direction: column; line-height: 1.1; }
   .brand { font-family: var(--serif); font-weight: 700; letter-spacing: 0.14em; font-size: 17px; color: var(--gold-bright); }
   .brand-sub { font-size: 10px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; }
-  .topbar-links { margin-left: auto; display: flex; gap: 4px; overflow-x: auto; }
+  .topbar-links { margin-left: auto; display: flex; gap: 4px; }
   .topbar-links a {
     text-decoration: none; font-size: 12px; color: var(--muted); white-space: nowrap;
     padding: 7px 12px; border-radius: 7px; border: 1px solid transparent;
   }
   .topbar-links a:hover, .topbar-links a.on { color: var(--arcane-bright); background: rgba(165,143,196,0.08); border-color: var(--hairline); }
 
+  /* ── Шапка патча ────────────────────────────────────────────── */
   .hero {
-    position: relative; padding: 64px 22px 50px; text-align: center; overflow: hidden;
-    border-bottom: 1px solid var(--hairline);
+    position: relative; overflow: hidden; text-align: center;
+    padding: 70px 18px 56px; border-bottom: 1px solid var(--hairline);
   }
   .hero::before {
     content: ''; position: absolute; inset: 0; pointer-events: none;
     background:
-      radial-gradient(ellipse 620px 360px at 50% 8%, rgba(165,143,196,0.16), transparent 65%),
-      radial-gradient(ellipse 500px 300px at 50% 30%, rgba(227,148,29,0.08), transparent 70%);
+      radial-gradient(ellipse 640px 380px at 50% 6%, rgba(165,143,196,0.20), transparent 65%),
+      radial-gradient(ellipse 520px 320px at 50% 40%, rgba(227,148,29,0.12), transparent 70%);
   }
-  .hero-inner { position: relative; }
-  .hero-eyebrow { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--arcane-bright); margin-bottom: 12px; font-weight: 600; }
-  h1.hero-title {
-    font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 6vw, 48px);
-    color: var(--gold-bright); margin: 0 0 14px; text-shadow: 0 0 30px rgba(165,143,196,0.25);
+  #fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .hero-inner { position: relative; z-index: 2; }
+  .sigil {
+    width: 128px; height: 128px; margin: 0 auto 22px; position: relative;
+    display: flex; align-items: center; justify-content: center;
   }
-  .hero-lede { font-size: 15px; max-width: 60ch; margin: 0 auto; }
-
-  main { max-width: 860px; margin: 0 auto; padding: 44px 18px 80px; }
-
-  .patch-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 40px; }
-  .patch-list a {
-    text-decoration: none; font-size: 12.5px; font-weight: 600; color: var(--text);
-    padding: 8px 14px; border-radius: 20px; background: var(--panel); border: 1px solid var(--hairline);
+  .sigil::before, .sigil::after {
+    content: ''; position: absolute; border-radius: 50%;
   }
-  .patch-list a span { color: var(--muted); font-weight: 500; margin-left: 6px; }
-  .patch-list a:hover { border-color: var(--hairline-strong); color: var(--gold-bright); }
+  .sigil::before { inset: 0; border: 1.5px dashed rgba(196,153,74,0.55); animation: spin 26s linear infinite; }
+  .sigil::after { inset: 14px; border: 1px dashed rgba(165,143,196,0.6); animation: spin 16s linear infinite reverse; }
+  .sigil img { width: 64px; height: 64px; filter: drop-shadow(0 0 14px rgba(255,190,90,0.6)); animation: bob 3.2s ease-in-out infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes bob { 50% { transform: translateY(-6px) rotate(-4deg); } }
 
-  article.patch {
-    scroll-margin-top: 78px; margin-bottom: 56px;
-    border: 1px solid var(--hairline-strong); border-radius: 14px; overflow: hidden;
+  .eyebrow { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--arcane-bright); font-weight: 700; margin-bottom: 10px; }
+  .eyebrow .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); margin-right: 8px; vertical-align: 1px; box-shadow: 0 0 10px var(--gold); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; transform: scale(.7); } }
+  h1.title {
+    font-family: var(--serif); font-weight: 700; margin: 0 0 14px;
+    font-size: clamp(36px, 8vw, 64px); line-height: 1.05;
+    background: linear-gradient(100deg, #f4d8a7 20%, #ffffff 40%, #e3941d 55%, #f4d8a7 75%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shine 6s linear infinite;
+    filter: drop-shadow(0 0 22px rgba(227,148,29,0.25));
+  }
+  @keyframes shine { to { background-position: -220% 0; } }
+  .lede { max-width: 58ch; margin: 0 auto; font-size: 15.5px; }
+  .lede b { color: var(--gold-bright); }
+
+  .countdown { display: inline-flex; gap: 8px; margin: 26px auto 0; }
+  .cd-cell {
+    min-width: 66px; padding: 10px 8px 8px; border-radius: 12px;
+    background: rgba(23,19,11,0.85); border: 1px solid var(--hairline-strong);
+    box-shadow: inset 0 0 18px rgba(227,148,29,0.08);
+  }
+  .cd-num { font-family: var(--serif); font-size: 28px; font-weight: 700; color: var(--gold-bright); line-height: 1; }
+  .cd-lbl { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+  .cd-cap { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .cta { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+  .btn {
+    text-decoration: none; font-weight: 800; font-size: 14px; padding: 11px 20px; border-radius: 12px;
+    border: 1px solid var(--hairline-strong); color: var(--gold-bright); background: rgba(32,26,16,0.8);
+    transition: transform .15s, box-shadow .15s;
+  }
+  .btn.primary { color: #1d1206; border-color: #f2b84b; background: linear-gradient(180deg, #f6c665, #c4821f); box-shadow: 0 8px 22px -10px rgba(227,148,29,0.8); }
+  .btn:hover { transform: translateY(-2px); }
+
+  main { max-width: 980px; margin: 0 auto; padding: 36px 16px 80px; }
+
+  /* ── Плитки «главное» ───────────────────────────────────────── */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 54px; }
+  .tile {
+    text-decoration: none; color: var(--text); text-align: center;
+    padding: 16px 10px 14px; border-radius: 14px;
     background: linear-gradient(180deg, var(--panel-raised), var(--panel));
-    box-shadow: 0 20px 40px -24px rgba(0,0,0,0.9);
+    border: 1px solid var(--hairline); transition: transform .2s, border-color .2s, box-shadow .2s;
   }
-  .patch-head {
-    padding: 22px 22px 18px; border-bottom: 1px solid var(--hairline);
-    background: radial-gradient(ellipse 400px 160px at 0% 0%, rgba(227,148,29,0.13), transparent 70%);
+  .tile:hover { transform: translateY(-4px); border-color: var(--hairline-strong); box-shadow: 0 14px 30px -18px rgba(227,148,29,0.6); }
+  .tile img { width: 44px; height: 44px; margin: 0 auto 8px; object-fit: contain; animation: float 4s ease-in-out infinite; }
+  .tile:nth-child(2) img { animation-delay: -.7s; } .tile:nth-child(3) img { animation-delay: -1.4s; }
+  .tile:nth-child(4) img { animation-delay: -2.1s; } .tile:nth-child(5) img { animation-delay: -2.8s; } .tile:nth-child(6) img { animation-delay: -3.4s; }
+  @keyframes float { 50% { transform: translateY(-5px); } }
+  .tile b { display: block; color: var(--gold-bright); font-size: 13.5px; }
+  .tile span { font-size: 11.5px; color: var(--muted); }
+
+  /* ── Разделы ────────────────────────────────────────────────── */
+  section.sec { margin-bottom: 64px; scroll-margin-top: 70px; }
+  .sec-eyebrow { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); font-weight: 700; margin-bottom: 6px; }
+  h2 { font-family: var(--serif); font-size: clamp(24px, 4.5vw, 32px); color: var(--gold-bright); margin: 0 0 6px; }
+  .dek { color: var(--muted); font-size: 14px; margin: 0 0 22px; max-width: 64ch; }
+
+  .card {
+    border-radius: 16px; border: 1px solid var(--hairline-strong);
+    background: linear-gradient(180deg, var(--panel-raised), var(--panel));
+    box-shadow: 0 20px 40px -26px rgba(0,0,0,0.9);
   }
-  .patch-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-  .badge {
-    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-    padding: 3px 10px; border-radius: 20px; border: 1px solid var(--hairline-strong); color: var(--gold-bright);
+  .split { display: grid; grid-template-columns: 1fr 260px; gap: 20px; align-items: start; }
+
+  /* телефон со скриншотом */
+  .phone {
+    position: relative; border-radius: 26px; padding: 8px; margin: 0 auto; max-width: 260px;
+    background: linear-gradient(160deg, #3a2d18, #120d06); border: 1px solid var(--hairline-strong);
+    box-shadow: 0 26px 50px -24px rgba(0,0,0,0.95), 0 0 40px -10px rgba(227,148,29,0.25);
+    transform: rotate(1.5deg); transition: transform .3s;
   }
-  .badge.new { color: #0b0805; background: var(--gold); border-color: var(--gold); }
-  .patch-date { font-size: 12.5px; color: var(--muted); }
-  .patch-head h2 { font-family: var(--serif); font-size: 26px; color: var(--gold-bright); margin: 0 0 6px; }
-  .patch-head p { margin: 0; color: var(--text); font-size: 14.5px; max-width: 68ch; }
+  .phone:hover { transform: rotate(0) scale(1.02); }
+  .phone img { width: 100%; border-radius: 19px; }
+  .phone.left { transform: rotate(-1.5deg); }
+  .phone-cap { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
 
-  .patch-body { padding: 6px 22px 22px; }
-  .group { margin-top: 20px; }
-  .group h3 {
-    font-family: var(--serif); font-size: 17px; color: var(--gold-bright);
-    margin: 0 0 10px; display: flex; align-items: center; gap: 8px;
+  /* задания */
+  .task-group { padding: 16px; margin-bottom: 12px; }
+  .tg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .tg-head b { font-family: var(--serif); font-size: 17px; color: var(--gold-bright); }
+  .tg-head span { font-size: 11.5px; color: var(--muted); }
+  .task { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(196,153,74,0.12); }
+  .task:first-of-type { border-top: none; }
+  .t-ico { flex: 0 0 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px;
+    background: radial-gradient(circle at 35% 30%, rgba(255,207,138,.18), rgba(0,0,0,.3)); border: 1px solid rgba(201,162,92,.35); }
+  .t-ico img { width: 24px; height: 24px; }
+  .t-name { flex: 1; font-size: 14px; }
+  .pill { flex-shrink: 0; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 800; color: #ffd35c; background: rgba(255,207,86,.12); border: 1px solid rgba(255,207,86,.45); }
+  .removed { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+  /* пьедестал */
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 10px; padding: 26px 14px 0; }
+  .pod { flex: 1; max-width: 150px; text-align: center; }
+  .pod .medal { font-size: 30px; line-height: 1; margin-bottom: 4px; }
+  .pod .usd { font-family: var(--serif); font-weight: 700; color: var(--gold-bright); font-size: 22px; }
+  .pod .place { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .pod .base { border-radius: 10px 10px 0 0; font-weight: 900; font-size: 22px; color: rgba(0,0,0,.5); padding: 14px 0; transform-origin: bottom; }
+  .pod.p1 .base { background: linear-gradient(180deg, #ffd96b, #b98a22); padding: 34px 0; }
+  .pod.p2 .base { background: linear-gradient(180deg, #e3e9ee, #8f9ba5); padding: 22px 0; }
+  .pod.p3 .base { background: linear-gradient(180deg, #e8ab70, #9c6331); padding: 14px 0; }
+  .reveal.in .pod .base { animation: rise .9s cubic-bezier(.2,.9,.3,1.2) both; }
+  .reveal.in .pod.p2 .base { animation-delay: .15s; } .reveal.in .pod.p3 .base { animation-delay: .3s; }
+  @keyframes rise { from { transform: scaleY(0); } }
+  .rest { display: flex; gap: 10px; padding: 14px; flex-wrap: wrap; justify-content: center; border-top: 1px solid var(--hairline); }
+  .rest div { padding: 8px 14px; border-radius: 10px; background: rgba(255,255,255,.03); border: 1px solid var(--hairline); font-size: 13.5px; }
+  .rest b { color: var(--gold-bright); }
+  .gram-note { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--hairline); }
+  .gram-note img { width: 26px; height: 26px; flex-shrink: 0; }
+
+  /* билет */
+  .ticket {
+    position: relative; overflow: hidden; display: flex; gap: 18px; align-items: center; padding: 20px;
+    background:
+      radial-gradient(ellipse 260px 160px at 0% 50%, rgba(255,190,90,.22), transparent 70%),
+      linear-gradient(180deg, var(--panel-raised), var(--panel));
   }
-  .group ul { margin: 0; padding-left: 20px; }
-  .group li { margin: 5px 0; font-size: 14.5px; }
-  .group li b { color: var(--gold-bright); }
-  .group .note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+  .ticket::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(105deg, transparent 40%, rgba(255,240,200,.10) 50%, transparent 60%);
+    background-size: 250% 100%; animation: sweep 4.5s ease-in-out infinite;
+  }
+  @keyframes sweep { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+  .ticket img { width: 84px; height: 84px; flex-shrink: 0; filter: drop-shadow(0 0 16px rgba(255,190,90,.55)); animation: bob 3.6s ease-in-out infinite; }
+  .ticket h3 { margin: 0 0 4px; font-family: var(--serif); color: var(--gold-bright); font-size: 20px; }
+  .price { display: inline-flex; align-items: center; gap: 6px; font-weight: 900; color: #8bd66a; font-size: 15px; }
+  .price img { width: 18px; height: 18px; filter: none; animation: none; }
+  .perks { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .perks span { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; background: rgba(126,224,192,.10); border: 1px solid rgba(126,224,192,.35); color: var(--green); }
+  .shop-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
+  .shop-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--hairline); font-size: 13px; }
+  .shop-item img { width: 30px; height: 30px; object-fit: contain; }
 
-  .cls { margin: 10px 0; padding: 10px 14px; border-radius: 10px; background: rgba(255,255,255,0.025); border: 1px solid var(--hairline); }
-  .cls-name { font-weight: 800; color: var(--gold-bright); margin-bottom: 2px; }
-  .cls ul { margin-top: 2px; }
+  /* классы */
+  .classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .cls { position: relative; overflow: hidden; padding: 16px; border-left: 3px solid var(--accent, var(--gold)); transition: transform .2s, box-shadow .2s; }
+  .cls:hover { transform: translateY(-3px); box-shadow: 0 18px 34px -22px var(--accent, var(--gold)); }
+  .cls::before { content: ''; position: absolute; right: -40px; top: -40px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%); pointer-events: none; }
+  .cls-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .portrait { width: 52px; height: 52px; border-radius: 50%; padding: 6px; background: radial-gradient(circle at 35% 30%, #3a2d18, #0e0a05); border: 2px solid var(--accent); box-shadow: 0 0 16px -4px var(--accent); }
+  .portrait img { width: 100%; height: 100%; object-fit: contain; }
+  .cls-name { font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--gold-bright); }
+  .cls-role { font-size: 11.5px; color: var(--muted); }
+  .chg { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid rgba(196,153,74,0.12); font-size: 13.5px; }
+  .chg .sk { flex: 0 0 34px; width: 34px; height: 34px; border-radius: 8px; border: 1px solid rgba(201,162,92,.4); background: #0e0a05; overflow: hidden; }
+  .chg .sk img { width: 100%; height: 100%; }
+  .chg b { color: var(--gold-bright); }
+  .all-classes { margin-top: 14px; padding: 14px 16px; display: flex; gap: 12px; align-items: center; }
+  .all-classes .ico { font-size: 26px; }
 
-  table.t { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 14px; }
-  table.t th, table.t td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
-  table.t th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
-  table.t td.num { color: var(--gold-bright); font-weight: 700; white-space: nowrap; text-align: right; }
+  /* вторая профессия */
+  .prof { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .prof .card { padding: 18px; }
+  .prof h3 { margin: 0 0 6px; font-family: var(--serif); color: var(--gold-bright); font-size: 18px; }
+  .lvl { display: flex; gap: 6px; margin: 14px 0 6px; }
+  .lvl i { flex: 1; height: 10px; border-radius: 4px; background: rgba(0,0,0,.5); border: 1px solid rgba(196,153,74,.3); }
+  .reveal.in .lvl i { animation: fill .35s ease-out both; }
+  @keyframes fill { to { background: linear-gradient(180deg, #ffd96b, #c4821f); border-color: #f2b84b; box-shadow: 0 0 8px rgba(255,200,90,.5); } }
+  .lvl-cap { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .cls-row { display: flex; gap: 10px; margin-top: 12px; }
+  .cls-row img { width: 46px; height: 46px; padding: 5px; border-radius: 50%; border: 2px solid var(--accent); background: #0e0a05; }
 
-  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; vertical-align: 1px; }
-  .tag.add { background: rgba(126,224,192,0.14); color: var(--green); }
+  /* улучшения */
+  .upg { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .upg div { padding: 12px 14px; border-radius: 12px; background: linear-gradient(180deg, var(--panel-raised), var(--panel)); border: 1px solid var(--hairline); }
+  .upg .v { font-family: var(--serif); font-size: 22px; font-weight: 700; color: var(--gold-bright); line-height: 1.1; }
+  .upg .n { font-size: 12.5px; color: var(--text); }
+  .upg .m { font-size: 11px; color: var(--muted); }
+  .upg .new { border-color: rgba(126,224,192,.45); }
+  .upg .new .v { color: var(--green); }
+  .note-line { display: flex; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 16px; font-size: 13.5px; }
+  .note-line img { width: 34px; height: 34px; flex-shrink: 0; }
+
+  /* мир */
+  .world { display: grid; grid-template-columns: 260px 1fr; gap: 22px; align-items: center; }
+  .wlist { list-style: none; margin: 0; padding: 0; }
+  .wlist li { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(196,153,74,0.12); font-size: 14px; }
+  .wlist li:first-child { border-top: none; }
+  .wlist .e { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
+
+  /* исправления */
+  .fixes { padding: 6px 16px; }
+  .fix { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px solid rgba(196,153,74,0.12); font-size: 14px; }
+  .fix:first-child { border-top: none; }
+  .tag { flex-shrink: 0; font-size: 10.5px; font-weight: 800; padding: 2px 8px; border-radius: 6px; text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+  .tag.fixd { background: rgba(165,143,196,0.18); color: var(--arcane-bright); }
   .tag.chg { background: rgba(227,148,29,0.16); color: var(--gold); }
-  .tag.fix { background: rgba(165,143,196,0.18); color: var(--arcane-bright); }
   .tag.del { background: rgba(224,122,122,0.16); color: var(--red); }
 
-  footer { max-width: 68ch; margin: 30px auto 0; padding: 22px 18px 0; border-top: 1px solid var(--hairline); font-size: 12px; color: #6b6152; text-align: center; }
+  /* появление при прокрутке */
+  .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  .stagger > * { opacity: 0; transform: translateY(18px); transition: opacity .55s ease, transform .55s ease; }
+  .stagger.in > * { opacity: 1; transform: none; }
+  .stagger.in > *:nth-child(2) { transition-delay: .08s; } .stagger.in > *:nth-child(3) { transition-delay: .16s; }
+  .stagger.in > *:nth-child(4) { transition-delay: .24s; } .stagger.in > *:nth-child(5) { transition-delay: .32s; }
+  .stagger.in > *:nth-child(6) { transition-delay: .40s; } .stagger.in > *:nth-child(7) { transition-delay: .48s; }
+  .stagger.in > *:nth-child(8) { transition-delay: .56s; } .stagger.in > *:nth-child(9) { transition-delay: .64s; }
 
-  @media (max-width: 560px) {
-    .topbar { padding: 12px 14px; }
+  footer { max-width: 68ch; margin: 20px auto 0; padding: 22px 16px 0; border-top: 1px solid var(--hairline); font-size: 12px; color: #6b6152; text-align: center; }
+
+  @media (max-width: 720px) {
+    .split, .world, .prof { grid-template-columns: 1fr; }
+    .world .phone { order: 2; }
+    .topbar { padding: 10px 12px; }
     .brand-sub { display: none; }
-    .patch-head, .patch-body { padding-left: 16px; padding-right: 16px; }
-    .patch-head h2 { font-size: 22px; }
+    .cd-cell { min-width: 58px; }
+    .ticket { flex-direction: column; text-align: center; }
+    .perks { justify-content: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal, .stagger > * { opacity: 1; transform: none; }
   }
 </style>
 </head>
@@ -162,155 +331,294 @@
   </div>
 </div>
 
-<div class="hero">
+<!-- ══ Витрина: Сезон 4 «Баланс» ══════════════════════════════════════ -->
+<header class="hero">
+  <canvas id="fx"></canvas>
   <div class="hero-inner">
-    <div class="hero-eyebrow">Летопись Liberty</div>
-    <h1 class="hero-title">Обновления</h1>
-    <p class="hero-lede">Что изменилось в игре — от новых к старым.</p>
+    <div class="sigil"><img src="/images/season_ticket.png?v=2" alt="" class="px"></div>
+    <div class="eyebrow"><span class="dot"></span>Обновление · 2 октября 2026</div>
+    <h1 class="title">Сезон 4: Баланс</h1>
+    <p class="lede">В этом сезоне мы сделали баланс персонажей, но это не конечный итог: идеал невозможен,
+      а отличное требует времени. <b>Приятной игры в 4 сезоне!</b></p>
+    <div class="countdown" id="cd" aria-label="До конца сезона">
+      <div class="cd-cell"><div class="cd-num" id="cd-d">–</div><div class="cd-lbl">дней</div></div>
+      <div class="cd-cell"><div class="cd-num" id="cd-h">–</div><div class="cd-lbl">часов</div></div>
+      <div class="cd-cell"><div class="cd-num" id="cd-m">–</div><div class="cd-lbl">минут</div></div>
+      <div class="cd-cell"><div class="cd-num" id="cd-s">–</div><div class="cd-lbl">секунд</div></div>
+    </div>
+    <div class="cd-cap" id="cd-cap">до конца сезона · 1 ноября, 18:00 МСК</div>
+    <div class="cta">
+      <a class="btn primary" href="#tasks">Что нового ↓</a>
+      <a class="btn" href="guide.html">Гайд по игре</a>
+    </div>
   </div>
-</div>
+</header>
 
 <main>
-  <nav class="patch-list" aria-label="Список обновлений">
-    <a href="#season4">Сезон 4: Баланс <span>2 октября 2026</span></a>
+  <!-- главное -->
+  <nav class="tiles stagger">
+    <a class="tile" href="#tasks"><img src="/images/props/chest_banded.png" alt="" class="px"><b>Задания</b><span>ежедневные и недельные</span></a>
+    <a class="tile" href="#prizes"><img src="/images/props/trophy.png" alt="" class="px"><b>Рейтинг</b><span>призы в USDT</span></a>
+    <a class="tile" href="#shop"><img src="/images/season_ticket.png?v=2" alt="" class="px"><b>Билет сезона</b><span>15 GRAM</span></a>
+    <a class="tile" href="#classes"><img src="/images/classicon/warlock.png" alt=""><b>Баланс классов</b><span>5 классов</span></a>
+    <a class="tile" href="#prof"><img src="/images/skill/adv/adv_babochki.png" alt="" class="px"><b>Вторая профессия</b><span>навыки до 10 ур.</span></a>
+    <a class="tile" href="#world"><img src="/images/material/libertybag.png" alt="" class="px"><b>Новый город</b><span>и локации</span></a>
   </nav>
 
-  <!-- ══ Сезон 4: Баланс ═══════════════════════════════════════════════ -->
-  <article class="patch" id="season4">
-    <div class="patch-head">
-      <div class="patch-meta">
-        <span class="badge new">Новое</span>
-        <span class="badge">Сезон 4</span>
-        <span class="patch-date">2 октября 2026</span>
+  <!-- задания -->
+  <section class="sec reveal" id="tasks">
+    <div class="sec-eyebrow">Очки сезона</div>
+    <h2>Задания</h2>
+    <p class="dek">Очки начисляются сами, как только задание выполнено — кнопка не нужна.</p>
+    <div class="split">
+      <div>
+        <div class="card task-group">
+          <div class="tg-head"><b>📈 Постоянно</b></div>
+          <div class="task"><div class="t-ico">🛒</div><div class="t-name">Покупка на маркете — за каждый GRAM</div><span class="pill">+10</span></div>
+        </div>
+        <div class="card task-group">
+          <div class="tg-head"><b>☀️ Ежедневные</b><span>сброс в 00:00 МСК</span></div>
+          <div class="task"><div class="t-ico">💬</div><div class="t-name">Отправить 10 сообщений в игровой чат</div><span class="pill">+30</span></div>
+          <div class="task"><div class="t-ico">🛒</div><div class="t-name">Купить на маркете на 3 GRAM</div><span class="pill">+100</span></div>
+          <div class="task"><div class="t-ico">💰</div><div class="t-name">Продать на маркете на 3 GRAM</div><span class="pill">+100</span></div>
+        </div>
+        <div class="card task-group">
+          <div class="tg-head"><b>📅 Еженедельные</b><span>сброс в понедельник</span></div>
+          <div class="task"><div class="t-ico">⚔️</div><div class="t-name">Убить 100 000 монстров на 1 этаже</div><span class="pill">+300</span></div>
+          <div class="task"><div class="t-ico">🗡️</div><div class="t-name">Убить 100 000 монстров на 2 этаже</div><span class="pill">+300</span></div>
+          <div class="task"><div class="t-ico">🌾</div><div class="t-name">Убить 100 000 монстров в фарм зоне</div><span class="pill">+300</span></div>
+          <div class="task"><div class="t-ico"><img src="/images/potion/atk.png" alt="" class="px"></div><div class="t-name">Скрафтить зелье атаки 10 раз</div><span class="pill">+50</span></div>
+          <div class="task"><div class="t-ico">🏰</div><div class="t-name">Участвовать в Кровавой Башне 3 раза</div><span class="pill">+200</span></div>
+          <div class="task"><div class="t-ico">👹</div><div class="t-name">Ударить мирового босса 3 раза</div><span class="pill">+200</span></div>
+          <div class="removed">✖ Задания 3 сезона и сжигание книг убраны.</div>
+        </div>
       </div>
-      <h2>Сезон 4: Баланс</h2>
-      <p>В этом сезоне мы сделали баланс персонажей, но это не конечный итог: идеал невозможен,
-        а отличное требует времени. Сезон идёт <b>до 1 ноября, 18:00 МСК</b>. Приятной игры!</p>
+      <div>
+        <div class="phone"><img src="/images/patches/s4-tasks.jpg" alt="Вкладка «Задания»" loading="lazy"></div>
+        <div class="phone-cap">Вкладка «Задания» в игре</div>
+      </div>
     </div>
-    <div class="patch-body">
+  </section>
 
-      <div class="group">
-        <h3>📋 Задания сезона</h3>
-        <p class="note" style="margin-top:0">Очки начисляются сами, как только задание выполнено.</p>
-        <table class="t">
-          <tr><th>Постоянно</th><th style="text-align:right">Очки</th></tr>
-          <tr><td>Покупка на маркете, за каждый GRAM</td><td class="num">+10</td></tr>
-        </table>
-        <table class="t">
-          <tr><th>Ежедневные · сброс в 00:00 МСК</th><th style="text-align:right">Очки</th></tr>
-          <tr><td>Отправить 10 сообщений в игровой чат</td><td class="num">+30</td></tr>
-          <tr><td>Купить на маркете на 3 GRAM</td><td class="num">+100</td></tr>
-          <tr><td>Продать на маркете на 3 GRAM</td><td class="num">+100</td></tr>
-        </table>
-        <table class="t">
-          <tr><th>Еженедельные · сброс в понедельник</th><th style="text-align:right">Очки</th></tr>
-          <tr><td>Убить 100 000 монстров на 1 этаже</td><td class="num">+300</td></tr>
-          <tr><td>Убить 100 000 монстров на 2 этаже</td><td class="num">+300</td></tr>
-          <tr><td>Убить 100 000 монстров в фарм зоне</td><td class="num">+300</td></tr>
-          <tr><td>Скрафтить зелье атаки 10 раз</td><td class="num">+50</td></tr>
-          <tr><td>Участвовать в Кровавой Башне 3 раза</td><td class="num">+200</td></tr>
-          <tr><td>Ударить мирового босса 3 раза</td><td class="num">+200</td></tr>
-        </table>
-        <ul>
-          <li><span class="tag del">Убрано</span>Задания 3 сезона и сжигание книг.</li>
-        </ul>
+  <!-- награды -->
+  <section class="sec reveal" id="prizes">
+    <div class="sec-eyebrow">Рейтинг 4 сезона</div>
+    <h2>Награды</h2>
+    <p class="dek">Двадцать лучших по очкам сезона получают призы. Рейтинг — во вкладке «Рейтинг» окна сезона.</p>
+    <div class="split">
+      <div class="card">
+        <div class="podium">
+          <div class="pod p2"><div class="medal">🥈</div><div class="usd">50 USDT</div><div class="place">2 место</div><div class="base">2</div></div>
+          <div class="pod p1"><div class="medal">🥇</div><div class="usd">100 USDT</div><div class="place">1 место</div><div class="base">1</div></div>
+          <div class="pod p3"><div class="medal">🥉</div><div class="usd">50 USDT</div><div class="place">3 место</div><div class="base">3</div></div>
+        </div>
+        <div class="rest">
+          <div>4–10 место · <b>10 USDT</b></div>
+          <div>11–20 место · <b>5 USDT</b></div>
+        </div>
+        <div class="gram-note"><img src="/images/gram-icon.png" alt="">После конца сезона награда забирается в GRAM по курсу 1 GRAM = 1,56 USDT — кнопкой «Забрать» во вкладке «Сезон».</div>
+        <div class="gram-note"><img src="/images/props/trophy.png" alt="" class="px">Победители 3 сезона уже могут забрать свою награду — кнопка «Забрать» во вкладке «Сезон».</div>
       </div>
-
-      <div class="group">
-        <h3>🏆 Рейтинг и награды</h3>
-        <table class="t">
-          <tr><th>Место</th><th style="text-align:right">Награда</th></tr>
-          <tr><td>🥇 1 место</td><td class="num">100 USDT</td></tr>
-          <tr><td>🥈 2–3 место</td><td class="num">50 USDT</td></tr>
-          <tr><td>🏅 4–10 место</td><td class="num">10 USDT</td></tr>
-          <tr><td>🏅 11–20 место</td><td class="num">5 USDT</td></tr>
-        </table>
-        <p class="note">После конца сезона награда забирается в GRAM по курсу 1 GRAM = 1,56 USDT — кнопкой «Забрать» во вкладке «Сезон».</p>
-        <ul>
-          <li><span class="tag add">Новое</span>Вкладка «Рейтинг» с пьедесталом топ-3 и новое оформление окна сезона.</li>
-          <li><span class="tag add">Новое</span>Победители 3 сезона забирают награду в GRAM кнопкой «Забрать» во вкладке «Сезон».</li>
-        </ul>
+      <div>
+        <div class="phone left"><img src="/images/patches/s4-rating.jpg" alt="Вкладка «Рейтинг»" loading="lazy"></div>
+        <div class="phone-cap">Пьедестал и рейтинг</div>
       </div>
-
-      <div class="group">
-        <h3>🎟 Магазин</h3>
-        <ul>
-          <li><span class="tag add">Новое</span><b>Билет 4 сезона — 15 GRAM</b>: x2 опыт, +60% к дропу, x2 Либерти. Действует до конца сезона. Билет 3 сезона больше не действует.</li>
-          <li><span class="tag del">Убрано</span>Паки. В магазине: билет, «Книги и оружие», «Зелья и золото», 700 Либерти.</li>
-        </ul>
-      </div>
-
-      <div class="group">
-        <h3>⚖️ Баланс классов</h3>
-        <div class="cls"><div class="cls-name">🛡 Танк</div><ul>
-          <li>Каждый обычный удар замедляет цель на 10% (до 50%) на 10 сек.</li>
-          <li>Прыжок приземляет точно у врага, а не перелетает его.</li>
-        </ul></div>
-        <div class="cls"><div class="cls-name">🗡 Рыцарь Смерти</div><ul>
-          <li>Каждый обычный удар замедляет цель на 10% (до 50%) на 10 сек.</li>
-          <li>С шансом 20% удар оглушает цель на 0,3 сек.</li>
-        </ul></div>
-        <div class="cls"><div class="cls-name">✨ Целитель</div><ul>
-          <li>Навыки исцеления бьют по площади: Тёмное исцеление ×1,5, Бабочки ×2, Тёмная молитва ×2, Исцеление ×3.</li>
-          <li>Перезарядка Бабочек — 16 сек, −1 сек за каждый уровень (до 7 сек).</li>
-        </ul></div>
-        <div class="cls"><div class="cls-name">🔮 Маг</div><ul>
-          <li>Разряд снимает 20% защиты с поражённых на 5 сек.</li>
-          <li>Вспышка даёт +30% к атаке.</li>
-        </ul></div>
-        <div class="cls"><div class="cls-name">🌑 Ассасин</div><ul>
-          <li>Крик снимает 20% защиты с поражённых на 5 сек.</li>
-        </ul></div>
-        <ul>
-          <li><span class="tag chg">Изменено</span>Все лечащие навыки восстанавливают и ЦП — столько же, сколько здоровья.</li>
-          <li><span class="tag chg">Изменено</span>Вторая профессия: продвинутые навыки качаются с 1 до 10 уровня (2 книги продвинутого навыка, шанс 30%), каждый уровень усиливает навык.</li>
-          <li><span class="tag add">Новое</span>Сменой класса можно выбрать Ассасина и Рунного бойца.</li>
-        </ul>
-      </div>
-
-      <div class="group">
-        <h3>📈 Улучшения персонажа</h3>
-        <table class="t">
-          <tr><th>Улучшение</th><th style="text-align:right">За уровень</th></tr>
-          <tr><td>Атака / Защита</td><td class="num">+3 / +3</td></tr>
-          <tr><td>Здоровье</td><td class="num">+30</td></tr>
-          <tr><td>Скорость атаки · максимум 120 ур.</td><td class="num">+0,01</td></tr>
-          <tr><td>Шанс крита · максимум 100 ур.</td><td class="num">+0,3%</td></tr>
-          <tr><td>Сила крита · максимум 100 ур.</td><td class="num">+0,3%</td></tr>
-          <tr><td>Реген</td><td class="num">+1</td></tr>
-          <tr><td>ЦП <span class="tag add">новое</span></td><td class="num">+200</td></tr>
-          <tr><td>Бонус к опыту <span class="tag add">новое</span></td><td class="num">+0,1%</td></tr>
-          <tr><td>Бонус к дропу <span class="tag add">новое</span></td><td class="num">+0,1%</td></tr>
-        </table>
-        <ul>
-          <li><span class="tag chg">Изменено</span>Неудачная безопасная заточка снижает уровень на 1 (не ниже +0).</li>
-        </ul>
-      </div>
-
-      <div class="group">
-        <h3>🏙 Мир</h3>
-        <ul>
-          <li><span class="tag add">Новое</span>Город оформлен заново: ночной город, лавки у NPC (хранилище, кузнец, торговец), площадь LIBERTY.</li>
-          <li><span class="tag add">Новое</span>Новый вид у локаций 1, 20, 40, 60 и фарм зон.</li>
-          <li><span class="tag chg">Изменено</span>Свитки босса выпадают в 10 раз реже.</li>
-          <li><span class="tag del">Убрано</span>Событие «Битва на смерть».</li>
-        </ul>
-      </div>
-
-      <div class="group">
-        <h3>🛠 Исправления</h3>
-        <ul>
-          <li><span class="tag fix">Исправлено</span>Баф питомца работает в событиях и режимах (Башня, Страх, Сотрудничество, арена и др.) и не пропадает при смене локации.</li>
-          <li><span class="tag fix">Исправлено</span>Перезарядка продвинутых навыков на кнопке показывается правильно.</li>
-          <li><span class="tag chg">Изменено</span>В авто-бою лечащие навыки применяются сразу по откату, а не только при низком здоровье.</li>
-        </ul>
-      </div>
-
     </div>
-  </article>
+  </section>
 
-  <footer>Liberty · список обновлений · новые патчи появляются сверху</footer>
+  <!-- магазин -->
+  <section class="sec reveal" id="shop">
+    <div class="sec-eyebrow">Магазин GRAM</div>
+    <h2>Билет 4 сезона</h2>
+    <p class="dek">Новый билет действует до конца сезона. Билет 3 сезона больше не работает.</p>
+    <div class="card ticket">
+      <img src="/images/season_ticket.png?v=2" alt="" class="px">
+      <div>
+        <h3>Билет 4 сезона</h3>
+        <div class="price"><img src="/images/gram-icon.png" alt="">15 GRAM</div>
+        <div class="perks"><span>x2 опыт</span><span>+60% к дропу</span><span>x2 Либерти</span><span>сезонные комнаты</span></div>
+      </div>
+    </div>
+    <div class="shop-row stagger">
+      <div class="shop-item"><span style="font-size:26px;width:30px;text-align:center">📚</span>Книги и оружие · 5 GRAM</div>
+      <div class="shop-item"><img src="/images/potion/atk.png" alt="" class="px">Зелья и золото · 1 GRAM</div>
+      <div class="shop-item"><img src="/images/nexum-coin_v2.png" alt="">700 Либерти · 10 GRAM</div>
+    </div>
+    <p class="removed">✖ Паки убраны из магазина.</p>
+  </section>
+
+  <!-- классы -->
+  <section class="sec reveal" id="classes">
+    <div class="sec-eyebrow">Баланс</div>
+    <h2>Изменения классов</h2>
+    <p class="dek">Танк и Рыцарь Смерти стали сильнее в ближнем бою, Целитель научился бить, Маг и Ассасин — ломать защиту.</p>
+    <div class="classes stagger">
+      <div class="card cls" style="--accent: var(--c-tank)">
+        <div class="cls-top"><div class="portrait"><img src="/images/classicon/lev.png" alt=""></div><div><div class="cls-name">Танк</div><div class="cls-role">ближний бой · защита</div></div></div>
+        <div class="chg"><div class="sk">🐌</div><div>Каждый обычный удар замедляет цель на <b>10%</b> (до <b>50%</b>) на 10 сек.</div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/audarteni.png" alt="" class="px"></div><div><b>Кувырок / Рывок</b> приземляет точно у врага, а не перелетает его.</div></div>
+      </div>
+      <div class="card cls" style="--accent: var(--c-dk)">
+        <div class="cls-top"><div class="portrait"><img src="/images/classicon/deathknight.png" alt=""></div><div><div class="cls-name">Рыцарь Смерти</div><div class="cls-role">ближний бой · урон</div></div></div>
+        <div class="chg"><div class="sk">🐌</div><div>Каждый обычный удар замедляет цель на <b>10%</b> (до <b>50%</b>) на 10 сек.</div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/wstun_v2.png" alt="" class="px"></div><div>С шансом <b>20%</b> удар оглушает цель на <b>0,3 сек</b>.</div></div>
+      </div>
+      <div class="card cls" style="--accent: var(--c-heal)">
+        <div class="cls-top"><div class="portrait"><img src="/images/classicon/warlock.png" alt=""></div><div><div class="cls-name">Целитель</div><div class="cls-role">лечение · поддержка</div></div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/sheal.png" alt="" class="px"></div><div>Навыки исцеления <b>бьют по площади</b>: Тёмное исцеление ×1,5, Тёмная молитва ×2.</div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/adv/adv_iscelenie.png" alt="" class="px"></div><div>Продвинутые: Бабочки ×2, Исцеление ×3.</div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/adv/adv_babochki.png" alt="" class="px"></div><div><b>Бабочки</b>: перезарядка 16 сек, <b>−1 сек</b> за каждый уровень (до 7 сек).</div></div>
+      </div>
+      <div class="card cls" style="--accent: var(--c-mage)">
+        <div class="cls-top"><div class="portrait"><img src="/images/classicon/mage.png" alt=""></div><div><div class="cls-name">Маг</div><div class="cls-role">дальний бой · магия</div></div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/adv/adv_razryad.png" alt="" class="px"></div><div><b>Разряд</b> снимает <b>20% защиты</b> с поражённых на 5 сек.</div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/adv/adv_vspishka.png" alt="" class="px"></div><div><b>Вспышка</b> даёт <b>+30% к атаке</b> вместе с защитой.</div></div>
+      </div>
+      <div class="card cls" style="--accent: var(--c-assassin)">
+        <div class="cls-top"><div class="portrait"><img src="/images/classicon/assassin.png" alt=""></div><div><div class="cls-name">Ассасин</div><div class="cls-role">ближний бой · крит</div></div></div>
+        <div class="chg"><div class="sk"><img src="/images/skill/adv/adv_as_scream.png" alt="" class="px"></div><div><b>Крик</b> снимает <b>20% защиты</b> с поражённых на 5 сек.</div></div>
+      </div>
+    </div>
+    <div class="card all-classes"><div class="ico">❤️</div><div>Все лечащие навыки теперь восстанавливают и <b>ЦП</b> — столько же, сколько здоровья.</div></div>
+  </section>
+
+  <!-- вторая профессия -->
+  <section class="sec reveal" id="prof">
+    <div class="sec-eyebrow">Развитие</div>
+    <h2>Вторая профессия и смена класса</h2>
+    <div class="prof">
+      <div class="card">
+        <h3>📚 Продвинутые навыки — до 10 уровня</h3>
+        <div>Качаются как обычные: <b>2 книги продвинутого навыка</b>, шанс <b>30%</b>. Каждый уровень усиливает навык.</div>
+        <div class="lvl">
+          <i style="animation-delay:.05s"></i><i style="animation-delay:.15s"></i><i style="animation-delay:.25s"></i><i style="animation-delay:.35s"></i><i style="animation-delay:.45s"></i>
+          <i style="animation-delay:.55s"></i><i style="animation-delay:.65s"></i><i style="animation-delay:.75s"></i><i style="animation-delay:.85s"></i><i style="animation-delay:.95s"></i>
+        </div>
+        <div class="lvl-cap"><span>ур. 1</span><span>ур. 10</span></div>
+      </div>
+      <div class="card">
+        <h3>🔁 Смена класса</h3>
+        <div>Теперь можно выбрать <b>Ассасина</b> и <b>Рунного бойца</b>.</div>
+        <div class="cls-row">
+          <img src="/images/classicon/assassin.png" alt="Ассасин" style="--accent: var(--c-assassin)">
+          <img src="/images/classicon/runefighter.png" alt="Рунный боец" style="--accent: var(--c-rune)">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- улучшения -->
+  <section class="sec reveal" id="upgrades">
+    <div class="sec-eyebrow">Персонаж</div>
+    <h2>Улучшения</h2>
+    <p class="dek">Сколько даёт один уровень улучшения.</p>
+    <div class="upg stagger">
+      <div><div class="v">+3</div><div class="n">Атака</div></div>
+      <div><div class="v">+3</div><div class="n">Защита</div></div>
+      <div><div class="v">+30</div><div class="n">Здоровье</div></div>
+      <div><div class="v">+0,01</div><div class="n">Скорость атаки</div><div class="m">максимум 120 ур.</div></div>
+      <div><div class="v">+0,3%</div><div class="n">Шанс крита</div><div class="m">максимум 100 ур.</div></div>
+      <div><div class="v">+0,3%</div><div class="n">Сила крита</div><div class="m">максимум 100 ур.</div></div>
+      <div><div class="v">+1</div><div class="n">Реген</div></div>
+      <div class="new"><div class="v">+200</div><div class="n">ЦП</div><div class="m">новое</div></div>
+      <div class="new"><div class="v">+0,1%</div><div class="n">Бонус к опыту</div><div class="m">новое</div></div>
+      <div class="new"><div class="v">+0,1%</div><div class="n">Бонус к дропу</div><div class="m">новое</div></div>
+    </div>
+    <div class="card note-line"><img src="/images/bless.png" alt="" class="px"><div><b>Заточка:</b> неудачная безопасная заточка снижает уровень на 1 (не ниже +0).</div></div>
+  </section>
+
+  <!-- мир -->
+  <section class="sec reveal" id="world">
+    <div class="sec-eyebrow">Мир Liberty</div>
+    <h2>Новый город</h2>
+    <div class="world">
+      <div>
+        <div class="phone left"><img src="/images/patches/s4-city.jpg" alt="Ночной город" loading="lazy"></div>
+        <div class="phone-cap">Ночной город и площадь LIBERTY</div>
+      </div>
+      <div class="card" style="padding: 8px 18px">
+        <ul class="wlist">
+          <li><span class="e">🌙</span><span>Город оформлен заново — ночные улицы, фонари и площадь <b>LIBERTY</b> в центре.</span></li>
+          <li><span class="e">🏪</span><span>У NPC свои лавки: хранилище наверху, кузнец справа, торговец слева.</span></li>
+          <li><span class="e">🧱</span><span>Новый вид у локаций 1, 20, 40, 60 и фарм зон.</span></li>
+          <li><span class="e">✖</span><span>Событие «Битва на смерть» убрано.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- исправления -->
+  <section class="sec reveal" id="fixes">
+    <div class="sec-eyebrow">Стабильность</div>
+    <h2>Исправления</h2>
+    <div class="card fixes">
+      <div class="fix"><span class="tag fixd">Исправлено</span><span><img src="/images/pet/pet_groot/icon.png" alt="" class="px" style="display:inline;width:20px;height:20px;vertical-align:-4px;margin-right:4px">Баф питомца работает в событиях и режимах (Башня, Страх, Сотрудничество, арена и др.) и не пропадает при смене локации.</span></div>
+      <div class="fix"><span class="tag fixd">Исправлено</span><span>Перезарядка продвинутых навыков на кнопке показывается правильно.</span></div>
+      <div class="fix"><span class="tag chg">Изменено</span><span>В авто-бою лечащие навыки применяются сразу по откату, а не только при низком здоровье.</span></div>
+    </div>
+  </section>
+
+  <footer>Liberty · обновления · перезайдите в игру, чтобы загрузилась новая версия</footer>
 </main>
 
+<script>
+  // Таймер до конца сезона: 1 ноября 2026, 18:00 МСК (15:00 UTC).
+  (function () {
+    var END = Date.UTC(2026, 10, 1, 15, 0, 0);
+    var el = function (id) { return document.getElementById(id); };
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function tick() {
+      var s = Math.max(0, Math.floor((END - Date.now()) / 1000));
+      if (s <= 0) { el('cd').style.display = 'none'; el('cd-cap').textContent = 'Сезон завершён'; return; }
+      el('cd-d').textContent = Math.floor(s / 86400);
+      el('cd-h').textContent = pad(Math.floor(s % 86400 / 3600));
+      el('cd-m').textContent = pad(Math.floor(s % 3600 / 60));
+      el('cd-s').textContent = pad(s % 60);
+      setTimeout(tick, 1000);
+    }
+    tick();
+  })();
+
+  // Появление разделов при прокрутке.
+  (function () {
+    var els = document.querySelectorAll('.reveal, .stagger');
+    if (!('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+    }, { threshold: 0.12 });
+    els.forEach(function (e) { io.observe(e); });
+  })();
+
+  // Частицы в шапке — золотые и сиреневые искры.
+  (function () {
+    var cv = document.getElementById('fx');
+    if (!cv || !cv.getContext) return;
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var ctx = cv.getContext('2d'), w, h, dpr = Math.min(2, window.devicePixelRatio || 1), ps = [];
+    var COLORS = ['244,216,167', '227,148,29', '205,184,236'];
+    function resize() { w = cv.clientWidth; h = cv.clientHeight; cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    function spawn(y) {
+      return { x: Math.random() * w, y: y == null ? h + 10 : y, r: 0.6 + Math.random() * 1.8,
+        vx: (Math.random() - 0.5) * 0.25, vy: 0.25 + Math.random() * 0.6,
+        c: COLORS[(Math.random() * COLORS.length) | 0], a: 0.2 + Math.random() * 0.5, t: Math.random() * 6 };
+    }
+    resize();
+    var n = Math.max(24, Math.min(70, Math.floor(w / 14)));
+    for (var i = 0; i < n; i++) ps.push(spawn(Math.random() * h));
+    window.addEventListener('resize', resize);
+    (function loop() {
+      ctx.clearRect(0, 0, w, h);
+      for (var i = 0; i < ps.length; i++) {
+        var p = ps[i]; p.x += p.vx; p.y -= p.vy; p.t += 0.03;
+        if (p.y < -10) ps[i] = p = spawn();
+        var a = p.a * (0.6 + 0.4 * Math.sin(p.t));
+        ctx.beginPath(); ctx.fillStyle = 'rgba(' + p.c + ',' + a + ')';
+        ctx.shadowColor = 'rgba(' + p.c + ',0.8)'; ctx.shadowBlur = 6;
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+      requestAnimationFrame(loop);
+    })();
+  })();
+</script>
 </body>
 </html>
