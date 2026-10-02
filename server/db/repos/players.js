@@ -34,7 +34,7 @@ const { query, hasColumn } = require('../index');
 const ton = require('../../ton');
 const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, UPGRADE_KEYS,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL,
-  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty, PASSIVE_CLASS_DEF } = require('../../../shared/definitions');
+  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty, PASSIVE_CLASS_DEF, UPGRADE_MAX } = require('../../../shared/definitions');
 
 // ── identity ────────────────────────────────────────────────────────────────
 
@@ -940,6 +940,11 @@ async function spendUpgrade(db, playerId, key) {
   // random or time-based key would have the opposite pair of properties — see
   // the "bad" example in repos/money.js.
   const cur = Number(r[col]) || 0;
+  // Потолок улучшения (UPGRADE_MAX): дальше не качается.
+  if (UPGRADE_MAX[key] && cur >= UPGRADE_MAX[key]) {
+    throw Object.assign(new Error('upgrade at max'),
+      { code: 'upg_max', userMessage: `Максимальный уровень улучшения — ${UPGRADE_MAX[key]}` });
+  }
   const cost = upgradeCost(cur);
   const money = require('./money');
   let goldLeft = null;

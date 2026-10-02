@@ -442,7 +442,7 @@ function recompute() {
 
   const lvl = player.lvl - 1;
   const cd  = player.charDef;
-  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + (u.atkSpeed   || 0) * UPGRADE_STEP.atkSpeed + extraAS;
+  player.atkSpeed   = cd.atkSpeed * (1 + lvl * 0.015) + upgLvlCapped('atkSpeed', u.atkSpeed) * UPGRADE_STEP.atkSpeed + extraAS;
   if (typeof atkSpeedTimer !== 'undefined' && atkSpeedTimer > 0) {
     // ×2 instead of ranger's own ×1.5 for "Ускорение" (adv ranger R); warlock
     // never sets atkSpeedTimer at all except via "Жажда" (adv warlock E), so
@@ -462,8 +462,8 @@ function recompute() {
   const _pierceCritChance = (typeof pierceTimer !== 'undefined' && pierceTimer > 0) ? 0.50 : 0;
   const _killerCritChance = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
   const _killerCritPower  = (typeof killerTimer !== 'undefined' && killerTimer > 0) ? 0.50 : 0;
-  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * UPGRADE_STEP.critChance + extraCrit + _critChanceBuff + _pierceCritChance + _killerCritChance);
-  player.critPower  = 1.5 + lvl * 0.015 + (u.critPower  || 0) * UPGRADE_STEP.critPower + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower
+  player.critChance = Math.min(0.80, 0.05 + lvl * 0.004 + upgLvlCapped('critChance', u.critChance) * UPGRADE_STEP.critChance + extraCrit + _critChanceBuff + _pierceCritChance + _killerCritChance);
+  player.critPower  = 1.5 + lvl * 0.015 + upgLvlCapped('critPower', u.critPower) * UPGRADE_STEP.critPower + (pt ? pt.critPowerFlat : 0) + _critDmgBuff + critPowerAdd + _killerCritPower
     + ((_petSk && _petSk.critPower) || 0);
   if (typeof netStatsUpdate === 'function') netStatsUpdate(a, d, h, player.critChance, player.critPower);
   player.hpRegen    = lvl * 0.02 + (u.hpRegen    || 0) * UPGRADE_STEP.hpRegen + (buffs.regen > 0 ? 2 : 0) + (pt ? pt.hpRegenFlat : 0);

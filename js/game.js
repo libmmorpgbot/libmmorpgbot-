@@ -395,9 +395,8 @@ const AUTO_SKILL_VIP_MIN = 2;
 // animation for ~0.68s — the character would stand there casting instead of
 // hitting anything.
 const AUTO_SKILL_GAP = 1.2;
-// Healing skills are wasted at (or near) full HP — they are on long
-// cooldowns, so spending one for nothing is worse than waiting.
-const AUTO_SKILL_HEAL_BELOW = 0.7;
+// Лечащие навыки в АВТО применяются по откату, как и остальные: они ещё и
+// бьют по площади (Целитель) и лечат CP, так что ждать просадки HP незачем.
 let _autoSkillTimer = 0;
 
 function _autoCastSkills(dt) {
@@ -433,12 +432,10 @@ function _autoCastSkills(dt) {
   if (dist(foe.x, foe.y, player.x, player.y) > 420) return;
 
   const baseSkills = SKILL_DEF[player.type] || [];
-  const hpFrac = player.maxHp > 0 ? (player.hp / player.maxHp) : 1;
   // Slots the player switched off in the picker. Keyed by slot (Q/W/E/R), so
   // it follows the slot rather than the variant — switching a slot to its
   // advanced version does not silently re-enable one that was turned off.
   const offSlots = player.autoSkillOff || {};
-  const bonusTypes = (typeof SKILL_BONUS_TYPE !== 'undefined' && SKILL_BONUS_TYPE[player.type]) || {};
   for (let i = 0; i < baseSkills.length; i++) {
     // Resolved to whichever version (base/advanced) is actually active —
     // an advanced skill can flip a slot's auto-eligibility either way (see
@@ -450,7 +447,6 @@ function _autoCastSkills(dt) {
     if (offSlots[sk.key]) continue;                        // switched off by the player
     if (_skillLvl(sk.key) <= 0) continue;                  // not learned
     if ((player.skillCooldowns[sk.key] || 0) > 0) continue;
-    if (bonusTypes[sk.key] === 'heal' && hpFrac > AUTO_SKILL_HEAL_BELOW) continue;
     useSkill(i);
     _autoSkillTimer = AUTO_SKILL_GAP;
     return;                                                // one per gap

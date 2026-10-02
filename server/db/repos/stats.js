@@ -42,7 +42,7 @@
 const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, UPGRADE_STEP,
+  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, UPGRADE_STEP, upgLvlCapped,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -362,9 +362,9 @@ function compute(row) {
     maxHp: h,
     // Capped at 0.80 like recompute(): without it, enough crit gear makes every
     // hit a crit and the stat stops meaning anything.
-    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + row.upg_crit_chance * UPGRADE_STEP.critChance + extraCrit),
-    critPower:  1.5 + lvl * 0.015 + row.upg_crit_power * UPGRADE_STEP.critPower + pt.critPowerFlat + critPowerAdd,
-    atkSpeed:   (cd.atkSpeed || 0) * (1 + lvl * 0.015) + row.upg_atk_speed * UPGRADE_STEP.atkSpeed + extraAS,
+    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + upgLvlCapped('critChance', row.upg_crit_chance) * UPGRADE_STEP.critChance + extraCrit),
+    critPower:  1.5 + lvl * 0.015 + upgLvlCapped('critPower', row.upg_crit_power) * UPGRADE_STEP.critPower + pt.critPowerFlat + critPowerAdd,
+    atkSpeed:   (cd.atkSpeed || 0) * (1 + lvl * 0.015) + upgLvlCapped('atkSpeed', row.upg_atk_speed) * UPGRADE_STEP.atkSpeed + extraAS,
     hpRegen:    lvl * 0.02 + row.upg_hp_regen * UPGRADE_STEP.hpRegen + pt.hpRegenFlat + regenBuff,
     // Прибавка к запасу CP от улучшения «ЦП» (Room._maxCpOf).
     cpFlat:     (row.upg_cp || 0) * UPGRADE_STEP.cp,

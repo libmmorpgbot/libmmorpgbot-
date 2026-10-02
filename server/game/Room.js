@@ -10,7 +10,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
-        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack } = require('../../shared/definitions');
+        ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -222,11 +222,11 @@ function computeStats(sd, cd, type, clanAtkBonusPct) {
     atk: a,
     def: d,
     maxHp: h,
-    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + (u.critChance || 0) * UPGRADE_STEP.critChance + extraCrit),
-    critPower:  1.5 + lvl * 0.015 + (u.critPower  || 0) * UPGRADE_STEP.critPower + pt.critPowerFlat,
+    critChance: Math.min(0.80, 0.05 + lvl * 0.004 + upgLvlCapped('critChance', u.critChance) * UPGRADE_STEP.critChance + extraCrit),
+    critPower:  1.5 + lvl * 0.015 + upgLvlCapped('critPower', u.critPower) * UPGRADE_STEP.critPower + pt.critPowerFlat,
     // Permanent-only — mirrors recompute() (js/player.js) minus its buff/skill
     // timer terms, same as every other field here (see the file header note).
-    atkSpeed: (cd.atkSpeed || 0) * (1 + lvl * 0.015) + (u.atkSpeed || 0) * UPGRADE_STEP.atkSpeed + extraAS,
+    atkSpeed: (cd.atkSpeed || 0) * (1 + lvl * 0.015) + upgLvlCapped('atkSpeed', u.atkSpeed) * UPGRADE_STEP.atkSpeed + extraAS,
     hpRegen:  lvl * 0.02 + (u.hpRegen || 0) * UPGRADE_STEP.hpRegen + pt.hpRegenFlat,
     // Прибавка к запасу CP от улучшения «ЦП» — см. _maxCpOf.
     cpFlat:   (u.cp || 0) * UPGRADE_STEP.cp,

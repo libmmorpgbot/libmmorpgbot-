@@ -737,15 +737,21 @@ function updateUpgradeUI() {
     // reads as "the upgrade button is broken", not as a stale copy of a
     // formula, and sends you looking in the wrong file.
     const cost = upgradeCost(lvl);
-    const can  = player.gold >= cost && availSP >= 1;
+    // Потолок улучшения (UPGRADE_MAX, shared/definitions.js) — тот же, что
+    // проверяет сервер.
+    const max = (typeof UPGRADE_MAX !== 'undefined' && UPGRADE_MAX[key]) || 0;
+    const atMax = max > 0 && lvl >= max;
+    const can  = !atMax && player.gold >= cost && availSP >= 1;
     return `<div class="upg-row">
       <div class="upg-info">
         <span class="upg-label">${iconHTML(cfg.icon, 14, '#b2a58e')} ${cfg.label}</span>
-        <span class="upg-meta">${t('levelAbbrev')}${lvl} · ${cfg.desc}</span>
+        <span class="upg-meta">${t('levelAbbrev')}${max ? `${Math.min(lvl, max)} / ${max}` : lvl} · ${cfg.desc}</span>
       </div>
-      <button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">
+      ${atMax
+        ? `<button class="upg-btn disabled" style="color:#ffcf56;font-weight:800">MAX</button>`
+        : `<button class="upg-btn${can ? '' : ' disabled'}" onclick="upgradeStats('${key}')">
         ${iconHTML('coin',12,'#e3941d')}${cost} + 1 ${t('spAbbrev')}
-      </button>
+      </button>`}
     </div>`;
   }).join('');
 
@@ -6177,7 +6183,8 @@ function openSeasonPanel() {
   if (!panel) return;
   panel.style.display = 'flex';
   // Сезон 4: «Сезон» (карточка и победители прошлого) и «Задания».
-  if (_seasonTab !== 'season' && _seasonTab !== 'tasks') _seasonTab = 'season';
+  if (!['season', 'tasks', 'rating'].includes(_seasonTab)) _seasonTab = 'season';
+  if (_seasonTab === 'rating' && typeof netSeasonRating === 'function') netSeasonRating();
   document.querySelectorAll('#season-panel .rating-tab').forEach(b => b.classList.remove('active'));
   document.getElementById('stab-' + _seasonTab)?.classList.add('active');
   if (typeof netSeasonSync === 'function') netSeasonSync();
@@ -6247,28 +6254,28 @@ function _seasonPrizesHTML() {
 function _seasonInfoHTML() {
   const w = _seasonWinners;
   const list = (w && w.list) || [];
+  const medal = p => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : p;
   const rows = list.map(x => {
-    const pc = x.place <= 3 ? ' p' + x.place : '';
     const prize = x.prizeGram != null ? `${x.prizeGram} GRAM` : '—';
     const btn = x.mine && !x.claimed && x.prizeGram != null
-      ? `<button class="db-action" style="margin:0 0 0 8px;padding:4px 10px;width:auto;font-size:12px" onclick="_seasonClaimPrize(this)">${t('seasonClaimBtn')}</button>`
+      ? `<button class="s4-claim" onclick="_seasonClaimPrize(this)">${t('seasonClaimBtn')}</button>`
       : '';
-    return `<div class="season-row${x.mine ? ' me' : ''}">
-      <span class="season-place${pc}">${x.place}</span>
-      <span class="season-name">${_esc(x.username)}</span>
-      <span class="season-prize">${prize}</span>${btn}
+    return `<div class="s4-row${x.mine ? ' me' : ''}${x.place <= 3 ? ' top' : ''}">
+      <span class="s4-place p${Math.min(x.place, 4)}">${medal(x.place)}</span>
+      <span class="s4-name">${_esc(x.username)}</span>
+      <span class="s4-gram">${prize}</span>${btn}
     </div>`;
   }).join('');
   const fallback = w === null ? t('seasonLoading') : t('seasonNoPlayers');
   return `
-    <div style="padding:16px">
+    <div class="s4-wrap">
       <div class="season-card">
         <div class="season-card-rule"><span>✦ LIBERTY ✦</span></div>
         <div class="season-card-title">${t('season2Title')}</div>
         <div class="season-card-sub">${t('season2Desc')}</div>
       </div>
-      <div class="db-rewards-hdr">${tVars('seasonPastWinnersHdr', { n: (w && w.season) || 3 })}</div>
-      ${rows || `<div class="db-phase">${fallback}</div>`}
+      <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonPastWinnersHdr', { n: (w && w.season) || 3 })}</span></div>
+      ${rows || `<div class="s4-empty">${fallback}</div>`}
     </div>`;
 }
 
@@ -6369,20 +6376,34 @@ function _seasonClaimFarm(zone) {
 // Сезон 4: постоянная награда, ежедневные и еженедельные задания. Прогресс и
 // цели — с сервера (seasonState.tasks); очки приходят сами, когда задание
 // выполнено (seasonTaskDone), кнопки нет.
+const _S4_TASK_ICON = {
+  chat: '💬', mbuy: '🛒', msell: '💰', kill1: '⚔️', kill2: '🗡️', killFarm: '🌾',
+  potAtk: '⚗️', tower: '🏰', boss: '👹',
+};
+// До сброса: ежедневные — полночь по Москве, еженедельные — понедельник.
+function _s4ResetLeft(weekly) {
+  const off = (typeof MSK_OFFSET_H !== 'undefined' ? MSK_OFFSET_H : 3) * 3600000;
+  const now = Date.now(), msk = new Date(now + off);
+  const midnight = Date.UTC(msk.getUTCFullYear(), msk.getUTCMonth(), msk.getUTCDate() + 1) - off;
+  if (!weekly) return midnight - now;
+  const dow = (msk.getUTCDay() + 6) % 7;            // 0 = понедельник
+  return midnight + (6 - dow) * 86400000 - now;
+}
 function _seasonTaskRowHTML(x) {
   const isGram = x.id === 'mbuy' || x.id === 'msell';
   const cur = Math.min(x.progress || 0, x.target);
   const fmt = n => isGram ? (Math.floor(n * 100) / 100) : Number(n).toLocaleString('ru-RU');
   const pct = Math.max(0, Math.min(100, Math.round((cur / Math.max(1e-9, x.target)) * 100)));
   return `
-    <div style="margin-top:10px;padding:10px;border:1px solid rgba(209,204,197,.14);border-radius:10px${x.done ? ';opacity:.6' : ''}">
-      <div style="display:flex;gap:8px;align-items:baseline">
-        <span style="flex:1;font-size:13px;color:#d9cfbe">${t('seasonTask_' + x.id)}</span>
-        <span style="font-size:12px;font-weight:700;color:#ffcf56;white-space:nowrap">+${x.points}</span>
-      </div>
-      <div class="cs-sbar" style="margin-top:6px">
-        <div class="cs-sbtrack"><div class="cs-sbfill" style="width:${pct}%;background:${x.done ? '#7ee0c0' : '#50af95'}"></div></div>
-        <span class="cs-sbv">${x.done ? '✓' : `${fmt(cur)} / ${fmt(x.target)}`}</span>
+    <div class="s4-task${x.done ? ' done' : ''}">
+      <div class="s4-ico">${x.done ? '✓' : (_S4_TASK_ICON[x.id] || '★')}</div>
+      <div class="s4-task-body">
+        <div class="s4-task-top">
+          <span class="s4-task-name">${t('seasonTask_' + x.id)}</span>
+          <span class="s4-reward">+${x.points}</span>
+        </div>
+        <div class="s4-bar"><div class="s4-bar-fill" style="width:${pct}%"></div></div>
+        <div class="s4-task-prog">${x.done ? t('seasonTaskDoneLbl') : `${fmt(cur)} / ${fmt(x.target)}`}</div>
       </div>
     </div>`;
 }
@@ -6390,22 +6411,28 @@ function _seasonTaskRowHTML(x) {
 function _seasonTasksHTML() {
   const st = _seasonState || {};
   const tasks = st.tasks || { daily: [], weekly: [] };
+  const sec = (icon, hdr, list, weekly) => {
+    const done = list.filter(x => x.done).length;
+    return `
+      <div class="s4-sec-hdr">
+        <span>${icon} ${t(hdr)}</span>
+        <span class="s4-sec-meta">${done}/${list.length} · ⏳ ${_fmtEventEta(_s4ResetLeft(weekly))}</span>
+      </div>
+      ${list.map(_seasonTaskRowHTML).join('')}`;
+  };
   return `
-    <div style="padding:16px">
-      <div class="db-countdown">${st.points || 0}</div>
-      <div class="db-phase" style="margin-bottom:12px">${t('seasonPointsLbl')}</div>
-      <div class="db-rules">
-        <b>${t('seasonTasksPermHdr')}</b>
-        <ul><li>${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 10 })}</li></ul>
+    <div class="s4-wrap">
+      <div class="s4-hero">
+        <div class="s4-hero-num">${(st.points || 0).toLocaleString('ru-RU')}</div>
+        <div class="s4-hero-lbl">${t('seasonPointsLbl')}</div>
       </div>
-      <div class="db-rules">
-        <b>${t('seasonTasksDailyHdr')}</b>
-        ${(tasks.daily || []).map(_seasonTaskRowHTML).join('')}
+      <div class="s4-sec-hdr"><span>📈 ${t('seasonTasksPermHdr')}</span></div>
+      <div class="s4-task perm">
+        <div class="s4-ico">🛒</div>
+        <div class="s4-task-body"><span class="s4-task-name">${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 10 })}</span></div>
       </div>
-      <div class="db-rules">
-        <b>${t('seasonTasksWeeklyHdr')}</b>
-        ${(tasks.weekly || []).map(_seasonTaskRowHTML).join('')}
-      </div>
+      ${sec('☀️', 'seasonTasksDailyHdr', tasks.daily || [], false)}
+      ${sec('📅', 'seasonTasksWeeklyHdr', tasks.weekly || [], true)}
     </div>`;
 }
 
@@ -6421,36 +6448,33 @@ function _seasonBurnBookConfirm(id) {
 // ── "Рейтинг" tab: top 20 ────────────────────────────────────────────────
 function _seasonRatingHTML() {
   const r = _seasonRating;
-  if (!r) return `<div style="padding:16px"><div class="db-phase">${t('seasonLoading')}</div></div>`;
-  const rows = (r.list || []).map(x => {
-    const mine = r.me && x.username === r.me.username;
-    const pc = x.place <= 3 ? ' p' + x.place : '';
-    return `<div class="season-row${mine ? ' me' : ''}">
-      <span class="season-place${pc}">${x.place}</span>
-      <span class="season-name">${_esc(x.username)}</span>
+  if (!r) return `<div class="s4-wrap"><div class="s4-empty">${t('seasonLoading')}</div></div>`;
+  const list = r.list || [];
+  const isMe = x => r.me && x.username === r.me.username;
+  // Пьедестал: 2 — 1 — 3.
+  const podSlot = (x, place) => x ? `
+    <div class="s4-pod p${place}${isMe(x) ? ' me' : ''}">
+      <div class="s4-pod-medal">${place === 1 ? '🥇' : place === 2 ? '🥈' : '🥉'}</div>
+      ${classBadgeHTML(x.charClass, place === 1 ? 34 : 28)}
+      <div class="s4-pod-name">${_esc(x.username)}</div>
+      <div class="s4-pod-pts">${Number(x.points).toLocaleString('ru-RU')}</div>
+      <div class="s4-pod-base">${place}</div>
+    </div>` : `<div class="s4-pod p${place} empty"><div class="s4-pod-base">${place}</div></div>`;
+  const podium = list.length ? `<div class="s4-podium">${podSlot(list[1], 2)}${podSlot(list[0], 1)}${podSlot(list[2], 3)}</div>` : '';
+  const row = (x, extra = '') => `
+    <div class="s4-row${isMe(x) ? ' me' : ''}"${extra}>
+      <span class="s4-place p4">${x.place}</span>
       ${classBadgeHTML(x.charClass)}
-      <span class="season-pts">${x.points}</span>
+      <span class="s4-name">${_esc(x.username)}</span>
+      <span class="s4-pts">${Number(x.points).toLocaleString('ru-RU')}</span>
     </div>`;
-  }).join('');
-  const meOutside = r.me && r.me.place > 0 && !(r.list || []).some(x => x.username === r.me.username);
-  const meRow = meOutside
-    ? `<div class="season-row me" style="margin-top:10px">
-         <span class="season-place">${r.me.place}</span>
-         <span class="season-name">${_esc(r.me.username)}</span>
-         ${classBadgeHTML(r.me.charClass)}
-         <span class="season-pts">${r.me.points}</span>
-       </div>`
-    : '';
-  // Season 3's floor is "scored at all" (SEASON_RATING_MIN_POINTS = 1) —
-  // not a real threshold worth printing, unlike Season 2's 5000.
-  const minLine = (r.minPoints || 0) > 1
-    ? `<div class="imod-enh-chance" style="margin-bottom:10px">${tVars('season2RatingMinFmt', { n: r.minPoints })}</div>`
-    : '';
-  return `<div style="padding:16px">
-    ${minLine}
-    ${rows || `<div class="db-phase">${t('seasonNoPlayers')}</div>`}
-    ${meRow}
-    ${_seasonPrizesHTML()}
+  const rest = list.slice(3).map(x => row(x)).join('');
+  const meOutside = r.me && r.me.place > 0 && !list.some(isMe);
+  return `<div class="s4-wrap">
+    <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonRatingHdrFmt', { n: 4 })}</span></div>
+    ${podium || `<div class="s4-empty">${t('seasonNoPlayers')}</div>`}
+    ${rest}
+    ${meOutside ? `<div class="s4-me-sep">···</div>${row(r.me)}` : ''}
   </div>`;
 }
 
