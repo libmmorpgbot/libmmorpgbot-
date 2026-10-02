@@ -610,7 +610,7 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // поставить её сюда: seasonActive() погаснет в этот момент, и
 // distributeSeasonPrizes сработает сам. 3-й сезон кончился
 // Date.UTC(2026, 9, 1, 15) — 1 Oct 2026, 18:00 MSK.
-const SEASON_END_AT = 0;
+const SEASON_END_AT = Date.UTC(2026, 10, 1, 15, 0, 0); // 1 Nov 2026, 18:00 MSK (UTC+3)
 function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_END_AT; }
 // Письмо-подарок (claimMailBonus) было акцией 3-го сезона и закрыто вместе с
 // ним — к сезону 4 не относится.
@@ -3694,7 +3694,7 @@ const GRAM_PER_LEVEL = 0.0000001;
 // Действует весь сезон: SEASON_TICKET_END_AT = 0 — дата конца не назначена.
 // Когда назначат — поставить её сюда, и билет погаснет в этот момент.
 const SEASON_TICKET_SEASON = 4;
-const SEASON_TICKET_END_AT = 0;
+const SEASON_TICKET_END_AT = SEASON_END_AT;   // билет — до конца 4 сезона
 function seasonTicketPeriodOn(now = Date.now()) { return !SEASON_TICKET_END_AT || now < SEASON_TICKET_END_AT; }
 const SEASON_TICKET_GRAM_PRICE = 15;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience

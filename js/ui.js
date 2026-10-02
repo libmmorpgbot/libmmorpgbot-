@@ -6292,10 +6292,19 @@ function _seasonInfoHTML() {
         <div class="season-card-rule"><span>✦ LIBERTY ✦</span></div>
         <div class="season-card-title">${t('season2Title')}</div>
         <div class="season-card-sub">${t('season2Desc')}</div>
+        ${_s4EndsHTML()}
       </div>
       <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonPastWinnersHdr', { n: (w && w.season) || 3 })}</span></div>
       ${rows || `<div class="s4-empty">${fallback}</div>`}
     </div>`;
+}
+
+// Сколько осталось до конца сезона (SEASON_END_AT, shared/definitions.js).
+function _s4EndsHTML() {
+  const end = typeof SEASON_END_AT !== 'undefined' ? SEASON_END_AT : 0;
+  if (!end) return '';
+  const left = end - Date.now();
+  return `<div class="s4-ends">${left > 0 ? '⏳ ' + tVars('seasonEndsIn', { t: _fmtEventEta(left) }) : t('seasonEnded')}</div>`;
 }
 
 function _seasonClaimPrize(btn) {
@@ -6444,6 +6453,7 @@ function _seasonTasksHTML() {
       <div class="s4-hero">
         <div class="s4-hero-num">${(st.points || 0).toLocaleString('ru-RU')}</div>
         <div class="s4-hero-lbl">${t('seasonPointsLbl')}</div>
+        ${_s4EndsHTML()}
       </div>
       <div class="s4-sec-hdr"><span>📈 ${t('seasonTasksPermHdr')}</span></div>
       <div class="s4-task perm">
