@@ -39,6 +39,7 @@ const PAGES = {
   '/':                         'index.html',
   '/index.html':               'index.html',
   '/guide.html':               'guide.html',
+  '/patches.html':             'patches.html',
   '/admin.html':               'admin.html',
   '/tonconnect-manifest.json': 'tonconnect-manifest.json',
 };

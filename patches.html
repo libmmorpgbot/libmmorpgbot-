@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liberty — Обновления</title>
+<!--
+  Список обновлений (патчноуты). Новый патч — новый <article class="patch">
+  СВЕРХУ списка в <main>, и строка в оглавлении #patch-list. Оформление —
+  то же, что у guide.html (палитра и шрифты оттуда).
+-->
+<style>
+  :root {
+    --ink: #0b0805;
+    --panel: #17130b;
+    --panel-raised: #201a10;
+    --hairline: rgba(196,153,74,0.22);
+    --hairline-strong: rgba(196,153,74,0.4);
+    --gold: #e3941d;
+    --gold-bright: #f4d8a7;
+    --arcane: #a58fc4;
+    --arcane-bright: #cdb8ec;
+    --text: #d8d2c8;
+    --muted: #9a8e7a;
+    --green: #7ee0c0;
+    --red: #e07a7a;
+
+    --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--ink); color: var(--text);
+    font-family: var(--sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  }
+  a { color: var(--gold-bright); }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 22px;
+    background: linear-gradient(180deg, rgba(24,18,9,0.97), rgba(13,10,4,0.97));
+    border-bottom: 1px solid var(--hairline-strong);
+    backdrop-filter: blur(6px);
+  }
+  .emblem {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+    background: radial-gradient(circle at 35% 30%, #5a3a7a, #2a1030 70%);
+    border: 2px solid var(--arcane); box-shadow: 0 0 14px rgba(165,143,196,0.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .emblem svg { width: 18px; height: 18px; }
+  .brandline { display: flex; flex-direction: column; line-height: 1.1; }
+  .brand { font-family: var(--serif); font-weight: 700; letter-spacing: 0.14em; font-size: 17px; color: var(--gold-bright); }
+  .brand-sub { font-size: 10px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; }
+  .topbar-links { margin-left: auto; display: flex; gap: 4px; overflow-x: auto; }
+  .topbar-links a {
+    text-decoration: none; font-size: 12px; color: var(--muted); white-space: nowrap;
+    padding: 7px 12px; border-radius: 7px; border: 1px solid transparent;
+  }
+  .topbar-links a:hover, .topbar-links a.on { color: var(--arcane-bright); background: rgba(165,143,196,0.08); border-color: var(--hairline); }
+
+  .hero {
+    position: relative; padding: 64px 22px 50px; text-align: center; overflow: hidden;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .hero::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse 620px 360px at 50% 8%, rgba(165,143,196,0.16), transparent 65%),
+      radial-gradient(ellipse 500px 300px at 50% 30%, rgba(227,148,29,0.08), transparent 70%);
+  }
+  .hero-inner { position: relative; }
+  .hero-eyebrow { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--arcane-bright); margin-bottom: 12px; font-weight: 600; }
+  h1.hero-title {
+    font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 6vw, 48px);
+    color: var(--gold-bright); margin: 0 0 14px; text-shadow: 0 0 30px rgba(165,143,196,0.25);
+  }
+  .hero-lede { font-size: 15px; max-width: 60ch; margin: 0 auto; }
+
+  main { max-width: 860px; margin: 0 auto; padding: 44px 18px 80px; }
+
+  .patch-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 40px; }
+  .patch-list a {
+    text-decoration: none; font-size: 12.5px; font-weight: 600; color: var(--text);
+    padding: 8px 14px; border-radius: 20px; background: var(--panel); border: 1px solid var(--hairline);
+  }
+  .patch-list a span { color: var(--muted); font-weight: 500; margin-left: 6px; }
+  .patch-list a:hover { border-color: var(--hairline-strong); color: var(--gold-bright); }
+
+  article.patch {
+    scroll-margin-top: 78px; margin-bottom: 56px;
+    border: 1px solid var(--hairline-strong); border-radius: 14px; overflow: hidden;
+    background: linear-gradient(180deg, var(--panel-raised), var(--panel));
+    box-shadow: 0 20px 40px -24px rgba(0,0,0,0.9);
+  }
+  .patch-head {
+    padding: 22px 22px 18px; border-bottom: 1px solid var(--hairline);
+    background: radial-gradient(ellipse 400px 160px at 0% 0%, rgba(227,148,29,0.13), transparent 70%);
+  }
+  .patch-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .badge {
+    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 20px; border: 1px solid var(--hairline-strong); color: var(--gold-bright);
+  }
+  .badge.new { color: #0b0805; background: var(--gold); border-color: var(--gold); }
+  .patch-date { font-size: 12.5px; color: var(--muted); }
+  .patch-head h2 { font-family: var(--serif); font-size: 26px; color: var(--gold-bright); margin: 0 0 6px; }
+  .patch-head p { margin: 0; color: var(--text); font-size: 14.5px; max-width: 68ch; }
+
+  .patch-body { padding: 6px 22px 22px; }
+  .group { margin-top: 20px; }
+  .group h3 {
+    font-family: var(--serif); font-size: 17px; color: var(--gold-bright);
+    margin: 0 0 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .group ul { margin: 0; padding-left: 20px; }
+  .group li { margin: 5px 0; font-size: 14.5px; }
+  .group li b { color: var(--gold-bright); }
+  .group .note { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+
+  .cls { margin: 10px 0; padding: 10px 14px; border-radius: 10px; background: rgba(255,255,255,0.025); border: 1px solid var(--hairline); }
+  .cls-name { font-weight: 800; color: var(--gold-bright); margin-bottom: 2px; }
+  .cls ul { margin-top: 2px; }
+
+  table.t { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 14px; }
+  table.t th, table.t td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--hairline); }
+  table.t th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  table.t td.num { color: var(--gold-bright); font-weight: 700; white-space: nowrap; text-align: right; }
+
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 6px; margin-right: 6px; vertical-align: 1px; }
+  .tag.add { background: rgba(126,224,192,0.14); color: var(--green); }
+  .tag.chg { background: rgba(227,148,29,0.16); color: var(--gold); }
+  .tag.fix { background: rgba(165,143,196,0.18); color: var(--arcane-bright); }
+  .tag.del { background: rgba(224,122,122,0.16); color: var(--red); }
+
+  footer { max-width: 68ch; margin: 30px auto 0; padding: 22px 18px 0; border-top: 1px solid var(--hairline); font-size: 12px; color: #6b6152; text-align: center; }
+
+  @media (max-width: 560px) {
+    .topbar { padding: 12px 14px; }
+    .brand-sub { display: none; }
+    .patch-head, .patch-body { padding-left: 16px; padding-right: 16px; }
+    .patch-head h2 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="emblem">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#cdb8ec" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v6c0 5 4 8 9 9 5-1 9-4 9-9V7l-9-5Z"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+  </div>
+  <div class="brandline">
+    <span class="brand">LIBERTY</span>
+    <span class="brand-sub">Обновления игры</span>
+  </div>
+  <div class="topbar-links">
+    <a href="guide.html">Гайд</a>
+    <a href="patches.html" class="on">Обновления</a>
+  </div>
+</div>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-eyebrow">Летопись Liberty</div>
+    <h1 class="hero-title">Обновления</h1>
+    <p class="hero-lede">Что изменилось в игре — от новых к старым.</p>
+  </div>
+</div>
+
+<main>
+  <nav class="patch-list" aria-label="Список обновлений">
+    <a href="#season4">Сезон 4: Баланс <span>2 октября 2026</span></a>
+  </nav>
+
+  <!-- ══ Сезон 4: Баланс ═══════════════════════════════════════════════ -->
+  <article class="patch" id="season4">
+    <div class="patch-head">
+      <div class="patch-meta">
+        <span class="badge new">Новое</span>
+        <span class="badge">Сезон 4</span>
+        <span class="patch-date">2 октября 2026</span>
+      </div>
+      <h2>Сезон 4: Баланс</h2>
+      <p>В этом сезоне мы сделали баланс персонажей, но это не конечный итог: идеал невозможен,
+        а отличное требует времени. Сезон идёт <b>до 1 ноября, 18:00 МСК</b>. Приятной игры!</p>
+    </div>
+    <div class="patch-body">
+
+      <div class="group">
+        <h3>📋 Задания сезона</h3>
+        <p class="note" style="margin-top:0">Очки начисляются сами, как только задание выполнено.</p>
+        <table class="t">
+          <tr><th>Постоянно</th><th style="text-align:right">Очки</th></tr>
+          <tr><td>Покупка на маркете, за каждый GRAM</td><td class="num">+10</td></tr>
+        </table>
+        <table class="t">
+          <tr><th>Ежедневные · сброс в 00:00 МСК</th><th style="text-align:right">Очки</th></tr>
+          <tr><td>Отправить 10 сообщений в игровой чат</td><td class="num">+30</td></tr>
+          <tr><td>Купить на маркете на 3 GRAM</td><td class="num">+100</td></tr>
+          <tr><td>Продать на маркете на 3 GRAM</td><td class="num">+100</td></tr>
+        </table>
+        <table class="t">
+          <tr><th>Еженедельные · сброс в понедельник</th><th style="text-align:right">Очки</th></tr>
+          <tr><td>Убить 100 000 монстров на 1 этаже</td><td class="num">+300</td></tr>
+          <tr><td>Убить 100 000 монстров на 2 этаже</td><td class="num">+300</td></tr>
+          <tr><td>Убить 100 000 монстров в фарм зоне</td><td class="num">+300</td></tr>
+          <tr><td>Скрафтить зелье атаки 10 раз</td><td class="num">+50</td></tr>
+          <tr><td>Участвовать в Кровавой Башне 3 раза</td><td class="num">+200</td></tr>
+          <tr><td>Ударить мирового босса 3 раза</td><td class="num">+200</td></tr>
+        </table>
+        <ul>
+          <li><span class="tag del">Убрано</span>Задания 3 сезона и сжигание книг.</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <h3>🏆 Рейтинг и награды</h3>
+        <table class="t">
+          <tr><th>Место</th><th style="text-align:right">Награда</th></tr>
+          <tr><td>🥇 1 место</td><td class="num">100 USDT</td></tr>
+          <tr><td>🥈 2–3 место</td><td class="num">50 USDT</td></tr>
+          <tr><td>🏅 4–10 место</td><td class="num">10 USDT</td></tr>
+          <tr><td>🏅 11–20 место</td><td class="num">5 USDT</td></tr>
+        </table>
+        <p class="note">После конца сезона награда забирается в GRAM по курсу 1 GRAM = 1,56 USDT — кнопкой «Забрать» во вкладке «Сезон».</p>
+        <ul>
+          <li><span class="tag add">Новое</span>Вкладка «Рейтинг» с пьедесталом топ-3 и новое оформление окна сезона.</li>
+          <li><span class="tag add">Новое</span>Победители 3 сезона забирают награду в GRAM кнопкой «Забрать» во вкладке «Сезон».</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <h3>🎟 Магазин</h3>
+        <ul>
+          <li><span class="tag add">Новое</span><b>Билет 4 сезона — 15 GRAM</b>: x2 опыт, +60% к дропу, x2 Либерти. Действует до конца сезона. Билет 3 сезона больше не действует.</li>
+          <li><span class="tag del">Убрано</span>Паки. В магазине: билет, «Книги и оружие», «Зелья и золото», 700 Либерти.</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <h3>⚖️ Баланс классов</h3>
+        <div class="cls"><div class="cls-name">🛡 Танк</div><ul>
+          <li>Каждый обычный удар замедляет цель на 10% (до 50%) на 10 сек.</li>
+          <li>Прыжок приземляет точно у врага, а не перелетает его.</li>
+        </ul></div>
+        <div class="cls"><div class="cls-name">🗡 Рыцарь Смерти</div><ul>
+          <li>Каждый обычный удар замедляет цель на 10% (до 50%) на 10 сек.</li>
+          <li>С шансом 20% удар оглушает цель на 0,3 сек.</li>
+        </ul></div>
+        <div class="cls"><div class="cls-name">✨ Целитель</div><ul>
+          <li>Навыки исцеления бьют по площади: Тёмное исцеление ×1,5, Бабочки ×2, Тёмная молитва ×2, Исцеление ×3.</li>
+          <li>Перезарядка Бабочек — 16 сек, −1 сек за каждый уровень (до 7 сек).</li>
+        </ul></div>
+        <div class="cls"><div class="cls-name">🔮 Маг</div><ul>
+          <li>Разряд снимает 20% защиты с поражённых на 5 сек.</li>
+          <li>Вспышка даёт +30% к атаке.</li>
+        </ul></div>
+        <div class="cls"><div class="cls-name">🌑 Ассасин</div><ul>
+          <li>Крик снимает 20% защиты с поражённых на 5 сек.</li>
+        </ul></div>
+        <ul>
+          <li><span class="tag chg">Изменено</span>Все лечащие навыки восстанавливают и ЦП — столько же, сколько здоровья.</li>
+          <li><span class="tag chg">Изменено</span>Вторая профессия: продвинутые навыки качаются с 1 до 10 уровня (2 книги продвинутого навыка, шанс 30%), каждый уровень усиливает навык.</li>
+          <li><span class="tag add">Новое</span>Сменой класса можно выбрать Ассасина и Рунного бойца.</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <h3>📈 Улучшения персонажа</h3>
+        <table class="t">
+          <tr><th>Улучшение</th><th style="text-align:right">За уровень</th></tr>
+          <tr><td>Атака / Защита</td><td class="num">+3 / +3</td></tr>
+          <tr><td>Здоровье</td><td class="num">+30</td></tr>
+          <tr><td>Скорость атаки · максимум 120 ур.</td><td class="num">+0,01</td></tr>
+          <tr><td>Шанс крита · максимум 100 ур.</td><td class="num">+0,3%</td></tr>
+          <tr><td>Сила крита · максимум 100 ур.</td><td class="num">+0,3%</td></tr>
+          <tr><td>Реген</td><td class="num">+1</td></tr>
+          <tr><td>ЦП <span class="tag add">новое</span></td><td class="num">+200</td></tr>
+          <tr><td>Бонус к опыту <span class="tag add">новое</span></td><td class="num">+0,1%</td></tr>
+          <tr><td>Бонус к дропу <span class="tag add">новое</span></td><td class="num">+0,1%</td></tr>
+        </table>
+        <ul>
+          <li><span class="tag chg">Изменено</span>Неудачная безопасная заточка снижает уровень на 1 (не ниже +0).</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <h3>🏙 Мир</h3>
+        <ul>
+          <li><span class="tag add">Новое</span>Город оформлен заново: ночной город, лавки у NPC (хранилище, кузнец, торговец), площадь LIBERTY.</li>
+          <li><span class="tag add">Новое</span>Новый вид у локаций 1, 20, 40, 60 и фарм зон.</li>
+          <li><span class="tag chg">Изменено</span>Свитки босса выпадают в 10 раз реже.</li>
+          <li><span class="tag del">Убрано</span>Событие «Битва на смерть».</li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <h3>🛠 Исправления</h3>
+        <ul>
+          <li><span class="tag fix">Исправлено</span>Баф питомца работает в событиях и режимах (Башня, Страх, Сотрудничество, арена и др.) и не пропадает при смене локации.</li>
+          <li><span class="tag fix">Исправлено</span>Перезарядка продвинутых навыков на кнопке показывается правильно.</li>
+          <li><span class="tag chg">Изменено</span>В авто-бою лечащие навыки применяются сразу по откату, а не только при низком здоровье.</li>
+        </ul>
+      </div>
+
+    </div>
+  </article>
+
+  <footer>Liberty · список обновлений · новые патчи появляются сверху</footer>
+</main>
+
+</body>
+</html>
