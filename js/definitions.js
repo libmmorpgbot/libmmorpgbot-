@@ -175,7 +175,7 @@ const ADV_SKILL_DEF = {
   mage: [
     { key:'Q', name:'Урон молнии',  icon:'fireball', img:'/images/skill/adv/adv_uronmolnii.png',  cd:5,  desc:'Снаряд ×3 урона + стан 3 сек' },
     { key:'W', name:'Разряд',       icon:'iceNova',  img:'/images/skill/adv/adv_razryad.png',     cd:10, desc:'АОЕ урон ×3, радиус 220; снимает 20% защиты с поражённых на 5 сек' },
-    { key:'E', name:'Вспышка',      icon:'barrier',  img:'/images/skill/adv/adv_vspishka.png',    cd:18, desc:'АОЕ урон ×2, радиус 220 + защита +80% на 3 сек' },
+    { key:'E', name:'Вспышка',      icon:'barrier',  img:'/images/skill/adv/adv_vspishka.png',    cd:18, desc:'АОЕ урон ×2, радиус 220 + защита +80% и атака +30% на 3 сек' },
     { key:'R', name:'Перенесение',  icon:'teleport', img:'/images/skill/adv/adv_perenesenie.png', cd:12, desc:'Рывок 360px + восстанавливает 20% здоровья и столько же ЦП', auto:false },
   ],
   warlock: [

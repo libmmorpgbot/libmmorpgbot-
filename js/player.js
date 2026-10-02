@@ -414,6 +414,8 @@ function recompute() {
   if (typeof advDkQAtkTimer  !== 'undefined' && advDkQAtkTimer  > 0) a = Math.floor(a * 1.20); // "Истощение" (adv DK Q)
   if (typeof madnessTimer    !== 'undefined' && madnessTimer    > 0) a = Math.floor(a * 1.25); // "Безумие" (adv DK E)
   if (typeof levShieldAtkTimer !== 'undefined' && levShieldAtkTimer > 0) a = Math.floor(a * 1.10); // "Щит" (adv Lev E)
+  // "Вспышка" (adv mage E): +30% атаки на время своего бафа защиты (barrierTimer).
+  if (typeof barrierTimer !== 'undefined' && barrierTimer > 0 && player.type === 'mage' && _advActive('E')) a = Math.floor(a * 1.30);
   let defMult = 1;
   if (typeof guardTimer       !== 'undefined' && guardTimer       > 0) defMult *= 1.80;
   // "Вспышка" (adv mage E) gives +80% def instead of Barrier's own +50% —
