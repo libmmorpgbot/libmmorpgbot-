@@ -610,9 +610,9 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // Комната их и тикает (_regenTick / _vampGain); здесь только проверка
     // права и запись окна.
     if (cls === 'warlock' && rk === 'Q' && adv) {
-      s.room.setSkillWindow(s.socket.id, 'butterflies', (BUTTERFLIES_SEC + lvl) * 1000);
+      s.room.setSkillWindow(s.socket.id, 'butterflies', BUTTERFLIES_SEC * 1000);
       lastHealAt.set(k, now);
-      return { window: 'butterflies', sec: BUTTERFLIES_SEC + lvl };
+      return { window: 'butterflies', sec: BUTTERFLIES_SEC };
     }
     if (cls === 'deathknight' && rk === 'Q') {
       const pct = adv ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT;

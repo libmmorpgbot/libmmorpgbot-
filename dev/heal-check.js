@@ -101,12 +101,12 @@ console.log('\n  ── Бабочки ──');
     'окно ставится методом комнаты, а не клиентом');
   let now = p._butterAt;
   for (let i = 0; i < 120; i++) { now += 25; regen.call(room, p, 0.025, now); }
-  // 5% от 1000 = 50 в секунду; окно ровно три секунды — значит три тика, и
+  // 2% от 1000 = 20 в секунду; окно ровно три секунды — значит три тика, и
   // третий приходится на самый край окна.
-  ok(p.hp === 250, 'три тика по 5% maxHp', p.hp);
+  ok(p.hp === 160, 'три тика по 2% maxHp', p.hp);
   const ticks = room.sent.filter(x => x.ev === 'skillHealTick' && x.p.kind === 'butterflies');
   ok(ticks.length === 3, 'по одному сообщению на тик', ticks.length);
-  ok(ticks.every(t => t.p.amount === 50), 'сумма тика — 5% maxHp', JSON.stringify(ticks.map(t => t.p.amount)));
+  ok(ticks.every(t => t.p.amount === 20), 'сумма тика — 2% maxHp', JSON.stringify(ticks.map(t => t.p.amount)));
 }
 
 // ── 4. вампиризм считается от урона, который применил сервер ───────────────
@@ -156,7 +156,7 @@ console.log('\n  ── Бабочки при полном здоровье ─�
   now += 25; regen.call(room, p, 0.025, now);
   ok(p.hp === 500, 'сразу после удара — ни одного отложенного тика', p.hp);
   for (let i = 0; i < 40; i++) { now += 25; regen.call(room, p, 0.025, now); }
-  ok(p.hp === 550, 'за следующую секунду ровно один тик (5% от 1000)', p.hp);
+  ok(p.hp === 520, 'за следующую секунду ровно один тик (2% от 1000)', p.hp);
 }
 
 // ── 4в. вампиризм доезжает до полосы ───────────────────────────────────────
@@ -543,7 +543,7 @@ console.log('\n  ── лечение навыками восстанавлив
   setWin.call(room, 's', 'butterflies', 2000);
   let now = p._butterAt;
   for (let i = 0; i < 80; i++) { now += 25; regen.call(room, p, 0.025, now); }
-  ok(p.hp === 1000 && p.cp === 1100, 'Бабочки: два тика по 500 CP (×10) при полном HP', p.cp);
+  ok(p.hp === 1000 && p.cp === 500, 'Бабочки: два тика по 200 CP (×10) при полном HP', p.cp);
 
   // Вампиризм.
   p.cp = 100; p._vampUntil = Date.now() + 5000; p._vampPct = D.VAMPIRISM_PCT;

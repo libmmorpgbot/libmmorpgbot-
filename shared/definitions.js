@@ -3131,7 +3131,9 @@ const SKILL_DMG_MULT = {
   warlock: {
     // Навыки исцеления бьют и по площади вокруг Целителя (радиусы —
     // WARLOCK_HEAL_AOE_R, js/player.js): лечение и урон одним нажатием.
-    Q: { base: 1.5,  adv: 2    },  // Тёмное исцеление / Бабочки — AOE
+    // advLvlPct — свой шаг урона за уровень у продвинутого варианта вместо
+    // общего +1%: улучшение «Бабочек» даёт +2% к урону по площади.
+    Q: { base: 1.5,  adv: 2, advLvlPct: 0.02 },  // Тёмное исцеление / Бабочки — AOE
     W: { base: null, adv: 3    },  // Оковы тьмы stun only / Колючие оковы also hit
     E: { base: null, adv: null },  // Тёмный щит / Жажда
     R: { base: 2,    adv: 3    },  // Тёмная молитва / Исцеление — AOE
@@ -3159,9 +3161,9 @@ const SKILL_DMG_MULT = {
 // Level and gear scaling, shared by every damaging skill: +1% per skill level,
 // then the equipment's skill-power bonus (skillPct, e.g. the unique weapons).
 // Split out because healing scales identically (_skillHealMult, js/player.js).
-function skillScaleMult(skillLvl, skillPct) {
+function skillScaleMult(skillLvl, skillPct, perLvl = 0.01) {
   const L = Math.max(0, Math.min(SKILL_MAX_LEVEL, Math.floor(Number(skillLvl)) || 0));
-  return (1 + L * 0.01) * (1 + Math.max(0, Number(skillPct) || 0));
+  return (1 + L * perLvl) * (1 + Math.max(0, Number(skillPct) || 0));
 }
 
 // The authoritative multiplier for one cast. Returns 0 when the slot's active
@@ -3172,7 +3174,7 @@ function skillDamageMult(cls, key, advActive, skillLvl, skillPct) {
   if (!row) return 0;
   const base = advActive ? row.adv : row.base;
   if (!base) return 0;
-  return base * skillScaleMult(skillLvl, skillPct);
+  return base * skillScaleMult(skillLvl, skillPct, (advActive && row.advLvlPct) || 0.01);
 }
 
 // ── длина PvP-боя ───────────────────────────────────────────────────────────
@@ -3911,10 +3913,11 @@ const SKILL_SELF_HEAL = {
   assassin: { R: { advPct: 0.30, advOnly: true } },       // «Прыжок за спину»
 };
 
-// «Бабочки» (продвинутый Q чернокнижника): 5% maxHp в секунду, десять секунд
-// плюс секунда за уровень навыка.
-const BUTTERFLIES_SEC = 10;
-const BUTTERFLIES_TICK_PCT = 0.05;
+// «Бабочки» (продвинутый Q чернокнижника): 2% maxHp в секунду, всегда
+// 16 секунд — уровень навыка длительность не меняет, он растит урон по
+// площади (advLvlPct в SKILL_DMG_MULT).
+const BUTTERFLIES_SEC = 16;
+const BUTTERFLIES_TICK_PCT = 0.02;
 // Тот же тик у игрока с включённым ПК (Room._regenTick): в PvP «Бабочки»
 // висят без перерыва, и полные 5% в секунду делали целителя неубиваемым.
 const BUTTERFLIES_TICK_PCT_PVP = 0.02;
