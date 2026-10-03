@@ -374,13 +374,14 @@ async function referralsOf(db, playerId) {
   // error went to 'gramError' where the client shows it as a toast: a player
   // opening their invites saw a server error and nothing else.
   const { rows } = await query(db, `
-    SELECT p.username,
+    SELECT p.username, pr.lvl,
            COALESCE(ROUND(SUM(t.amount) FILTER (
              WHERE t.type = 'deposit' AND t.status = 'confirmed') * 0.05, 2), 0) AS bonus
       FROM players p
+      LEFT JOIN player_progress pr ON pr.player_id = p.id
       LEFT JOIN gram_tx t ON t.player_id = p.id
      WHERE p.referred_by = $1
-     GROUP BY p.id, p.username
+     GROUP BY p.id, p.username, pr.lvl
      ORDER BY bonus DESC, p.username`, [tg]);
 
   // The same builder authOk uses, not a second copy of the string. This reply
@@ -389,7 +390,8 @@ async function referralsOf(db, playerId) {
   // and it was the one still pointing at ?start=, the form nothing in this
   // build can read. See refLink() in server/security.js.
   return {
-    friends: rows.map(r => ({ username: r.username, bonus: Number(r.bonus) })),
+    // lvl — уровень персонажа друга; null, пока тот не создал персонажа.
+    friends: rows.map(r => ({ username: r.username, lvl: r.lvl == null ? null : Number(r.lvl), bonus: Number(r.bonus) })),
     refLink: refLink(tg),
   };
 }

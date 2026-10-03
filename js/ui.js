@@ -10075,6 +10075,7 @@ function updateFriendsUI() {
             return `<div class="ref-friend-row">
               <div class="ref-friend-avatar">${init}</div>
               <div class="ref-friend-name">@${f.username ? _escHtml(f.username) : t('playerFallbackLbl')}</div>
+              ${f.lvl ? `<div class="ref-friend-lvl">${t('levelAbbrev')} ${Number(f.lvl)}</div>` : ''}
               <div class="ref-friend-bonus">+${(f.bonus || 0).toFixed(2)} GRAM</div>
             </div>`;
           }).join('')
@@ -10101,7 +10102,7 @@ function onRefData(data) {
 }
 
 function onFriendJoined(data) {
-  _refFriendsList.unshift({ username: data.username, bonus: 0 });
+  _refFriendsList.unshift({ username: data.username, lvl: 1, bonus: 0 });
   const el = document.getElementById('ref-friends-list');
   if (el && window._profileTab === 'friends') updateFriendsUI();
   // Toast notification
