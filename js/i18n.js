@@ -795,6 +795,11 @@ Object.assign(I18N_UI, {
 Object.assign(I18N_UI, {
   charLevelFmt: { ru: 'Уровень {lvl}', en: 'Level {lvl}', uk: 'Рівень {lvl}', es: 'Nivel {lvl}', tr: 'Seviye {lvl}', pt: 'Nível {lvl}' },
   bmAbbrev:     { ru: 'БМ', en: 'BM', uk: 'БМ', es: 'PC', tr: 'SG', pt: 'PC' },
+  gearSetTitle:    { ru: 'Заточенный сет', en: 'Enhanced set', uk: 'Заточений сет', es: 'Set mejorado', tr: 'Güçlü set', pt: 'Set aprimorado' },
+  gearSetAtkSpeed: { ru: 'скор. атаки', en: 'atk. speed', uk: 'швид. атаки', es: 'vel. ataque', tr: 'saldırı hızı', pt: 'vel. ataque' },
+  gearSetNeedAll:  { ru: 'Надень все 6 вещей этой редкости — {n}/6', en: 'Wear all 6 items of this rarity — {n}/6', uk: 'Вдягни всі 6 речей цієї рідкості — {n}/6', es: 'Equipa los 6 objetos de esta rareza — {n}/6', tr: 'Bu nadirlikteki 6 eşyanın hepsini kuşan — {n}/6', pt: 'Equipe os 6 itens desta raridade — {n}/6' },
+  gearSetNeedEnh:  { ru: 'Сет собран. Заточи все вещи до +{e}', en: 'Set complete. Enhance every item to +{e}', uk: 'Сет зібрано. Заточи всі речі до +{e}', es: 'Set completo. Mejora todo a +{e}', tr: 'Set tamam. Tüm eşyaları +{e} yap', pt: 'Set completo. Aprimore tudo para +{e}' },
+  gearSetActive:   { ru: 'Активно: +{pct}% к скорости атаки', en: 'Active: +{pct}% attack speed', uk: 'Активно: +{pct}% до швидкості атаки', es: 'Activo: +{pct}% vel. de ataque', tr: 'Aktif: +%{pct} saldırı hızı', pt: 'Ativo: +{pct}% vel. de ataque' },
   buffCountSuffix: { ru: 'бафф', en: 'buff', uk: 'бафф', es: 'buff', tr: 'buff', pt: 'buff' },
   offLbl: { ru: 'ВЫКЛ', en: 'OFF', uk: 'ВИМК', es: 'APAG', tr: 'KAPALI', pt: 'DESL' },
   onLbl: { ru: 'ВКЛ', en: 'ON', uk: 'УВІМК', es: 'ENC', tr: 'AÇIK', pt: 'LIG' },

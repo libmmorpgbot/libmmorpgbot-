@@ -110,6 +110,8 @@ function updateInvUI() {
     <div class="eq-ring-orn"></div>
   `;
 
+  _renderGearSetPanel();
+
   // Inventory grid — materials stack by id
   document.getElementById('inv-count').textContent = invSlotCount() + '/150';
   const _displayInv = [];
@@ -138,6 +140,69 @@ function updateInvUI() {
     </div>`;
   }).join('');
   _refreshTeleportBadge();
+}
+
+// ── Бонус заточенного сета ──────────────────────────────────────────────
+// Шесть вещей одной редкости (gearSetBonusFor, shared/definitions.js) и
+// шесть порогов заточки. Вкладка редкости выбирается сама — по тому, чего
+// надето больше всего, — но её можно переключить, чтобы посмотреть цифры
+// другой редкости. Индикаторы порогов загораются, только когда надеты все
+// шесть вещей и самая слабая из них заточена не ниже порога.
+let _gearSetTab = null;   // null — по надетому
+function _gearSetPickTab(r) { _gearSetTab = r; _renderGearSetPanel(); }
+function _renderGearSetPanel() {
+  const host = document.getElementById('eq-set-bonus');
+  if (!host || !player || typeof gearSetBonusFor !== 'function') return;
+  const eq = player.equipment || {};
+  const live = gearSetBonusFor(eq);
+  const rar = _gearSetTab || live.rarity || 'epic';
+  const rc = RARITY_COLOR[rar];
+  // Состояние ВЫБРАННОЙ вкладки: сколько её вещей надето и какой порог взят.
+  const mine = GEAR_SET_SLOTS.map(s => eq[s] && !eq[s].uniqueSet && eq[s].rarity === rar ? eq[s] : null);
+  const worn = mine.filter(Boolean).length;
+  const full = worn === GEAR_SET_SLOTS.length;
+  const minEnh = full ? Math.min(...mine.map(it => it.enhance || 0)) : 0;
+  let tier = -1;
+  if (full) GEAR_SET_ENH_TIERS.forEach((tr, i) => { if (minEnh >= tr.enhance) tier = i; });
+  const fmtPct = v => String(Math.round(v * 1000) / 10);
+
+  const tabs = Object.keys(GEAR_SET_RARITY_MULT).map(r => `
+    <button type="button" class="gsb-tab${r === rar ? ' on' : ''}${r === live.rarity && live.tier >= 0 ? ' live' : ''}"
+      style="--rc:${RARITY_COLOR[r]}" onclick="_gearSetPickTab('${r}')">${_RARITY_NAMES[r] || r}</button>`).join('');
+
+  const pips = GEAR_SET_SLOTS.map((s, i) => {
+    const it = mine[i];
+    return `<div class="gsb-pip${it ? ' on' : ''}" title="${_escHtml(it ? it.name : s)}">
+      ${iconHTML(s, 16, it ? rc : '#4a4234')}
+      ${it ? `<span class="gsb-pip-enh">+${it.enhance || 0}</span>` : ''}
+    </div>`;
+  }).join('');
+
+  const tiers = GEAR_SET_ENH_TIERS.map((tr, i) => {
+    const cls = i === tier ? ' on cur' : i < tier ? ' on' : '';
+    return `<div class="gsb-tier${cls}">
+      <div class="gsb-tier-lamp"></div>
+      <div class="gsb-tier-enh">+${tr.enhance}</div>
+      <div class="gsb-tier-pct">+${fmtPct(gearSetTierPct(rar, i))}%</div>
+    </div>`;
+  }).join('');
+
+  let status;
+  if (!full) status = tVars('gearSetNeedAll', { n: worn });
+  else if (tier < 0) status = tVars('gearSetNeedEnh', { e: GEAR_SET_ENH_TIERS[0].enhance });
+  else status = tVars('gearSetActive', { pct: fmtPct(gearSetTierPct(rar, tier)) });
+
+  host.innerHTML = `
+    <div class="gsb${tier >= 0 ? ' active' : ''}" style="--rc:${rc}">
+      <div class="gsb-head">
+        <span class="gsb-title">${t('gearSetTitle')}</span>
+        <span class="gsb-sub">${iconHTML('lightning', 11, '#e3941d')} ${t('gearSetAtkSpeed')}</span>
+      </div>
+      <div class="gsb-tabs">${tabs}</div>
+      <div class="gsb-pips">${pips}</div>
+      <div class="gsb-tiers">${tiers}</div>
+      <div class="gsb-status">${status}</div>
+    </div>`;
 }
 
 // ── стикеры ─────────────────────────────────────────────────────────────

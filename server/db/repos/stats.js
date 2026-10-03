@@ -42,7 +42,7 @@
 const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, UPGRADE_STEP, upgLvlCapped,
+  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, gearSetBonusFor, UPGRADE_STEP, upgLvlCapped,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -252,9 +252,12 @@ function compute(row) {
   // плоского счётчика штук с меткой `uniqueSet` (см. UNIQUE_SET_ITEMS,
   // shared/definitions.js).
   let uniqueSetCount = 0;
+  // Заточенный сет — каталожная редкость и заточка по слотам (gearSetBonusFor).
+  const gearSetBySlot = {};
   for (const it of (row.equipped || [])) {
     const base = _byId.get(it.id);
     if (!base) continue;                        // retired id — contributes nothing
+    gearSetBySlot[it.slot] = { rarity: base.rarity, enhance: it.enhance || 0, uniqueSet: !!base.uniqueSet };
     const eb = enhanceBonus(base, it.enhance || 0);
     a += (base.atk || 0) + (eb.atk || 0);
     d += (base.def || 0) + (eb.def || 0);
@@ -276,6 +279,9 @@ function compute(row) {
   const usb = uniqueSetBonusFor(uniqueSetCount);
   atkPct += usb.atkPct; hpPct += usb.hpPct; critPowerAdd += usb.critPowerPct;
   extraAS += (cd.atkSpeed || 0) * usb.atkSpeedPct;
+  // Заточенный сет (редкий/эпический/легендарный, все шесть вещей) — та же
+  // доля от базовой скорости класса.
+  extraAS += (cd.atkSpeed || 0) * gearSetBonusFor(gearSetBySlot).atkSpeedPct;
 
   // ── руны ────────────────────────────────────────────────────────────────
   // Складываются со СВОИМИ же полями снаряжения, а не отдельным множителем:

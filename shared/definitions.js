@@ -1206,12 +1206,15 @@ const ITEM_DEF = [
   { id:'as3', name:'Кинжал дракона',   slot:'weapon', forClass:['assassin'], img:'/images/wep/rd.png', atk:27, critChance:0.10,                   rarity:'rare'     },
   { id:'as4', name:'Кинжал теней',     slot:'weapon', forClass:['assassin'], img:'/images/wep/ed.png', atk:50, critChance:0.16,                   rarity:'epic'     },
   { id:'as5', name:'Кинжал героя',     slot:'weapon', forClass:['assassin'], img:'/images/wep/ld.png', atk:74, critChance:0.32,                   rarity:'legendary'},
+  // Атака редкого/эпического/легендарного снаряжения (шлем, перчи, боты,
+  // кольцо, пояс) — втрое против прежней, по просьбе владельца. Оружие,
+  // плащи, артефакты и уникальный сет не тронуты.
   // ── Helmet ────────────────────────────────────────────────
   { id:'hm1', name:'Кожаный шлем',     slot:'helmet', img:'/images/arm/ch.png', hp:25,           rarity:'common'   },
   { id:'hm2', name:'Железный шлем',    slot:'helmet', img:'/images/arm/uh.png', hp:50,           rarity:'uncommon' },
-  { id:'hm3', name:'Платиновый шлем',  slot:'helmet', img:'/images/arm/rh.png', hp:90,  atk:4,  rarity:'rare'     },
-  { id:'hm4', name:'Корона героя',     slot:'helmet', img:'/images/arm/eh.png', hp:140, atk:8,  rarity:'epic'     },
-  { id:'hm5', name:'Шлем легенды',     slot:'helmet', img:'/images/arm/lh.png', hp:210, atk:12, rarity:'legendary'},
+  { id:'hm3', name:'Платиновый шлем',  slot:'helmet', img:'/images/arm/rh.png', hp:90,  atk:12, rarity:'rare'     },
+  { id:'hm4', name:'Корона героя',     slot:'helmet', img:'/images/arm/eh.png', hp:140, atk:24, rarity:'epic'     },
+  { id:'hm5', name:'Шлем легенды',     slot:'helmet', img:'/images/arm/lh.png', hp:210, atk:36, rarity:'legendary'},
   // ── Body ─────────────────────────────────────────────────
   { id:'ar1', name:'Кожаная броня',    slot:'body',   img:'/images/arm/ct.png', def:5,           rarity:'common'   },
   { id:'ar2', name:'Железная броня',   slot:'body',   img:'/images/arm/ut.png', def:11,          rarity:'uncommon' },
@@ -1221,27 +1224,27 @@ const ITEM_DEF = [
   // ── Gloves ───────────────────────────────────────────────
   { id:'gl1', name:'Кожаные перчи',    slot:'gloves', img:'/images/arm/cg.png', atk:2,           rarity:'common'   },
   { id:'gl2', name:'Железные перчи',   slot:'gloves', img:'/images/arm/ug.png', atk:5,           rarity:'uncommon' },
-  { id:'gl3', name:'Платиновые перчи', slot:'gloves', img:'/images/arm/rg.png', atk:10,          rarity:'rare'     },
-  { id:'gl4', name:'Перчатки героя',   slot:'gloves', img:'/images/arm/eg.png', atk:16, def:4,   rarity:'epic'     },
-  { id:'gl5', name:'Перчатки легенды', slot:'gloves', img:'/images/arm/lg.png', atk:24, def:8,   rarity:'legendary'},
+  { id:'gl3', name:'Платиновые перчи', slot:'gloves', img:'/images/arm/rg.png', atk:30, rarity:'rare'     },
+  { id:'gl4', name:'Перчатки героя',   slot:'gloves', img:'/images/arm/eg.png', atk:48, def:4,   rarity:'epic'     },
+  { id:'gl5', name:'Перчатки легенды', slot:'gloves', img:'/images/arm/lg.png', atk:72, def:8,   rarity:'legendary'},
   // ── Boots ────────────────────────────────────────────────
   { id:'bt1', name:'Кожаные боты',     slot:'boots',  img:'/images/arm/cb.png', def:2,           rarity:'common'   },
   { id:'bt2', name:'Железные боты',    slot:'boots',  img:'/images/arm/ub.png', def:4,           rarity:'uncommon' },
-  { id:'bt3', name:'Платиновые боты',  slot:'boots',  img:'/images/arm/rb.png', def:8,  atk:3,  rarity:'rare'     },
-  { id:'bt4', name:'Боты героя',       slot:'boots',  img:'/images/arm/eb.png', def:14, atk:5,  rarity:'epic'     },
-  { id:'bt5', name:'Боты легенды',     slot:'boots',  img:'/images/arm/lb.png', def:20, atk:10, rarity:'legendary'},
+  { id:'bt3', name:'Платиновые боты',  slot:'boots',  img:'/images/arm/rb.png', def:8,  atk:9, rarity:'rare'     },
+  { id:'bt4', name:'Боты героя',       slot:'boots',  img:'/images/arm/eb.png', def:14, atk:15, rarity:'epic'     },
+  { id:'bt5', name:'Боты легенды',     slot:'boots',  img:'/images/arm/lb.png', def:20, atk:30, rarity:'legendary'},
   // ── Ring ─────────────────────────────────────────────────
   { id:'rn1', name:'Кольцо силы',      slot:'ring',   img:'/images/acs/cr.png', atk:4,           rarity:'common'   },
   { id:'rn2', name:'Кольцо защиты',    slot:'ring',   img:'/images/acs/ur.png', def:4,           rarity:'uncommon' },
-  { id:'rn3', name:'Кольцо крови',     slot:'ring',   img:'/images/acs/rr.png', atk:3,  hp:40,  rarity:'rare'     },
-  { id:'rn4', name:'Кольцо героя',     slot:'ring',   img:'/images/acs/er.png', atk:8,  def:4,  rarity:'epic'     },
-  { id:'rn5', name:'Кольцо легенды',   slot:'ring',   img:'/images/acs/lr.png', atk:14, def:8, hp:50, rarity:'legendary'},
+  { id:'rn3', name:'Кольцо крови',     slot:'ring',   img:'/images/acs/rr.png', atk:9, hp:40,  rarity:'rare'     },
+  { id:'rn4', name:'Кольцо героя',     slot:'ring',   img:'/images/acs/er.png', atk:24, def:4,  rarity:'epic'     },
+  { id:'rn5', name:'Кольцо легенды',   slot:'ring',   img:'/images/acs/lr.png', atk:42, def:8, hp:50, rarity:'legendary'},
   // ── Belt ─────────────────────────────────────────────────
   { id:'nd1', name:'Пояс силы',        slot:'belt',   img:'/images/acs/cp.png', atk:5,           rarity:'common'   },
   { id:'nd2', name:'Пояс здоровья',    slot:'belt',   img:'/images/acs/up.png', hp:60,           rarity:'uncommon' },
-  { id:'nd3', name:'Пояс тьмы',        slot:'belt',   img:'/images/acs/rp.png', atk:8,  hp:30,  rarity:'rare'     },
-  { id:'nd4', name:'Пояс героя',       slot:'belt',   img:'/images/acs/ep.png', atk:16, hp:80,  rarity:'epic'     },
-  { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:24, hp:120, rarity:'legendary'},
+  { id:'nd3', name:'Пояс тьмы',        slot:'belt',   img:'/images/acs/rp.png', atk:24, hp:30,  rarity:'rare'     },
+  { id:'nd4', name:'Пояс героя',       slot:'belt',   img:'/images/acs/ep.png', atk:48, hp:80,  rarity:'epic'     },
+  { id:'nd5', name:'Пояс легенды',     slot:'belt',   img:'/images/acs/lp.png', atk:72, hp:120, rarity:'legendary'},
   // ── Class cloaks & artifacts (salvage-craft) ──────────────
   // One flavor per class, common+uncommon only, marked with `classItem` so
   // CLASS_GEAR_SALVAGE_RECIPES below can pool them. Crafted at the blacksmith
@@ -1982,6 +1985,52 @@ function uniqueSetBonusFor(count) {
     if (tier.atkPct) out.atkPct += tier.atkPct;
     if (tier.critPowerPct) out.critPowerPct += tier.critPowerPct;
   }
+  return out;
+}
+// ── Бонус заточенного сета (редкий / эпический / легендарный) ────────────
+// Все шесть вещей снаряжения одной редкости надеты — сет собран. Порог
+// заточки считается по САМОЙ слабой вещи: «весь сет +6» значит, что каждая
+// из шести не ниже +6. Действует только наивысший пройденный порог, пороги
+// не складываются. Уникальный сет сюда не входит — у него свой бонус выше.
+//
+// Значения в таблице — эпические; редкий даёт половину, легендарный вдвое
+// больше. Скорость атаки — доля от базовой скорости класса, так же, как
+// atkSpeedPct уникального сета. Считают обе стороны: compute() в
+// server/db/repos/stats.js и recompute() в js/player.js.
+const GEAR_SET_SLOTS = ['helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+const GEAR_SET_RARITY_MULT = { rare: 0.5, epic: 1, legendary: 2 };
+const GEAR_SET_ENH_TIERS = [
+  { enhance: 2,  atkSpeedPct: 0.03 },
+  { enhance: 4,  atkSpeedPct: 0.06 },
+  { enhance: 6,  atkSpeedPct: 0.09 },
+  { enhance: 8,  atkSpeedPct: 0.12 },
+  { enhance: 10, atkSpeedPct: 0.15 },
+  { enhance: 12, atkSpeedPct: 0.20 },
+];
+function gearSetTierPct(rarity, tierIdx) {
+  return GEAR_SET_ENH_TIERS[tierIdx].atkSpeedPct * (GEAR_SET_RARITY_MULT[rarity] || 0);
+}
+// bySlot: { helmet: { rarity, enhance, uniqueSet }, ... } — каталожная
+// редкость и заточка надетой в слот вещи. Возвращает, что собрано, чтобы
+// и бой, и панель в инвентаре читали одно и то же.
+function gearSetBonusFor(bySlot) {
+  const out = { rarity: null, worn: 0, minEnhance: 0, tier: -1, atkSpeedPct: 0 };
+  const items = GEAR_SET_SLOTS.map(s => bySlot && bySlot[s]).filter(it => it && !it.uniqueSet);
+  // Редкость сета — та, которой надето больше всего; при равенстве старшая.
+  let best = null, bestN = 0;
+  for (const r of Object.keys(GEAR_SET_RARITY_MULT)) {
+    const n = items.filter(it => it.rarity === r).length;
+    if (n > 0 && n >= bestN) { best = r; bestN = n; }
+  }
+  if (!best) return out;
+  out.rarity = best;
+  out.worn = bestN;
+  if (bestN < GEAR_SET_SLOTS.length) return out;
+  out.minEnhance = Math.min(...items.map(it => it.enhance || 0));
+  for (let i = GEAR_SET_ENH_TIERS.length - 1; i >= 0; i--) {
+    if (out.minEnhance >= GEAR_SET_ENH_TIERS[i].enhance) { out.tier = i; break; }
+  }
+  if (out.tier >= 0) out.atkSpeedPct = gearSetTierPct(best, out.tier);
   return out;
 }
 // 1% — снижено в 10 раз (было 10%) по просьбе владельца.
@@ -4009,7 +4058,9 @@ if (typeof module !== 'undefined') module.exports = {
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,
   UNIQUE_SHARDS, UNIQUE_WEAPONS, UNIQUE_CRAFT_RECIPES, UNIQUE_SHARD_COST,
-  UNIQUE_SET_CRAFT_RECIPES, uniqueSetBonusFor, BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
+  UNIQUE_SET_CRAFT_RECIPES, uniqueSetBonusFor,
+  GEAR_SET_SLOTS, GEAR_SET_RARITY_MULT, GEAR_SET_ENH_TIERS, gearSetTierPct, gearSetBonusFor,
+  BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
   FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,

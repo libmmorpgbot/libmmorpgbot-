@@ -336,6 +336,10 @@ function recompute() {
     atkPct += usb.atkPct; hpPct += usb.hpPct; critPowerAdd += usb.critPowerPct;
     extraAS += (player.charDef.atkSpeed || 0) * usb.atkSpeedPct;
   }
+  // Заточенный сет — то же, что в compute() на сервере.
+  if (typeof gearSetBonusFor === 'function') {
+    extraAS += (player.charDef.atkSpeed || 0) * gearSetBonusFor(player.equipment).atkSpeedPct;
+  }
   // ── руны надетого ───────────────────────────────────────────────────────
   // Те же слагаемые, что считает сервер (repos/stats.js), и по той же общей
   // таблице: панель обязана показывать числа, по которым уже идёт бой.
