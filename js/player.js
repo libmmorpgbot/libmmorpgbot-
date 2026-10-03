@@ -1196,10 +1196,10 @@ function _dispatchSkillEffect(cls, sk) {
     };
     if (sk.key === 'Q') {
       _healAoe('Q', _advActive('Q') ? '#f5c542' : '#a855e0');
-      if (_advActive('Q')) { // Бабочки — summon for 10s, healing 2% maxHP/sec (+1s per level)
+      if (_advActive('Q')) { // Бабочки — summon for 10s, healing 2% maxHP/sec; level adds only AoE damage
         // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
         // им и место: раньше их отсчитывал кадр, и сервер о них не знал.
-        butterfliesTimer = BUTTERFLIES_SEC + _skillBuffSec('Q');
+        butterfliesTimer = BUTTERFLIES_SEC;
         // Перезарядка — ровно 16 с, без сокращения уровнем и «Ясным разумом»,
         // как на сервере (SKILL_CD_FIXED_ADV_SEC).
         player.skillCooldowns[_cooldownKeyFor('Q')] = SKILL_CD_FIXED_ADV_SEC.warlock.Q;

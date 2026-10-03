@@ -3918,10 +3918,9 @@ const SKILL_SELF_HEAL = {
   assassin: { R: { advPct: 0.30, advOnly: true } },       // «Прыжок за спину»
 };
 
-// «Бабочки» (продвинутый Q чернокнижника): 2% maxHp в секунду, десять секунд
-// плюс секунда за уровень навыка. Уровень ещё растит урон по площади
-// (advLvlPct в SKILL_DMG_MULT); перезарядка — ровно 16 с
-// (SKILL_CD_FIXED_ADV_SEC).
+// «Бабочки» (продвинутый Q чернокнижника): 2% maxHp в секунду, ровно десять
+// секунд. Уровень навыка даёт только +2% к урону по площади (advLvlPct в
+// SKILL_DMG_MULT); перезарядка — ровно 16 с (SKILL_CD_FIXED_ADV_SEC).
 const BUTTERFLIES_SEC = 10;
 const BUTTERFLIES_TICK_PCT = 0.02;
 // Тот же тик у игрока с включённым ПК (Room._regenTick): в PvP «Бабочки»
