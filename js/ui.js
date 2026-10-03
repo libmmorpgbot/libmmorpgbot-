@@ -7038,6 +7038,8 @@ function _marketMinPriceForRaw(it, qty) {
   if (it.slot === 'box') return (it.id === 'liberty_bag' ? 5 : it.id === 'box_rare' ? 2 : 1) * n;
   // Руда — одна цена на все пять редкостей, за штуку.
   if (it.id && it.id.startsWith('ore_')) return 0.01 * n;
+  // Осколки для крафта — тоже за штуку.
+  if (it.uniqueShard) return 0.01 * n;
   // Руна — своя цена по редкости, flat (руны не стакаются). Без этой строки
   // все пять проваливались в MARKET_MIN_PRICE ниже: руна не в
   // ENHANCEABLE_SLOTS, ни один rarity-чек для снаряжения её не ловит.

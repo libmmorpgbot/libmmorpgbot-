@@ -45,6 +45,10 @@ const MARKET_MIN_PRICE_BUFF_POTION = 0.3;  // slot:'buff_potion', per potion
 // цена на все пять редкостей: редкость руды и так упирается в цену самой
 // переплавки (RUNE_ORE_COST), второй раз множить её здесь незачем.
 const MARKET_MIN_PRICE_ORE = 0.01;
+// Осколки для крафта уникального оружия (uniqueShard, UNIQUE_SHARDS) — per
+// unit. Без своей строки стак любого размера падал в общий MARKET_MIN_PRICE
+// (0.1 за весь лот).
+const MARKET_MIN_PRICE_SHARD = 0.01;
 // Руна — slot:'rune', flat (руны не стакаются). Своя цена на каждую
 // редкость: без неё все пять проваливались в общий MARKET_MIN_PRICE (0.1) —
 // руна не в ENHANCEABLE_SLOTS (её нельзя точить), поэтому ни один из
@@ -109,6 +113,7 @@ function _marketMinPriceRaw(item) {
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'buff_potion') return MARKET_MIN_PRICE_BUFF_POTION * qty;
   if (item.id && item.id.startsWith('ore_')) return MARKET_MIN_PRICE_ORE * qty;
+  if (item.uniqueShard) return MARKET_MIN_PRICE_SHARD * qty;
   // Своя таблица по редкости, не общий rarity-чек ниже: руна не в
   // ENHANCEABLE_SLOTS, и без этой строки любая её редкость падала бы в
   // MARKET_MIN_PRICE — легендарная руна продавалась бы за те же 0.1 GRAM,
