@@ -1196,13 +1196,13 @@ function _dispatchSkillEffect(cls, sk) {
     };
     if (sk.key === 'Q') {
       _healAoe('Q', _advActive('Q') ? '#f5c542' : '#a855e0');
-      if (_advActive('Q')) { // Бабочки — always BUTTERFLIES_SEC, healing 2% maxHP/sec
+      if (_advActive('Q')) { // Бабочки — summon for 10s, healing 2% maxHP/sec (+1s per level)
         // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
         // им и место: раньше их отсчитывал кадр, и сервер о них не знал.
-        butterfliesTimer = BUTTERFLIES_SEC;
-        // Перезарядка: 16 с на 1 уровне, −1 с за каждое улучшение (не меньше 7),
-        // как на сервере (SKILL_CD_ADV_LEVEL_FLOOR_SEC).
-        player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(7, sk.cd - (_skillLvl('Q') - 1)) * (1 - (player.cdrPct || 0));
+        butterfliesTimer = BUTTERFLIES_SEC + _skillBuffSec('Q');
+        // Перезарядка — ровно 16 с, без сокращения уровнем и «Ясным разумом»,
+        // как на сервере (SKILL_CD_FIXED_ADV_SEC).
+        player.skillCooldowns[_cooldownKeyFor('Q')] = SKILL_CD_FIXED_ADV_SEC.warlock.Q;
         _butterfliesTickAcc = 0;
         if (typeof netSkillHeal === 'function') netSkillHeal('Q');
         dmgNum(player.x, player.y - 40, '🦋 Бабочки!', '#f5c542');

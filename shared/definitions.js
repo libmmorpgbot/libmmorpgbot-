@@ -3281,12 +3281,17 @@ const SKILL_CD_SERVER_SLACK = 0.9;
 // Не точная перезарядка игрока, а нижняя граница для любого честного клиента.
 // Продвинутые навыки, у которых перезарядка падает с уровнем: −1 с за каждое
 // улучшение (уровень 1 — полная перезарядка), не ниже порога.
-const SKILL_CD_ADV_LEVEL_FLOOR_SEC = {
-  warlock: { Q: 7 },   // «Бабочки»: 16 с на 1 уровне → 7 с на 10-м
+const SKILL_CD_ADV_LEVEL_FLOOR_SEC = {};
+// Продвинутые навыки с неизменной перезарядкой: ни уровень, ни «Ясный разум»
+// её не сокращают.
+const SKILL_CD_FIXED_ADV_SEC = {
+  warlock: { Q: 16 },  // «Бабочки» — никогда не меньше 16 с
 };
 function skillCooldownFloorMs(cls, key, advActive, skillLvl) {
   const row = (SKILL_CD_SEC[cls] || {})[key];
   if (!row) return 0;
+  const fixed = advActive && (SKILL_CD_FIXED_ADV_SEC[cls] || {})[key];
+  if (fixed) return Math.floor(fixed * 1000 * SKILL_CD_SERVER_SLACK);
   let cd = row[advActive ? 1 : 0];
   const floor = !advActive && (SKILL_CD_LEVEL_FLOOR_SEC[cls] || {})[key];
   if (floor) cd = Math.max(floor, cd - Math.max(0, Math.floor(Number(skillLvl)) || 0));
@@ -3913,10 +3918,11 @@ const SKILL_SELF_HEAL = {
   assassin: { R: { advPct: 0.30, advOnly: true } },       // «Прыжок за спину»
 };
 
-// «Бабочки» (продвинутый Q чернокнижника): 2% maxHp в секунду, всегда
-// 16 секунд — уровень навыка длительность не меняет, он растит урон по
-// площади (advLvlPct в SKILL_DMG_MULT).
-const BUTTERFLIES_SEC = 16;
+// «Бабочки» (продвинутый Q чернокнижника): 2% maxHp в секунду, десять секунд
+// плюс секунда за уровень навыка. Уровень ещё растит урон по площади
+// (advLvlPct в SKILL_DMG_MULT); перезарядка — ровно 16 с
+// (SKILL_CD_FIXED_ADV_SEC).
+const BUTTERFLIES_SEC = 10;
 const BUTTERFLIES_TICK_PCT = 0.02;
 // Тот же тик у игрока с включённым ПК (Room._regenTick): в PvP «Бабочки»
 // висят без перерыва, и полные 5% в секунду делали целителя неубиваемым.
@@ -4028,7 +4034,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
-  ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel, SKILL_CD_ADV_LEVEL_FLOOR_SEC,
+  ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel, SKILL_CD_ADV_LEVEL_FLOOR_SEC, SKILL_CD_FIXED_ADV_SEC,
   SKILL_DEF_DOWN, skillDefDownOf,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, UPGRADE_STEP, upgradeCost, UPGRADE_MAX, upgLvlCapped,
   FOREIGN_SKILL_KEY,
