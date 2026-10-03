@@ -257,7 +257,8 @@ function compute(row) {
   for (const it of (row.equipped || [])) {
     const base = _byId.get(it.id);
     if (!base) continue;                        // retired id — contributes nothing
-    gearSetBySlot[it.slot] = { rarity: base.rarity, enhance: it.enhance || 0, uniqueSet: !!base.uniqueSet };
+    // Вещь целиком с её заточкой — ровно то, что передаёт клиент (recompute).
+    gearSetBySlot[it.slot] = { ...base, enhance: it.enhance || 0 };
     const eb = enhanceBonus(base, it.enhance || 0);
     a += (base.atk || 0) + (eb.atk || 0);
     d += (base.def || 0) + (eb.def || 0);
