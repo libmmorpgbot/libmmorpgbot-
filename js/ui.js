@@ -6486,7 +6486,7 @@ function _seasonClaimFarm(zone) {
 // цели — с сервера (seasonState.tasks); очки приходят сами, когда задание
 // выполнено (seasonTaskDone), кнопки нет.
 const _S4_TASK_ICON = {
-  chat: '💬', mbuy: '🛒', msell: '💰', kill1: '⚔️', kill2: '🗡️', killFarm: '🌾',
+  chat: '💬', mbuy: '🛒', msell: '💰', killDung: '💀', kill1: '⚔️', kill2: '🗡️', killFarm: '🌾',
   potAtk: '⚗️', tower: '🏰', boss: '👹',
 };
 // До сброса: ежедневные — полночь по Москве, еженедельные — понедельник.

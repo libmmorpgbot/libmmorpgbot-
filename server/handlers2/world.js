@@ -69,7 +69,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
   async function _seasonKillTask(t, sess, result) {
     const floor = sess && sess.room && sess.room.floor;
     if (result.farmZone) return seasonTasks.bumpIn(t, sess, 'killFarm', 1);
-    if (result.farmZone2 || result.farmHigh || result.dungeon) return null;
+    if (result.dungeon) return seasonTasks.bumpIn(t, sess, 'killDung', 1);
+    if (result.farmZone2 || result.farmHigh) return null;
     if (floor === floorIdOf('left')) return seasonTasks.bumpIn(t, sess, 'kill1', 1);
     if (floor === floorIdOf('top')) return seasonTasks.bumpIn(t, sess, 'kill2', 1);
     return null;

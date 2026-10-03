@@ -736,6 +736,7 @@ const SEASON_DAILY_TASKS = [
   { id: 'chat',  target: 10, points: 30 },   // сообщения в общий чат
   { id: 'mbuy',  target: 3,  points: 100 },  // купить на маркете на 3 GRAM
   { id: 'msell', target: 3,  points: 100 },  // продать на маркете на 3 GRAM
+  { id: 'killDung', target: 20000, points: 50 },  // убить 20 000 монстров в Подземелье
 ];
 const SEASON_WEEKLY_TASKS = [
   { id: 'kill1',    target: 100000, points: 300 },  // 1 этаж (левый коридор)
