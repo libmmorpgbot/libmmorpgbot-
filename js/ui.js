@@ -6487,6 +6487,7 @@ function _seasonClaimFarm(zone) {
 // выполнено (seasonTaskDone), кнопки нет.
 const _S4_TASK_ICON = {
   chat: '💬', mbuy: '🛒', msell: '💰', killDung: '💀', kill1: '⚔️', kill2: '🗡️', killFarm: '🌾',
+  killFarm2: '💎', killFarmHigh: '🌿',
   potAtk: '⚗️', tower: '🏰', boss: '👹',
 };
 // До сброса: ежедневные — полночь по Москве, еженедельные — понедельник.

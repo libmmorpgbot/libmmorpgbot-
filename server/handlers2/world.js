@@ -64,13 +64,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
   let teleportTimer = null;
   const { io, enterFloor, floorIdOf, resolveFloor, floorCtxOf, ticketOnlyFloor } = deps;
 
-  // Сезон 4: какое еженедельное задание двигает это убийство. Этаж — комната,
+  // Сезон 4: какое задание (ежедневное или еженедельное) двигает это убийство. Этаж — комната,
   // где стоит игрок (у доли пати — своя комната участника).
   async function _seasonKillTask(t, sess, result) {
     const floor = sess && sess.room && sess.room.floor;
     if (result.farmZone) return seasonTasks.bumpIn(t, sess, 'killFarm', 1);
     if (result.dungeon) return seasonTasks.bumpIn(t, sess, 'killDung', 1);
-    if (result.farmZone2 || result.farmHigh) return null;
+    if (result.farmHigh) return seasonTasks.bumpIn(t, sess, 'killFarmHigh', 1);
+    if (result.farmZone2) return seasonTasks.bumpIn(t, sess, 'killFarm2', 1);
     if (floor === floorIdOf('left')) return seasonTasks.bumpIn(t, sess, 'kill1', 1);
     if (floor === floorIdOf('top')) return seasonTasks.bumpIn(t, sess, 'kill2', 1);
     return null;
