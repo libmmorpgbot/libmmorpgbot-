@@ -6284,7 +6284,7 @@ function openSeasonPanel() {
   if (!panel) return;
   panel.style.display = 'flex';
   // Сезон 4: «Сезон» (карточка и победители прошлого) и «Задания».
-  if (!['season', 'tasks', 'rating'].includes(_seasonTab)) _seasonTab = 'season';
+  if (!['season', 'tasks', 'shop', 'rating'].includes(_seasonTab)) _seasonTab = 'season';
   if (_seasonTab === 'rating' && typeof netSeasonRating === 'function') netSeasonRating();
   document.querySelectorAll('#season-panel .rating-tab').forEach(b => b.classList.remove('active'));
   document.getElementById('stab-' + _seasonTab)?.classList.add('active');
@@ -6317,6 +6317,7 @@ function _renderSeasonBody() {
   if (!body) return;
   body.innerHTML = _seasonTab === 'rating' ? _seasonRatingHTML()
                   : _seasonTab === 'tasks' ? _seasonTasksHTML()
+                  : _seasonTab === 'shop' ? _seasonShopHTML()
                   : _seasonInfoHTML();
 }
 
@@ -6562,6 +6563,55 @@ function _seasonTasksHTML() {
       ${sec('☀️', 'seasonTasksDailyHdr', tasks.daily || [], false)}
       ${sec('📅', 'seasonTasksWeeklyHdr', tasks.weekly || [], true)}
     </div>`;
+}
+
+// ── Сезон 4: магазин за очки ─────────────────────────────────────────────
+// Товары, цены и сколько уже куплено — с сервера (seasonState.shop). Покупка
+// списывает очки сезона, по которым идёт рейтинг, — об этом говорит и
+// подсказка, и подтверждение.
+const _S4_SHOP_ICON = { bless: '🛡️', buffs: '🧪', boxU: '📦', boxR: '🎁', sp: '⭐' };
+function _seasonShopHTML() {
+  const st = _seasonState || {};
+  const pts = st.points || 0;
+  const list = st.shop || [];
+  const rows = list.map(o => {
+    const left = Math.max(0, o.limit - (o.bought || 0));
+    const can = st.active !== false && left > 0 && pts >= o.cost;
+    return `
+    <div class="s4-task${left ? '' : ' done'}">
+      <div class="s4-ico">${_S4_SHOP_ICON[o.id] || '★'}</div>
+      <div class="s4-task-body">
+        <div class="s4-task-top">
+          <span class="s4-task-name">${t('seasonShop_' + o.id)}</span>
+          <span class="s4-reward">${o.cost.toLocaleString('ru-RU')}</span>
+        </div>
+        <div class="s4-task-prog" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <span>${tVars('seasonShopLeftFmt', { n: left, m: o.limit })}</span>
+          <button class="codex-more-btn" style="margin:0;padding:4px 12px;width:auto"${can ? '' : ' disabled'}
+            onclick="_seasonShopBuy('${o.id}')">${t('seasonShopBuyBtn')}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="s4-wrap">
+      <div class="s4-hero">
+        <div class="s4-hero-num">${pts.toLocaleString('ru-RU')}</div>
+        <div class="s4-hero-lbl">${t('seasonPointsLbl')}</div>
+      </div>
+      <div class="s4-sec-hdr">
+        <span>🛒 ${t('seasonShopHdr')}</span>
+        <span class="s4-sec-meta">⏳ ${_fmtEventEta(_s4ResetLeft(true))}</span>
+      </div>
+      <div class="s4-empty" style="text-align:left;padding:4px 2px 8px">${t('seasonShopHint')}</div>
+      ${rows || `<div class="s4-empty">${t('seasonLoading')}</div>`}
+    </div>`;
+}
+function _seasonShopBuy(id) {
+  const o = ((_seasonState || {}).shop || []).find(x => x.id === id);
+  if (!o) return;
+  if (!confirm(tVars('seasonShopConfirm', { name: t('seasonShop_' + id), n: o.cost }))) return;
+  if (typeof netSeasonShopBuy === 'function') netSeasonShopBuy(id);
 }
 
 // Same "ask, then send the whole stack" shape as bulk actions elsewhere.

@@ -749,6 +749,22 @@ const SEASON_WEEKLY_TASKS = [
   { id: 'tower',    target: 3,      points: 200 },  // участие в Кровавой Башне
   { id: 'boss',     target: 3,      points: 200 },  // удары по мировому боссу
 ];
+// ── Сезон 4: магазин за очки сезона ──────────────────────────────────────
+// Платится ТЕМИ ЖЕ очками, по которым идёт рейтинг (так решил владелец):
+// покупка опускает игрока в таблице. Лимит — штук каждого товара за неделю
+// (seasonWeekKey, по Москве), счётчик в player_season.quests.shop.
+// items — что кладётся в инвентарь, sp — очки навыка (bonus_sp).
+const SEASON_SHOP = [
+  { id: 'bless', cost: 800,  limit: 10, items: [{ id: 'bless_stone', qty: 1 }] },
+  { id: 'buffs', cost: 800,  limit: 10, items: [
+    { id: 'bp_hp', qty: 1 }, { id: 'bp_exp', qty: 1 }, { id: 'bp_gold', qty: 1 },
+    { id: 'bp_regen', qty: 1 }, { id: 'bp_atkspeed', qty: 1 }, { id: 'bp_atk', qty: 1 },
+  ] },
+  { id: 'boxU',  cost: 300,  limit: 10, items: [{ id: 'box_uncommon', qty: 1 }] },
+  { id: 'boxR',  cost: 600,  limit: 10, items: [{ id: 'box_rare', qty: 1 }] },
+  { id: 'sp',    cost: 1000, limit: 10, sp: 1 },
+];
+
 // Дата по Москве: 'YYYY-MM-DD'. Неделя — понедельник этой недели.
 function seasonDayKey(now = Date.now()) {
   return new Date(now + MSK_OFFSET_H * 3600000).toISOString().slice(0, 10);
@@ -4077,7 +4093,7 @@ if (typeof module !== 'undefined') module.exports = {
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES, VIP_MAX_LEVEL,
   SEASON_TICKET_SEASON, SEASON_TICKET_END_AT, seasonTicketPeriodOn,
-  SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, seasonDayKey, seasonWeekKey,
+  SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, SEASON_SHOP, seasonDayKey, seasonWeekKey,
   ATK_SLOW_CLASSES, ATK_SLOW_STEP, ATK_SLOW_MAX, ATK_SLOW_SEC, atkSlowStack,
   DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,

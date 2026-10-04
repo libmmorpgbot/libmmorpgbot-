@@ -401,6 +401,18 @@ module.exports = function registerProgression(s, safeOn) {
       s.socket.emit('seasonState', await progression.seasonState(t, pid));
     }));
 
+  // ── Сезон 4: магазин за очки ────────────────────────────────────────────
+  // Цена, лимит, наличие очков и место в сумке решает buySeasonShop — внутри
+  // той же транзакции, что и списание.
+  safeOn('seasonShopBuy', ({ offerId } = {}) => s.act('seasonShopBuy', 'seasonError', async (t, pid) => {
+    const res = await progression.buySeasonShop(t, pid, offerId);
+    await s.pushItems(t);
+    await s.pushProgress(t);
+    s.socket.emit('seasonShopBought', res);
+    s.socket.emit('seasonState', await progression.seasonState(t, pid));
+    return res;
+  }, r => r && { offerId: r.offerId, cost: r.cost, bought: r.bought, total: r.total }));
+
   async function afterBurn(t, pid, res) {
     await s.pushItems(t);
     await s.pushStats(t);

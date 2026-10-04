@@ -2667,6 +2667,15 @@ function netConnect(onReady) {
     if (typeof _marketToast === 'function') _marketToast(tVars('seasonPrizeClaimedToast', { n: gram || 0 }), 'ok');
   });
 
+  // Магазин сезона: вещи уже приехали inventorySync'ом, полный seasonState —
+  // следом. Здесь только тост.
+  socket.on('seasonShopBought', ({ offerId, cost, total } = {}) => {
+    if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
+    if (typeof _marketToast === 'function') {
+      _marketToast(tVars('seasonShopBoughtToast', { name: t('seasonShop_' + offerId), n: cost || 0 }), 'ok');
+    }
+  });
+
   // Items are already gone via the inventorySync that preceded this.
   socket.on('seasonBurned', ({ burned, points, total } = {}) => {
     if (Number.isFinite(total)) _seasonState = { ..._seasonState, points: total };
@@ -5359,6 +5368,7 @@ function netSeasonClaimFarmKills(zone) {
 // Books are stackable, so they're addressed by id + how many to burn rather
 // than by index/enhance identity.
 function netSeasonBurnBook(id, qty) { if (socket?.connected) socket.emit('seasonBurnBook', { id, qty }); }
+function netSeasonShopBuy(offerId) { if (socket?.connected) socket.emit('seasonShopBuy', { offerId }); }
 // Disassembling destroys the item for Liberty (nexum) — the server owns both
 // halves, nothing is applied locally.
 // Same identity check as netSellItem: a stale index could destroy the wrong

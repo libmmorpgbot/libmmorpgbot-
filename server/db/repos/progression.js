@@ -31,7 +31,7 @@ const {
   SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
   SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS, CRAFT_MATS,
-  SEASON_TICKET_SEASON, SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, seasonDayKey, seasonWeekKey,
+  SEASON_TICKET_SEASON, SEASON_DAILY_TASKS, SEASON_WEEKLY_TASKS, SEASON_SHOP, seasonDayKey, seasonWeekKey,
 } = require('../../../shared/definitions');
 
 class ProgressionError extends Error {
@@ -457,6 +457,66 @@ function seasonTasksOf(quests, now = Date.now()) {
   return { daily: list(SEASON_DAILY_TASKS, 'd'), weekly: list(SEASON_WEEKLY_TASKS, 'w') };
 }
 
+// ── Сезон 4: магазин ────────────────────────────────────────────────────────
+// quests.shop = { k: ключ недели, <offerId>: куплено }. Сменилась неделя —
+// счётчики с нуля. Порядок блокировок как везде: сначала игрок
+// (items.lockPlayer), потом его строка сезона FOR UPDATE — два клика подряд
+// не пройдут проверку очков и лимита по одному и тому же чтению.
+const _SHOP_BY_ID = new Map(SEASON_SHOP.map(o => [o.id, o]));
+
+function _shopPeriod(q, now) {
+  const k = seasonWeekKey(now);
+  const cur = q && q.shop;
+  return (cur && cur.k === k) ? { ...cur } : { k };
+}
+
+function seasonShopOf(quests, now = Date.now()) {
+  const per = _shopPeriod(quests || {}, now);
+  return SEASON_SHOP.map(o => ({
+    id: o.id, cost: o.cost, limit: o.limit, items: o.items || [], sp: o.sp || 0,
+    bought: Number(per[o.id] || 0),
+  }));
+}
+
+async function buySeasonShop(db, playerId, offerId, now = Date.now(), season = CURRENT_SEASON) {
+  const offer = typeof offerId === 'string' ? _SHOP_BY_ID.get(offerId) : null;
+  if (!offer) err('bad_offer', 'Товар не найден');
+  if (!seasonActive(now)) err('season_over', 'Сезон завершён — магазин закрыт');
+  await items.lockPlayer(db, playerId);
+  await query(db, `
+    INSERT INTO player_season (player_id, season) VALUES ($1, $2)
+    ON CONFLICT (player_id, season) DO NOTHING`, [playerId, season]);
+  const { rows } = await query(db, `
+    SELECT points, quests FROM player_season
+     WHERE player_id = $1 AND season = $2 FOR UPDATE`, [playerId, season]);
+  const points = Number(rows[0].points);
+  const per = _shopPeriod(rows[0].quests || {}, now);
+  const bought = Number(per[offer.id] || 0);
+  if (bought >= offer.limit) err('limit', `Лимит на этой неделе исчерпан (${offer.limit})`);
+  if (points < offer.cost) err('no_points', `Не хватает очков сезона: нужно ${offer.cost}`);
+
+  for (const it of (offer.items || [])) {
+    if (!await items.hasRoomFor(db, playerId, it.id)) err('inv_full', 'Инвентарь полон');
+    const rowId = await items.add(db, playerId, it.id,
+      { qty: it.qty || 1, source: 'season_shop', sourceRef: `${offer.id}:${per.k}:${bought + 1}` });
+    if (rowId === null) err('inv_full', 'Инвентарь полон');
+  }
+  if (offer.sp) {
+    await query(db, `
+      UPDATE player_progress SET bonus_sp = bonus_sp + $2, updated_at = now()
+       WHERE player_id = $1`, [playerId, offer.sp]);
+  }
+
+  per[offer.id] = bought + 1;
+  const { rows: out } = await query(db, `
+    UPDATE player_season
+       SET quests = jsonb_set(COALESCE(quests, '{}'::jsonb), '{shop}', $3::jsonb),
+           points = points - $4
+     WHERE player_id = $1 AND season = $2
+    RETURNING points`, [playerId, season, JSON.stringify(per), offer.cost]);
+  return { offerId: offer.id, cost: offer.cost, bought: per[offer.id], total: Number(out[0].points) };
+}
+
 // The referral bonus: paid once, when an invited friend crosses the level
 // threshold. `ref_paid` lives on the FRIEND's row — on the old model it was a
 // field in the friend's own blob, so they could clear it and have their
@@ -783,6 +843,9 @@ async function seasonState(db, playerId) {
     },
     // Сезон 4: ежедневные и еженедельные задания (seasonTasksOf).
     tasks: seasonTasksOf(mine.quests),
+    // Сезон 4: магазин за очки (buySeasonShop) — товары и сколько куплено
+    // на этой неделе.
+    shop: seasonShopOf(mine.quests),
   };
 }
 
@@ -832,7 +895,7 @@ async function secondsLeft(db, playerId, mode, budgetSeconds) {
 }
 
 module.exports = {
-  disassembleItem, burnBooks, seasonState,
+  disassembleItem, burnBooks, seasonState, buySeasonShop, seasonShopOf,
   claimSpecialQuest, claimedSpecialQuests,
   bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,
   addVipSpend, claimVip, vipOf, grantSeasonTicket,
