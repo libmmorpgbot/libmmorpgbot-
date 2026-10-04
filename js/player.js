@@ -307,6 +307,11 @@ function recompute() {
   // после всех плоских прибавок — иначе порядок слагаемых решал бы результат.
   let speedPct = 0, atkPct = 0, critPowerAdd = 0;
   let _runeDefPct = 0;
+  // Кодекс за число наборов — то же, что в compute() на сервере.
+  if (cx) {
+    extraAS += (player.charDef.atkSpeed || 0) * (cx.atkSpeedPct || 0);
+    critPowerAdd += cx.critPowerPct || 0;
+  }
   // Уникальные сеты — see the identical block in server/db/repos/stats.js's
   // compute(), which this MUST stay step-for-step identical to.
   let uniqueSetCount = 0;

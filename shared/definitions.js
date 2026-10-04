@@ -2814,20 +2814,52 @@ function codexItemMeetsReq(it, req) {
   return !!it && !!req && it.id === req.itemId && (it.enhance || 0) === req.minEnhance;
 }
 
+// ── Кодекс: бонусы за число завершённых наборов ─────────────────────────────
+// Сверх бонусов самих наборов. Пороги накопительные: на 120 наборах игрок
+// получает и +20 АТК за 10, и +40 АТК за 120. atkSpeedPct — доля от БАЗОВОЙ
+// скорости атаки класса (как у рун и пассивок), critPowerPct — прибавка к
+// силе крита в долях (0.10 = +10%, как руна «Сила крита»).
+const CODEX_MILESTONES = [
+  { n: 10,   atk: 20 },
+  { n: 50,   hp: 2000 },
+  { n: 70,   def: 50 },
+  { n: 120,  atk: 40 },
+  { n: 170,  hp: 3000 },
+  { n: 250,  def: 70 },
+  { n: 300,  atkSpeedPct: 0.10 },
+  { n: 400,  critPowerPct: 0.10 },
+  { n: 500,  atk: 150 },
+  { n: 600,  def: 150 },
+  { n: 700,  atkSpeedPct: 0.15 },
+  { n: 1000, atk: 300, def: 300, hp: 10000, atkSpeedPct: 0.20 },
+];
+
 // Sums every COMPLETED set's bonus. `progress` is { [setId]: boolean[] } —
 // one flag per slot, true once that slot's item has been consumed into it.
+// Plus CODEX_MILESTONES for the number of completed sets.
 function codexTotalBonus(progress) {
-  const total = { atk: 0, def: 0, hp: 0 };
+  const total = { atk: 0, def: 0, hp: 0, atkSpeedPct: 0, critPowerPct: 0, completed: 0 };
   if (!progress) return total;
   Object.keys(progress).forEach(setId => {
     const set = codexSetById(setId);
     const filled = progress[setId];
     if (!set || !Array.isArray(filled) || filled.length !== set.slots.length) return;
     if (!filled.every(Boolean)) return;
+    total.completed++;
     total.atk += set.bonus.atk || 0;
     total.def += set.bonus.def || 0;
     total.hp  += set.bonus.hp  || 0;
   });
+  for (const m of CODEX_MILESTONES) {
+    if (total.completed < m.n) break;
+    total.atk += m.atk || 0;
+    total.def += m.def || 0;
+    total.hp  += m.hp  || 0;
+    total.atkSpeedPct  += m.atkSpeedPct  || 0;
+    total.critPowerPct += m.critPowerPct || 0;
+  }
+  total.atkSpeedPct  = Math.round(total.atkSpeedPct * 1000) / 1000;
+  total.critPowerPct = Math.round(total.critPowerPct * 1000) / 1000;
   // Тот же один знак, которым выше уже чистится бонус ОДНОГО набора.
   // Слагаемые дробные, и сумма трёх наборов приезжала в панель как
   // «+0.6000000000000001 АТК».
@@ -4065,7 +4097,7 @@ if (typeof module !== 'undefined') module.exports = {
   runeKindOf, runeRarityOf, runeCatalogId, runeStatPct, runeQualityPool,
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
-  CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus,
+  CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus, CODEX_MILESTONES,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,

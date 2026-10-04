@@ -1981,9 +1981,22 @@ function renderCodexPanel() {
   if (bonus.atk) bonusParts.push(`+${bonus.atk} АТК`);
   if (bonus.def) bonusParts.push(`+${bonus.def} ЗАЩ`);
   if (bonus.hp)  bonusParts.push(`+${bonus.hp} HP`);
+  if (bonus.atkSpeedPct)  bonusParts.push(`+${Math.round(bonus.atkSpeedPct * 100)}% СКОР. АТК`);
+  if (bonus.critPowerPct) bonusParts.push(`+${Math.round(bonus.critPowerPct * 100)}% СИЛА КРИТА`);
   const codex = player.codex || {};
   const allSets = (typeof CODEX_SETS !== 'undefined') ? CODEX_SETS : [];
   const doneTotal = allSets.filter(s => _codexSetDone(s, codex[s.id])).length;
+  // Бонусы за число завершённых наборов (CODEX_MILESTONES, shared/definitions.js).
+  const _msText = m => [
+    m.atk ? `+${m.atk} АТК` : '', m.def ? `+${m.def} ЗАЩ` : '', m.hp ? `+${m.hp.toLocaleString('ru-RU')} HP` : '',
+    m.atkSpeedPct ? `+${Math.round(m.atkSpeedPct * 100)}% скор. атаки` : '',
+    m.critPowerPct ? `+${Math.round(m.critPowerPct * 100)}% силы крита` : '',
+  ].filter(Boolean).join(', ');
+  const milestonesHtml = (typeof CODEX_MILESTONES !== 'undefined' ? CODEX_MILESTONES : []).map(m => {
+    const got = doneTotal >= m.n;
+    return `<div class="codex-ms${got ? ' done' : ''}" style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;opacity:${got ? 1 : 0.6}">
+      <span>${got ? '✅' : '⬜'} ${m.n} наборов</span><span>${_msText(m)}</span></div>`;
+  }).join('');
 
   const filtered = _codexSetsFiltered();
   const shown = filtered.slice(0, _codexShown);
@@ -2001,6 +2014,10 @@ function renderCodexPanel() {
     <div class="codex-total">
       <div class="codex-total-label">Бонус кодекса · наборов завершено ${doneTotal}/${allSets.length}</div>
       <div class="codex-total-stats">${bonusParts.length ? bonusParts.join(' &nbsp; ') : '—'}</div>
+    </div>
+    <div class="codex-total codex-milestones">
+      <div class="codex-total-label">Бонусы за завершённые наборы</div>
+      ${milestonesHtml}
     </div>
     <div class="codex-toolbar">
       <input id="codex-search-input" class="codex-search" type="text" placeholder="Поиск по названию…"
