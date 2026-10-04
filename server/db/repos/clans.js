@@ -212,6 +212,9 @@ async function accept(db, leaderId, clanId, playerId) {
   // НИКОГДА. Держать её в очереди — значит показывать лидеру кнопку, которая
   // не может сработать.
   await query(db, 'DELETE FROM clan_applications WHERE player_id = $1', [playerId]);
+  // Бонус атаки клана входит в БМ (stats.compute → clanAtkBonusPct), а БМ в
+  // рейтинге хранится — вступление обязано его переписать.
+  await require('./stats').refreshBm(db, playerId);
   return true;
 }
 
@@ -229,6 +232,7 @@ async function kick(db, leaderId, clanId, playerId) {
     `DELETE FROM clan_members WHERE clan_id = $1 AND player_id = $2 AND role <> 'leader'`,
     [clanId, playerId]);
   if (!rowCount) err('not_member', 'Учасника не знайдено');
+  await require('./stats').refreshBm(db, playerId);   // бонус клана ушёл из БМ
   return true;
 }
 
@@ -243,6 +247,7 @@ async function leave(db, playerId) {
   if (rows[0].role === 'leader') err('leader', 'Лідер не може вийти — розформуйте клан');
   await _requireNoHeldShards(db, rows[0].clan_id, playerId);
   await query(db, 'DELETE FROM clan_members WHERE player_id = $1', [playerId]);
+  await require('./stats').refreshBm(db, playerId);   // бонус клана ушёл из БМ
   return true;
 }
 
@@ -259,8 +264,11 @@ async function disband(db, leaderId, clanId) {
   if (alloc[0].n > 0) err('allocations_pending', 'Є нероздані Осколки — дочекайтесь, поки їх заберуть');
 
   await query(db, 'DELETE FROM clan_applications WHERE clan_id = $1', [clanId]);
-  await query(db, 'DELETE FROM clan_members WHERE clan_id = $1', [clanId]);
+  const { rows: gone } = await query(db,
+    'DELETE FROM clan_members WHERE clan_id = $1 RETURNING player_id', [clanId]);
   await query(db, 'DELETE FROM clans WHERE id = $1', [clanId]);
+  // Бонус клана ушёл из БМ у всех бывших участников.
+  for (const g of gone) await require('./stats').refreshBm(db, g.player_id);
   return true;
 }
 

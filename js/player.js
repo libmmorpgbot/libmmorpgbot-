@@ -373,6 +373,24 @@ function recompute() {
   if (pt) hpPct += pt.hpPct;
   h = Math.floor(h * (1 + hpPct));
 
+  // ── БМ без временного ────────────────────────────────────────────────────
+  // Рейтинг сортирует по players.bm, а сервер пишет его БЕЗ зелий, награды
+  // новичка, баффов навыков и питомца (refreshBm, server/db/repos/stats.js).
+  // calcBM брал player.atk/def/maxHp — со всем этим сверху, — и игрок под
+  // зельем видел у себя одно число, а в рейтинге другое. Здесь та же цепочка,
+  // что в compute() при buffs = {}, шаг в шаг: atkPct, проценты защиты,
+  // пассивная атака, клан.
+  {
+    let pa = a, pd = d;
+    if (atkPct) pa = Math.floor(pa * (1 + atkPct));
+    const pDefPct = (pt ? pt.defPct : 0) + _runeDefPct;
+    if (pDefPct) pd = Math.floor(pd * (1 + pDefPct));
+    if (pt) pa = Math.floor(pa * (1 + pt.atkPct));
+    const cb = typeof getClanBonus === 'function' ? getClanBonus() : null;
+    if (cb && cb.atk > 0) pa = Math.floor(pa * (1 + cb.atk / 100));
+    player.bmAtk = pa; player.bmDef = pd; player.bmMaxHp = h;
+  }
+
   // Buff potion bonuses
   const buffs = player.buffs || {};
   if (buffs.hp        > 0) h = Math.floor(h * 1.10);

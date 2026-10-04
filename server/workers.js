@@ -339,6 +339,25 @@ async function paySeasonPrizes() {
   }
 }
 
+// ── рейтинг: сверка БМ ──────────────────────────────────────────────────────
+// См. syncAllBm (db/repos/stats.js). Раз на старте — чтобы рейтинг сошёлся с
+// формулой после выкатки, — и дальше раз в сутки на случай пути, который
+// забыл refreshBm.
+let _bmSyncing = false;
+async function syncBm() {
+  if (_bmSyncing) return;
+  _bmSyncing = true;
+  try {
+    const res = await require('./db/repos/stats').syncAllBm();
+    if (res.changed) console.log(`[workers] БМ пересчитан: ${res.changed} из ${res.total}`);
+  } catch (err) {
+    console.error('[workers] syncBm:', err);
+    await ops.alertError('bm.sync', 'Ошибка пересчёта БМ для рейтинга', err);
+  } finally {
+    _bmSyncing = false;
+  }
+}
+
 // ── maintenance ─────────────────────────────────────────────────────────────
 // Log partitions must exist before the month they cover. A partitioned table
 // with no partition for today rejects every insert, so this running late is a
@@ -367,6 +386,7 @@ function start(opts = {}) {
   // owed since before a restart, rather than waiting out SEASON_PRIZE_EVERY_MS.
   maintain();
   paySeasonPrizes();
+  syncBm();
 
   // Reconciliation and partition maintenance are database-only and safe
   // anywhere. The other two reach OUTSIDE this process — the chain and the
@@ -380,6 +400,7 @@ function start(opts = {}) {
   timers.push(setInterval(() => reconcileItems(), RECONCILE_EVERY_MS));
   timers.push(setInterval(() => maintain(), 6 * 3600 * 1000));
   timers.push(setInterval(() => paySeasonPrizes(), SEASON_PRIZE_EVERY_MS));
+  timers.push(setInterval(() => syncBm(), 24 * 3600 * 1000));
 
   const live = ops.isLive();
   if (live) {

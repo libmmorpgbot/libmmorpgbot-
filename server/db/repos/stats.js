@@ -427,7 +427,7 @@ function battlePower(st, upgrades) {
 
 // Recomputes and stores bm, so the leaderboard reads a column instead of
 // deriving thirty numbers per row.
-async function refreshBm(db, playerId) {
+async function refreshBm(db, playerId, { onlyIfChanged = false } = {}) {
   const row = await load(db, playerId);
   if (!row) return null;
   // PERMANENT stats only. compute() applies whatever potion is running on top
@@ -451,8 +451,35 @@ async function refreshBm(db, playerId) {
     hpRegen: row.upg_hp_regen, atkSpeed: row.upg_atk_speed,
     cp: row.upg_cp || 0, xp: row.upg_xp || 0, drop: row.upg_drop || 0,
   });
-  await query(db, 'UPDATE players SET bm = $2, updated_at = now() WHERE id = $1', [playerId, bm]);
+  // onlyIfChanged — для фоновой сверки (syncAllBm): строка, где число уже
+  // верное, не трогается, и updated_at у игрока не сдвигается зря.
+  await query(db, onlyIfChanged
+    ? 'UPDATE players SET bm = $2, updated_at = now() WHERE id = $1 AND bm IS DISTINCT FROM $2'
+    : 'UPDATE players SET bm = $2, updated_at = now() WHERE id = $1', [playerId, bm]);
   return { bm, stats: st };
 }
 
-module.exports = { load, compute, of, battlePower, refreshBm };
+// ── сверка рейтинга целиком ─────────────────────────────────────────────────
+// players.bm переписывается только там, где двигается что-то из его входов.
+// Всё, что поменялось В ФОРМУЛЕ (новые улучшения ЦП/опыт/дроп, кодекс, руны,
+// сеты) или во входе, у которого своего refreshBm не было (уровень клана),
+// оставляло в рейтинге старое число у каждого, кто с тех пор ничего не
+// надевал и не качал. Пересчёт всех по очереди, по одному запросу на игрока,
+// с паузой — чтобы не занимать пул на старте.
+async function syncAllBm({ pauseMs = 5 } = {}) {
+  const { rows } = await query(null, 'SELECT player_id FROM player_progress ORDER BY player_id');
+  let changed = 0;
+  for (const r of rows) {
+    try {
+      const before = await query(null, 'SELECT bm FROM players WHERE id = $1', [r.player_id]);
+      const res = await refreshBm(null, r.player_id, { onlyIfChanged: true });
+      if (res && before.rows.length && Number(before.rows[0].bm) !== res.bm) changed++;
+    } catch (err) {
+      console.error(`[stats] syncAllBm ${r.player_id}:`, err.message);
+    }
+    if (pauseMs) await new Promise(ok => setTimeout(ok, pauseMs));
+  }
+  return { total: rows.length, changed };
+}
+
+module.exports = { load, compute, of, battlePower, refreshBm, syncAllBm };

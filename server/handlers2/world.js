@@ -559,6 +559,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // was never awarded in the first place.
       if (!s.clan || res.level === s.clan.level) return;
       const view = await clans.fullView(null, clanId);
+      // Новый уровень — новый % атаки, а он входит в БМ, который рейтинг
+      // хранит. У каждого участника, онлайн он или нет.
+      for (const m of (view.members || [])) {
+        await stats.refreshBm(null, m.playerId).catch(err =>
+          console.error(`[clanXp] refreshBm ${m.playerId}:`, err.message));
+      }
       for (const m of (view.members || [])) {
         const sock = deps.socketForPlayerId && deps.socketForPlayerId(m.playerId);
         if (!sock || !sock.data || !sock.data.session) continue;

@@ -271,5 +271,10 @@ function calcBM(p) {
   const upg = p.upgrades || {};
   const extras = ((upg.critChance || 0) + (upg.critPower || 0) +
     (upg.hpRegen || 0) + (upg.atkSpeed || 0) + (upg.cp || 0) + (upg.xp || 0) + (upg.drop || 0)) * 8;
-  return Math.round((p.lvl || p.level || 1) * 50 + (p.atk || 0) * 5 + (p.def || 0) * 3 + (p.maxHp || 100) * 0.5 + extras);
+  // bmAtk/bmDef/bmMaxHp — те же статы без временных баффов (recompute,
+  // js/player.js): рейтинг хранит БМ без них, и своё число должно совпадать.
+  const atk = p.bmAtk != null ? p.bmAtk : p.atk;
+  const def = p.bmDef != null ? p.bmDef : p.def;
+  const maxHp = p.bmMaxHp != null ? p.bmMaxHp : p.maxHp;
+  return Math.round((p.lvl || p.level || 1) * 50 + (atk || 0) * 5 + (def || 0) * 3 + (maxHp || 100) * 0.5 + extras);
 }
