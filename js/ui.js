@@ -6569,7 +6569,16 @@ function _seasonTasksHTML() {
 // Товары, цены и сколько уже куплено — с сервера (seasonState.shop). Покупка
 // списывает очки сезона, по которым идёт рейтинг, — об этом говорит и
 // подсказка, и подтверждение.
-const _S4_SHOP_ICON = { bless: '🛡️', buffs: '🧪', boxU: '📦', boxR: '🎁', sp: '⭐' };
+// Картинки тех же предметов, что лежат в инвентаре; очко навыка — тот же
+// значок, что у очков навыка в GRAM-магазине (_shopSpUri).
+const _S4_SHOP_IMG = {
+  bless: '/images/bless.png', buffs: '/images/potion/atk.png',
+  boxU: '/images/material/boxu.png', boxR: '/images/material/boxr.png',
+};
+function _s4ShopIconHTML(id) {
+  const src = id === 'sp' ? _shopSpUri : _S4_SHOP_IMG[id];
+  return src ? `<img src="${src}" alt="" style="width:80%;height:80%;object-fit:contain;image-rendering:auto">` : '★';
+}
 function _seasonShopHTML() {
   const st = _seasonState || {};
   const pts = st.points || 0;
@@ -6579,7 +6588,7 @@ function _seasonShopHTML() {
     const can = st.active !== false && left > 0 && pts >= o.cost;
     return `
     <div class="s4-task${left ? '' : ' done'}">
-      <div class="s4-ico">${_S4_SHOP_ICON[o.id] || '★'}</div>
+      <div class="s4-ico">${_s4ShopIconHTML(o.id)}</div>
       <div class="s4-task-body">
         <div class="s4-task-top">
           <span class="s4-task-name">${t('seasonShop_' + o.id)}</span>
