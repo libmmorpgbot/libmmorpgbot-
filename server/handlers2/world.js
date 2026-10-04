@@ -74,6 +74,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (result.farmZone2) return seasonTasks.bumpIn(t, sess, 'killFarm2', 1);
     if (floor === floorIdOf('left')) return seasonTasks.bumpIn(t, sess, 'kill1', 1);
     if (floor === floorIdOf('top')) return seasonTasks.bumpIn(t, sess, 'kill2', 1);
+    if (floor === floorIdOf('bottom')) return seasonTasks.bumpIn(t, sess, 'kill3', 1);
     return null;
   }
 

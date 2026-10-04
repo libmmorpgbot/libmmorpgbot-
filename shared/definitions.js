@@ -742,6 +742,7 @@ const SEASON_DAILY_TASKS = [
 const SEASON_WEEKLY_TASKS = [
   { id: 'kill1',    target: 100000, points: 300 },  // 1 этаж (левый коридор)
   { id: 'kill2',    target: 100000, points: 300 },  // 2 этаж (верхний коридор)
+  { id: 'kill3',    target: 100000, points: 300 },  // 3 этаж (нижний коридор)
   { id: 'killFarm', target: 100000, points: 300 },  // фарм зона
   { id: 'killFarmHigh', target: 100000, points: 300 },  // фарм зона 2 (farmHigh)
   { id: 'potAtk',   target: 10,     points: 50 },   // скрафтить зелье атаки
