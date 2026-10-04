@@ -1965,6 +1965,9 @@ function _codexSetRowHtml(set) {
   </div>`;
 }
 
+// Раскрыт ли список бонусов за наборы (блок над наборами).
+let _codexMsOpen = false;
+
 function renderCodexPanel() {
   const body = document.getElementById('codex-panel-body');
   if (!body || !player) return;
@@ -1987,16 +1990,41 @@ function renderCodexPanel() {
   const allSets = (typeof CODEX_SETS !== 'undefined') ? CODEX_SETS : [];
   const doneTotal = allSets.filter(s => _codexSetDone(s, codex[s.id])).length;
   // Бонусы за число завершённых наборов (CODEX_MILESTONES, shared/definitions.js).
+  // Сверху — ближайший порог с полосой прогресса; весь список раскрывается
+  // кнопкой, чтобы двенадцать строк не отодвигали сами наборы вниз.
   const _msText = m => [
-    m.atk ? `+${m.atk} АТК` : '', m.def ? `+${m.def} ЗАЩ` : '', m.hp ? `+${m.hp.toLocaleString('ru-RU')} HP` : '',
+    m.atk ? `+${m.atk} АТК` : '', m.def ? `+${m.def} ЗАЩ` : '',
+    m.hp ? `+${m.hp.toLocaleString('ru-RU')} HP` : '',
     m.atkSpeedPct ? `+${Math.round(m.atkSpeedPct * 100)}% скор. атаки` : '',
     m.critPowerPct ? `+${Math.round(m.critPowerPct * 100)}% силы крита` : '',
-  ].filter(Boolean).join(', ');
-  const milestonesHtml = (typeof CODEX_MILESTONES !== 'undefined' ? CODEX_MILESTONES : []).map(m => {
-    const got = doneTotal >= m.n;
-    return `<div class="codex-ms${got ? ' done' : ''}" style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;opacity:${got ? 1 : 0.6}">
-      <span>${got ? '✅' : '⬜'} ${m.n} наборов</span><span>${_msText(m)}</span></div>`;
+  ].filter(Boolean).join(' · ');
+  const _ms = (typeof CODEX_MILESTONES !== 'undefined') ? CODEX_MILESTONES : [];
+  const _next = _ms.find(m => doneTotal < m.n) || null;
+  const _prevN = _next ? ((_ms[_ms.indexOf(_next) - 1] || {}).n || 0) : 0;
+  const _pct = _next ? Math.max(0, Math.min(100, Math.round((doneTotal - _prevN) / (_next.n - _prevN) * 100))) : 100;
+  const _gotN = _ms.filter(m => doneTotal >= m.n).length;
+  const msRows = _ms.map(m => {
+    const st = doneTotal >= m.n ? 'done' : (m === _next ? 'next' : 'locked');
+    return `<div class="codex-ms-row ${st}">
+      <span class="codex-ms-n">${st === 'done' ? '✓' : m.n}</span>
+      <span class="codex-ms-txt">${st === 'done' ? `<b>${m.n}</b> · ` : ''}${_msText(m)}</span>
+    </div>`;
   }).join('');
+  const milestonesHtml = `
+    <div class="codex-ms">
+      <div class="codex-ms-head">
+        <span class="codex-ms-title">Бонусы за наборы</span>
+        <span class="codex-ms-count">${_gotN}/${_ms.length}</span>
+      </div>
+      ${_next ? `
+        <div class="codex-ms-next">Следующий: <b>${_next.n} наборов</b> — ${_msText(_next)}</div>
+        <div class="codex-ms-bar"><div class="codex-ms-fill" style="width:${_pct}%"></div></div>
+        <div class="codex-ms-prog">${doneTotal} / ${_next.n}</div>`
+      : `<div class="codex-ms-next">Все бонусы получены!</div>`}
+      <button class="codex-ms-toggle" onclick="_codexMsOpen=!_codexMsOpen;renderCodexPanel()">
+        ${_codexMsOpen ? 'Скрыть ▴' : 'Все бонусы ▾'}</button>
+      ${_codexMsOpen ? `<div class="codex-ms-list">${msRows}</div>` : ''}
+    </div>`;
 
   const filtered = _codexSetsFiltered();
   const shown = filtered.slice(0, _codexShown);
@@ -2015,10 +2043,7 @@ function renderCodexPanel() {
       <div class="codex-total-label">Бонус кодекса · наборов завершено ${doneTotal}/${allSets.length}</div>
       <div class="codex-total-stats">${bonusParts.length ? bonusParts.join(' &nbsp; ') : '—'}</div>
     </div>
-    <div class="codex-total codex-milestones">
-      <div class="codex-total-label">Бонусы за завершённые наборы</div>
-      ${milestonesHtml}
-    </div>
+    ${milestonesHtml}
     <div class="codex-toolbar">
       <input id="codex-search-input" class="codex-search" type="text" placeholder="Поиск по названию…"
         value="${_escAttr(_codexFilters.q)}" oninput="_codexSetFilter('q', this.value)">
