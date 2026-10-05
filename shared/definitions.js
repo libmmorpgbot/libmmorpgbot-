@@ -737,7 +737,7 @@ const SEASON_DAILY_TASKS = [
   { id: 'mbuy',  target: 3,  points: 100 },  // купить на маркете на 3 GRAM
   { id: 'msell', target: 3,  points: 100 },  // продать на маркете на 3 GRAM
   { id: 'killDung', target: 20000, points: 50 },  // убить 20 000 монстров в Подземелье
-  { id: 'killFarm2', target: 20000, points: 50 }, // убить 20 000 монстров в Элитной фарм-зоне (farm2)
+  { id: 'killFarm2', target: 10000, points: 50 }, // убить 10 000 монстров в Элитной фарм-зоне (farm2)
 ];
 const SEASON_WEEKLY_TASKS = [
   { id: 'kill1',    target: 100000, points: 300 },  // 1 этаж (левый коридор)
