@@ -256,9 +256,10 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       s.socket.emit('matUpgraded', {
         from: res.from, to: res.to, success: res.outcome !== 'fail',
         count: res.count, succeeded: res.succeeded,
+        newNexumBalance: res.cost > 0 ? await nexumOf(t, pid) : undefined,
       });
       return res;
-    }, r => r && { outcome: r.outcome, from: r.from, to: r.to, spent: r.spent, chance: r.chance, count: r.count, succeeded: r.succeeded }));
+    }, r => r && { outcome: r.outcome, from: r.from, to: r.to, spent: r.spent, chance: r.chance, count: r.count, succeeded: r.succeeded, cost: r.cost }));
 
   safeOn('craftBox', ({ boxId } = {}) => s.act('craftBox', 'craftBoxError', async (t, pid) => {
     if (typeof boxId !== 'string' || !boxId) fail('Не выбран сундук', 'bad_box');

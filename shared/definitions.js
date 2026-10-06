@@ -2102,6 +2102,10 @@ const MAT_UPGRADE_RECIPES = [
   { from:'ore_uncommon', to:'ore_rare',      count:10, chance:1.0 },
   { from:'ore_rare',     to:'ore_epic',      count:10, chance:1.0 },
   { from:'ore_epic',     to:'ore_legendary', count:10, chance:1.0 },
+  // Безопасная заточка: 10 обычных и 20 Liberty — одна безопасная, без
+  // провала. nexumCost — доплата в Liberty ЗА ОДИН крафт (в партии из n —
+  // n раз); у остальных строк её нет, и они работают как прежде.
+  { from:'norm_stone',   to:'bless_stone',   count:10, nexumCost:20, chance:1.0 },
 ];
 
 // How many upgrades openMatModal's quantity picker (js/npc.js) can queue in

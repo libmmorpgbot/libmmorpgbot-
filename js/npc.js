@@ -711,7 +711,7 @@ function _craftsmanMatsTab() {
     const toMat   = CRAFT_MATS.find(m => m.id === recipe.to);
     if (!fromMat || !toMat) return;
     const have = countMaterial(recipe.from);
-    const canCraft = have >= recipe.count && invHasSpace();
+    const canCraft = have >= recipe.count && (window._nexumBalance || 0) >= (recipe.nexumCost || 0) && invHasSpace();
     const rc = RARITY_COLOR[toMat.rarity] || '#aea599';
     html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
       <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
@@ -1307,12 +1307,18 @@ function openMatModal(idx) {
   const have = countMaterial(recipe.from);
   // At least 1 even when there isn't enough for a single craft — the field
   // still has to show SOMETHING, and 0 would fight the "min=1" on the input.
+  // Доплата в Liberty (безопасная заточка) — тоже ограничивает партию.
+  const nexumPer = recipe.nexumCost || 0;
+  const nexumBal = window._nexumBalance || 0;
   const maxQty = Math.max(1, Math.min(Math.floor(have / recipe.count),
+    nexumPer > 0 ? Math.floor(nexumBal / nexumPer) : Infinity,
     typeof MAT_UPGRADE_MAX_BATCH === 'number' ? MAT_UPGRADE_MAX_BATCH : 999));
   _matUpgradeQty = Math.min(Math.max(Math.floor(_matUpgradeQty) || 1, 1), maxQty);
   const need = recipe.count * _matUpgradeQty;
+  const nexumNeed = nexumPer * _matUpgradeQty;
   const ok = have >= need;
-  const canCraft = ok && invHasSpace();
+  const nexumOk = nexumBal >= nexumNeed;
+  const canCraft = ok && nexumOk && invHasSpace();
   const rcTo = RARITY_COLOR[toMat.rarity] || '#aea599';
   // Below one full craft's worth, there's nothing to pick a quantity OF —
   // the stepper would just offer "1" next to a row already showing "не
@@ -1350,6 +1356,11 @@ function openMatModal(idx) {
         <span class="craft-req-name">${fromMat.name}</span>
         <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${need}</span>
       </div>
+      ${nexumPer > 0 ? `<div class="craft-req-row">
+        <span class="craft-req-icon">${_nexumIconHtml(20)}</span>
+        <span class="craft-req-name">Liberty</span>
+        <span class="craft-req-count" style="color:${nexumOk ? '#98e456' : '#eb4e61'}">${nexumBal}/${nexumNeed}</span>
+      </div>` : ''}
     </div>
     <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(recipe.chance * 100)}%</b></div>
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">${btnLbl}</button>
@@ -1383,6 +1394,7 @@ function craftMatUpgrade(idx) {
   const qty = Math.max(1, Math.floor(_matUpgradeQty) || 1);
   const fromHave = countMaterial(recipe.from);
   if (fromHave < recipe.count * qty) { _shopMsg(typeof t === 'function' ? t('craftNotEnoughMats') : 'Недостаточно материалов!'); return; }
+  if ((window._nexumBalance || 0) < (recipe.nexumCost || 0) * qty) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughLiberty') : 'Мало Liberty!'); return; }
   if (!invHasSpace())                { _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!'); return; }
   _pendingMatUpgradeIdx = idx;
   if (typeof netCraftMatUpgrade === 'function') netCraftMatUpgrade(recipe.from, qty);

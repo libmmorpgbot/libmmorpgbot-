@@ -5713,7 +5713,8 @@ function _initPetCraftHandlers(s) {
   s.on('craftBoxError', ({ msg }) => {
     if (typeof onBoxCraftError === 'function') onBoxCraftError(msg);
   });
-  s.on('matUpgraded', ({ from, to, success, count, succeeded }) => {
+  s.on('matUpgraded', ({ from, to, success, count, succeeded, newNexumBalance }) => {
+    if (typeof newNexumBalance === 'number') window._nexumBalance = newNexumBalance;
     if (typeof onMatUpgraded === 'function') onMatUpgraded(from, to, success, count, succeeded);
   });
   s.on('craftMatUpgradeError', ({ msg }) => {

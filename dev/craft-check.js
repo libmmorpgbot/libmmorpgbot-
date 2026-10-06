@@ -352,6 +352,22 @@ async function main() {
   eq(await countOf(up, mu.to), muRes.outcome === 'success' ? 1 : 0,
     `результат збігається з кидком (${muRes.outcome}, шанс ${mu.chance})`);
 
+  // Безопасная заточка: 10 обычных + 20 Liberty за штуку. Без Liberty —
+  // отказ, и камни не тронуты; с ней — партия списывает и то и другое.
+  const bs = MAT_UPGRADE_RECIPES.find(r => r.to === 'bless_stone');
+  ok(!!bs && bs.from === 'norm_stone' && bs.count === 10 && bs.nexumCost === 20 && bs.chance === 1,
+    'рецепт безпечної заточки: 10 звичайних + 20 Liberty');
+  const bsP = await mk('blessup');
+  await give(bsP, bs.from, bs.count * 2);
+  eq(await caught(() => tx(t => craft.upgradeMat(t, bsP, bs.from))), 'no_nexum', 'без Liberty — відмова');
+  eq(await countOf(bsP, bs.from), bs.count * 2, 'камені не списано при відмові');
+  await money.credit(null, bsP, 'nexum', bs.nexumCost * 2, { reason: 'seed', idemKey: `${TAG}:bs` });
+  const bsRes = await tx(t => craft.upgradeMat(t, bsP, bs.from, 2));
+  eq(bsRes.outcome, 'success', 'партія з 2 — успіх');
+  eq(await countOf(bsP, bs.from), 0, `${bs.count * 2} звичайних списано`);
+  eq(await countOf(bsP, bs.to), 2, '2 безпечні заточки отримано');
+  eq((await money.balancesOf(null, bsP)).nexum, 0, `${bs.nexumCost * 2} Liberty списано`);
+
   // ── class gear salvage ───────────────────────────────────────────────────
   // "Junk gear" is a catalog property here. The old handler asked the client's
   // copy of the inventory whether an item was stackable and what rarity it was

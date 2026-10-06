@@ -461,13 +461,24 @@ async function upgradeMat(db, playerId, from, n = 1) {
   }
   if (!await items.hasRoomFor(db, playerId, rec.to)) err('no_room', 'Инвентарь полон');
 
+  // Доплата в Liberty (безопасная заточка) — за каждый крафт партии. Списана
+  // в той же транзакции, что и материалы: любой отказ ниже откатит и её.
+  const nexumCost = (rec.nexumCost || 0) * count;
+  if (nexumCost > 0) {
+    const paid = await money.spend(db, playerId, 'nexum', nexumCost, {
+      reason: 'craft_mat_upgrade', refType: 'upgrade', refId: rec.to,
+      idemKey: `craft_mat:${playerId}:${rec.to}:${crypto.randomUUID()}`,
+    });
+    if (!paid) err('no_nexum', `Нужно ${nexumCost} Liberty`);
+  }
+
   if (!await items.removeQty(db, playerId, rec.from, need)) {
     err('no_mats', `Нужно ${need} × ${rec.from}`);
   }
   let succeeded = 0;
   for (let i = 0; i < count; i++) if (rand() < rec.chance) succeeded++;
   if (!succeeded) {
-    return { outcome: 'fail', from: rec.from, to: rec.to, chance: rec.chance, spent: need, count, succeeded };
+    return { outcome: 'fail', from: rec.from, to: rec.to, chance: rec.chance, spent: need, count, succeeded, cost: nexumCost };
   }
   const rowId = await items.add(db, playerId, rec.to,
     { qty: succeeded, source: 'craft', sourceRef: 'upgrade:' + rec.to });
@@ -475,7 +486,7 @@ async function upgradeMat(db, playerId, from, n = 1) {
   return {
     outcome: succeeded === count ? 'success' : 'partial',
     from: rec.from, to: rec.to, chance: rec.chance, itemId: rec.to, rowId,
-    spent: need, count, succeeded,
+    spent: need, count, succeeded, cost: nexumCost,
   };
 }
 
