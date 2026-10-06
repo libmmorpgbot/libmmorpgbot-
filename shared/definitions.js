@@ -3339,7 +3339,15 @@ const SKILL_CD_ADV_LEVEL_FLOOR_SEC = {};
 const SKILL_CD_FIXED_ADV_SEC = {
   warlock: { Q: 16 },  // «Бабочки» — никогда не меньше 16 с
 };
+// Улучшения навыков (первой и второй профессии) время НЕ меняют: ни
+// длительность бафов/станов/замедлений, ни перезарядку. Они дают урон,
+// лечение и прочее, а всё, что в секундах, всегда как на 1 уровне.
+// Изученный навык — 1, неизученный — 0 (его и так нельзя применить).
+function skillTimeLevel(skillLvl) {
+  return Math.max(0, Math.min(1, Math.floor(Number(skillLvl)) || 0));
+}
 function skillCooldownFloorMs(cls, key, advActive, skillLvl) {
+  skillLvl = skillTimeLevel(skillLvl);
   const row = (SKILL_CD_SEC[cls] || {})[key];
   if (!row) return 0;
   const fixed = advActive && (SKILL_CD_FIXED_ADV_SEC[cls] || {})[key];
@@ -3928,10 +3936,11 @@ function skillBuffOf(charClass, key, adv) {
   return def || null;
 }
 
-// Длительность окна бафа/ускорения: базовые секунды плюс секунда за уровень
-// навыка, но не больше maxSec, если он задан. Одна функция на клиент и сервер.
+// Длительность окна бафа/ускорения: базовые секунды плюс секунда (как на
+// 1 уровне — skillTimeLevel, улучшения её не растят), но не больше maxSec,
+// если он задан. Одна функция на клиент и сервер.
 function skillBuffSecOf(def, skillLvl) {
-  const sec = (def.sec || 0) + Math.max(0, Math.floor(Number(skillLvl)) || 0);
+  const sec = (def.sec || 0) + skillTimeLevel(skillLvl);
   return def.maxSec ? Math.min(sec, def.maxSec) : sec;
 }
 
@@ -4082,7 +4091,7 @@ if (typeof module !== 'undefined') module.exports = {
   UPGRADE_RESET_COST, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
-  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
+  SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, skillTimeLevel, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel, SKILL_CD_ADV_LEVEL_FLOOR_SEC, SKILL_CD_FIXED_ADV_SEC,

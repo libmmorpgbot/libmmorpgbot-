@@ -212,7 +212,9 @@ function _skillMult(key) {
   const cls = (_foreignCastCtx && _foreignCastCtx.key === key) ? _foreignCastCtx.cls : (player && player.type);
   return skillDamageMult(cls, key, _advActive(key), _skillLvl(key), (player && player.skillPct) || 0);
 }
-function _skillBuffSec(key)    { return _skillLvl(key); }
+// Секунды от уровня не растут: улучшения дают урон и прочее, а длительности
+// и перезарядки всегда как на 1 уровне (skillTimeLevel, shared/definitions.js).
+function _skillBuffSec(key)    { return skillTimeLevel(_skillLvl(key)); }
 // The same maxSec ceiling the server applies (skillBuffSecOf, shared/
 // definitions.js), so the HUD timer ends when the server's window does.
 function _cappedBuffSec(key, sec) {
@@ -1369,7 +1371,7 @@ function _dispatchSkillEffect(cls, sk) {
       // the skill's own description) — the generic assignment at the top of
       // useSkill() doesn't know that, so it's overridden here.
       const _advQ5 = _advActive('Q');
-      if (!_advQ5) player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
+      if (!_advQ5) player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(10, sk.cd - _skillBuffSec('Q')) * (1 - (player.cdrPct || 0));
       const hits = _advQ5 ? 5 : 3;
       const dmgMult = _skillMult('Q');
       const pvpTgt = _pvpPlayerTarget();
@@ -1394,7 +1396,7 @@ function _dispatchSkillEffect(cls, sk) {
     } else if (sk.key === 'W') { // Встряска / Сокрушение — AOE; base cooldown
       // improves -1s/level.
       const _advW5 = _advActive('W');
-      if (!_advW5) player.skillCooldowns[_cooldownKeyFor('W')] = Math.max(6, sk.cd - _skillLvl('W')) * (1 - (player.cdrPct || 0));
+      if (!_advW5) player.skillCooldowns[_cooldownKeyFor('W')] = Math.max(6, sk.cd - _skillBuffSec('W')) * (1 - (player.cdrPct || 0));
       const r = _advW5 ? 220 : 150;
       spawnAOE(player.x, player.y, r, 'shockwave', '#c98a4a');
       _skillAOEMult(r, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r, 'shockwave', '#c98a4a');
@@ -1454,7 +1456,7 @@ function _dispatchSkillEffect(cls, sk) {
       // itself, nothing to send here beyond the slot). Base cooldown
       // improves -1s/level.
       const _advQ6 = _advActive('Q');
-      if (!_advQ6) player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(10, sk.cd - _skillLvl('Q')) * (1 - (player.cdrPct || 0));
+      if (!_advQ6) player.skillCooldowns[_cooldownKeyFor('Q')] = Math.max(10, sk.cd - _skillBuffSec('Q')) * (1 - (player.cdrPct || 0));
       const dmgMult2 = _skillMult('Q');
       const pvpTgt3 = _pvpPlayerTarget();
       if (pvpTgt3) {
@@ -1484,7 +1486,7 @@ function _dispatchSkillEffect(cls, sk) {
       // +50% crit chance and +50% crit power, both 5s (+1s/level). Base
       // cooldown improves -1s/level.
       const _advE6 = _advActive('E');
-      if (!_advE6) player.skillCooldowns[_cooldownKeyFor('E')] = Math.max(20, sk.cd - _skillLvl('E')) * (1 - (player.cdrPct || 0));
+      if (!_advE6) player.skillCooldowns[_cooldownKeyFor('E')] = Math.max(20, sk.cd - _skillBuffSec('E')) * (1 - (player.cdrPct || 0));
       if (_advE6) killerTimer = 5 + _skillBuffSec('E'); else pierceTimer = 5 + _skillBuffSec('E');
       if (typeof netSkillBuff === 'function') netSkillBuff('E');
       recompute();
@@ -1494,7 +1496,7 @@ function _dispatchSkillEffect(cls, sk) {
       // base cooldown improves -1s/level / Прыжок за спину — leap behind the
       // target, ×2 dmg + heal 30% of own HP on arrival.
       const _advR7 = _advActive('R');
-      if (!_advR7) player.skillCooldowns[_cooldownKeyFor('R')] = Math.max(10, sk.cd - _skillLvl('R')) * (1 - (player.cdrPct || 0));
+      if (!_advR7) player.skillCooldowns[_cooldownKeyFor('R')] = Math.max(10, sk.cd - _skillBuffSec('R')) * (1 - (player.cdrPct || 0));
       if (_advR7) {
         const pvpTgt4 = _pvpPlayerTarget();
         let _rdx3, _rdy3, _chargeTarget3 = null, _chargePvpTarget3 = null;

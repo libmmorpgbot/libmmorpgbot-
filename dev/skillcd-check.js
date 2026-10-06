@@ -31,7 +31,7 @@ for (const cls of Object.keys(D.CHAR_DEF)) {
 }
 // Нижняя граница всегда меньше самой короткой честной перезарядки.
 ok(D.skillCooldownFloorMs('mage', 'Q', true, 10) < 5000 * (1 - 0.2), 'порог ниже перезарядки с максимальным сокращением');
-ok(D.skillCooldownFloorMs('runefighter', 'W', false, 10) === Math.floor(6000 * 0.8 * 0.9), 'уровневое сокращение учитывается');
+ok(D.skillCooldownFloorMs('runefighter', 'W', false, 10) === Math.floor(15000 * 0.8 * 0.9), 'перезарядка как на 1 уровне, улучшения её не сокращают');
 
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 process.exit(fail ? 1 : 0);

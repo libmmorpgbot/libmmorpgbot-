@@ -21,7 +21,7 @@ const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const chatMod = require('../chat-mod');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
-        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillCooldownFloorMs,
+        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillTimeLevel, skillCooldownFloorMs,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
         RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY, slotSkillLevel } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
@@ -616,9 +616,9 @@ module.exports = function registerSocial(s, safeOn, deps) {
     }
     if (cls === 'deathknight' && rk === 'Q') {
       const pct = adv ? ADV_VAMPIRISM_PCT : VAMPIRISM_PCT;
-      s.room.setSkillWindow(s.socket.id, 'vampirism', (VAMPIRISM_SEC + lvl) * 1000, pct);
+      s.room.setSkillWindow(s.socket.id, 'vampirism', (VAMPIRISM_SEC + skillTimeLevel(lvl)) * 1000, pct);
       lastHealAt.set(k, now);
-      return { window: 'vampirism', sec: VAMPIRISM_SEC + lvl, pct };
+      return { window: 'vampirism', sec: VAMPIRISM_SEC + skillTimeLevel(lvl), pct };
     }
     // «Регенерация» (Rune Fighter E base) — flat HP/sec for a fixed window,
     // not a fraction of maxHp, so it can't go through skillSelfHealOf below
