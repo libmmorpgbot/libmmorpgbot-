@@ -1009,7 +1009,7 @@ Object.assign(I18N_UI, {
   bonusToHeal: { ru: 'к лечению', en: 'to healing', uk: 'до лікування', es: 'a la curación', tr: 'iyileşmeye', pt: 'à cura' },
   bonusToRange: { ru: 'px дальность', en: 'px range', uk: 'px дальність', es: 'px alcance', tr: 'px menzil', pt: 'px alcance' },
   bonusTypeDamage: { ru: '+1%/ур. урон', en: '+1%/lvl dmg', uk: '+1%/рів. шкода', es: '+1%/niv. daño', tr: '+%1/sv. hasar', pt: '+1%/nív. dano' },
-  bonusTypeBuff: { ru: '+5/ур. атаки на время бафа', en: '+5/lvl attack while active', uk: '+5/рів. атаки на час бафу', es: '+5/niv. ataque mientras dure', tr: 'Etkiyken sv. başına +5 saldırı', pt: '+5/nív. ataque enquanto ativo' },
+  bonusTypeBuff: { ru: '+2%/ур. атаки на время бафа', en: '+2%/lvl attack while active', uk: '+2%/рів. атаки на час бафу', es: '+2%/niv. ataque mientras dure', tr: 'Etkiyken sv. başına +%2 saldırı', pt: '+2%/nív. ataque enquanto ativo' },
   bonusToBuffAtk: { ru: 'к атаке на время бафа', en: 'attack while active', uk: 'до атаки на час бафу', es: 'de ataque mientras dure', tr: 'saldırı (etkiyken)', pt: 'de ataque enquanto ativo' },
   bonusTypeHeal: { ru: '+1%/ур. лечение', en: '+1%/lvl heal', uk: '+1%/рів. лікування', es: '+1%/niv. curación', tr: '+%1/sv. iyileşme', pt: '+1%/nív. cura' },
   bonusTypeMobility: { ru: '+10px/ур. дальность', en: '+10px/lvl range', uk: '+10px/рів. дальність', es: '+10px/niv. alcance', tr: '+10px/sv. menzil', pt: '+10px/nív. alcance' },

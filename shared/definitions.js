@@ -4031,8 +4031,8 @@ function skillBuffOf(charClass, key, adv) {
 // если он задан. Одна функция на клиент и сервер.
 // ── что дают улучшения навыка ───────────────────────────────────────────────
 // Категория слота: damage → +1% урона за уровень, heal → +1% лечения,
-// mobility → +10px дальности, buff → +SKILL_BUFF_ATK_PER_LVL атаки (единиц, не
-// процентов) за уровень, пока баф действует. Время действия и перезарядка от
+// mobility → +10px дальности, buff → +SKILL_BUFF_ATK_PCT_PER_LVL атаки (2% за
+// уровень, 10 ур. — +20%), пока баф действует. Время действия и перезарядка от
 // уровня не зависят вовсе (skillTimeLevel выше).
 const SKILL_BONUS_TYPE = {
   lev:         { Q: 'damage', W: 'damage', E: 'buff', R: 'damage'   },
@@ -4043,7 +4043,7 @@ const SKILL_BONUS_TYPE = {
   runefighter: { Q: 'damage', W: 'damage', E: 'heal', R: 'buff'     },
   assassin:    { Q: 'damage', W: 'mobility', E: 'buff', R: 'buff'   },
 };
-const SKILL_BUFF_ATK_PER_LVL = 5;
+const SKILL_BUFF_ATK_PCT_PER_LVL = 0.02;
 // Сколько секунд держится прибавка к атаке у баф-слота — ровно время действия
 // самого навыка на 1 уровне (js/player.js, ветки useSkill), [базовый,
 // продвинутый]. 0 — у этого варианта действия во времени нет (прыжок
@@ -4061,14 +4061,15 @@ function skillBonusTypeOf(cls, key) {
   const byCls = Object.hasOwn(SKILL_BONUS_TYPE, cls) ? SKILL_BONUS_TYPE[cls] : null;
   return (byCls && Object.hasOwn(byCls, key)) ? byCls[key] : null;
 }
-// Прибавка к атаке за уровни баф-навыка: { atk, sec } или null.
+// Прибавка к атаке за уровни баф-навыка: { pct, sec } или null — pct доля
+// (0.08 = +8%), множится на атаку, как и сами бафы.
 function skillBuffAtkOf(cls, key, adv, skillLvl) {
   if (skillBonusTypeOf(cls, key) !== 'buff') return null;
   const lvl = Math.max(0, Math.floor(Number(skillLvl)) || 0);
   const row = Object.hasOwn(SKILL_BUFF_ATK_SEC, cls) && Object.hasOwn(SKILL_BUFF_ATK_SEC[cls], key) ? SKILL_BUFF_ATK_SEC[cls][key] : null;
   const sec = row ? row[adv ? 1 : 0] : 0;
   if (lvl <= 0 || !(sec > 0)) return null;
-  return { atk: lvl * SKILL_BUFF_ATK_PER_LVL, sec };
+  return { pct: Math.round(lvl * SKILL_BUFF_ATK_PCT_PER_LVL * 1000) / 1000, sec };
 }
 
 function skillBuffSecOf(def, skillLvl) {
@@ -4226,7 +4227,7 @@ if (typeof module !== 'undefined') module.exports = {
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, skillTimeLevel,
-  SKILL_BONUS_TYPE, SKILL_BUFF_ATK_PER_LVL, SKILL_BUFF_ATK_SEC, skillBonusTypeOf, skillBuffAtkOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
+  SKILL_BONUS_TYPE, SKILL_BUFF_ATK_PCT_PER_LVL, SKILL_BUFF_ATK_SEC, skillBonusTypeOf, skillBuffAtkOf, pvpDamageMult, STICKER_DEF, STICKER_LIFE_MS, STICKER_COOLDOWN_MS, PVP_CP_MULT, CP_REGEN_DELAY_MS, CP_REGEN_PCT_PER_SEC, SKILL_CD_SEC, skillCooldownFloorMs, skillMaxHitsPerTarget, SKILL_SPEED_MAX_PCT,
   RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC,
   SKILL_STUDY_COST, SKILL_UPGRADE_COST, SKILL_UPGRADE_CHANCE, ADV_SKILL_STUDY_COST,
   ADV_SKILL_UPGRADE_COST, ADV_SKILL_UPGRADE_CHANCE, slotSkillLevel, SKILL_CD_ADV_LEVEL_FLOOR_SEC, SKILL_CD_FIXED_ADV_SEC,

@@ -437,9 +437,9 @@ function recompute() {
   // function rebuilds both fields from scratch, so any unrelated recompute()
   // — a level-up, a gear swap, a potion buff expiring — used to silently
   // erase a still-running skill buff while its timer and icon kept going.
-  // Уровни баф-навыков: плоская прибавка, до множителей бафов — как у сервера
+  // Уровни баф-навыков: +2% за уровень множителем — как окно 'lvl:' у сервера
   // (Room._atkOf).
-  a += _lvlAtkFlat();
+  a = Math.floor(a * _lvlAtkMult());
   if (typeof battleCryTimer !== 'undefined' && battleCryTimer > 0) a = Math.floor(a * 1.20);
   // Advanced-skill ATK buffs (own separate timers — see js/state.js's
   // comment block above them for why they can't just share battleCryTimer).
@@ -977,22 +977,22 @@ function useForeignSkill() {
 // функции нет ни одной ссылки на player.type — только на cls и на sk.key —
 // именно поэтому один и тот же диспетчер годится для обоих вызовов.
 // ── прибавка к атаке за уровни баф-навыка ──────────────────────────────
-// +5 атаки за уровень, пока баф действует (skillBuffAtkOf, shared/
+// +2% атаки за уровень, пока баф действует (skillBuffAtkOf, shared/
 // definitions.js). Бой считает сервер по своему окну (netSkillAtkBuff); эта
 // карта — только для цифры атаки в панели, ключ — слот перезарядки.
 const _lvlAtkBuffs = {};
-function _lvlAtkFlat() {
+function _lvlAtkMult() {
   const now = Date.now();
-  let sum = 0;
+  let m = 1;
   for (const k in _lvlAtkBuffs) {
-    if (_lvlAtkBuffs[k].until > now) sum += _lvlAtkBuffs[k].atk;
+    if (_lvlAtkBuffs[k].until > now) m *= 1 + _lvlAtkBuffs[k].pct;
   }
-  return sum;
+  return m;
 }
 function _startLvlAtkBuff(cls, key) {
   const b = typeof skillBuffAtkOf === 'function' ? skillBuffAtkOf(cls, key, _advActive(key), _skillLvl(key)) : null;
   if (!b) return;
-  _lvlAtkBuffs[_cooldownKeyFor(key)] = { until: Date.now() + b.sec * 1000, atk: b.atk };
+  _lvlAtkBuffs[_cooldownKeyFor(key)] = { until: Date.now() + b.sec * 1000, pct: b.pct };
   if (typeof netSkillAtkBuff === 'function') netSkillAtkBuff(_cooldownKeyFor(key));
   if (typeof recompute === 'function') recompute();
 }

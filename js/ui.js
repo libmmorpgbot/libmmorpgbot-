@@ -1337,9 +1337,9 @@ function _skillBonusDesc(type, level, mobilityMult) {
   if (level <= 0) return null;
   switch (type) {
     case 'damage':   return `+${level}% ${t('bonusToDamage')}`;
-    // +5 атаки за уровень, пока баф действует (skillBuffAtkOf). Время
+    // +2% атаки за уровень, пока баф действует (skillBuffAtkOf). Время
     // действия от уровня не растёт — см. skillTimeLevel.
-    case 'buff':     return `+${level * (typeof SKILL_BUFF_ATK_PER_LVL === 'number' ? SKILL_BUFF_ATK_PER_LVL : 5)} ${t('bonusToBuffAtk')}`;
+    case 'buff':     return `+${Math.round(level * (typeof SKILL_BUFF_ATK_PCT_PER_LVL === 'number' ? SKILL_BUFF_ATK_PCT_PER_LVL : 0.02) * 100)}% ${t('bonusToBuffAtk')}`;
     case 'heal':     return `+${level}% ${t('bonusToHeal')}`;
     // 10px/level is the shared 'mobility' rate (SKILL_BONUS_TYPE above) — true
     // for assassin W's AOE radius, but mage R's dash distance was doubled

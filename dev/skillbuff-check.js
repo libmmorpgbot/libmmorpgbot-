@@ -77,18 +77,19 @@ console.log('\n  ── атака под бафом ──');
 }
 
 // ── 2б. уровни баф-навыка: +5 атаки за уровень, пока баф действует ─────────
-console.log('\n  ── уровни бафа: +5 атаки за уровень ──');
+console.log('\n  ── уровни бафа: +2% атаки за уровень ──');
 {
   const p = { socketId: 'lv', atk: 1000, def: 0 };
   room.players.set('lv', p);
   const lb = D.skillBuffAtkOf('deathknight', 'E', false, 4); // Ярость ур.4
-  ok(!!lb && lb.atk === 20 && lb.sec === 6, 'Ярость ур.4: +20 атаки на 6 с (время как на 1 ур.)', JSON.stringify(lb));
+  ok(!!lb && lb.pct === 0.08 && lb.sec === 6, 'Ярость ур.4: +8% атаки на 6 с (время как на 1 ур.)', JSON.stringify(lb));
+  eq(D.skillBuffAtkOf('deathknight', 'E', false, 10).pct, 0.2, 'на 10 уровне — +20%');
   eq(D.skillBuffAtkOf('deathknight', 'W', false, 4), null, 'у атакующего навыка прибавки к атаке нет');
   eq(D.skillBuffAtkOf('deathknight', 'Q', false, 0), null, 'неизученный — ничего');
-  setWin.call(room, 'lv', 'buff', lb.sec * 1000, { slot: 'lvl:E', atkFlat: lb.atk });
-  eq(room._atkOf(p), 1020, 'прибавка за уровни дошла до боя: 1000 + 20');
+  setWin.call(room, 'lv', 'buff', lb.sec * 1000, { slot: 'lvl:E', atk: 1 + lb.pct });
+  eq(Math.round(room._atkOf(p)), 1080, 'прибавка за уровни дошла до боя: 1000 × 1.08');
   setWin.call(room, 'lv', 'buff', 10000, { slot: 'E', ...D.skillBuffOf('deathknight', 'E', false) });
-  eq(room._atkOf(p), Math.round((1000 + 20) * 1.20), 'вместе с самим бафом: (1000 + 20) × 1.20');
+  eq(Math.round(room._atkOf(p)), Math.round(1000 * 1.08 * 1.20), 'вместе с самим бафом: 1000 × 1.08 × 1.20');
 }
 
 // ── 3. окно кончается ──────────────────────────────────────────────────────

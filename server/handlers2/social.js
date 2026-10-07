@@ -546,8 +546,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // Клиент, как и с лечением, сообщает ТОЛЬКО клавишу: во сколько раз и на
   // сколько секунд — решает общая таблица (SKILL_HASTE) из класса и
   // изученности, то есть из того, что уже лежит в базе.
-  // Прибавка к атаке за уровни баф-навыка: +SKILL_BUFF_ATK_PER_LVL единиц за
-  // уровень, пока баф действует (skillBuffAtkOf, shared/definitions.js). Своё
+  // Прибавка к атаке за уровни баф-навыка: +2% за уровень, пока баф действует
+  // (skillBuffAtkOf, shared/definitions.js) — множителем, как и сами бафы. Своё
   // окно на слот ('lvl:Q') — рядом с окном самого бафа, а не вместо него.
   // Отказ тихий (свой errEvent, клиент его не показывает): это фоновая
   // прибавка к уже сработавшему навыку, а не кнопка, о провале которой надо
@@ -570,8 +570,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
     const now = Date.now();
     if (castTooSoon('lvlatk', k, cls, rk, adv, lvl, now)) fail('Навык ещё перезаряжается', 'cooldown');
     lastCastAt.set('lvlatk:' + k, now);
-    s.room.setSkillWindow(s.socket.id, 'buff', b.sec * 1000, { slot: 'lvl:' + k, atkFlat: b.atk });
-    return { atk: b.atk, sec: b.sec };
+    s.room.setSkillWindow(s.socket.id, 'buff', b.sec * 1000, { slot: 'lvl:' + k, atk: 1 + b.pct });
+    return { pct: b.pct, sec: b.sec };
   }));
 
   safeOn('skillHaste', ({ key } = {}) => s.act('skillHaste', 'skillError', async (t, pid) => {
