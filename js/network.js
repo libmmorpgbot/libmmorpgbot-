@@ -3637,6 +3637,12 @@ function netSkillBuff(key) {
   if (!socket?.connected) return;
   socket.emit('skillBuff', { key: String(key || '') });
 }
+// Прибавка к атаке за уровни баф-навыка — сервер сам решает, сколько и на
+// сколько (skillBuffAtkOf); клиент шлёт только клавишу.
+function netSkillAtkBuff(key) {
+  if (!socket?.connected) return;
+  socket.emit('skillAtkBuff', { key: String(key || '') });
+}
 // `key` is the skill slot that was cast (Q/W/E/R). The server derives the
 // damage multiplier from it — see skillDamageMult, shared/definitions.js — so
 // this no longer sends a number for the server to trust. `multiplier` is still

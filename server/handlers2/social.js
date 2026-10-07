@@ -21,7 +21,7 @@ const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const chatMod = require('../chat-mod');
 const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
-        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillTimeLevel, skillCooldownFloorMs,
+        SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillTimeLevel, skillCooldownFloorMs, skillBuffAtkOf,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
         RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY, slotSkillLevel } = require('../../shared/definitions');
 const stats = require('../db/repos/stats');
@@ -546,6 +546,34 @@ module.exports = function registerSocial(s, safeOn, deps) {
   // Клиент, как и с лечением, сообщает ТОЛЬКО клавишу: во сколько раз и на
   // сколько секунд — решает общая таблица (SKILL_HASTE) из класса и
   // изученности, то есть из того, что уже лежит в базе.
+  // Прибавка к атаке за уровни баф-навыка: +SKILL_BUFF_ATK_PER_LVL единиц за
+  // уровень, пока баф действует (skillBuffAtkOf, shared/definitions.js). Своё
+  // окно на слот ('lvl:Q') — рядом с окном самого бафа, а не вместо него.
+  // Отказ тихий (свой errEvent, клиент его не показывает): это фоновая
+  // прибавка к уже сработавшему навыку, а не кнопка, о провале которой надо
+  // сообщать.
+  safeOn('skillAtkBuff', ({ key } = {}) => s.act('skillAtkBuff', 'skillAtkBuffError', async (t, pid) => {
+    const k = String(key || '');
+    if (k !== 'Q' && k !== 'W' && k !== 'E' && k !== 'R' && k !== FOREIGN_SKILL_KEY) fail('Неизвестный навык', 'bad_skill');
+    if (!s.room) fail('Вы не на карте — перезайдите', 'no_room');
+    const st = await stats.of(t, pid);
+    if (!st) fail('Персонаж недоступен — перезайдите', 'no_stats');
+    const sk = await players.skillsOf(t, pid);
+    const isForeign = k === FOREIGN_SKILL_KEY;
+    if (isForeign && !st.foreignSkill) fail('Навык не изучен', 'not_learned');
+    const cls = isForeign ? st.foreignSkill.cls : st.charClass;
+    const rk  = isForeign ? st.foreignSkill.key : k;
+    const lvl = isForeign ? (st.foreignSkill.level || 0) : slotSkillLevel(sk, k);
+    const adv = isForeign ? false : !!(sk.advSkillLearned[k] && sk.advSkillActive[k]);
+    const b = skillBuffAtkOf(cls, rk, adv, lvl);
+    if (!b) fail('Этот навык не даёт атаки', 'not_buff');
+    const now = Date.now();
+    if (castTooSoon('lvlatk', k, cls, rk, adv, lvl, now)) fail('Навык ещё перезаряжается', 'cooldown');
+    lastCastAt.set('lvlatk:' + k, now);
+    s.room.setSkillWindow(s.socket.id, 'buff', b.sec * 1000, { slot: 'lvl:' + k, atkFlat: b.atk });
+    return { atk: b.atk, sec: b.sec };
+  }));
+
   safeOn('skillHaste', ({ key } = {}) => s.act('skillHaste', 'skillError', async (t, pid) => {
     const k = String(key || '');
     if (k !== 'Q' && k !== 'W' && k !== 'E' && k !== 'R' && k !== FOREIGN_SKILL_KEY) fail('Неизвестный навык', 'bad_skill');

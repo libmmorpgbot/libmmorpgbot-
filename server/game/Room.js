@@ -4273,6 +4273,8 @@ class Room {
         critChance: Number(pct && pct.critChance) || 0,
         critPower: Number(pct && pct.critPower) || 0,
         hp: Number(pct && pct.hp) || 1,
+        // Плоская прибавка к атаке за уровни баф-навыка (skillBuffAtkOf).
+        atkFlat: Number(pct && pct.atkFlat) || 0,
       };
       return true;
     }
@@ -4357,12 +4359,13 @@ class Room {
   // перемножаются, прибавки к криту складываются — как в recompute() у
   // клиента, где у каждого навыка свой таймер.
   _buffAgg(p) {
-    const agg = { on: false, atk: 1, def: 1, hp: 1, critChance: 0, critPower: 0 };
+    const agg = { on: false, atk: 1, atkFlat: 0, def: 1, hp: 1, critChance: 0, critPower: 0 };
     const now = Date.now();
     for (const b of Object.values((p && p._buffs) || {})) {
       if (!(b.until > now)) continue;
       agg.on = true;
       agg.atk *= b.atk; agg.def *= b.def; agg.hp *= b.hp;
+      agg.atkFlat += b.atkFlat || 0;
       agg.critChance += b.critChance; agg.critPower += b.critPower;
     }
     return agg;
@@ -4373,7 +4376,9 @@ class Room {
   // записи одного.
   _petBuffOn(p) { return !!(p && p._petBuffUntil > Date.now()); }
   _atkOf(p) {
-    let a = (p.atk || 0) * this._buffAgg(p).atk;
+    // Плоская прибавка (уровни баф-навыков) — к базе, до множителей бафов.
+    const agg = this._buffAgg(p);
+    let a = ((p.atk || 0) + agg.atkFlat) * agg.atk;
     if (this._petBuffOn(p)) a *= (p._petBuffAtk || 1);
     return a;
   }

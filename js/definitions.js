@@ -207,17 +207,8 @@ const ADV_SKILL_DEF = {
   ],
 };
 
-// Bonus category for each skill key per class
-// damage → +1% per level  |  buff → +1s duration  |  barrier → +0.2s  |  invis → +0.2s  |  heal → +1%  |  mobility → +10px range
-const SKILL_BONUS_TYPE = {
-  lev:         { Q: 'damage', W: 'damage', E: 'buff', R: 'damage'   },
-  deathknight: { Q: 'buff',   W: 'damage', E: 'buff', R: 'damage'   },
-  ranger:      { Q: 'damage', W: 'damage', E: 'buff', R: 'buff'     },
-  mage:        { Q: 'damage', W: 'damage', E: 'buff', R: 'mobility' },
-  warlock:     { Q: 'heal',   W: 'buff',   E: 'buff', R: 'heal'     },
-  runefighter: { Q: 'damage', W: 'damage', E: 'heal', R: 'buff'     },
-  assassin:    { Q: 'damage', W: 'mobility', E: 'buff', R: 'buff'   },
-};
+// SKILL_BONUS_TYPE (what each slot's upgrades give) lives in shared/
+// definitions.js now — the server pays the buff slots' attack bonus from it.
 
 const NPC_DEF = [
   { id:'merchant',   name:'Торговец',   icon:'merchant',   color:'#ffaa00', desc:'Зелья и расходники'          },

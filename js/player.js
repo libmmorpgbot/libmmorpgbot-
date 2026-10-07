@@ -437,6 +437,9 @@ function recompute() {
   // function rebuilds both fields from scratch, so any unrelated recompute()
   // — a level-up, a gear swap, a potion buff expiring — used to silently
   // erase a still-running skill buff while its timer and icon kept going.
+  // Уровни баф-навыков: плоская прибавка, до множителей бафов — как у сервера
+  // (Room._atkOf).
+  a += _lvlAtkFlat();
   if (typeof battleCryTimer !== 'undefined' && battleCryTimer > 0) a = Math.floor(a * 1.20);
   // Advanced-skill ATK buffs (own separate timers — see js/state.js's
   // comment block above them for why they can't just share battleCryTimer).
@@ -973,7 +976,38 @@ function useForeignSkill() {
 // useSkill() выше, заимствованный класс для useForeignSkill(). Внутри этой
 // функции нет ни одной ссылки на player.type — только на cls и на sk.key —
 // именно поэтому один и тот же диспетчер годится для обоих вызовов.
+// ── прибавка к атаке за уровни баф-навыка ──────────────────────────────
+// +5 атаки за уровень, пока баф действует (skillBuffAtkOf, shared/
+// definitions.js). Бой считает сервер по своему окну (netSkillAtkBuff); эта
+// карта — только для цифры атаки в панели, ключ — слот перезарядки.
+const _lvlAtkBuffs = {};
+function _lvlAtkFlat() {
+  const now = Date.now();
+  let sum = 0;
+  for (const k in _lvlAtkBuffs) {
+    if (_lvlAtkBuffs[k].until > now) sum += _lvlAtkBuffs[k].atk;
+  }
+  return sum;
+}
+function _startLvlAtkBuff(cls, key) {
+  const b = typeof skillBuffAtkOf === 'function' ? skillBuffAtkOf(cls, key, _advActive(key), _skillLvl(key)) : null;
+  if (!b) return;
+  _lvlAtkBuffs[_cooldownKeyFor(key)] = { until: Date.now() + b.sec * 1000, atk: b.atk };
+  if (typeof netSkillAtkBuff === 'function') netSkillAtkBuff(_cooldownKeyFor(key));
+  if (typeof recompute === 'function') recompute();
+}
+// Кончилась — пересчитать атаку в панели.
+if (typeof setInterval === 'function') {
+  setInterval(() => {
+    const now = Date.now();
+    let changed = false;
+    for (const k in _lvlAtkBuffs) if (_lvlAtkBuffs[k].until <= now) { delete _lvlAtkBuffs[k]; changed = true; }
+    if (changed && typeof recompute === 'function' && player) recompute();
+  }, 500);
+}
+
 function _dispatchSkillEffect(cls, sk) {
+  _startLvlAtkBuff(cls, sk.key);
   if (cls === 'deathknight') {
     if (sk.key === 'Q') {
       // Таймер здесь остаётся только для иконки на панели навыков: лечит

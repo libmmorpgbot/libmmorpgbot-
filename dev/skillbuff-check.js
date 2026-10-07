@@ -76,6 +76,21 @@ console.log('\n  ── атака под бафом ──');
   eq(room._atkOf(p), 1250, 'продвинутая версия даёт 25%');
 }
 
+// ── 2б. уровни баф-навыка: +5 атаки за уровень, пока баф действует ─────────
+console.log('\n  ── уровни бафа: +5 атаки за уровень ──');
+{
+  const p = { socketId: 'lv', atk: 1000, def: 0 };
+  room.players.set('lv', p);
+  const lb = D.skillBuffAtkOf('deathknight', 'E', false, 4); // Ярость ур.4
+  ok(!!lb && lb.atk === 20 && lb.sec === 6, 'Ярость ур.4: +20 атаки на 6 с (время как на 1 ур.)', JSON.stringify(lb));
+  eq(D.skillBuffAtkOf('deathknight', 'W', false, 4), null, 'у атакующего навыка прибавки к атаке нет');
+  eq(D.skillBuffAtkOf('deathknight', 'Q', false, 0), null, 'неизученный — ничего');
+  setWin.call(room, 'lv', 'buff', lb.sec * 1000, { slot: 'lvl:E', atkFlat: lb.atk });
+  eq(room._atkOf(p), 1020, 'прибавка за уровни дошла до боя: 1000 + 20');
+  setWin.call(room, 'lv', 'buff', 10000, { slot: 'E', ...D.skillBuffOf('deathknight', 'E', false) });
+  eq(room._atkOf(p), Math.round((1000 + 20) * 1.20), 'вместе с самим бафом: (1000 + 20) × 1.20');
+}
+
 // ── 3. окно кончается ──────────────────────────────────────────────────────
 // Баф, который не кончается, — это не баф, а прибавка к характеристике.
 console.log('\n  ── окно ──');
