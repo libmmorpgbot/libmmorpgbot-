@@ -454,7 +454,10 @@ function calcGoldDrop(enemy) {
   // (server/index.js's attack/skillAttack handlers) and the boss's own fixed
   // 1 bless_stone + 100 Liberty payout (_coopBossTrackKill).
   if (enemy.arm === 'coop') return 0;
-  const g = goldAtLevel(enemy.rlvl || 1);
+  // Подземелье: у каждого лича своё золото (DUNGEON_LICH: командир 500,
+  // остальные 300) — его и обещает окно монстров. Формула уровня давала
+  // goldAtLevel(DUNGEON_LVL) = 50 вместо них.
+  const g = (enemy.dungeon && enemy.gold > 0) ? enemy.gold : goldAtLevel(enemy.rlvl || 1);
   if (enemy.isBoss) return g;
   return Math.random() > 0.30 ? 0 : g;
 }
