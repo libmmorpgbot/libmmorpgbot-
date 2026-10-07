@@ -4909,7 +4909,7 @@ function _initRace10Handlers(s) {
       // 'idle' outside the 20:30 MSK, 5-minute window, 'reg' while it's open —
       // nextAt is the next window's open time; startAt is when registration
       // closes and the run itself starts, used for the countdown while
-      // phase is 'reg' (see _race10BodyHTML, js/ui.js).
+      // phase is 'reg' (see _race10Model, js/ui.js).
       phase: st.phase || 'idle', nextAt: st.nextAt || 0, startAt: st.startAt || 0,
     };
     if (st.registered !== undefined) _race10Registered = !!st.registered;

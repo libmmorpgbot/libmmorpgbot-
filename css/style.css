@@ -3052,6 +3052,7 @@ canvas { display:block; width:100%; height:100%; }
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   z-index: 1;
+  padding-bottom: 8px;
 }
 /* Each card's own themed art (images/events/<key>.jpg — a crop of just the
    hexagon-icon + scene, no text baked in, see the upload that prompted this)
@@ -3068,7 +3069,7 @@ canvas { display:block; width:100%; height:100%; }
   width: 100%;
   flex-shrink: 0;
   min-height: 86px;
-  padding: 10px 14px 10px 148px;
+  padding: 10px 14px 10px 132px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--cc) 38%, rgba(193,204,213,.12));
   background: #070c13;
@@ -3082,13 +3083,14 @@ canvas { display:block; width:100%; height:100%; }
 .event-tab-item::before {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0; bottom: 0; left: 0;
+  width: 140px;   /* art stays in its own column — never under the title */
   background-image: var(--art);
   background-repeat: no-repeat;
   background-position: left center;
-  background-size: auto 100%;
-  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 48%, transparent 92%);
-          mask-image: linear-gradient(to right, #000 0%, #000 48%, transparent 92%);
+  background-size: cover;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 55%, transparent 100%);
+          mask-image: linear-gradient(to right, #000 0%, #000 55%, transparent 100%);
   z-index: 0;
 }
 .event-tab-item.active {
@@ -3102,6 +3104,121 @@ canvas { display:block; width:100%; height:100%; }
 .event-tab-sched svg { flex-shrink: 0; opacity: .85; }
 .event-tab-arrow { position: relative; z-index: 1; flex-shrink: 0; color: var(--cc); opacity: .6; }
 .event-tab-item.active .event-tab-arrow { opacity: 1; }
+/* Cards the player can't use right now fade back so the playable ones lead. */
+.event-tab-item.evt-off { opacity: .62; }
+.event-tab-item.evt-live, .event-tab-item.evt-mine, .event-tab-item.evt-open { border-color: color-mix(in srgb, var(--cc) 70%, transparent); }
+
+/* List sections: «Доступно сейчас» / «Скоро» / «Пока недоступно». */
+.evt-sec-hdr {
+  flex-shrink: 0;
+  margin: 6px 2px 0;
+  font-size: 10.5px; font-weight: 800;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: #6f8597;
+}
+.evt-sec-hdr:first-child { margin-top: 0; }
+.evt-sec-now { color: #8fd65c; }
+
+/* Status pill — one colour per state, same on the card and on the page. */
+.evt-pill {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 1.3;
+  background: rgba(125,138,150,.16); color: #b5c0ca;
+  border: 1px solid rgba(125,138,150,.3);
+  white-space: nowrap;
+}
+.evt-pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.evt-pill-open { background: rgba(143,214,92,.14); color: #a6e57a; border-color: rgba(143,214,92,.4); }
+.evt-pill-mine { background: rgba(255,207,138,.14); color: #ffcf8a; border-color: rgba(255,207,138,.45); }
+.evt-pill-live { background: rgba(255,107,94,.16); color: #ff8c80; border-color: rgba(255,107,94,.5); }
+.evt-pill-live i { animation: evtPulse 1.2s ease-in-out infinite; }
+.evt-pill-soon { background: rgba(111,168,214,.13); color: #8fc2ea; border-color: rgba(111,168,214,.35); }
+.evt-pill-off  { background: rgba(125,138,150,.12); color: #8e9aa5; border-color: rgba(125,138,150,.28); }
+@keyframes evtPulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .evt-pill-live i { animation: none; } }
+
+/* ── Event page (_evtPageHTML, js/ui.js) ── */
+.evp { display: flex; flex-direction: column; gap: 12px; }
+.evp-hero {
+  position: relative;
+  min-height: 112px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--cc) 45%, rgba(193,204,213,.12));
+  background: #070c13;
+  overflow: hidden;
+  display: flex; align-items: flex-end;
+  padding: 12px 14px 12px 136px;
+}
+.evp-hero::before {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 150px;
+  background-image: var(--art); background-repeat: no-repeat;
+  background-position: left center; background-size: cover;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 55%, transparent 100%);
+          mask-image: linear-gradient(to right, #000 0%, #000 55%, transparent 100%);
+}
+.evp-hero-text { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.evp-title { font-size: 18px; font-weight: 800; color: var(--cc); text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+.evp-sub { font-size: 12px; line-height: 1.35; color: #b8c5d0; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+.evp-pill-row { display: flex; justify-content: center; }
+.evp-pill-row .evt-pill { align-self: auto; }
+
+.evp-status {
+  text-align: center;
+  padding: 12px 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--cc) 9%, rgba(0,0,0,.25));
+  border: 1px solid color-mix(in srgb, var(--cc) 25%, rgba(193,204,213,.08));
+}
+.evp-stat-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8197ab; }
+.evp-stat-value {
+  margin-top: 2px;
+  font-size: 32px; font-weight: 800; letter-spacing: 1px;
+  color: #ffcf8a; font-variant-numeric: tabular-nums;
+}
+.evp-stat-value.is-text { font-size: 19px; letter-spacing: 0; line-height: 1.3; margin-top: 4px; }
+.evp-stat-note { margin-top: 3px; font-size: 12.5px; color: #a8bccb; }
+
+.evp-action { display: flex; flex-direction: column; gap: 8px; }
+.evp-action .coop-grp-box { margin-bottom: 0; }
+.evp-sub-hdr { margin-top: 6px; font-size: 11px; font-weight: 700; color: #8197ab; letter-spacing: .05em; text-transform: uppercase; }
+.evp-action .coop-open-list { margin-top: 0; }
+.evp-hint {
+  font-size: 12px; line-height: 1.45; color: #a8bccb;
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(111,168,214,.08); border: 1px solid rgba(111,168,214,.2);
+}
+
+.evp-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.evp-fact {
+  min-width: 0;
+  padding: 8px 10px; border-radius: 10px;
+  background: rgba(193,204,213,.04); border: 1px solid rgba(193,204,213,.09);
+}
+.evp-fact-k { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6f8597; }
+.evp-fact-v { margin-top: 2px; font-size: 13px; font-weight: 700; color: #e3e9ee; line-height: 1.3; overflow-wrap: anywhere; }
+
+.evp-section { margin-top: 4px; }
+.evp-sec-hdr { font-size: 13px; font-weight: 800; color: #ffcf8a; margin-bottom: 8px; }
+.evp-section .db-rewards { margin-bottom: 0; }
+.evp-steps { margin: 0; padding: 0; list-style: none; counter-reset: evp; display: flex; flex-direction: column; gap: 7px; }
+.evp-steps li {
+  counter-increment: evp;
+  position: relative;
+  padding-left: 28px;
+  font-size: 12.5px; line-height: 1.45; color: #b3c1cd;
+}
+.evp-steps li::before {
+  content: counter(evp);
+  position: absolute; left: 0; top: 0;
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800;
+  color: var(--cc); background: color-mix(in srgb, var(--cc) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cc) 40%, transparent);
+}
 
 .vip-back {
   display: none;
@@ -3116,9 +3233,7 @@ canvas { display:block; width:100%; height:100%; }
   color: #5797c4;
   cursor: pointer;
 }
-.events-title-detail { display: none; }
 #events-panel.events-detail .vip-back { display: flex; }
-#events-panel.events-detail .events-title-home { display: none; }
 #events-panel.events-detail .event-tab-list { display: none; }
 #events-panel:not(.events-detail) .vip-body { display: none; }
 #events-panel.events-detail .vip-body { display: block; top: 50px; }

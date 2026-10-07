@@ -7277,6 +7277,169 @@ let _eventTab = 'a3';
 // returns to it. See the .events-detail toggle in css/style.css.
 let _eventsView = 'list';
 
+// ── one page layout for every event ─────────────────────────────────────────
+// Each event used to draw its own page: an unlabeled big number (the same
+// slot meant "time until it opens", "people in the queue", "attempts left"
+// or "current wave" depending on the event and its phase), a grey phase
+// line under it and a bullet list. Players could not tell what the number
+// was, whether they could play right now, or what was required.
+//
+// Now every event is a MODEL (_<event>Model below) — what state it is in,
+// what the headline number means, what to press, the key facts — and one
+// renderer draws all of them the same way (_evtPageHTML). The list reads the
+// same models, so the status pill on a card is always the one on its page.
+//
+// pill.kind decides the colour and the list section:
+//   mine — the player is already in it (queued, fighting, in a group)
+//   live — happening right now for everyone (boss up, castle open)
+//   open — the player can join right now
+//   soon — waiting for its scheduled time
+//   off  — closed for this player (level too low, attempts/time used up)
+const _EVT_META = {
+  a3:         { color: '#5b8def', art: 'a3',       title: 'a3Tab',        sub: 'eventSubA3',         sched: 'eventSchedA3' },
+  race10:     { color: '#eb4e61', art: 'race10',   title: 'race10Tab',    sub: 'eventSubRace10',     sched: 'eventSchedRace10' },
+  fear:       { color: '#8a6fbf', art: 'fear',     title: 'fearTab',      sub: 'eventSubFear',       sched: 'eventSchedFear' },
+  coop:       { color: '#4caf6b', art: 'coop',     title: 'coopTab',      sub: 'eventSubCoop',       sched: 'eventSchedCoop' },
+  farm2:      { color: '#e0a23c', art: 'farm2',    title: 'farm2Tab',     sub: 'eventSubFarm2',      sched: 'eventSchedFarm2' },
+  boss:       { color: '#ffd18a', art: 'boss',     title: 'worldBossTab', sub: 'eventSubBoss',       sched: 'eventSchedBoss' },
+  guildWar:   { color: '#8a5cf6', art: 'guildWar', title: 'guildWarTab',  sub: 'eventSubGuildWar',   sched: 'eventSchedGuildWar' },
+  // No dedicated art yet — battle.jpg stands in until tournament.jpg exists.
+  tournament: { color: '#ffb020', art: 'battle',   title: 'tournamentTab', sub: 'eventSubTournament', sched: 'eventSchedTournament' },
+};
+const _EVT_ORDER = ['a3', 'race10', 'fear', 'coop', 'farm2', 'boss', 'guildWar', 'tournament'];
+
+function _evtModel(tab) {
+  return tab === 'boss'       ? _worldBossModel()
+       : tab === 'race10'     ? _race10Model()
+       : tab === 'fear'       ? _fearModel()
+       : tab === 'coop'       ? _coopModel()
+       : tab === 'farm2'      ? _farm2Model()
+       : tab === 'guildWar'   ? _guildWarModel()
+       : tab === 'tournament' ? _tournamentModel()
+       : _arena3Model();
+}
+
+const _EVT_CLOCK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>`;
+const _EVT_ARROW_SVG = `<svg class="event-tab-arrow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"/></svg>`;
+
+function _evtPill(kind, text) { return { kind, text }; }
+function _evtPillHTML(p) {
+  return p ? `<span class="evt-pill evt-pill-${p.kind}"><i></i>${p.text}</span>` : '';
+}
+function _evtKnown(v) { return v !== null && v !== undefined; }
+function _evtLvl() { return (player && player.lvl) || 1; }
+function _evtEtaUntil(at) { return _fmtEventEta(Math.max(0, (at || 0) - Date.now())); }
+function _evtBtn(label, onclick, cls = '') {
+  return onclick
+    ? `<button class="db-action ${cls}" onclick="${onclick}">${label}</button>`
+    : `<button class="db-action ${cls}" disabled>${label}</button>`;
+}
+// Facts cell for "attempts": the real count once the server has told us,
+// the daily allowance until then.
+function _evtAttemptsFact(st) {
+  return [t('evtFactAttempts'), _evtKnown(st.attemptsLeft)
+    ? `${st.attemptsLeft}/${st.maxAttempts}`
+    : tVars('evtFactPerDayFmt', { n: st.maxAttempts })];
+}
+// Shared "attempts left" headline for the on-demand events.
+function _evtAttemptsStat(st, note) {
+  return {
+    label: t('evtStatAttempts'),
+    value: _evtKnown(st.attemptsLeft) ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`,
+    note,
+  };
+}
+// Section headers in the old strings end with a colon ("Правила:") — the page
+// renders them as headings, so it goes.
+function _evtHdr(s) { return String(s || '').replace(/[:：]\s*$/, ''); }
+
+// opts.hero=false — the standalone Турнир panel draws the page without the
+// art banner, it has its own header.
+function _evtPageHTML(tab, m, opts = {}) {
+  const meta = _EVT_META[tab] || _EVT_META.a3;
+  const hero = opts.hero === false ? '' : `
+    <div class="evp-hero" style="--art:url('/images/events/${meta.art}.jpg')">
+      <div class="evp-hero-text">
+        <div class="evp-title">${t(meta.title)}</div>
+        <div class="evp-sub">${t(meta.sub)}</div>
+        ${_evtPillHTML(m.pill)}
+      </div>
+    </div>`;
+  const stat = m.stat ? `
+    <div class="evp-status">
+      <div class="evp-stat-label">${m.stat.label}</div>
+      <div class="evp-stat-value${m.stat.text ? ' is-text' : ''}">${m.stat.value}</div>
+      ${m.stat.note ? `<div class="evp-stat-note">${m.stat.note}</div>` : ''}
+    </div>` : '';
+  const facts = (m.facts || []).filter(Boolean);
+  const factsHTML = facts.length ? `
+    <div class="evp-facts">${facts.map(([k, v]) => `
+      <div class="evp-fact"><div class="evp-fact-k">${k}</div><div class="evp-fact-v">${v}</div></div>`).join('')}
+    </div>` : '';
+  const rules = (m.rules || []).filter(Boolean);
+  const rulesHTML = rules.length ? `
+    <div class="evp-section">
+      <div class="evp-sec-hdr">${t('evtHowHdr')}</div>
+      <ol class="evp-steps">${rules.map(r => `<li>${r}</li>`).join('')}</ol>
+    </div>` : '';
+  const rewardsHTML = m.rewards ? `
+    <div class="evp-section">
+      <div class="evp-sec-hdr">${_evtHdr(m.rewardsHdr || t('evtRewardsHdr'))}</div>
+      ${m.rewards}
+    </div>` : '';
+  return `
+    <div class="evp" style="--cc:${meta.color}">
+      ${hero}
+      ${opts.hero === false ? `<div class="evp-pill-row">${_evtPillHTML(m.pill)}</div>` : ''}
+      ${stat}
+      ${m.action ? `<div class="evp-action">${m.action}</div>` : ''}
+      ${m.hint ? `<div class="evp-hint">${m.hint}</div>` : ''}
+      ${factsHTML}
+      ${rulesHTML}
+      ${rewardsHTML}
+    </div>`;
+}
+
+// The list: one card per event, grouped by what the player can do with it
+// right now. Within a group the original order stays, so a card only moves
+// when its state actually changes.
+function _eventsListHTML() {
+  const groups = { now: [], soon: [], off: [] };
+  _EVT_ORDER.forEach(tab => {
+    const meta = _EVT_META[tab];
+    let m;
+    try { m = _evtModel(tab); } catch (e) { m = { pill: null }; }
+    const kind = m.pill ? m.pill.kind : 'soon';
+    const grp = kind === 'soon' ? 'soon' : kind === 'off' ? 'off' : 'now';
+    groups[grp].push(`
+      <button class="event-tab-item evt-${kind}" id="etab-${tab}" onclick="openEventDetail('${tab}')" style="--cc:${meta.color}; --art:url('/images/events/${meta.art}.jpg')">
+        <span class="event-tab-text">
+          <span class="event-tab-label">${t(meta.title)}</span>
+          <span class="event-tab-sub">${t(meta.sub)}</span>
+          ${_evtPillHTML(m.pill)}
+          <span class="event-tab-sched">${_EVT_CLOCK_SVG}<span>${t(meta.sched)}</span></span>
+        </span>
+        ${_EVT_ARROW_SVG}
+      </button>`);
+  });
+  const sec = (key, hdr) => groups[key].length
+    ? `<div class="evt-sec-hdr evt-sec-${key}">${t(hdr)}</div>${groups[key].join('')}` : '';
+  return sec('now', 'evtSecNow') + sec('soon', 'evtSecSoon') + sec('off', 'evtSecOff');
+}
+
+// Re-rendered every second by the ticker below; only touches the DOM when
+// something visible changed, so a tap that lands mid-tick is never eaten by
+// its button being replaced under the finger.
+function _evtSetHTML(el, html) {
+  if (!el || el._evtHtml === html) return;
+  el.innerHTML = html;
+  el._evtHtml = html;
+}
+
+function _renderEventsList() {
+  _evtSetHTML(document.getElementById('events-tab-list'), _eventsListHTML());
+}
+
 function openEventsPanel() {
   const panel = document.getElementById('events-panel');
   if (!panel) return;
@@ -7299,22 +7462,17 @@ function closeEventsPanel() {
 function showEventsList() {
   _eventsView = 'list';
   document.getElementById('events-panel')?.classList.remove('events-detail');
-  document.querySelectorAll('#events-panel .events-title-detail').forEach(el => { el.style.display = 'none'; });
+  _renderEventsList();
 }
 
-// Navigate into one event's own page — tapping a row in the list, not a
-// same-screen tab swap: the list is replaced by the event's page (a back
-// arrow in the header returns to the list), and the header's title/icon
-// swaps to that event's (the matching #etitle-<tab> span).
+// Navigate into one event's own page — the list is replaced by the event's
+// page and the header grows a back arrow that returns to the list.
 function openEventDetail(tab) {
-  _eventTab = tab;
+  _eventTab = _EVT_META[tab] ? tab : 'a3';
   _eventsView = 'detail';
   document.getElementById('events-panel')?.classList.add('events-detail');
-  document.querySelectorAll('#events-panel .event-tab-item').forEach(b => b.classList.remove('active'));
-  document.getElementById('etab-' + tab)?.classList.add('active');
-  document.querySelectorAll('#events-panel .events-title-detail').forEach(el => { el.style.display = 'none'; });
-  const dt = document.getElementById('etitle-' + tab);
-  if (dt) dt.style.display = 'inline';
+  const body = document.getElementById('events-panel-body');
+  if (body) body.scrollTop = 0;
   _renderEventsBody();
 }
 
@@ -7322,160 +7480,136 @@ function _eventsPanelOpen() {
   return document.getElementById('events-panel')?.style.display === 'flex';
 }
 
+// Whatever the panel is showing — the list or one event's page.
 function _renderEventsBody() {
-  if (_eventsView !== 'detail') return;
-  const body = document.getElementById('events-panel-body');
-  if (!body) return;
-  body.innerHTML = _eventTab === 'boss'      ? _worldBossBodyHTML()
-                 : _eventTab === 'a3'        ? _arena3BodyHTML()
-                 : _eventTab === 'race10'    ? _race10BodyHTML()
-                 : _eventTab === 'fear'      ? _fearBodyHTML()
-                 : _eventTab === 'coop'      ? _coopBodyHTML()
-                 : _eventTab === 'farm2'     ? _farm2BodyHTML()
-                 : _eventTab === 'guildWar'  ? _guildWarBodyHTML()
-                 : _eventTab === 'tournament'? _tournamentBodyHTML()
-                 : _arena3BodyHTML();
+  if (_eventsView !== 'detail') { _renderEventsList(); return; }
+  _evtSetHTML(document.getElementById('events-panel-body'), _evtPageHTML(_eventTab, _evtModel(_eventTab)));
 }
 
-// ── 3v3 arena tab ───────────────────────────────────────────────────────────
-// Queue-driven, so there is no countdown to show — the headline number is how
-// many of the six are waiting. Everything here comes from _a3State, pushed by
-// the server (see _initArena3Handlers in js/network.js).
-function _arena3BodyHTML() {
+// ── 3v3 arena ───────────────────────────────────────────────────────────────
+// Queue-driven inside a daily window. Everything here comes from _a3State,
+// pushed by the server (see _initArena3Handlers in js/network.js).
+function _arena3Model() {
   const st = (typeof _a3State !== 'undefined' && _a3State) || { phase: 'idle', nextAt: 0, queued: 0, needed: 6, minLevel: 15, reward: 10 };
   const inMatch = typeof _a3InMatch !== 'undefined' && _a3InMatch;
   const open = st.phase === 'reg';
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = lvl < (st.minLevel || 15);
-
+  const tooLow = _evtLvl() < (st.minLevel || 15);
   // null means the panel hasn't synced yet — don't lock the button on a count
   // we haven't actually been told.
-  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+  const spent = _evtKnown(st.attemptsLeft) && st.attemptsLeft <= 0;
+  const queue = { label: t('evtStatQueue'), value: `${st.queued}/${st.needed}` };
 
-  let phaseTxt, action;
+  let pill, stat, action;
   if (inMatch) {
-    phaseTxt = t('a3PhaseFighting');
-    action = `<button class="db-action" disabled>${t('a3PhaseFighting')}</button>`;
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = { label: t('evtStatScore'), value: tVars('a3ScoreFmt', { a: _a3Score.a, b: _a3Score.b }), text: true };
+    action = _evtBtn(t('a3PhaseFighting'));
   } else if (!open) {
-    phaseTxt = t('a3PhaseClosed');
-    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
+    const eta = _evtEtaUntil(st.nextAt);
+    pill = _evtPill('soon', tVars('evtPillInFmt', { t: eta }));
+    stat = { label: t('evtStatStartsIn'), value: eta, note: st.nextAt ? _fmtEventWhen(st.nextAt) : '' };
+    action = _evtBtn(t('dbClosedBtn'));
   } else if (tooLow) {
-    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.minLevel }));
+    stat = { ...queue, note: tVars('a3NeedLevelFmt', { n: st.minLevel }) };
+    action = _evtBtn(tVars('a3NeedLevelFmt', { n: st.minLevel }));
   } else if (spent && !_a3Registered) {
-    phaseTxt = t('a3NoAttempts');
-    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+    pill = _evtPill('off', t('evtPillNoAttempts'));
+    stat = { ...queue, note: t('evtNoteTomorrow') };
+    action = _evtBtn(t('a3NoAttempts'));
   } else if (_a3Registered) {
-    phaseTxt = t('a3PhaseQueued');
-    action = `<button class="db-action db-leave" onclick="netArena3Unregister()">${t('dbLeaveBtn')}</button>`;
+    pill = _evtPill('mine', t('evtPillQueued'));
+    stat = { ...queue, note: t('a3PhaseQueued') };
+    action = _evtBtn(t('dbLeaveBtn'), 'netArena3Unregister()', 'db-leave');
   } else {
-    phaseTxt = t('a3PhaseIdle');
-    action = `<button class="db-action" onclick="netArena3Register()">${t('dbJoinBtn')}</button>`;
+    pill = _evtPill('open', t('evtPillReg'));
+    stat = { ...queue, note: t('a3PhaseIdle') };
+    action = _evtBtn(t('dbJoinBtn'), 'netArena3Register()');
   }
 
-  // Idle (window closed) counts down to the next daily window, open/in-match
-  // stay on the plain queue count.
-  const countdown = !open && !inMatch ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now())) : `${st.queued}/${st.needed}`;
-  const score = inMatch
-    ? `<div class="db-count">${tVars('a3ScoreFmt', { a: _a3Score.a, b: _a3Score.b })}</div>`
-    : open && st.attemptsLeft !== null && st.attemptsLeft !== undefined
-        ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
-        : (!open && st.nextAt ? `<div class="db-count">${_fmtEventWhen(st.nextAt)}</div>` : '');
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${score}
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${t('a3RuleSchedule')}</li>
-          <li>${tVars('a3Rule1', { n: st.needed })}</li>
-          <li>${t('a3Rule2')}</li>
-          <li>${t('a3Rule3')}</li>
-          <li>${t('a3Rule4')}</li>
-          <li>${t('a3RuleBoss')}</li>
-          <li>${t('a3RuleDuration')}</li>
-          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
-          <li>${tVars('a3Rule6', { n: st.maxAttempts })}</li>
-        </ul>
-      </div>
-      <div class="db-rewards-hdr">${t('a3RewardHdr')}</div>
-      <div class="db-rewards">
+  return {
+    pill, stat, action,
+    facts: [
+      [t('evtFactLevel'), `${st.minLevel}+`],
+      [t('evtFactWhen'), t('eventSchedA3')],
+      [t('evtFactPlayers'), '3 × 3'],
+      _evtAttemptsFact(st),
+    ],
+    rules: [
+      t('a3RuleSchedule'), tVars('a3Rule1', { n: st.needed }), t('a3Rule2'), t('a3Rule3'), t('a3Rule4'),
+      t('a3RuleBoss'), t('a3RuleDuration'), tVars('a3Rule5', { n: st.minLevel }), tVars('a3Rule6', { n: st.maxAttempts }),
+    ],
+    rewardsHdr: t('a3RewardHdr'),
+    rewards: `<div class="db-rewards">
         <div class="db-reward-row">
           <img src="/images/nexum-coin_v2.png" alt="">
           <span>Liberty</span><span class="db-reward-qty">+${st.reward}</span>
         </div>
-      </div>
-    </div>`;
+      </div>`,
+  };
 }
 
-// ── Турнир tab (32-player double elimination) ────────────────────────────────
+// ── Турнир (32-player double elimination) ────────────────────────────────────
 // _trState is pushed by js/network.js's tournamentState handler; _trAlive
 // covers the gap between rounds (see server/game/tournament.js's file header)
 // where this player is neither actively fighting nor free to register again.
-function _tournamentBodyHTML() {
+function _tournamentModel() {
   const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10, gapEndAt: 0 };
   const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
   const alive = typeof _trAlive !== 'undefined' && _trAlive;
   const open = st.phase === 'reg';
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = lvl < (st.minLevel || 15);
+  const tooLow = _evtLvl() < (st.minLevel || 15);
+  const round = { label: t('evtStatRound'), value: `${st.round}/${st.totalRounds}` };
+  const signed = { label: t('evtStatRegistered'), value: tVars('trCountFmt', { n: st.queued || 0, need: st.needed }) };
 
-  let phaseTxt, action;
+  let pill, stat, action;
   if (inMatch) {
-    const opp = (typeof _trOpponent !== 'undefined' && _trOpponent) ? ' — ' + tVars('trOpponentFmt', { name: _trOpponent }) : '';
-    phaseTxt = tVars('trRoundFmt', { n: st.round, total: st.totalRounds }) + opp;
-    action = `<button class="db-action" disabled>${t('trPhaseFighting')}</button>`;
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = { ...round, note: (typeof _trOpponent !== 'undefined' && _trOpponent) ? tVars('trOpponentFmt', { name: _escHtml(_trOpponent) }) : '' };
+    action = _evtBtn(t('trPhaseFighting'));
   } else if (alive) {
-    phaseTxt = tVars('trRoundFmt', { n: st.round, total: st.totalRounds });
-    action = `<button class="db-action" disabled>${t('trPhaseWaiting')}</button>`;
+    // Between rounds the gap has a real end time from the server — show that
+    // ticking down; the registration count means nothing once the bracket runs.
+    const gapLeft = (st.gapEndAt || 0) - Date.now();
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = gapLeft > 0
+      ? { label: t('evtStatNextRound'), value: _fmtEventEta(gapLeft), note: tVars('trRoundFmt', { n: st.round, total: st.totalRounds }) }
+      : { ...round, note: t('trPhaseWaiting') };
+    action = _evtBtn(t('trPhaseWaiting'));
   } else if (!open) {
-    phaseTxt = t('trPhaseIdle');
-    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
+    const eta = _evtEtaUntil(st.nextAt);
+    pill = _evtPill('soon', tVars('evtPillInFmt', { t: eta }));
+    stat = { label: t('evtStatStartsIn'), value: eta, note: st.nextAt ? _fmtEventWhen(st.nextAt) : '' };
+    action = _evtBtn(t('dbClosedBtn'));
   } else if (tooLow) {
-    phaseTxt = tVars('trNeedLevelFmt', { n: st.minLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('trNeedLevelFmt', { n: st.minLevel })}</button>`;
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.minLevel }));
+    stat = { ...signed, note: tVars('trNeedLevelFmt', { n: st.minLevel }) };
+    action = _evtBtn(tVars('trNeedLevelFmt', { n: st.minLevel }));
   } else if (_trRegistered) {
-    phaseTxt = t('trPhaseQueued');
-    action = `<button class="db-action db-leave" onclick="netTournamentUnregister()">${t('dbLeaveBtn')}</button>`;
+    pill = _evtPill('mine', t('evtPillQueued'));
+    stat = { ...signed, note: t('trPhaseQueued') };
+    action = _evtBtn(t('dbLeaveBtn'), 'netTournamentUnregister()', 'db-leave');
   } else {
-    phaseTxt = t('trPhaseIdle');
-    action = `<button class="db-action" onclick="netTournamentRegister()">${t('dbJoinBtn')}</button>`;
+    pill = _evtPill('open', t('evtPillReg'));
+    stat = { ...signed, note: t('a3PhaseIdle') };
+    action = _evtBtn(t('dbJoinBtn'), 'netTournamentRegister()');
   }
 
-  // Between rounds (alive, not fighting), the gap has a real end time from
-  // the server (st.gapEndAt) — show that ticking down rather than the static
-  // registration count, which no longer means anything once the bracket is
-  // running (registration cleared the moment the tournament started).
-  const gapLeft = alive && !inMatch ? (st.gapEndAt || 0) - Date.now() : 0;
-  const countdown = (!open && !inMatch && !alive)
-    ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
-    : (gapLeft > 0)
-      ? _fmtEventEta(gapLeft)
-      : tVars('trCountFmt', { n: st.queued, need: st.needed });
+  return {
+    pill, stat, action,
+    facts: [
+      [t('evtFactLevel'), `${st.minLevel}+`],
+      [t('evtFactWhen'), t('eventSchedTournament')],
+      [t('evtFactPlayers'), String(st.needed || 32)],
+    ],
+    rules: [t('trRule1'), t('trRule2'), t('trRule3'), t('trRule4'), t('trRule5'), t('trRule6'), t('trRule7'), t('trRule8')],
+  };
+}
 
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${t('trRule1')}</li>
-          <li>${t('trRule2')}</li>
-          <li>${t('trRule3')}</li>
-          <li>${t('trRule4')}</li>
-          <li>${t('trRule5')}</li>
-          <li>${t('trRule6')}</li>
-          <li>${t('trRule7')}</li>
-          <li>${t('trRule8')}</li>
-        </ul>
-      </div>
-    </div>`;
+// The standalone Турнир panel's "Регистрация" tab shows the same page, minus
+// the art banner (that panel has its own header).
+function _tournamentBodyHTML() {
+  return _evtPageHTML('tournament', _tournamentModel(), { hero: false });
 }
 
 function onTournamentState() {
@@ -7594,79 +7728,65 @@ function onTournamentRatingError(msg) {
   if (typeof _marketToast === 'function') _marketToast(msg || t('ratingErrorToast'), 'err');
 }
 
-// ── Кровавая Башня tab (10-player corridor race) ────────────────────────────
+// ── Кровавая Башня (corridor race) ──────────────────────────────────────────
 // Open every day at 20:30 MSK for 5 minutes (see _race10Schedule,
-// server/index.js) — same reg/idle phase shape as _arena3BodyHTML
-// above, plus the queue count and team-less damage race once open.
-function _race10BodyHTML() {
+// server/index.js); everyone who signs up runs, there is no headcount.
+function _race10Model() {
   const st = (typeof _race10State !== 'undefined' && _race10State) || { phase: 'idle', nextAt: 0, queued: 0, startAt: 0, capacity: 0, minLevel: 10, reward: 10 };
   const inMatch = typeof _race10InMatch !== 'undefined' && _race10InMatch;
   const open = st.phase === 'reg';
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = lvl < (st.minLevel || 10);
-  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
+  const tooLow = _evtLvl() < (st.minLevel || 10);
+  const spent = _evtKnown(st.attemptsLeft) && st.attemptsLeft <= 0;
+  const regEnds = { label: t('evtStatRegEnds'), value: _evtEtaUntil(st.startAt) };
+  const waiting = tVars('race10Waiting', { n: st.queued || 0 });
 
-  let phaseTxt, action;
+  let pill, stat, action;
   if (inMatch) {
-    phaseTxt = t('race10PhaseFighting');
-    action = `<button class="db-action" disabled>${t('race10PhaseFighting')}</button>`;
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = {
+      label: t('evtStatRank'),
+      value: _race10Total ? `${_race10Rank || '–'}/${_race10Total}` : '–',
+      note: tVars('race10ScoreFmt', { dmg: Math.floor(_race10MyDamage || 0), rank: _race10Rank || 0, total: _race10Total || 0 }),
+    };
+    action = _evtBtn(t('race10PhaseFighting'));
   } else if (!open) {
-    phaseTxt = t('race10PhaseIdle');
-    action = `<button class="db-action" disabled>${t('dbClosedBtn')}</button>`;
+    const eta = _evtEtaUntil(st.nextAt);
+    pill = _evtPill('soon', tVars('evtPillInFmt', { t: eta }));
+    stat = { label: t('evtStatStartsIn'), value: eta, note: st.nextAt ? _fmtEventWhen(st.nextAt) : '' };
+    action = _evtBtn(t('dbClosedBtn'));
   } else if (tooLow) {
-    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.minLevel }));
+    stat = { ...regEnds, note: tVars('a3NeedLevelFmt', { n: st.minLevel }) };
+    action = _evtBtn(tVars('a3NeedLevelFmt', { n: st.minLevel }));
   } else if (spent && !_race10Registered) {
-    phaseTxt = t('a3NoAttempts');
-    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+    pill = _evtPill('off', t('evtPillNoAttempts'));
+    stat = { ...regEnds, note: t('evtNoteTomorrow') };
+    action = _evtBtn(t('a3NoAttempts'));
   } else if (_race10Registered) {
-    phaseTxt = t('a3PhaseQueued');
-    action = `<button class="db-action db-leave" onclick="netRace10Unregister()">${t('dbLeaveBtn')}</button>`;
+    pill = _evtPill('mine', t('evtPillQueued'));
+    stat = { ...regEnds, note: `${t('a3PhaseQueued')} · ${waiting}` };
+    action = _evtBtn(t('dbLeaveBtn'), 'netRace10Unregister()', 'db-leave');
   } else {
-    phaseTxt = t('a3PhaseIdle');
-    action = `<button class="db-action" onclick="netRace10Register()">${t('dbJoinBtn')}</button>`;
+    pill = _evtPill('open', t('evtPillReg'));
+    stat = { ...regEnds, note: waiting };
+    action = _evtBtn(t('dbJoinBtn'), 'netRace10Register()');
   }
 
-  // Idle counts down to the next daily window (can be many hours away). While
-  // registration is open the number that matters is the time left to sign up —
-  // there is no headcount to fill any more, everyone who registers runs.
-  const countdown = inMatch
-    ? `${st.queued}`
-    : !open
-        ? _fmtEventEta(Math.max(0, (st.nextAt || 0) - Date.now()))
-        : _fmtEventEta(Math.max(0, (st.startAt || 0) - Date.now()));
-  const score = inMatch
-    ? `<div class="db-count">${tVars('race10ScoreFmt', { dmg: Math.floor(_race10MyDamage || 0), rank: _race10Rank || 0, total: _race10Total || 0 })}</div>`
-    : open
-        ? `<div class="db-count">${tVars('race10Waiting', { n: st.queued || 0 })}${
-            st.attemptsLeft !== null && st.attemptsLeft !== undefined
-              ? ' · ' + tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })
-              : ''}</div>`
-        : (st.nextAt ? `<div class="db-count">${_fmtEventWhen(st.nextAt)}</div>` : '');
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${score}
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${t('race10Rule6')}</li>
-          <li>${t('race10Rule1')}</li>
-          <li>${t('race10Rule8')}</li>
-          <li>${t('race10Rule2')}</li>
-          <li>${t('race10Rule3')}</li>
-          <li>${t('race10Rule4')}</li>
-          <li>${t('race10Rule5')}</li>
-          <li>${t('race10Rule7')}</li>
-          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
-          <li>${tVars('a3Rule6', { n: st.maxAttempts })}</li>
-        </ul>
-      </div>
-      <div class="db-rewards-hdr">${t('race10RewardHdr')}</div>
-      <div class="db-rewards">
+  return {
+    pill, stat, action,
+    facts: [
+      [t('evtFactLevel'), `${st.minLevel}+`],
+      [t('evtFactWhen'), t('eventSchedRace10')],
+      [t('evtFactPlayers'), t('evtPlayersAll')],
+      _evtAttemptsFact(st),
+    ],
+    rules: [
+      t('race10Rule6'), t('race10Rule1'), t('race10Rule8'), t('race10Rule2'), t('race10Rule3'),
+      t('race10Rule4'), t('race10Rule5'), t('race10Rule7'),
+      tVars('a3Rule5', { n: st.minLevel }), tVars('a3Rule6', { n: st.maxAttempts }),
+    ],
+    rewardsHdr: t('race10RewardHdr'),
+    rewards: `<div class="db-rewards">
         <div class="db-reward-row">
           <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23e3941d' stroke='%23e3941d' stroke-width='1' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>" alt="">
           <span>${t('race10XpRewardName')}</span><span class="db-reward-qty">×4</span>
@@ -7683,72 +7803,57 @@ function _race10BodyHTML() {
           <span class="db-reward-fallback">🧪</span>
           <span>${t('race10RewardPotions')}</span><span class="db-reward-qty">×1 / ×2</span>
         </div>
-      </div>
-    </div>`;
+      </div>`,
+  };
 }
 
-// ── Страх (Fear) tab ─────────────────────────────────────────────────────────
+// ── Страх (Fear) ─────────────────────────────────────────────────────────────
 // On-demand: no schedule, no queue — the only gates are the min level and
-// whether today's attempts are used up. Entering IS starting (no separate
-// register step), so the action button either starts a run or shows it's
-// already running. Headline number is the current wave while running,
-// otherwise how many of the daily attempts are left.
-function _fearBodyHTML() {
+// whether today's attempts are used up. Entering IS starting.
+function _fearModel() {
   const st = (typeof _fearState !== 'undefined' && _fearState) || { attemptsLeft: null, maxAttempts: 2, maxWave: 39, minLevel: 10 };
   const inRun = typeof _fearInRun !== 'undefined' && _fearInRun;
-  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = !inRun && lvl < (st.minLevel || 10);
+  const spent = _evtKnown(st.attemptsLeft) && st.attemptsLeft <= 0;
+  const tooLow = !inRun && _evtLvl() < (st.minLevel || 10);
 
-  let phaseTxt, action;
+  let pill, stat, action;
   if (inRun) {
-    // wave is 0 for the FEAR_START_DELAY_MS grace window between landing in
-    // the hall and wave 1 actually spawning (see server's fearEnter) — the
-    // #db-freeze countdown overlay is already covering the screen at that
-    // point, but this panel can still be reopened during it, so it needs its
-    // own "not fighting yet" phase rather than claiming wave 1 is already up.
-    phaseTxt = _fearWave > 0
-      ? tVars('fearPhaseFighting', { wave: _fearWave, max: st.maxWave })
-      : t('fearPhaseReady');
-    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+    // wave is 0 for the grace window between landing in the hall and wave 1
+    // actually spawning (see server's fearEnter) — "not fighting yet".
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = {
+      label: t('evtStatWave'),
+      value: `${_fearWave > 0 ? _fearWave : '–'}/${st.maxWave}`,
+      note: _fearWave > 0 ? '' : t('fearPhaseReady'),
+    };
+    action = _evtBtn(t('fearInRunBtn'));
   } else if (tooLow) {
-    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.minLevel }));
+    stat = _evtAttemptsStat(st, tVars('a3NeedLevelFmt', { n: st.minLevel }));
+    action = _evtBtn(tVars('a3NeedLevelFmt', { n: st.minLevel }));
   } else if (spent) {
-    phaseTxt = t('a3NoAttempts');
-    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+    pill = _evtPill('off', t('evtPillNoAttempts'));
+    stat = _evtAttemptsStat(st, t('evtNoteTomorrow'));
+    action = _evtBtn(t('a3NoAttempts'));
   } else {
-    phaseTxt = t('fearPhaseIdle');
-    action = `<button class="db-action" onclick="netFearEnter()">${t('fearEnterBtn')}</button>`;
+    pill = _evtPill('open', t('evtPillReady'));
+    stat = _evtAttemptsStat(st, t('fearPhaseIdle'));
+    action = _evtBtn(t('fearEnterBtn'), 'netFearEnter()');
   }
 
-  const countdown = inRun
-    ? `${_fearWave > 0 ? _fearWave : '–'}/${st.maxWave}`
-    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
-  // No more "free halls" line — every entrant gets their own private
-  // instance now, so there is nothing to ever be full.
-  const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
-    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
-    : '';
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${score}
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
-          <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
-          <li>${t('fearRule2')}</li>
-          <li>${tVars('fearRule3', { n: st.maxWave })}</li>
-          <li>${t('fearRule4')}</li>
-          <li>${t('fearRule5')}</li>
-        </ul>
-      </div>
-    </div>`;
+  return {
+    pill, stat, action,
+    facts: [
+      [t('evtFactLevel'), `${st.minLevel}+`],
+      [t('evtFactWhen'), t('eventSchedFear')],
+      [t('evtFactPlayers'), t('evtPlayersSolo')],
+      _evtAttemptsFact(st),
+    ],
+    rules: [
+      tVars('a3Rule5', { n: st.minLevel }), tVars('fearRule1', { n: st.maxAttempts }), t('fearRule2'),
+      tVars('fearRule3', { n: st.maxWave }), t('fearRule4'), t('fearRule5'),
+    ],
+  };
 }
 
 // ── Сотрудничество (Coop) tab ────────────────────────────────────────────────
@@ -7798,66 +7903,56 @@ function _coopOpenGroupsHTML() {
     </div>`).join('')}</div>`;
 }
 
-function _coopBodyHTML() {
+function _coopModel() {
   const st = (typeof _coopState !== 'undefined' && _coopState) || { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
   const inRun = typeof _coopInRun !== 'undefined' && _coopInRun;
   const group = typeof _coopGroup !== 'undefined' ? _coopGroup : null;
-  const spent = st.attemptsLeft !== null && st.attemptsLeft !== undefined && st.attemptsLeft <= 0;
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = !inRun && lvl < (st.minLevel || 10);
+  const spent = _evtKnown(st.attemptsLeft) && st.attemptsLeft <= 0;
+  const tooLow = !inRun && _evtLvl() < (st.minLevel || 10);
 
-  let phaseTxt, action;
+  let pill, stat, action;
   if (inRun) {
-    // stage is 0 for the COOP_START_DELAY_MS grace window between landing
-    // and stage 1 actually spawning (see server's coopGroupStart) — the
-    // #db-freeze countdown overlay is already covering the screen at that
-    // point, but this panel can still be reopened during it, so it needs
-    // its own "not fighting yet" phase rather than claiming stage 1 is
-    // already up.
-    phaseTxt = _coopStageNo > 0
-      ? tVars('coopPhaseFighting', { stage: _coopStageNo, max: st.maxStage })
-      : t('coopPhaseReady');
-    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+    // stage is 0 for the grace window between landing and stage 1 actually
+    // spawning (see server's coopGroupStart) — "not fighting yet".
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = {
+      label: t('evtStatStage'),
+      value: `${_coopStageNo > 0 ? _coopStageNo : '–'}/${st.maxStage}`,
+      note: _coopStageNo > 0 ? '' : t('coopPhaseReady'),
+    };
+    action = _evtBtn(t('fearInRunBtn'));
   } else if (group) {
-    phaseTxt = group.isLeader ? t('coopPhaseLeaderLbl') : t('coopPhaseMemberLbl');
+    pill = _evtPill('mine', t('evtPillInGroup'));
+    stat = _evtAttemptsStat(st, group.isLeader ? t('coopPhaseLeaderLbl') : t('coopPhaseMemberLbl'));
     action = _coopGroupPanelHTML(group);
   } else if (tooLow) {
-    phaseTxt = tVars('a3NeedLevelFmt', { n: st.minLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.minLevel })}</button>`;
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.minLevel }));
+    stat = _evtAttemptsStat(st, tVars('a3NeedLevelFmt', { n: st.minLevel }));
+    action = _evtBtn(tVars('a3NeedLevelFmt', { n: st.minLevel }));
   } else if (spent) {
-    phaseTxt = t('a3NoAttempts');
-    action = `<button class="db-action disabled" disabled>${t('a3NoAttempts')}</button>`;
+    pill = _evtPill('off', t('evtPillNoAttempts'));
+    stat = _evtAttemptsStat(st, t('evtNoteTomorrow'));
+    action = _evtBtn(t('a3NoAttempts'));
   } else {
-    phaseTxt = t('fearPhaseIdle');
-    action = `<button class="db-action" onclick="netCoopGroupCreate()">${t('coopCreateGroupBtn')}</button>${_coopOpenGroupsHTML()}`;
+    pill = _evtPill('open', t('evtPillReady'));
+    stat = _evtAttemptsStat(st, t('fearPhaseIdle'));
+    action = _evtBtn(t('coopCreateGroupBtn'), 'netCoopGroupCreate()')
+      + `<div class="evp-sub-hdr">${t('evtOpenGroupsHdr')}</div>${_coopOpenGroupsHTML()}`;
   }
 
-  const countdown = inRun
-    ? `${_coopStageNo > 0 ? _coopStageNo : '–'}/${st.maxStage}`
-    : (st.attemptsLeft !== null && st.attemptsLeft !== undefined ? `${st.attemptsLeft}/${st.maxAttempts}` : `?/${st.maxAttempts}`);
-  const score = !inRun && st.attemptsLeft !== null && st.attemptsLeft !== undefined
-    ? `<div class="db-count">${tVars('a3AttemptsFmt', { n: st.attemptsLeft, max: st.maxAttempts })}</div>`
-    : '';
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${score}
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${t('coopRule1')}</li>
-          <li>${tVars('a3Rule5', { n: st.minLevel })}</li>
-          <li>${tVars('fearRule1', { n: st.maxAttempts })}</li>
-          <li>${t('coopRule2')}</li>
-          <li>${t('coopRule3')}</li>
-          <li>${t('coopRule4')}</li>
-          <li>${t('coopRule5')}</li>
-        </ul>
-      </div>
-    </div>`;
+  return {
+    pill, stat, action,
+    facts: [
+      [t('evtFactLevel'), `${st.minLevel}+`],
+      [t('evtFactWhen'), t('eventSchedCoop')],
+      [t('evtFactPlayers'), '2'],
+      _evtAttemptsFact(st),
+    ],
+    rules: [
+      t('coopRule1'), tVars('a3Rule5', { n: st.minLevel }), tVars('fearRule1', { n: st.maxAttempts }),
+      t('coopRule2'), t('coopRule3'), t('coopRule4'), t('coopRule5'),
+    ],
+  };
 }
 
 // Called from the network handlers on every server push.
@@ -7918,56 +8013,57 @@ function _farm2OpenGroupsHTML() {
     </div>`).join('')}</div>`;
 }
 
-function _farm2BodyHTML() {
+function _farm2Model() {
   const st = (typeof _farm2State !== 'undefined' && _farm2State) || { entryLevel: 30, partySize: 3, dailyMinutes: 120, minutesLeft: null };
   const inRun = typeof _farm2InRun !== 'undefined' && _farm2InRun;
   const group = typeof _farm2Group !== 'undefined' ? _farm2Group : null;
-  const spent = st.minutesLeft !== null && st.minutesLeft !== undefined && st.minutesLeft <= 0;
-  const lvl = (player && player.lvl) || 1;
-  const tooLow = !inRun && lvl < (st.entryLevel || 30);
+  const spent = _evtKnown(st.minutesLeft) && st.minutesLeft <= 0;
+  const tooLow = !inRun && _evtLvl() < (st.entryLevel || 30);
+  const minutes = note => ({
+    label: t('evtStatMinutes'),
+    value: _evtKnown(st.minutesLeft) ? tVars('farm2MinutesFmt', { n: st.minutesLeft, max: st.dailyMinutes }) : `?/${st.dailyMinutes}`,
+    note,
+  });
 
-  let phaseTxt, action;
+  let pill, stat, action;
   if (inRun) {
-    phaseTxt = t('coopPhaseReady');
-    action = `<button class="db-action" disabled>${t('fearInRunBtn')}</button>`;
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = minutes(t('coopPhaseReady'));
+    action = _evtBtn(t('fearInRunBtn'));
   } else if (group) {
-    phaseTxt = group.isLeader ? t('coopPhaseLeaderLbl') : t('coopPhaseMemberLbl');
+    pill = _evtPill('mine', t('evtPillInGroup'));
+    stat = minutes(group.isLeader ? t('coopPhaseLeaderLbl') : t('coopPhaseMemberLbl'));
     action = _farm2GroupPanelHTML(group);
   } else if (tooLow) {
-    phaseTxt = tVars('a3NeedLevelFmt', { n: st.entryLevel });
-    action = `<button class="db-action disabled" disabled>${tVars('a3NeedLevelFmt', { n: st.entryLevel })}</button>`;
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.entryLevel }));
+    stat = minutes(tVars('a3NeedLevelFmt', { n: st.entryLevel }));
+    action = _evtBtn(tVars('a3NeedLevelFmt', { n: st.entryLevel }));
   } else if (spent) {
-    phaseTxt = t('farm2NoTimeLbl');
-    action = `<button class="db-action disabled" disabled>${t('farm2NoTimeLbl')}</button>`;
+    pill = _evtPill('off', t('evtPillNoTime'));
+    stat = minutes(t('evtNoteTomorrow'));
+    action = _evtBtn(t('farm2NoTimeLbl'));
   } else {
-    phaseTxt = t('fearPhaseIdle');
-    action = `<button class="db-action" onclick="netFarm2GroupCreate()">${t('coopCreateGroupBtn')}</button>${_farm2OpenGroupsHTML()}`;
+    pill = _evtPill('open', t('evtPillReady'));
+    stat = minutes(t('fearPhaseIdle'));
+    action = _evtBtn(t('coopCreateGroupBtn'), 'netFarm2GroupCreate()')
+      + `<div class="evp-sub-hdr">${t('evtOpenGroupsHdr')}</div>${_farm2OpenGroupsHTML()}`;
   }
 
-  const countdown = st.minutesLeft !== null && st.minutesLeft !== undefined
-    ? tVars('farm2MinutesFmt', { n: st.minutesLeft, max: st.dailyMinutes })
-    : `?/${st.dailyMinutes}`;
-
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${countdown}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${action}
-      <div class="db-rules">
-        ${t('dbRulesHdr')}
-        <ul>
-          <li>${tVars('farm2Rule1', { n: st.entryLevel })}</li>
-          <li>${tVars('farm2Rule2', { n: st.partySize })}</li>
-          <li>${t('farm2Rule3')}</li>
-          <li>${t('farm2Rule4')}</li>
-          <li>${tVars('farm2Rule5', { n: st.dailyMinutes })}</li>
-        </ul>
-      </div>
-      <div class="db-rules">
-        <div class="fi-drops-hdr">${t('farm2DropHdr')}</div>
-        ${_farm2DropRows()}
-      </div>
-    </div>`;
+  return {
+    pill, stat, action,
+    facts: [
+      [t('evtFactLevel'), `${st.entryLevel}+`],
+      [t('evtFactWhen'), t('eventSchedFear')],
+      [t('evtFactPlayers'), String(st.partySize)],
+      [t('evtFactLimit'), t('eventSchedFarm2')],
+    ],
+    rules: [
+      tVars('farm2Rule1', { n: st.entryLevel }), tVars('farm2Rule2', { n: st.partySize }), t('farm2Rule3'),
+      t('farm2Rule4'), tVars('farm2Rule5', { n: st.dailyMinutes }),
+    ],
+    rewardsHdr: t('farm2DropHdr'),
+    rewards: _farm2DropRows(),
+  };
 }
 
 // The advanced-skill-book roll is ONE shared chance across the FULL 20-book
@@ -8159,83 +8255,74 @@ function hideArena3Timer() {
   if (el) el.style.display = 'none';
 }
 
-// World boss: alive right now, mid-summon countdown, or waiting for its next
-// scheduled appearance. _evtBossState is filled from gameStart and the
-// eventBoss* pushes (see network.js).
-// ── Guild War (Война гильдий) tab ────────────────────────────────────────────
+// ── Guild War (Война гильдий) ────────────────────────────────────────────────
 // _gwState is pushed by js/network.js's guildWarState handler (and seeded by
-// gameStart) — phase/nextAt drive the countdown the same way the world boss
-// tab does, ownerClanName/capturedAt describe who currently holds the tower
-// regardless of whether the zone is open right now (ownership has no
-// schedule of its own, only combat access does — see server/index.js's _gw).
-function _guildWarBodyHTML() {
+// gameStart) — phase/nextAt drive the countdown, ownerClanName describes who
+// holds the tower whether or not the zone is open right now.
+function _guildWarModel() {
   const st = (typeof _gwState !== 'undefined' && _gwState) || {};
   const open = st.phase === 'live';
-  const timeTxt = open
-    ? '🏰'
-    : (st.nextAt ? _fmtEventEta(st.nextAt - Date.now()) : '—');
-  const phaseTxt = open ? t('guildWarPhaseOpen') : t('guildWarPhaseClosed');
-  const note = open ? t('guildWarNoteOpen') : (st.nextAt ? _fmtEventWhen(st.nextAt) : '');
   // Escaped: a clan's name is typed by its founder, and this panel shows it to
   // everyone on the server. It is the one place a clan name reaches innerHTML.
-  const ownerLine = st.ownerClanName
-    ? `<div class="db-count">${t('guildWarOwnerLbl')}: <b>${_escHtml(st.ownerClanName)}</b></div>`
-    : `<div class="db-count">${t('guildWarNoOwnerLbl')}</div>`;
+  const owner = st.ownerClanName ? _escHtml(st.ownerClanName) : t('guildWarNoOwnerLbl');
 
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${timeTxt}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${note ? `<div class="db-count">${note}</div>` : ''}
-      ${ownerLine}
-      <div class="db-rules">
-        ${t('guildWarScheduleHdr')}
-        <ul>
-          <li>${t('guildWarRule1')}</li>
-          <li>${t('guildWarRule2')}</li>
-          <li>${t('guildWarRule3')}</li>
-        </ul>
-      </div>
-    </div>`;
+  let pill, stat;
+  if (open) {
+    pill = _evtPill('live', t('evtPillLive'));
+    stat = { label: t('evtStatNow'), value: t('guildWarPhaseOpen'), text: true, note: t('guildWarNoteOpen') };
+  } else {
+    const eta = st.nextAt ? _evtEtaUntil(st.nextAt) : '—';
+    pill = _evtPill('soon', st.nextAt ? tVars('evtPillInFmt', { t: eta }) : t('guildWarPhaseClosed'));
+    stat = { label: t('evtStatStartsIn'), value: eta, note: st.nextAt ? _fmtEventWhen(st.nextAt) : '' };
+  }
+
+  return {
+    pill, stat,
+    hint: t('evtGwHint'),
+    facts: [
+      [t('evtFactWhen'), t('eventSchedGuildWar')],
+      [t('evtFactPlayers'), t('evtPlayersClans')],
+      [t('evtFactOwner'), owner],
+    ],
+    rules: [t('guildWarRule1'), t('guildWarRule2'), t('guildWarRule3')],
+  };
 }
 
-function _worldBossBodyHTML() {
+// ── World boss ───────────────────────────────────────────────────────────────
+// Alive right now, mid-summon countdown, or waiting for its next scheduled
+// appearance. _evtBossState is filled from gameStart and the eventBoss*
+// pushes (see network.js).
+function _worldBossModel() {
   const st = (typeof _evtBossState !== 'undefined' && _evtBossState) || {};
-  const alive   = !!(typeof _evtBossAlive !== 'undefined' ? _evtBossAlive : st.alive);
+  const alive = !!(typeof _evtBossAlive !== 'undefined' ? _evtBossAlive : st.alive);
   const summonAt = st.spawnAt || 0;
   const pending = summonAt > Date.now();
 
-  let phaseTxt, timeTxt, note;
+  let pill, stat;
   if (alive) {
-    phaseTxt = t('wbPhaseAlive');
-    timeTxt  = '⚔';
-    note     = t('wbNoteAlive');
+    pill = _evtPill('live', t('evtPillBossAlive'));
+    stat = { label: t('evtStatNow'), value: t('wbPhaseAlive'), text: true, note: t('wbNoteAlive') };
   } else if (pending) {
-    phaseTxt = t('wbPhaseSummon');
-    timeTxt  = _fmtBossTime(summonAt - Date.now());
-    note     = t('wbNoteSummon');
+    const eta = _fmtBossTime(summonAt - Date.now());
+    pill = _evtPill('live', tVars('evtPillSummonFmt', { t: eta }));
+    stat = { label: t('evtStatSpawnsIn'), value: eta, note: t('wbNoteSummon') };
   } else {
-    phaseTxt = t('wbPhaseIdle');
-    timeTxt  = st.nextAt ? _fmtEventEta(st.nextAt - Date.now()) : '—';
-    note     = st.nextAt ? _fmtEventWhen(st.nextAt) : '';
+    const eta = st.nextAt ? _evtEtaUntil(st.nextAt) : '—';
+    pill = _evtPill('soon', st.nextAt ? tVars('evtPillInFmt', { t: eta }) : t('wbPhaseIdle'));
+    stat = { label: t('evtStatStartsIn'), value: eta, note: st.nextAt ? _fmtEventWhen(st.nextAt) : '' };
   }
 
-  return `
-    <div style="padding:16px">
-      <div class="db-countdown">${timeTxt}</div>
-      <div class="db-phase">${phaseTxt}</div>
-      ${note ? `<div class="db-count">${note}</div>` : ''}
-      <div class="db-rules">
-        ${t('wbScheduleHdr')}
-        <ul>
-          <li>${t('wbRule1')}</li>
-          <li>${t('wbRule2')}</li>
-          <li>${t('wbRule3')}</li>
-        </ul>
-      </div>
-      <div class="db-rewards-hdr">${t('wbRewardsHdr')}</div>
-      <div class="db-rewards">${_worldBossDropRows()}</div>
-    </div>`;
+  return {
+    pill, stat,
+    hint: t('evtBossHint'),
+    facts: [
+      [t('evtFactWhen'), t('eventSchedBoss')],
+      [t('evtFactPlayers'), t('evtPlayersAll')],
+    ],
+    rules: [t('wbRule1'), t('wbRule2'), t('wbRule3')],
+    rewardsHdr: t('wbRewardsHdr'),
+    rewards: `<div class="db-rewards">${_worldBossDropRows()}</div>`,
+  };
 }
 
 // Static description of EVENT_BOSS's drop table (rollEventBossDrops, shared/
@@ -8282,8 +8369,9 @@ function _updateEventsBtnHighlight() {
   if (label) label.textContent = open ? t('dbBtnOpen') : t('eventsBtn');
 }
 
-// One ticker for the whole Events panel — both tabs count down, and only the
-// visible one is rendered.
+// One ticker for the whole Events panel — the list's status pills and the open
+// event's page both count down; only what's visible is rendered, and
+// _evtSetHTML skips the DOM entirely when nothing changed.
 if (typeof setInterval === 'function') {
   setInterval(() => { if (_eventsPanelOpen()) _renderEventsBody(); }, 1000);
   // Same idea for the standalone Турнир panel's own "Регистрация" tab: the

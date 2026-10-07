@@ -1879,7 +1879,7 @@ let _portalModalOpen = false; // true while the destination-picker modal is up
 let _portalDismissed = false; // player closed it manually; don't reopen until they step away and back
 // World boss state as the server last reported it: spawnAt is a summon already
 // counting down, nextAt the next scheduled appearance (пн/ср/пт/вс 20:00 МСК).
-// Read by the Events panel — see _worldBossBodyHTML in js/ui.js.
+// Read by the Events panel — see _worldBossModel in js/ui.js.
 let _evtBossState = { spawnAt: 0, alive: false, nextAt: 0 };
 let _evtHpCd = 0;
 // Подземелье's own teleport hall (dungeon.classPads, generateDungeonHub,
