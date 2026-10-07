@@ -1159,7 +1159,7 @@ function netConnect(onReady) {
       _race10State = {
         queued: r10s.queued || 0, needed: r10s.needed || 10, live: !!r10s.live,
         minLevel: r10s.minLevel || 10, reward: r10s.reward || 10, winReward: r10s.winReward || 30,
-        maxAttempts: r10s.maxAttempts || 3, attemptsLeft: null,
+        maxAttempts: r10s.maxAttempts || 1, attemptsLeft: null,
         phase: r10s.phase || 'idle', nextAt: r10s.nextAt || 0, startAt: r10s.startAt || 0,
       };
       _race10Registered = !!r10s.registered;
@@ -4904,7 +4904,7 @@ function _initRace10Handlers(s) {
     _race10State = {
       queued: st.queued || 0, needed: st.needed || 10, live: !!st.live,
       minLevel: st.minLevel || 10, reward: st.reward || 10, winReward: st.winReward || 30,
-      maxAttempts: st.maxAttempts || _race10State.maxAttempts || 3,
+      maxAttempts: st.maxAttempts || _race10State.maxAttempts || 1,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _race10State.attemptsLeft,
       // 'idle' outside the 20:30 MSK, 5-minute window, 'reg' while it's open —
       // nextAt is the next window's open time; startAt is when registration
@@ -5147,7 +5147,7 @@ function netCoopGroupStart()  { if (socket?.connected) socket.emit('coopGroupSta
 function _initCoopHandlers(s) {
   s.on('coopState', (st) => {
     _coopState = {
-      maxAttempts: st.maxAttempts || _coopState.maxAttempts || 2,
+      maxAttempts: st.maxAttempts || _coopState.maxAttempts || 1,
       maxStage: st.maxStage || _coopState.maxStage || 8,
       minLevel: st.minLevel != null ? st.minLevel : (_coopState.minLevel || 10),
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _coopState.attemptsLeft,

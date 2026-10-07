@@ -283,7 +283,7 @@ let _trRoundEndAt = 0;
 // most cumulative damage wins. myDamage is this client's own running total,
 // pushed by the server (see js/network.js's race10Score handler) so the HUD
 // can show it live.
-let _race10State = { phase: 'idle', nextAt: 0, startAt: 0, queued: 0, needed: 10, live: false, minLevel: 10, reward: 10, winReward: 30, attemptsLeft: null, maxAttempts: 3 };
+let _race10State = { phase: 'idle', nextAt: 0, startAt: 0, queued: 0, needed: 10, live: false, minLevel: 10, reward: 10, winReward: 30, attemptsLeft: null, maxAttempts: 1 };
 let _race10Registered = false;
 let _race10InMatch = false;
 let _race10Lane = null;
@@ -334,7 +334,7 @@ let _fearWave = 0;
 // { isLeader, leaderId, leaderName, memberId, memberName }. _coopOpenGroups
 // is the joinable lobby list (coopGroupList) — groups still missing a
 // member, from every player, not just this one.
-let _coopState = { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
+let _coopState = { attemptsLeft: null, maxAttempts: 1, maxStage: 8, minLevel: 10 };
 let _coopInRun = false;
 let _coopStageNo = 0;
 let _coopGroup = null;

@@ -75,7 +75,7 @@ function capOf(mode) {
     case 'arena3': return DUNGEON_ATTEMPTS;
     case 'race10': return modes.RACE10_ATTEMPTS ?? 1;
     case 'fear':   return modes.FEAR_ATTEMPTS ?? 2;
-    case 'coop':   return modes.COOP_ATTEMPTS ?? 2;
+    case 'coop':   return modes.COOP_ATTEMPTS ?? 1;
     default:       return 0;
   }
 }

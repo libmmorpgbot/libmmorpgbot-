@@ -7783,7 +7783,7 @@ function _race10Model() {
     rules: [
       t('race10Rule6'), t('race10Rule1'), t('race10Rule8'), t('race10Rule2'), t('race10Rule3'),
       t('race10Rule4'), t('race10Rule5'), t('race10Rule7'),
-      tVars('a3Rule5', { n: st.minLevel }), tVars('a3Rule6', { n: st.maxAttempts }),
+      tVars('a3Rule5', { n: st.minLevel }),
     ],
     rewardsHdr: t('race10RewardHdr'),
     rewards: `<div class="db-rewards">
@@ -7904,7 +7904,7 @@ function _coopOpenGroupsHTML() {
 }
 
 function _coopModel() {
-  const st = (typeof _coopState !== 'undefined' && _coopState) || { attemptsLeft: null, maxAttempts: 2, maxStage: 8, minLevel: 10 };
+  const st = (typeof _coopState !== 'undefined' && _coopState) || { attemptsLeft: null, maxAttempts: 1, maxStage: 8, minLevel: 10 };
   const inRun = typeof _coopInRun !== 'undefined' && _coopInRun;
   const group = typeof _coopGroup !== 'undefined' ? _coopGroup : null;
   const spent = _evtKnown(st.attemptsLeft) && st.attemptsLeft <= 0;
@@ -7949,7 +7949,8 @@ function _coopModel() {
       _evtAttemptsFact(st),
     ],
     rules: [
-      t('coopRule1'), tVars('a3Rule5', { n: st.minLevel }), tVars('fearRule1', { n: st.maxAttempts }),
+      t('coopRule1'), tVars('a3Rule5', { n: st.minLevel }),
+      st.maxAttempts === 1 ? t('coopRuleOneAttempt') : tVars('fearRule1', { n: st.maxAttempts }),
       t('coopRule2'), t('coopRule3'), t('coopRule4'), t('coopRule5'),
     ],
   };

@@ -27,7 +27,7 @@ module.exports = function createCoop(deps) {
   // level-COOP_BOSS_LEVEL boss. Dying anywhere, or a disconnect hold lapsing
   // for good, ends the run for BOTH participants — there is no way to keep
   // going with only one of them.
-  const COOP_ATTEMPTS = 2;
+  const COOP_ATTEMPTS = 1;
   const COOP_MIN_LEVEL = 10;
   // Same role FEAR_START_DELAY_MS plays — see its own comment.
   const COOP_START_DELAY_MS = 5000;
