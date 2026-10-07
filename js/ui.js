@@ -7164,7 +7164,7 @@ function _marketMinPriceForRaw(it, qty) {
   if (!it) return MARKET_MIN_PRICE;
   const n = qty || it.qty || 1;
   if (it.id === 'norm_stone') return 0.40 * n;
-  if (it.id === 'bless_stone') return 1.5 * n;
+  if (it.id === 'bless_stone') return 0.75 * n;
   if (it.id === 'key_rare') return 0.006 * n;
   if (it.id && it.id.startsWith('key_')) return 0.003 * n;
   if (it.slot === 'recipe') return 0.01 * n;
@@ -7172,6 +7172,8 @@ function _marketMinPriceForRaw(it, qty) {
   if (it.slot === 'box') return (it.id === 'liberty_bag' ? 5 : it.id === 'box_rare' ? 2 : 1) * n;
   // Руда — одна цена на все пять редкостей, за штуку.
   if (it.id && it.id.startsWith('ore_')) return 0.01 * n;
+  // Звёздный осколок — за штуку.
+  if (it.id === 'star_shard') return 0.05 * n;
   // Осколки для крафта — тоже за штуку.
   if (it.uniqueShard) return 0.01 * n;
   // Руна — своя цена по редкости, flat (руны не стакаются). Без этой строки
@@ -7198,7 +7200,7 @@ function _marketMinPriceForRaw(it, qty) {
   if (it.skillKey || it.passiveId) return 0.4 * n;
   // Epic pet joins epic weapon/armor/wings here (unlike rare/uncommon pet
   // below, which stay on the generic floor).
-  if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot)) return 30;
+  if (it.rarity === 'epic' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot)) return 15;
   if (it.rarity === 'rare' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 3;
   if (it.rarity === 'uncommon' && typeof ENHANCEABLE_SLOTS !== 'undefined' && ENHANCEABLE_SLOTS.has(it.slot) && it.slot !== 'pet') return 0.3;
   return MARKET_MIN_PRICE;

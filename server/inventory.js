@@ -29,11 +29,11 @@ const MARKET_MIN_PRICE_KEY_UNCOMMON = 0.003; // key_uncommon, per key
 const MARKET_MIN_PRICE_KEY_RARE     = 0.006; // key_rare (blue), per key
 const MARKET_MIN_PRICE_RECIPE      = 0.01; // slot:'recipe' (recu/recr/rece/recl), per scroll
 const MARKET_MIN_PRICE_STONE       = 0.40; // norm_stone, per stone
-const MARKET_MIN_PRICE_BLESS_STONE = 1.5;  // bless_stone, per stone
+const MARKET_MIN_PRICE_BLESS_STONE = 0.75; // bless_stone, per stone (было 1.5)
 const MARKET_MIN_PRICE_BOX_UNCOMMON = 1;   // box_uncommon (green, BOX_DEF), per box
 const MARKET_MIN_PRICE_BOX_RARE     = 2;   // box_rare (blue, BOX_DEF), per box
 const MARKET_MIN_PRICE_LIBERTY_BAG  = 5;   // liberty_bag (BOX_DEF), per bag
-const MARKET_MIN_PRICE_EPIC_GEAR   = 30;   // rarity:'epic' weapon/armor/wings/pet, flat
+const MARKET_MIN_PRICE_EPIC_GEAR   = 15;   // rarity:'epic' weapon/armor/wings/pet, flat (было 30)
 const MARKET_MIN_PRICE_RARE_GEAR   = 3;    // rarity:'rare' weapon/armor, flat
 const MARKET_MIN_PRICE_UNCOMMON_GEAR = 0.3; // rarity:'uncommon' armor/weapon, flat
 const MARKET_MIN_PRICE_RARE_PET_WING_ARTIFACT = 20; // rarity:'rare' pet/wings/artifact, flat
@@ -45,6 +45,9 @@ const MARKET_MIN_PRICE_BUFF_POTION = 0.3;  // slot:'buff_potion', per potion
 // цена на все пять редкостей: редкость руды и так упирается в цену самой
 // переплавки (RUNE_ORE_COST), второй раз множить её здесь незачем.
 const MARKET_MIN_PRICE_ORE = 0.01;
+// Звёздный осколок (награда Логова боссов, защита заточки) — за штуку.
+// Без своей строки стак любого размера уходил за общие 0.1 на весь лот.
+const MARKET_MIN_PRICE_STAR_SHARD = 0.05;
 // Осколки для крафта уникального оружия (uniqueShard, UNIQUE_SHARDS) — per
 // unit. Без своей строки стак любого размера падал в общий MARKET_MIN_PRICE
 // (0.1 за весь лот).
@@ -113,6 +116,7 @@ function _marketMinPriceRaw(item) {
   if (item.slot === 'recipe') return MARKET_MIN_PRICE_RECIPE * qty;
   if (item.slot === 'buff_potion') return MARKET_MIN_PRICE_BUFF_POTION * qty;
   if (item.id && item.id.startsWith('ore_')) return MARKET_MIN_PRICE_ORE * qty;
+  if (item.id === 'star_shard') return MARKET_MIN_PRICE_STAR_SHARD * qty;
   if (item.uniqueShard) return MARKET_MIN_PRICE_SHARD * qty;
   // Своя таблица по редкости, не общий rarity-чек ниже: руна не в
   // ENHANCEABLE_SLOTS, и без этой строки любая её редкость падала бы в
