@@ -20,7 +20,7 @@ const { wipeItemsAll } = require('./fixtures');
 const {
   UNIQUE_SET_CRAFT_RECIPES, UNIQUE_CRAFT_RECIPES, WINGS_CRAFT_RECIPES, CRAFT_ANY_GEAR_SLOTS, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
-  BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, isStackableItem,
+  BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCE_GUARD_SHARDS, isStackableItem,
   QUEST_DEF, questComplete,
 } = require('../shared/definitions');
 
@@ -133,6 +133,33 @@ async function main() {
   // Дошли до +3 на квесті з +2 — наступний квест від цього НЕ закривається.
   ok(!questComplete(QUEST_DEF[qi3], after.quest_kills, 30),
     'квест на +3 від цього НЕ закрився — кожен заробляється окремо');
+
+  // ── защита осколками ─────────────────────────────────────────────────────
+  // Безопасный камень + ENHANCE_GUARD_SHARDS звёздных осколков: промах НЕ
+  // снижает заточку. +7 — шанс 10%, так что промахи почти наверняка будут.
+  console.log('  ── защита осколками ──');
+  const gp = await mk('guard');
+  const gRow = await give(gp, 'sw1', 1, 7);
+  await give(gp, 'bless_stone', 1);
+  await give(gp, 'star_shard', ENHANCE_GUARD_SHARDS - 1);
+  eq(await caught(() => tx(t => craft.enhance(t, gp, gRow, 'bless', { guard: true }))), 'no_shards',
+    `без ${ENHANCE_GUARD_SHARDS} осколков — отказ`);
+  eq(await countOf(gp, 'bless_stone'), 1, 'отказ не съел камень');
+  eq(await countOf(gp, 'star_shard'), ENHANCE_GUARD_SHARDS - 1, 'и осколки не тронуты');
+  await give(gp, 'star_shard', ENHANCE_GUARD_SHARDS * 5 + 1);
+  await give(gp, 'bless_stone', 5);
+  let level = 7, guardedFails = 0, dropped = false;
+  for (let i = 0; i < 6; i++) {
+    const res = await tx(t => craft.enhance(t, gp, gRow, 'bless', { guard: true }));
+    if (res.outcome === 'fail') { guardedFails++; if (res.to < res.from) dropped = true; }
+    if (res.outcome === 'burned') dropped = true;
+    level = res.to;
+  }
+  ok(!dropped, `защищённая заточка ни разу не снизила уровень (промахов: ${guardedFails})`);
+  const gItem = (await invOf(gp)).find(x => x.rowId === gRow);
+  ok(gItem && gItem.enhance === level && level >= 7, `вещь на +${level}, не ниже +7`);
+  eq(await countOf(gp, 'star_shard'), 0, `${ENHANCE_GUARD_SHARDS} осколков списано за каждую попытку`);
+  eq(await countOf(gp, 'bless_stone'), 0, 'и по безопасному камню');
 
   // The rate curve, stated as the live build states it.
   eq(craft.enhanceRate(0), 80, 'шанс на +1 — 80%');

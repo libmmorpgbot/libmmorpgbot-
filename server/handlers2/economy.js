@@ -321,7 +321,10 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       ? await items.resolveRow(t, pid, { slot }, 'equipment')
       : await items.resolveRow(t, pid, { rowId, id, enhance }, 'inventory');
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
-    const res = await craft.enhance(t, pid, row, stoneType === 'bless' ? 'bless' : 'norm');
+    // 'guard' — безопасная заточка с защитой осколками (craft.enhance opts.guard).
+    const res = await craft.enhance(t, pid, row,
+      (stoneType === 'bless' || stoneType === 'guard') ? 'bless' : 'norm',
+      { guard: stoneType === 'guard' });
     // Квест «Заточи предмет до +N» — В ТОЙ ЖЕ транзакции, что и сама заточка.
     // Отдельным шагом после неё зачёт мог бы не случиться на удавшемся броске:
     // камень потрачен, вещь заточена, квест стоит. Порог и «только текущий
@@ -365,6 +368,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       to: res.to,
       newEnhance: res.to,
       rate: res.rate,
+      guard: !!res.guard,
     });
     return res;
     // ── the row that answers "мій +12 меч згорів" ─────────────────────────
@@ -375,7 +379,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // them away on the way to the log.
   }, r => r && {
     outcome: r.outcome, itemId: r.itemId, rowId: r.rowId,
-    from: r.from, to: r.to, rate: r.rate,
+    from: r.from, to: r.to, rate: r.rate, guard: !!r.guard,
   }));
 
   // ── boxes ────────────────────────────────────────────────────────────────
