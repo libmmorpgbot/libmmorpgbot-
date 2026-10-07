@@ -1074,7 +1074,7 @@ function netConnect(onReady) {
 
   function _applyGameStart(payload, d, rxAt) {
     const { floor, spawn: srvSpawn, enemies: initialEnemies, bossStatus: bs, eventBoss: evb,
-            race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs, farm2: f2 } = payload;
+            race10: r10s, arena3: a3s, fear: fs, guildWar: gws, coop: cs, farm2: f2, bossLair: bls } = payload;
     // A world is arriving, so the post-disconnect teardown has nothing left to
     // do — see _scheduleWorldWipe.
     _cancelWorldWipe();
@@ -1212,6 +1212,16 @@ function netConnect(onReady) {
       _fearInRun = false;
       _fearWave = 0;
       if (typeof onFearState === 'function') onFearState();
+    }
+    // Логово боссов: same reconnect reasoning as Fear just above.
+    if (bls && bls.inRun) {
+      _bossLairInRun = true;
+      _bossLairLevel = bls.level || 0;
+      _bossLairUp = !!bls.up;
+      if (typeof onBossLairState === 'function') onBossLairState();
+    } else if (_bossLairInRun) {
+      _bossLairInRun = false; _bossLairLevel = 0; _bossLairUp = false;
+      if (typeof onBossLairState === 'function') onBossLairState();
     }
     // Сотрудничество: same reconnect-resume reasoning as Fear just above.
     if (cs && cs.inRun) {
@@ -4607,6 +4617,7 @@ function _initEventBossHandlers(s) {
   _initTournamentHandlers(s);
   _initRace10Handlers(s);
   _initFearHandlers(s);
+  _initBossLairHandlers(s);
   _initCoopHandlers(s);
   _initFarm2Handlers(s);
   _initGuildWarHandlers(s);
@@ -5125,6 +5136,70 @@ function _initFearHandlers(s) {
     if (cleared && typeof netFearReturn === 'function') netFearReturn();
     if (typeof netFearSync === 'function') netFearSync();
     if (typeof onFearState === 'function') onFearState();
+  });
+}
+
+// ── Логово боссов ────────────────────────────────────────────────────────────
+// Fear's private hall with one chosen boss in it. Entering and dying are free;
+// only a kill is limited (one a day), and the reward comes with
+// bossLairFinished. The way home after a kill is the same fearReturn.
+function netBossLairSync()       { if (socket?.connected) socket.emit('bossLairSync'); }
+function netBossLairEnter(level) { if (socket?.connected) socket.emit('bossLairEnter', { level }); }
+
+function _initBossLairHandlers(s) {
+  s.on('bossLairState', (st) => {
+    _bossLairState = {
+      levels: Array.isArray(st.levels) && st.levels.length ? st.levels : _bossLairState.levels,
+      minLevel: st.minLevel || _bossLairState.minLevel,
+      maxKills: st.maxKills || _bossLairState.maxKills,
+      killsLeft: st.killsLeft !== undefined ? st.killsLeft : _bossLairState.killsLeft,
+    };
+    _bossLairInRun = !!st.inRun;
+    _bossLairLevel = st.level || 0;
+    if (!_bossLairInRun) _bossLairUp = false;
+    if (typeof onBossLairState === 'function') onBossLairState();
+  });
+
+  s.on('bossLairError', ({ msg }) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+
+  // In the hall; the boss appears after readyAt (same countdown as Fear).
+  s.on('bossLairStarted', ({ x, y, hp, level, readyAt }) => {
+    if (!player) return;
+    _bossLairInRun = true;
+    _bossLairLevel = level || 0;
+    _bossLairUp = false;
+    if (hp) player.hp = hp;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('bossLairTab'));
+    else { player.x = x; player.y = y; }
+    if (typeof closeEventsPanel === 'function') closeEventsPanel();
+    if (readyAt && typeof showFreezeCountdown === 'function') showFreezeCountdown(readyAt, t('bossLairFreezeLbl'));
+    if (typeof onBossLairState === 'function') onBossLairState();
+  });
+
+  s.on('bossLairBoss', ({ level }) => {
+    _bossLairUp = true;
+    if (level) _bossLairLevel = level;
+    if (typeof hideFreezeCountdown === 'function') hideFreezeCountdown();
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('bossLairBossMsg', { n: _bossLairLevel }), '#e5484d');
+    if (typeof Sound !== 'undefined') Sound.bossSpawn();
+    if (typeof onBossLairState === 'function') onBossLairState();
+  });
+
+  // Fight over: killed it (cleared, with the reward the server actually paid)
+  // or died / left. A death goes home through the generic respawn flow, so
+  // only a kill needs the explicit trip back.
+  s.on('bossLairFinished', ({ cleared, level, reward }) => {
+    _bossLairInRun = false; _bossLairUp = false;
+    const lvl = level || _bossLairLevel;
+    _bossLairLevel = 0;
+    if (typeof hideFreezeCountdown === 'function') hideFreezeCountdown();
+    if (cleared && typeof showBossLairResult === 'function') showBossLairResult(lvl, reward);
+    else if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('bossLairDiedMsg', { n: lvl }), '#f07886');
+    if (cleared && typeof netFearReturn === 'function') netFearReturn();
+    netBossLairSync();
+    if (typeof onBossLairState === 'function') onBossLairState();
   });
 }
 

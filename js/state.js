@@ -326,6 +326,14 @@ let _serverPlacedAt = 0;
 let _fearInRun = false;
 let _fearWave = 0;
 
+// Логово боссов — Fear's hall with one chosen boss in it (js/network.js's
+// _initBossLairHandlers). killsLeft is null until the server has said.
+let _bossLairState = { levels: [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75], minLevel: 10, maxKills: 1, killsLeft: null };
+let _bossLairInRun = false;
+let _bossLairLevel = 0;     // the boss being fought, 0 when not in a run
+let _bossLairUp = false;    // false during the entry countdown
+let _bossLairPick = 0;      // the boss card the Events page has open, 0 — the ladder
+
 // Сотрудничество (Coop) — 2-player-only instance entered through a
 // leader-run group rather than solo/random matchmaking (see js/network.js's
 // netCoopGroup*/coopStarted). stageNo/maxStage track progress through the

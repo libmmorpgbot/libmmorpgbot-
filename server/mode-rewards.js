@@ -44,6 +44,7 @@ const plog = require('./db/repos/playerlog');
 const ops = require('./tg-ops');
 const {
   race10Rewards, race10Liberty,
+  bossLairReward, BOSS_LAIR_DAILY_KILLS, CRAFT_MATS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS, SEASON_TOURNAMENT_WIN_POINTS,
 } = require('../shared/definitions');
 
@@ -167,6 +168,7 @@ function attach(socket, s) {
       { сокет: socket.id }).catch(() => {});
     return null;
   };
+  attachBossLair(socket, s, pid);
 
   // ── season points for entering and for winning ───────────────────────────
   // The two closures arena3.js and death-battle.js call through
@@ -278,6 +280,32 @@ function attach(socket, s) {
         };
       });
     } catch (err) { return _report('coop', err, id); }
+  };
+}
+
+// Логово боссов: the day's kill and the reward in ONE transaction. The kill
+// is counted first (progression.takeAttempt under the daily cap) — refused
+// means the day's kill was already used, from this or another session, and
+// nothing is paid; anything throwing after it rolls the count back too, so a
+// failed payout never costs the player their kill for the day.
+function attachBossLair(socket, s, pid) {
+  socket.data._grantBossLairReward = async (level) => {
+    const id = pid();
+    if (!id) return null;
+    try {
+      return await tx(async (t) => {
+        const took = await progression.takeAttempt(t, id, 'bosslair', BOSS_LAIR_DAILY_KILLS);
+        if (!took) return { counted: false, items: [], missed: [] };
+        const list = bossLairReward(level).map(it => {
+          const def = CRAFT_MATS.find(m => m.id === it.id);
+          return { ...it, name: def ? def.name : it.id, img: def ? def.img : null };
+        });
+        const g = await grantItems(t, id, list);
+        if (g.given.length) await s.pushItems(t);
+        _recordPayout(id, 'bosslair', { level, ...g });
+        return { counted: true, items: g.given, missed: g.missed, killsLeft: took.left };
+      });
+    } catch (err) { return _report('bosslair', err, id); }
   };
 }
 

@@ -192,6 +192,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
       const spot = p ? deps._returnToHub(s.socket.id) : null;
       // Told, not just logged: the client's own HUD still says "in run" from
       // before the drop, and only a fearFinished clears it.
+      if (run.boss) {
+        s.socket.emit('bossLairFinished', { cleared: false, level: run.boss, x: spot && spot.x, y: spot && spot.y });
+        return;
+      }
       s.socket.emit('fearFinished', {
         cleared: false, wave: run.wave, x: spot && spot.x, y: spot && spot.y,
       });
@@ -205,6 +209,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // no longer exists — it no-ops by design (see fearEnter, handlers2/
     // modes.js). Resuming a countdown nobody was watching would just be a
     // second wait, so the wave starts now.
+    // A Boss Lair run is the same hall with one boss in it: up already, or
+    // spawned now for the same reason as wave 1 above.
+    if (run.boss) {
+      if (run.wave !== 0) s.socket.emit('bossLairBoss', { level: run.boss });
+      else m._lairStartBoss(run.room, s.socket.id, run.lane, run.boss);
+      return;
+    }
     if (run.wave > 0) s.socket.emit('fearWave', { wave: run.wave, maxWave: FEAR_MAX_WAVE });
     else m._fearStartWave(run.room, s.socket.id, run.lane, 1);
   }
@@ -471,6 +482,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
     const scratch = [];
     const out = { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 };
     if (result.arm === 'coop') return out;
+    // Босс Логова: только его фиксированная награда (две заточки и
+    // осколки, server/game/fear.js) — ни таблицы зоны, ни боссовых сундуков.
+    if (result.bossLair) return out;
 
     // Таблица той зоны, где убит монстр. Функцией, а не одним вызовом: бонус
     // к дропу ниже бросает её же второй раз.

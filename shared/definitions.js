@@ -925,6 +925,52 @@ const FEAR_FLOOR_ID = 11;
 const COOP_STAGE_LEVELS = [10, 15, 20, 25, 30, 40, 50, 60];
 const COOP_BOSS_LEVEL = 40;
 
+// ── Логово боссов (Boss Lair) event ──────────────────────────────────────────
+// Fear's sibling: the same private on-demand hall (server/game/fear.js,
+// Room.js's fear lanes), but instead of waves the player picks ONE boss from
+// the ladder below and fights it alone. Only a KILL is limited — dying or
+// walking out costs nothing — and a player may kill BOSS_LAIR_DAILY_KILLS of
+// them per day in total, whichever they pick. A boss opens once the player
+// reaches its level.
+//
+// Every step up is a stronger boss twice over: monsterStatsAtLevel's own
+// 'boss' curve already grows with the level, and bossLairScaling below adds
+// more HP/attack on top and makes it run and swing faster.
+const BOSS_LAIR_LEVELS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75];
+const BOSS_LAIR_MIN_LEVEL = BOSS_LAIR_LEVELS[0];
+const BOSS_LAIR_DAILY_KILLS = 1;
+// Reward per kill: two enchant stones — ordinary ones from the bosses up to
+// BOSS_LAIR_NORM_MAX_LEVEL, safe ones above it — and as many star shards as
+// the boss's level (a level-35 boss — 2 safe stones and 35 shards).
+const BOSS_LAIR_STONES = 2;
+const BOSS_LAIR_NORM_MAX_LEVEL = 30;
+const BOSS_LAIR_SHARD_ID = 'star_shard';
+function bossLairStoneId(level) {
+  return (Number(level) || 0) <= BOSS_LAIR_NORM_MAX_LEVEL ? 'norm_stone' : 'bless_stone';
+}
+function bossLairReward(level) {
+  return [
+    { id: bossLairStoneId(level), qty: BOSS_LAIR_STONES },
+    { id: BOSS_LAIR_SHARD_ID, qty: Math.max(1, Math.floor(Number(level) || 0)) },
+  ];
+}
+// Extra multipliers by rung (0 for the level-10 boss, 13 for the level-75):
+// HP +12%, attack +6%, move speed +4% and swing interval -4% per rung.
+function bossLairScaling(level) {
+  const i = Math.max(0, BOSS_LAIR_LEVELS.indexOf(level));
+  return {
+    hpMult: 1 + i * 0.12,
+    atkMult: 1 + i * 0.06,
+    spdMult: 1 + i * 0.04,
+    atkCdMult: 1 / (1 + i * 0.04),
+  };
+}
+// Which species plays the boss — the boss of the zone that level belongs to
+// (imp/orc/beholder/demon), the same pick the co-op boss uses.
+function bossLairEid(level) {
+  return FLOOR_ENEMIES[armIndexForLevel(level)].boss;
+}
+
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
 // and server-side validation (e.g. the Market only ever stores a listing's
@@ -998,6 +1044,10 @@ const CRAFT_MATS = [
   // ── Teleport stone (bought from the merchant for Liberty, see
   // TELEPORT_STONE_PRICE below — not a drop) ──────────────────
   { id:'teleport_stone', name:'Камень телепортации', icon:'teleport', slot:'material', rarity:'rare' },
+  // ── Star shard — the Boss Lair's reward (bossLairReward below), as many
+  // per kill as the boss's level. Nothing spends it yet; it is stockpiled
+  // for what comes next. ─────────────────────────────────────────────────
+  { id:'star_shard', name:'Звёздный осколок', img:'/images/material/shard.png', slot:'material', rarity:'epic' },
   // ── Room-level keys (от монстров в комнатах подземелья) ──
   { id:'key_uncommon', name:'Необычный ключ', img:'/images/material/keyu.png', slot:'material', rarity:'uncommon' },
   { id:'key_rare',      name:'Редкий ключ',    img:'/images/material/keyr.png', slot:'material', rarity:'rare'     },
@@ -4074,6 +4124,8 @@ if (typeof module !== 'undefined') module.exports = {
   CLAN_LEVELS, clanAtkBonusPct, clanBonusOf,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
+  BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS, BOSS_LAIR_STONES, BOSS_LAIR_NORM_MAX_LEVEL, BOSS_LAIR_SHARD_ID, bossLairStoneId,
+  bossLairReward, bossLairScaling, bossLairEid,
   QUEST_DEF,
   SEASON_END_AT, seasonActive, MAIL_BONUS_END_AT, mailBonusOn,
   SEASON_ENHANCE_POINTS,

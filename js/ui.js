@@ -7299,6 +7299,7 @@ const _EVT_META = {
   a3:         { color: '#5b8def', art: 'a3',       title: 'a3Tab',        sub: 'eventSubA3',         sched: 'eventSchedA3' },
   race10:     { color: '#eb4e61', art: 'race10',   title: 'race10Tab',    sub: 'eventSubRace10',     sched: 'eventSchedRace10' },
   fear:       { color: '#8a6fbf', art: 'fear',     title: 'fearTab',      sub: 'eventSubFear',       sched: 'eventSchedFear' },
+  bossLair:   { color: '#e5484d', art: 'lair',     title: 'bossLairTab',  sub: 'eventSubBossLair',   sched: 'eventSchedBossLair' },
   coop:       { color: '#4caf6b', art: 'coop',     title: 'coopTab',      sub: 'eventSubCoop',       sched: 'eventSchedCoop' },
   farm2:      { color: '#e0a23c', art: 'farm2',    title: 'farm2Tab',     sub: 'eventSubFarm2',      sched: 'eventSchedFarm2' },
   boss:       { color: '#ffd18a', art: 'boss',     title: 'worldBossTab', sub: 'eventSubBoss',       sched: 'eventSchedBoss' },
@@ -7306,12 +7307,13 @@ const _EVT_META = {
   // No dedicated art yet — battle.jpg stands in until tournament.jpg exists.
   tournament: { color: '#ffb020', art: 'battle',   title: 'tournamentTab', sub: 'eventSubTournament', sched: 'eventSchedTournament' },
 };
-const _EVT_ORDER = ['a3', 'race10', 'fear', 'coop', 'farm2', 'boss', 'guildWar', 'tournament'];
+const _EVT_ORDER = ['a3', 'race10', 'fear', 'bossLair', 'coop', 'farm2', 'boss', 'guildWar', 'tournament'];
 
 function _evtModel(tab) {
   return tab === 'boss'       ? _worldBossModel()
        : tab === 'race10'     ? _race10Model()
        : tab === 'fear'       ? _fearModel()
+       : tab === 'bossLair'   ? _bossLairModel()
        : tab === 'coop'       ? _coopModel()
        : tab === 'farm2'      ? _farm2Model()
        : tab === 'guildWar'   ? _guildWarModel()
@@ -7394,6 +7396,7 @@ function _evtPageHTML(tab, m, opts = {}) {
       ${stat}
       ${m.action ? `<div class="evp-action">${m.action}</div>` : ''}
       ${m.hint ? `<div class="evp-hint">${m.hint}</div>` : ''}
+      ${m.extra ? `<div class="evp-section">${m.extraHdr ? `<div class="evp-sec-hdr">${m.extraHdr}</div>` : ''}${m.extra}</div>` : ''}
       ${factsHTML}
       ${rulesHTML}
       ${rewardsHTML}
@@ -7447,6 +7450,7 @@ function openEventsPanel() {
   if (typeof netArena3Sync === 'function') netArena3Sync();
   if (typeof netRace10Sync === 'function') netRace10Sync();
   if (typeof netFearSync === 'function') netFearSync();
+  if (typeof netBossLairSync === 'function') netBossLairSync();
   if (typeof netCoopSync === 'function') netCoopSync();
   if (typeof netFarm2Sync === 'function') netFarm2Sync();
   if (typeof netTournamentSync === 'function') netTournamentSync();
@@ -7854,6 +7858,154 @@ function _fearModel() {
       tVars('fearRule3', { n: st.maxWave }), t('fearRule4'), t('fearRule5'),
     ],
   };
+}
+
+// ── Логово боссов ────────────────────────────────────────────────────────────
+// Fear's private hall with ONE boss of the player's choosing. The page is the
+// ladder itself: every boss is its own card — sprite, level, how hard it hits,
+// what it pays — with its own "В бой" button. Only a kill is limited (one a
+// day, any boss); entering and dying are free. State comes from
+// _bossLairState / _bossLairInRun (js/network.js _initBossLairHandlers).
+
+// First frame of the boss's idle sheet as a CSS sprite — the same art that
+// walks around in the hall (ENEMY_SPRITE_DEF, js/sprites.js).
+function _lairBossIcon(eid, size) {
+  const def = typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[eid];
+  const idle = def && def.sheets && def.sheets.idle;
+  if (!idle) return iconHTML('crown', Math.round(size * 0.6), '#e5484d');
+  return `<span class="lair-sprite" style="width:${size}px;height:${size}px;background-image:url('/${idle.src}');background-size:${idle.cols * size}px auto"></span>`;
+}
+
+function _lairFmt(n) {
+  n = Math.round(n || 0);
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e4) return Math.round(n / 1e3) + 'k';
+  return String(n);
+}
+
+// What the server will spawn for this level (Room.fearSpawnBoss): the zone's
+// boss on the 'boss' stat curve, times the rung's own multipliers.
+function _lairBossInfo(lvl) {
+  const eid = bossLairEid(lvl);
+  const base = (typeof ENEMY_DEF !== 'undefined' ? ENEMY_DEF : []).find(d => d.eid === eid) || {};
+  const st = monsterStatsAtLevel(lvl, 'boss');
+  const k = bossLairScaling(lvl);
+  return {
+    eid, name: base.name || eid, color: base.color || '#e5484d',
+    hp: st.hp * k.hpMult, atk: st.atk * k.atkMult,
+    spdPct: Math.round((k.spdMult - 1) * 100), atkSpdPct: Math.round((1 / k.atkCdMult - 1) * 100),
+  };
+}
+
+function _lairBossCardsHTML(st, inRun, lvl) {
+  const shard = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === BOSS_LAIR_SHARD_ID) : null;
+  const spent = _evtKnown(st.killsLeft) && st.killsLeft <= 0;
+  return `<div class="lair-list">${(st.levels || BOSS_LAIR_LEVELS).map(bl => {
+    const b = _lairBossInfo(bl);
+    const stone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === bossLairStoneId(bl)) : null;
+    const locked = lvl < bl;
+    const fighting = inRun && _bossLairLevel === bl;
+    let btn;
+    if (fighting) btn = `<button class="lair-go" disabled>${t('evtPillInMatch')}</button>`;
+    else if (locked) btn = `<span class="lair-lock">${iconHTML('lock', 12)} ${tVars('bossLairLockFmt', { n: bl })}</span>`;
+    else if (inRun || spent) btn = `<button class="lair-go" disabled>${spent ? t('bossLairTomorrow') : t('bossLairFightBtn')}</button>`;
+    else btn = `<button class="lair-go" onclick="netBossLairEnter(${bl})">${t('bossLairFightBtn')}</button>`;
+    const fast = b.spdPct > 0
+      ? `<span>${t('bossLairSpd')} <b>+${b.spdPct}%</b></span>` : '';
+    return `
+      <div class="lair-boss${locked ? ' is-locked' : ''}${fighting ? ' is-fighting' : ''}" style="--bc:${b.color}">
+        <div class="lair-ico">${_lairBossIcon(b.eid, 56)}<span class="lair-badge">${bl}</span></div>
+        <div class="lair-info">
+          <div class="lair-name">${b.name}<span class="lair-lvl">${tVars('bossLairLvlFmt', { n: bl })}</span></div>
+          <div class="lair-stats">
+            <span>❤ <b>${_lairFmt(b.hp)}</b></span>
+            <span>⚔ <b>${_lairFmt(b.atk)}</b></span>
+            ${fast}
+          </div>
+          <div class="lair-rew">
+            <span class="lair-rew-lbl">${t('evtRewardsHdr')}:</span>
+            ${stone ? `<span class="lair-rew-it" title="${stone.name}">${_itemIcon(stone, 18)}×${BOSS_LAIR_STONES}</span>` : ''}
+            ${shard ? `<span class="lair-rew-it" title="${shard.name}">${_itemIcon(shard, 18)}×${bl}</span>` : ''}
+          </div>
+        </div>
+        <div class="lair-act">${btn}</div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+function _bossLairModel() {
+  const st = (typeof _bossLairState !== 'undefined' && _bossLairState) || { levels: BOSS_LAIR_LEVELS, minLevel: BOSS_LAIR_MIN_LEVEL, maxKills: 1, killsLeft: null };
+  const inRun = typeof _bossLairInRun !== 'undefined' && _bossLairInRun;
+  const lvl = _evtLvl();
+  const spent = _evtKnown(st.killsLeft) && st.killsLeft <= 0;
+  const kills = {
+    label: t('evtStatKills'),
+    value: _evtKnown(st.killsLeft) ? `${st.killsLeft}/${st.maxKills}` : `?/${st.maxKills}`,
+  };
+
+  let pill, stat;
+  if (inRun) {
+    pill = _evtPill('mine', t('evtPillInMatch'));
+    stat = {
+      label: t('evtStatNow'), text: true,
+      value: tVars('bossLairFightFmt', { n: _bossLairLevel }),
+      note: _bossLairUp ? t('bossLairPhaseFight') : t('bossLairPhaseCountdown'),
+    };
+  } else if (lvl < st.minLevel) {
+    pill = _evtPill('off', tVars('evtPillLvlFmt', { n: st.minLevel }));
+    stat = { ...kills, note: tVars('a3NeedLevelFmt', { n: st.minLevel }) };
+  } else if (spent) {
+    pill = _evtPill('off', t('evtPillKilledToday'));
+    stat = { ...kills, note: t('bossLairNoteTomorrow') };
+  } else {
+    pill = _evtPill('open', t('evtPillReady'));
+    stat = { ...kills, note: t('bossLairNotePick') };
+  }
+
+  return {
+    pill, stat,
+    extraHdr: t('bossLairBossesHdr'),
+    extra: _lairBossCardsHTML(st, inRun, lvl),
+    facts: [
+      [t('evtFactLevel'), `${st.minLevel}+`],
+      [t('evtFactWhen'), t('eventSchedFear')],
+      [t('evtFactPlayers'), t('evtPlayersSolo')],
+      [t('evtFactLimit'), t('bossLairLimitVal')],
+    ],
+    rules: [t('bossLairRule1'), t('bossLairRule2'), t('bossLairRule3'), t('bossLairRule4'), t('bossLairRule5'), t('bossLairRule6')],
+  };
+}
+
+function onBossLairState() {
+  _updateEventsBtnHighlight();
+  if (_eventsPanelOpen()) _renderEventsBody();
+}
+
+// The kill's result screen — what the server actually paid (reward.items),
+// not what the table promises: a full inventory or a day already used shows
+// as such instead of a fake prize.
+function showBossLairResult(level, reward) {
+  const modal = document.getElementById('lair-result-modal');
+  if (!modal) return;
+  const r = reward || {};
+  const rows = (r.items || []).map(it => {
+    const def = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === it.id) : null;
+    const img = (def && def.img) || it.img;
+    return `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}
+      <span>${(def && def.name) || it.name || it.id}</span><span class="db-reward-qty">×${it.qty || 1}</span></div>`;
+  });
+  let sub = tVars('bossLairResultSubFmt', { n: level });
+  if (reward && r.counted === false) sub = t('bossLairResultNone');
+  else if (!reward) sub = t('bossLairResultError');
+  else if ((r.missed || []).length) sub += ' ' + t('bossLairResultMissed');
+  document.getElementById('lair-result-sub').textContent = sub;
+  document.getElementById('lair-result-rewards').innerHTML = rows.join('');
+  modal.style.display = 'flex';
+}
+
+function closeBossLairResult() {
+  const modal = document.getElementById('lair-result-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 // ── Сотрудничество (Coop) tab ────────────────────────────────────────────────

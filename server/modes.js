@@ -39,6 +39,7 @@ const {
   FARM2_DAILY_MINUTES, WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   FEAR_MAX_WAVE, COOP_STAGE_LEVELS, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE,
+  BOSS_LAIR_DAILY_KILLS,
 } = require('../shared/definitions');
 
 // telegram-id → player_id, с памятью на процесс. Пара «id в базе — id в
@@ -76,6 +77,8 @@ function capOf(mode) {
     case 'race10': return modes.RACE10_ATTEMPTS ?? 1;
     case 'fear':   return modes.FEAR_ATTEMPTS ?? 2;
     case 'coop':   return modes.COOP_ATTEMPTS ?? 1;
+    // Логово боссов counts KILLS, not entries — see bossLairEnter.
+    case 'bosslair': return BOSS_LAIR_DAILY_KILLS;
     default:       return 0;
   }
 }
@@ -708,7 +711,11 @@ function init(io) {
     if (!Number.isFinite(oldFloor)) return;
     try {
       if (oldFloor === FLOOR_IDS.fear) {
-        if (modes._fearReleaseRun(socketId)) {
+        const run = modes._fearReleaseRun(socketId);
+        // A Boss Lair run walked out of: nothing was spent (only a kill
+        // counts), the client just has to stop showing the fight.
+        if (run && run.boss) io.to(socketId).emit('bossLairState', { inRun: false, level: 0 });
+        else if (run) {
           io.to(socketId).emit('fearState', {
             maxAttempts: modes.FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE,
             minLevel: modes.FEAR_MIN_LEVEL, inRun: false, wave: 0,
@@ -835,7 +842,7 @@ function init(io) {
     // A floor boss going down is floor-wide news: the client draws the respawn
     // countdown from it, and the countdown is the only thing that tells a
     // player whether it is worth waiting.
-    if (result.isBoss && room && Number.isFinite(room.floor)) {
+    if (result.isBoss && !result.bossLair && room && Number.isFinite(room.floor)) {
       io.to(`floor_${room.floor}`).emit('bossStatus', {
         arm: result.arm, alive: false, respawnAt: result.respawnAt,
       });

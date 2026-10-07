@@ -3140,6 +3140,51 @@ canvas { display:block; width:100%; height:100%; }
 @keyframes evtPulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .evt-pill-live i { animation: none; } }
 
+/* ── Логово боссов: one card per boss (_lairBossCardsHTML, js/ui.js) ── */
+.lair-list { display: flex; flex-direction: column; gap: 8px; }
+.lair-boss {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 8px; border-radius: 12px;
+  background: color-mix(in srgb, var(--bc) 7%, rgba(0,0,0,.25));
+  border: 1px solid color-mix(in srgb, var(--bc) 32%, rgba(193,204,213,.08));
+}
+.lair-boss.is-locked { opacity: .55; }
+.lair-boss.is-fighting { border-color: #ffcf8a; box-shadow: 0 0 0 1px rgba(255,207,138,.35); }
+.lair-ico {
+  position: relative; flex-shrink: 0;
+  width: 60px; height: 60px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 60%, color-mix(in srgb, var(--bc) 30%, transparent), rgba(0,0,0,.35) 70%);
+  border: 1px solid color-mix(in srgb, var(--bc) 40%, transparent);
+  overflow: hidden;
+}
+.lair-sprite { display: block; background-repeat: no-repeat; background-position: 0 0; image-rendering: pixelated; }
+.lair-badge {
+  position: absolute; right: 2px; bottom: 2px;
+  min-width: 20px; padding: 1px 4px; border-radius: 6px;
+  font-size: 10.5px; font-weight: 800; text-align: center;
+  color: #1a0c0c; background: #ffcf8a;
+}
+.lair-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.lair-name { font-size: 13.5px; font-weight: 800; color: var(--bc); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.lair-lvl { font-size: 11px; font-weight: 700; color: #a8bccb; }
+.lair-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: #8fa3b3; }
+.lair-stats b { color: #e3e9ee; }
+.lair-rew { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 11.5px; font-weight: 700; color: #ffcf8a; }
+.lair-rew-lbl { font-weight: 600; color: #8fa3b3; }
+.lair-rew-it { display: inline-flex; align-items: center; gap: 2px; }
+.lair-rew-it img, .lair-rew-it svg { width: 18px; height: 18px; }
+.lair-act { flex-shrink: 0; }
+.lair-go {
+  padding: 8px 12px; border-radius: 9px;
+  border: 1px solid rgba(229,72,77,.55);
+  background: linear-gradient(180deg, rgba(229,72,77,.28), rgba(229,72,77,.12));
+  color: #ffc2b8; font-size: 12px; font-weight: 800;
+  cursor: pointer; touch-action: manipulation; white-space: nowrap;
+}
+.lair-go:disabled { opacity: .45; cursor: default; }
+.lair-lock { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: #8e9aa5; white-space: nowrap; }
+
 /* ── Event page (_evtPageHTML, js/ui.js) ── */
 .evp { display: flex; flex-direction: column; gap: 12px; }
 .evp-hero {
@@ -3557,7 +3602,7 @@ canvas { display:block; width:100%; height:100%; }
 /* Victory modal — same framing as the death modal, gold instead of blood. */
 /* The 3v3 and race10 result modals reuse .db-win-panel and its children
    wholesale — only the icon/title/subtitle text differ between outcomes. */
-#a3-result-modal, #race10-result-modal {
+#a3-result-modal, #race10-result-modal, #lair-result-modal {
   position: absolute; inset: 0;
   background: rgba(0,0,0,0.88);
   display: flex; align-items: center; justify-content: center; z-index: 260;

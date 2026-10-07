@@ -1077,7 +1077,10 @@ class Session {
       arena3: m._a3PublicState
         ? { ...m._a3PublicState(), registered: !!(m._a3 && m._a3.queue.has(sid)) } : null,
       guildWar: m._gwPublicState ? m._gwPublicState() : null,
-      fear: inFear ? { inRun: true, wave: inFear.wave, maxWave: FEAR_MAX_WAVE } : null,
+      fear: inFear && !inFear.boss ? { inRun: true, wave: inFear.wave, maxWave: FEAR_MAX_WAVE } : null,
+      // Логово боссов rides on the same hall record (server/game/fear.js) —
+      // `boss` is the level of the boss being fought.
+      bossLair: inFear && inFear.boss ? { inRun: true, level: inFear.boss, up: inFear.wave !== 0 } : null,
       coop: inCoop && inCoop.room
         ? { inRun: true, stage: inCoop.room.coopStage(), maxStage: COOP_STAGE_LEVELS.length }
         : null,

@@ -147,7 +147,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
   // FEAR_MAX_WAVE/TOURNAMENT_MIN_LEVEL/TOURNAMENT_SIZE are not fear.js/
   // tournament.js's to own — Room.js and this file need them too, so all
   // three live in shared/definitions.
-  const { FEAR_MAX_WAVE, TOURNAMENT_MIN_LEVEL, TOURNAMENT_SIZE } = require('../../shared/definitions');
+  const { FEAR_MAX_WAVE, TOURNAMENT_MIN_LEVEL, TOURNAMENT_SIZE,
+    BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS } = require('../../shared/definitions');
   const { playerParty, safeTimeout } = deps;
   const { _pvpEliminate, _pvpFrozen, _returnToHub } = modes;
 
@@ -681,7 +682,9 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     });
 
     safeOn('fearSync', async () => {
-      const run = _fear.get(s.socket.id);
+      const raw = _fear.get(s.socket.id);
+      // A Boss Lair fight lives in the same record — it is not a Fear run.
+      const run = raw && !raw.boss ? raw : null;
       s.socket.emit('fearState', {
         maxAttempts: FEAR_ATTEMPTS, maxWave: FEAR_MAX_WAVE, minLevel: FEAR_MIN_LEVEL,
         attemptsLeft: await modes.attemptsLeft(s.socket.id, 'fear'),
@@ -690,6 +693,73 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
         // private Room now (_createFearRoom), so there is no shared pool that
         // can ever be "full".
       });
+    });
+
+    // ── Логово боссов ─────────────────────────────────────────────────────────
+    // Fear's hall with one boss in it (server/game/fear.js _lairStartBoss).
+    // Entering is free and so is dying: only a kill is limited, to
+    // BOSS_LAIR_DAILY_KILLS a day across all bosses, and it is counted in the
+    // same transaction that pays the reward (_grantBossLairReward). The check
+    // here only stops someone whose kill is already used from walking in for
+    // nothing.
+    const _lairState = async () => {
+      const run = _fear.get(s.socket.id);
+      return {
+        levels: BOSS_LAIR_LEVELS, minLevel: BOSS_LAIR_MIN_LEVEL, maxKills: BOSS_LAIR_DAILY_KILLS,
+        killsLeft: await modes.attemptsLeft(s.socket.id, 'bosslair'),
+        inRun: !!(run && run.boss), level: (run && run.boss) || 0,
+      };
+    };
+    safeOn('bossLairSync', async () => {
+      s.socket.emit('bossLairState', await _lairState());
+    });
+    safeOn('bossLairEnter', async ({ level } = {}) => {
+      if (!s.authed || !s.room) return;
+      if (_fear.has(s.socket.id) || _fearStarting.has(s.socket.id)) return;
+      const bossLvl = Math.floor(Number(level));
+      if (!BOSS_LAIR_LEVELS.includes(bossLvl)) return s.socket.emit('bossLairError', { msg: 'Нет такого босса' });
+      const cp = s.room.players.get(s.socket.id);
+      if (!cp) return s.socket.emit('bossLairError', { msg: 'Выберите персонажа' });
+      // Same cross-checks as fearEnter, for the same reason (see there).
+      if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
+        return s.socket.emit('bossLairError', { msg: 'Вы сейчас на арене 3х3' });
+      }
+      if (_race10.queue.has(s.socket.id) || (_race10.live && _race10.alive.has(s.socket.id))) {
+        return s.socket.emit('bossLairError', { msg: 'Вы сейчас в Кровавой Башне' });
+      }
+      if (_coop.has(s.socket.id) || _farm2.has(s.socket.id)) {
+        return s.socket.emit('bossLairError', { msg: 'Сначала завершите текущее событие' });
+      }
+      if (levelOf() < bossLvl) {
+        return s.socket.emit('bossLairError', { msg: `Этот босс открывается с ${bossLvl} уровня` });
+      }
+      _fearStarting.add(s.socket.id);
+      try {
+        if (await modes.attemptsLeft(s.socket.id, 'bosslair') <= 0) {
+          return s.socket.emit('bossLairError', { msg: 'Босс на сегодня уже убит — приходите завтра' });
+        }
+        const room = _createFearRoom();
+        if (!_doEnterLocation('fear', { force: true, room, pos: room.fearLaneEntry(0) })) {
+          return s.socket.emit('bossLairError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+        }
+        const spot = s.room.fearDeploy(s.socket.id);
+        if (!spot) {
+          _doEnterLocation('hub', { force: true });
+          return s.socket.emit('bossLairError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+        }
+        // wave:0 — in the hall, boss not up yet. A real record from the first
+        // moment, for the same reason fearEnter sets one before its countdown.
+        const readyAt = Date.now() + FEAR_START_DELAY_MS;
+        _fear.set(s.socket.id, { room, lane: spot.lane, wave: 0, boss: bossLvl });
+        s.socket.emit('bossLairStarted', { x: spot.x, y: spot.y, hp: cp.hp, level: bossLvl, readyAt });
+        safeTimeout('bossLairSpawn', () => {
+          const run = _fear.get(s.socket.id);
+          if (!run || run.room !== room || run.lane !== spot.lane || run.wave !== 0) return;
+          modes._lairStartBoss(room, s.socket.id, spot.lane, bossLvl);
+        }, FEAR_START_DELAY_MS);
+      } finally {
+        _fearStarting.delete(s.socket.id);
+      }
     });
 
     // Sent once the player closes the fear result modal — same reasoning as

@@ -109,6 +109,7 @@ module.exports = function createFear(deps) {
     if (result.arm !== 'fear') return;
     const run = _fear.get(socketId);
     if (!run || run.lane !== result.lane) return;
+    if (run.boss) { _lairTrackKill(socketId, run, result); return; }
     const room = run.room;
     if (!room) return;
     // The run record is only trustworthy while the player is still actually
@@ -162,11 +163,50 @@ module.exports = function createFear(deps) {
     return run;
   }
 
-  function _fearFinish(socketId, cleared) {
+  function _fearFinish(socketId, cleared, reward) {
     const run = _fearReleaseRun(socketId);
     if (!run) return;
     const spot = _returnToHub(socketId);
+    if (run.boss) {
+      io.to(socketId).emit('bossLairFinished', { cleared, level: run.boss, reward: reward || null, x: spot?.x, y: spot?.y });
+      return;
+    }
     io.to(socketId).emit('fearFinished', { cleared, wave: run.wave, x: spot?.x, y: spot?.y });
+  }
+
+  // ── Логово боссов ─────────────────────────────────────────────────────────
+  // A Fear hall with one boss in it instead of waves (Room.fearSpawnBoss).
+  // The run record is the same _fear entry with `boss` set to the boss's
+  // level, so everything that already guards a Fear run — one run at a time,
+  // the death fan-out, the reconnect hold, leaving through a portal — covers
+  // this one for free. `wave` keeps its meaning of "has the fight started":
+  // 0 during the entry countdown, 1 once the boss is up.
+  function _lairStartBoss(room, socketId, lane, level) {
+    if (!room.fearSpawnBoss(lane, level)) return false;
+    _fear.set(socketId, { room, lane, wave: 1, boss: level });
+    io.to(socketId).emit('bossLairBoss', { level });
+    return true;
+  }
+
+  // The boss fell. The day's kill and the reward are one transaction
+  // (_grantBossLairReward, server/mode-rewards.js): a kill that could not be
+  // counted — the day's limit already used from another session — pays
+  // nothing, and a reward that failed does not use up the day.
+  function _lairTrackKill(socketId, run, result) {
+    if (!result.bossLair) return;
+    const room = run.room;
+    if (!room || room.fearLaneOf(socketId) !== run.lane || room.fearOwnerOf(run.lane) !== socketId) {
+      _fear.delete(socketId);
+      return;
+    }
+    // Out of the map before the await, so a second hit landing on the corpse
+    // in the same tick cannot pay twice.
+    _fear.set(socketId, { ...run, wave: -1 });
+    const sock = io.sockets.sockets.get(socketId);
+    const grant = sock?.data?._grantBossLairReward;
+    Promise.resolve(grant ? grant(run.boss) : null)
+      .catch(() => null)
+      .then(reward => _fearFinish(socketId, true, reward));
   }
 
   // Wired into _pvpEliminate's fan-out (mirrors _race10Eliminate) — dying
@@ -265,5 +305,6 @@ module.exports = function createFear(deps) {
     _fear, _fearRooms, _createFearRoom, _liveFearRooms, _trackFearRoom,
     _fearStartWave, _fearTrackKill, _fearReleaseRun, _fearFinish, _fearEliminate,
     _fearDisconnectGrace, _fearHoldOnDisconnect, _fearClaimOnReconnect, _fearResumeRun,
+    _lairStartBoss,
   };
 };
