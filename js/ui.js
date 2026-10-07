@@ -5235,14 +5235,28 @@ function _enhMatTotal(id) {
   if (!player) return 0;
   return player.inventory.reduce((n, i) => n + (i && i.id === id ? (i.qty || 1) : 0), 0);
 }
-const _ENH_GUARD_COST = typeof ENHANCE_GUARD_SHARDS === 'number' ? ENHANCE_GUARD_SHARDS : 100;
-// Хватает ли на попытку этим способом: камень, а для защиты ещё и осколки.
+// ── шкала осколков у безопасной заточки ──────────────────────────────────
+// Каждый шаг — ENHANCE_BOOST_SHARDS звёздных осколков и +10% к шансу, до 90%
+// (enhanceBoostedRate, shared/definitions.js; сервер считает так же).
+// Сбрасывается при открытии панели другой вещи.
+const _ENH_BOOST_COST = typeof ENHANCE_BOOST_SHARDS === 'number' ? ENHANCE_BOOST_SHARDS : 100;
+let _enhBoost = 0;
+let _enhBoostFor = null;
+function _enhBoostClamp(enh) {
+  const byShards = Math.floor(_enhMatTotal('star_shard') / _ENH_BOOST_COST);
+  _enhBoost = Math.max(0, Math.min(_enhBoost, enhanceBoostMaxSteps(enh), byShards));
+  return _enhBoost;
+}
+function _stepEnhBoost(kind, key, d) {
+  _enhBoost = Math.max(0, _enhBoost + d);
+  openEnhancePanel(kind, key);
+}
+// Хватает ли на попытку этим способом: камень, а для шагов шкалы — осколки.
 function _enhCanPay(stoneType) {
-  const stoneId = (stoneType === 'bless' || stoneType === 'guard') ? 'bless_stone' : 'norm_stone';
+  const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
   if (_enhStoneQty(stoneId) <= 0) return t('noStoneToast');
-  if (stoneType === 'guard' && _enhMatTotal('star_shard') < _ENH_GUARD_COST) {
-    return tVars('enhGuardNoShardsFmt', { n: _ENH_GUARD_COST });
-  }
+  const need = stoneType === 'bless' ? _enhBoost * _ENH_BOOST_COST : 0;
+  if (need && _enhMatTotal('star_shard') < need) return tVars('enhBoostNoShardsFmt', { n: need });
   return null;
 }
 const _RARITY_NAMES = { common:'Обычный', uncommon:'Необычный', rare:'Редкий', epic:'Эпический', legendary:'Легендарный' };
@@ -6025,7 +6039,37 @@ function openEnhancePanel(kind, key) {
     const normQty  = _enhStoneQty('norm_stone');
     const blessQty = _enhStoneQty('bless_stone');
     const shardQty = _enhMatTotal('star_shard');
-    const canGuard = blessQty > 0 && shardQty >= _ENH_GUARD_COST;
+    const keyLit = kind === 'inv' ? String(key) : `'${key}'`;
+    const forKey = kind + ':' + key + ':' + enh;
+    if (_enhBoostFor !== forKey) { _enhBoost = 0; _enhBoostFor = forKey; }
+    const steps = _enhBoostClamp(enh);
+    const maxSteps = enhanceBoostMaxSteps(enh);
+    const boosted = enhanceBoostedRate(enh, steps);
+    const canMore = steps < maxSteps && shardQty >= (steps + 1) * _ENH_BOOST_COST;
+    const maxPct = typeof ENHANCE_BOOST_MAX_PCT === 'number' ? ENHANCE_BOOST_MAX_PCT : 90;
+    // Девять делений по 10%: оранжевые — свой шанс, голубые — добавлено
+    // осколками, пустые — до потолка.
+    const cells = [];
+    for (let p = 10; p <= maxPct; p += 10) {
+      cells.push(`<span class="enh-boost-cell${p <= rate ? ' is-base' : p <= boosted ? ' is-boost' : ''}"></span>`);
+    }
+    const boostBlock = maxSteps > 0 ? `
+        <div class="enh-boost">
+          <div class="enh-boost-hdr">
+            <img src="/images/material/shard.png" width="16" height="16">
+            <span>${t('enhBoostLbl')}</span>
+            <span class="enh-boost-have">${tVars('enhBoostHaveFmt', { n: shardQty })}</span>
+          </div>
+          <div class="enh-boost-bar">${cells.join('')}</div>
+          <div class="enh-boost-ctl">
+            <button class="enh-boost-btn${steps > 0 ? '' : ' disabled'}" onclick="_stepEnhBoost('${kind}',${keyLit},-1)">−</button>
+            <div class="enh-boost-val">
+              <b>${boosted}%</b>
+              <span>${steps ? tVars('enhBoostCostFmt', { n: steps * _ENH_BOOST_COST, pct: steps * 10 }) : t('enhBoostNone')}</span>
+            </div>
+            <button class="enh-boost-btn${canMore ? '' : ' disabled'}" onclick="_stepEnhBoost('${kind}',${keyLit},1)">+</button>
+          </div>
+        </div>` : '';
     // Single-quoted, not JSON.stringify: this whole thing lands inside a
     // double-quoted onclick="...", and JSON.stringify('weapon') comes out
     // itself double-quoted — closing that attribute early. That was the
@@ -6035,7 +6079,6 @@ function openEnhancePanel(kind, key) {
     // clicking through never even reached netEnhanceItem. Slot names are
     // plain identifiers (weapon, helmet, ring, …), so a bare single-quoted
     // literal is safe here the way it already was for unequipFromModal.
-    const keyLit = kind === 'inv' ? String(key) : `'${key}'`;
     body = `
       <div class="imod-enh-block">
         <div class="imod-enh-title">${tVars('enhanceTitleFmt', { cur: enh > 0 ? '+' + enh : '0', next: '<span style="color:#e69419">+' + (enh + 1) + '</span>' })}</div>
@@ -6058,18 +6101,8 @@ function openEnhancePanel(kind, key) {
           <span class="enh-opt-qty">×${blessQty}</span>
         </div>
         <div class="enh-opt-desc">${t('enhSafeCardDesc')}</div>
-        <button class="imod-btn enh-opt-btn${blessQty > 0 ? '' : ' disabled'}" onclick="_beginEnhance('${kind}',${keyLit},'bless')">${t('enhTryBtnLbl')}</button>
-      </div>
-      <div class="enh-opt-card enh-opt-guard">
-        <div class="enh-opt-hdr">
-          <img src="/images/bless.png" width="20" height="20" style="image-rendering:pixelated">
-          <span class="enh-opt-plus">+</span>
-          <img src="/images/material/shard.png" width="20" height="20">
-          <span class="enh-opt-title">${t('enhGuardCardTitle')}</span>
-          <span class="enh-opt-qty" style="color:${shardQty >= _ENH_GUARD_COST ? '#7fdcf5' : '#eb4e61'}">${shardQty}/${_ENH_GUARD_COST}</span>
-        </div>
-        <div class="enh-opt-desc">${tVars('enhGuardCardDescFmt', { n: _ENH_GUARD_COST })}</div>
-        <button class="imod-btn enh-opt-btn${canGuard ? '' : ' disabled'}" onclick="_beginEnhance('${kind}',${keyLit},'guard')">${t('enhTryBtnLbl')}</button>
+        ${boostBlock}
+        <button class="imod-btn enh-opt-btn${blessQty > 0 ? '' : ' disabled'}" onclick="_beginEnhance('${kind}',${keyLit},'bless')">${steps ? tVars('enhTryBoostedFmt', { n: boosted }) : t('enhTryBtnLbl')}</button>
       </div>`;
   } else {
     body = `<div class="imod-enh-block"><div class="imod-enh-title" style="color:#e69419">${t('maxEnhanceLbl')}</div></div>`;
@@ -6133,7 +6166,7 @@ function enhanceItem(idx, stoneType) {
   // rowId names the exact copy. Without it the server matched on (id, enhance)
   // and enhanced whichever row came first, which is how enhancing one item
   // walked every identical one up alongside it.
-  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, null, it.rowId);
+  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, null, it.rowId, stoneType === 'bless' ? _enhBoost : 0);
 }
 
 function openEqItemModal(slot) {
@@ -6185,7 +6218,7 @@ function enhanceEqItem(slot, stoneType) {
   if (enh >= _ENH_MAX) return;
   const _noPay = _enhCanPay(stoneType);
   if (_noPay) { dmgNum(player.x, player.y - 30, _noPay, '#f17e8b'); return; }
-  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, slot);
+  if (typeof netEnhanceItem === 'function') netEnhanceItem(it.id, enh, stoneType, slot, null, stoneType === 'bless' ? _enhBoost : 0);
 }
 
 // Applies whatever server/index.js's 'enhanceItem' handler actually rolled.
@@ -6198,16 +6231,16 @@ function enhanceEqItem(slot, stoneType) {
 // number over the character, easy to miss if the modal was covering them.
 // Held back to _ENH_ANIM_MS so the animation always gets to play out, then
 // handed to _revealEnhanceResult for the actual ✅/❌/💥.
-function onEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, guard } = {}) {
+function onEnhanceResult({ id, slot, outcome, newEnhance, rowId, from } = {}) {
   if (!player) return;
   const startedAt = _enhAnim ? _enhAnim.at : null;
   const gen = _enhAnim ? _enhAnim.gen : -1;
   _enhAnim = null;
   const wait = startedAt != null ? Math.max(0, _ENH_ANIM_MS - (Date.now() - startedAt)) : 0;
-  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, guard, gen }), wait);
+  setTimeout(() => _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, gen }), wait);
 }
 
-function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, guard, gen }) {
+function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, gen }) {
   if (!player) return;
   // Окно этой попытки уже закрыто (или вместо него открыт другой предмет) —
   // цифра над персонажем ниже всё равно покажет итог, но окна не трогаем.
@@ -6220,8 +6253,7 @@ function _revealEnhanceResult({ id, slot, outcome, newEnhance, rowId, from, guar
   const dropped = outcome === 'fail' && Number.isFinite(from) && Number.isFinite(newEnhance) && newEnhance < from;
   const text = outcome === 'success' ? tVars('enhSuccessToast', { n: newEnhance })
     : outcome === 'burned' ? t('itemBurnedToast')
-    : dropped ? tVars('enhFailedDownToast', { n: newEnhance })
-    : guard ? tVars('enhFailedGuardToast', { n: newEnhance }) : t('enhFailedToast');
+    : dropped ? tVars('enhFailedDownToast', { n: newEnhance }) : t('enhFailedToast');
   // Kept alongside the in-modal indicator, not replaced by it — a player
   // who has already closed the panel (see below) still gets the same
   // floating-number feedback every other reward in the game uses.

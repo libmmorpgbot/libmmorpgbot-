@@ -19,7 +19,7 @@ const { wipeItemsAll } = require('./fixtures');
 const {
   UNIQUE_SET_CRAFT_RECIPES, UNIQUE_CRAFT_RECIPES, WINGS_CRAFT_RECIPES, CRAFT_ANY_GEAR_SLOTS, MAT_UPGRADE_RECIPES,
   CLASS_GEAR_SALVAGE_RECIPES, PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, ADV_SKILL_BOOK_CRAFT,
-  BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCE_GUARD_SHARDS, isStackableItem,
+  BOX_DEF, ITEM_DEF, CRAFT_MATS, ENHANCE_MAX, ENHANCE_BOOST_SHARDS, enhanceBoostedRate, isStackableItem,
   QUEST_DEF,
 } = require('../shared/definitions');
 
@@ -100,32 +100,30 @@ async function main() {
   // Все квесты — только «убей монстров» (QUEST_DEF, shared/definitions.js).
   ok(!QUEST_DEF.some(q => q.type === 'enhance'), 'квестов «заточи предмет» нет');
 
-  // ── защита осколками ─────────────────────────────────────────────────────
-  // Безопасный камень + ENHANCE_GUARD_SHARDS звёздных осколков: промах НЕ
-  // снижает заточку. +7 — шанс 10%, так что промахи почти наверняка будут.
-  console.log('  ── защита осколками ──');
-  const gp = await mk('guard');
-  const gRow = await give(gp, 'sw1', 1, 7);
+  // ── шкала осколков ───────────────────────────────────────────────────────
+  // Безопасная заточка: каждые ENHANCE_BOOST_SHARDS звёздных осколков — +10%
+  // к шансу, до 90%. +6 — свой шанс 20%, значит до потолка ровно 7 шагов.
+  console.log('  ── шкала осколков ──');
+  const gp = await mk('boost');
+  const gRow = await give(gp, 'sw1', 1, 6);
   await give(gp, 'bless_stone', 1);
-  await give(gp, 'star_shard', ENHANCE_GUARD_SHARDS - 1);
-  eq(await caught(() => tx(t => craft.enhance(t, gp, gRow, 'bless', { guard: true }))), 'no_shards',
-    `без ${ENHANCE_GUARD_SHARDS} осколков — отказ`);
+  await give(gp, 'norm_stone', 1);
+  await give(gp, 'star_shard', ENHANCE_BOOST_SHARDS * 7 - 1);
+  eq(await caught(() => tx(t => craft.enhance(t, gp, gRow, 'bless', { boost: 7 }))), 'no_shards',
+    'на 7 шагов не хватает одного осколка — отказ');
   eq(await countOf(gp, 'bless_stone'), 1, 'отказ не съел камень');
-  eq(await countOf(gp, 'star_shard'), ENHANCE_GUARD_SHARDS - 1, 'и осколки не тронуты');
-  await give(gp, 'star_shard', ENHANCE_GUARD_SHARDS * 5 + 1);
-  await give(gp, 'bless_stone', 5);
-  let level = 7, guardedFails = 0, dropped = false;
-  for (let i = 0; i < 6; i++) {
-    const res = await tx(t => craft.enhance(t, gp, gRow, 'bless', { guard: true }));
-    if (res.outcome === 'fail') { guardedFails++; if (res.to < res.from) dropped = true; }
-    if (res.outcome === 'burned') dropped = true;
-    level = res.to;
-  }
-  ok(!dropped, `защищённая заточка ни разу не снизила уровень (промахов: ${guardedFails})`);
-  const gItem = (await invOf(gp)).find(x => x.rowId === gRow);
-  ok(gItem && gItem.enhance === level && level >= 7, `вещь на +${level}, не ниже +7`);
-  eq(await countOf(gp, 'star_shard'), 0, `${ENHANCE_GUARD_SHARDS} осколков списано за каждую попытку`);
-  eq(await countOf(gp, 'bless_stone'), 0, 'и по безопасному камню');
+  eq(await countOf(gp, 'star_shard'), ENHANCE_BOOST_SHARDS * 7 - 1, 'и осколки не тронуты');
+  eq(await caught(() => tx(t => craft.enhance(t, gp, gRow, 'bless', { boost: 8 }))), 'bad_boost',
+    'восьмой шаг — сверх 90%, за него не берут');
+  eq(await caught(() => tx(t => craft.enhance(t, gp, gRow, 'norm', { boost: 1 }))), 'bad_stone',
+    'осколки только с безопасной заточкой');
+  await give(gp, 'star_shard', 1);
+  const br = await tx(t => craft.enhance(t, gp, gRow, 'bless', { boost: 7 }));
+  eq(br.rate, 90, 'шанс с 7 шагами — 90% (20 + 70)');
+  eq(await countOf(gp, 'star_shard'), 0, `списано ${ENHANCE_BOOST_SHARDS * 7} осколков`);
+  eq(await countOf(gp, 'bless_stone'), 0, 'и безопасный камень');
+  eq(enhanceBoostedRate(6, 3), 50, '3 шага на +6: 20 + 30 = 50%');
+  eq(enhanceBoostedRate(0, 5), 90, 'выше 90% не бывает');
 
   // The rate curve, stated as the live build states it.
   eq(craft.enhanceRate(0), 80, 'шанс на +1 — 80%');

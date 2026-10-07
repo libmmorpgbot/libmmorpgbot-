@@ -308,7 +308,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // worn in. An equipped item is unambiguous by its slot; two identical items
   // in the bag are interchangeable UNTIL one is enhanced, which is why the
   // client sends the slot at all.
-  safeOn('enhanceItem', ({ id, enhance, stoneType, slot, rowId } = {}) =>
+  safeOn('enhanceItem', ({ id, enhance, stoneType, slot, rowId, boost } = {}) =>
     s.act('enhanceItem', 'enhanceError', async (t, pid) => {
     await items.lockPlayer(t, pid);
     // rowId FIRST. Two copies of one item at the same enhancement are
@@ -321,10 +321,9 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       ? await items.resolveRow(t, pid, { slot }, 'equipment')
       : await items.resolveRow(t, pid, { rowId, id, enhance }, 'inventory');
     if (!row) throw Object.assign(new Error('gone'), { userMessage: 'Предмет не найден — список обновлён' });
-    // 'guard' — безопасная заточка с защитой осколками (craft.enhance opts.guard).
-    const res = await craft.enhance(t, pid, row,
-      (stoneType === 'bless' || stoneType === 'guard') ? 'bless' : 'norm',
-      { guard: stoneType === 'guard' });
+    // boost — шаги звёздными осколками к шансу безопасной заточки (craft.enhance).
+    const res = await craft.enhance(t, pid, row, stoneType === 'bless' ? 'bless' : 'norm',
+      { boost: stoneType === 'bless' ? boost : 0 });
     // Квест «Заточи предмет до +N» — В ТОЙ ЖЕ транзакции, что и сама заточка.
     // Отдельным шагом после неё зачёт мог бы не случиться на удавшемся броске:
     // камень потрачен, вещь заточена, квест стоит. Порог и «только текущий
@@ -368,7 +367,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
       to: res.to,
       newEnhance: res.to,
       rate: res.rate,
-      guard: !!res.guard,
+      boost: res.boost || 0,
     });
     return res;
     // ── the row that answers "мій +12 меч згорів" ─────────────────────────
@@ -379,7 +378,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // them away on the way to the log.
   }, r => r && {
     outcome: r.outcome, itemId: r.itemId, rowId: r.rowId,
-    from: r.from, to: r.to, rate: r.rate, guard: !!r.guard,
+    from: r.from, to: r.to, rate: r.rate, boost: r.boost || 0,
   }));
 
   // ── boxes ────────────────────────────────────────────────────────────────

@@ -799,11 +799,22 @@ canvas { display:block; width:100%; height:100%; }
 .enh-opt-desc { font-size:11px; color:#a3957c; line-height:1.4; }
 .enh-opt-btn { padding:8px; font-size:13px; background:linear-gradient(135deg,#274469,#31658b); color:#eec276; }
 .enh-opt-safe .enh-opt-btn { background:linear-gradient(135deg,#17293f,#294870); color:#efc680; }
-/* Безопасная + защита звёздными осколками: при промахе заточка не падает. */
-.enh-opt-card.enh-opt-guard { background:rgba(80,200,240,0.07); border-color:rgba(80,200,240,0.32); }
-.enh-opt-guard .enh-opt-title { color:#7fdcf5; }
-.enh-opt-guard .enh-opt-btn { background:linear-gradient(135deg,#123a4a,#1d6680); color:#dff7ff; }
-.enh-opt-plus { font-size:12px; font-weight:800; color:#7fdcf5; margin:0 -4px; }
+/* Шкала звёздных осколков у безопасной заточки: +10% за 100 осколков, до 90%. */
+.enh-boost { display:flex; flex-direction:column; gap:7px; padding:9px 10px; border-radius:9px;
+  background:rgba(80,200,240,0.06); border:1px solid rgba(80,200,240,0.25); }
+.enh-boost-hdr { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:#7fdcf5; }
+.enh-boost-have { margin-left:auto; font-weight:600; color:#8fa3b3; }
+.enh-boost-bar { display:grid; grid-template-columns:repeat(9, 1fr); gap:3px; }
+.enh-boost-cell { height:9px; border-radius:3px; background:rgba(193,204,213,.10); }
+.enh-boost-cell.is-base { background:#e69419; }
+.enh-boost-cell.is-boost { background:#5fd3f5; box-shadow:0 0 6px rgba(95,211,245,.55); }
+.enh-boost-ctl { display:flex; align-items:center; gap:10px; }
+.enh-boost-btn { width:34px; height:30px; border-radius:8px; border:1px solid rgba(95,211,245,.4);
+  background:rgba(95,211,245,.12); color:#bff0ff; font-size:18px; font-weight:800; cursor:pointer; touch-action:manipulation; }
+.enh-boost-btn.disabled { opacity:.35; pointer-events:none; }
+.enh-boost-val { flex:1; display:flex; flex-direction:column; align-items:center; line-height:1.25; }
+.enh-boost-val b { font-size:18px; color:#7fdcf5; }
+.enh-boost-val span { font-size:10.5px; color:#8fa3b3; text-align:center; }
 .enh-opt-btn:active { opacity:0.8; }
 .enh-opt-btn.disabled { opacity:0.4; pointer-events:none; }
 

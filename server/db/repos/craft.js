@@ -33,7 +33,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ENHANCE_MAX, ENHANCE_GUARD_SHARDS, BOSS_LAIR_SHARD_ID, ENHANCEABLE_SLOTS, ITEM_DEF, BOX_DEF, CRAFT_MATS,
+  ENHANCE_MAX, ENHANCE_BOOST_SHARDS, BOSS_LAIR_SHARD_ID, enhanceBaseRate, enhanceBoostMaxSteps, enhanceBoostedRate, ENHANCEABLE_SLOTS, ITEM_DEF, BOX_DEF, CRAFT_MATS,
   PET_CRAFT_RECIPES,
   MAT_UPGRADE_RECIPES, MAT_UPGRADE_MAX_BATCH, CLASS_GEAR_SALVAGE_RECIPES, UNIQUE_CRAFT_RECIPES,
   UNIQUE_SET_CRAFT_RECIPES,
@@ -60,17 +60,17 @@ function pickOne(list) { return list[crypto.randomInt(list.length)]; }
 // Success rate is max(10, 80 - enhance*10) percent, exactly as the live build.
 // A normal stone destroys the item on a miss; a blessed one does not.
 function enhanceRate(current) {
-  return Math.max(10, 80 - current * 10);
+  return enhanceBaseRate(current);
 }
 
-// opts.guard — защита осколками: только с безопасным камнем, стоит
-// ENHANCE_GUARD_SHARDS звёздных осколков сверху, и промах не снижает заточку.
+// opts.boost — шаги осколками (только с безопасным камнем): каждый стоит
+// ENHANCE_BOOST_SHARDS звёздных осколков и даёт +10% к шансу, до 90%.
 async function enhance(db, playerId, rowId, stoneType, opts = {}) {
   await items.lockPlayer(db, playerId);
 
   const stoneId = stoneType === 'bless' ? 'bless_stone' : 'norm_stone';
-  const guard = !!opts.guard;
-  if (guard && stoneType !== 'bless') err('bad_stone', 'Защита осколками — только с безопасной заточкой');
+  const boost = Math.max(0, Math.floor(Number(opts.boost) || 0));
+  if (boost && stoneType !== 'bless') err('bad_stone', 'Осколки — только с безопасной заточкой');
 
   // The target, named by row and scoped to this player. FOR UPDATE so a
   // concurrent equip cannot move it out from under the roll.
@@ -98,13 +98,17 @@ async function enhance(db, playerId, rowId, stoneType, opts = {}) {
   if (!await items.removeQty(db, playerId, stoneId, 1)) {
     err('no_stone', 'Нет камня заточки');
   }
+  // Шагов не больше, чем нужно до потолка: лишние осколки сверх 90% ничего
+  // бы не дали, и брать за них плату нельзя.
+  if (boost > enhanceBoostMaxSteps(it.enhance)) err('bad_boost', 'Шанс уже на максимуме');
   // Осколки — та же плата за попытку, что и камень, и в той же транзакции:
   // не хватило — отказ откатывает и камень.
-  if (guard && !await items.removeQty(db, playerId, BOSS_LAIR_SHARD_ID, ENHANCE_GUARD_SHARDS)) {
-    err('no_shards', `Нужно ${ENHANCE_GUARD_SHARDS} звёздных осколков`);
+  const shards = boost * ENHANCE_BOOST_SHARDS;
+  if (shards && !await items.removeQty(db, playerId, BOSS_LAIR_SHARD_ID, shards)) {
+    err('no_shards', `Нужно ${shards} звёздных осколков`);
   }
 
-  const rate = enhanceRate(it.enhance);
+  const rate = enhanceBoostedRate(it.enhance, boost);
   const success = rand() * 100 < rate;
 
   // Only a WORN piece moves the battle rating: enhanceBonus is added in
@@ -123,11 +127,7 @@ async function enhance(db, playerId, rowId, stoneType, opts = {}) {
     // is not. What the item is worth afterwards is player_logs' subject.
     await query(db, 'UPDATE player_items SET enhance = enhance + 1 WHERE id = $1', [rowId]);
     if (worn) await require('./stats').refreshBm(db, playerId);
-    return { outcome: 'success', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance + 1, rate, guard };
-  }
-  // Защищённый промах: осколки заплачены — заточка остаётся как была.
-  if (guard) {
-    return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance, rate, guard };
+    return { outcome: 'success', rowId, itemId: it.item_id, from: it.enhance, to: it.enhance + 1, rate, boost };
   }
   if (stoneType === 'bless') {
     // Безопасный камень: предмет не горит, но заточка падает на 1 (не ниже
@@ -141,7 +141,7 @@ async function enhance(db, playerId, rowId, stoneType, opts = {}) {
       await query(db, 'UPDATE player_items SET enhance = GREATEST(enhance - 1, 0) WHERE id = $1', [rowId]);
       if (worn) await require('./stats').refreshBm(db, playerId);
     }
-    return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to, rate };
+    return { outcome: 'fail', rowId, itemId: it.item_id, from: it.enhance, to, rate, boost };
   }
   // Burned. The row is deleted, which is what makes the loss real rather than
   // a flag some later read has to remember to honour.

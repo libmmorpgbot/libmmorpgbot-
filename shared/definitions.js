@@ -2714,11 +2714,25 @@ const CLAN_DESC_MAX_CHARS = 200;
 
 // Max enchant-stone enhance level (mirrors the client's _ENH_MAX in ui.js)
 const ENHANCE_MAX = 15;
-// Защита заточки звёздными осколками: к безопасной заточке доплачивается
-// столько осколков (BOSS_LAIR_SHARD_ID — награда Логова боссов), и промах
-// не снижает заточку — вещь либо станет +1, либо останется как есть.
-// Осколки тратятся на попытку, как и сам камень, при любом исходе.
-const ENHANCE_GUARD_SHARDS = 100;
+// Шанс безопасной заточки можно поднять звёздными осколками (BOSS_LAIR_SHARD_ID
+// — награда Логова боссов): каждые ENHANCE_BOOST_SHARDS осколков дают
+// +ENHANCE_BOOST_PCT к шансу, но не выше ENHANCE_BOOST_MAX_PCT. Осколки
+// тратятся на попытку, как и камень, при любом исходе; промах ведёт себя как
+// у любой безопасной заточки.
+const ENHANCE_BOOST_SHARDS = 100;
+const ENHANCE_BOOST_PCT = 10;
+const ENHANCE_BOOST_MAX_PCT = 90;
+function enhanceBaseRate(current) {
+  return Math.max(10, 80 - (Number(current) || 0) * 10);
+}
+// Сколько шагов осколками ещё имеет смысл: до потолка, не дальше.
+function enhanceBoostMaxSteps(current) {
+  return Math.max(0, Math.ceil((ENHANCE_BOOST_MAX_PCT - enhanceBaseRate(current)) / ENHANCE_BOOST_PCT));
+}
+function enhanceBoostedRate(current, steps) {
+  const n = Math.max(0, Math.floor(Number(steps) || 0));
+  return Math.min(ENHANCE_BOOST_MAX_PCT, enhanceBaseRate(current) + n * ENHANCE_BOOST_PCT);
+}
 // Slots whose atk/def/hp scale with enhance level (mirrors _enhBonusAt in player.js).
 // `wings` belongs here too — it's a real equipment slot with its own atk/def/hp
 // (see ITEM_DEF's wing_c..wing_l) sitting right alongside every other slot in
@@ -4251,7 +4265,7 @@ if (typeof module !== 'undefined') module.exports = {
   DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC,
   SEASON_TICKET_GRAM_PRICE, SEASON_TICKET_XP_PCT, SEASON_TICKET_DROP_PCT, SEASON_TICKET_LIBERTY_PCT,
   COOP_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
-  ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCE_GUARD_SHARDS, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
+  ITEM_DEF, CRAFT_MATS, BOX_DEF, BOX_LOOT_SLOTS, boxLootPool, ENHANCE_MAX, ENHANCE_BOOST_SHARDS, ENHANCE_BOOST_PCT, ENHANCE_BOOST_MAX_PCT, enhanceBaseRate, enhanceBoostMaxSteps, enhanceBoostedRate, ENHANCEABLE_SLOTS, enhanceBonus, isStackableItem,
   EARLY_ZONE_DROP_MULT, EARLY_ZONE_ARMS, UNIVERSAL_PASSIVE_BOOKS, levelSkillBookPool, levelClassPassivePool,
   levelUniversalPassivePool,
   itemCatalogBase, CODEX_BONUS_BY_RARITY,

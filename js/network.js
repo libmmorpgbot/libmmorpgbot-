@@ -4493,12 +4493,13 @@ function netCraftGear(itemId) {
   if (socket?.connected) socket.emit('craftGear', { itemId });
 }
 
-function netEnhanceItem(id, enhance, stoneType, slot, rowId) {
+// boost — шаги звёздными осколками к шансу безопасной заточки (0 — без них).
+function netEnhanceItem(id, enhance, stoneType, slot, rowId, boost) {
   if (socket?.connected) {
     // id/enhance still travel: they are the fallback when a rowId has gone
     // stale (the item was sold or burned on another connection), and the
     // server checks them against the row it resolves.
-    socket.emit('enhanceItem', { id, enhance, stoneType, slot: slot || null, rowId: rowId || null });
+    socket.emit('enhanceItem', { id, enhance, stoneType, slot: slot || null, rowId: rowId || null, boost: boost || 0 });
   }
 }
 
