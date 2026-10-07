@@ -936,7 +936,40 @@ const COOP_BOSS_LEVEL = 40;
 // Every step up is a stronger boss twice over: monsterStatsAtLevel's own
 // 'boss' curve already grows with the level, and bossLairScaling below adds
 // more HP/attack on top and makes it run and swing faster.
+//
+// Bosses open one after another: the first is open from the start, every
+// next one once the previous has been killed at least once
+// (bossLairUnlocked; the furthest kill is player_progress.boss_lair_max).
 const BOSS_LAIR_LEVELS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75];
+// Who each rung is: its own sprite (eid → ENEMY_SPRITE_DEF, js/sprites.js),
+// name, colour and size, so no two bosses look alike. `base` is the
+// ENEMY_DEF entry whose remaining fields it borrows — the liches only exist
+// in the dungeon's own table, so they borrow a regular boss's.
+const BOSS_LAIR_BOSSES = [
+  { level: 10, eid: 'rat_warrior',            base: 'rat_warrior',       key: 'lairBoss10', name: 'Король крыс',        color: '#c9a27a', size: 22 },
+  { level: 15, eid: 'slime_warrior',          base: 'slime_warrior',     key: 'lairBoss15', name: 'Великий слизень',    color: '#7ad47a', size: 23 },
+  { level: 20, eid: 'imp_boss',               base: 'imp_boss',          key: 'lairBoss20', name: 'Повелитель бесов',   color: '#ff6a3a', size: 24 },
+  { level: 25, eid: 'zombie_warrior',         base: 'zombie_warrior',    key: 'lairBoss25', name: 'Чумной вожак',       color: '#9fc27a', size: 25 },
+  { level: 30, eid: 'lizardman_warrior',      base: 'lizardman_warrior', key: 'lairBoss30', name: 'Вождь ящеров',       color: '#4fc28a', size: 25 },
+  { level: 35, eid: 'orc_boss',               base: 'orc_boss',          key: 'lairBoss35', name: 'Военачальник орков', color: '#ffb020', size: 26 },
+  { level: 40, eid: 'plant_warrior',          base: 'plant_warrior',     key: 'lairBoss40', name: 'Хищная лоза',        color: '#a6d65a', size: 27 },
+  { level: 45, eid: 'vampire_warrior',        base: 'vampire_warrior',   key: 'lairBoss45', name: 'Граф-вампир',        color: '#d0506a', size: 27 },
+  { level: 50, eid: 'beholder_boss',          base: 'beholder_boss',     key: 'lairBoss50', name: 'Всевидящее око',     color: '#c060ff', size: 29 },
+  { level: 55, eid: 'ent_warrior',            base: 'ent_warrior',       key: 'lairBoss55', name: 'Древний страж',      color: '#b58a5a', size: 30 },
+  { level: 60, eid: 'dungeon_lich_skeleton',  base: 'beholder_boss',     key: 'lairBoss60', name: 'Костяной лорд',      color: '#d8d2c0', size: 30 },
+  { level: 65, eid: 'dungeon_lich_blue',      base: 'demon_boss',        key: 'lairBoss65', name: 'Ледяной лич',        color: '#5ab4ff', size: 31 },
+  { level: 70, eid: 'dungeon_lich_commander', base: 'demon_boss',        key: 'lairBoss70', name: 'Архилич',            color: '#3f6fe0', size: 32 },
+  { level: 75, eid: 'demon_boss',             base: 'demon_boss',        key: 'lairBoss75', name: 'Владыка демонов',    color: '#ff2020', size: 34 },
+];
+function bossLairBoss(level) {
+  return BOSS_LAIR_BOSSES.find(b => b.level === level) || null;
+}
+// Open from the start, or the previous rung has been killed at least once.
+function bossLairUnlocked(level, maxKilled) {
+  const i = BOSS_LAIR_LEVELS.indexOf(level);
+  if (i < 0) return false;
+  return i === 0 || (Number(maxKilled) || 0) >= BOSS_LAIR_LEVELS[i - 1];
+}
 const BOSS_LAIR_MIN_LEVEL = BOSS_LAIR_LEVELS[0];
 const BOSS_LAIR_DAILY_KILLS = 1;
 // Reward per kill: two enchant stones — ordinary ones from the bosses up to
@@ -955,20 +988,23 @@ function bossLairReward(level) {
   ];
 }
 // Extra multipliers by rung (0 for the level-10 boss, 13 for the level-75):
-// HP +12%, attack +6%, move speed +4% and swing interval -4% per rung.
+// HP +12%, attack +6%, move speed +4% and swing interval -4% per rung — on
+// top of the flat BOSS_LAIR_HP_MULT/BOSS_LAIR_ATK_MULT every Lair boss gets
+// over an ordinary boss of its level.
+const BOSS_LAIR_HP_MULT = 30;
+const BOSS_LAIR_ATK_MULT = 3;
+const BOSS_LAIR_BASE_SPD = 80;
 function bossLairScaling(level) {
   const i = Math.max(0, BOSS_LAIR_LEVELS.indexOf(level));
   return {
-    hpMult: 1 + i * 0.12,
-    atkMult: 1 + i * 0.06,
+    hpMult: (1 + i * 0.12) * BOSS_LAIR_HP_MULT,
+    atkMult: (1 + i * 0.06) * BOSS_LAIR_ATK_MULT,
     spdMult: 1 + i * 0.04,
+    // One base speed for every Lair boss, whatever species it wears — a slow
+    // ent sprite on rung 10 must still outrun the rat on rung 1.
+    spd: Math.round(BOSS_LAIR_BASE_SPD * (1 + i * 0.04)),
     atkCdMult: 1 / (1 + i * 0.04),
   };
-}
-// Which species plays the boss — the boss of the zone that level belongs to
-// (imp/orc/beholder/demon), the same pick the co-op boss uses.
-function bossLairEid(level) {
-  return FLOOR_ENEMIES[armIndexForLevel(level)].boss;
 }
 
 // ── Items ─────────────────────────────────────────────────────────────────────
@@ -4125,7 +4161,7 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS, BOSS_LAIR_STONES, BOSS_LAIR_NORM_MAX_LEVEL, BOSS_LAIR_SHARD_ID, bossLairStoneId,
-  bossLairReward, bossLairScaling, bossLairEid,
+  bossLairReward, bossLairScaling, BOSS_LAIR_BOSSES, bossLairBoss, bossLairUnlocked, BOSS_LAIR_HP_MULT, BOSS_LAIR_ATK_MULT,
   QUEST_DEF,
   SEASON_END_AT, seasonActive, MAIL_BONUS_END_AT, mailBonusOn,
   SEASON_ENHANCE_POINTS,

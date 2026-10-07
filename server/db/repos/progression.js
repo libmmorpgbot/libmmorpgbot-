@@ -894,7 +894,24 @@ async function secondsLeft(db, playerId, mode, budgetSeconds) {
   return budgetSeconds - (rows.length ? rows[0].seconds : 0);
 }
 
+// Логово боссов: the strongest boss this player has ever killed there
+// (0 — none yet). Decides which bosses are open (bossLairUnlocked,
+// shared/definitions.js). Only ever raised: re-killing an easier boss must
+// not lock the harder ones again.
+async function bossLairMax(db, playerId) {
+  const { rows } = await query(db,
+    'SELECT boss_lair_max FROM player_progress WHERE player_id = $1', [playerId]);
+  return rows.length ? Number(rows[0].boss_lair_max) || 0 : 0;
+}
+async function recordBossLairKill(db, playerId, level) {
+  const { rows } = await query(db, `
+    UPDATE player_progress SET boss_lair_max = GREATEST(boss_lair_max, $2::smallint)
+     WHERE player_id = $1 RETURNING boss_lair_max`, [playerId, level]);
+  return rows.length ? Number(rows[0].boss_lair_max) || 0 : 0;
+}
+
 module.exports = {
+  bossLairMax, recordBossLairKill,
   disassembleItem, burnBooks, seasonState, buySeasonShop, seasonShopOf,
   claimSpecialQuest, claimedSpecialQuests,
   bumpQuest, questState, questOnKill, questOnEvent, questOnEnhance, claimQuest,

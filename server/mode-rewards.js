@@ -301,9 +301,11 @@ function attachBossLair(socket, s, pid) {
           return { ...it, name: def ? def.name : it.id, img: def ? def.img : null };
         });
         const g = await grantItems(t, id, list);
+        // The kill opens the next boss — in the same transaction as the count.
+        const maxKilled = await progression.recordBossLairKill(t, id, level);
         if (g.given.length) await s.pushItems(t);
         _recordPayout(id, 'bosslair', { level, ...g });
-        return { counted: true, items: g.given, missed: g.missed, killsLeft: took.left };
+        return { counted: true, items: g.given, missed: g.missed, killsLeft: took.left, maxKilled };
       });
     } catch (err) { return _report('bosslair', err, id); }
   };

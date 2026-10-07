@@ -8,7 +8,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
-        bossLairScaling, bossLairEid,
+        bossLairScaling, bossLairBoss,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
@@ -1122,9 +1122,10 @@ class Room {
   }
 
   // Логово боссов: one boss of level `lvl` in lane `lane`'s hall instead of a
-  // wave — the boss of that level's zone (bossLairEid), on monsterStatsAtLevel's
-  // 'boss' curve with bossLairScaling's per-rung extra on top, so every rung up
-  // the ladder hits harder, has more HP, runs and swings faster.
+  // wave — that rung's own boss (BOSS_LAIR_BOSSES: its sprite, name, size), on
+  // monsterStatsAtLevel's 'boss' curve times bossLairScaling (×30 HP, ×3 atk,
+  // plus the per-rung extra), so every rung up the ladder hits harder, has
+  // more HP, runs and swings faster.
   //
   // Tagged arm 'fear' on purpose: the whole hall machinery — lane isolation,
   // no 12s respawn, purge on release, the reconnect hold — keys off that arm,
@@ -1135,10 +1136,8 @@ class Room {
     this._fearPurgeDead(lane);
     const room = this._dungeon.fear.lanes[lane];
     if (!room) return null;
-    const armIdx = armIndexForLevel(lvl);
-    const localLvl = lvl - ARM_OFFSETS[armIdx - 1];
-    const maxLocalLvl = roomsInArm(armIdx) - 1;
-    const d = _FEAR_ENEMY_BY_EID.get(bossLairEid(lvl));
+    const row = bossLairBoss(lvl);
+    const d = row && _FEAR_ENEMY_BY_EID.get(row.base);
     if (!d) return null;
     const stats = monsterStatsAtLevel(lvl, 'boss');
     const k = bossLairScaling(lvl);
@@ -1148,12 +1147,11 @@ class Room {
     const hp = Math.floor(stats.hp * k.hpMult);
     const e = {
       id: `lair_${lane}_${this._fearSeq = (this._fearSeq || 0) + 1}`,
-      ...d, isBoss: true, arm: 'fear', lane, rlvl: lvl, bossLair: true,
-      name: monsterNameAtLevel(d.name, localLvl, true, d.fem, maxLocalLvl),
-      color: monsterColorAtLevel(d.color, d.endColor, localLvl, true, maxLocalLvl),
+      ...d, eid: row.eid, eType: 'boss', isBoss: true, arm: 'fear', lane, rlvl: lvl, bossLair: true,
+      name: row.name, color: row.color, size: row.size,
       maxHp: hp, hp,
       atk: Math.floor(stats.atk * k.atkMult), def: stats.def,
-      spd: Math.round(d.spd * k.spdMult), atkCdMult: k.atkCdMult,
+      spd: k.spd, atkCdMult: k.atkCdMult,
       xp: xpAtLevel(lvl) * FEAR_XP_MULT * 5, gold: 0,
       x: ex, y: ey, spawnX: ex, spawnY: ey,
       // Same wide leash as a Fear wave (see fearSpawnWave): the hall is sealed,

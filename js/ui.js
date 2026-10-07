@@ -7873,7 +7873,10 @@ function _lairBossIcon(eid, size) {
   const def = typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[eid];
   const idle = def && def.sheets && def.sheets.idle;
   if (!idle) return iconHTML('crown', Math.round(size * 0.6), '#e5484d');
-  return `<span class="lair-sprite" style="width:${size}px;height:${size}px;background-image:url('/${idle.src}');background-size:${idle.cols * size}px auto"></span>`;
+  // Zoomed past the frame and re-centred: the creature sits in the middle of
+  // a 64px frame with a lot of empty margin, so at 1:1 a rat is a speck.
+  const z = 1.6, f = size * z, off = -(f - size) / 2;
+  return `<span class="lair-sprite" style="width:${size}px;height:${size}px;background-image:url('/${idle.src}');background-size:${idle.cols * f}px auto;background-position:${off}px ${off}px"></span>`;
 }
 
 function _lairFmt(n) {
@@ -7883,15 +7886,14 @@ function _lairFmt(n) {
   return String(n);
 }
 
-// What the server will spawn for this level (Room.fearSpawnBoss): the zone's
-// boss on the 'boss' stat curve, times the rung's own multipliers.
+// What the server will spawn for this level (Room.fearSpawnBoss): that rung's
+// own boss (BOSS_LAIR_BOSSES) on the 'boss' stat curve, times its multipliers.
 function _lairBossInfo(lvl) {
-  const eid = bossLairEid(lvl);
-  const base = (typeof ENEMY_DEF !== 'undefined' ? ENEMY_DEF : []).find(d => d.eid === eid) || {};
+  const row = bossLairBoss(lvl) || {};
   const st = monsterStatsAtLevel(lvl, 'boss');
   const k = bossLairScaling(lvl);
   return {
-    eid, name: base.name || eid, color: base.color || '#e5484d',
+    eid: row.eid, name: row.key ? t(row.key) : (row.name || ''), color: row.color || '#e5484d',
     hp: st.hp * k.hpMult, atk: st.atk * k.atkMult,
     spdPct: Math.round((k.spdMult - 1) * 100), atkSpdPct: Math.round((1 / k.atkCdMult - 1) * 100),
   };
@@ -7900,15 +7902,18 @@ function _lairBossInfo(lvl) {
 function _lairBossCardsHTML(st, inRun, lvl) {
   const shard = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === BOSS_LAIR_SHARD_ID) : null;
   const spent = _evtKnown(st.killsLeft) && st.killsLeft <= 0;
-  return `<div class="lair-list">${(st.levels || BOSS_LAIR_LEVELS).map(bl => {
+  st = { ...st, levels: st.levels || BOSS_LAIR_LEVELS };
+  return `<div class="lair-list">${st.levels.map(bl => {
     const b = _lairBossInfo(bl);
     const stone = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === bossLairStoneId(bl)) : null;
-    const locked = lvl < bl;
+    // Opens in order: the previous boss must have been killed once.
+    const locked = !bossLairUnlocked(bl, st.maxKilled);
+    const prev = st.levels[st.levels.indexOf(bl) - 1];
     const fighting = inRun && _bossLairLevel === bl;
     let btn;
     if (fighting) btn = `<button class="lair-go" disabled>${t('evtPillInMatch')}</button>`;
-    else if (locked) btn = `<span class="lair-lock">${iconHTML('lock', 12)} ${tVars('bossLairLockFmt', { n: bl })}</span>`;
-    else if (inRun || spent) btn = `<button class="lair-go" disabled>${spent ? t('bossLairTomorrow') : t('bossLairFightBtn')}</button>`;
+    else if (locked) btn = `<span class="lair-lock">${iconHTML('lock', 14)}<span>${tVars('bossLairLockFmt', { n: prev })}</span></span>`;
+    else if (inRun || spent || lvl < st.minLevel) btn = `<button class="lair-go" disabled>${spent ? t('bossLairTomorrow') : t('bossLairFightBtn')}</button>`;
     else btn = `<button class="lair-go" onclick="netBossLairEnter(${bl})">${t('bossLairFightBtn')}</button>`;
     const fast = b.spdPct > 0
       ? `<span>${t('bossLairSpd')} <b>+${b.spdPct}%</b></span>` : '';
@@ -7934,7 +7939,7 @@ function _lairBossCardsHTML(st, inRun, lvl) {
 }
 
 function _bossLairModel() {
-  const st = (typeof _bossLairState !== 'undefined' && _bossLairState) || { levels: BOSS_LAIR_LEVELS, minLevel: BOSS_LAIR_MIN_LEVEL, maxKills: 1, killsLeft: null };
+  const st = (typeof _bossLairState !== 'undefined' && _bossLairState) || { levels: BOSS_LAIR_LEVELS, minLevel: BOSS_LAIR_MIN_LEVEL, maxKills: 1, killsLeft: null, maxKilled: 0 };
   const inRun = typeof _bossLairInRun !== 'undefined' && _bossLairInRun;
   const lvl = _evtLvl();
   const spent = _evtKnown(st.killsLeft) && st.killsLeft <= 0;

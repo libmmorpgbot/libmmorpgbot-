@@ -5153,6 +5153,7 @@ function _initBossLairHandlers(s) {
       minLevel: st.minLevel || _bossLairState.minLevel,
       maxKills: st.maxKills || _bossLairState.maxKills,
       killsLeft: st.killsLeft !== undefined ? st.killsLeft : _bossLairState.killsLeft,
+      maxKilled: st.maxKilled !== undefined ? st.maxKilled : (_bossLairState.maxKilled || 0),
     };
     _bossLairInRun = !!st.inRun;
     _bossLairLevel = st.level || 0;

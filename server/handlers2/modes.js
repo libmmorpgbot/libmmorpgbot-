@@ -148,7 +148,8 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
   // tournament.js's to own — Room.js and this file need them too, so all
   // three live in shared/definitions.
   const { FEAR_MAX_WAVE, TOURNAMENT_MIN_LEVEL, TOURNAMENT_SIZE,
-    BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS } = require('../../shared/definitions');
+    BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS, bossLairUnlocked } = require('../../shared/definitions');
+  const progression = require('../db/repos/progression');
   const { playerParty, safeTimeout } = deps;
   const { _pvpEliminate, _pvpFrozen, _returnToHub } = modes;
 
@@ -697,16 +698,23 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
 
     // ── Логово боссов ─────────────────────────────────────────────────────────
     // Fear's hall with one boss in it (server/game/fear.js _lairStartBoss).
-    // Entering is free and so is dying: only a kill is limited, to
+    // Bosses open in order — the next once the previous has been killed
+    // (bossLairUnlocked, player_progress.boss_lair_max). Entering is free and
+    // so is dying: only a kill is limited, to
     // BOSS_LAIR_DAILY_KILLS a day across all bosses, and it is counted in the
     // same transaction that pays the reward (_grantBossLairReward). The check
     // here only stops someone whose kill is already used from walking in for
     // nothing.
+    const _lairMax = async () => {
+      try { return s.authed ? await progression.bossLairMax(null, s.playerId) : 0; }
+      catch { return 0; }
+    };
     const _lairState = async () => {
       const run = _fear.get(s.socket.id);
       return {
         levels: BOSS_LAIR_LEVELS, minLevel: BOSS_LAIR_MIN_LEVEL, maxKills: BOSS_LAIR_DAILY_KILLS,
         killsLeft: await modes.attemptsLeft(s.socket.id, 'bosslair'),
+        maxKilled: await _lairMax(),
         inRun: !!(run && run.boss), level: (run && run.boss) || 0,
       };
     };
@@ -730,11 +738,15 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_coop.has(s.socket.id) || _farm2.has(s.socket.id)) {
         return s.socket.emit('bossLairError', { msg: 'Сначала завершите текущее событие' });
       }
-      if (levelOf() < bossLvl) {
-        return s.socket.emit('bossLairError', { msg: `Этот босс открывается с ${bossLvl} уровня` });
+      if (levelOf() < BOSS_LAIR_MIN_LEVEL) {
+        return s.socket.emit('bossLairError', { msg: `Нужен ${BOSS_LAIR_MIN_LEVEL} уровень` });
       }
       _fearStarting.add(s.socket.id);
       try {
+        if (!bossLairUnlocked(bossLvl, await _lairMax())) {
+          const prev = BOSS_LAIR_LEVELS[BOSS_LAIR_LEVELS.indexOf(bossLvl) - 1];
+          return s.socket.emit('bossLairError', { msg: `Сначала убейте босса ${prev} уровня` });
+        }
         if (await modes.attemptsLeft(s.socket.id, 'bosslair') <= 0) {
           return s.socket.emit('bossLairError', { msg: 'Босс на сегодня уже убит — приходите завтра' });
         }

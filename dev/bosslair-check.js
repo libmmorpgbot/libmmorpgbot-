@@ -6,7 +6,7 @@
 //
 // Boots the real server (same harness as dev/modes-check.js) and asks:
 //
-//   * is a boss above the player's level refused?
+//   * do the bosses open in order — the next only after the previous is killed?
 //   * does entering put the player in a private hall, and does the chosen
 //     boss — at that level, with the rung's speed/attack-rate scaling —
 //     actually appear there?
@@ -27,7 +27,7 @@ process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 const { pool, close } = require('../server/db');
 const app = require('../server/app');
 const { wipeItemsAll } = require('./fixtures');
-const { BOSS_LAIR_LEVELS, bossLairScaling, bossLairReward, monsterStatsAtLevel } = require('../shared/definitions');
+const { BOSS_LAIR_LEVELS, BOSS_LAIR_BOSSES, bossLairBoss, bossLairScaling, bossLairReward, monsterStatsAtLevel } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -97,65 +97,75 @@ async function main() {
   const modes = require('../server/modes').modes;
   const TG = 900000301;
   const a0 = await connectAs(TG, `${TAG}_a`);
-  await pool().query('UPDATE player_progress SET lvl = 20 WHERE player_id = $1', [a0.pid]);
+  await pool().query('UPDATE player_progress SET lvl = 12 WHERE player_id = $1', [a0.pid]);
   await pool().query('DELETE FROM player_daily WHERE player_id = $1', [a0.pid]);
   a0.sock.disconnect();
   await wait(300);
   const a = await connectAs(TG, `${TAG}_a`);
 
+  // Enters the hall for `lvl`, waits for the boss, checks what was spawned and
+  // lands the killing blow. Returns the bossLairFinished payload.
+  async function fight(lvl) {
+    a.sock.emit('bossLairEnter', { level: lvl });
+    const started = await maybe(a.sock, 'bossLairStarted', 5000);
+    ok(started && started.level === lvl, `вошёл в логово к боссу ${lvl} ур.`);
+    const up = started ? await maybe(a.sock, 'bossLairBoss', 9000) : null;
+    ok(up && up.level === lvl, 'босс появился после отсчёта');
+    const run = modes._fear.get(a.sock.id);
+    ok(run && run.boss === lvl, 'забег записан как бой с боссом, а не Страх');
+    const boss = run && run.room.enemies.find(e => e.bossLair && e.hp > 0);
+    const row = bossLairBoss(lvl);
+    ok(!!boss, `в зале стоит босс (${boss && boss.name})`);
+    if (boss) {
+      const k = bossLairScaling(lvl), st = monsterStatsAtLevel(lvl, 'boss');
+      eq(boss.eid, row.eid, `свой облик: ${row.eid}`);
+      eq(boss.rlvl, lvl, 'уровень босса — выбранный');
+      eq(boss.maxHp, Math.floor(st.hp * k.hpMult), 'HP: кривая босса ×30 × ступень');
+      ok(boss.maxHp >= st.hp * 30, `HP минимум в 30 раз больше обычного босса (${boss.maxHp})`);
+      ok(boss.atk >= Math.floor(st.atk * 3), `атака минимум в 3 раза больше (${boss.atk})`);
+      eq(boss.atkCdMult, k.atkCdMult, 'бьёт чаще по своей ступени');
+      const me = run.room.players.get(a.sock.id);
+      boss.hp = 1; boss.x = me.x + 10; boss.y = me.y; boss.atk = 0;
+      a.sock.emit('attack', { enemyId: boss.id });
+    }
+    return maybe(a.sock, 'bossLairFinished', 6000);
+  }
+  const sync = async () => { a.sock.emit('bossLairSync'); return once(a.sock, 'bossLairState'); };
+
+  console.log('  ── облик ──');
+  eq(new Set(BOSS_LAIR_BOSSES.map(b => b.eid)).size, 14, 'у всех 14 боссов разные спрайты');
+
   console.log('  ── вход ──');
-  a.sock.emit('bossLairSync');
-  const st = await once(a.sock, 'bossLairState');
+  const st = await sync();
   eq(st.killsLeft, 1, 'на сегодня одно убийство');
   eq((st.levels || []).length, 14, 'сервер прислал 14 боссов');
+  eq(st.maxKilled, 0, 'ещё никого не убил — открыт только первый');
 
-  a.sock.emit('bossLairEnter', { level: 25 });
+  a.sock.emit('bossLairEnter', { level: 15 });
   const err = await maybe(a.sock, 'bossLairError', 2000);
-  ok(err && /25/.test(err.msg), `босс выше уровня — отказ (${err && err.msg})`);
+  ok(err && /10/.test(err.msg), `второй босс закрыт, пока не убит первый (${err && err.msg})`);
 
-  const BOSS = 15;
-  a.sock.emit('bossLairEnter', { level: BOSS });
-  const started = await maybe(a.sock, 'bossLairStarted', 5000);
-  ok(started && started.level === BOSS, `вошёл в логово к боссу ${BOSS} ур.`);
-  const up = started ? await maybe(a.sock, 'bossLairBoss', 9000) : null;
-  ok(up && up.level === BOSS, 'босс появился после отсчёта');
-
-  const run = modes._fear.get(a.sock.id);
-  ok(run && run.boss === BOSS, 'забег записан как бой с боссом, а не Страх');
-  const boss = run && run.room.enemies.find(e => e.bossLair && e.hp > 0);
-  ok(!!boss, `в зале стоит босс (${boss && boss.name})`);
-  if (boss) {
-    const k = bossLairScaling(BOSS);
-    eq(boss.rlvl, BOSS, 'уровень босса — выбранный');
-    eq(boss.atkCdMult, k.atkCdMult, 'бьёт чаще по своей ступени');
-    eq(boss.maxHp, Math.floor(monsterStatsAtLevel(BOSS, 'boss').hp * k.hpMult), 'HP по кривой босса × ступень');
-  }
-
-  a.sock.emit('fearSync');
-  const fs = await once(a.sock, 'fearState');
-  eq(fs.inRun, false, 'Страх не считает бой с боссом своим забегом');
-
-  console.log('  ── убийство ──');
-  const beforeNorm = await countItem(a.pid, 'norm_stone');
-  if (boss) {
-    const me = run.room.players.get(a.sock.id);
-    boss.hp = 1; boss.x = me.x + 10; boss.y = me.y; boss.atk = 0;
-    a.sock.emit('attack', { enemyId: boss.id });
-  }
-  const fin = await maybe(a.sock, 'bossLairFinished', 6000);
+  console.log('  ── убийство первого ──');
+  const fin = await fight(10);
   ok(fin && fin.cleared === true, 'босс убит, бой завершён');
   ok(fin && fin.reward && fin.reward.counted === true, 'убийство засчитано');
-  eq(await countItem(a.pid, 'norm_stone') - beforeNorm, 2, '+2 камня обычной заточки в базе (босс 15 ур.)');
-  eq(await countItem(a.pid, 'star_shard'), BOSS, `+${BOSS} звёздных осколков в базе`);
+  eq(await countItem(a.pid, 'norm_stone'), 2, '+2 камня обычной заточки в базе (босс 10 ур.)');
+  eq(await countItem(a.pid, 'star_shard'), 10, '+10 звёздных осколков в базе');
   ok(!modes._fear.has(a.sock.id), 'зал освобождён');
 
-  console.log('  ── второй раз за день ──');
-  a.sock.emit('bossLairSync');
-  const st2 = await once(a.sock, 'bossLairState');
+  const st2 = await sync();
   eq(st2.killsLeft, 0, 'убийств на сегодня не осталось');
-  a.sock.emit('bossLairEnter', { level: 10 });
+  eq(st2.maxKilled, 10, 'прогресс записан — открыт следующий босс');
+  a.sock.emit('bossLairEnter', { level: 15 });
   const err2 = await maybe(a.sock, 'bossLairError', 2000);
   ok(err2 && /завтра/i.test(err2.msg), `второй вход за день — отказ (${err2 && err2.msg})`);
+
+  console.log('  ── на следующий день — второй босс ──');
+  await pool().query('DELETE FROM player_daily WHERE player_id = $1', [a.pid]);
+  const fin2 = await fight(15);
+  ok(fin2 && fin2.reward && fin2.reward.counted === true, 'второй босс убит и засчитан');
+  eq(await countItem(a.pid, 'star_shard'), 25, '+15 осколков сверху');
+  eq((await sync()).maxKilled, 15, 'открыт третий босс');
 
   a.sock.disconnect();
   await wait(200);
