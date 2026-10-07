@@ -118,6 +118,12 @@ async function main() {
   eq(st.questKills[targetEid], undefined,
     'моб попереднього завдання не рахується у поточне');
 
+  // ── только убийство монстров ─────────────────────────────────────────────
+  // Решение владельца: ни зелий, ни уровня, ни заточки, ни гильдии, ни
+  // коридора, ни боссов — каждый квест «убей N монстров», и цель не босс.
+  ok(QUEST_DEF.every(q => q.type === 'kill'), 'все квесты — на убийство монстров');
+  ok(QUEST_DEF.every(q => (q.eids || []).every(e => !/boss/.test(e))), 'ни один квест не требует босса');
+
   // ── a non-kill quest: buying potions ─────────────────────────────────────
   const potionIdx = QUEST_DEF.findIndex(q => q.type === 'buy_potion');
   if (potionIdx >= 0) {
