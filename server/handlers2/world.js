@@ -42,7 +42,7 @@ const {
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
-  oreDropChance, CRAFT_MATS, NEWBIE_BUFF,
+  oreDropChance, CRAFT_MATS, NEWBIE_BUFF, ELITE_MOB_DROP_MULT,
   STICKER_DEF, STICKER_COOLDOWN_MS,
 } = require('../../shared/definitions');
 const _STICKER_IDS = new Set(STICKER_DEF.map(d => d.id));
@@ -488,9 +488,12 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
     // Таблица той зоны, где убит монстр. Функцией, а не одним вызовом: бонус
     // к дропу ниже бросает её же второй раз.
+    // Элитный монстр сезонного крыла: та же таблица зоны, но шанс каждого
+    // броска x ELITE_MOB_DROP_MULT (руда ниже — тоже).
+    const dropMult = result.elite ? (ELITE_MOB_DROP_MULT || 1) : 1;
     const rollTable = inv =>
-        result.farmZone  ? loot._rollFarmZoneLoot(inv, result.eid)
-      : result.farmHigh  ? loot._rollFarmHighLoot(inv, result.eid)
+        result.farmZone  ? loot._rollFarmZoneLoot(inv, result.eid, dropMult)
+      : result.farmHigh  ? loot._rollFarmHighLoot(inv, result.eid, dropMult)
       : result.farmZone2 ? loot._rollFarm2Loot(inv)
       : result.dungeon   ? loot._rollDungeonLoot(inv, result.eid, result.dungeonClass)
       : loot._rollMobLoot(inv, result.eid, result.rlvl);
@@ -514,7 +517,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Руда — часть дропа: бонус к дропу ниже бросает её второй раз вместе с
     // таблицей зоны (rollOre там же), а не только таблицу.
     const rollOre = () => {
-      if (rand() >= oreDropChance(result.rlvl)) return;
+      if (rand() >= oreDropChance(result.rlvl) * dropMult) return;
       const ore = CRAFT_MATS.find(m => m.id === 'ore_common');
       // Через ту же scratch-корзину и тот же список, что и остальная добыча:
       // дальше её разбирает репозиторий, и руда обязана проходить те же

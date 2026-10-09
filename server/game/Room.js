@@ -12,7 +12,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
-        DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC } = require('../../shared/definitions');
+        DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC, ELITE_MOB_HP, ELITE_MOB_SIZE_MULT } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -681,7 +681,7 @@ const ENEMY_RESTATE_TICKS = 80;
 function _fullEnemyEntry(e) {
   return {
     id: e.id, idx: e._idx, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
-    name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+    name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, elite: !!e.elite, aggro: e.aggro,
     aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
     atkAnimTimer: e._atkPulse ? e.atkAnimTimer : 0,
   };
@@ -905,6 +905,62 @@ class Room {
     this._enemyMap.set(e.id, e);
     this._eventBossId = e.id;
     return e;
+  }
+
+  // ── Элитный монстр сезонного крыла ───────────────────────────────────────
+  // Один на весь сервер — это правило держит планировщик (server/game/
+  // elite.js), а комната только ставит монстра и говорит, когда он умер.
+  // Вид и уровень берутся у обычных монстров этого же этажа (самого старшего
+  // из них), поэтому у элитного та же таблица дропа зоны (farmZone/farmHigh
+  // копируются) — только с шансом x ELITE_MOB_DROP_MULT, см. rollLoot в
+  // server/handlers2/world.js. Здоровье фиксированное, размер x3.
+  spawnEliteMonster(onDeath) {
+    if (this.isEliteAlive()) return null;
+    const pool = this.enemies.filter(e => !e.elite && !e.isBoss && (e.farmZone || e.farmHigh));
+    if (!pool.length) return null;
+    const topLvl = Math.max(...pool.map(e => e.rlvl || 0));
+    const tops = pool.filter(e => (e.rlvl || 0) === topLvl);
+    const tpl = tops[Math.floor(Math.random() * tops.length)];
+    // Случайная комната крыла, случайная проходимая точка в ней.
+    const rooms = (this._dungeon.rooms || []).filter(r => r && r.size);
+    let x = tpl.spawnX, y = tpl.spawnY;
+    if (rooms.length) {
+      const r = rooms[Math.floor(Math.random() * rooms.length)];
+      const gx = r.x + 2 + Math.floor(Math.random() * Math.max(1, r.size - 4));
+      const gy = r.y + 2 + Math.floor(Math.random() * Math.max(1, r.size - 4));
+      const at = this._nearestWalkable(gx * TILE + TILE / 2, gy * TILE + TILE / 2);
+      if (at) { x = at.x; y = at.y; }
+    }
+    const e = {
+      id: `elite_${this.floor}_${Date.now()}`,
+      eid: tpl.eid, eType: tpl.eType, fem: tpl.fem,
+      name: `Элитный ${tpl.name}`,
+      color: tpl.color,
+      elite: true, isBoss: false,
+      arm: tpl.arm, farmZone: !!tpl.farmZone, farmHigh: !!tpl.farmHigh,
+      rlvl: topLvl,
+      size: Math.min(255, Math.round((tpl.size || 16) * ELITE_MOB_SIZE_MULT)),
+      maxHp: ELITE_MOB_HP, hp: ELITE_MOB_HP,
+      // У обычных монстров крыла атака урезана вдвое (FARM_WEAK_MULT);
+      // элитному она возвращается полностью.
+      atk: (tpl.atk || 0) * 2, def: tpl.def, spd: tpl.spd,
+      xp: tpl.xp, gold: tpl.gold,
+      x, y, spawnX: x, spawnY: y,
+      atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
+      aggro: false, aggroR: 260,
+      _sx: x, _sy: y, _shp: ELITE_MOB_HP,
+      _idx: this._allocIdx(),
+    };
+    this.enemies.push(e);
+    this._enemyMap.set(e.id, e);
+    this._eliteId = e.id;
+    this._onEliteDeath = onDeath || null;
+    return e;
+  }
+
+  isEliteAlive() {
+    const e = this._eliteId ? this._enemyMap.get(this._eliteId) : null;
+    return !!(e && e.hp > 0);
   }
 
   isEventBossAlive() {
@@ -1851,7 +1907,7 @@ class Room {
       }
       out.push({
         id: e.id, eid: e.eid, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp,
-        name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, aggro: e.aggro,
+        name: e.name, color: e.color, size: e.size, isBoss: e.isBoss, elite: !!e.elite, aggro: e.aggro,
         aggroR: e.aggroR, spd: e.spd, rlvl: e.rlvl || 0,
       });
       // Known — but `full: false`. See the two meanings of _eKnown above.
@@ -2140,6 +2196,21 @@ class Room {
         // dead until both lanes clear the stage (coopRegisterKill) and
         // coopSpawnStage lays down the next batch, or the lane is released.
         if (e.arm === 'coop') return;
+        // Элитный монстр сезонного крыла: не воскресает на месте. Его убирают
+        // с этажа, а следующего — через 60-70 минут и, возможно, в другом
+        // крыле — заводит общий на весь сервер планировщик (server/game/
+        // elite.js), которому здесь и сообщается о смерти.
+        if (e.elite) {
+          if (!e._evtRemove) {
+            e._evtRemove = true;
+            this._evtPurge = true;
+            if (this._eliteId === e.id) this._eliteId = null;
+            const cb = this._onEliteDeath;
+            this._onEliteDeath = null;
+            if (cb) { try { cb(this.floor, e); } catch (err) { console.error('[elite] onDeath:', err.message); } }
+          }
+          return;
+        }
         // Event boss: drop its whole loot table on the floor for everyone and
         // remove it for good. Unlike the per-arm bosses it never respawns on
         // a timer — only another admin summon brings it back. _evtLooted
@@ -5285,7 +5356,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -5392,7 +5463,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

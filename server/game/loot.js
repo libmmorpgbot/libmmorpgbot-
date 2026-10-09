@@ -167,7 +167,9 @@ function _rollMobLoot(inv, eid, rlvl) {
 // server/handlers/craft.js — 10 base books at ADV_SKILL_BOOK_CRAFT.chance),
 // this is the only way to get an advanced-skill book: ordinary corridor
 // monsters never drop one (_rollMobLoot above).
-function _rollFarmZoneLoot(inv, eid) {
+// `mult` — множитель к шансу КАЖДОГО броска: 1 для обычного монстра,
+// ELITE_MOB_DROP_MULT для элитного монстра сезонного крыла (x10).
+function _rollFarmZoneLoot(inv, eid, mult = 1) {
   const granted = [];
   function addMat(id, qty) {
     const mat = CRAFT_MATS.find(m => m.id === id);
@@ -180,13 +182,13 @@ function _rollFarmZoneLoot(inv, eid) {
     ? FARM_SPECIES_SHARDS[eid]
     : UNIQUE_SHARDS.map(s => s.id);
   for (const shId of shardPool) {
-    if (Math.random() < FARM_SHARD_CHANCE) addMat(shId, 1);
+    if (Math.random() < FARM_SHARD_CHANCE * mult) addMat(shId, 1);
   }
-  if (Math.random() < FARM_NORM_STONE_CHANCE) addMat('norm_stone', 1);
-  if (Math.random() < FARM_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
-  if (Math.random() < FARM_EPIC_RECIPE_CHANCE) addMat('rece', 1);
-  if (Math.random() < FARM_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
-  if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE) {
+  if (Math.random() < FARM_NORM_STONE_CHANCE * mult) addMat('norm_stone', 1);
+  if (Math.random() < FARM_BLESS_STONE_CHANCE * mult) addMat('bless_stone', 1);
+  if (Math.random() < FARM_EPIC_RECIPE_CHANCE * mult) addMat('rece', 1);
+  if (Math.random() < FARM_LEGENDARY_RECIPE_CHANCE * mult) addMat('recl', 1);
+  if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE * mult) {
     // Falls back to the full pool for a species FARM_SPECIES_BOOKS doesn't
     // recognize (shouldn't happen for a real farmZone kill, but an empty
     // pool must never make this roll silently grant nothing).
@@ -220,7 +222,8 @@ function _rollFarmZoneLoot(inv, eid) {
 // Элитной зоны. Liberty тоже не бросается здесь — это валюта (nexum), её
 // бросают и начисляют обработчики attack/skillAttack (server/handlers2/
 // world.js) по FARM_HIGH_LIBERTY_CHANCE.
-function _rollFarmHighLoot(inv, eid) {
+// `mult` — как у _rollFarmZoneLoot выше: x10 к шансам для элитного монстра.
+function _rollFarmHighLoot(inv, eid, mult = 1) {
   const granted = [];
   function addMat(id, qty) {
     const mat = CRAFT_MATS.find(m => m.id === id);
@@ -232,7 +235,7 @@ function _rollFarmHighLoot(inv, eid) {
   // бывает (FARM_HIGH_SPECIES и таблицы строятся из одного списка), но
   // молчаливая потеря дропа — худшее, чем можно ответить на рассинхрон.
   function rollFrom(chance, speciesPool, fullPool) {
-    if (Math.random() >= chance) return;
+    if (Math.random() >= chance * mult) return;
     const pool = (speciesPool && speciesPool.length) ? speciesPool : fullPool;
     if (pool.length) addMat(pool[Math.floor(Math.random() * pool.length)], 1);
   }
@@ -244,7 +247,7 @@ function _rollFarmHighLoot(inv, eid) {
   const gearSlots = FARM_HIGH_SPECIES_GEAR_SLOTS[eid]
     || ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
   for (const rarity of Object.keys(FARM_HIGH_GEAR_CHANCE)) {
-    if (Math.random() >= FARM_HIGH_GEAR_CHANCE[rarity]) continue;
+    if (Math.random() >= FARM_HIGH_GEAR_CHANCE[rarity] * mult) continue;
     const pool = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && gearSlots.includes(d.slot));
     if (!pool.length) continue;
     const it = pool[Math.floor(Math.random() * pool.length)];
@@ -267,19 +270,19 @@ function _rollFarmHighLoot(inv, eid) {
     ? FARM_HIGH_SPECIES_SHARDS[eid]
     : UNIQUE_SHARDS.map(s => s.id);
   for (const shId of shardPool) {
-    if (Math.random() < FARM_HIGH_SHARD_CHANCE) addMat(shId, 1);
+    if (Math.random() < FARM_HIGH_SHARD_CHANCE * mult) addMat(shId, 1);
   }
 
   // ── общее для всей зоны, без деления по видам ───────────────────────────
   // Рецепт не привязан ни к классу, ни к слоту, а камень заточки — один
   // предмет: делить тут нечего.
-  if (Math.random() < FARM_HIGH_NORM_STONE_CHANCE) addMat('norm_stone', 1);
+  if (Math.random() < FARM_HIGH_NORM_STONE_CHANCE * mult) addMat('norm_stone', 1);
   // Камень безопасной заточки — добавлен позже, ставкой обычной Фарм-зоны
   // (FARM_HIGH_BLESS_STONE_CHANCE === FARM_BLESS_STONE_CHANCE, без ×1.3
   // осколков) — так же, без деления по видам, как обычный камень выше.
-  if (Math.random() < FARM_HIGH_BLESS_STONE_CHANCE) addMat('bless_stone', 1);
-  if (Math.random() < FARM_HIGH_EPIC_RECIPE_CHANCE) addMat('rece', 1);
-  if (Math.random() < FARM_HIGH_LEGENDARY_RECIPE_CHANCE) addMat('recl', 1);
+  if (Math.random() < FARM_HIGH_BLESS_STONE_CHANCE * mult) addMat('bless_stone', 1);
+  if (Math.random() < FARM_HIGH_EPIC_RECIPE_CHANCE * mult) addMat('rece', 1);
+  if (Math.random() < FARM_HIGH_LEGENDARY_RECIPE_CHANCE * mult) addMat('recl', 1);
   return granted;
 }
 

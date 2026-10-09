@@ -1841,9 +1841,12 @@ function _getEnemy(id) {
   const gfx = new PIXI.Graphics();
   const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4, align: 'center' });
   lbl.anchor.set(0.5, 1);
-  ct.addChild(spr, gfx, lbl);
+  // Аура элитного монстра — под спрайтом, как у персонажей.
+  const aura = new PIXI.Graphics();
+  aura.visible = false;
+  ct.addChild(aura, spr, gfx, lbl);
   _enemyCt.addChild(ct);
-  const obj = { ct, spr, gfx, lbl };
+  const obj = { ct, spr, gfx, lbl, aura };
   _enemyPool.set(id, obj);
   return obj;
 }
@@ -1882,6 +1885,21 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   }
 
   const ds     = (e.isBoss ? e.size * 4.5 : e.size * 6.75) * 0.85;
+
+  // Красная аура элитного монстра. Рисуется так же, как у персонажей
+  // (_drawAura), но в масштабе монстра — он в 3 раза крупнее обычного.
+  const { aura } = obj;
+  if (e.elite && e.hp > 0) {
+    const k = Math.max(1, ds / 75);
+    aura.clear();
+    _drawAura(aura, 0, 0, performance.now(), 'red');
+    aura.scale.set(k);
+    aura.y = ds * 0.4 - 6 * k;
+    aura.visible = true;
+  } else if (aura.visible) {
+    aura.clear();
+    aura.visible = false;
+  }
   const texRows = def ? _enemyTextures(e.eid, key) : null;
   const sh = def?.sheets[key];
   if (texRows && sh) {
@@ -1972,12 +1990,13 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     ? (typeof tVars === 'function' ? tVars('charLevelFmt', { lvl: e.rlvl }) : 'Уровень ' + e.rlvl) + '\n'
     : '';
   const boss = typeof t === 'function' ? t('bossTag') : 'БОСС';
-  const nameLine = e.isBoss ? `⚠ ${boss} · ${e.name || ''}` : `${e.name || ''}`;
+  const nameLine = e.isBoss ? `⚠ ${boss} · ${e.name || ''}` : e.elite ? `★ ${e.name || ''}` : `${e.name || ''}`;
   const lblText  = lvlLine + nameLine;
   if (lbl.text !== lblText) lbl.text = lblText;
-  lbl.style.fill         = e.isBoss ? '#ff9999' : '#e8e8e8';
-  lbl.style.fontSize     = e.isBoss ? 18 : 14;
-  lbl.style.strokeThickness = e.isBoss ? 5 : 4;
+  const big = e.isBoss || e.elite;
+  lbl.style.fill         = e.elite ? '#ff5a4a' : e.isBoss ? '#ff9999' : '#e8e8e8';
+  lbl.style.fontSize     = big ? 18 : 14;
+  lbl.style.strokeThickness = big ? 5 : 4;
   lbl.x = 0;
   lbl.y = by - 4;
 }
@@ -1993,7 +2012,7 @@ function _updateEnemies(dt, pulse, bossGlow) {
   const visIds = typeof visibleEnemyIds === 'function' ? visibleEnemyIds() : null;
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return;
-    if (visIds && !e.isBoss && !visIds.has(e.id)) return;
+    if (visIds && !e.isBoss && !e.elite && !visIds.has(e.id)) return;
     // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
     if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
     _seen('e|' + e.eid);
@@ -2037,6 +2056,8 @@ const _AURA_PALETTES = {
   // rim: pool outline · ray: sweeping spokes · mote: rising sparks
   gold:   { pool: 0xffc63c, halo: 0xffd76a, core: 0xfff3cf, rim: 0xffe9a8, ray: 0xffd76a, mote: 0xfff0c0 },
   purple: { pool: 0x9b3fe0, halo: 0xb56cf0, core: 0xf3e2ff, rim: 0xd8a8ff, ray: 0xb56cf0, mote: 0xe8c8ff },
+  // Элитный монстр сезонного крыла — та же аура, что у персонажей, только красная.
+  red:    { pool: 0xe0201c, halo: 0xff3a30, core: 0xffd2cc, rim: 0xff7a70, ray: 0xff3a30, mote: 0xffb0a8 },
 };
 
 function isTopPlayer(username) {

@@ -41,7 +41,7 @@
 //     u8  aggro
 //     u8  atkAnimTimer*100
 //     full only: str id, str eid, i32 maxHp, str name, str color,
-//                u8 size, u8 isBoss, f32 aggroR, u16 spd, u8 rlvl
+//                u8 size, u8 isBoss (2 = elite), f32 aggroR, u16 spd, u8 rlvl
 //   [projectiles] u16 count, per entry (19 bytes):
 //     u32 x*2, u32 y*2, i16 vx, i16 vy, u8 size, u8 life*20,
 //     u8 r, u8 g, u8 b, u8 flags (bit0 = arrow), u8 age (10ms units)
@@ -288,7 +288,8 @@ function encodeGameState(players, enemies, t, enemiesGen, projs, aoes) {
         o = _ncWStr(o, e.name);
         o = _ncWStr(o, e.color);
         _ncDV.setUint8(o, Math.max(0, Math.min(255, e.size | 0))); o += 1;
-        _ncDV.setUint8(o, e.isBoss ? 1 : 0); o += 1;
+        // 2 = элитный монстр сезонного крыла (не босс, но с красной аурой).
+        _ncDV.setUint8(o, e.isBoss ? 1 : (e.elite ? 2 : 0)); o += 1;
         _ncDV.setFloat32(o, e.aggroR || 0, true); o += 4;
         _ncDV.setUint16(o, Math.max(0, Math.min(65535, e.spd | 0)), true); o += 2;
         _ncDV.setUint8(o, Math.max(0, Math.min(255, e.rlvl | 0))); o += 1;
@@ -440,12 +441,14 @@ function decodeGameState(data) {
       const name = rStr();
       const color = rStr();
       const size = dv.getUint8(o); o += 1;
-      const isBoss = !!dv.getUint8(o); o += 1;
+      const bossByte = dv.getUint8(o); o += 1;
+      const isBoss = bossByte === 1;
+      const elite = bossByte === 2;
       const aggroR = dv.getFloat32(o, true); o += 4;
       const spd = dv.getUint16(o, true); o += 2;
       const rlvl = dv.getUint8(o); o += 1;
       _ncEIdMap.set(idx, id);
-      enemies.push({ id, eid, x, y, hp, maxHp, name, color, size, isBoss,
+      enemies.push({ id, eid, x, y, hp, maxHp, name, color, size, isBoss, elite,
         aggro, aggroR, spd, rlvl, atkAnimTimer });
     } else {
       const id = _ncEIdMap.get(idx);

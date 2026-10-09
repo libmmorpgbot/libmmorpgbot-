@@ -38,6 +38,7 @@ const tgGame = require('./tg-game');
 // modes.js's _socketForTelegramId.
 const { Session, activeSessions, sessionClaims } = require('./session');
 const world = require('./world');
+const eliteMob = require('./game/elite');
 const version = require('./version');
 const party = require('./party');
 const modesLib = require('./modes');
@@ -1558,6 +1559,13 @@ async function boot() {
   const floors = world.initFloors(io, bossstate.save, bossStates);
   console.log(`world: ${floors} floors` + (restored ? `, восстановлено таймеров боссов: ${restored}` : ''));
 
+  // Элитный монстр сезонных крыльев — один на весь сервер (server/game/elite.js).
+  // Срок следующего появления лежит в той же boss_state, что и таймеры боссов.
+  eliteMob.init({
+    io, roomOf: world.roomOf, save: bossstate.save,
+    deadlineMs: (bossStates[eliteMob.ELITE_STATE_FLOOR] || {})[eliteMob.ELITE_ARM],
+  });
+
   // 2c. The event modes. Their schedules start here, which is why this is after
   //     the floors exist and before the first player can connect: a mode that
   //     opens its registration window while the arena has no room would deploy
@@ -1694,6 +1702,7 @@ async function shutdown(signal, { exit = true } = {}) {
   console.log(`${signal}: shutting down`);
 
   workers.stop();
+  eliteMob.stop();
   world.stopAll();
 
   // ── всех, кто сейчас играет, — на новую версию ────────────────────────────

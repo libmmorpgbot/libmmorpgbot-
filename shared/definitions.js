@@ -729,6 +729,18 @@ const SEASON_FARM2_KILL_POINTS = 15;
 const SEASON_FARM_HIGH_KILL_TARGET = 5000;
 const SEASON_FARM_HIGH_KILL_POINTS = 20;
 
+// ── Элитный монстр сезонных крыльев ─────────────────────────────────────────
+// Один на весь сервер: появляется в сезонном крыле Фарм-зоны или Фарм зоны 2
+// (какое — решает случай), живёт, пока его не убьют, и следующий приходит
+// через 60-70 минут после смерти. В 3 раза крупнее обычного монстра, ровно
+// 3 000 000 здоровья, и шанс каждого броска его дропа — x10 к шансу обычного
+// монстра той же зоны (server/game/elite.js, Room.spawnEliteMonster).
+const ELITE_MOB_HP = 3000000;
+const ELITE_MOB_SIZE_MULT = 3;
+const ELITE_MOB_DROP_MULT = 10;
+const ELITE_MOB_RESPAWN_MIN_MS = 60 * 60 * 1000;
+const ELITE_MOB_RESPAWN_MAX_MS = 70 * 60 * 1000;
+
 // ── Сезон 4: ежедневные и еженедельные задания ──────────────────────────
 // Счётчики живут в player_season.quests (строка 4-го сезона): d — день,
 // w — неделя, у каждого свой ключ периода (seasonDayKey/seasonWeekKey, по
@@ -4240,6 +4252,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_TOURNAMENT_WIN_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
+  ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS,
   SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, seasonPrizeGram, PRIZE_SEASONS, prizeSeasonShown, prizeSeasonClaimable,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
