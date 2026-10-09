@@ -42,7 +42,7 @@ const {
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
-  oreDropChance, CRAFT_MATS, NEWBIE_BUFF, ELITE_MOB_DROP_MULT,
+  oreDropChance, CRAFT_MATS, NEWBIE_BUFF, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM,
   STICKER_DEF, STICKER_COOLDOWN_MS,
 } = require('../../shared/definitions');
 const _STICKER_IDS = new Set(STICKER_DEF.map(d => d.id));
@@ -715,7 +715,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // co-op run — those pay their own fixed rewards — and, like Liberty, its
     // chance table never came across from the retired handler file, so
     // `result.gram` was emitted to the client while nothing set it.
-    const myGram = (result.farmZone || result.farmHigh || result.farmZone2 || result.dungeon || result.arm === 'coop') ? 0
+    // Элитный монстр сезонного крыла — фиксированные ELITE_MOB_GRAM убийце,
+    // хотя обычные монстры фарм-зон GRAM не дают.
+    const myGram = result.elite ? (ELITE_MOB_GRAM || 0)
+      : (result.farmZone || result.farmHigh || result.farmZone2 || result.dungeon || result.arm === 'coop') ? 0
       : (rand() < (GRAM_DROP_CHANCE || 0) ? (result.rlvl || 1) * (GRAM_PER_LEVEL || 0) : 0);
 
     // One key per KILL, not per enemy and not per attempt.
@@ -861,6 +864,16 @@ module.exports = function registerWorld(s, safeOn, deps) {
       normStone: drops.normStone, blessStone: drops.blessStone,
       nexum: myNexum, gram: myGram,
     });
+
+    // Элитный монстр: весь сервер узнаёт, кто забрал его GRAM. После
+    // транзакции — объявляется только то, что действительно начислено.
+    if (result.elite && myGram > 0) {
+      io.emit('chatMsg', {
+        username: 'СОБЫТИЕ',
+        text: `Игрок ${s.username || '?'} получил ${myGram} GRAM с элитного монстра`,
+        time: new Date().toISOString(),
+      });
+    }
 
     // What would not fit stays on the floor. The reward for a kill is not owed
     // anywhere else, so it is not destroyed over a missing slot.

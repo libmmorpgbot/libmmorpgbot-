@@ -22,24 +22,16 @@ const ELITE_FLOORS = [FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason];
 // Один ключ на сервер, а не на этаж — монстр тоже один.
 const ELITE_STATE_FLOOR = FLOOR_IDS.farmSeason;
 const ELITE_ARM = 'elite';
-const ZONE_NAME = {
-  [FLOOR_IDS.farmSeason]: 'сезонном крыле Фарм-зоны',
-  [FLOOR_IDS.farmHighSeason]: 'сезонном крыле Фарм зоны 2',
-};
 // Комната не смогла поставить монстра (этажа нет, не из кого взять вид) —
 // повторить через минуту, а не ждать следующего часа.
 const RETRY_MS = 60 * 1000;
 
-let _io = null, _roomOf = null, _save = null;
+let _roomOf = null, _save = null;
 let _timer = null;
 let _nextAt = 0;
 
 function respawnDelayMs() {
   return ELITE_MOB_RESPAWN_MIN_MS + Math.random() * (ELITE_MOB_RESPAWN_MAX_MS - ELITE_MOB_RESPAWN_MIN_MS);
-}
-
-function _announce(text) {
-  if (_io) _io.emit('chatMsg', { username: 'СОБЫТИЕ', text, time: new Date().toISOString() });
 }
 
 function _schedule(at) {
@@ -58,11 +50,10 @@ function aliveFloor() {
   return null;
 }
 
-function _onDeath(floor) {
+function _onDeath() {
   const at = Date.now() + respawnDelayMs();
   if (_save) _save(ELITE_STATE_FLOOR, ELITE_ARM, at);
   _schedule(at);
-  _announce(`💀 Элитный монстр в ${ZONE_NAME[floor] || 'сезонном крыле'} повержен! Следующий — примерно через час.`);
 }
 
 // Ставит монстра в случайное из двух крыльев. Уже жив где-то — ничего.
@@ -75,7 +66,6 @@ function spawnNow() {
     const e = room && typeof room.spawnEliteMonster === 'function' ? room.spawnEliteMonster(_onDeath) : null;
     if (e) {
       _nextAt = 0;
-      _announce(`🔴 В ${ZONE_NAME[f]} появился элитный монстр — ${e.name}! 3 000 000 здоровья, дроп x10.`);
       return { floor: f, enemy: e };
     }
   }
@@ -84,8 +74,8 @@ function spawnNow() {
 }
 
 // deadlineMs — сохранённый срок следующего появления (или null).
-function init({ io, roomOf, save, deadlineMs = null }) {
-  _io = io; _roomOf = roomOf; _save = save || null;
+function init({ roomOf, save, deadlineMs = null }) {
+  _roomOf = roomOf; _save = save || null;
   _schedule(Number.isFinite(deadlineMs) && deadlineMs > Date.now() ? deadlineMs : Date.now());
 }
 

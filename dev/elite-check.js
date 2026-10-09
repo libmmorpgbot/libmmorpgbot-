@@ -10,7 +10,7 @@
 // x10 и фиксированно 3 000 000 здоровья».
 
 const {
-  ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT,
+  ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM,
   ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS,
 } = require('../shared/definitions');
 const Room = require('../server/game/Room');
@@ -99,6 +99,7 @@ head('дроп x10');
   const z10 = count((inv, m) => loot._rollFarmZoneLoot(inv, 'orc_warrior', m), ELITE_MOB_DROP_MULT);
   ok(z10 > z1 * 6, `Фарм-зона: x10 к шансу даёт заметно больше дропа (${z1} → ${z10})`);
   eq(ELITE_MOB_DROP_MULT, 10, 'множитель — ровно 10');
+  eq(ELITE_MOB_GRAM, 0.3, 'GRAM с элитного — 0.3');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -112,7 +113,7 @@ head('один на весь сервер, респ 60-70 минут');
   eq(ELITE_MOB_RESPAWN_MAX_MS, 70 * 60 * 1000, 'верхняя — 70');
 
   const saved = [];
-  elite.init({ io, roomOf, save: (f, arm, at) => saved.push({ f, arm, at }), deadlineMs: Date.now() + 3600e3 });
+  elite.init({ roomOf, save: (f, arm, at) => saved.push({ f, arm, at }), deadlineMs: Date.now() + 3600e3 });
   eq(elite.aliveFloor(), null, 'сохранённый срок в будущем — сразу не появляется');
   const first = elite.spawnNow();
   ok(first && elite.ELITE_FLOORS.includes(first.floor), 'появляется в одном из двух сезонных крыльев');
@@ -120,7 +121,7 @@ head('один на весь сервер, респ 60-70 минут');
   const alive = [...rooms.keys()].filter(f => rooms.get(f).isEliteAlive());
   eq(alive.length, 1, 'жив ровно один на весь сервер');
   ok(!rooms.get(FLOOR_IDS.farmZone).isEliteAlive(), 'в обычной Фарм-зоне (не крыле) не появляется');
-  ok(chat.some(t => t.includes('появился элитный монстр')), 'появление объявлено в чате');
+  eq(chat.length, 0, 'о появлении в чат не пишется');
 
   first.enemy.hp = 0;
   const t0 = Date.now();
@@ -131,6 +132,7 @@ head('один на весь сервер, респ 60-70 минут');
     'следующий — через 60-70 минут после смерти');
   eq(saved[0].at, st.nextAt, 'в базу уходит тот же срок, что стоит на таймере');
   eq(elite.aliveFloor(), null, 'до срока на сервере элитного нет');
+  eq(chat.length, 0, 'о смерти в чат тоже не пишется (пишет только выдача GRAM)');
   elite.stop();
 }
 
