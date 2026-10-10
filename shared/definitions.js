@@ -934,7 +934,7 @@ const QUEST_DEF = [
 // Shared between Room.js (spawning + the wave-clear check) and server/
 // index.js (the UI's wave counter), so it lives here rather than being
 // duplicated in both.
-const FEAR_MAX_WAVE = 39;
+const FEAR_MAX_WAVE = 59;
 // Номер этажа Страха — server/game/floors.js берёт его отсюда (FLOOR_IDS.fear),
 // а клиент по нему узнаёт, что стоит в Страхе (лавовый пол, js/game.js).
 const FEAR_FLOOR_ID = 11;

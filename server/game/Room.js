@@ -1111,7 +1111,7 @@ class Room {
     // Fear monsters are exempt from the tick loop's 12s respawn (they must
     // stay dead for fearRegisterKill's count to ever reach zero), so without
     // this every corpse of the run stayed in this.enemies until the lane was
-    // released — 780 dead objects per full 39-wave run, times however many
+    // released — 1180 dead objects per full 59-wave run, times however many
     // halls are busy, walked by the AI loop and the enemy-grid rebuild forty
     // times a second on top of the ~7000 the world already has. That is a
     // cost paid by every player on the server, not just the one in here.
@@ -3277,7 +3277,7 @@ class Room {
   //
   // The wire field is u16, so the counter must not run past 65535; the
   // free-list is what keeps a long-lived room (Fear waves alone are 20
-  // monsters per wave, 39 waves per run) from ever getting there.
+  // monsters per wave, 59 waves per run) from ever getting there.
   _allocIdx() {
     if (this._idxFree.length) return this._idxFree.pop();
     return this._idxNext++;

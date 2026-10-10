@@ -308,7 +308,7 @@ let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: n
 // queue and no scheduled window, unlike the arena/race above — entering IS
 // starting (see js/network.js's netFearEnter/fearStarted). wave/maxWave
 // track progress through the current run, pushed by fearWave/fearStarted.
-let _fearState = { attemptsLeft: null, maxAttempts: 2, maxWave: 39, minLevel: 10 };
+let _fearState = { attemptsLeft: null, maxAttempts: 2, maxWave: 59, minLevel: 10 };
 // Wall-clock time the SERVER last placed this player explicitly — every
 // instanced deploy and every return home goes through _teleportTo (js/game.js),
 // which stamps this. Read by _applyGameStart (js/network.js) to tell a

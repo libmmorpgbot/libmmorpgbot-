@@ -7969,7 +7969,7 @@ function _race10Model() {
 // On-demand: no schedule, no queue — the only gates are the min level and
 // whether today's attempts are used up. Entering IS starting.
 function _fearModel() {
-  const st = (typeof _fearState !== 'undefined' && _fearState) || { attemptsLeft: null, maxAttempts: 2, maxWave: 39, minLevel: 10 };
+  const st = (typeof _fearState !== 'undefined' && _fearState) || { attemptsLeft: null, maxAttempts: 2, maxWave: 59, minLevel: 10 };
   const inRun = typeof _fearInRun !== 'undefined' && _fearInRun;
   const spent = _evtKnown(st.attemptsLeft) && st.attemptsLeft <= 0;
   const tooLow = !inRun && _evtLvl() < (st.minLevel || 10);

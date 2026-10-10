@@ -5080,7 +5080,7 @@ function _initFearHandlers(s) {
   s.on('fearState', (st) => {
     _fearState = {
       maxAttempts: st.maxAttempts || _fearState.maxAttempts || 2,
-      maxWave: st.maxWave || _fearState.maxWave || 39,
+      maxWave: st.maxWave || _fearState.maxWave || 59,
       minLevel: st.minLevel || _fearState.minLevel || 10,
       attemptsLeft: st.attemptsLeft !== undefined ? st.attemptsLeft : _fearState.attemptsLeft,
     };
