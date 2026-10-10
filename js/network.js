@@ -4563,6 +4563,9 @@ function netMailBonusClaim() {
 function netGetRating(tab) {
   if (socket?.connected) socket.emit('getRating', { tab });
 }
+function netEliteRating() {
+  if (socket?.connected) socket.emit('eliteRating');
+}
 
 // ── Event boss + world drops ────────────────────────────────────────────────
 // worldDrops is the shared ground-loot pool (id -> {id,x,y,item}); the server
@@ -5609,6 +5612,12 @@ function _initGramHandlers(s) {
   s.on('refBonusReceived', (data) => {
     window._gramBalance = (window._gramBalance || 0) + data.bonus;
     if (typeof onRefBonusReceived === 'function') onRefBonusReceived(data);
+  });
+  s.on('eliteRatingData', (data) => {
+    if (typeof onEliteRatingData === 'function') onEliteRatingData(data);
+  });
+  s.on('eliteRatingError', ({ msg } = {}) => {
+    if (typeof onEliteRatingError === 'function') onEliteRatingError(msg);
   });
   s.on('ratingData', ({ tab, rows }) => {
     if (typeof onRatingData === 'function') onRatingData(tab, rows);

@@ -613,6 +613,31 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('ratingData', { tab: 'players', rows });
   }));
 
+  // Вкладка «Элитный» в HUD: кто сколько элитных монстров убил. Полсотни
+  // лучших и своя строка отдельно — как у основного рейтинга выше.
+  safeOn('eliteRating', () => s.act('eliteRating', 'eliteRatingError', async (t, pid) => {
+    const { query } = require('../db');
+    const { rows } = await query(t, `
+      SELECT p.username, ek.kills, pr.lvl AS level, pr.char_class AS "charClass"
+        FROM elite_kills ek
+        JOIN players p          ON p.id = ek.player_id
+        JOIN player_progress pr ON pr.player_id = p.id
+       WHERE ek.kills > 0
+       ORDER BY ek.kills DESC, ek.last_kill_at, p.id
+       LIMIT 50`);
+    const { rows: me } = await query(t, `
+      SELECT ek.kills,
+             (SELECT count(*) FROM elite_kills q
+               WHERE q.kills > ek.kills
+                  OR (q.kills = ek.kills AND q.last_kill_at < ek.last_kill_at))::int + 1 AS rank
+        FROM elite_kills ek
+       WHERE ek.player_id = $1`, [pid]);
+    s.socket.emit('eliteRatingData', {
+      rows: rows.map(r => ({ ...r, kills: Number(r.kills) })),
+      me: me.length ? { kills: Number(me[0].kills), rank: me[0].rank } : { kills: 0, rank: null },
+    });
+  }));
+
   // Турнир's own leaderboard — champions ranked by how many times they've won
   // one, not by BM/level like the main rating panel. Reuses pvp_history
   // rather than a new table: server/game/tournament.js's _trFinishTournament

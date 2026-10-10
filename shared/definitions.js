@@ -742,6 +742,14 @@ const ELITE_MOB_DROP_MULT = 10;
 const ELITE_MOB_GRAM = 0.3;
 const ELITE_MOB_RESPAWN_MIN_MS = 60 * 60 * 1000;
 const ELITE_MOB_RESPAWN_MAX_MS = 70 * 60 * 1000;
+// Когда элитный монстр вообще появляется: только 13 октября 2026 по Москве
+// (UTC+3, без перехода на летнее время), с 00:00 до 23:59. Вне окна его нет,
+// а живой к концу окна — исчезает. [START, END) в мс UTC.
+const ELITE_EVENT_START_AT = Date.UTC(2026, 9, 12, 21, 0, 0); // 13.10.2026 00:00 МСК
+const ELITE_EVENT_END_AT   = Date.UTC(2026, 9, 13, 21, 0, 0); // 14.10.2026 00:00 МСК
+function eliteEventOn(now = Date.now()) {
+  return now >= ELITE_EVENT_START_AT && now < ELITE_EVENT_END_AT;
+}
 
 // ── Сезон 4: ежедневные и еженедельные задания ──────────────────────────
 // Счётчики живут в player_season.quests (строка 4-го сезона): d — день,
@@ -4255,6 +4263,7 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
   ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM, ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS,
+  ELITE_EVENT_START_AT, ELITE_EVENT_END_AT, eliteEventOn,
   SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, seasonPrizeGram, PRIZE_SEASONS, prizeSeasonShown, prizeSeasonClaimable,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,

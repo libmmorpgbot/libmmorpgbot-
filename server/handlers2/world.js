@@ -780,6 +780,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // from `eid`, which the result does carry.
       const quest = await progression.questOnKill(t, pid, { eid: result.eid, rlvl: result.rlvl });
       if (quest) s.socket.emit('questSync', quest);
+      // Рейтинг «Элитный» (HUD): убийство элитного монстра засчитывается тому,
+      // кто его добил, — в той же транзакции, что и награда.
+      if (result.elite) {
+        await query(t, `
+          INSERT INTO elite_kills (player_id, kills, last_kill_at) VALUES ($1, 1, now())
+          ON CONFLICT (player_id) DO UPDATE
+            SET kills = elite_kills.kills + 1, last_kill_at = now()`, [pid]);
+      }
       // Season 3's farm-zone kill quests. A plain counter, not points —
       // seasonClaimFarmKills (server/handlers2/progression.js) is what turns
       // completed cycles into season points, so this runs unconditionally

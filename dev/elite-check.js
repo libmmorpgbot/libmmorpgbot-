@@ -8,10 +8,13 @@
 // красным внизу как у персонажей, в 3 раза больше обычного, появляется в
 // сезонной фарм-зоне 1 и 2, один на весь сервер, респ 60-70 минут, шанс дропа
 // x10 и фиксированно 3 000 000 здоровья».
+//
+// Позже: «только 13.10 с 00:00 по Москве до 23:59».
 
 const {
   ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM,
   ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS,
+  ELITE_EVENT_START_AT, ELITE_EVENT_END_AT, eliteEventOn,
 } = require('../shared/definitions');
 const Room = require('../server/game/Room');
 const { FLOOR_IDS } = require('../server/game/floors');
@@ -112,8 +115,11 @@ head('один на весь сервер, респ 60-70 минут');
   eq(ELITE_MOB_RESPAWN_MIN_MS, 60 * 60 * 1000, 'нижняя граница — 60 минут');
   eq(ELITE_MOB_RESPAWN_MAX_MS, 70 * 60 * 1000, 'верхняя — 70');
 
+  // Внутри окна события: 13.10, 12:00 по Москве.
+  let clock = ELITE_EVENT_START_AT + 12 * 3600e3;
+  elite._setClock(() => clock);
   const saved = [];
-  elite.init({ roomOf, save: (f, arm, at) => saved.push({ f, arm, at }), deadlineMs: Date.now() + 3600e3 });
+  elite.init({ roomOf, save: (f, arm, at) => saved.push({ f, arm, at }), deadlineMs: clock + 3600e3 });
   eq(elite.aliveFloor(), null, 'сохранённый срок в будущем — сразу не появляется');
   const first = elite.spawnNow();
   ok(first && elite.ELITE_FLOORS.includes(first.floor), 'появляется в одном из двух сезонных крыльев');
@@ -124,16 +130,49 @@ head('один на весь сервер, респ 60-70 минут');
   eq(chat.length, 0, 'о появлении в чат не пишется');
 
   first.enemy.hp = 0;
-  const t0 = Date.now();
+  const t0 = clock;
   rooms.get(first.floor)._tick();
   eq(saved.length, 1, 'смерть записывает срок следующего');
   const st = elite.status();
-  ok(st.nextAt >= t0 + ELITE_MOB_RESPAWN_MIN_MS && st.nextAt <= Date.now() + ELITE_MOB_RESPAWN_MAX_MS,
+  ok(st.nextAt >= t0 + ELITE_MOB_RESPAWN_MIN_MS && st.nextAt <= t0 + ELITE_MOB_RESPAWN_MAX_MS,
     'следующий — через 60-70 минут после смерти');
   eq(saved[0].at, st.nextAt, 'в базу уходит тот же срок, что стоит на таймере');
   eq(elite.aliveFloor(), null, 'до срока на сервере элитного нет');
   eq(chat.length, 0, 'о смерти в чат тоже не пишется (пишет только выдача GRAM)');
   elite.stop();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+head('только 13.10 с 00:00 до 23:59 по Москве');
+{
+  eq(new Date(ELITE_EVENT_START_AT).toISOString(), '2026-10-12T21:00:00.000Z', 'начало — 13.10 00:00 МСК (UTC+3)');
+  eq(new Date(ELITE_EVENT_END_AT).toISOString(), '2026-10-13T21:00:00.000Z', 'конец — 14.10 00:00 МСК, то есть после 23:59');
+  ok(!eliteEventOn(ELITE_EVENT_START_AT - 1), '12.10 23:59:59 МСК — ещё нет');
+  ok(eliteEventOn(ELITE_EVENT_START_AT), '13.10 00:00 МСК — уже да');
+  ok(eliteEventOn(ELITE_EVENT_END_AT - 1), '13.10 23:59:59 МСК — ещё да');
+  ok(!eliteEventOn(ELITE_EVENT_END_AT), '14.10 00:00 МСК — уже нет');
+
+  let clock = ELITE_EVENT_START_AT - 5 * 3600e3;
+  elite._setClock(() => clock);
+  elite.init({ roomOf, save: () => {}, deadlineMs: null });
+  eq(elite.spawnNow(), null, 'до 13.10 не появляется');
+  eq(elite.status().nextAt, ELITE_EVENT_START_AT, 'первый поставлен ровно на 13.10 00:00 МСК');
+
+  clock = ELITE_EVENT_START_AT + 23 * 3600e3 + 30 * 60e3; // 23:30 МСК
+  const late = elite.spawnNow();
+  ok(late, '13.10 в 23:30 появляется');
+  late.enemy.hp = 0; rooms.get(late.floor)._tick();
+  eq(elite.status().nextAt, null, 'убит в 23:30 — следующего уже не будет (60-70 минут выходят за окно)');
+
+  clock = ELITE_EVENT_START_AT + 23 * 3600e3 + 50 * 60e3;
+  const last = elite.spawnNow();
+  ok(last, 'в 23:50 ставится, если никого нет');
+  clock = ELITE_EVENT_END_AT;
+  elite.endEvent();
+  eq(elite.aliveFloor(), null, 'в 00:00 14.10 живой исчезает');
+  eq(elite.spawnNow(), null, 'после окна не появляется');
+  elite.stop();
+  elite._setClock(null);
 }
 
 for (const r of rooms.values()) r._stopLoop();

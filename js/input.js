@@ -150,6 +150,15 @@ function getStarterBonusBtnPos() {
   return { x: mb.x, y: mb.y + mb.h + 6, w: mb.w, h: mb.h };
 }
 
+// Прямо под «Бонус», та же колонка — «Элитный»: рейтинг убийств элитного
+// монстра сезонных крыльев (openElitePanel, js/ui.js). Там, где раньше стояла
+// «Дружба». Место безусловное, как было у неё: список пати ниже строится от
+// этого слота и не прыгает.
+function getEliteBtnPos() {
+  const bb = getStarterBonusBtnPos();
+  return { x: bb.x, y: bb.y + bb.h + 6, w: bb.w, h: bb.h };
+}
+
 function getPartyLeaveBtnPos() {
   const bh = hud(26), gap = 4;
   const startY = _partyHudStartY();
@@ -163,8 +172,8 @@ function getPartyLeaveBtnPos() {
 // slot whether or not the button is currently drawn, so the list does not
 // jump the moment the kit is claimed.
 function _partyHudStartY() {
-  const bb = getStarterBonusBtnPos();
-  return bb.y + bb.h + 6;
+  const eb = getEliteBtnPos();
+  return eb.y + eb.h + 6;
 }
 
 // x is offset so the Пати+/Инфо pair as a whole sits centered on screen —
@@ -666,6 +675,15 @@ function _checkStarterBonusBtnTouch(cx, cy) {
   return false;
 }
 
+function _checkEliteBtnTouch(cx, cy) {
+  const eb = getEliteBtnPos();
+  if (cx >= eb.x && cx <= eb.x + eb.w && cy >= eb.y && cy <= eb.y + eb.h) {
+    if (typeof openElitePanel === 'function') openElitePanel();
+    return true;
+  }
+  return false;
+}
+
 function _checkPartyLeaveBtnTouch(cx, cy) {
   if (!partyMembers || partyMembers.length === 0) return false;
   const lb = getPartyLeaveBtnPos();
@@ -824,6 +842,7 @@ function onTS(e) {
     if (_checkClassChangeBtnTouch(p.x, p.y)) continue;
     if (_checkMailBonusBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
+    if (_checkEliteBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -918,6 +937,7 @@ function onMD(e) {
   if (_checkClassChangeBtnTouch(p.x, p.y)) return;
   if (_checkMailBonusBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
+  if (_checkEliteBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;

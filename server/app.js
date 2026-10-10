@@ -453,7 +453,7 @@ const HEAVY = new Set([
   'learnSkill', 'upgradeSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
   'seasonRating', 'seasonSync', 'seasonBurnBook', 'itemDisassemble',
-  'empower', 'resetUpgrades', 'getRating', 'starterBonusClaim', 'mailBonusClaim',
+  'empower', 'resetUpgrades', 'getRating', 'eliteRating', 'starterBonusClaim', 'mailBonusClaim',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanSetDescription', 'clanSearch', 'clanRequest',
   'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
@@ -537,6 +537,7 @@ for (const [channel, events] of Object.entries({
   empowerError: ['empower'],
   resetUpgradesError: ['resetUpgrades'],
   ratingError: ['getRating'],
+  eliteRatingError: ['eliteRating'],
   locationError: ['enterLocation'],
   prefsError: ['savePrefs'],
   // NOT gramError. That channel flips a deposit modal waiting on its code into

@@ -4842,6 +4842,94 @@ function drawStarterBonusButton() {
   ctx.restore();
 }
 
+// ─────────────────────────────────────────────────────────
+//  ЭЛИТНЫЙ BUTTON — под «Бонус», та же колонка (где раньше была «Дружба»).
+//  Открывает рейтинг: кто сколько элитных монстров сезонных крыльев убил.
+//  Данные — eliteRating (server/handlers2/progression.js). См.
+//  getEliteBtnPos/_checkEliteBtnTouch, js/input.js.
+// ─────────────────────────────────────────────────────────
+function drawEliteButton() {
+  if (!player || !player.type) return;
+  if (!_uiBtnGrads) _buildUiBtnGrads();
+  const eb = getEliteBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+  ctx.fillStyle = _uiBtnGrads.pfg0;
+  roundRect(ctx, eb.x, eb.y, eb.w, eb.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,80,70,0.5)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, eb.x, eb.y, eb.w, eb.h, 9); ctx.stroke();
+
+  const col = 'rgba(255,120,110,0.95)';
+  drawIconCtx(ctx, 'skull', eb.x + eb.w / 2 - hud(17), eb.y + eb.h / 2, hud(12), col);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = col;
+  ctx.fillText(t('eliteBtnLbl'), eb.x + eb.w / 2 - hud(8), eb.y + eb.h / 2);
+  ctx.restore();
+}
+
+function _eliteRatingHtml(data) {
+  const rows = (data && data.rows) || [];
+  if (!rows.length) return `<div class="rating-empty">${t('eliteEmpty')}</div>`;
+  const myUsername = typeof netUsername !== 'undefined' ? netUsername : '';
+  return rows.map((r, i) => {
+    const rank = i + 1;
+    const rankCls = rank === 1 ? 'rating-rank-1' : rank === 2 ? 'rating-rank-2' : rank === 3 ? 'rating-rank-3' : '';
+    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+    const isMe = r.username === myUsername;
+    const uname = _escHtml(r.username || '');
+    const init = _escHtml((r.username || '?')[0].toUpperCase());
+    return `<div class="rating-row${isMe ? ' rating-me' : ''}">
+      <div class="rating-rank ${rankCls}">${medal}</div>
+      <div class="rating-avatar">${init}</div>
+      <div style="flex:1;min-width:0">
+        <div class="rating-name">@${uname} ${classBadgeHTML(r.charClass, 18)}</div>
+        <div class="rating-sub">${t('levelAbbrev')} ${r.level || 1}</div>
+      </div>
+      <div class="rating-bm">
+        <div class="rating-bm-val" style="color:#ff6a5c">${(r.kills || 0).toLocaleString()}</div>
+        <div class="rating-bm-lbl">${t('eliteKillsLbl')}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function onEliteRatingData(data) {
+  const list = document.getElementById('elite-list');
+  if (list) list.innerHTML = _eliteRatingHtml(data);
+  const me = document.getElementById('elite-me');
+  if (me) {
+    const m = (data && data.me) || {};
+    me.textContent = m.kills > 0 && m.rank
+      ? tVars('eliteMyRankFmt', { rank: m.rank, n: m.kills })
+      : t('eliteNoKillsYet');
+  }
+}
+
+function onEliteRatingError(msg) {
+  const list = document.getElementById('elite-list');
+  if (list) list.innerHTML = `<div class="rating-empty">${_escHtml(msg || t('ratingErrorToast'))}</div>`;
+}
+
+function openElitePanel() {
+  const existing = document.getElementById('elite-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.id = 'elite-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:380px;max-height:82vh;display:flex;flex-direction:column;background:#0c1420;border-radius:16px;border:1px solid rgba(255,80,70,.28);padding:20px 18px;">
+    <div style="font-size:16px;font-weight:800;color:#ff6a5c;margin-bottom:6px">${t('eliteTitle')}</div>
+    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:10px">${t('eliteDesc')}</div>
+    <div id="elite-me" style="font-size:13px;font-weight:700;color:#bfe4ff;margin-bottom:12px">…</div>
+    <div id="elite-list" class="ov-scroll" style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px"><div class="rating-loading">${t('questLoading')}</div></div>
+    <button onclick="document.getElementById('elite-ov').remove()" style="margin-top:16px;flex-shrink:0;padding:11px;border:1px solid rgba(193,204,213,.14);border-radius:10px;background:rgba(193,204,213,.06);color:#c1ccd5;font-size:13px;font-weight:700;cursor:pointer">${t('closeLbl')}</button>
+  </div>`;
+  document.body.appendChild(ov);
+  if (typeof netEliteRating === 'function') netEliteRating();
+}
+
 // Одна строка списка награды — значок, что это и сколько. Общая для «Набора
 // новичка» и «Письма»: список у них разный, а вид строки один.
 function _bonusItemRow(icon, label, qty) {

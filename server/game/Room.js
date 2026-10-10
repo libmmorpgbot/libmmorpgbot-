@@ -958,6 +958,21 @@ class Room {
     return e;
   }
 
+  // Конец события: живой элитный монстр убирается без награды и без вызова
+  // onDeath (это не смерть — планировщику нового ставить не надо). Тело
+  // убирается у всех на этаже тем же пакетом, что и при убийстве.
+  despawnElite() {
+    const e = this._eliteId ? this._enemyMap.get(this._eliteId) : null;
+    this._eliteId = null;
+    this._onEliteDeath = null;
+    if (!e) return false;
+    e.hp = 0;
+    e._evtRemove = true;
+    this._evtPurge = true;
+    this.io.to(`floor_${this.floor}`).emit('enemyKilled', { id: e.id, ex: e.x, ey: e.y, color: e.color });
+    return true;
+  }
+
   isEliteAlive() {
     const e = this._eliteId ? this._enemyMap.get(this._eliteId) : null;
     return !!(e && e.hp > 0);
