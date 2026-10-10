@@ -1586,31 +1586,22 @@ async function boot() {
   });
   if (modesRuntime._gwRestore) await modesRuntime._gwRestore();
 
-  // ── the castle itself ────────────────────────────────────────────────────
-  // Room.spawnGuildWarTower has existed the whole time and NOTHING has ever
-  // called it. The old build spawned it while building the floor's Room
-  // (`if (f === FLOOR_IDS.guildWar) room.spawnGuildWarTower(_gw)`); the
-  // rewrite moved room creation into world.initFloors and left this behind.
-  //
-  // So the Guild War zone opened on schedule, players walked in, and there was
-  // nothing there to fight over — "замка в битвах гільдій нема", "башни нету
-  // короче". The whole mode is a fight for one structure, and the structure
-  // was never placed.
-  //
-  // AFTER _gwRestore, so the tower is handed the owner that survived the
-  // restart instead of standing unclaimed every time the process starts.
+  // ── the four towers ──────────────────────────────────────────────────────
+  // One per corner room of the Guild War floor (Room.spawnGuildWarTowers).
+  // They start neutral every window (_gwOpenWindow resets them); the CASTLE's
+  // owner — the last clan to hold all four for the full clock — is restored
+  // by _gwRestore above and lives on in _gw, not on the towers.
   const gwRoom = world.roomOf(world.FLOOR_IDS.guildWar);
-  if (gwRoom && gwRoom.spawnGuildWarTower && modesRuntime._gw) {
-    // Whether the castle may be fought over at all. A Room knows geometry and
+  if (gwRoom && gwRoom.spawnGuildWarTowers && modesRuntime._gw) {
+    // Whether the towers may be fought over at all. A Room knows geometry and
     // combat and deliberately nothing about the clock, so the question is
-    // handed in — without it the castle could be brought down and captured any
-    // hour of any day, with the event not running and nobody able to contest.
+    // handed in — without it a tower could be taken any hour of any day.
     gwRoom._gwIsOpen = () => !!(modesRuntime._gw && modesRuntime._gw.phase === 'live');
-    const tower = gwRoom.spawnGuildWarTower(modesRuntime._gw);
-    console.log(`guild war: замок ${tower ? 'на месте' : 'НЕ создан'}`
-      + `${tower && tower.ownerClanName ? ` · владеет «${tower.ownerClanName}»` : ' · ничей'}`);
+    const towers = gwRoom.spawnGuildWarTowers();
+    console.log(`guild war: вышек ${towers.length}`
+      + `${modesRuntime._gw.ownerClanName ? ` · замком владеет «${modesRuntime._gw.ownerClanName}»` : ' · замок ничей'}`);
   } else {
-    console.error('[boot] замок Войны гильдий не создан — комната или режим недоступны');
+    console.error('[boot] вышки Войны гильдий не созданы — комната или режим недоступны');
   }
 
   if (modesRuntime._gwSchedule) modesRuntime._gwSchedule();

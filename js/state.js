@@ -289,20 +289,20 @@ let _race10InMatch = false;
 let _race10Lane = null;
 let _race10MyDamage = 0;
 
-// Война гильдий (Guild War) — daily 22:00-22:15 MSK sealed zone with one
-// stationary tower; whichever clan lands the killing blow owns it until
-// another clan re-fights it down to 0 (see server/game/Room.js's capture
-// logic). Combat access follows phase (open/closed); ownership/income don't.
+// Война гильдий (Guild War) — daily 22:00-22:15 MSK zone with four towers;
+// the killing blow takes a tower for your clan, and the clan holding all four
+// for 5 minutes wins the castle (server/game/guildwar.js). `towers` and
+// `holdUntil` drive the in-zone panel (updateGuildWarHpBar, js/ui.js).
 // Pushed by js/network.js's guildWarState handler and by gameStart.
 //
 // No towerHp field here, though the server sends one: the tower is an
 // ordinary enemy in the world snapshot, so updateGuildWarHpBar (js/ui.js)
-// reads its hp/maxHp straight off serverEnemies.find(e => e.eid ===
-// 'guildwar_castle') — live, every tick. A towerHp: 300000 default used to
+// reads each tower's hp straight off serverEnemies (eid 'guildwar_tower')
+// — live, every tick. A towerHp: 300000 default used to
 // sit in this initializer with nothing reading it, and the only thing it
 // could do was invite someone to point the bar at a number that moves only
 // when a whole guildWarState packet happens to arrive.
-let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0 };
+let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0, towers: [], holdClanName: null, holdUntil: 0 };
 
 // Страх (Fear) — on-demand, solo wave-survival instance: no registration
 // queue and no scheduled window, unlike the arena/race above — entering IS

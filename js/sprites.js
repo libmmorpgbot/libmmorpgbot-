@@ -726,22 +726,6 @@ const ENEMY_SPRITE_DEF = {
       death:  { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
     }
   },
-  // Guild War tower/castle (server/game/Room.js spawnGuildWarTower) — a
-  // single static illustration, no facing/movement/attack of its own
-  // (guildWar enemies are permanently stationary — see the stationary branch
-  // in Room.js's tick loop). The loader/rasterizer above hard-require 4 facing
-  // rows per sheet, so the one idle sheet is the same picture duplicated
-  // into all 4 rows (cols:1) rather than a pipeline change — it never turns
-  // to face anything, so every row draws identically anyway. No walk/attack
-  // /death sheets: aggro and atkAnimTimer are permanently false/0 for this
-  // enemy, so pixi-world.js's animation-key selector only ever resolves
-  // 'idle'.
-  guildwar_castle: {
-    frameW: 70, frameH: 130,
-    sheets: {
-      idle: { src: 'images/enemy/guildwar_castle.png', cols: 1, fps: 1, loop: false },
-    },
-  },
   // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) —
   // visually the world event boss, but its own eid so it doesn't show up in
   // the real world boss's HP-bar/alive tracking (js/ui.js

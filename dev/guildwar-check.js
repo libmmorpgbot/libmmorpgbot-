@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// ── The castle, and who may be standing next to it ──────────────────────────
+// ── The four towers, the hold, and who may be standing next to them ──────────
 //
 //   DATABASE_URL=... PG_CA_FILE=... node dev/guildwar-check.js
 //
@@ -25,6 +25,12 @@
 // The same shape is checked for the world-boss arena, because it is the other
 // floor that is only supposed to be standable while something is happening on
 // it.
+//
+// Later the castle became four towers, one per corner room: «клан, который 5
+// минут будет удерживать все 4 вышки, получает победу». So this also checks
+// that one tower changing hands does NOT hand over the castle, that holding
+// all four starts the clock, that losing any one stops it, and that the clock
+// running out does.
 
 const PORT = Number(process.env.GW_PORT || 3163);
 process.env.PORT = String(PORT);
@@ -81,25 +87,25 @@ async function main() {
   const modes = require('../server/modes').modes;
   const room = world.roomOf(FLOOR_IDS.guildWar);
 
-  // ── the castle is there at all ───────────────────────────────────────────
-  console.log('  ── замок ──');
-  const tower = room && room.enemies.find(e => e.guildWar);
-  ok(!!tower, 'замок стоїть на своєму поверсі');
-  ok(tower && tower.hp === tower.maxHp, `цілий (${tower && tower.hp}/${tower && tower.maxHp})`);
+  // ── the towers are there at all ──────────────────────────────────────────
+  console.log('  ── вышки ──');
+  const towers = room ? room.guildWarTowers() : [];
+  eq(towers.length, 4, 'на поверсі чотири вишки');
+  ok(towers.every(t => t.hp === t.maxHp), 'усі цілі');
+  ok(new Set(towers.map(t => `${Math.round(t.x)},${Math.round(t.y)}`)).size === 4, 'і стоять у різних місцях');
   ok(typeof room._gwIsOpen === 'function',
     'кімнаті передано питання «чи відкрите вікно» — без нього бій не перевіряється');
+  room.resetGuildWarTowers();
+  ok(towers.every(t => t.ownerClanId == null), 'нове вікно — усі нічиї');
+  const tower = towers[0];
 
   // ── the floor, while the window is CLOSED ────────────────────────────────
   console.log('\n  ── вхід поки закрито ──');
   modes._gw.phase = 'closed';
   const high = { lvl: 999 };
   eq(world.resolveFloor(FLOOR_IDS.guildWar, high), FLOOR_IDS.hub,
-    'зайти в зону замку не можна — відкидає в хаб');
+    'зайти в зону не можна — відкидає в хаб');
   eq(world.resolveFloor('guildWar', high), FLOOR_IDS.hub, 'і за назвою теж');
-
-  // This is the exploit as reported: logging out inside, then logging back in.
-  // sendGameStart restores progress.floor through resolveFloor, so the answer
-  // has to be the hub.
   eq(world.resolveFloor(FLOOR_IDS.guildWar, { lvl: 999, floor: FLOOR_IDS.guildWar }), FLOOR_IDS.hub,
     'і той, хто вийшов усередині, при вході опиняється в хабі, а не в зоні');
 
@@ -109,87 +115,107 @@ async function main() {
   const c1 = await tx(t => clans.create(t, a, `${TAG.slice(-3)}A`, 3));
   clanIds.push(c1.clanId);
   const badge = await clans.badgeOf(null, a);
+  const b = await mkPlayer('b', 500);
+  const c2 = await tx(t => clans.create(t, b, `${TAG.slice(-3)}B`, 4));
+  clanIds.push(c2.clanId);
+  const badgeB = await clans.badgeOf(null, b);
 
-  // A player standing next to the tower, placed directly: the point is the
-  // combat rule, not how they got there.
-  room.addPlayer('sock_a', `${TAG}_a`, badge.name, badge.icon, badge.atkBonus, `${TAG}-a`, badge.clanId);
-  room.setPlayerChar('sock_a', 'deathknight');
-  room.setPlayerStats('sock_a', { atk: 999999, def: 10, maxHp: 9999, hp: 9999, critChance: 0, critPower: 1, atkSpeed: 1, hpRegen: 0 });
-  const me = room.players.get('sock_a');
-  me.x = tower.x + 40; me.y = tower.y;
+  function join(sid, nick, bd) {
+    room.addPlayer(sid, `${TAG}_${nick}`, bd && bd.name, bd && bd.icon, (bd && bd.atkBonus) || 0, `${TAG}-${nick}`, bd && bd.clanId);
+    room.setPlayerChar(sid, 'deathknight');
+    room.setPlayerStats(sid, { atk: 999999, def: 10, maxHp: 9999, hp: 9999, critChance: 0, critPower: 1, atkSpeed: 1, hpRegen: 0 });
+    return room.players.get(sid);
+  }
+  join('sock_a', 'a', badge);
+  join('sock_b', 'b', badgeB);
 
-  // attackEnemy обмежує потік ударів відром токенів, що наповнюється за
-  // швидкістю атаки гравця (Room._attackAllowed). У цієї перевірки інша тема —
-  // захоплення замку, — а порожнє відро зробило б кожне твердження нижче
-  // `null`. Тому перед кожним замахом відро скидається у повне: _atkBudgetAt
-  // === null означає «накопичувати не було де», і саме так починає гравець,
-  // який щойно увійшов у світ.
-  //
-  // _lastAtk скидається окремо: він більше не про темп, він про вікно splash.
-  const swing = (sid) => {
+  // attackEnemy обмежує потік ударів відром токенів (Room._attackAllowed);
+  // у цієї перевірки інша тема, тож перед кожним замахом відро повне.
+  const swing = (sid, tw) => {
     const p2 = room.players.get(sid);
-    if (p2) { p2._lastAtk = 0; p2._atkBudgetAt = null; p2._atkBudget = 0; }
-    return room.attackEnemy(sid, tower.id);
+    if (p2) { p2._lastAtk = 0; p2._atkBudgetAt = null; p2._atkBudget = 0; p2.x = tw.x + 40; p2.y = tw.y; }
+    return room.attackEnemy(sid, tw.id);
+  };
+  // Б'є, поки вишка не перейде, і передає результат режиму — так само, як
+  // це робить modes._onCombatResult у грі.
+  const capture = (sid, tw) => {
+    let res = null;
+    for (let i = 0; i < 4000 && !(res && res.captured); i++) {
+      res = swing(sid, tw);
+      if (res && res.immune) break;
+    }
+    if (res && res.captured) modes._onCombatResult(sid, tw.id, res, room);
+    return res;
   };
 
-  const closedHit = swing('sock_a');
-  ok(closedHit && closedHit.immune, 'удар по замку відхилено');
+  const closedHit = swing('sock_a', tower);
+  ok(closedHit && closedHit.immune, 'удар по вишці відхилено');
   eq(closedHit && closedHit.reason, 'closed', 'саме тому, що вікно закрите');
-  eq(tower.hp, tower.maxHp, 'і замок не втратив жодного HP');
+  eq(tower.hp, tower.maxHp, 'і вишка не втратила жодного HP');
 
   // ── the window opens ─────────────────────────────────────────────────────
   console.log('\n  ── вікно відкрите ──');
   modes._gw.phase = 'live';
-  eq(world.resolveFloor(FLOOR_IDS.guildWar, high), FLOOR_IDS.guildWar,
-    'тепер у зону пускає');
+  eq(world.resolveFloor(FLOOR_IDS.guildWar, high), FLOOR_IDS.guildWar, 'тепер у зону пускає');
 
-  // No clan — refused. The account itself is only needed so that mkPlayer
-  // registers it for cleanup; the refusal is decided from the ROOM record,
-  // which is added clanless on the next line.
   await mkPlayer('solo');
-  room.addPlayer('sock_s', `${TAG}_s`, null, null, 0, `${TAG}-solo`, null);
-  room.setPlayerChar('sock_s', 'deathknight');
-  room.setPlayerStats('sock_s', { atk: 999, def: 1, maxHp: 100, hp: 100, critChance: 0, critPower: 1, atkSpeed: 1, hpRegen: 0 });
-  const soloP = room.players.get('sock_s');
-  soloP.x = tower.x + 40; soloP.y = tower.y;
-  const soloHit = swing('sock_s');
-  eq(soloHit && soloHit.reason, 'no_clan', 'без клану бити замок не можна');
+  join('sock_s', 'solo', null);
+  const soloHit = swing('sock_s', tower);
+  eq(soloHit && soloHit.reason, 'no_clan', 'без клану бити вишку не можна');
 
-  // Its own owner — refused.
-  tower.ownerClanName = badge.name;
-  const ownHit = swing('sock_a');
-  eq(ownHit && ownHit.reason, 'own_tower', 'свій замок бити не можна');
-  tower.ownerClanName = 'ХтосьІнший';
+  // ── one tower ────────────────────────────────────────────────────────────
+  console.log('\n  ── одна вишка ──');
+  const castleBefore = modes._gw.ownerClanName;
+  const res = capture('sock_a', tower);
+  ok(res && res.captured, `вишку захоплено${res && res.immune ? ` — відмовлено: ${res.reason}` : ''}`);
+  eq(res && res.newOwnerClanName, badge.name, 'новий власник — клан нападника');
+  eq(tower.hp, tower.maxHp, 'HP вишки відновлено повністю');
+  eq(tower.id, 'gw_tower_0', 'і це той самий обʼєкт — id не змінився');
+  const ownHit = swing('sock_a', tower);
+  eq(ownHit && ownHit.reason, 'own_tower', 'свою вишку бити не можна');
+  eq(modes._gw.ownerClanName, castleBefore, 'ОДНА вишка замок не передає');
+  eq(modes._gw.holdClanId, null, 'і відлік утримання не пішов');
+  const st1 = modes._gwPublicState();
+  eq(st1.towers.length, 4, 'публічний стан — про всі чотири вишки');
+  eq(st1.towers.find(x => x.i === 0).ownerClanName, badge.name, 'і знає, чия перша');
 
-  // ── the capture ──────────────────────────────────────────────────────────
-  console.log('\n  ── захоплення ──');
-  const prevOwner = tower.ownerClanName;
-  let res = null;
-  for (let i = 0; i < 4000 && !(res && res.captured); i++) {
-    res = swing('sock_a');
-    if (res && res.immune) break;
+  // ── all four ─────────────────────────────────────────────────────────────
+  console.log('\n  ── всі чотири ──');
+  for (const tw of towers.slice(1)) capture('sock_a', tw);
+  ok(towers.every(t => t.ownerClanId === badge.clanId), 'клан А тримає всі чотири');
+  eq(modes._gw.holdClanId, badge.clanId, 'пішов відлік утримання — за кланом А');
+  const st2 = modes._gwPublicState();
+  ok(st2.holdUntil - Date.now() > 4.9 * 60 * 1000 && st2.holdUntil - Date.now() <= 5 * 60 * 1000,
+    `до перемоги — 5 хвилин (${Math.round((st2.holdUntil - Date.now()) / 1000)} с)`);
+  eq(modes._gw.ownerClanName, castleBefore, 'замок поки не передано — треба протримати');
+
+  // ── losing one stops the clock ───────────────────────────────────────────
+  console.log('\n  ── втрата однієї вишки ──');
+  capture('sock_b', towers[2]);
+  eq(towers[2].ownerClanId, badgeB.clanId, 'клан Б відбив третю вишку');
+  eq(modes._gw.holdClanId, null, 'відлік утримання зупинено');
+  capture('sock_a', towers[2]);
+  eq(modes._gw.holdClanId, badge.clanId, 'клан А повернув її — відлік пішов наново');
+
+  // ── the clock runs out ───────────────────────────────────────────────────
+  console.log('\n  ── перемога ──');
+  clearTimeout(modes._gw.holdTimer);
+  modes._gwHoldDone();
+  eq(modes._gw.ownerClanName, badge.name, 'клан А став власником замку');
+  eq(modes._gw.phase, 'won', 'вікно завершується перемогою');
+  eq(world.resolveFloor(FLOOR_IDS.guildWar, high), FLOOR_IDS.hub, 'після перемоги нових не пускає');
+  const afterWin = swing('sock_b', towers[0]);
+  eq(afterWin && afterWin.reason, 'closed', 'і вишки більше не бʼються');
+  // saveCastle пишеться у фоні (бій на нього не чекає) — тож чекаємо запис,
+  // а не читаємо в ту ж мить.
+  let savedOwner = null;
+  for (let i = 0; i < 40 && savedOwner !== badge.clanId; i++) {
+    await new Promise(r => setTimeout(r, 50));
+    const { rows: saved } = await pool().query(
+      `SELECT owner_clan_id FROM guild_war_state WHERE key = 'castle'`);
+    savedOwner = saved.length ? Number(saved[0].owner_clan_id) : null;
   }
-  ok(res && res.captured, `замок захоплено${res && res.immune ? ` — відмовлено: ${res.reason}` : ''}`);
-  eq(res && res.prevOwnerClanName, prevOwner, 'у відповіді — хто володів до того');
-  eq(res && res.newOwnerClanName, badge.name, 'і хто володіє тепер');
-  eq(tower.hp, tower.maxHp,
-    'HP замку відновлено ПОВНІСТЮ — він не лишається на нулі, як було на скріншоті');
-  eq(tower.ownerClanName, badge.name, 'власник у кімнаті змінився');
-  eq(tower.id, 'guildwar_castle',
-    'і це той самий обʼєкт — id не змінився, інакше в усіх клієнтів зламається таблиця дескрипторів');
-
-  // The mode runtime has to hear about it, or the panel and the hourly income
-  // keep paying the previous owner.
-  modes._gwApplyCapture(res);
-  eq(modes._gw.ownerClanName, badge.name, 'режим записав нового власника');
-  ok(modes._gw.capturedAt > 0, 'і час захоплення');
-  const st = modes._gwPublicState();
-  eq(st.ownerClanName, badge.name, 'публічний стан теж');
-
-  // ── and it survives a restart ────────────────────────────────────────────
-  const { rows: saved } = await pool().query(
-    `SELECT owner_clan_id FROM guild_war_state WHERE key = 'castle'`);
-  ok(saved.length > 0, 'володіння записано в базу — переживе перезапуск');
+  eq(savedOwner, badge.clanId, 'власника записано в базу — переживе перезапуск');
 
   // ── the world-boss arena, same rule ──────────────────────────────────────
   console.log('\n  ── арена світового боса ──');
@@ -212,18 +238,10 @@ async function main() {
   eq(modes._gw.ownerClanName, badge.name,
     'а володіння лишилось — воно не має розкладу, дохід іде цілодобово');
 
-  room.removePlayer('sock_a');
-  room.removePlayer('sock_s');
-  // `ok(true, ...)`, with a message that interpolated `solo ? '' : ''` — two
-  // empty strings, so not even the text it printed could vary with anything.
-  // It stood over the one call that used to be missing altogether: nothing
-  // removed a departing player from a room, so a body stayed on the floor for
-  // everyone else and the monsters kept chasing it. Two test players left
-  // behind here also outlive this file — the guild-war room is the real one
-  // from server/world.js and it is not rebuilt between suites, so the next one
-  // to look at that floor sees them.
-  ok(!room.players.has('sock_a') && !room.players.has('sock_s'),
+  for (const sid of ['sock_a', 'sock_b', 'sock_s']) room.removePlayer(sid);
+  ok(!['sock_a', 'sock_b', 'sock_s'].some(sid => room.players.has(sid)),
     `гравці прибрані з кімнати (лишилось ${room.players.size})`);
+  room.resetGuildWarTowers();
 
   console.log(`\n  ${pass} пройшло, ${fail} впало`);
   if (failures.length) console.log(`  впали: ${failures.join(', ')}`);

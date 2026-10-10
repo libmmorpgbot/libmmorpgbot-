@@ -604,8 +604,6 @@ const CORPSE_FANOUT_R2 = (ENEMY_AOI_R + 600) * (ENEMY_AOI_R + 600);
 // самого замка (иначе смысл случайности теряется), уже стоящего игрока
 // («один тіп крисить і вбиває» — вот про это) и пада возврата, который
 // срабатывает вблизи и утащил бы вошедшего обратно в хаб.
-const GW_SPAWN_CASTLE_CLEAR = 8 * TILE;   // 320px
-const GW_SPAWN_PLAYER_CLEAR = 600;
 const RETURN_PAD_CLEAR      = 4 * TILE;   // 160px
 
 // Сколько держится предохранитель входа и насколько далеко от точки
@@ -4994,31 +4992,49 @@ class Room {
   // (non-boss) enemies size at 6.75x instead of a boss's 4.5x
   // (js/pixi-world.js), so `size` is scaled down from 90 to 60 to keep the
   // exact same on-screen footprint.
-  spawnGuildWarTower(owner) {
+  // Четыре вышки Войны гильдий — по одной в каждой угловой комнате
+  // (dungeon.guildWar.towers). Стоят всё время жизни комнаты и никогда не
+  // пересоздаются: захват сбрасывает здоровье и меняет владельца на месте
+  // (attackEnemy/skillAttackEnemy), а в начале каждого окна все четыре снова
+  // становятся ничьими (resetGuildWarTowers). Порядок в массиве — номер
+  // вышки, его же видит клиент (id gw_tower_N).
+  spawnGuildWarTowers() {
     const gw = this._dungeon.guildWar;
-    if (!gw) return null;
-    const x = gw.cx, y = gw.cy;
-    const e = {
-      id: 'guildwar_castle', eid: 'guildwar_castle',
-      name: 'Замок гильдий', color: '#c9a24b', size: 60,
-      maxHp: GUILD_WAR_TOWER_HP, hp: GUILD_WAR_TOWER_HP,
-      atk: 0, def: 0, spd: 0, xp: 0, gold: 0,
-      isBoss: false,
-      x, y, spawnX: x, spawnY: y,
-      atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
-      aggro: false, aggroR: 0,
-      guildWar: true,
-      ownerClanId: (owner && owner.ownerClanId) || null,
-      ownerClanName: (owner && owner.ownerClanName) || null,
-      ownerClanIcon: (owner && owner.ownerClanIcon) || null,
-      _sx: x, _sy: y, _shp: GUILD_WAR_TOWER_HP,
-      _idx: this._allocIdx(),
-    };
-    this.enemies.push(e);
-    this._enemyMap.set(e.id, e);
-    this._gwTowerId = e.id;
-    return e;
+    if (!gw || !gw.towers) return [];
+    this._gwTowerIds = gw.towers.map((t, i) => {
+      const e = {
+        id: `gw_tower_${i}`, eid: 'guildwar_tower',
+        name: `Вышка ${i + 1}`, color: '#9fb6ff', size: 40,
+        maxHp: GUILD_WAR_TOWER_HP, hp: GUILD_WAR_TOWER_HP,
+        atk: 0, def: 0, spd: 0, xp: 0, gold: 0,
+        isBoss: false,
+        x: t.x, y: t.y, spawnX: t.x, spawnY: t.y,
+        atkTimer: 1, hurtTimer: 0, atkAnimTimer: 0,
+        aggro: false, aggroR: 0,
+        guildWar: true, gwIndex: i,
+        ownerClanId: null, ownerClanName: null, ownerClanIcon: null,
+        _sx: t.x, _sy: t.y, _shp: GUILD_WAR_TOWER_HP,
+        _idx: this._allocIdx(),
+      };
+      this.enemies.push(e);
+      this._enemyMap.set(e.id, e);
+      return e.id;
+    });
+    return this.guildWarTowers();
   }
+
+  guildWarTowers() {
+    return (this._gwTowerIds || []).map(id => this._enemyMap.get(id)).filter(Boolean);
+  }
+
+  // Новое окно — все вышки ничьи и целые.
+  resetGuildWarTowers() {
+    for (const e of this.guildWarTowers()) {
+      e.hp = e.maxHp; e._shp = -1;
+      e.ownerClanId = null; e.ownerClanName = null; e.ownerClanIcon = null;
+    }
+  }
+
 
   // Guild War entry placement: spreads a fresh entrant across the zone's own
   // spawn ring (dungeon.js's guildWar.spawns) instead of landing everyone on
@@ -5579,9 +5595,24 @@ class Room {
   spawnPointFor() {
     const gw = this._dungeon.guildWar;
     if (!gw) return this._dungeon.spawn;
+    // Вход — в ту из четырёх входных комнат, где сейчас меньше всего живых
+    // игроков (при равенстве — случайную), в случайную точку внутри неё.
+    // «Один тип крысит и убивает» — жалоба на того, кто караулит точку
+    // появления; так он не знает, в какую из четырёх комнат войдут.
+    const rects = gw.entryRects || [];
+    if (!rects.length) return gw.spawns && gw.spawns[0] || this._dungeon.spawn;
+    const pad = 3 * TILE;
+    const busy = rects.map(r => {
+      let n = 0;
+      this.players.forEach(op => {
+        if (op.hp > 0 && op.x >= r.x0 - pad && op.x <= r.x1 + pad && op.y >= r.y0 - pad && op.y <= r.y1 + pad) n++;
+      });
+      return n;
+    });
+    const least = Math.min(...busy);
+    const pick = rects.filter((r, i) => busy[i] === least);
     return this.randomStandPoint({
-      avoid: [{ x: gw.cx, y: gw.cy, r: GW_SPAWN_CASTLE_CLEAR }],
-      awayFromPlayers: GW_SPAWN_PLAYER_CLEAR,
+      within: [pick[Math.floor(Math.random() * pick.length)]],
       fallback: (gw.spawns && gw.spawns.length)
         ? gw.spawns[Math.floor(Math.random() * gw.spawns.length)] : this._dungeon.spawn,
     });
@@ -5597,7 +5628,9 @@ class Room {
   // так что в стену попасть нельзя по построению. Исчерпание попыток пишется
   // в журнал, а не проглатывается: молчаливый откат к одной точке — это ровно
   // та поломка, которую здесь чинят.
-  randomStandPoint({ avoid = [], awayFromPlayers = 0, tries = 80, fallback = null } = {}) {
+  // `within` — список прямоугольников {x0,y0,x1,y1} в пикселях: точка
+  // выбирается только внутри одного из них (входные комнаты Войны гильдий).
+  randomStandPoint({ avoid = [], within = null, awayFromPlayers = 0, tries = 80, fallback = null } = {}) {
     const d = this._dungeon;
     const zones = avoid.slice();
     // Пад возврата — тоже запретная зона: клиент срабатывает на нём с
@@ -5605,8 +5638,15 @@ class Room {
     // мгновенно уехать в хаб.
     if (d.returnPad) zones.push({ x: d.returnPad.x, y: d.returnPad.y, r: RETURN_PAD_CLEAR });
     for (let i = 0; i < tries; i++) {
-      const x = Math.floor(Math.random() * d.w) * TILE + TILE / 2;
-      const y = Math.floor(Math.random() * d.h) * TILE + TILE / 2;
+      let x, y;
+      if (within && within.length) {
+        const r = within[Math.floor(Math.random() * within.length)];
+        x = Math.floor((r.x0 + Math.random() * (r.x1 - r.x0)) / TILE) * TILE + TILE / 2;
+        y = Math.floor((r.y0 + Math.random() * (r.y1 - r.y0)) / TILE) * TILE + TILE / 2;
+      } else {
+        x = Math.floor(Math.random() * d.w) * TILE + TILE / 2;
+        y = Math.floor(Math.random() * d.h) * TILE + TILE / 2;
+      }
       if (!this.canStandAt(x, y)) continue;
       if (zones.some(z => (x - z.x) ** 2 + (y - z.y) ** 2 < z.r * z.r)) continue;
       if (awayFromPlayers > 0) {

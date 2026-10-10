@@ -3,7 +3,7 @@
 // income — moved out of server/index.js verbatim as a factory
 // (createGuildWar(deps)), same pattern as arena3.js/death-battle.js.
 const {
-  GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP,
+  GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP, GUILD_WAR_HOLD_MS,
   GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   UNIQUE_SHARDS,
@@ -22,19 +22,34 @@ module.exports = function createGuildWar(deps) {
   } = deps;
 
   // ── Война гильдий (Guild War) ────────────────────────────────────────────────
-  // One sealed zone, open daily 22:00-22:15 MSK, containing one stationary
-  // tower (Room.spawnGuildWarTower). Whichever clan lands the killing blow
-  // owns it — Room.attackEnemy/skillAttackEnemy reset its hp to maxHp in
-  // place and reassign ownership the instant it happens (see result.captured,
-  // handled below by _gwApplyCapture). Ownership itself has no schedule: it
-  // persists across the closed 22:15-22:00 gap and pays out passive income
-  // every hour, 24/7 (_gwGrantIncome), independent of whether the zone is
-  // currently open for combat — only combat access follows the window.
+  // Daily window 22:00-22:15 MSK on its own floor with four crystal towers,
+  // one per corner room (Room.spawnGuildWarTowers). A tower changes hands the
+  // way the old castle did: whoever lands the killing blow takes it for their
+  // clan and it comes back at full health (Room.attackEnemy). The clan that
+  // holds ALL FOUR at once for GUILD_WAR_HOLD_MS unbroken wins: it becomes the
+  // castle's owner (persisted, paid hourly shards by _gwGrantIncome) and the
+  // window ends early. Losing any tower resets that clock. A window that ends
+  // with no winner leaves the previous owner in place. Every window starts
+  // with all four towers neutral.
   const _gw = {
-    phase: 'closed',      // 'closed' → 'live' (22:00-22:15 MSK) → 'closed'
+    phase: 'closed',      // 'closed' → 'live' → ('won' for a few seconds) → 'closed'
     ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0,
-    openTimer: null, closeTimer: null, notifyTimer: null, incomeTimer: null,
+    // Кто сейчас держит все четыре и с какого момента.
+    holdClanId: null, holdClanName: null, holdClanIcon: null, holdSince: 0,
+    openTimer: null, closeTimer: null, notifyTimer: null, incomeTimer: null, holdTimer: null,
   };
+  // Сколько после победы ждать, прежде чем выставить всех из локации: чтобы
+  // успели увидеть, кто победил.
+  const GW_VICTORY_LINGER_MS = 10 * 1000;
+
+  // The floor's Room, looked up lazily: world.js is loaded after this file.
+  function _gwRoom() {
+    try { return require('../world').roomOf(FLOOR_IDS.guildWar); } catch { return null; }
+  }
+  function _gwTowers() {
+    const r = _gwRoom();
+    return r && typeof r.guildWarTowers === 'function' ? r.guildWarTowers() : [];
+  }
 
   function _gwNextOpenAt(from = Date.now()) {
     return nextEventStartAt(GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, from);
@@ -44,10 +59,76 @@ module.exports = function createGuildWar(deps) {
     return {
       phase: _gw.phase,
       nextAt: _gwNextOpenAt(),
+      closesAt: _gw.closesAt || 0,
       ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName, ownerClanIcon: _gw.ownerClanIcon,
       capturedAt: _gw.capturedAt,
       towerHp: GUILD_WAR_TOWER_HP,
+      towers: _gwTowers().map(t => ({
+        i: t.gwIndex, ownerClanId: t.ownerClanId, ownerClanName: t.ownerClanName, ownerClanIcon: t.ownerClanIcon,
+      })),
+      holdClanId: _gw.holdClanId, holdClanName: _gw.holdClanName,
+      holdUntil: _gw.holdClanId ? _gw.holdSince + GUILD_WAR_HOLD_MS : 0,
+      holdMs: GUILD_WAR_HOLD_MS,
+      now: Date.now(),
     };
+  }
+
+  function _gwClearHold() {
+    clearTimeout(_gw.holdTimer);
+    _gw.holdTimer = null;
+    _gw.holdClanId = null; _gw.holdClanName = null; _gw.holdClanIcon = null; _gw.holdSince = 0;
+  }
+
+  // Re-derives "does one clan hold all four?" from the towers themselves —
+  // never from a running tally, so it cannot drift from what is on the map.
+  function _gwRecheckHold() {
+    const towers = _gwTowers();
+    const first = towers[0];
+    const allOne = towers.length > 0 && first.ownerClanId != null
+      && towers.every(t => t.ownerClanId === first.ownerClanId);
+    if (!allOne) { _gwClearHold(); return; }
+    if (_gw.holdClanId === first.ownerClanId) return;   // clock already running
+    _gwClearHold();
+    _gw.holdClanId = first.ownerClanId;
+    _gw.holdClanName = first.ownerClanName;
+    _gw.holdClanIcon = first.ownerClanIcon;
+    _gw.holdSince = Date.now();
+    _gw.holdTimer = safeTimeout('gwHold', _gwHoldDone, GUILD_WAR_HOLD_MS);
+  }
+
+  function _gwHoldDone() {
+    _gw.holdTimer = null;
+    if (_gw.phase !== 'live') return;
+    // Проверяем ещё раз по самим вышкам: таймер мог пережить захват, который
+    // по какой-то причине не дошёл до _gwRecheckHold.
+    const towers = _gwTowers();
+    if (!towers.length || !towers.every(t => t.ownerClanId === _gw.holdClanId)) { _gwRecheckHold(); return; }
+    _gwVictory({ clanId: _gw.holdClanId, clanName: _gw.holdClanName, clanIcon: _gw.holdClanIcon });
+  }
+
+  // The clan that held all four for the full clock owns the castle from now
+  // on — same persistence and hourly income the old castle capture had.
+  function _gwVictory(w) {
+    const prevOwnerClanName = _gw.ownerClanName;
+    _gw.ownerClanId = w.clanId;
+    _gw.ownerClanName = w.clanName;
+    _gw.ownerClanIcon = w.clanIcon;
+    _gw.capturedAt = Date.now();
+    saveCastle({
+      ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName,
+      ownerClanIcon: _gw.ownerClanIcon, capturedAt: _gw.capturedAt,
+    }).catch(err => console.error('[guildwar] persist failed', err));
+    _gw.phase = 'won';
+    clearTimeout(_gw.closeTimer);
+    _gw.closeTimer = safeTimeout('gwClose', _gwCloseWindow, GW_VICTORY_LINGER_MS);
+    io.emit('guildWarVictory', { clanName: w.clanName, clanIcon: w.clanIcon, prevOwnerClanName });
+    io.emit('chatMsg', {
+      username: 'СОБЫТИЕ',
+      text: `🏆 Клан «${w.clanName}» удержал все 4 вышки и победил в Войне гильдий!`,
+      time: new Date().toISOString(),
+    });
+    _gwClearHold();
+    io.emit('guildWarState', _gwPublicState());
   }
 
   // Arms the next daily window (22:00 MSK) plus its 30-minute warning. Called
@@ -68,6 +149,11 @@ module.exports = function createGuildWar(deps) {
 
   function _gwOpenWindow(openAt = Date.now()) {
     _gw.phase = 'live';
+    _gw.closesAt = Date.now() + GUILD_WAR_WINDOW_MS;
+    // Каждое окно начинается с нуля: все четыре вышки ничьи и целые.
+    const room = _gwRoom();
+    if (room && typeof room.resetGuildWarTowers === 'function') room.resetGuildWarTowers();
+    _gwClearHold();
     notifyEventStarted('guildWar', openAt);
     clearTimeout(_gw.closeTimer);
     _gw.closeTimer = safeTimeout('gwClose', _gwCloseWindow, GUILD_WAR_WINDOW_MS);
@@ -87,7 +173,9 @@ module.exports = function createGuildWar(deps) {
   // into each affected connection from outside.
   function _gwCloseWindow() {
     _gw.phase = 'closed';
+    _gw.closesAt = 0;
     clearTimeout(_gw.closeTimer);
+    _gwClearHold();
     for (const [sid, floor] of playerFloorMap) {
       if (floor !== FLOOR_IDS.guildWar) continue;
       io.sockets.sockets.get(sid)?.data?._forceEnterLocation?.('hub');
@@ -96,23 +184,19 @@ module.exports = function createGuildWar(deps) {
     _gwSchedule();
   }
 
-  // Applies a capture result from Room.attackEnemy/skillAttackEnemy
-  // (result.captured) — updates the in-memory owner, persists it, and tells
-  // everyone. Module-level (not per-connection) since result is self-contained
-  // and the hourly income job (below) needs the same _gw.ownerClanId it writes.
-  function _gwApplyCapture(result) {
-    _gw.ownerClanId = result.newOwnerClanId;
-    _gw.ownerClanName = result.newOwnerClanName;
-    _gw.ownerClanIcon = result.newOwnerClanIcon;
-    _gw.capturedAt = Date.now();
-    saveCastle({
-      ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName,
-      ownerClanIcon: _gw.ownerClanIcon, capturedAt: _gw.capturedAt,
-    }).catch(err => console.error('[guildwar] persist failed', err));
+  // A tower changed hands (Room.attackEnemy/skillAttackEnemy returned
+  // result.captured — called from modes._onCombatResult). Tells everyone
+  // which tower went to whom and restarts or stops the hold clock. The castle
+  // itself only changes owner on a full hold (_gwVictory).
+  function _gwApplyCapture(enemyId, result) {
+    if (_gw.phase !== 'live') return;
+    const t = _gwTowers().find(x => x.id === enemyId);
     io.emit('guildWarCaptured', {
+      tower: t ? t.gwIndex : null,
       newOwnerClanName: result.newOwnerClanName, newOwnerClanIcon: result.newOwnerClanIcon,
       prevOwnerClanName: result.prevOwnerClanName,
     });
+    _gwRecheckHold();
     io.emit('guildWarState', _gwPublicState());
   }
 
@@ -205,6 +289,6 @@ module.exports = function createGuildWar(deps) {
 
   return {
     _gw, _gwNextOpenAt, _gwPublicState, _gwSchedule, _gwOpenWindow, _gwCloseWindow,
-    _gwApplyCapture, _gwIncomeSchedule, _gwRestore,
+    _gwApplyCapture, _gwHoldDone, _gwIncomeSchedule, _gwRestore,
   };
 };

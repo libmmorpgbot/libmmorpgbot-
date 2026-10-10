@@ -46,6 +46,8 @@ const _ZONE_FARMS = {
   farmHigh:  ['crystalmine', 'crystalmine'],  // Фарм зона 2 и её сезонное крыло
   farmZone2: ['goldvault', 'goldvault'],      // Элитная фарм-зона
 };
+// Война гильдий — своя тема: боевая крепость.
+const _ZONE_GW = ['warkeep', 'warkeep'];
 
 let _zoneCache = null, _zoneCacheFor = null;
 function _zoneLayout() {
@@ -64,6 +66,7 @@ function _zoneLayout() {
   } else if (d.farmZone2) stages = _ZONE_FARMS.farmZone2;
   else if (d.farmHigh) stages = _ZONE_FARMS.farmHigh;
   else if (d.farmZone) stages = _ZONE_FARMS.farmZone;
+  else if (d.guildWar) stages = _ZONE_GW;
   if (!stages) return (_zoneCache = null);
   let x0 = 1e9, x1 = -1e9;
   for (const r of d.rooms) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + r.size); }
@@ -734,4 +737,74 @@ const _ZONE_ST = {
       } else if (h < 0.17) _zTorch(c, x, y, ctx);
     },
   },
-};
+
+  // Боевая крепость (Война гильдий): холодный сине-серый камень, обломки
+  // стрел и мечей, брошенные щиты, руны захвата; на стенах — знамёна и
+  // факелы.
+  warkeep: {
+    wall: '#1d2030', overlay: 'rgba(6,8,18,0.30)',
+    floor(c, x, y, tx, ty) {
+      _zBricks(c, x, y, tx, ty, '#363a4c', '#13151e', 20, 10, 0.22);
+      if (_zh(tx, ty, 9) < 0.05) _zCrack(c, x + 20, y + 20, tx, ty, 14, 1.2, 'rgba(8,10,16,0.7)');
+    },
+    wallTile(c, x, y, tx, ty) { _zBricks(c, x, y, tx, ty, '#1d2030', '#0a0b12', 26, 13, 0.22); },
+    deco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 1);
+      if (h < 0.05) {
+        // воткнутая стрела
+        const ax = x + 10 + _zh(tx, ty, 2) * 20, ay = y + 24 + _zh(tx, ty, 3) * 8, tilt = (_zh(tx, ty, 4) - 0.5) * 0.8;
+        _zBlob(c, ax + 1, ay + 1, 4, 1.5, 'rgba(0,0,0,0.45)');
+        c.save(); c.translate(ax, ay); c.rotate(tilt);
+        c.fillStyle = '#6b4a2a'; c.fillRect(-1, -16, 2, 16);
+        c.fillStyle = '#d9d2c0'; c.beginPath(); c.moveTo(-3.5, -16); c.lineTo(0, -12); c.lineTo(3.5, -16); c.lineTo(0, -19); c.closePath(); c.fill();
+        c.restore();
+      } else if (h < 0.08) {
+        // брошенный круглый щит
+        const sx = x + 14 + _zh(tx, ty, 5) * 12, sy = y + 18 + _zh(tx, ty, 6) * 10;
+        _zBlob(c, sx + 2, sy + 3, 9, 4, 'rgba(0,0,0,0.45)');
+        const cols = ['#5a2a2a', '#2a3a5a', '#2a4a34'];
+        _zBlob(c, sx, sy, 8, 6, '#3a3a40');
+        _zBlob(c, sx, sy, 6.5, 4.8, cols[Math.floor(_zh(tx, ty, 7) * 3)]);
+        _zBlob(c, sx, sy, 2, 1.5, '#b8a070');
+      } else if (h < 0.10) {
+        // обломок меча
+        const bx = x + 8 + _zh(tx, ty, 8) * 18, by = y + 14 + _zh(tx, ty, 9) * 16;
+        c.save(); c.translate(bx, by); c.rotate(_zh(tx, ty, 10) * Math.PI);
+        c.fillStyle = '#9aa0ae'; c.fillRect(0, -1.5, 16, 3);
+        c.fillStyle = '#5a4630'; c.fillRect(-6, -1.5, 6, 3); c.fillStyle = '#8a7040'; c.fillRect(-1, -4, 2, 8);
+        c.restore();
+      } else if (h < 0.115) {
+        // светящаяся руна захвата
+        const rx = x + 20, ry = y + 20;
+        ctx.glow(g => {
+          _zRadial(g, rx, ry, 16, 'rgba(120,150,255,0.22)');
+          g.strokeStyle = 'rgba(150,175,255,0.75)'; g.lineWidth = 1.5;
+          g.beginPath(); g.arc(rx, ry, 7, 0, Math.PI * 2); g.stroke();
+          g.beginPath(); g.moveTo(rx, ry - 5); g.lineTo(rx, ry + 5); g.moveTo(rx - 4, ry - 1); g.lineTo(rx + 4, ry - 1); g.stroke();
+        });
+      } else if (h < 0.16) {
+        c.fillStyle = '#2a2d3a';
+        for (let k = 0; k < 3; k++) _zBlob(c, x + 8 + _zh(tx, ty, 11 + k) * 24, y + 10 + _zh(tx, ty, 14 + k) * 22, 3 + _zh(tx, ty, 17 + k) * 2.5, 2, '#2a2d3a');
+      }
+    },
+    wallDeco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 60);
+      if (h < 0.09) {
+        // боевое знамя: синее или красное, с белой звездой
+        const bx = x + 20, by = y + 10;
+        c.fillStyle = '#1a1612'; c.fillRect(bx - 11, by - 2, 22, 3);
+        c.fillStyle = _zh(tx, ty, 62) < 0.5 ? '#25407a' : '#7a2525';
+        c.beginPath(); c.moveTo(bx - 9, by); c.lineTo(bx + 9, by); c.lineTo(bx + 9, by + 26); c.lineTo(bx, by + 20); c.lineTo(bx - 9, by + 26); c.closePath(); c.fill();
+        c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(bx - 9, by, 18, 3);
+        ctx.glow(g => {
+          g.fillStyle = '#e8e2d0';
+          g.beginPath();
+          for (let k = 0; k < 10; k++) {
+            const r = k % 2 ? 2 : 4.6, a = -Math.PI / 2 + k * Math.PI / 5;
+            g.lineTo(bx + Math.cos(a) * r, by + 11 + Math.sin(a) * r);
+          }
+          g.closePath(); g.fill();
+        });
+      } else if (h < 0.17) _zTorch(c, x, y, ctx);
+    },
+  },};

@@ -1261,10 +1261,6 @@ function netConnect(onReady) {
     // only on the map during an event, and the announce gives five minutes'
     // warning — far more than the sheets need to arrive.
     if (evb && (evb.alive || evb.spawnAt)) loadEnemySprites('demon_event_boss');
-    // The tower persists forever (see server/game/Room.js's spawnGuildWarTower
-    // comment), so unlike the event boss's sheets there's no "only during an
-    // event" window to gate this behind — load it every session.
-    loadEnemySprites('guildwar_castle');
     if (_isReconnectRejoin) {
       // Resuming after a socket.io reconnect (see authOk guard above) — the
       // dungeon/enemy resync above is still needed since this is a fresh
@@ -1538,7 +1534,8 @@ function netConnect(onReady) {
       const cull = ENEMY_AOI_R + 600, cull2 = cull * cull;
       for (let i = serverEnemies.length - 1; i >= 0; i--) {
         const e = serverEnemies[i];
-        if (e.isBoss) continue;
+        // Вышки Войны гильдий сервер, как и боссов, шлёт с любого расстояния.
+        if (e.isBoss || e.eid === 'guildwar_tower') continue;
         const dx = e.x - player.x, dy = e.y - player.y;
         if (dx * dx + dy * dy <= cull2) continue;
         serverEnemies.splice(i, 1);
@@ -5046,10 +5043,14 @@ function _initGuildWarHandlers(s) {
     if (typeof onGuildWarState === 'function') onGuildWarState();
   });
 
-  s.on('guildWarCaptured', ({ newOwnerClanName, newOwnerClanIcon, prevOwnerClanName }) => {
+  s.on('guildWarCaptured', ({ tower, newOwnerClanName, newOwnerClanIcon, prevOwnerClanName }) => {
     if (typeof showGuildWarCapturedBanner === 'function') {
-      showGuildWarCapturedBanner(newOwnerClanName, newOwnerClanIcon, prevOwnerClanName);
+      showGuildWarCapturedBanner(newOwnerClanName, newOwnerClanIcon, prevOwnerClanName, tower);
     }
+  });
+
+  s.on('guildWarVictory', ({ clanName } = {}) => {
+    if (typeof showGuildWarVictoryBanner === 'function') showGuildWarVictoryBanner(clanName);
   });
 
   s.on('guildWarError', ({ msg }) => {

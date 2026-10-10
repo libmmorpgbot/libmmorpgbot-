@@ -215,8 +215,8 @@ const _EVENT_TEXT = {
     now:  () => '⚔️ <b>Арена 3х3 открыта!</b>\n\nЗаписывайся в игре — как наберётся 6 человек, старт. Окно открыто до 22:00 по Москве.',
   },
   guildWar: {
-    soon: (m) => `🏰 <b>Война гильдий</b>\n\nЛокация с замком откроется через ${m} мин. — с 22:00 до 22:15 по Москве.\nКлан, который захватит замок, будет получать осколки каждый час, пока держит его.`,
-    now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗаходи в игру — локация с замком доступна до 22:15 по Москве.',
+    soon: (m) => `🏰 <b>Война гильдий</b>\n\nЛокация откроется через ${m} мин. — с 22:00 до 22:15 по Москве.\nВ углах карты 4 вышки. Клан, который удержит все 4 вышки 5 минут подряд, побеждает и получает осколки каждый час.`,
+    now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗахватывай вышки вместе с кланом — нужно удержать все 4 пять минут подряд. Локация открыта до 22:15 по Москве.',
   },
   tournament: {
     soon: (m) => `🏆 <b>Турнир</b>\n\nРегистрация откроется через ${m} мин. — в 23:00 по Москве.\nНужно ровно 32 участника — набралось, и сетка стартует сразу же.`,
@@ -792,6 +792,13 @@ function init(io) {
   // ordinary reward path would then be paying out for a monster that is gone.
   modes._onCombatResult = (socketId, enemyId, result, room) => {
     if (!result) return false;
+
+    // A guild-war tower changed hands. It is not a kill — no reward path, no
+    // loot table — so the hit ends here once the event has been told.
+    if (result.captured) {
+      if (typeof modes._gwApplyCapture === 'function') modes._gwApplyCapture(enemyId, result);
+      return true;
+    }
 
     // The race boss tallies EVERY hit, not just the last: the winner is whoever
     // dealt the most damage, which a killing-blow-only count cannot know.

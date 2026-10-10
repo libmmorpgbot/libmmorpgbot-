@@ -9493,42 +9493,67 @@ function showEventBossBanner(text, color) {
 // ownership state (an owner name/icon line), not a countdown, and the zone
 // being sealed doesn't guarantee a player can never also be near the world
 // boss's arena at the same time.
+// ── Панель Войны гильдий: четыре вышки и отсчёт удержания ────────────────
+// Видна, пока игрок на этаже Войны гильдий. Кто владеет какой вышкой —
+// из _gwState.towers (guildWarState, js/network.js); здоровье — живое, из
+// serverEnemies; отсчёт до победы — holdUntil по часам сервера.
+let _gwClockSkew = 0;
+function _gwMyClan() { return (typeof clanData !== 'undefined' && clanData && clanData.name) || null; }
+function _gwSideOf(name) { return !name ? 'neutral' : (name === _gwMyClan() ? 'mine' : 'enemy'); }
+const _GW_SIDE_CSS = { mine: '#40c878', enemy: '#eb463c', neutral: '#9aa8c0' };
+
 function _gwHpEl() {
   let el = document.getElementById('gw-tower-hp');
   if (!el) {
     el = document.createElement('div');
     el.id = 'gw-tower-hp';
-    el.style.cssText = 'position:fixed;top:110px;left:50%;transform:translateX(-50%);' +
-      'width:min(420px,92vw);z-index:340;pointer-events:none;display:none;text-align:center';
-    el.innerHTML =
-      '<div id="gw-hp-name" style="font-size:12px;font-weight:800;color:#f5dbae;text-shadow:0 1px 3px #000;margin-bottom:3px"></div>' +
-      '<div style="height:14px;background:rgba(10,8,4,.85);border:1px solid #6b4f22;border-radius:7px;overflow:hidden">' +
-      '<div id="gw-hp-fill" style="height:100%;width:100%;background:linear-gradient(90deg,#7a5a1f,#c9a24b);transition:width .18s linear"></div>' +
-      '</div>' +
-      '<div id="gw-hp-num" style="font-size:11px;color:#d9c9a8;text-shadow:0 1px 3px #000;margin-top:2px;font-variant-numeric:tabular-nums"></div>';
+    el.className = 'gwp';
+    el.innerHTML = '<div class="gwp-top"><span class="gwp-title"></span><span class="gwp-left"></span></div>' +
+      '<div class="gwp-towers"></div><div class="gwp-hold"></div>';
     document.body.appendChild(el);
   }
   return el;
 }
 
-// Called from the game loop (throttled, see js/game.js's _updateTeleportPads)
-// — reads the live enemy snapshot for hp/maxHp, and _gwState (kept in sync by
-// js/network.js's guildWarState handler) for the owner name, since netcodec's
-// fixed-shape enemy wire encoding has no room for arbitrary extra fields like
-// ownerClanName.
+function _gwFmt(ms) {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+
+// Called from the game loop (throttled, see js/game.js's _updateTeleportPads).
 function updateGuildWarHpBar() {
   const el = _gwHpEl();
-  const b = (typeof serverEnemies !== 'undefined') ? serverEnemies.find(e => e.eid === 'guildwar_castle') : null;
-  if (!b) { el.style.display = 'none'; return; }
+  const onFloor = typeof dungeon !== 'undefined' && dungeon && dungeon.guildWar;
+  const towers = (typeof serverEnemies !== 'undefined') ? serverEnemies.filter(e => e.eid === 'guildwar_tower') : [];
+  if (!onFloor || !towers.length) { el.style.display = 'none'; return; }
   el.style.display = 'block';
-  const pct = Math.max(0, Math.min(1, b.hp / (b.maxHp || 1)));
-  const owner = _gwState && _gwState.ownerClanName;
-  document.getElementById('gw-hp-name').textContent =
-    (b.name || 'Замок гильдий') + (owner ? ` · ${owner}` : '');
-  document.getElementById('gw-hp-fill').style.width = (pct * 100).toFixed(2) + '%';
-  document.getElementById('gw-hp-num').textContent =
-    Math.ceil(b.hp).toLocaleString('ru-RU') + ' / ' + (b.maxHp || 0).toLocaleString('ru-RU') +
-    '  ·  ' + (pct * 100).toFixed(1) + '%';
+  const st = _gwState || {};
+  const now = Date.now() + _gwClockSkew;
+  el.querySelector('.gwp-title').textContent = t('guildWarLbl');
+  el.querySelector('.gwp-left').textContent = st.phase === 'live' && st.closesAt ? '⏳ ' + _gwFmt(st.closesAt - now) : '';
+  const owners = new Map((st.towers || []).map(x => [x.i, x.ownerClanName]));
+  const rows = [0, 1, 2, 3].map(i => {
+    const e = towers.find(x => x.id === 'gw_tower_' + i);
+    const owner = owners.get(i) || null;
+    const side = _gwSideOf(owner);
+    const pct = e ? Math.max(0, Math.min(1, e.hp / (e.maxHp || 1))) : 1;
+    return `<div class="gwp-t gwp-${side}">
+      <div class="gwp-gem" style="--c:${_GW_SIDE_CSS[side]}">${i + 1}</div>
+      <div class="gwp-own">${owner ? _escHtml(owner) : t('gwTowerNeutral')}</div>
+      <div class="gwp-bar"><i style="width:${(pct * 100).toFixed(1)}%;background:${_GW_SIDE_CSS[side]}"></i></div>
+    </div>`;
+  }).join('');
+  const tw = el.querySelector('.gwp-towers');
+  if (tw._html !== rows) { tw.innerHTML = rows; tw._html = rows; }
+  const hold = el.querySelector('.gwp-hold');
+  if (st.holdClanName && st.holdUntil) {
+    const side = _gwSideOf(st.holdClanName);
+    hold.className = 'gwp-hold gwp-hold-' + side;
+    hold.textContent = tVars(side === 'mine' ? 'gwHoldMineFmt' : 'gwHoldFmt', { clan: st.holdClanName, t: _gwFmt(st.holdUntil - now) });
+  } else {
+    hold.className = 'gwp-hold';
+    hold.textContent = t('gwHoldHint');
+  }
 }
 
 function _gwBannerEl() {
@@ -9536,31 +9561,40 @@ function _gwBannerEl() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'gw-captured-banner';
-    el.style.cssText = 'position:fixed;top:74px;left:50%;transform:translateX(-50%);' +
-      'background:rgba(22,18,10,.94);border:1px solid #c9a24b;color:#f5dbae;' +
-      'padding:8px 16px;border-radius:10px;font-size:13px;font-weight:700;z-index:350;' +
-      'pointer-events:none;max-width:88vw;text-align:center;display:none;' +
-      'box-shadow:0 4px 18px rgba(0,0,0,.5)';
+    el.className = 'gwp-banner';
     document.body.appendChild(el);
   }
   return el;
 }
 
-function showGuildWarCapturedBanner(newOwnerClanName, newOwnerClanIcon, prevOwnerClanName) {
+function _gwShowBanner(text, kind, ms) {
   const el = _gwBannerEl();
+  el.className = 'gwp-banner gwp-banner-' + kind;
+  el.textContent = text;
   el.style.display = 'block';
-  el.textContent = prevOwnerClanName
-    ? `🏰 Замок гильдий захвачен кланом «${newOwnerClanName}» (был у «${prevOwnerClanName}»)`
-    : `🏰 Замок гильдий захвачен кланом «${newOwnerClanName}»`;
-  clearTimeout(showGuildWarCapturedBanner._t);
-  showGuildWarCapturedBanner._t = setTimeout(() => { el.style.display = 'none'; }, 8000);
+  clearTimeout(_gwShowBanner._t);
+  _gwShowBanner._t = setTimeout(() => { el.style.display = 'none'; }, ms || 6000);
+}
+
+// Вышка перешла к другому клану.
+function showGuildWarCapturedBanner(newOwnerClanName, newOwnerClanIcon, prevOwnerClanName, tower) {
+  const side = _gwSideOf(newOwnerClanName);
+  const n = tower != null ? tower + 1 : '?';
+  _gwShowBanner(tVars('gwTowerCapturedFmt', { n, clan: newOwnerClanName || '?' }), side, 5000);
+}
+
+// Клан удержал все четыре вышки.
+function showGuildWarVictoryBanner(clanName) {
+  _gwShowBanner(tVars('gwVictoryFmt', { clan: clanName || '?' }), _gwSideOf(clanName) === 'mine' ? 'mine' : 'win', 10000);
 }
 
 // Refresh hook for js/network.js's guildWarState handler — currently just a
 // placeholder for a future Events-panel status entry (owner/countdown), same
 // role onRace10State/onArena3State play for their own panels; the HP bar
 // above already updates on its own throttled cadence and doesn't need this.
-function onGuildWarState() {}
+function onGuildWarState() {
+  if (_gwState && Number.isFinite(_gwState.now)) _gwClockSkew = _gwState.now - Date.now();
+}
 
 // ── Buy flow ────────────────────────────────────────────────
 function openMarketBuyConfirm(listingId) {

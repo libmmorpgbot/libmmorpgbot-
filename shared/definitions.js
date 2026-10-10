@@ -3179,11 +3179,14 @@ const GUILD_WAR_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
 const GUILD_WAR_HOURS_MSK = [22];
 const GUILD_WAR_WINDOW_MS = 15 * 60 * 1000;
 
-// Same HP as the world event boss ("здоровье как у мирового босса") — a
-// whole server's worth of damage, meant to take a sustained multi-clan push,
-// not one raid. References EVENT_BOSS.hp directly (rather than copying the
-// number) so the two always stay in sync if that ever gets retuned again.
-const GUILD_WAR_TOWER_HP = EVENT_BOSS.hp;
+// Здоровье ОДНОЙ из четырёх вышек. Раньше здесь был один замок со здоровьем
+// мирового босса; вышек теперь четыре, и вместе они стоят столько же — по
+// четверти EVENT_BOSS.hp каждая (и меняются вместе с ним).
+const GUILD_WAR_TOWER_COUNT = 4;
+const GUILD_WAR_TOWER_HP = Math.round(EVENT_BOSS.hp / GUILD_WAR_TOWER_COUNT);
+// Сколько клан должен непрерывно держать ВСЕ четыре вышки, чтобы победить.
+// Потеря любой вышки сбрасывает отсчёт.
+const GUILD_WAR_HOLD_MS = 5 * 60 * 1000;
 
 // Passive income while owned: a random total of 10-30 shard units per hour,
 // spread across UNIQUE_SHARDS' kinds (see _rollGuildWarIncome, server/
@@ -4360,7 +4363,7 @@ if (typeof module !== 'undefined') module.exports = {
   TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, TOURNAMENT_WINDOW_MS, TOURNAMENT_SIZE, TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_FIGHT_MS, TOURNAMENT_COUNTDOWN_MS, TOURNAMENT_ROUND_GAP_MS,
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
-  GUILD_WAR_TOWER_HP, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
+  GUILD_WAR_TOWER_HP, GUILD_WAR_TOWER_COUNT, GUILD_WAR_HOLD_MS, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
   GRAM_MIN_WITHDRAW,
   SKILL_SELF_HEAL, SKILL_HASTE, skillHasteOf,
   SKILL_BUFFS, skillBuffOf,

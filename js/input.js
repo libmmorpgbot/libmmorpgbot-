@@ -448,7 +448,7 @@ function _openWorldAllyUnselectable(id) {
   return !!op && op.clanName === myClan;
 }
 
-// Same reasoning as _gwUnselectable just above, for the castle itself rather
+// Same reasoning as _gwUnselectable just above, for a tower rather
 // than a clanmate: the server refuses a hit on your own currently-held tower
 // outright ('own_tower', Room.js), so offering it as a target/assist
 // candidate is just a wasted swing and a wrong lock. Takes the enemy record
@@ -458,10 +458,12 @@ function _openWorldAllyUnselectable(id) {
 // comment (js/ui.js) — so this reads _gwState instead, kept in sync by
 // js/network.js's guildWarState handler.
 function _gwTowerUnselectable(e) {
-  if (!e || e.eid !== 'guildwar_castle') return false;
+  if (!e || e.eid !== 'guildwar_tower') return false;
   const myClan = (typeof clanData !== 'undefined' && clanData && clanData.name) || null;
   if (!myClan) return false;
-  return typeof _gwState !== 'undefined' && _gwState && _gwState.ownerClanName === myClan;
+  const i = Number(String(e.id).replace('gw_tower_', ''));
+  const t = typeof _gwState !== 'undefined' && _gwState && (_gwState.towers || []).find(x => x.i === i);
+  return !!t && t.ownerClanName === myClan;
 }
 
 // True while racing (Кровавая Башня) for a racer in a different lane than

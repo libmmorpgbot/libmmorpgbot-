@@ -4304,3 +4304,31 @@ canvas { display:block; width:100%; height:100%; }
 
 .elp-me { margin-bottom: 8px; padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; color: #ffd9d3;
   background: rgba(255,70,60,.08); border: 1px solid rgba(255,90,70,.2); }
+
+/* ── Война гильдий: панель вышек (updateGuildWarHpBar, js/ui.js) ─────────── */
+.gwp { position: fixed; top: 108px; left: 50%; transform: translateX(-50%); width: min(380px, 92vw); z-index: 340;
+  pointer-events: none; display: none; padding: 8px 10px 9px; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(14,18,32,.92), rgba(8,10,18,.88)); border: 1px solid rgba(140,160,255,.25);
+  box-shadow: 0 6px 22px rgba(0,0,0,.5); font-family: system-ui, -apple-system, Arial; }
+.gwp-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.gwp-title { font-size: 12px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; color: #b9c6ff; }
+.gwp-left { font-size: 12px; font-weight: 800; color: #ffe0b8; font-variant-numeric: tabular-nums; }
+.gwp-towers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.gwp-t { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.gwp-gem { width: 22px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; color: #fff;
+  background: var(--c); clip-path: polygon(50% 0, 100% 35%, 80% 100%, 20% 100%, 0 35%); filter: drop-shadow(0 0 6px var(--c)); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.gwp-own { max-width: 100%; font-size: 10px; font-weight: 700; color: #cfd6e2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gwp-mine .gwp-own { color: #7dffb0; } .gwp-enemy .gwp-own { color: #ff8a80; }
+.gwp-bar { width: 100%; height: 5px; border-radius: 3px; background: rgba(0,0,0,.55); overflow: hidden; }
+.gwp-bar i { display: block; height: 100%; border-radius: 3px; transition: width .18s linear; }
+.gwp-hold { margin-top: 7px; padding: 5px 8px; border-radius: 8px; font-size: 11.5px; font-weight: 800; text-align: center;
+  color: #c8d2e0; background: rgba(255,255,255,.05); font-variant-numeric: tabular-nums; }
+.gwp-hold-mine { color: #0b2a17; background: linear-gradient(90deg, #4fe08e, #2fbf6b); animation: gwpPulse 1s ease-in-out infinite; }
+.gwp-hold-enemy { color: #fff; background: linear-gradient(90deg, #e2483d, #a8261d); animation: gwpPulse 1s ease-in-out infinite; }
+@keyframes gwpPulse { 0%, 100% { opacity: .85; } 50% { opacity: 1; } }
+.gwp-banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); z-index: 350; pointer-events: none; display: none;
+  max-width: 88vw; padding: 9px 16px; border-radius: 12px; font: 800 13px system-ui, -apple-system, Arial; text-align: center;
+  background: rgba(14,18,32,.95); border: 1px solid rgba(160,180,255,.4); color: #e6ebff; box-shadow: 0 6px 22px rgba(0,0,0,.55); }
+.gwp-banner-mine { border-color: #40c878; color: #b9ffd6; }
+.gwp-banner-enemy { border-color: #eb463c; color: #ffc2bc; }
+.gwp-banner-win { border-color: #ffd37a; color: #ffe7b0; font-size: 14px; }

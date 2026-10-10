@@ -166,18 +166,17 @@ const FEAR_GAP    = 8;     // wall padding (irrelevant now with only one room, k
 const FEAR_PITCH  = FEAR_ROOM + FEAR_GAP;
 
 // ── Война гильдий (Guild War) ────────────────────────────────────────────────
-// Its own floor now (generateGuildWar, below). One square sealed zone with a
-// single stationary tower/castle dead centre. Whichever clan lands the
-// killing blow owns it (Room.js's capture logic resets its HP in place — it
-// is never despawned/respawned, see Room.spawnGuildWarTower). No
-// matchmaking/capacity cap ("Без ограничений — открытая зона"), so sized
-// generously like the boss ARENA rather than tightly like a sealed instance.
-// `spawns` is a ring of entry points used both for initial placement and for
-// in-zone respawn while the window is live (Room.guildWarRespawn) — dying
-// here doesn't eject you, unlike every other sealed zone.
-const GW_SIZE = 60;
-const GW_SPAWN_COUNT = 8;
-const GW_SPAWN_R = Math.floor(GW_SIZE / 2) - 4;
+// Its own floor (generateGuildWar, below), built like the levelling floors:
+// rooms joined by corridors, not one open square. Four corner rooms each hold
+// a crystal tower (Room.spawnGuildWarTowers); a big hall sits in the centre
+// with the way back to the hub; the four entry rooms sit mid-wall, each the
+// same walk from the two towers either side of it, so no side of the map
+// starts closer to the fight than another. The clan that holds all four
+// towers for GUILD_WAR_HOLD_MS wins the castle (server/game/guildwar.js).
+const GW_SIZE = 64;          // inner square, tiles
+const GW_TOWER_ROOM = 15;
+const GW_HALL = 18;
+const GW_ENTRY_ROOM = 10;
 
 // ── Фарм-зона (Farm Zone) ─────────────────────────────────────────────────
 // Its own floor now (generateFarmZone, below). Four identical square rooms
@@ -460,44 +459,76 @@ function generateArm(dir, armIdx) {
 // check in Room.js's _tick keeps working unchanged: everyone on this floor
 // is inside `bounds` from the moment they land.
 function generateGuildWar() {
-  const w = GW_SIZE + MARGIN * 2, h = GW_SIZE + MARGIN * 2;
+  const N = GW_SIZE;
+  const w = N + MARGIN * 2, h = N + MARGIN * 2;
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
-  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
-  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
+  // Координаты ниже — внутри квадрата N×N; O сдвигает их на рамку стены.
+  const O = MARGIN;
   function paintRect(x0, y0, x1, y1) {
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+      const X = gx + O, Y = gy + O;
+      if (X >= 0 && X < w && Y >= 0 && Y < h) grid[Y][X] = FLOOR;
+    }
+  }
+  const rooms = [];
+  function room(x, y, size, kind) {
+    paintRect(x, y, x + size - 1, y + size - 1);
+    const r = {
+      x: x + O, y: y + O, size, kind,
+      bx1: x + O - 1, by1: y + O - 1, bx2: x + O + size, by2: y + O + size,
+      cx: x + O + Math.floor(size / 2), cy: y + O + Math.floor(size / 2),
+      isGuildWar: true,
+    };
+    rooms.push(r);
+    return r;
   }
 
-  const gw = {
-    x: MARGIN, y: MARGIN, size: GW_SIZE,
-    bx1: MARGIN - 1, by1: MARGIN - 1, bx2: MARGIN + GW_SIZE + 1, by2: MARGIN + GW_SIZE + 1,
-    cx: MARGIN + Math.floor(GW_SIZE / 2), cy: MARGIN + Math.floor(GW_SIZE / 2),
-    isGuildWar: true,
-  };
-  paintRect(gw.x, gw.y, gw.x + gw.size - 1, gw.y + gw.size - 1);
+  // Четыре угла — вышки; центр — зал; середины сторон — входы.
+  const T = GW_TOWER_ROOM, E = GW_ENTRY_ROOM, far = N - 3 - T;
+  const towerRooms = [room(3, 3, T, 'tower'), room(far, 3, T, 'tower'), room(3, far, T, 'tower'), room(far, far, T, 'tower')];
+  const hallAt = Math.floor((N - GW_HALL) / 2);
+  const hall = room(hallAt, hallAt, GW_HALL, 'hall');
+  const mid = Math.floor((N - E) / 2);
+  const entryRooms = [room(mid, 3, E, 'entry'), room(mid, N - 3 - E, E, 'entry'), room(3, mid, E, 'entry'), room(N - 3 - E, mid, E, 'entry')];
 
-  const cx = gw.cx * TILE + TILE / 2, cy = gw.cy * TILE + TILE / 2;
-  const spawns = Array.from({ length: GW_SPAWN_COUNT }, (_, i) => {
-    const ang = (i / GW_SPAWN_COUNT) * Math.PI * 2;
-    return { x: cx + Math.cos(ang) * GW_SPAWN_R * TILE, y: cy + Math.sin(ang) * GW_SPAWN_R * TILE };
-  });
-  // Sits just inside the north-west corner, clear of the tower and the spawn
-  // ring — walking onto it triggers enterLocation({target:'hub'}) client-side
-  // the same generic way an arm's own returnPad does (js/game.js).
-  const returnPad = { x: (gw.x + 3) * TILE + TILE / 2, y: (gw.y + 3) * TILE + TILE / 2 };
+  // Внешнее кольцо: вход ↔ соседние угловые комнаты (коридор шириной 3).
+  const a = 3 + T, b = far - 1, ringNear = 3 + Math.floor(T / 2) - 1, ringFar = N - 3 - Math.floor(T / 2) - 2;
+  for (const y of [ringNear, ringFar]) { paintRect(a, y, mid - 1, y + 2); paintRect(mid + E, y, b, y + 2); }
+  for (const x of [ringNear, ringFar]) { paintRect(x, a, x + 2, mid - 1); paintRect(x, mid + E, x + 2, b); }
+  // Крест: каждый вход ↔ зал.
+  const c0 = Math.floor(N / 2) - 1;
+  paintRect(c0, 3 + E, c0 + 1, hallAt - 1);
+  paintRect(c0, hallAt + GW_HALL, c0 + 1, N - 4 - E);
+  paintRect(3 + E, c0, hallAt - 1, c0 + 1);
+  paintRect(hallAt + GW_HALL, c0, N - 4 - E, c0 + 1);
+  // Диагонали: каждая угловая комната ↔ зал (ступенькой шириной 3).
+  function diag(x0, y0, x1, y1) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let i = 0; i <= n; i++) {
+      const x = Math.round(x0 + (x1 - x0) * i / n), y = Math.round(y0 + (y1 - y0) * i / n);
+      paintRect(x - 1, y - 1, x + 1, y + 1);
+    }
+  }
+  const tIn = 3 + T - 1, tOut = far, hIn = hallAt + 1, hOut = hallAt + GW_HALL - 2;
+  diag(tIn, tIn, hIn, hIn); diag(tOut, tIn, hOut, hIn); diag(tIn, tOut, hIn, hOut); diag(tOut, tOut, hOut, hOut);
+
+  const px = r => ({ x: r.cx * TILE + TILE / 2, y: r.cy * TILE + TILE / 2 });
+  const towers = towerRooms.map(px);
+  const spawns = entryRooms.map(px);
+  // Прямоугольники входных комнат в пикселях, с отступом в клетку от стен, —
+  // Room.spawnPointFor ставит вошедшего в случайную точку одной из них.
+  const entryRects = entryRooms.map(r => ({
+    x0: (r.x + 1) * TILE, y0: (r.y + 1) * TILE, x1: (r.x + r.size - 1) * TILE, y1: (r.y + r.size - 1) * TILE,
+  }));
+  const hc = px(hall);
+  // Портал в город — в центре зала: туда сходятся все коридоры.
+  const returnPad = { x: hc.x, y: hc.y };
 
   return {
-    grid, rooms: [gw], w, h,
-    // Одно значение, а не геттер. Геттер здесь был ошибкой: вызывающие читают
-    // `d.spawn.x` и `d.spawn.y` двумя обращениями, и каждое выбирало бы СВОЮ
-    // точку — игрок попадал бы по иксу от одной, по игреку от другой, то есть
-    // куда угодно, в том числе в стену.
-    //
-    // Случайность живёт там, где игрока ставят: Room.spawnPointFor (см. её
-    // комментарий). Здесь остаётся значение по умолчанию.
+    grid, rooms, w, h,
     spawn: spawns[0],
     returnPad,
-    guildWar: { cx, cy, spawns, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
+    guildWar: { cx: hc.x, cy: hc.y, towers, spawns, entryRects, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
     enemies: [],
   };
 }

@@ -1851,7 +1851,102 @@ function _getEnemy(id) {
   return obj;
 }
 
+// ── Вышка Войны гильдий: кристальный обелиск ─────────────────────────────
+// Рисуется кодом, а не спрайтом: цвет кристалла, луча, рун и кольца на земле
+// — цвет владельца относительно смотрящего (свой клан зелёный, чужой
+// красный, ничья — серо-голубая). Владелец берётся из _gwState.towers
+// (js/network.js, guildWarState): в фиксированной записи врага на проводе
+// для него нет места.
+const _GW_TOWER_COL = { mine: 0x40c878, enemy: 0xeb463c, neutral: 0x9aa8c0 };
+function _gwTowerSide(e) {
+  const st = typeof _gwState !== 'undefined' && _gwState && _gwState.towers;
+  const t = st && st.find(x => x.i === e.gwIndexClient);
+  if (!t || !t.ownerClanName) return { side: 'neutral', name: null };
+  const myClan = (typeof clanData !== 'undefined' && clanData && clanData.name) || null;
+  return { side: myClan && t.ownerClanName === myClan ? 'mine' : 'enemy', name: t.ownerClanName };
+}
+function _mixCol(a, b, t) {
+  const r = ((a >> 16) & 255) + (((b >> 16) & 255) - ((a >> 16) & 255)) * t;
+  const g = ((a >> 8) & 255) + (((b >> 8) & 255) - ((a >> 8) & 255)) * t;
+  const bl = (a & 255) + ((b & 255) - (a & 255)) * t;
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl);
+}
+function _updateGwTowerObj(e, obj, ts) {
+  const { ct, spr, gfx, lbl } = obj;
+  ct.x = e.x; ct.y = e.y;
+  spr.visible = false;
+  if (e.gwIndexClient == null) e.gwIndexClient = Number(String(e.id).replace('gw_tower_', ''));
+  const { side, name } = _gwTowerSide(e);
+  const col = _GW_TOWER_COL[side];
+  const hi = _mixCol(col, 0xffffff, 0.55), lo = _mixCol(col, 0x000000, 0.45);
+  const tm = ts * 0.001;
+  const hurt = (e.hurtTimer || 0) > 0;
+  const g = gfx;
+  g.clear();
+  const base = 34;                       // земля под постаментом, от центра
+  // Кольцо захвата на земле: мягкое пятно и бегущий пунктир.
+  for (let i = 6; i >= 1; i--) { g.beginFill(col, 0.035 * (7 - i)); g.drawEllipse(0, base, 40 + i * 9, (40 + i * 9) * 0.42); g.endFill(); }
+  const R = 92, segs = 24, off = (tm * 0.6) % (Math.PI * 2 / segs);
+  g.lineStyle(4, col, 0.45);
+  for (let k = 0; k < segs; k++) {
+    const a0 = off + k * Math.PI * 2 / segs, a1 = a0 + Math.PI / segs;
+    g.moveTo(Math.cos(a0) * R, base + Math.sin(a0) * R * 0.42);
+    for (let q = 1; q <= 4; q++) { const a = a0 + (a1 - a0) * q / 4; g.lineTo(Math.cos(a) * R, base + Math.sin(a) * R * 0.42); }
+  }
+  g.lineStyle(0);
+  // Тень и ступенчатый постамент.
+  g.beginFill(0x000000, 0.45); g.drawEllipse(0, base + 2, 52, 15); g.endFill();
+  const steps = [[96, 14, 0x3f4450], [76, 14, 0x4b5160], [56, 30, 0x5a6172]];
+  let yy = base;
+  for (const [w, h, c] of steps) {
+    g.beginFill(c); g.drawRect(-w / 2, yy - h, w, h); g.endFill();
+    g.beginFill(0xffffff, 0.08); g.drawRect(-w / 2, yy - h, w, 3); g.endFill();
+    yy -= h;
+  }
+  // Руны на постаменте — пульсируют цветом владельца.
+  const ra = 0.55 + 0.45 * Math.sin(tm * 2);
+  g.beginFill(hi, ra);
+  for (let k = -1; k <= 1; k++) { g.drawRect(k * 14 - 1.5, base - 44, 3, 12); g.drawRect(k * 14 - 5, base - 40, 10, 2.5); }
+  g.endFill();
+  // Парящий кристалл с ореолом и лучом вверх.
+  const fy = yy - 34 + Math.sin(tm * 1.6) * 6;
+  for (let i = 5; i >= 1; i--) { g.beginFill(col, 0.05 + 0.03 * (6 - i)); g.drawCircle(0, fy, 14 + i * 11); g.endFill(); }
+  for (let i = 0; i < 8; i++) { g.beginFill(col, 0.05 * (i + 1) / 8 + 0.02); g.drawRect(-10 + i * 0.6, fy - 190 + i * 22, 20 - i * 1.2, 22); g.endFill(); }
+  const crystal = hurt ? 0xffffff : _mixCol(col, 0xffffff, 0.15);
+  g.beginFill(_mixCol(crystal, 0x000000, 0.35));
+  g.drawPolygon([0, fy - 58, 22, fy - 18, 14, fy + 26, 0, fy + 40, -14, fy + 26, -22, fy - 18]); g.endFill();
+  g.beginFill(crystal);
+  g.drawPolygon([0, fy - 58, 22, fy - 18, 14, fy + 26, 0, fy + 40, 0, fy - 8]); g.endFill();
+  g.beginFill(_mixCol(crystal, 0xffffff, 0.6), 0.9);
+  g.drawPolygon([0, fy - 58, -22, fy - 18, -4, fy - 8]); g.endFill();
+  g.lineStyle(1.5, hi, 0.8);
+  g.drawPolygon([0, fy - 58, 22, fy - 18, 14, fy + 26, 0, fy + 40, -14, fy + 26, -22, fy - 18]);
+  g.lineStyle(0);
+  // Три осколка на орбите — те, что за кристаллом, тусклее.
+  for (let i = 0; i < 3; i++) {
+    const a = tm * 1.4 + i * 2.09, ox = Math.cos(a) * 40, oy = Math.sin(a) * 12;
+    g.beginFill(_mixCol(crystal, 0xffffff, 0.3), oy < 0 ? 0.55 : 1);
+    g.drawPolygon([ox, fy + oy - 8, ox + 5, fy + oy, ox, fy + oy + 8, ox - 5, fy + oy]); g.endFill();
+  }
+  // Полоса здоровья над кристаллом.
+  const bw = 110, by = fy - 98;
+  g.beginFill(0x000000, 0.6); g.drawRoundedRect(-bw / 2 - 2, by - 2, bw + 4, 12, 4); g.endFill();
+  const pct = Math.max(0, Math.min(1, e.hp / (e.maxHp || 1)));
+  g.beginFill(side === 'neutral' ? 0x9aa4b2 : col); g.drawRoundedRect(-bw / 2, by, bw * pct, 8, 3); g.endFill();
+  if (e.id === targetId && !targetIsPlayer) {
+    g.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * Math.sin(tm * 6));
+    g.drawEllipse(0, base, 70, 26); g.lineStyle(0);
+  }
+  // Подпись: «Вышка N» и клан-владелец.
+  const txt = name ? `${e.name || ''}\n${name}` : (e.name || '');
+  if (lbl.text !== txt) lbl.text = txt;
+  lbl.style.fill = side === 'mine' ? '#7dffb0' : side === 'enemy' ? '#ff8a80' : '#dfe6ee';
+  lbl.style.fontSize = 16; lbl.style.strokeThickness = 5;
+  lbl.x = 0; lbl.y = by - 6;
+}
+
 function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
+  if (e.eid === 'guildwar_tower') { _updateGwTowerObj(e, obj, performance.now()); return; }
   const { ct, spr, gfx } = obj;
   ct.x = e.x; ct.y = e.y;
 
@@ -2012,7 +2107,7 @@ function _updateEnemies(dt, pulse, bossGlow) {
   const visIds = typeof visibleEnemyIds === 'function' ? visibleEnemyIds() : null;
   serverEnemies.forEach(e => {
     if (!_isOnScreen(e.x, e.y)) return;
-    if (visIds && !e.isBoss && !e.elite && !visIds.has(e.id)) return;
+    if (visIds && !e.isBoss && !e.elite && e.eid !== 'guildwar_tower' && !visIds.has(e.id)) return;
     // Lazy-load sprites on first encounter (mirrors old drawEnemySprite behaviour)
     if (!enemySpriteCache[e.eid]) loadEnemySprites(e.eid);
     _seen('e|' + e.eid);
