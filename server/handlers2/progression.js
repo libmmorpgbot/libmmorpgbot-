@@ -632,7 +632,13 @@ module.exports = function registerProgression(s, safeOn) {
                   OR (q.kills = ek.kills AND q.last_kill_at < ek.last_kill_at))::int + 1 AS rank
         FROM elite_kills ek
        WHERE ek.player_id = $1`, [pid]);
+    // Состояние события для таймера и строки «где сейчас»: на каком этаже
+    // жив монстр (ключ этажа) и когда появится следующий.
+    const eliteSt = require('../game/elite').status();
+    const { FLOOR_IDS } = require('../game/floors');
+    const floorKey = Object.keys(FLOOR_IDS).find(k => FLOOR_IDS[k] === eliteSt.aliveFloor) || null;
     s.socket.emit('eliteRatingData', {
+      status: { aliveFloor: floorKey, nextAt: eliteSt.nextAt || null, now: Date.now() },
       rows: rows.map(r => ({ ...r, kills: Number(r.kills) })),
       me: me.length ? { kills: Number(me[0].kills), rank: me[0].rank } : { kills: 0, rank: null },
     });

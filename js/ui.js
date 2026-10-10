@@ -4869,6 +4869,74 @@ function drawEliteButton() {
   ctx.restore();
 }
 
+// Последний ответ сервера (eliteRating) и сдвиг его часов от наших: таймер
+// считается по серверному времени, иначе у игрока со сбитыми часами он
+// показывал бы не то.
+let _eliteData = null;
+let _eliteClockSkew = 0;
+let _eliteTick = null;
+
+// Виды, которыми может оказаться элитный монстр: все, кто живёт на уровнях
+// 1-45 — три вида первого этажа, три второго и три третьего (на третьем
+// этаже и в Фарм-зоне 2 до 45-го уровня доходят только они).
+const _ELITE_SPECIES = ['rat', 'slime', 'imp', 'zombie', 'lizardman', 'orc', 'plant', 'vampire', 'beholder'];
+
+function _eliteNow() { return Date.now() + _eliteClockSkew; }
+
+// 1д 02:03:04 / 02:03:04
+function _eliteFmtLeft(ms) {
+  ms = Math.max(0, ms);
+  const sec = Math.floor(ms / 1000);
+  const d = Math.floor(sec / 86400), h = Math.floor(sec / 3600) % 24, m = Math.floor(sec / 60) % 60, ss = sec % 60;
+  const p2 = n => String(n).padStart(2, '0');
+  return (d > 0 ? `${d}${t('eliteDaysShort')} ` : '') + `${p2(h)}:${p2(m)}:${p2(ss)}`;
+}
+
+// Анимированный спрайт вида: idle-лист, нижний ряд (взгляд вниз).
+function _eliteMonsterThumb(eid, px) {
+  const def = typeof ENEMY_SPRITE_DEF !== 'undefined' ? ENEMY_SPRITE_DEF[eid] : null;
+  const sh = def && def.sheets && def.sheets.idle;
+  if (!sh) return `<div class="elp-mon-img" style="width:${px}px;height:${px}px"></div>`;
+  const src = sh.src.startsWith('/') ? sh.src : '/' + sh.src;
+  return `<div class="elp-mon-img elp-anim" style="width:${px}px;height:${px}px;--w:${px}px;--cols:${sh.cols};
+    background-image:url('${src}');background-size:${sh.cols * px}px ${4 * px}px"></div>`;
+}
+
+function _eliteLocName(key) {
+  const floorN = { left: 1, top: 2, bottom: 3, right: 4 }[key];
+  if (floorN) return tVars('eliteFloorFmt', { n: floorN });
+  if (key === 'farmZone') return t('farmZoneLbl');
+  if (key === 'farmHigh') return t('farmHighLbl');
+  if (key === 'farmSeason') return t('farmSeasonLbl');
+  if (key === 'farmHighSeason') return t('farmHighSeasonLbl');
+  return key || '';
+}
+
+// Верхняя плашка: до начала / идёт (до конца, где монстр или когда
+// следующий) / закончилось. Перерисовывается раз в секунду.
+function _eliteTimerHtml() {
+  const now = _eliteNow();
+  const start = ELITE_EVENT_START_AT, end = ELITE_EVENT_END_AT;
+  if (now < start) {
+    return `<div class="elp-timer-lbl">${t('eliteStartsIn')}</div>
+      <div class="elp-timer">${_eliteFmtLeft(start - now)}</div>
+      <div class="elp-timer-sub">${t('eliteDateLbl')}</div>`;
+  }
+  if (now >= end) {
+    return `<div class="elp-timer-lbl">${t('eliteOver')}</div>
+      <div class="elp-timer-sub">${t('eliteDateLbl')}</div>`;
+  }
+  const st = (_eliteData && _eliteData.status) || {};
+  let live = '';
+  if (st.aliveFloor) {
+    live = `<div class="elp-live"><span class="elp-dot"></span>${t('eliteAliveNow')} <b>${_escHtml(_eliteLocName(st.aliveFloor))}</b></div>`;
+  } else if (st.nextAt && st.nextAt > now) {
+    live = `<div class="elp-live">${t('eliteNextIn')} <b>${_eliteFmtLeft(st.nextAt - now)}</b></div>`;
+  }
+  return `<div class="elp-timer-lbl elp-on">${t('eliteEndsIn')}</div>
+    <div class="elp-timer">${_eliteFmtLeft(end - now)}</div>${live}`;
+}
+
 function _eliteRatingHtml(data) {
   const rows = (data && data.rows) || [];
   if (!rows.length) return `<div class="rating-empty">${t('eliteEmpty')}</div>`;
@@ -4895,7 +4963,16 @@ function _eliteRatingHtml(data) {
   }).join('');
 }
 
+function _eliteRenderTimer() {
+  const el = document.getElementById('elp-timer-box');
+  if (!el) { if (_eliteTick) { clearInterval(_eliteTick); _eliteTick = null; } return; }
+  el.innerHTML = _eliteTimerHtml();
+}
+
 function onEliteRatingData(data) {
+  _eliteData = data || null;
+  if (data && data.status && Number.isFinite(data.status.now)) _eliteClockSkew = data.status.now - Date.now();
+  _eliteRenderTimer();
   const list = document.getElementById('elite-list');
   if (list) list.innerHTML = _eliteRatingHtml(data);
   const me = document.getElementById('elite-me');
@@ -4912,21 +4989,77 @@ function onEliteRatingError(msg) {
   if (list) list.innerHTML = `<div class="rating-empty">${_escHtml(msg || t('ratingErrorToast'))}</div>`;
 }
 
+function _closeElitePanel() {
+  const ov = document.getElementById('elite-ov');
+  if (ov) ov.remove();
+  if (_eliteTick) { clearInterval(_eliteTick); _eliteTick = null; }
+}
+
 function openElitePanel() {
-  const existing = document.getElementById('elite-ov');
-  if (existing) existing.remove();
+  _closeElitePanel();
   const ov = document.createElement('div');
   ov.id = 'elite-ov';
-  ov.onclick = () => ov.remove();
-  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:380px;max-height:82vh;display:flex;flex-direction:column;background:#0c1420;border-radius:16px;border:1px solid rgba(255,80,70,.28);padding:20px 18px;">
-    <div style="font-size:16px;font-weight:800;color:#ff6a5c;margin-bottom:6px">${t('eliteTitle')}</div>
-    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:10px">${t('eliteDesc')}</div>
-    <div id="elite-me" style="font-size:13px;font-weight:700;color:#bfe4ff;margin-bottom:12px">…</div>
-    <div id="elite-list" class="ov-scroll" style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px"><div class="rating-loading">${t('questLoading')}</div></div>
-    <button onclick="document.getElementById('elite-ov').remove()" style="margin-top:16px;flex-shrink:0;padding:11px;border:1px solid rgba(193,204,213,.14);border-radius:10px;background:rgba(193,204,213,.06);color:#c1ccd5;font-size:13px;font-weight:700;cursor:pointer">${t('closeLbl')}</button>
+  ov.onclick = _closeElitePanel;
+
+  const gramIco = '<img src="/images/gram-icon.png" class="elp-rew-img" alt="">';
+  const rewards = [
+    { ico: gramIco, val: `${ELITE_MOB_GRAM} GRAM`, lbl: t('eliteRewGram'), cls: 'elp-rew-gram' },
+    { ico: '<span class="elp-rew-emo">🎁</span>', val: `x${ELITE_MOB_DROP_MULT}`, lbl: t('eliteRewDrop'), cls: 'elp-rew-drop' },
+    { ico: '<span class="elp-rew-emo">❤️</span>', val: ELITE_MOB_HP.toLocaleString('ru-RU'), lbl: t('eliteRewHp'), cls: 'elp-rew-hp' },
+    { ico: '<span class="elp-rew-emo">👹</span>', val: `x${ELITE_MOB_SIZE_MULT}`, lbl: t('eliteRewSize'), cls: 'elp-rew-size' },
+  ].map(r => `<div class="elp-rew ${r.cls}">${r.ico}<div class="elp-rew-val">${r.val}</div><div class="elp-rew-lbl">${r.lbl}</div></div>`).join('');
+
+  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  const monsters = _ELITE_SPECIES.map(sp => {
+    const d = eMap.get(sp + '_warrior') || eMap.get(sp + '_guard');
+    if (!d) return '';
+    return `<div class="elp-mon"><div class="elp-mon-glow"></div>${_eliteMonsterThumb(d.eid, 76)}
+      <div class="elp-mon-name">${_escHtml(d.name.replace(/ (воин|страж)$/, ''))}</div></div>`;
+  }).join('');
+
+  const locs = [
+    tVars('eliteFloorFmt', { n: 1 }), tVars('eliteFloorFmt', { n: 2 }), tVars('eliteFloorFmt', { n: 3 }),
+    t('farmZoneLbl'), t('farmHighLbl'), t('eliteSeasonRoomsLbl'),
+  ].map(l => `<span class="elp-chip">${_escHtml(l)}</span>`).join('');
+
+  ov.className = 'elp-ov';
+  ov.innerHTML = `<div class="elp-card" onclick="event.stopPropagation()">
+    <button class="elp-x" onclick="_closeElitePanel()">✕</button>
+    <div class="elp-scroll ov-scroll">
+      <div class="elp-hero">
+        <div class="elp-hero-aura"></div>
+        ${_eliteMonsterThumb('orc_warrior', 96)}
+        <div class="elp-title">${t('eliteTitle')}</div>
+        <div id="elp-timer-box" class="elp-timer-box">${_eliteTimerHtml()}</div>
+      </div>
+
+      <div class="elp-sec-hdr">${t('eliteRewardsHdr')}</div>
+      <div class="elp-rews">${rewards}</div>
+
+      <div class="elp-sec-hdr">${t('eliteMonstersHdr')}</div>
+      <div class="elp-mons">${monsters}</div>
+
+      <div class="elp-sec-hdr">${t('eliteWhereHdr')}</div>
+      <div class="elp-chips">${locs}</div>
+
+      <div class="elp-sec-hdr">${t('eliteRulesHdr')}</div>
+      <ul class="elp-rules">
+        <li>${t('eliteRule1')}</li><li>${t('eliteRule2')}</li><li>${t('eliteRule3')}</li>
+      </ul>
+
+      <div class="elp-sec-hdr">${t('eliteRatingHdr')}</div>
+      <div id="elite-me" class="elp-me">…</div>
+      <div id="elite-list"><div class="rating-loading">${t('questLoading')}</div></div>
+    </div>
   </div>`;
   document.body.appendChild(ov);
+  if (_eliteData) onEliteRatingData(_eliteData);
+  // Таймер — каждую секунду; данные (где монстр, рейтинг) — раз в 30 секунд.
+  let n = 0;
+  _eliteTick = setInterval(() => {
+    _eliteRenderTimer();
+    if (++n % 30 === 0 && typeof netEliteRating === 'function') netEliteRating();
+  }, 1000);
   if (typeof netEliteRating === 'function') netEliteRating();
 }
 
