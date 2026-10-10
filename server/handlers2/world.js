@@ -496,7 +496,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       : result.farmHigh  ? loot._rollFarmHighLoot(inv, result.eid, dropMult)
       : result.farmZone2 ? loot._rollFarm2Loot(inv)
       : result.dungeon   ? loot._rollDungeonLoot(inv, result.eid, result.dungeonClass)
-      : loot._rollMobLoot(inv, result.eid, result.rlvl);
+      : loot._rollMobLoot(inv, result.eid, result.rlvl, dropMult);
     out.items = rollTable(scratch) || [];
 
     // ── руда ────────────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
 'use strict';
-// ── Элитный монстр сезонных крыльев ─────────────────────────────────────────
+// ── Элитный монстр ─────────────────────────────────────────────────────────────
 //
-// Заказ: «раз в час в сезонной фарм-зоне появляется элитный монстр… он
-// появляется в сезонной фарм-зоне 1 и 2, один на весь сервер, раз в 60-70
-// минут респ, шанс дропа x10, фиксированно 3 000 000 здоровья».
+// Заказ: «раз в час появляется элитный монстр… один на весь сервер, раз в
+// 60-70 минут респ, шанс дропа x10». Сначала — только в сезонных крыльях и с
+// 3 000 000 здоровья; потом: «с 1 по 45 в любой локации, 1 грам, здоровье
+// 1 000 000».
 //
 // «Один на весь сервер» — правило на ДВА этажа сразу, а Room знает только про
 // себя. Поэтому решение «пора ли и куда» живёт здесь, а комната лишь ставит
@@ -23,7 +24,16 @@ const {
   ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS, ELITE_EVENT_START_AT, ELITE_EVENT_END_AT,
 } = require('../../shared/definitions');
 
-const ELITE_FLOORS = [FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason];
+// Все открытые локации, где живут обычные монстры: четыре коридора, обе
+// Фарм-зоны и их сезонные крылья. Подходят только монстры 1-45 уровня
+// (Room.eliteCandidates), так что коридор 61-78 сам собой выпадает, а у
+// коридора 41-60 и Фарм зоны 2 (40-53) в дело идут только младшие.
+// Не входят: инстансы и режимы (Страх, Башня, Сотрудничество, турнир, арены),
+// Элитная фарм-зона (вход только партией) и Подземелье (вход по классу).
+const ELITE_FLOORS = [
+  FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
+  FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason,
+];
 // Строка в boss_state: (floor = сезонное крыло первой зоны, arm = 'elite').
 // Один ключ на сервер, а не на этаж — монстр тоже один.
 const ELITE_STATE_FLOOR = FLOOR_IDS.farmSeason;
@@ -83,17 +93,30 @@ function _onDeath() {
   _schedule(at);
 }
 
-// Ставит монстра в случайное из двух крыльев. Уже жив где-то — ничего.
+// Ставит монстра в случайную локацию. Уже жив где-то — ничего.
 function spawnNow() {
   _timer = null;
   const now = _clock();
   if (now < ELITE_EVENT_START_AT) { _schedule(ELITE_EVENT_START_AT); return null; }
   if (now >= ELITE_EVENT_END_AT) return null;
   if (aliveFloor() != null) return null;
-  const order = ELITE_FLOORS.slice().sort(() => Math.random() - 0.5);
-  for (const f of order) {
+  // Локация выбирается с весом по числу подходящих монстров: каждый обычный
+  // монстр 1-45 уровня на сервере имеет равный шанс «стать» элитным, и
+  // коридор, где таких 200, не уравнивается с крылом, где их 40.
+  const opts = [];
+  let total = 0;
+  for (const f of ELITE_FLOORS) {
     const room = _roomOf && _roomOf(f);
-    const e = room && typeof room.spawnEliteMonster === 'function' ? room.spawnEliteMonster(_onDeath) : null;
+    if (!room || typeof room.eliteCandidates !== 'function') continue;
+    const n = room.eliteCandidates().length;
+    if (n > 0) { opts.push({ f, room, n }); total += n; }
+  }
+  while (opts.length) {
+    let r = Math.random() * total, k = 0;
+    while (k < opts.length - 1 && r >= opts[k].n) { r -= opts[k].n; k++; }
+    const { f, room, n } = opts.splice(k, 1)[0];
+    total -= n;
+    const e = room.spawnEliteMonster(_onDeath);
     if (e) {
       _nextAt = 0;
       return { floor: f, enemy: e };

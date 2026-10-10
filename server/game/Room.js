@@ -12,7 +12,8 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
-        DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC, ELITE_MOB_HP, ELITE_MOB_SIZE_MULT } = require('../../shared/definitions');
+        DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC, ELITE_MOB_HP, ELITE_MOB_SIZE_MULT,
+        ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -907,30 +908,32 @@ class Room {
     return e;
   }
 
-  // ── Элитный монстр сезонного крыла ───────────────────────────────────────
+  // ── Элитный монстр ───────────────────────────────────────────────────────
   // Один на весь сервер — это правило держит планировщик (server/game/
   // elite.js), а комната только ставит монстра и говорит, когда он умер.
-  // Вид и уровень берутся у обычных монстров этого же этажа (самого старшего
-  // из них), поэтому у элитного та же таблица дропа зоны (farmZone/farmHigh
-  // копируются) — только с шансом x ELITE_MOB_DROP_MULT, см. rollLoot в
-  // server/handlers2/world.js. Здоровье фиксированное, размер x3.
-  spawnEliteMonster(onDeath) {
+  // Вид и уровень берутся у обычного монстра этого же этажа, поэтому у
+  // элитного та же таблица дропа зоны (arm/farmZone/farmHigh копируются) —
+  // только с шансом x ELITE_MOB_DROP_MULT, см. rollLoot в server/handlers2/
+  // world.js. Здоровье фиксированное, размер x3.
+  // Обычные монстры этого этажа, на месте которых может встать элитный:
+  // живые и мёртвые (вид и точка от смерти не меняются), не боссы и только
+  // заданной полосы уровней.
+  eliteCandidates(minLvl = ELITE_MOB_LVL_MIN, maxLvl = ELITE_MOB_LVL_MAX) {
+    return this.enemies.filter(e => !e.elite && !e.isBoss && !e.ignoresSafeZone && !e.guildWar
+      && (e.rlvl || 0) >= minLvl && (e.rlvl || 0) <= maxLvl);
+  }
+
+  spawnEliteMonster(onDeath, { minLvl = ELITE_MOB_LVL_MIN, maxLvl = ELITE_MOB_LVL_MAX } = {}) {
     if (this.isEliteAlive()) return null;
-    const pool = this.enemies.filter(e => !e.elite && !e.isBoss && (e.farmZone || e.farmHigh));
+    const pool = this.eliteCandidates(minLvl, maxLvl);
     if (!pool.length) return null;
-    const topLvl = Math.max(...pool.map(e => e.rlvl || 0));
-    const tops = pool.filter(e => (e.rlvl || 0) === topLvl);
-    const tpl = tops[Math.floor(Math.random() * tops.length)];
-    // Случайная комната крыла, случайная проходимая точка в ней.
-    const rooms = (this._dungeon.rooms || []).filter(r => r && r.size);
+    // Случайный обычный монстр полосы: элитный берёт его вид, уровень и
+    // место — встаёт рядом с его точкой появления, в его же комнате.
+    const tpl = pool[Math.floor(Math.random() * pool.length)];
+    const topLvl = tpl.rlvl || 0;
     let x = tpl.spawnX, y = tpl.spawnY;
-    if (rooms.length) {
-      const r = rooms[Math.floor(Math.random() * rooms.length)];
-      const gx = r.x + 2 + Math.floor(Math.random() * Math.max(1, r.size - 4));
-      const gy = r.y + 2 + Math.floor(Math.random() * Math.max(1, r.size - 4));
-      const at = this._nearestWalkable(gx * TILE + TILE / 2, gy * TILE + TILE / 2);
-      if (at) { x = at.x; y = at.y; }
-    }
+    const at = this._nearestWalkable(x, y);
+    if (at) { x = at.x; y = at.y; }
     const e = {
       id: `elite_${this.floor}_${Date.now()}`,
       eid: tpl.eid, eType: tpl.eType, fem: tpl.fem,
@@ -941,7 +944,7 @@ class Room {
       rlvl: topLvl,
       size: Math.min(255, Math.round((tpl.size || 16) * ELITE_MOB_SIZE_MULT)),
       maxHp: ELITE_MOB_HP, hp: ELITE_MOB_HP,
-      // У обычных монстров крыла атака урезана вдвое (FARM_WEAK_MULT);
+      // У обычных монстров атака урезана вдвое (они ходят стаями);
       // элитному она возвращается полностью.
       atk: (tpl.atk || 0) * 2, def: tpl.def, spd: tpl.spd,
       xp: tpl.xp, gold: tpl.gold,

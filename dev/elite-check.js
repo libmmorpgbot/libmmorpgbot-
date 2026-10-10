@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// ── Элитный монстр сезонных крыльев ─────────────────────────────────────────
+// ── Элитный монстр ─────────────────────────────────────────────────────────────
 //
 //   node dev/elite-check.js
 //
@@ -9,10 +9,11 @@
 // сезонной фарм-зоне 1 и 2, один на весь сервер, респ 60-70 минут, шанс дропа
 // x10 и фиксированно 3 000 000 здоровья».
 //
-// Позже: «только 13.10 с 00:00 по Москве до 23:59».
+// Позже: «только 13.10 с 00:00 по Москве до 23:59», и ещё позже: «с 1 по 45
+// в любой локации, а не только сезонные; 1 грам; здоровье 1 000 000».
 
 const {
-  ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM,
+  ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM, ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX,
   ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS,
   ELITE_EVENT_START_AT, ELITE_EVENT_END_AT, eliteEventOn,
 } = require('../shared/definitions');
@@ -36,7 +37,9 @@ const io = { to: () => ({ emit: () => {} }), emit: (ev, m) => { if (ev === 'chat
 console.log('\nelite-check');
 
 const rooms = new Map();
-for (const f of [FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason, FLOOR_IDS.farmZone]) {
+const ALL = [FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right, FLOOR_IDS.farmZone,
+  FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason, FLOOR_IDS.hub, FLOOR_IDS.farmZone2];
+for (const f of ALL) {
   const r = new Room(f, io, {}, null);
   r._stopLoop();
   rooms.set(f, r);
@@ -45,19 +48,20 @@ const roomOf = f => rooms.get(Number(f)) || null;
 
 // ════════════════════════════════════════════════════════════════════════════
 head('монстр');
-for (const f of [FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason]) {
+for (const f of [FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason]) {
   const room = rooms.get(f);
   const before = room.enemies.length;
   let died = null;
   const e = room.spawnEliteMonster((floor, en) => { died = { floor, id: en.id }; });
   ok(!!e, `этаж ${f}: монстр поставлен`);
   eq(room.enemies.length, before + 1, `этаж ${f}: ровно один новый монстр`);
-  eq(e.hp, ELITE_MOB_HP, `этаж ${f}: 3 000 000 здоровья`);
-  eq(e.maxHp, 3000000, `этаж ${f}: maxHp тоже ровно 3 000 000`);
+  eq(e.hp, ELITE_MOB_HP, `этаж ${f}: 1 000 000 здоровья`);
+  eq(e.maxHp, 1000000, `этаж ${f}: maxHp тоже ровно 1 000 000`);
+  ok(e.rlvl >= 1 && e.rlvl <= 45, `этаж ${f}: уровень в полосе 1-45 (${e.rlvl})`);
   const tpl = room.enemies.find(x => !x.elite && x.eid === e.eid);
   eq(e.size, tpl.size * ELITE_MOB_SIZE_MULT, `этаж ${f}: в 3 раза крупнее обычного того же вида`);
   ok(e.elite && !e.isBoss, `этаж ${f}: элитный, но не босс`);
-  ok(f === FLOOR_IDS.farmSeason ? e.farmZone : e.farmHigh, `этаж ${f}: таблица дропа своей зоны`);
+  eq(e.arm, tpl.arm, `этаж ${f}: таблица дропа своей зоны (${e.arm})`);
   ok(!room.canStandAt || room.canStandAt(e.x, e.y), `этаж ${f}: стоит на полу, а не в стене`);
   eq(room.spawnEliteMonster(() => {}), null, `этаж ${f}: второго, пока жив первый, не ставит`);
 
@@ -102,7 +106,13 @@ head('дроп x10');
   const z10 = count((inv, m) => loot._rollFarmZoneLoot(inv, 'orc_warrior', m), ELITE_MOB_DROP_MULT);
   ok(z10 > z1 * 6, `Фарм-зона: x10 к шансу даёт заметно больше дропа (${z1} → ${z10})`);
   eq(ELITE_MOB_DROP_MULT, 10, 'множитель — ровно 10');
-  eq(ELITE_MOB_GRAM, 0.3, 'GRAM с элитного — 0.3');
+  eq(ELITE_MOB_GRAM, 1, 'GRAM с элитного — 1');
+  eq(ELITE_MOB_HP, 1000000, 'здоровье — 1 000 000');
+  {
+    let c1 = 0, c10 = 0;
+    for (let i = 0; i < N; i++) { c1 += loot._rollMobLoot([], 'imp_guard', 15, 1).length; c10 += loot._rollMobLoot([], 'imp_guard', 15, ELITE_MOB_DROP_MULT).length; }
+    ok(c10 > c1 * 4, `коридор: x10 к шансу даёт заметно больше дропа (${c1} → ${c10})`);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -122,11 +132,32 @@ head('один на весь сервер, респ 60-70 минут');
   elite.init({ roomOf, save: (f, arm, at) => saved.push({ f, arm, at }), deadlineMs: clock + 3600e3 });
   eq(elite.aliveFloor(), null, 'сохранённый срок в будущем — сразу не появляется');
   const first = elite.spawnNow();
-  ok(first && elite.ELITE_FLOORS.includes(first.floor), 'появляется в одном из двух сезонных крыльев');
-  eq(elite.spawnNow(), null, 'второй, пока жив первый, не появляется — ни в том же крыле, ни в другом');
+  ok(first && elite.ELITE_FLOORS.includes(first.floor), 'появляется в одной из открытых локаций');
+  eq(elite.spawnNow(), null, 'второй, пока жив первый, не появляется — ни там же, ни в другой локации');
   const alive = [...rooms.keys()].filter(f => rooms.get(f).isEliteAlive());
   eq(alive.length, 1, 'жив ровно один на весь сервер');
-  ok(!rooms.get(FLOOR_IDS.farmZone).isEliteAlive(), 'в обычной Фарм-зоне (не крыле) не появляется');
+  ok(!rooms.get(FLOOR_IDS.hub).isEliteAlive() && !rooms.get(FLOOR_IDS.farmZone2).isEliteAlive(),
+    'в хабе и Элитной фарм-зоне не появляется');
+  eq(rooms.get(FLOOR_IDS.right).eliteCandidates().length, 0, 'в коридоре 61-78 подходящих монстров нет');
+  ok(rooms.get(FLOOR_IDS.bottom).eliteCandidates().every(x => x.rlvl <= 45), 'в коридоре 41-60 — только до 45-го');
+  // Много появлений подряд: встаёт по разным локациям, всегда 1-45.
+  const seen = new Set();
+  let badLvl = 0;
+  first.enemy.hp = 0; rooms.get(first.floor)._tick();
+  for (let i = 0; i < 300; i++) {
+    const x = elite.spawnNow();
+    if (!x) break;
+    seen.add(x.floor);
+    if (x.enemy.rlvl < ELITE_MOB_LVL_MIN || x.enemy.rlvl > ELITE_MOB_LVL_MAX) badLvl++;
+    x.enemy.hp = 0; rooms.get(x.floor)._tick();
+  }
+  eq(badLvl, 0, 'за 300 появлений ни разу вне 1-45');
+  ok(seen.has(FLOOR_IDS.left) && seen.has(FLOOR_IDS.top) && seen.has(FLOOR_IDS.farmZone),
+    `встаёт в разных локациях, не только в сезонных (${[...seen].join(',')})`);
+  saved.length = 0;
+  const again = elite.spawnNow();
+  ok(again, 'и снова ставится после смерти');
+  first.enemy = again.enemy; first.floor = again.floor;
   eq(chat.length, 0, 'о появлении в чат не пишется');
 
   first.enemy.hp = 0;

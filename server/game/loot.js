@@ -38,7 +38,8 @@ const { _invAdd } = require('../inventory');
 // since it fires on every kill in the game. Mutates `inv` in place via
 // _invAdd; the caller ('attack'/'skillAttack' below) decides who this runs
 // for (loot-winner arbitration among a party) and reports the result back.
-function _rollMobLoot(inv, eid, rlvl) {
+// `mult` — множитель к шансу каждого броска (x10 для элитного монстра).
+function _rollMobLoot(inv, eid, rlvl, mult = 1) {
   const eDef = ENEMY_DEF.find(e => e.eid === eid);
   const eType = eDef ? eDef.eType : null;
   const granted = [];
@@ -57,7 +58,9 @@ function _rollMobLoot(inv, eid, rlvl) {
   const _armIdx = armIndexForLevel(rlvl);
   const _localLvl = armLocalLevel(rlvl);
   const _dropMult = _armIdx * roomDropMult(_localLvl);
-  const _zoneMult = EARLY_ZONE_ARMS.has(_armIdx) ? EARLY_ZONE_DROP_MULT : 1;
+  // _zoneMult стоит множителем в каждом броске ниже, поэтому множитель
+  // элитного монстра (mult) едет вместе с ним.
+  const _zoneMult = (EARLY_ZONE_ARMS.has(_armIdx) ? EARLY_ZONE_DROP_MULT : 1) * mult;
 
   // Recipe drop (all non-boss enemies)
   if (eType && eType !== 'boss') {
