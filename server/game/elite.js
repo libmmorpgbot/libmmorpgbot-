@@ -42,7 +42,7 @@ const ELITE_ARM = 'elite';
 // повторить через минуту, а не ждать следующего часа.
 const RETRY_MS = 60 * 1000;
 
-let _roomOf = null, _save = null;
+let _roomOf = null, _save = null, _io = null;
 let _timer = null;
 let _endTimer = null;
 let _nextAt = 0;
@@ -76,6 +76,19 @@ function endEvent() {
     const r = _roomOf(f);
     if (r && typeof r.despawnElite === 'function') r.despawnElite();
   }
+  _broadcast();
+}
+
+// Состояние для клиента: ключ этажа, где монстр жив, и срок следующего.
+// Рассылается всем при каждом изменении — по нему кнопка «Элитный» в HUD
+// показывает «жив / через сколько», не опрашивая сервер.
+const _FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [v, k]));
+function publicStatus() {
+  const f = aliveFloor();
+  return { aliveFloor: f != null ? (_FLOOR_KEY[f] || null) : null, nextAt: _nextAt || null, now: _clock() };
+}
+function _broadcast() {
+  if (_io) _io.emit('eliteStatus', publicStatus());
 }
 
 function aliveFloor() {
@@ -91,6 +104,7 @@ function _onDeath() {
   const at = _clock() + respawnDelayMs();
   if (_save) _save(ELITE_STATE_FLOOR, ELITE_ARM, at);
   _schedule(at);
+  _broadcast();
 }
 
 // Ставит монстра в случайную локацию. Уже жив где-то — ничего.
@@ -119,6 +133,7 @@ function spawnNow() {
     const e = room.spawnEliteMonster(_onDeath);
     if (e) {
       _nextAt = 0;
+      _broadcast();
       return { floor: f, enemy: e };
     }
   }
@@ -127,8 +142,8 @@ function spawnNow() {
 }
 
 // deadlineMs — сохранённый срок следующего появления (или null).
-function init({ roomOf, save, deadlineMs = null }) {
-  _roomOf = roomOf; _save = save || null;
+function init({ io = null, roomOf, save, deadlineMs = null }) {
+  _io = io; _roomOf = roomOf; _save = save || null;
   const now = _clock();
   _schedule(Number.isFinite(deadlineMs) && deadlineMs > now ? deadlineMs : now);
   if (_endTimer) clearTimeout(_endTimer);
@@ -154,4 +169,4 @@ function status() {
   return { aliveFloor: aliveFloor(), nextAt: _nextAt || null };
 }
 
-module.exports = { init, stop, spawnNow, endEvent, status, _setClock, aliveFloor, respawnDelayMs, ELITE_FLOORS, ELITE_STATE_FLOOR, ELITE_ARM };
+module.exports = { init, stop, spawnNow, endEvent, status, publicStatus, _setClock, aliveFloor, respawnDelayMs, ELITE_FLOORS, ELITE_STATE_FLOOR, ELITE_ARM };

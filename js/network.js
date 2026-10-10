@@ -4135,6 +4135,9 @@ function _finishOnlineStart() {
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
   if (typeof showCodexBtn === 'function') showCodexBtn();
+  // Кнопке «Элитный» в HUD нужно состояние события (жив ли монстр, когда
+  // следующий) с самого входа, а не с первого открытия панели.
+  if (typeof netEliteRating === 'function') netEliteRating();
 
   // ── АВТО включается само у тех, кому оно доступно ────────────────────────
   // Кнопка AUTO открыта с VIP 2 (AUTO_ATTACK_VIP_MIN, js/input.js), но
@@ -5615,6 +5618,9 @@ function _initGramHandlers(s) {
   });
   s.on('eliteRatingData', (data) => {
     if (typeof onEliteRatingData === 'function') onEliteRatingData(data);
+  });
+  s.on('eliteStatus', (st) => {
+    if (typeof onEliteStatus === 'function') onEliteStatus(st);
   });
   s.on('eliteRatingError', ({ msg } = {}) => {
     if (typeof onEliteRatingError === 'function') onEliteRatingError(msg);

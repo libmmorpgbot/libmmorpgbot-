@@ -4848,24 +4848,103 @@ function drawStarterBonusButton() {
 //  Данные — eliteRating (server/handlers2/progression.js). См.
 //  getEliteBtnPos/_checkEliteBtnTouch, js/input.js.
 // ─────────────────────────────────────────────────────────
+// Строка таймера под названием: до начала — обратный отсчёт; в день
+// события — где монстр сейчас (красным) или через сколько следующий; после
+// — ничего. { text, color, live, alive }.
+function _eliteHudLine() {
+  const now = _eliteNow();
+  if (now < ELITE_EVENT_START_AT) {
+    const ms = ELITE_EVENT_START_AT - now;
+    const sec = Math.floor(ms / 1000), d = Math.floor(sec / 86400);
+    const p2 = n => String(n).padStart(2, '0');
+    const txt = d > 0
+      ? `${d}${t('eliteDaysShort')} ${p2(Math.floor(sec / 3600) % 24)}:${p2(Math.floor(sec / 60) % 60)}:${p2(sec % 60)}`
+      : _eliteFmtLeft(ms);
+    return { text: txt, color: '#ffe0b8', live: false };
+  }
+  if (now >= ELITE_EVENT_END_AT) return null;
+  const st = (_eliteData && _eliteData.status) || {};
+  if (st.aliveFloor) {
+    // Короткие имена: «Фарм зона 2» в узкую кнопку не помещается.
+    const short = { farmZone: 'eliteHudFarm1', farmHigh: 'eliteHudFarm2',
+      farmSeason: 'eliteHudSeason1', farmHighSeason: 'eliteHudSeason2' }[st.aliveFloor];
+    const loc = short ? t(short) : _eliteLocName(st.aliveFloor);
+    return { text: '● ' + loc, color: '#ff5b4f', live: true, alive: true };
+  }
+  if (st.nextAt && st.nextAt > now) {
+    const left = _eliteFmtLeft(st.nextAt - now);
+    return { text: '⏱ ' + (left.startsWith('00:') ? left.slice(3) : left), color: '#ffe0b8', live: true };
+  }
+  return { text: '● ' + t('eliteHudLive'), color: '#7ef08a', live: true };
+}
+
+// Сервер рассылает это всем при появлении, смерти монстра и конце события.
+function onEliteStatus(st) {
+  if (!st) return;
+  if (Number.isFinite(st.now)) _eliteClockSkew = st.now - Date.now();
+  _eliteData = Object.assign({}, _eliteData || {}, { status: st });
+  _eliteRenderTimer();
+}
+
 function drawEliteButton() {
   if (!player || !player.type) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
   const eb = getEliteBtnPos();
   const F = 'system-ui, -apple-system, Arial';
+  const line = _eliteHudLine();
+  const tnow = Date.now();
+  const pulse = 0.5 + 0.5 * Math.sin(tnow / (line && line.alive ? 220 : 420));
 
   ctx.save();
-  ctx.fillStyle = _uiBtnGrads.pfg0;
+  // Тёмно-красная плашка с бегущим бликом — как у «Бонуса», только кровь.
+  const sweep = (Math.sin(tnow / 1300) + 1) / 2;
+  const grad = ctx.createLinearGradient(eb.x, eb.y, eb.x + eb.w, eb.y + eb.h);
+  grad.addColorStop(0, '#2a0a0e');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#3d0f14');
+  grad.addColorStop(sweep, line && line.live ? '#a3201c' : '#6d1a18');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#3d0f14');
+  grad.addColorStop(1, '#1a0709');
+  ctx.fillStyle = grad;
   roundRect(ctx, eb.x, eb.y, eb.w, eb.h, 9); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,80,70,0.5)';
+
+  ctx.strokeStyle = `rgba(255,80,66,${(0.55 + 0.35 * pulse).toFixed(3)})`;
   ctx.lineWidth = 1.5;
   roundRect(ctx, eb.x, eb.y, eb.w, eb.h, 9); ctx.stroke();
+  // Внешнее свечение — сильнее, пока идёт событие, и бьётся чаще, пока монстр жив.
+  const glowA = line && line.live ? 0.18 + 0.22 * pulse : 0.08 + 0.10 * pulse;
+  ctx.strokeStyle = `rgba(255,50,40,${glowA.toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, eb.x - 2, eb.y - 2, eb.w + 4, eb.h + 4, 11); ctx.stroke();
 
-  const col = 'rgba(255,120,110,0.95)';
-  drawIconCtx(ctx, 'skull', eb.x + eb.w / 2 - hud(17), eb.y + eb.h / 2, hud(12), col);
+  const twoLines = !!line;
+  const y1 = twoLines ? eb.y + hud(13) : eb.y + eb.h / 2;
+  // Иконка и надпись центрируются вместе по реальной ширине текста: на
+  // других языках и при другом масштабе HUD фиксированные отступы вылезали
+  // за край кнопки.
+  const lbl = t('eliteBtnLbl');
+  const icoSz = hud(11), gap = hud(3);
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = col;
-  ctx.fillText(t('eliteBtnLbl'), eb.x + eb.w / 2 - hud(8), eb.y + eb.h / 2);
+  let tw = ctx.measureText(lbl).width;
+  const maxTw = eb.w - hud(8) - icoSz - gap;
+  if (tw > maxTw) { ctx.font = `bold ${hudF(10)}px ${F}`; tw = Math.min(ctx.measureText(lbl).width, maxTw); }
+  const x0 = eb.x + (eb.w - (icoSz + gap + tw)) / 2;
+  drawIconCtx(ctx, 'skull', x0 + icoSz / 2, y1, icoSz, '#ff6a5c');
+  ctx.fillStyle = '#ffc2b8';
+  ctx.fillText(lbl, x0 + icoSz + gap, y1, maxTw);
+
+  if (line) {
+    const y2 = eb.y + eb.h - hud(12);
+    ctx.font = `bold ${hudF(10)}px ui-monospace, Menlo, Consolas, ${F}`;
+    ctx.textAlign = 'center';
+    // Тонкая подложка под таймер.
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    roundRect(ctx, eb.x + hud(5), y2 - hud(7), eb.w - hud(10), hud(14), 6); ctx.fill();
+    ctx.fillStyle = line.color;
+    if (line.alive) ctx.globalAlpha = 0.7 + 0.3 * pulse;
+    let txt = line.text;
+    const maxW = eb.w - hud(12);
+    while (txt.length > 3 && ctx.measureText(txt).width > maxW) txt = txt.slice(0, -2) + '…';
+    ctx.fillText(txt, eb.x + eb.w / 2, y2);
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }
 

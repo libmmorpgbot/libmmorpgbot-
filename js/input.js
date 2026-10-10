@@ -154,9 +154,13 @@ function getStarterBonusBtnPos() {
 // монстра сезонных крыльев (openElitePanel, js/ui.js). Там, где раньше стояла
 // «Дружба». Место безусловное, как было у неё: список пати ниже строится от
 // этого слота и не прыгает.
+// Пока событие не закончилось, кнопка выше обычной: под названием строка с
+// таймером (_eliteHudLine, js/ui.js).
 function getEliteBtnPos() {
   const bb = getStarterBonusBtnPos();
-  return { x: bb.x, y: bb.y + bb.h + 6, w: bb.w, h: bb.h };
+  const tall = typeof ELITE_EVENT_END_AT === 'undefined' || typeof _eliteNow !== 'function'
+    || _eliteNow() < ELITE_EVENT_END_AT;
+  return { x: bb.x, y: bb.y + bb.h + 6, w: bb.w, h: tall ? hud(40) : bb.h };
 }
 
 function getPartyLeaveBtnPos() {

@@ -1563,7 +1563,7 @@ async function boot() {
   // Элитный монстр сезонных крыльев — один на весь сервер (server/game/elite.js).
   // Срок следующего появления лежит в той же boss_state, что и таймеры боссов.
   eliteMob.init({
-    roomOf: world.roomOf, save: bossstate.save,
+    io, roomOf: world.roomOf, save: bossstate.save,
     deadlineMs: (bossStates[eliteMob.ELITE_STATE_FLOOR] || {})[eliteMob.ELITE_ARM],
   });
 
