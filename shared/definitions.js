@@ -1472,7 +1472,7 @@ const ITEM_DEF = [
   { id:'pet_ogre',    name:'Огр',      slot:'pet', img:'/images/pet/pet_ogre/icon.png',    hp:300, atk:25, def:20, hpPct:0.25,      rarity:'uncommon' },
   { id:'pet_bonessa', name:'Бонесса',  slot:'pet', img:'/images/pet/pet_bonessa/icon.png', hp:550, atk:45, def:35, critChance:0.25, rarity:'rare'     },
   { id:'pet_cyclops', name:'Циклоп',   slot:'pet', img:'/images/pet/pet_cyclops/icon.png', hp:550, atk:45, def:35, hpPct:0.40,      rarity:'rare'     },
-  { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:550, atk:45, def:35, atkSpeed:0.25,   rarity:'rare'     },
+  { id:'pet_yeti',    name:'Йети',     slot:'pet', img:'/images/pet/pet_yeti/icon.png',    hp:550, atk:45, def:35, atkSpeed:0.50,   rarity:'rare'     },
   // ── эпические ───────────────────────────────────────────────────────────
   // Одинаковая основа (100/100/1200 и +10% опыта) и по НАВЫКУ на каждого
   // вместо постоянной прибавки, которая была здесь раньше (у Грута — сила
