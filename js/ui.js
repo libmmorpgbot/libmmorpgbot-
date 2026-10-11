@@ -8783,32 +8783,141 @@ function hideArena3Timer() {
 // _gwState is pushed by js/network.js's guildWarState handler (and seeded by
 // gameStart) — phase/nextAt drive the countdown, ownerClanName describes who
 // holds the tower whether or not the zone is open right now.
+// Схема поля боя: четыре угловые комнаты с вышками-кристаллами, зал в
+// центре, входы посередине сторон. Цвет кристалла — владелец вышки
+// относительно смотрящего (_gwSideOf: свой / чужой / ничья). Без бесконечных
+// CSS-анимаций: панель перерисовывается раз в секунду, и анимация
+// начиналась бы заново каждый раз.
+const _GW_SIDE_FILL = { mine: '#40c878', enemy: '#eb463c', neutral: '#9aa8c0' };
+function _gwFieldHTML(st, live) {
+  const owners = new Map(((live && st.towers) || []).map(x => [x.i, x.ownerClanName]));
+  const corners = [[38, 38], [162, 38], [38, 162], [162, 162]];
+  const room = (x, y, w, h) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="5" class="gwf-room"/>`;
+  const rooms = [
+    room(10, 10, 56, 56), room(134, 10, 56, 56), room(10, 134, 56, 56), room(134, 134, 56, 56),
+    room(68, 68, 64, 64),
+    room(82, 10, 36, 36), room(82, 154, 36, 36), room(10, 82, 36, 36), room(154, 82, 36, 36),
+  ].join('');
+  const halls = [
+    'M66 30H82', 'M118 30H134', 'M66 170H82', 'M118 170H134',
+    'M30 66V82', 'M30 118V134', 'M170 66V82', 'M170 118V134',
+    'M100 46V68', 'M100 132V154', 'M46 100H68', 'M132 100H154',
+    'M58 58L74 74', 'M142 58L126 74', 'M58 142L74 126', 'M142 142L126 126',
+  ].map(d => `<path d="${d}" class="gwf-hall"/>`).join('');
+  const gems = corners.map(([cx, cy], i) => {
+    const owner = owners.get(i) || null;
+    const side = _gwSideOf(owner);
+    const c = _GW_SIDE_FILL[side];
+    const y0 = cy - 9;
+    return `<g class="gwf-tw gwf-${side}">
+      <ellipse cx="${cx}" cy="${cy + 13}" rx="16" ry="5" fill="${c}" opacity=".28"/>
+      <circle cx="${cx}" cy="${y0}" r="17" fill="${c}" opacity=".16"/>
+      <polygon points="${cx},${y0 - 15} ${cx + 9},${y0 - 3} ${cx + 6},${y0 + 11} ${cx},${y0 + 17} ${cx - 6},${y0 + 11} ${cx - 9},${y0 - 3}" fill="${c}" stroke="#fff" stroke-opacity=".55" stroke-width="1"/>
+      <polygon points="${cx},${y0 - 15} ${cx - 9},${y0 - 3} ${cx - 2},${y0 + 1}" fill="#fff" opacity=".45"/>
+      <text x="${cx}" y="${cy + 25}" class="gwf-num">${i + 1}</text>
+    </g>`;
+  }).join('');
+  const entries = [[100, 28], [100, 172], [28, 100], [172, 100]]
+    .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="4" class="gwf-entry"/>`).join('');
+  const legend = [0, 1, 2, 3].map(i => {
+    const owner = owners.get(i) || null;
+    const side = _gwSideOf(owner);
+    return `<div class="gwf-leg gwf-leg-${side}"><i style="background:${_GW_SIDE_FILL[side]}"></i>
+      <b>${i + 1}</b><span>${owner ? _escHtml(owner) : t('gwTowerNeutral')}</span></div>`;
+  }).join('');
+  return `<div class="gwf">
+    <svg class="gwf-map" viewBox="0 0 200 200" aria-hidden="true">
+      <rect x="0" y="0" width="200" height="200" rx="14" class="gwf-bg"/>
+      ${halls}${rooms}${entries}
+      <text x="100" y="105" class="gwf-castle">🏰</text>
+      ${gems}
+    </svg>
+    <div class="gwf-legend">${legend}</div>
+  </div>`;
+}
+
+// Полоса «держит все 4»: сколько из пяти минут уже выстояно.
+function _gwHoldHTML(st) {
+  const now = Date.now() + (typeof _gwClockSkew !== 'undefined' ? _gwClockSkew : 0);
+  if (!(st.holdClanName && st.holdUntil > now)) {
+    return `<div class="gwh gwh-idle">${t('gwHoldHint')}</div>`;
+  }
+  const holdMs = st.holdMs || 5 * 60 * 1000;
+  const left = st.holdUntil - now;
+  const pct = Math.max(0, Math.min(100, (1 - left / holdMs) * 100));
+  const side = _gwSideOf(st.holdClanName);
+  const sec = Math.ceil(left / 1000);
+  const tleft = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  return `<div class="gwh gwh-${side}">
+    <div class="gwh-txt">${_escHtml(tVars(side === 'mine' ? 'gwHoldMineFmt' : 'gwHoldFmt', { clan: st.holdClanName, t: tleft }))}</div>
+    <div class="gwh-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+  </div>`;
+}
+
+// Кто сейчас владеет замком и что ему это даёт.
+function _gwOwnerHTML(st) {
+  const has = !!st.ownerClanName;
+  const icon = has && typeof clanIconSVG === 'function' ? clanIconSVG(st.ownerClanIcon || 1, 34) : '🏰';
+  const mine = has && st.ownerClanName === _gwMyClan();
+  return `<div class="gwo${mine ? ' gwo-mine' : ''}">
+    <div class="gwo-ico">${icon}</div>
+    <div class="gwo-body">
+      <div class="gwo-k">${t('gwOwnerHdr')}</div>
+      <div class="gwo-v">${has ? _escHtml(st.ownerClanName) : t('guildWarNoOwnerLbl')}</div>
+      ${has ? `<div class="gwo-note">${t('gwOwnerIncome')}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function _gwRewardsHTML() {
+  const shards = (typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : []).slice(0, 6)
+    .map(sh => `<img src="${sh.img}" alt="" title="${_escHtml(sh.name)}">`).join('');
+  return `<div class="gwr">
+    <div class="gwr-shards">${shards}</div>
+    <div class="gwr-txt"><b>${tVars('gwRewardShardsFmt', { a: GUILD_WAR_SHARD_MIN, b: GUILD_WAR_SHARD_MAX })}</b>
+      <span>${t('gwRewardShardsNote')}</span></div>
+  </div>`;
+}
+
 function _guildWarModel() {
   const st = (typeof _gwState !== 'undefined' && _gwState) || {};
-  const open = st.phase === 'live';
+  const live = st.phase === 'live';
+  const won = st.phase === 'won';
+  const now = Date.now() + (typeof _gwClockSkew !== 'undefined' ? _gwClockSkew : 0);
   // Escaped: a clan's name is typed by its founder, and this panel shows it to
-  // everyone on the server. It is the one place a clan name reaches innerHTML.
+  // everyone on the server.
   const owner = st.ownerClanName ? _escHtml(st.ownerClanName) : t('guildWarNoOwnerLbl');
 
   let pill, stat;
-  if (open) {
+  if (won) {
+    pill = _evtPill('live', t('gwPillWon'));
+    stat = { label: t('evtStatNow'), value: tVars('gwWonFmt', { clan: owner }), text: true };
+  } else if (live) {
     pill = _evtPill('live', t('evtPillLive'));
-    stat = { label: t('evtStatNow'), value: t('guildWarPhaseOpen'), text: true, note: t('guildWarNoteOpen') };
+    const left = st.closesAt ? _fmtEventEta(Math.max(0, st.closesAt - now)) : '—';
+    stat = { label: t('gwStatEndsIn'), value: left, note: t('guildWarNoteOpen') };
   } else {
     const eta = st.nextAt ? _evtEtaUntil(st.nextAt) : '—';
     pill = _evtPill('soon', st.nextAt ? tVars('evtPillInFmt', { t: eta }) : t('guildWarPhaseClosed'));
     stat = { label: t('evtStatStartsIn'), value: eta, note: st.nextAt ? _fmtEventWhen(st.nextAt) : '' };
   }
 
+  const field = _gwFieldHTML(st, live || won)
+    + (live ? _gwHoldHTML(st) : won ? '' : `<div class="gwh gwh-idle">${t('gwTowersResetNote')}</div>`);
   return {
     pill, stat,
     hint: t('evtGwHint'),
+    extraHdr: t('gwFieldHdr'),
+    extra: field + _gwOwnerHTML(st),
     facts: [
       [t('evtFactWhen'), t('eventSchedGuildWar')],
       [t('evtFactPlayers'), t('evtPlayersClans')],
-      [t('evtFactOwner'), owner],
+      [t('gwFactTowers'), t('gwFactTowersVal')],
+      [t('gwFactHold'), t('gwFactHoldVal')],
     ],
-    rules: [t('guildWarRule1'), t('guildWarRule2'), t('guildWarRule3')],
+    rules: [t('guildWarRule1'), t('guildWarRule2'), t('gwRuleHold'), t('guildWarRule3'), t('gwRuleNoWin')],
+    rewardsHdr: t('gwRewardsHdr'),
+    rewards: _gwRewardsHTML(),
   };
 }
 

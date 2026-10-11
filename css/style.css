@@ -4332,3 +4332,47 @@ canvas { display:block; width:100%; height:100%; }
 .gwp-banner-mine { border-color: #40c878; color: #b9ffd6; }
 .gwp-banner-enemy { border-color: #eb463c; color: #ffc2bc; }
 .gwp-banner-win { border-color: #ffd37a; color: #ffe7b0; font-size: 14px; }
+
+/* ── Война гильдий: страница события (_guildWarModel, js/ui.js) ──────────── */
+.gwf { display: flex; gap: 12px; align-items: center; }
+.gwf-map { width: 54%; max-width: 220px; flex: 0 0 auto; display: block; filter: drop-shadow(0 6px 18px rgba(0,0,0,.45)); }
+.gwf-bg { fill: #0d1020; stroke: rgba(140,160,255,.25); stroke-width: 1.5; }
+.gwf-room { fill: #262a3c; stroke: #3a4058; stroke-width: 1.2; }
+.gwf-hall { stroke: #2e3348; stroke-width: 7; stroke-linecap: square; fill: none; }
+.gwf-entry { fill: #4cc3ff; opacity: .85; }
+.gwf-castle { font-size: 20px; text-anchor: middle; dominant-baseline: middle; }
+.gwf-num { font: 900 10px system-ui, Arial; fill: #fff; text-anchor: middle; paint-order: stroke; stroke: rgba(0,0,0,.7); stroke-width: 3px; }
+.gwf-mine polygon:first-of-type { filter: drop-shadow(0 0 4px #40c878); }
+.gwf-enemy polygon:first-of-type { filter: drop-shadow(0 0 4px #eb463c); }
+.gwf-legend { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.gwf-leg { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 9px; background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06); font-size: 12px; min-width: 0; }
+.gwf-leg i { width: 10px; height: 12px; flex: 0 0 auto; clip-path: polygon(50% 0, 100% 35%, 80% 100%, 20% 100%, 0 35%); }
+.gwf-leg b { color: #8fa0c8; font-weight: 900; }
+.gwf-leg span { color: #c9d1dc; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gwf-leg-mine { border-color: rgba(64,200,120,.4); background: rgba(64,200,120,.08); } .gwf-leg-mine span { color: #7dffb0; }
+.gwf-leg-enemy { border-color: rgba(235,70,60,.4); background: rgba(235,70,60,.08); } .gwf-leg-enemy span { color: #ff8a80; }
+
+.gwh { margin-top: 10px; padding: 9px 11px; border-radius: 10px; font-size: 12.5px; font-weight: 800; text-align: center; }
+.gwh-idle { color: #aab6c6; background: rgba(255,255,255,.04); border: 1px dashed rgba(255,255,255,.12); font-weight: 700; }
+.gwh-mine { color: #b9ffd6; background: rgba(64,200,120,.12); border: 1px solid rgba(64,200,120,.45); }
+.gwh-enemy { color: #ffc2bc; background: rgba(235,70,60,.12); border: 1px solid rgba(235,70,60,.45); }
+.gwh-bar { margin-top: 7px; height: 7px; border-radius: 4px; background: rgba(0,0,0,.45); overflow: hidden; }
+.gwh-bar i { display: block; height: 100%; border-radius: 4px; background: currentColor; transition: width .9s linear; }
+
+.gwo { margin-top: 10px; display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(138,92,246,.16), rgba(255,255,255,.03)); border: 1px solid rgba(138,92,246,.35); }
+.gwo-mine { background: linear-gradient(135deg, rgba(64,200,120,.18), rgba(255,255,255,.03)); border-color: rgba(64,200,120,.45); }
+.gwo-ico { width: 42px; height: 42px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; font-size: 26px;
+  border-radius: 10px; background: rgba(0,0,0,.3); }
+.gwo-k { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #a79bd6; }
+.gwo-v { margin-top: 2px; font-size: 15px; font-weight: 900; color: #fff; overflow-wrap: anywhere; }
+.gwo-note { margin-top: 2px; font-size: 11.5px; color: #c6b8ef; }
+
+.gwr { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 12px;
+  background: rgba(255,207,138,.06); border: 1px solid rgba(255,207,138,.22); }
+.gwr-shards { display: grid; grid-template-columns: repeat(3, 22px); gap: 3px; flex: 0 0 auto; }
+.gwr-shards img { width: 22px; height: 22px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 0 4px rgba(255,200,120,.35)); }
+.gwr-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gwr-txt b { color: #ffcf8a; font-size: 13px; }
+.gwr-txt span { color: #b9a990; font-size: 11.5px; line-height: 1.35; }
