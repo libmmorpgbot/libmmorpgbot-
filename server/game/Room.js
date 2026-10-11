@@ -1222,7 +1222,7 @@ class Room {
       ...d, eid: row.eid, eType: 'boss', isBoss: true, arm: 'fear', lane, rlvl: lvl, bossLair: true,
       name: row.name, color: row.color, size: row.size,
       maxHp: hp, hp,
-      atk: Math.floor(stats.atk * k.atkMult), def: stats.def,
+      atk: Math.floor(stats.atk * k.atkMult), def: Math.floor(stats.def * (k.defMult || 1)),
       spd: k.spd, atkCdMult: k.atkCdMult,
       xp: xpAtLevel(lvl) * FEAR_XP_MULT * 5, gold: 0,
       x: ex, y: ey, spawnX: ex, spawnY: ey,

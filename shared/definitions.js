@@ -1025,11 +1025,17 @@ function bossLairReward(level) {
 const BOSS_LAIR_HP_MULT = 30;
 const BOSS_LAIR_ATK_MULT = 3;
 const BOSS_LAIR_BASE_SPD = 80;
+// С 25-го уровня Логово было слишком жёстким: атака и защита боссов с этого
+// уровня делятся на BOSS_LAIR_NERF_DIV (здоровье и скорость — как были).
+const BOSS_LAIR_NERF_FROM_LEVEL = 25;
+const BOSS_LAIR_NERF_DIV = 5;
 function bossLairScaling(level) {
   const i = Math.max(0, BOSS_LAIR_LEVELS.indexOf(level));
+  const nerf = (Number(level) || 0) >= BOSS_LAIR_NERF_FROM_LEVEL ? 1 / BOSS_LAIR_NERF_DIV : 1;
   return {
     hpMult: (1 + i * 0.12) * BOSS_LAIR_HP_MULT,
-    atkMult: (1 + i * 0.06) * BOSS_LAIR_ATK_MULT,
+    atkMult: (1 + i * 0.06) * BOSS_LAIR_ATK_MULT * nerf,
+    defMult: nerf,
     spdMult: 1 + i * 0.04,
     // One base speed for every Lair boss, whatever species it wears — a slow
     // ent sprite on rung 10 must still outrun the rat on rung 1.
