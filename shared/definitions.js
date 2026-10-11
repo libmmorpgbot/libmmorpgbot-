@@ -2767,12 +2767,15 @@ function enhanceBoostedRate(current, steps) {
 // EQ_SLOTS (js/definitions.js), and was simply left out of this set by oversight —
 // enhanceBonus() already handles it correctly with no slot-specific change needed.
 const ENHANCEABLE_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt', 'pet', 'cloak', 'artifact', 'wings']);
+// Прибавка за каждый уровень заточки: 30% базовой характеристики предмета
+// (было 10% — утроено), но не меньше 3 атаки/защиты и 15 здоровья за уровень.
+const ENHANCE_STAT_PCT = 0.30;
 function enhanceBonus(it, levels) {
   if (!levels) return {};
   const b = {};
-  if (it.atk) b.atk = Math.max(1, Math.ceil(it.atk * 0.10)) * levels;
-  if (it.def) b.def = Math.max(1, Math.ceil(it.def * 0.10)) * levels;
-  if (it.hp)  b.hp  = Math.max(5, Math.ceil(it.hp  * 0.10)) * levels;
+  if (it.atk) b.atk = Math.max(3, Math.ceil(it.atk * ENHANCE_STAT_PCT)) * levels;
+  if (it.def) b.def = Math.max(3, Math.ceil(it.def * ENHANCE_STAT_PCT)) * levels;
+  if (it.hp)  b.hp  = Math.max(15, Math.ceil(it.hp * ENHANCE_STAT_PCT)) * levels;
   return b;
 }
 // Items that stack into one inventory slot by id, tracked with a qty
