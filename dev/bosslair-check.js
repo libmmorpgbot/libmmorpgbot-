@@ -27,7 +27,8 @@ process.env.TG_BOT_TOKEN = process.env.TG_BOT_TOKEN || 'test:token';
 const { pool, close } = require('../server/db');
 const app = require('../server/app');
 const { wipeItemsAll } = require('./fixtures');
-const { BOSS_LAIR_LEVELS, BOSS_LAIR_BOSSES, bossLairBoss, bossLairScaling, bossLairReward, monsterStatsAtLevel } = require('../shared/definitions');
+const { BOSS_LAIR_LEVELS, BOSS_LAIR_BOSSES, bossLairBoss, bossLairScaling, bossLairReward, monsterStatsAtLevel,
+  BOSS_LAIR_NERF_FROM_LEVEL, BOSS_LAIR_NERF_DIV } = require('../shared/definitions');
 
 let pass = 0, fail = 0; const failures = [];
 function ok(c, name, detail) {
@@ -77,15 +78,26 @@ async function main() {
 
   console.log('  ── лестница боссов ──');
   eq(BOSS_LAIR_LEVELS.join(','), '10,15,20,25,30,35,40,45,50,55,60,65,70,75', '14 боссов, 10..75 через 5');
+  // С 25-го уровня атака и защита делятся на 5 (BOSS_LAIR_NERF_*), поэтому
+  // на переходе 20 → 25 атака ПАДАЕТ — это намеренно. Внутри каждой из двух
+  // частей лестницы следующий босс по-прежнему сильнее.
   let stronger = true;
   for (let i = 1; i < BOSS_LAIR_LEVELS.length; i++) {
     const a = BOSS_LAIR_LEVELS[i - 1], b = BOSS_LAIR_LEVELS[i];
     const ka = bossLairScaling(a), kb = bossLairScaling(b);
     const sa = monsterStatsAtLevel(a, 'boss'), sb = monsterStatsAtLevel(b, 'boss');
-    if (!(sb.hp * kb.hpMult > sa.hp * ka.hpMult && sb.atk * kb.atkMult > sa.atk * ka.atkMult
+    const crossesNerf = a < BOSS_LAIR_NERF_FROM_LEVEL && b >= BOSS_LAIR_NERF_FROM_LEVEL;
+    if (!(sb.hp * kb.hpMult > sa.hp * ka.hpMult && (crossesNerf || sb.atk * kb.atkMult > sa.atk * ka.atkMult)
           && kb.spdMult > ka.spdMult && kb.atkCdMult < ka.atkCdMult)) stronger = false;
   }
-  ok(stronger, 'каждый следующий босс сильнее, быстрее и бьёт чаще');
+  ok(stronger, 'каждый следующий босс сильнее, быстрее и бьёт чаще (атака — внутри частей до и после 25 ур.)');
+  {
+    const k20 = bossLairScaling(20), k25 = bossLairScaling(25);
+    const raw25 = (1 + BOSS_LAIR_LEVELS.indexOf(25) * 0.06) * 3;
+    ok(Math.abs(k25.atkMult * BOSS_LAIR_NERF_DIV - raw25) < 1e-9 && k25.defMult === 1 / BOSS_LAIR_NERF_DIV,
+      'с 25 ур. атака и защита босса в 5 раз ниже');
+    ok(!k20.defMult || k20.defMult === 1, 'до 25 ур. — без изменений');
+  }
   eq(JSON.stringify(bossLairReward(35)), JSON.stringify([{ id: 'bless_stone', qty: 2 }, { id: 'star_shard', qty: 35 }]),
     'награда босса 35 ур.: 2 безопасные заточки + 35 осколков');
   eq(JSON.stringify(bossLairReward(30)), JSON.stringify([{ id: 'norm_stone', qty: 2 }, { id: 'star_shard', qty: 30 }]),
