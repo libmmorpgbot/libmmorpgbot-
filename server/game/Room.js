@@ -1843,8 +1843,19 @@ class Room {
 
   _inSafeZone(x, y) {
     const sz = this._dungeon.safeZone;
-    if (!sz) return false; // arm floors have no hub-style safe zone
-    return x >= sz.x1 && x <= sz.x2 && y >= sz.y1 && y <= sz.y2;
+    if (sz && x >= sz.x1 && x <= sz.x2 && y >= sz.y1 && y <= sz.y2) return true;
+    // Война гильдий: входные комнаты, куда ставят после телепорта на этаж
+    // (dungeon.js: guildWar.safeZones). PvP-режим там остаётся включённым
+    // (правило этажа), но pvpAttack/pvpSkillAttack/pvpSkillCC отказывают по
+    // этой же проверке.
+    const gz = this._dungeon.guildWar && this._dungeon.guildWar.safeZones;
+    if (gz) {
+      for (let i = 0; i < gz.length; i++) {
+        const z = gz[i];
+        if (x >= z.x1 && x <= z.x2 && y >= z.y1 && y <= z.y2) return true;
+      }
+    }
+    return false; // arm floors have no hub-style safe zone
   }
 
   isPlayerInSafeZone(socketId) {

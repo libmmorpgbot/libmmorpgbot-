@@ -520,6 +520,13 @@ function generateGuildWar() {
   const entryRects = entryRooms.map(r => ({
     x0: (r.x + 1) * TILE, y0: (r.y + 1) * TILE, x1: (r.x + r.size - 1) * TILE, y1: (r.y + r.size - 1) * TILE,
   }));
+  // Безопасные зоны — вся входная комната целиком, куда игрок попадает при
+  // входе (Room.spawnPointFor). Внутри неё нельзя ни бить, ни получать урон
+  // от игроков (Room._inSafeZone), так что появившегося не убивают у точки
+  // входа. В пикселях, в той же форме, что и safeZone хаба.
+  const safeZones = entryRooms.map(r => ({
+    x1: r.x * TILE, y1: r.y * TILE, x2: (r.x + r.size) * TILE, y2: (r.y + r.size) * TILE,
+  }));
   const hc = px(hall);
   // Портал в город — в центре зала: туда сходятся все коридоры.
   const returnPad = { x: hc.x, y: hc.y };
@@ -528,7 +535,7 @@ function generateGuildWar() {
     grid, rooms, w, h,
     spawn: spawns[0],
     returnPad,
-    guildWar: { cx: hc.x, cy: hc.y, towers, spawns, entryRects, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
+    guildWar: { cx: hc.x, cy: hc.y, towers, spawns, entryRects, safeZones, bounds: { x0: 0, y0: 0, x1: w, y1: h } },
     enemies: [],
   };
 }

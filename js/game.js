@@ -630,7 +630,10 @@ function update(dt, realDt) {
   // Safe zone regen: +1 HP/sec; auto-disable PvP on entry
   if (inSafeZone(player.x, player.y)) {
     if (player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + dt);
-    if (pvpMode) {
+    // На Войне гильдий ПК — правило этажа (сервер включает его каждый тик),
+    // выключать его здесь значило бы мигать туда-обратно; удары и так
+    // отклоняются, пока кто-то из двоих стоит в безопасной зоне.
+    if (pvpMode && !dungeon.guildWar) {
       pvpMode = false;
       if (typeof netSetPvpMode === 'function') netSetPvpMode(false);
       if (targetIsPlayer) { targetId = null; targetIsPlayer = false; }
@@ -1797,9 +1800,13 @@ function getOtherPlayerAnimKey(p) {
 //  SAFE ZONE
 // ─────────────────────────────────────────────────────────
 function inSafeZone(px, py) {
-  if (!dungeon || !dungeon.safeZone) return false;
+  if (!dungeon) return false;
   const sz = dungeon.safeZone;
-  return px >= sz.x1 && px <= sz.x2 && py >= sz.y1 && py <= sz.y2;
+  if (sz && px >= sz.x1 && px <= sz.x2 && py >= sz.y1 && py <= sz.y2) return true;
+  // Война гильдий: входные комнаты (server/game/dungeon.js, guildWar.safeZones).
+  const gz = dungeon.guildWar && dungeon.guildWar.safeZones;
+  if (gz) for (const z of gz) if (px >= z.x1 && px <= z.x2 && py >= z.y1 && py <= z.y2) return true;
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2368,6 +2375,22 @@ function _buildDecals(ts) {
     }
   }
 
+  // ── безопасные зоны Войны гильдий ──
+  // Входные комнаты, куда ставит телепорт: внутри PvP не проходит (Room.
+  // _inSafeZone на сервере). Видимая заливка, чтобы было понятно, где
+  // граница, — за ней бить уже можно.
+  const _gwSz = dungeon.guildWar && dungeon.guildWar.safeZones;
+  if (_gwSz) {
+    for (const z of _gwSz) {
+      const cx = (z.x1 + z.x2) / 2, cy = (z.y1 + z.y2) / 2, hw = (z.x2 - z.x1) / 2, hh = (z.y2 - z.y1) / 2;
+      if (cx + hw < _vL - _DECAL_MARGIN || cx - hw > _vR + _DECAL_MARGIN ||
+          cy + hh < _vT - _DECAL_MARGIN || cy - hh > _vB + _DECAL_MARGIN) continue;
+      _decals.push({ k: 'zone', x: cx, y: cy, hw, hh, fill: 0x3fb6ff, edge: 0x8fd8ff });
+      _decalLbls.push({ wx: cx, wy: z.y1, dy: 18, text: typeof t === 'function' ? t('safeZoneLbl') : '\u{1F6E1} Безопасная зона',
+        color: '#8fd8ff', px: 11, mid: false });
+    }
+  }
+
   _pushDecalsToGpu(ts);
 }
 
@@ -2381,6 +2404,7 @@ function _pushDecalsToGpu(ts) {
     const d = _decals[i];
     if (d.k === 'ring')       pixiDecalRing(d.x, d.y, d.r, d.fill, d.fillA, d.edge, pulse);
     else if (d.k === 'swirl') pixiDecalSwirl(d.x, d.y, d.r, d.th, tsec, sPulse);
+    else if (d.k === 'zone')  pixiDecalWall(d.x, d.y, d.hw, d.hh, d.fill, 0.08 + 0.04 * pulse, d.edge, 0.35 + 0.2 * pulse);
     else                      pixiDecalWall(d.x, d.y, d.hw, d.hh, d.fill, 0.35 + 0.15 * pulse, d.edge, 0.7 + 0.3 * pulse);
   }
   pixiDecalsEnd();

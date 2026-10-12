@@ -9636,9 +9636,25 @@ function updateGuildWarHpBar() {
   const towers = (typeof serverEnemies !== 'undefined') ? serverEnemies.filter(e => e.eid === 'guildwar_tower') : [];
   if (!onFloor || !towers.length) { el.style.display = 'none'; return; }
   el.style.display = 'block';
+  // Левая колонка, сразу под «Элитный» (и под списком пати, если он есть):
+  // раньше панель висела по центру сверху и закрывала поле боя прямо над
+  // персонажем. Координаты кнопок — в пикселях холста интерфейса, холст
+  // может стоять не в углу окна, поэтому прибавляем его смещение.
+  if (typeof getEliteBtnPos === 'function') {
+    const eb = getEliteBtnPos();
+    let y = eb.y + eb.h + 6;
+    if (typeof partyMembers !== 'undefined' && partyMembers.length && typeof getPartyLeaveBtnPos === 'function') {
+      const lb = getPartyLeaveBtnPos();
+      y = lb.y + lb.h + 6;
+    }
+    const r = (typeof _uiOverlay !== 'undefined' && _uiOverlay) ? _uiOverlay.getBoundingClientRect() : { left: 0, top: 0 };
+    const left = Math.round(r.left + eb.x) + 'px', top = Math.round(r.top + y) + 'px';
+    if (el.style.left !== left) el.style.left = left;
+    if (el.style.top !== top) el.style.top = top;
+  }
   const st = _gwState || {};
   const now = Date.now() + _gwClockSkew;
-  el.querySelector('.gwp-title').textContent = t('guildWarLbl');
+  el.querySelector('.gwp-title').textContent = t('gwShortLbl');
   el.querySelector('.gwp-left').textContent = st.phase === 'live' && st.closesAt ? '⏳ ' + _gwFmt(st.closesAt - now) : '';
   const owners = new Map((st.towers || []).map(x => [x.i, x.ownerClanName]));
   const rows = [0, 1, 2, 3].map(i => {
@@ -9648,8 +9664,10 @@ function updateGuildWarHpBar() {
     const pct = e ? Math.max(0, Math.min(1, e.hp / (e.maxHp || 1))) : 1;
     return `<div class="gwp-t gwp-${side}">
       <div class="gwp-gem" style="--c:${_GW_SIDE_CSS[side]}">${i + 1}</div>
-      <div class="gwp-own">${owner ? _escHtml(owner) : t('gwTowerNeutral')}</div>
-      <div class="gwp-bar"><i style="width:${(pct * 100).toFixed(1)}%;background:${_GW_SIDE_CSS[side]}"></i></div>
+      <div class="gwp-info">
+        <div class="gwp-own">${owner ? _escHtml(owner) : t('gwTowerNeutral')}</div>
+        <div class="gwp-bar"><i style="width:${(pct * 100).toFixed(1)}%;background:${_GW_SIDE_CSS[side]}"></i></div>
+      </div>
     </div>`;
   }).join('');
   const tw = el.querySelector('.gwp-towers');
@@ -9658,10 +9676,10 @@ function updateGuildWarHpBar() {
   if (st.holdClanName && st.holdUntil) {
     const side = _gwSideOf(st.holdClanName);
     hold.className = 'gwp-hold gwp-hold-' + side;
-    hold.textContent = tVars(side === 'mine' ? 'gwHoldMineFmt' : 'gwHoldFmt', { clan: st.holdClanName, t: _gwFmt(st.holdUntil - now) });
+    hold.textContent = tVars(side === 'mine' ? 'gwHoldShortMineFmt' : 'gwHoldShortFmt', { clan: st.holdClanName, t: _gwFmt(st.holdUntil - now) });
   } else {
     hold.className = 'gwp-hold';
-    hold.textContent = t('gwHoldHint');
+    hold.textContent = t('gwHoldShortHint');
   }
 }
 
