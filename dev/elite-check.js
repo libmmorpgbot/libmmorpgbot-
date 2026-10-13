@@ -55,8 +55,8 @@ for (const f of [FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.farm
   const e = room.spawnEliteMonster((floor, en) => { died = { floor, id: en.id }; });
   ok(!!e, `этаж ${f}: монстр поставлен`);
   eq(room.enemies.length, before + 1, `этаж ${f}: ровно один новый монстр`);
-  eq(e.hp, ELITE_MOB_HP, `этаж ${f}: 1 000 000 здоровья`);
-  eq(e.maxHp, 1000000, `этаж ${f}: maxHp тоже ровно 1 000 000`);
+  eq(e.hp, ELITE_MOB_HP, `этаж ${f}: 100 000 здоровья`);
+  eq(e.maxHp, 100000, `этаж ${f}: maxHp тоже ровно 100 000`);
   ok(e.rlvl >= 1 && e.rlvl <= 45, `этаж ${f}: уровень в полосе 1-45 (${e.rlvl})`);
   const tpl = room.enemies.find(x => !x.elite && x.eid === e.eid);
   eq(e.size, tpl.size * ELITE_MOB_SIZE_MULT, `этаж ${f}: в 3 раза крупнее обычного того же вида`);
@@ -107,7 +107,7 @@ head('дроп x10');
   ok(z10 > z1 * 6, `Фарм-зона: x10 к шансу даёт заметно больше дропа (${z1} → ${z10})`);
   eq(ELITE_MOB_DROP_MULT, 10, 'множитель — ровно 10');
   eq(ELITE_MOB_GRAM, 1, 'GRAM с элитного — 1');
-  eq(ELITE_MOB_HP, 1000000, 'здоровье — 1 000 000');
+  eq(ELITE_MOB_HP, 100000, 'здоровье — 100 000');
   {
     let c1 = 0, c10 = 0;
     for (let i = 0; i < N; i++) { c1 += loot._rollMobLoot([], 'imp_guard', 15, 1).length; c10 += loot._rollMobLoot([], 'imp_guard', 15, ELITE_MOB_DROP_MULT).length; }

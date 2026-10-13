@@ -733,10 +733,10 @@ const SEASON_FARM_HIGH_KILL_POINTS = 20;
 // Один на весь сервер: появляется в любой открытой локации на месте обычного
 // монстра 1-45 уровня (где — решает случай), живёт, пока его не убьют, и
 // следующий приходит через 60-70 минут после смерти. В 3 раза крупнее
-// обычного монстра, ровно 1 000 000 здоровья, и шанс каждого броска его
+// обычного монстра, ровно 100 000 здоровья, и шанс каждого броска его
 // дропа — x10 к шансу обычного монстра той же зоны (server/game/elite.js,
 // Room.spawnEliteMonster).
-const ELITE_MOB_HP = 1000000;
+const ELITE_MOB_HP = 100000;
 const ELITE_MOB_SIZE_MULT = 3;
 const ELITE_MOB_DROP_MULT = 10;
 // Где может появиться: в любой открытой локации (коридоры, Фарм-зоны и их
@@ -3975,7 +3975,7 @@ const GRAM_PER_LEVEL = 0.0000001;
 const SEASON_TICKET_SEASON = 4;
 const SEASON_TICKET_END_AT = SEASON_END_AT;   // билет — до конца 4 сезона
 function seasonTicketPeriodOn(now = Date.now()) { return !SEASON_TICKET_END_AT || now < SEASON_TICKET_END_AT; }
-const SEASON_TICKET_GRAM_PRICE = 15;
+const SEASON_TICKET_GRAM_PRICE = 10;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
 const SEASON_TICKET_DROP_PCT = 60;     // +60 to the bonus loot re-roll chance
 const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop chance — x2

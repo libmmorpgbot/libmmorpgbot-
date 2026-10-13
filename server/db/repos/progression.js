@@ -320,7 +320,7 @@ async function vipOf(db, playerId) {
 // purchases sent together cannot both spend, because the second matches no row.
 //
 // INSERT ... ON CONFLICT, а не голый UPDATE. Голый UPDATE не находит строки,
-// если её нет, — и тогда билет за 15 GRAM просто не записывается: buyPackage
+// если её нет, — и тогда билет за 10 GRAM просто не записывается: buyPackage
 // (server/db/repos/shop.js) возврат не проверяет, gramShopResult всё равно
 // говорит seasonTicket:true, клиент зажигает значок до конца сессии, а после
 // перезахода vipOf читает пустоту и билета нет. Ровно «сезонний білет після
