@@ -6771,6 +6771,27 @@ function offlineFarmShowError(msg) {
   else if (msg && player) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
 }
 
+// Значки окна — свои, штрихом, в цвет текста: общий набор iconHTML не знает
+// ни луны, ни монеты, а эмодзи на разных телефонах рисуются по-разному.
+const _OFARM_SVG = {
+  moon:  '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>',
+  sword: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/>',
+  star:  '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>',
+  coin:  '<circle cx="12" cy="12" r="9"/><path d="M14.8 9a2 2 0 0 0-1.8-1h-2a2 2 0 0 0 0 4h2a2 2 0 0 1 0 4h-2a2 2 0 0 1-1.8-1"/><path d="M12 6v2m0 8v2"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  lock:  '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  skull: '<path d="M12 3a8 8 0 0 0-5 14.2V20h10v-2.8A8 8 0 0 0 12 3z"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>',
+  zone:  '<path d="M3 20h18"/><path d="m5 20 4-9 3 5 2-3 5 7"/><circle cx="17" cy="6" r="2"/>',
+  door:  '<path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M3 21h18"/><circle cx="14" cy="12" r="1"/>',
+  bag:   '<path d="M6 7h12l1 14H5L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/>',
+  up:    '<path d="m6 15 6-6 6 6"/>',
+  ticket:'<path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4V8z"/><path d="M13 6v12" stroke-dasharray="2 2"/>',
+  play:  '<path d="M7 4v16l13-8L7 4z"/>',
+};
+function _ofI(name, size = 16) {
+  return `<svg class="of-svg" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${_OFARM_SVG[name] || ''}</svg>`;
+}
+
 function _ofarmLocName(l) {
   if (l.kind === 'farmZone') return 'Фарм-зона';
   if (l.kind === 'farmHigh') return 'Фарм зона 2';
@@ -6784,32 +6805,64 @@ function _ofarmLocSub(l) {
   return `Комната ${lv}${d ? ' · ' + d.name : ''}`;
 }
 function _ofarmFmt(n) { return Math.round(n || 0).toLocaleString('ru-RU'); }
+// 215 000 → «215 тыс.», 1 530 000 → «1,53 млн» — в плитке темпа места мало.
+function _ofarmShort(n) {
+  n = Math.round(n || 0);
+  if (n >= 1e6) return (n / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + ' млн';
+  if (n >= 1e4) return Math.round(n / 1e3).toLocaleString('ru-RU') + ' тыс.';
+  return n.toLocaleString('ru-RU');
+}
+// Полоса-индикатор: доля 0..1, подпись слева и справа.
+function _ofarmMeter(label, frac, right, cls = '') {
+  const w = Math.max(0, Math.min(1, frac || 0)) * 100;
+  return `<div class="of-meter ${cls}">
+    <div class="of-meter-lbl"><span>${label}</span><b>${right}</b></div>
+    <div class="of-meter-bar"><div style="width:${w.toFixed(1)}%"></div></div>
+  </div>`;
+}
 
-function _ofarmRowHtml(l, bestId) {
+function _ofarmRowHtml(l, best) {
   const name = _ofarmLocName(l), sub = _ofarmLocSub(l);
   const open = _ofarmOpen === l.id;
-  const tap = `onclick="offlineFarmToggleDrop('${l.id}')"`;
-  const dropLink = `<div class="ofarm-drop-link${open ? ' open' : ''}">${open ? 'Скрыть дроп' : 'Показать дроп'} <span>›</span></div>`;
-  const drop = open ? _ofarmDropHtml(l.id) : '';
+  const isBest = best && l.id === best.id;
+  const kindCls = l.kind === 'corridor' ? 'k-corr' : l.kind === 'farmHigh' ? 'k-high' : 'k-zone';
+  const ico = !l.open ? 'lock' : !l.ok ? 'skull' : (l.kind === 'corridor' ? 'door' : 'zone');
+  const state = !l.open ? ' locked' : !l.ok ? ' tough' : '';
+  const dropBtn = `<button class="of-btn-ghost${open ? ' open' : ''}" onclick="offlineFarmToggleDrop('${l.id}')">${_ofI('bag', 14)}${open ? 'Скрыть дроп' : 'Дроп'}</button>`;
+  const head = `
+    <div class="of-card-top" onclick="offlineFarmToggleDrop('${l.id}')">
+      <div class="of-ico ${kindCls}">${_ofI(ico, 20)}</div>
+      <div class="of-card-info">
+        <div class="of-card-name">${name}${isBest ? `<span class="of-badge">${_ofI('star', 11)}Больше опыта</span>` : ''}</div>
+        <div class="of-card-sub">${sub}</div>
+      </div>
+    </div>`;
+  let mid;
   if (!l.open) {
-    return `<div class="ofarm-row locked"><div class="ofarm-main" ${tap}><div class="ofarm-name">${name}</div>
-      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Нужен ${l.reqLevel} уровень</div>${dropLink}</div></div>${drop}`;
+    const lvl = (player && player.lvl) || 0;
+    mid = _ofarmMeter(`${_ofI('lock', 12)} Откроется на ${l.reqLevel} уровне`, l.reqLevel ? lvl / l.reqLevel : 0, `${lvl} / ${l.reqLevel}`, 'm-lock');
+  } else if (!l.ok) {
+    mid = `<div class="of-warn">${_ofI('skull', 14)} Монстры слишком сильны — вы не переживёте бой</div>`;
+  } else {
+    const xpFrac = best && best.xpPerHour ? l.xpPerHour / best.xpPerHour : 0;
+    mid = `
+      <div class="of-stats">
+        <div class="of-stat s-kill">${_ofI('sword', 15)}<b>${_ofarmShort(l.killsPerHour)}</b><span>убийств/ч</span></div>
+        <div class="of-stat s-xp">${_ofI('star', 15)}<b>${_ofarmShort(l.xpPerHour)}</b><span>опыта/ч</span></div>
+        <div class="of-stat s-gold">${_ofI('coin', 15)}<b>${_ofarmShort(l.goldPerHour)}</b><span>золота/ч</span></div>
+      </div>
+      ${_ofarmMeter('Опыт относительно лучшей', xpFrac, Math.round(xpFrac * 100) + '%', 'm-xp')}
+      ${_ofarmMeter('Монстров по силам', l.reach, Math.round((l.reach || 0) * 100) + '%', l.reach < 1 ? 'm-warn' : 'm-ok')}`;
   }
-  if (!l.ok) {
-    return `<div class="ofarm-row locked"><div class="ofarm-main" ${tap}><div class="ofarm-name">${name}</div>
-      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Монстры слишком сильны — вы не переживёте бой</div>${dropLink}</div></div>${drop}`;
-  }
-  const part = l.reach < 1 ? ` · по силам ${Math.round(l.reach * 100)}% монстров` : '';
   const confirm = _ofarmConfirm === l.id;
-  return `<div class="ofarm-row${l.id === bestId ? ' best' : ''}">
-    <div class="ofarm-main" ${tap}>
-      <div class="ofarm-name">${name}${l.id === bestId ? ' · больше всего опыта' : ''}</div>
-      <div class="ofarm-sub">${sub}${part}</div>
-      <div class="ofarm-rate">≈ ${_ofarmFmt(l.killsPerHour)} убийств/ч · ${_ofarmFmt(l.xpPerHour)} опыта/ч · ${_ofarmFmt(l.goldPerHour)} золота/ч</div>
-      ${dropLink}
-    </div>
-    ${`<button class="ofarm-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : 'Начать'}</button>`}
-  </div>${drop}`;
+  const go = (l.open && l.ok)
+    ? `<button class="of-btn-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : _ofI('play', 13) + 'Начать'}</button>`
+    : '';
+  return `<div class="of-card${state}${isBest ? ' best' : ''}${open ? ' open' : ''}">
+    ${head}${mid}
+    <div class="of-card-foot">${dropBtn}${go}</div>
+    ${open ? _ofarmDropHtml(l.id) : ''}
+  </div>`;
 }
 
 function renderOfflineFarmPanel(data) {
@@ -6821,7 +6874,6 @@ function renderOfflineFarmPanel(data) {
   _ofarmVipOk = !!d.seasonTicket;
   const ready = locs.filter(l => l.open && l.ok);
   const best = ready.reduce((b, l) => (!b || l.xpPerHour > b.xpPerHour) ? l : b, null);
-  const bestId = best ? best.id : null;
   const zones = locs.filter(l => l.kind !== 'corridor');
   // Коридоры — только открытые и следующая закрытая комната: вся лестница из
   // семидесяти шести строк новичку не нужна.
@@ -6829,22 +6881,44 @@ function renderOfflineFarmPanel(data) {
   const openCorr = corr.filter(l => l.open).sort((a, b) => b.minLvl - a.minLvl);
   const nextLocked = corr.filter(l => !l.open).sort((a, b) => a.reqLevel - b.reqLevel)[0];
 
+  // Шкала лимита: по клетке на час билетного потолка. Горят часы, которые
+  // засчитаются ЭТОМУ игроку; без билета остальные — золотистым контуром.
+  const tk = d.ticketHours || 7, mine = d.maxHours || 1;
+  const segs = Array.from({ length: tk }, (_, i) =>
+    `<div class="of-seg${i < mine ? ' on' : ' tk'}"><span>${i + 1}</span></div>`).join('');
+
   body.innerHTML = `
-    <div class="ofarm-hint">Выберите локацию — игра закроется, а персонаж продолжит фармить там.
-      При следующем входе вы получите всё, что он успел добыть: опыт, золото, Liberty, GRAM и предметы,
-      с вашими бонусами VIP, клана и сезонного билета.
-      Темп считается по вашей атаке, скорости атаки, криту, защите и здоровью. Запуск — из центрального зала.</div>
-    <div class="ofarm-limit">
-      <div class="ofarm-limit-row"><span>Без билета</span><b${_ofarmVipOk ? '' : ' class="on"'}>${d.freeHours || 1} ч</b></div>
-      <div class="ofarm-limit-row"><span>С сезонным билетом</span><b${_ofarmVipOk ? ' class="on"' : ''}>${d.ticketHours || 7} ч</b></div>
-      <div class="ofarm-limit-note">Вам засчитается до <b>${d.maxHours || 1} ч</b>${_ofarmVipOk ? '' : ' — купите сезонный билет, чтобы фармить до ' + (d.ticketHours || 7) + ' ч'}.</div>
+    <div class="of-hero">
+      <div class="of-hero-moon">${_ofI('moon', 30)}<i></i><i></i><i></i></div>
+      <div class="of-hero-txt">
+        <div class="of-hero-t">Персонаж фармит, пока вас нет</div>
+        <div class="of-hero-s">Опыт, золото, Liberty и предметы — с вашими бонусами VIP, клана, билета и рун.</div>
+      </div>
+    </div>
+    <div class="of-limit">
+      <div class="of-limit-head">
+        <span>${_ofI('clock', 15)} Лимит времени</span>
+        <b>до ${mine} ч</b>
+      </div>
+      <div class="of-segs">${segs}</div>
+      <div class="of-limit-legend">
+        <span><i class="of-dot on"></i>Без билета — ${d.freeHours || 1} ч</span>
+        <span><i class="of-dot tk"></i>С билетом — ${tk} ч</span>
+      </div>
+      <div class="of-ticket ${_ofarmVipOk ? 'yes' : 'no'}">${_ofI('ticket', 14)}${_ofarmVipOk
+        ? 'Сезонный билет активен — засчитается до ' + tk + ' ч'
+        : 'Нет сезонного билета — засчитается ' + mine + ' ч. С билетом — до ' + tk + ' ч'}</div>
+    </div>
+    <div class="of-steps">
+      <div><b>1</b>Выберите локацию</div><div><b>2</b>Игра закроется</div><div><b>3</b>Награда при входе</div>
     </div>
     ${_ofarmError ? `<div class="ofarm-err">${_escHtml(_ofarmError)}</div>` : ''}
-    <div class="ofarm-group">Фарм-зоны</div>
-    ${zones.map(l => _ofarmRowHtml(l, bestId)).join('')}
-    <div class="ofarm-group">Коридоры</div>
-    ${openCorr.map(l => _ofarmRowHtml(l, bestId)).join('')}
-    ${nextLocked ? _ofarmRowHtml(nextLocked, bestId) : ''}`;
+    <div class="of-group">Фарм-зоны</div>
+    ${zones.map(l => _ofarmRowHtml(l, best)).join('')}
+    <div class="of-group">Коридоры</div>
+    ${openCorr.map(l => _ofarmRowHtml(l, best)).join('')}
+    ${nextLocked ? _ofarmRowHtml(nextLocked, best) : ''}
+    <div class="of-foot-note">Темп считается по вашей атаке, скорости атаки, криту, защите и здоровью. Запуск — из центрального зала.</div>`;
 }
 
 function offlineFarmStartTap(id) {
@@ -6873,44 +6947,55 @@ function offlineFarmShowPending() {
   const body = document.getElementById('offline-farm-panel-body');
   if (!panel || !body) return;
   const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(res.loc) : null;
-  const where = loc ? `${_ofarmLocName(loc)} · ${_ofarmLocSub({ ...loc, open: true })}` : '';
   const dur = _ofarmDur(res.seconds);
-  const line = (label, v) => `<div class="ofarm-sum-line"><span>${label}</span><b>${v}</b></div>`;
-  // Сколько из доступного времени отфармлено и сколько ещё оставалось
-  // (или сколько сверх лимита не засчитано).
-  const maxSec = res.maxSeconds || 0;
-  const usedSec = Math.min(res.seconds || 0, maxSec || Infinity);
-  const pct = maxSec ? Math.round(usedSec / maxSec * 100) : 100;
-  const overSec = Math.max(0, (res.awaySeconds || 0) - maxSec);
-  const timeBox = maxSec ? `
-      <div class="ofarm-time">
-        <div class="ofarm-time-head"><span>Время фарма</span><b>${dur} из ${_ofarmDur(maxSec)}</b></div>
-        <div class="ofarm-time-bar"><div style="width:${pct}%"></div></div>
-        <div class="ofarm-time-foot">
-          <span>Засчитано: ${dur}</span>
-          ${res.capped ? `<span class="over">Сверх лимита: ${_ofarmDur(overSec)}</span>`
-                       : `<span>Оставалось: ${_ofarmDur(maxSec - usedSec)}</span>`}
-        </div>
-      </div>` : '';
   let html;
   if (res.tooShort) {
-    html = `<div class="ofarm-hint">Оффлайн-фарм длился меньше минуты — награды нет.</div>`;
+    html = `<div class="of-hero"><div class="of-hero-moon">${_ofI('moon', 30)}</div><div class="of-hero-txt">
+      <div class="of-hero-t">Слишком коротко</div><div class="of-hero-s">Оффлайн-фарм длился меньше минуты — награды нет.</div></div></div>`;
   } else {
+    // Кольцо: засчитанное время от лимита. Сверх лимита — отдельной строкой.
+    const maxSec = res.maxSeconds || res.seconds || 1;
+    const usedSec = Math.min(res.seconds || 0, maxSec);
+    const frac = usedSec / maxSec;
+    const R = 52, C = 2 * Math.PI * R;
+    const overSec = Math.max(0, (res.awaySeconds || 0) - maxSec);
+    const ring = `
+      <div class="of-ring">
+        <svg viewBox="0 0 120 120" width="132" height="132">
+          <defs><linearGradient id="ofRingG" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#7fb4e8"/><stop offset="1" stop-color="#3a7bc8"/></linearGradient></defs>
+          <circle cx="60" cy="60" r="${R}" class="of-ring-bg"/>
+          <circle cx="60" cy="60" r="${R}" class="of-ring-fg" stroke="url(#ofRingG)"
+            stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - frac)).toFixed(1)}"/>
+        </svg>
+        <div class="of-ring-c"><b>${dur}</b><span>из ${_ofarmDur(maxSec)}</span></div>
+      </div>`;
+    const timeInfo = `
+      <div class="of-time-list">
+        <div class="of-time-row"><i class="of-dot on"></i><span>Засчитано</span><b>${dur}</b></div>
+        ${res.capped
+          ? `<div class="of-time-row over"><i class="of-dot over"></i><span>Сверх лимита</span><b>${_ofarmDur(overSec)}</b></div>`
+          : `<div class="of-time-row"><i class="of-dot rest"></i><span>Оставалось</span><b>${_ofarmDur(maxSec - usedSec)}</b></div>`}
+        <div class="of-time-row"><i class="of-dot lim"></i><span>Лимит</span><b>${_ofarmDur(maxSec)}</b></div>
+        ${loc ? `<div class="of-time-where">${_ofI(loc.kind === 'corridor' ? 'door' : 'zone', 13)} ${_ofarmLocName(loc)} · ${_ofarmLocSub({ ...loc, open: true })}</div>` : ''}
+      </div>`;
+    const tile = (cls, icon, label, v) => `<div class="of-res ${cls}"><div class="of-res-ico">${icon}</div><div class="of-res-v">${v}</div><div class="of-res-l">${label}</div></div>`;
+    const lib = typeof _nexumIconHtml === 'function' ? _nexumIconHtml(20) : _ofI('coin', 18);
     html = `
-      <div class="ofarm-hint">Пока вас не было${where ? ' (' + where + ')' : ''}, персонаж фармил ${dur}${res.capped ? ` — засчитан максимум` : ''}.</div>
-      ${timeBox}
-      <div class="ofarm-sum">
-        ${line('Убито монстров', _ofarmFmt(res.kills))}
-        ${line('Опыт', '+' + _ofarmFmt(res.xp))}
-        ${line('Золото', '+' + _ofarmFmt(res.gold))}
-        ${res.nexum ? line('Liberty', '+' + _ofarmFmt(res.nexum)) : ''}
-        ${res.gram ? line('GRAM', '+' + Number(res.gram).toFixed(7)) : ''}
-        ${res.levelsGained ? line('Новых уровней', '+' + res.levelsGained) : ''}
+      <div class="of-sum-head">${ring}${timeInfo}</div>
+      ${res.capped ? `<div class="of-capped">${_ofI('clock', 14)} Засчитан максимум — ${_ofarmDur(maxSec)}${maxSec < 7 * 3600 ? '. С сезонным билетом можно фармить до 7 ч' : ''}</div>` : ''}
+      <div class="of-res-grid">
+        ${tile('r-kill', _ofI('sword', 18), 'Убито монстров', _ofarmFmt(res.kills))}
+        ${tile('r-xp', _ofI('star', 18), 'Опыт', '+' + _ofarmFmt(res.xp))}
+        ${tile('r-gold', _ofI('coin', 18), 'Золото', '+' + _ofarmFmt(res.gold))}
+        ${res.nexum ? tile('r-lib', lib, 'Liberty', '+' + _ofarmFmt(res.nexum)) : ''}
+        ${res.gram ? tile('r-gram', _ofI('coin', 18), 'GRAM', '+' + Number(res.gram).toFixed(7)) : ''}
+        ${res.levelsGained ? tile('r-lvl', _ofI('up', 18), 'Новых уровней', '+' + res.levelsGained) : ''}
       </div>
-      ${(res.items || []).length ? `<div class="ofarm-group">Добыча</div><div class="ofarm-items">${res.items.map(_ofarmItemTile).join('')}</div>` : ''}
-      ${(res.lost || []).length ? `<div class="ofarm-group">Не влезло в сумку</div><div class="ofarm-items lost">${res.lost.map(_ofarmItemTile).join('')}</div>` : ''}`;
+      ${(res.items || []).length ? `<div class="of-group">Добыча <span>${(res.items || []).reduce((n, i) => n + (i.qty || 1), 0)}</span></div><div class="ofarm-items">${res.items.map(_ofarmItemTile).join('')}</div>` : ''}
+      ${(res.lost || []).length ? `<div class="of-group lost">Не влезло в сумку</div><div class="ofarm-items lost">${res.lost.map(_ofarmItemTile).join('')}</div>` : ''}`;
   }
-  body.innerHTML = html + `<button class="ofarm-go ofarm-ok" onclick="closeOfflineFarmPanel()">Отлично</button>`;
+  body.innerHTML = html + `<button class="of-btn-go of-ok" onclick="closeOfflineFarmPanel()">Отлично</button>`;
   panel.style.display = 'flex';
 }
 
