@@ -6699,6 +6699,34 @@ let _ofarmPending = null;   // итог фарма, пришедший до вх
 let _ofarmLast = null;      // последний список локаций
 let _ofarmError = '';
 let _ofarmVipOk = true;      // есть ли сезонный билет (решает сервер, здесь — только вид)
+let _ofarmOpen = null;       // id локации, у которой раскрыт список дропа
+
+// Весь дроп локации — те же списки, что в бестиарии (кнопка «Монстры»):
+// оффлайн крутит те же таблицы (server/offline-farm.js), значит и показывать
+// надо их же, а не свою копию.
+function _ofarmDropHtml(id) {
+  const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(id) : null;
+  if (!loc) return '';
+  let html;
+  if (loc.kind === 'farmZone') html = _farmZoneMonsterListHtml();
+  else if (loc.kind === 'farmHigh') html = _farmHighMonsterListHtml();
+  else {
+    const arm = ARM_NAMES.indexOf(loc.arm) + 1;
+    const base = ENEMY_DEF.find(e => e.eid === loc.species[0]);
+    if (!arm || !base) return '';
+    const e = _liveEnemy(base, loc.lvl, armLocalLevel(loc.lvl), false, roomsInArm(arm) - 1);
+    html = `<div class="mon-variant">${_monsterDropBodyHtml(e, arm, loc.lvl)}</div>`;
+  }
+  return `<div class="ofarm-drop">
+    <div class="ofarm-drop-note">Каждое убийство в оффлайне бросает ту же таблицу, что и в игре, вместе со вторым броском за VIP, сезонный билет и вещи.</div>
+    ${html}
+  </div>`;
+}
+
+function offlineFarmToggleDrop(id) {
+  _ofarmOpen = _ofarmOpen === id ? null : id;
+  renderOfflineFarmPanel();
+}
 
 // «1 ч 5 мин», «7 ч», «12 мин».
 function _ofarmDur(sec) {
@@ -6723,7 +6751,7 @@ function openOfflineFarmPanel() {
   const panel = document.getElementById('offline-farm-panel');
   if (!panel || !player) return;
   panel.style.display = 'flex';
-  _ofarmConfirm = null; _ofarmError = '';
+  _ofarmConfirm = null; _ofarmError = ''; _ofarmOpen = null;
   const body = document.getElementById('offline-farm-panel-body');
   if (body) body.innerHTML = '<div class="ofarm-hint">Загрузка…</div>';
   if (typeof netOfflineFarmInfo === 'function') netOfflineFarmInfo();
@@ -6759,24 +6787,29 @@ function _ofarmFmt(n) { return Math.round(n || 0).toLocaleString('ru-RU'); }
 
 function _ofarmRowHtml(l, bestId) {
   const name = _ofarmLocName(l), sub = _ofarmLocSub(l);
+  const open = _ofarmOpen === l.id;
+  const tap = `onclick="offlineFarmToggleDrop('${l.id}')"`;
+  const dropLink = `<div class="ofarm-drop-link${open ? ' open' : ''}">${open ? 'Скрыть дроп' : 'Показать дроп'} <span>›</span></div>`;
+  const drop = open ? _ofarmDropHtml(l.id) : '';
   if (!l.open) {
-    return `<div class="ofarm-row locked"><div class="ofarm-main"><div class="ofarm-name">${name}</div>
-      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Нужен ${l.reqLevel} уровень</div></div></div>`;
+    return `<div class="ofarm-row locked"><div class="ofarm-main" ${tap}><div class="ofarm-name">${name}</div>
+      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Нужен ${l.reqLevel} уровень</div>${dropLink}</div></div>${drop}`;
   }
   if (!l.ok) {
-    return `<div class="ofarm-row locked"><div class="ofarm-main"><div class="ofarm-name">${name}</div>
-      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Монстры слишком сильны — вы не переживёте бой</div></div></div>`;
+    return `<div class="ofarm-row locked"><div class="ofarm-main" ${tap}><div class="ofarm-name">${name}</div>
+      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Монстры слишком сильны — вы не переживёте бой</div>${dropLink}</div></div>${drop}`;
   }
   const part = l.reach < 1 ? ` · по силам ${Math.round(l.reach * 100)}% монстров` : '';
   const confirm = _ofarmConfirm === l.id;
   return `<div class="ofarm-row${l.id === bestId ? ' best' : ''}">
-    <div class="ofarm-main">
+    <div class="ofarm-main" ${tap}>
       <div class="ofarm-name">${name}${l.id === bestId ? ' · больше всего опыта' : ''}</div>
       <div class="ofarm-sub">${sub}${part}</div>
       <div class="ofarm-rate">≈ ${_ofarmFmt(l.killsPerHour)} убийств/ч · ${_ofarmFmt(l.xpPerHour)} опыта/ч · ${_ofarmFmt(l.goldPerHour)} золота/ч</div>
+      ${dropLink}
     </div>
     ${`<button class="ofarm-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : 'Начать'}</button>`}
-  </div>`;
+  </div>${drop}`;
 }
 
 function renderOfflineFarmPanel(data) {
