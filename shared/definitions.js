@@ -4291,7 +4291,7 @@ const OFFLINE_FARM_MAX_HOURS = 7;           // с билетом: всё, что
 const OFFLINE_FARM_FREE_HOURS = 1;          // без билета
 const OFFLINE_FARM_MIN_SEC = 60;            // меньше минуты — не фарм
 const OFFLINE_FARM_EFFICIENCY = 1;          // 100% онлайн-темпа — число владельца
-const OFFLINE_FARM_WALK_SEC = 2;            // от одного монстра до следующего
+const OFFLINE_FARM_WALK_SEC = 1;            // от одного монстра до следующего: монстры стоят плотно, как онлайн
 const OFFLINE_FARM_MOB_SWING_SEC = 1.7;     // среднее окно удара монстра, Room.js: 1.4-2.0 с
 const OFFLINE_FARM_REST_REGEN_PCT = 0.02;   // отдых: +2% макс. HP в секунду сверх регена
 // Монстры коридоров и фарм-зон стоят пачками и потому ослаблены вдвое
