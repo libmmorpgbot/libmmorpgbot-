@@ -6700,6 +6700,25 @@ let _ofarmLast = null;      // последний список локаций
 let _ofarmError = '';
 let _ofarmVipOk = true;      // есть ли сезонный билет (решает сервер, здесь — только вид)
 
+// «1 ч 5 мин», «7 ч», «12 мин».
+function _ofarmDur(sec) {
+  const h = Math.floor((sec || 0) / 3600), m = Math.floor(((sec || 0) % 3600) / 60);
+  if (h && !m) return `${h} ч`;
+  return (h ? `${h} ч ` : '') + `${m} мин`;
+}
+
+// Плитка добычи: иконка предмета, количество в углу, название под ней.
+function _ofarmItemTile(it) {
+  const def = (typeof _anyItemDef === 'function' && _anyItemDef(it.id)) || it;
+  const rc = (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[it.rarity || def.rarity]) || '#5c6b78';
+  const name = _escHtml(it.name || def.name || it.id);
+  const qty = (it.qty || 1) > 1 ? `<span class="ofarm-tile-qty">×${_ofarmFmt(it.qty)}</span>` : '';
+  return `<div class="ofarm-tile" title="${name}" style="border-color:${rc}66">
+    <div class="ofarm-tile-ico">${_itemIcon(def, 30)}${qty}</div>
+    <div class="ofarm-tile-name">${name}</div>
+  </div>`;
+}
+
 function openOfflineFarmPanel() {
   const panel = document.getElementById('offline-farm-panel');
   if (!panel || !player) return;
@@ -6756,7 +6775,7 @@ function _ofarmRowHtml(l, bestId) {
       <div class="ofarm-sub">${sub}${part}</div>
       <div class="ofarm-rate">≈ ${_ofarmFmt(l.killsPerHour)} убийств/ч · ${_ofarmFmt(l.xpPerHour)} опыта/ч · ${_ofarmFmt(l.goldPerHour)} золота/ч</div>
     </div>
-    ${_ofarmVipOk ? `<button class="ofarm-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : 'Начать'}</button>` : ''}
+    ${`<button class="ofarm-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : 'Начать'}</button>`}
   </div>`;
 }
 
@@ -6780,10 +6799,14 @@ function renderOfflineFarmPanel(data) {
   body.innerHTML = `
     <div class="ofarm-hint">Выберите локацию — игра закроется, а персонаж продолжит фармить там.
       При следующем входе вы получите всё, что он успел добыть: опыт, золото, Liberty, GRAM и предметы,
-      с вашими бонусами VIP, клана и сезонного билета. Засчитывается до ${d.maxHours || 12} ч.
+      с вашими бонусами VIP, клана и сезонного билета.
       Темп считается по вашей атаке, скорости атаки, криту, защите и здоровью. Запуск — из центрального зала.</div>
+    <div class="ofarm-limit">
+      <div class="ofarm-limit-row"><span>Без билета</span><b${_ofarmVipOk ? '' : ' class="on"'}>${d.freeHours || 1} ч</b></div>
+      <div class="ofarm-limit-row"><span>С сезонным билетом</span><b${_ofarmVipOk ? ' class="on"' : ''}>${d.ticketHours || 7} ч</b></div>
+      <div class="ofarm-limit-note">Вам засчитается до <b>${d.maxHours || 1} ч</b>${_ofarmVipOk ? '' : ' — купите сезонный билет, чтобы фармить до ' + (d.ticketHours || 7) + ' ч'}.</div>
+    </div>
     ${_ofarmError ? `<div class="ofarm-err">${_escHtml(_ofarmError)}</div>` : ''}
-    ${_ofarmVipOk ? '' : `<div class="ofarm-err">Оффлайн-фарм доступен только с сезонным билетом. Ниже видно, сколько вы бы фармили.</div>`}
     <div class="ofarm-group">Фарм-зоны</div>
     ${zones.map(l => _ofarmRowHtml(l, bestId)).join('')}
     <div class="ofarm-group">Коридоры</div>
@@ -6818,16 +6841,31 @@ function offlineFarmShowPending() {
   if (!panel || !body) return;
   const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(res.loc) : null;
   const where = loc ? `${_ofarmLocName(loc)} · ${_ofarmLocSub({ ...loc, open: true })}` : '';
-  const h = Math.floor((res.seconds || 0) / 3600), m = Math.floor(((res.seconds || 0) % 3600) / 60);
-  const dur = (h ? `${h} ч ` : '') + `${m} мин`;
+  const dur = _ofarmDur(res.seconds);
   const line = (label, v) => `<div class="ofarm-sum-line"><span>${label}</span><b>${v}</b></div>`;
-  const itemTag = it => `<span class="ofarm-item">${_escHtml(it.name || it.id)}${(it.qty || 1) > 1 ? ' ×' + it.qty : ''}</span>`;
+  // Сколько из доступного времени отфармлено и сколько ещё оставалось
+  // (или сколько сверх лимита не засчитано).
+  const maxSec = res.maxSeconds || 0;
+  const usedSec = Math.min(res.seconds || 0, maxSec || Infinity);
+  const pct = maxSec ? Math.round(usedSec / maxSec * 100) : 100;
+  const overSec = Math.max(0, (res.awaySeconds || 0) - maxSec);
+  const timeBox = maxSec ? `
+      <div class="ofarm-time">
+        <div class="ofarm-time-head"><span>Время фарма</span><b>${dur} из ${_ofarmDur(maxSec)}</b></div>
+        <div class="ofarm-time-bar"><div style="width:${pct}%"></div></div>
+        <div class="ofarm-time-foot">
+          <span>Засчитано: ${dur}</span>
+          ${res.capped ? `<span class="over">Сверх лимита: ${_ofarmDur(overSec)}</span>`
+                       : `<span>Оставалось: ${_ofarmDur(maxSec - usedSec)}</span>`}
+        </div>
+      </div>` : '';
   let html;
   if (res.tooShort) {
     html = `<div class="ofarm-hint">Оффлайн-фарм длился меньше минуты — награды нет.</div>`;
   } else {
     html = `
       <div class="ofarm-hint">Пока вас не было${where ? ' (' + where + ')' : ''}, персонаж фармил ${dur}${res.capped ? ` — засчитан максимум` : ''}.</div>
+      ${timeBox}
       <div class="ofarm-sum">
         ${line('Убито монстров', _ofarmFmt(res.kills))}
         ${line('Опыт', '+' + _ofarmFmt(res.xp))}
@@ -6836,8 +6874,8 @@ function offlineFarmShowPending() {
         ${res.gram ? line('GRAM', '+' + Number(res.gram).toFixed(7)) : ''}
         ${res.levelsGained ? line('Новых уровней', '+' + res.levelsGained) : ''}
       </div>
-      ${(res.items || []).length ? `<div class="ofarm-group">Добыча</div><div class="ofarm-items">${res.items.map(itemTag).join('')}</div>` : ''}
-      ${(res.lost || []).length ? `<div class="ofarm-group">Не влезло в сумку</div><div class="ofarm-items">${res.lost.map(itemTag).join('')}</div>` : ''}`;
+      ${(res.items || []).length ? `<div class="ofarm-group">Добыча</div><div class="ofarm-items">${res.items.map(_ofarmItemTile).join('')}</div>` : ''}
+      ${(res.lost || []).length ? `<div class="ofarm-group">Не влезло в сумку</div><div class="ofarm-items lost">${res.lost.map(_ofarmItemTile).join('')}</div>` : ''}`;
   }
   body.innerHTML = html + `<button class="ofarm-go ofarm-ok" onclick="closeOfflineFarmPanel()">Отлично</button>`;
   panel.style.display = 'flex';

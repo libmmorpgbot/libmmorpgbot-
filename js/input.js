@@ -689,12 +689,7 @@ function _checkStarterBonusBtnTouch(cx, cy) {
 function _checkOfflineFarmBtnTouch(cx, cy) {
   const ob = getOfflineFarmBtnPos();
   if (cx >= ob.x && cx <= ob.x + ob.w && cy >= ob.y && cy <= ob.y + ob.h) {
-    if (!_hasSeasonTicket()) {
-      const msg = typeof t === 'function' ? t('offlineFarmNeedTicket') : 'Нужен сезонный билет';
-      if (typeof _marketToast === 'function') _marketToast(msg, 'err');
-      else if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
-      return true;
-    }
+    // Без билета тоже открывается: засчитывается пробный час (сервер решает).
     if (typeof openOfflineFarmPanel === 'function') openOfflineFarmPanel();
     return true;
   }

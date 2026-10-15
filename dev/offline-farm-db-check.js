@@ -118,11 +118,14 @@ const claim = (pid, s = {}) => tx(t => of.claim(t, pid, s));
     `двадцать часов засчитаны как ${D.OFFLINE_FARM_MAX_HOURS}`, capped.seconds);
 
   const novip = await mkPlayer('c', 25, false);
-  const s6 = await start(novip, 'farmZone');
-  ok(!s6.ok && s6.code === 'ticket_required', 'без сезонного билета запуск отклонён', s6.code);
-  ok(await farmOf(novip) === null, 'и ничего не записано');
   const niv = await of.info(null, novip);
-  ok(niv.seasonTicket === false, 'окно знает, что билета нет');
+  ok(niv.seasonTicket === false && niv.maxHours === D.OFFLINE_FARM_FREE_HOURS, 'окно знает, что билета нет, и показывает пробный час');
+  const s6 = await start(novip, 'farmZone');
+  ok(s6.ok, 'без сезонного билета запуск разрешён', s6.code);
+  await rewind(novip, 5 * HOUR);
+  const freeCap = await claim(novip);
+  ok(freeCap.capped && freeCap.seconds === D.OFFLINE_FARM_FREE_HOURS * 3600,
+    `без билета засчитано ${D.OFFLINE_FARM_FREE_HOURS} ч`, freeCap.seconds);
 
   const low = await mkPlayer('b', 5);
   const s4 = await start(low, 'farmZone');

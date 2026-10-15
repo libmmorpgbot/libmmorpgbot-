@@ -4285,9 +4285,10 @@ function skillSelfHealOf(charClass, key, adv, skillLvl, skillPct, maxHp) {
 //
 // Награда за каждое убийство — ровно онлайновая (опыт, золото, Liberty,
 // GRAM, дроп, руда, VIP/клан/билет/вещи), см. server/offline-farm.js.
-// Доступен только владельцам сезонного билета. Проверяет сервер при запуске
-// (server/offline-farm.js), окно лишь показывает замок.
-const OFFLINE_FARM_MAX_HOURS = 12;          // всё, что дольше, не засчитывается
+// Без сезонного билета засчитывается OFFLINE_FARM_FREE_HOURS, с билетом —
+// OFFLINE_FARM_MAX_HOURS. Потолок запоминается при запуске (server/offline-farm.js).
+const OFFLINE_FARM_MAX_HOURS = 7;           // с билетом: всё, что дольше, не засчитывается
+const OFFLINE_FARM_FREE_HOURS = 1;          // без билета
 const OFFLINE_FARM_MIN_SEC = 60;            // меньше минуты — не фарм
 const OFFLINE_FARM_EFFICIENCY = 1;          // 100% онлайн-темпа — число владельца
 const OFFLINE_FARM_WALK_SEC = 2;            // от одного монстра до следующего
@@ -4522,7 +4523,7 @@ if (typeof module !== 'undefined') module.exports = {
   VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
   SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,
   skillHealMult, skillSelfHealOf,
-  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_MIN_SEC, OFFLINE_FARM_EFFICIENCY, OFFLINE_FARM_WALK_SEC,
+  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC, OFFLINE_FARM_EFFICIENCY, OFFLINE_FARM_WALK_SEC,
   OFFLINE_FARM_MOB_SWING_SEC, OFFLINE_FARM_REST_REGEN_PCT, OFFLINE_FARM_WEAK_MULT,
   offlineFarmLocations, offlineFarmLocation, offlineFarmMobs, offlineFarmRate,
 };

@@ -914,7 +914,7 @@ function netConnect(onReady) {
     if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null; }
     if (socket.io) socket.io.reconnection(false);
     if (typeof closeOfflineFarmPanel === 'function') closeOfflineFarmPanel();
-    showAuthError(`Оффлайн-фарм запущен. Зайдите в игру позже — награда за время фарма (до ${maxHours || 12} ч) придёт при входе.`, 'offline_farm');
+    showAuthError(`Оффлайн-фарм запущен. Засчитывается до ${maxHours || 1} ч — зайдите в игру позже, награда придёт при входе.`, 'offline_farm');
     const _ls = document.getElementById('login-screen');
     if (_ls) { _ls.style.display = ''; _ls.classList.remove('splash-out'); }
     setTimeout(() => {

@@ -9,7 +9,7 @@
 //   start   запомнить локацию, время и снимок характеристик. Снимок — чтобы
 //           темп считался по тому, с чем игрок ушёл, а не по тому, что у него
 //           окажется к следующему входу. Без временных зелий: банка атаки на
-//           десять минут не должна множить двенадцать часов.
+//           десять минут не должна множить семь часов.
 //
 //   claim   на входе, в одной транзакции: забрать запись (атомарно — второй
 //           вход с другого устройства найдёт пусто), посчитать число убийств и
@@ -31,7 +31,7 @@ const clans = require('./db/repos/clans');
 const loot = require('./game/loot');
 const { query, hasColumn } = require('./db');
 const {
-  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_MIN_SEC,
+  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC,
   offlineFarmLocations, offlineFarmLocation, offlineFarmRate,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
   FARM_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
@@ -44,7 +44,8 @@ const rand = () => crypto.randomInt(2 ** 30) / (2 ** 30);
 
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
-const MAX_MS = OFFLINE_FARM_MAX_HOURS * 3600 * 1000;
+// Потолок в часах: с сезонным билетом — полный, без него — пробный час.
+const hoursFor = ticket => (ticket ? OFFLINE_FARM_MAX_HOURS : OFFLINE_FARM_FREE_HOURS);
 const _MAT_BY_ID = new Map(CRAFT_MATS.map(m => [m.id, m]));
 
 async function available() { return hasColumn('player_progress', 'offline_farm'); }
@@ -61,7 +62,7 @@ async function _permanentStats(db, playerId) {
 }
 
 // Только то, что нужно расчёту. Числа, не объект целиком: запись лежит в
-// jsonb до двенадцати часов, и в ней не должно быть ничего лишнего.
+// jsonb до семи часов, и в ней не должно быть ничего лишнего.
 function _snapshot(st) {
   const n = v => Number(v) || 0;
   return {
@@ -101,8 +102,8 @@ async function info(db, playerId) {
     if (f) active = { loc: f.loc, at: Number(f.at) };
   }
   const ticket = !!(await progression.vipOf(db, playerId)).seasonTicket;
-  return { locations: list, active, maxHours: OFFLINE_FARM_MAX_HOURS, minSec: OFFLINE_FARM_MIN_SEC,
-           seasonTicket: ticket };
+  return { locations: list, active, maxHours: hoursFor(ticket), minSec: OFFLINE_FARM_MIN_SEC,
+           ticketHours: OFFLINE_FARM_MAX_HOURS, freeHours: OFFLINE_FARM_FREE_HOURS, seasonTicket: ticket };
 }
 
 // ── запуск ──────────────────────────────────────────────────────────────────
@@ -111,9 +112,10 @@ async function start(db, playerId, locId) {
   const loc = typeof locId === 'string' ? offlineFarmLocation(locId) : null;
   if (!loc) fail('Неизвестная локация', 'bad_loc');
   // Сезонный билет — из базы, а не с сессии: кэш сессии обновляется не на
-  // каждую покупку, а билет решает, пускать ли вообще.
+  // каждую покупку, а билет решает, сколько часов засчитать. Потолок
+  // запоминается в записи: купленный или истёкший потом билет его не меняет.
   const ticket = !!(await progression.vipOf(db, playerId)).seasonTicket;
-  if (!ticket) fail('Оффлайн-фарм доступен только с сезонным билетом', 'ticket_required');
+  const maxHours = hoursFor(ticket);
 
   const { rows } = await query(db,
     'SELECT lvl, char_class, offline_farm FROM player_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
@@ -130,8 +132,8 @@ async function start(db, playerId, locId) {
 
   const at = Date.now();
   await query(db, 'UPDATE player_progress SET offline_farm = $2, updated_at = now() WHERE player_id = $1',
-    [playerId, JSON.stringify({ loc: loc.id, at, st: snap })]);
-  return { loc: loc.id, at, killsPerHour: Math.round(r.killsPerHour), maxHours: OFFLINE_FARM_MAX_HOURS };
+    [playerId, JSON.stringify({ loc: loc.id, at, h: maxHours, st: snap })]);
+  return { loc: loc.id, at, killsPerHour: Math.round(r.killsPerHour), maxHours, seasonTicket: ticket };
 }
 
 // ── сколько убийств ─────────────────────────────────────────────────────────
@@ -146,7 +148,7 @@ function _killsFor(killsPerHour, sec) {
 
 // Какая часть окна фарма пришлась на действие зелья, которое истекает в
 // `until` (мс). Зелье опыта, выпитое за пять минут до выхода, удваивает опыт
-// первых пяти минут фарма, а не всех двенадцати часов.
+// первых пяти минут фарма, а не всех семи часов.
 function _overlap(until, from, to) {
   const u = Number(until) || 0;
   if (u <= from || to <= from) return 0;
@@ -248,9 +250,13 @@ async function claim(db, playerId, s) {
   const loc = offlineFarmLocation(farm.loc);
   const at = Number(farm.at) || 0;
   const now = Date.now();
-  const ms = Math.max(0, Math.min(now - at, MAX_MS));
+  // Запись без `h` — запущена до появления пробного часа, тогда только с билетом.
+  const maxMs = Math.min(Number(farm.h) || OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_MAX_HOURS) * 3600 * 1000;
+  const awayMs = Math.max(0, now - at);
+  const ms = Math.min(awayMs, maxMs);
   const sec = Math.floor(ms / 1000);
-  const summary = { loc: farm.loc, seconds: sec, capped: now - at > MAX_MS, kills: 0,
+  const summary = { loc: farm.loc, seconds: sec, maxSeconds: maxMs / 1000, awaySeconds: Math.floor(awayMs / 1000),
+                    capped: awayMs > maxMs, kills: 0,
                     xp: 0, gold: 0, nexum: 0, gram: 0, items: [], lost: [], levelsGained: 0 };
   if (!loc || !farm.st || !at || sec < OFFLINE_FARM_MIN_SEC) { summary.tooShort = true; return summary; }
 
@@ -308,4 +314,4 @@ async function claim(db, playerId, s) {
   return summary;
 }
 
-module.exports = { available, info, start, claim, simulate, _killsFor, _overlap };
+module.exports = { available, info, start, claim, simulate, hoursFor, _killsFor, _overlap };
