@@ -33,7 +33,7 @@ const { query, hasColumn } = require('./db');
 const {
   OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC,
   offlineFarmLocations, offlineFarmLocation, offlineFarmRate,
-  VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive,
+  VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonTicketPeriodOn,
   FARM_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
   clanBonusOf, oreDropChance, CRAFT_MATS, NEWBIE_BUFF,
 } = require('../shared/definitions');
@@ -165,7 +165,7 @@ function simulate(loc, snap, kills, bonus = {}) {
   if (!r.ok || kills <= 0) return out;
 
   const vipB = VIP_BONUSES[bonus.vipLevel || 0] || VIP_BONUSES[0] || {};
-  const ticketOn = !!(bonus.seasonTicket && seasonActive());
+  const ticketOn = !!(bonus.seasonTicket && seasonTicketPeriodOn());
   const clanB = clanBonusOf(bonus.clanLevel);
   const xpPct = (vipB.xp || 0) + (ticketOn ? (SEASON_TICKET_XP_PCT || 0) : 0) + clanB.xp + (snap.gearXpPct || 0);
   const goldPct = (vipB.gold || 0) + clanB.gold;
@@ -194,6 +194,11 @@ function simulate(loc, snap, kills, bonus = {}) {
     }
   };
 
+  const ore = _MAT_BY_ID.get('ore_common');
+  const rollOre = (m) => {
+    if (ore && rand() < oreDropChance(m.rlvl)) push({ id: ore.id, name: ore.name, rarity: ore.rarity, qty: 1 });
+  };
+
   let xp = 0, gold = 0, gram = 0;
   for (let i = 0; i < kills; i++) {
     const m = r.mobs[Math.floor(rand() * r.mobs.length)];
@@ -201,11 +206,12 @@ function simulate(loc, snap, kills, bonus = {}) {
     xp += m.xp;
     if (rand() < 0.30) gold += m.gold;                     // calcGoldDrop
     for (const d of (rollTable([], m) || [])) push(d);
-    if (rand() < oreDropChance(m.rlvl)) {
-      const ore = _MAT_BY_ID.get('ore_common');
-      if (ore) push({ id: ore.id, name: ore.name, rarity: ore.rarity, qty: 1 });
+    rollOre(m);
+    // Второй бросок — таблица зоны И руда, как rollOre в онлайне.
+    if (extraRoll > 0 && rand() * 100 < extraRoll) {
+      for (const d of (rollTable([], m) || [])) push(d);
+      rollOre(m);
     }
-    if (extraRoll > 0 && rand() * 100 < extraRoll) for (const d of (rollTable([], m) || [])) push(d);
     if (libertyChance > 0 && rand() < libertyChance) out.nexum++;
     if (payGram && rand() < (GRAM_DROP_CHANCE || 0)) gram += (m.rlvl || 1) * (GRAM_PER_LEVEL || 0);
   }
