@@ -4616,6 +4616,34 @@ function drawClassChangeButton() {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ОФФЛАЙН BUTTON — под «Класс», синяя. Только у владельцев сезонного
+//  билета (_offlineFarmBtnVisible, js/input.js); сервер проверяет билет сам
+//  (server/offline-farm.js). Открывает окно оффлайн-фарма.
+// ─────────────────────────────────────────────────────────
+function drawOfflineFarmButton() {
+  if (!player || !player.type) return;
+  if (typeof _offlineFarmBtnVisible === 'function' && !_offlineFarmBtnVisible()) return;
+  const ob = getOfflineFarmBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+
+  ctx.save();
+  const grad = ctx.createLinearGradient(ob.x, ob.y, ob.x, ob.y + ob.h);
+  grad.addColorStop(0, '#2f6aa8');
+  grad.addColorStop(1, '#1d4a7a');
+  ctx.fillStyle = grad;
+  roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(127,180,232,0.75)';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 9); ctx.stroke();
+
+  const lbl = t('offlineFarmBtn');
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e6f0fa';
+  ctx.fillText(lbl, ob.x + ob.w / 2, ob.y + ob.h / 2, ob.w - hud(8));
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
 //  ПИСЬМО BUTTON — под «Класс», одна из двух наград MAIL_BONUS.
 //  Состав обеих лежит в shared/definitions.js, выдаёт claimMailBonus
 //  (server/db/repos/shop.js). См. getMailBonusBtnPos/_checkMailBonusBtnTouch,
@@ -6662,6 +6690,160 @@ function showCodexBtn() {
   if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionCodexBtn(); }
 }
 
+// ── Оффлайн-фарм ────────────────────────────────────────────────────────────
+// Окно выбора: сервер присылает список локаций с темпом ДЛЯ ЭТОГО игрока
+// (offlineFarmInfo, server/offline-farm.js) — клиент ничего не считает сам,
+// только показывает. «Начать» — в два нажатия: после старта игра закрывается.
+const _OFARM_ARM_RU = { left: 'Левый коридор', top: 'Верхний коридор', bottom: 'Нижний коридор', right: 'Правый коридор' };
+let _ofarmConfirm = null;   // id локации, на которой нажали «Начать» первый раз
+let _ofarmPending = null;   // итог фарма, пришедший до входа в мир
+let _ofarmLast = null;      // последний список локаций
+let _ofarmError = '';
+let _ofarmVipOk = true;      // есть ли сезонный билет (решает сервер, здесь — только вид)
+
+function openOfflineFarmPanel() {
+  const panel = document.getElementById('offline-farm-panel');
+  if (!panel || !player) return;
+  panel.style.display = 'flex';
+  _ofarmConfirm = null; _ofarmError = '';
+  const body = document.getElementById('offline-farm-panel-body');
+  if (body) body.innerHTML = '<div class="ofarm-hint">Загрузка…</div>';
+  if (typeof netOfflineFarmInfo === 'function') netOfflineFarmInfo();
+}
+
+function closeOfflineFarmPanel() {
+  const panel = document.getElementById('offline-farm-panel');
+  if (panel) panel.style.display = 'none';
+  _ofarmConfirm = null;
+}
+
+function offlineFarmShowError(msg) {
+  _ofarmError = msg || '';
+  _ofarmConfirm = null;
+  const panel = document.getElementById('offline-farm-panel');
+  if (panel && panel.style.display !== 'none' && _ofarmLast) renderOfflineFarmPanel(_ofarmLast);
+  else if (msg && player) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
+}
+
+function _ofarmLocName(l) {
+  if (l.kind === 'farmZone') return 'Фарм-зона';
+  if (l.kind === 'farmHigh') return 'Фарм зона 2';
+  return _OFARM_ARM_RU[l.arm] || 'Коридор';
+}
+function _ofarmLocSub(l) {
+  const lv = l.minLvl === l.maxLvl ? `ур. ${l.minLvl}` : `ур. ${l.minLvl}–${l.maxLvl}`;
+  if (l.kind !== 'corridor') return `Монстры ${lv}`;
+  const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(l.id) : null;
+  const d = loc && loc.species[0] ? ENEMY_DEF.find(e => e.eid === loc.species[0]) : null;
+  return `Комната ${lv}${d ? ' · ' + d.name : ''}`;
+}
+function _ofarmFmt(n) { return Math.round(n || 0).toLocaleString('ru-RU'); }
+
+function _ofarmRowHtml(l, bestId) {
+  const name = _ofarmLocName(l), sub = _ofarmLocSub(l);
+  if (!l.open) {
+    return `<div class="ofarm-row locked"><div class="ofarm-main"><div class="ofarm-name">${name}</div>
+      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Нужен ${l.reqLevel} уровень</div></div></div>`;
+  }
+  if (!l.ok) {
+    return `<div class="ofarm-row locked"><div class="ofarm-main"><div class="ofarm-name">${name}</div>
+      <div class="ofarm-sub">${sub}</div><div class="ofarm-rate">Монстры слишком сильны — вы не переживёте бой</div></div></div>`;
+  }
+  const part = l.reach < 1 ? ` · по силам ${Math.round(l.reach * 100)}% монстров` : '';
+  const confirm = _ofarmConfirm === l.id;
+  return `<div class="ofarm-row${l.id === bestId ? ' best' : ''}">
+    <div class="ofarm-main">
+      <div class="ofarm-name">${name}${l.id === bestId ? ' · больше всего опыта' : ''}</div>
+      <div class="ofarm-sub">${sub}${part}</div>
+      <div class="ofarm-rate">≈ ${_ofarmFmt(l.killsPerHour)} убийств/ч · ${_ofarmFmt(l.xpPerHour)} опыта/ч · ${_ofarmFmt(l.goldPerHour)} золота/ч</div>
+    </div>
+    ${_ofarmVipOk ? `<button class="ofarm-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : 'Начать'}</button>` : ''}
+  </div>`;
+}
+
+function renderOfflineFarmPanel(data) {
+  _ofarmLast = data || _ofarmLast;
+  const body = document.getElementById('offline-farm-panel-body');
+  if (!body || !_ofarmLast) return;
+  const d = _ofarmLast;
+  const locs = d.locations || [];
+  _ofarmVipOk = !!d.seasonTicket;
+  const ready = locs.filter(l => l.open && l.ok);
+  const best = ready.reduce((b, l) => (!b || l.xpPerHour > b.xpPerHour) ? l : b, null);
+  const bestId = best ? best.id : null;
+  const zones = locs.filter(l => l.kind !== 'corridor');
+  // Коридоры — только открытые и следующая закрытая комната: вся лестница из
+  // семидесяти шести строк новичку не нужна.
+  const corr = locs.filter(l => l.kind === 'corridor');
+  const openCorr = corr.filter(l => l.open).sort((a, b) => b.minLvl - a.minLvl);
+  const nextLocked = corr.filter(l => !l.open).sort((a, b) => a.reqLevel - b.reqLevel)[0];
+
+  body.innerHTML = `
+    <div class="ofarm-hint">Выберите локацию — игра закроется, а персонаж продолжит фармить там.
+      При следующем входе вы получите всё, что он успел добыть: опыт, золото, Liberty, GRAM и предметы,
+      с вашими бонусами VIP, клана и сезонного билета. Засчитывается до ${d.maxHours || 12} ч.
+      Темп считается по вашей атаке, скорости атаки, криту, защите и здоровью. Запуск — из центрального зала.</div>
+    ${_ofarmError ? `<div class="ofarm-err">${_escHtml(_ofarmError)}</div>` : ''}
+    ${_ofarmVipOk ? '' : `<div class="ofarm-err">Оффлайн-фарм доступен только с сезонным билетом. Ниже видно, сколько вы бы фармили.</div>`}
+    <div class="ofarm-group">Фарм-зоны</div>
+    ${zones.map(l => _ofarmRowHtml(l, bestId)).join('')}
+    <div class="ofarm-group">Коридоры</div>
+    ${openCorr.map(l => _ofarmRowHtml(l, bestId)).join('')}
+    ${nextLocked ? _ofarmRowHtml(nextLocked, bestId) : ''}`;
+}
+
+function offlineFarmStartTap(id) {
+  if (_ofarmConfirm !== id) {
+    _ofarmConfirm = id; _ofarmError = '';
+    renderOfflineFarmPanel();
+    return;
+  }
+  _ofarmConfirm = null;
+  if (typeof netOfflineFarmStart === 'function') netOfflineFarmStart(id);
+}
+
+// Итог приходит сразу за authOk, а показывать его можно только в мире —
+// поэтому сначала запоминается, а показывается из _finishOnlineStart.
+function offlineFarmSetPending(res) {
+  _ofarmPending = res || null;
+  const btn = document.getElementById('hud-menu-btn');
+  if (btn && btn.dataset.shown === '1') offlineFarmShowPending();
+}
+
+function offlineFarmShowPending() {
+  const res = _ofarmPending;
+  if (!res) return;
+  _ofarmPending = null;
+  const panel = document.getElementById('offline-farm-panel');
+  const body = document.getElementById('offline-farm-panel-body');
+  if (!panel || !body) return;
+  const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(res.loc) : null;
+  const where = loc ? `${_ofarmLocName(loc)} · ${_ofarmLocSub({ ...loc, open: true })}` : '';
+  const h = Math.floor((res.seconds || 0) / 3600), m = Math.floor(((res.seconds || 0) % 3600) / 60);
+  const dur = (h ? `${h} ч ` : '') + `${m} мин`;
+  const line = (label, v) => `<div class="ofarm-sum-line"><span>${label}</span><b>${v}</b></div>`;
+  const itemTag = it => `<span class="ofarm-item">${_escHtml(it.name || it.id)}${(it.qty || 1) > 1 ? ' ×' + it.qty : ''}</span>`;
+  let html;
+  if (res.tooShort) {
+    html = `<div class="ofarm-hint">Оффлайн-фарм длился меньше минуты — награды нет.</div>`;
+  } else {
+    html = `
+      <div class="ofarm-hint">Пока вас не было${where ? ' (' + where + ')' : ''}, персонаж фармил ${dur}${res.capped ? ` — засчитан максимум` : ''}.</div>
+      <div class="ofarm-sum">
+        ${line('Убито монстров', _ofarmFmt(res.kills))}
+        ${line('Опыт', '+' + _ofarmFmt(res.xp))}
+        ${line('Золото', '+' + _ofarmFmt(res.gold))}
+        ${res.nexum ? line('Liberty', '+' + _ofarmFmt(res.nexum)) : ''}
+        ${res.gram ? line('GRAM', '+' + Number(res.gram).toFixed(7)) : ''}
+        ${res.levelsGained ? line('Новых уровней', '+' + res.levelsGained) : ''}
+      </div>
+      ${(res.items || []).length ? `<div class="ofarm-group">Добыча</div><div class="ofarm-items">${res.items.map(itemTag).join('')}</div>` : ''}
+      ${(res.lost || []).length ? `<div class="ofarm-group">Не влезло в сумку</div><div class="ofarm-items">${res.lost.map(itemTag).join('')}</div>` : ''}`;
+  }
+  body.innerHTML = html + `<button class="ofarm-go ofarm-ok" onclick="closeOfflineFarmPanel()">Отлично</button>`;
+  panel.style.display = 'flex';
+}
+
 // Сезон 2. Three tabs: Сезон (description + rewards), Задания (how to earn
 // points), Рейтинг (leaderboard, 5000+ points only). Points are server-owned
 // (see the season handlers in server/index.js) — everything here renders
@@ -8152,15 +8334,11 @@ function _race10Model() {
     ],
     rules: [
       t('race10Rule6'), t('race10Rule1'), t('race10Rule8'), t('race10Rule2'), t('race10Rule3'),
-      t('race10Rule4'), t('race10Rule5'), t('race10Rule7'),
+      t('race10Rule4'), t('race10Rule5'),
       tVars('a3Rule5', { n: st.minLevel }),
     ],
     rewardsHdr: t('race10RewardHdr'),
     rewards: `<div class="db-rewards">
-        <div class="db-reward-row">
-          <img src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23e3941d' stroke='%23e3941d' stroke-width='1' stroke-linejoin='round'><polygon points='12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26'/></svg>" alt="">
-          <span>${t('race10XpRewardName')}</span><span class="db-reward-qty">×4</span>
-        </div>
         <div class="db-reward-row">
           <img src="/images/nexum-coin_v2.png" alt="">
           <span>${t('race10RewardAll')}</span><span class="db-reward-qty">+${st.reward}</span>

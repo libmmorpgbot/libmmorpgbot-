@@ -416,6 +416,13 @@ function netLostHandles() { return _netLostHandles; }
 function netResyncWorld() {
   if (socket && socket.connected) socket.emit('enemyResyncAll');
 }
+// Оффлайн-фарм: список локаций и запуск (server/handlers2/offline.js).
+function netOfflineFarmInfo() {
+  if (socket && socket.connected) socket.emit('offlineFarmInfo');
+}
+function netOfflineFarmStart(loc) {
+  if (socket && socket.connected) socket.emit('offlineFarmStart', { loc });
+}
 // Computed on read rather than per packet — only the overlay ever asks, and
 // only while it is on screen.
 function netJitterP95() {
@@ -887,6 +894,37 @@ function netConnect(onReady) {
     setTimeout(() => {
       if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
     }, 2000);
+  });
+
+  // ── оффлайн-фарм ─────────────────────────────────────────────────────────
+  // Список локаций с темпом для этого игрока — в окно выбора (js/ui.js).
+  socket.on('offlineFarmInfo', (data) => {
+    if (typeof renderOfflineFarmPanel === 'function') renderOfflineFarmPanel(data);
+  });
+  socket.on('offlineFarmError', ({ msg } = {}) => {
+    if (typeof offlineFarmShowError === 'function') offlineFarmShowError(msg);
+    else if (msg && player) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
+  });
+  // Фарм запущен, и сервер сейчас закроет соединение. Ровно как 'kicked':
+  // сессия окончена решением сервера, переподключаться нельзя — новый вход
+  // тут же забрал бы фарм, не дав ему пройти и минуты.
+  socket.on('offlineFarmStarted', ({ maxHours } = {}) => {
+    _kicked = true;
+    _cancelNetNotice();
+    if (_pingTimer) { clearInterval(_pingTimer); _pingTimer = null; }
+    if (socket.io) socket.io.reconnection(false);
+    if (typeof closeOfflineFarmPanel === 'function') closeOfflineFarmPanel();
+    showAuthError(`Оффлайн-фарм запущен. Зайдите в игру позже — награда за время фарма (до ${maxHours || 12} ч) придёт при входе.`, 'offline_farm');
+    const _ls = document.getElementById('login-screen');
+    if (_ls) { _ls.style.display = ''; _ls.classList.remove('splash-out'); }
+    setTimeout(() => {
+      if (window.Telegram?.WebApp?.close) window.Telegram.WebApp.close();
+    }, 4000);
+  });
+  // Итог: что принёс фарм. Приходит сразу за authOk — балансы и сумка в нём
+  // уже учтены, это только окно «пока вас не было».
+  socket.on('offlineFarmResult', (data) => {
+    if (typeof offlineFarmSetPending === 'function') offlineFarmSetPending(data);
   });
 
   socket.on('playerJoined', ({ id, username }) => {
@@ -4132,9 +4170,9 @@ function _finishOnlineStart() {
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
   if (typeof showCodexBtn === 'function') showCodexBtn();
-  // Кнопке «Элитный» в HUD нужно состояние события (жив ли монстр, когда
-  // следующий) с самого входа, а не с первого открытия панели.
-  if (typeof netEliteRating === 'function') netEliteRating();
+  // Итог оффлайн-фарма пришёл сразу после authOk, когда показывать его было
+  // некуда, — показывается здесь, как только игрок в мире.
+  if (typeof offlineFarmShowPending === 'function') offlineFarmShowPending();
 
   // ── АВТО включается само у тех, кому оно доступно ────────────────────────
   // Кнопка AUTO открыта с VIP 2 (AUTO_ATTACK_VIP_MIN, js/input.js), но
@@ -4954,6 +4992,7 @@ function _initRace10Handlers(s) {
     _race10Registered = false;
     _race10Lane = lane;
     _race10MyDamage = 0;
+    _race10Portal = null;
     if (hp) player.hp = hp;
     _dbFightAt = fightAt || 0;   // same freeze overlay the death battle/3v3 use
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('race10ArenaLbl'));
@@ -4968,26 +5007,19 @@ function _initRace10Handlers(s) {
     if (typeof onRace10State === 'function') onRace10State();
   });
 
-  // A silent correction from the server's own position sweep (_race10Sweep,
-  // server/game/race10.js): this racer's x/y drifted outside their own
-  // lane's row (client-authoritative movement means the client has to be
-  // told to relocate too, or the very next playerMove just overwrites the
-  // server's fix) — «Игрока кинуло на чужую дорожку». No banner/sound,
-  // unlike race10Started: this isn't a new start, just a snap back into the
-  // corridor the racer was already supposed to be in, and it can fire more
-  // than once for the same run.
-  s.on('race10LaneSnap', ({ x, y }) => {
-    if (!player) return;
-    if (typeof _teleportTo === 'function') _teleportTo(x, y, t('race10ArenaLbl'));
-    else { player.x = x; player.y = y; }
+  // Игрок зашёл в комнату, где открылся портал к боссу (_race10Sweep,
+  // server/game/race10.js). Шаг в него — и сервер перенесёт к боссу.
+  s.on('race10Portal', ({ x, y }) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    _race10Portal = { x, y };
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('race10PortalFoundMsg'), '#e8574f');
   });
 
-  // The instant this lane's monsters are all dead, the server teleports this
-  // racer straight into the (small, shared) boss room — see
-  // _race10ReachBoss, server/game/race10.js, and generateRace10's own
-  // comment for why there's no corridor left to walk into it.
+  // Шагнул в портал — сервер перенёс в комнату босса (_race10ReachBoss,
+  // server/game/race10.js).
   s.on('race10ReachedBoss', ({ x, y }) => {
     if (!player) return;
+    _race10Portal = null;
     if (typeof _teleportTo === 'function') _teleportTo(x, y, t('race10ArenaLbl'));
     else { player.x = x; player.y = y; }
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('race10ReachedBossMsg'), '#e8574f');
@@ -5012,6 +5044,7 @@ function _initRace10Handlers(s) {
   // out of the race" notice.
   s.on('race10Eliminated', () => {
     _race10InMatch = false;
+    _race10Portal = null;
     if (typeof showEventBossBanner === 'function') showEventBossBanner(t('race10Eliminated'), '#f07886');
     if (typeof onRace10State === 'function') onRace10State();
   });
@@ -5019,6 +5052,7 @@ function _initRace10Handlers(s) {
   s.on('race10Result', ({ won, winnerName, myDamage, timedOut, reward, items }) => {
     _race10InMatch = false;
     _race10Lane = null;
+    _race10Portal = null;
     _dbFightAt = 0;
     if (typeof hideDeathBattleFreeze === 'function') hideDeathBattleFreeze();
     // No local balance bump here — same reasoning as arena3Result above: the

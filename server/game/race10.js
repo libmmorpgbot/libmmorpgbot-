@@ -1,5 +1,5 @@
 'use strict';
-// Кровавая Башня (Bloody Tower corridor race), moved out of server/index.js
+// Кровавая Башня (Bloody Tower: find the portal, beat the boss), moved out of server/index.js
 // verbatim as a factory (createRace10(deps)), same pattern as the other
 // game-mode managers. _race10Frozen and _race10Eliminate are also called from
 // the cross-mode glue in server/modes.js (_pvpFrozen/_pvpEliminate), which
@@ -20,17 +20,16 @@ module.exports = function createRace10(deps) {
     _race10AttemptsLeft, _lockRace10Daily,
   } = deps;
 
-  // ── Кровавая Башня (corridor race) ──────────────────────────────────────────
+  // ── Кровавая Башня ──────────────────────────────────────────────────────────
   // Registration opens at 20:30 MSK and everyone who signs up runs — no fixed
-  // headcount. RACE10_REG_MS later the whole field starts at once, one sealed
-  // lane each (server/game/dungeon.js race10): 60 level-5 monsters then 60
-  // level-10, packed shoulder to shoulder, no way past but through. Every lane
-  // ends at the same shared room and the same single boss (spawnRaceBoss,
-  // server/game/Room.js): whoever has dealt it the most cumulative damage when
-  // it dies wins Liberty. Dying anywhere in a lane is an elimination — handled
-  // by the existing 'respawn' handler via _pvpEliminate, the same wiring the
-  // death battle and 3v3 arena already share, so a monster kill in the corridor
-  // counts exactly like a PvP kill would.
+  // headcount. RACE10_REG_MS later the whole field appears together in the
+  // central hall of one shared location (server/game/dungeon.js race10): a
+  // maze of 50 rooms, no monsters. In one random room a portal to the boss
+  // opens (_race10Sweep); whoever finds it is carried to the single shared
+  // boss (spawnRaceBoss, server/game/Room.js), and whoever has dealt it the
+  // most cumulative damage when it dies wins Liberty. Dying is an
+  // elimination — handled by the existing 'respawn' handler via
+  // _pvpEliminate, the same wiring the death battle and 3v3 arena share.
   //
   // It used to fire the moment ten players were queued, and could run several
   // times in the hour. One start with everyone in it replaces that, which is
@@ -90,6 +89,7 @@ module.exports = function createRace10(deps) {
     names: new Map(),    // socketId -> name, kept for the result screen after elimination
     dmg: new Map(),      // socketId -> cumulative damage dealt to the shared boss
     bossId: null,
+    portal: null,        // { room, x, y, r } — где на этот забег открылся портал к боссу
     fightAt: 0,
     startAt: 0,          // when the field is deployed — registration closes then
     freezeTimer: null,
@@ -99,8 +99,10 @@ module.exports = function createRace10(deps) {
     openTimer: null, notifyTimer: null,
   };
 
-  // Как часто идёт страховочный проход по забегу (_race10Sweep).
-  const RACE10_SWEEP_MS = 2000;
+  // Как часто проверяется, кто нашёл портал (_race10Sweep). Движение
+  // клиентское, поэтому сервер узнаёт о шаге в портал только отсюда — проход
+  // частый, но дешёвый: по одному сравнению на участника.
+  const RACE10_SWEEP_MS = 400;
 
   // telegramId -> { socketId, timer } — one racer's disconnect held open for
   // a possible reconnect. See _race10HoldOnDisconnect/_race10ClaimOnReconnect
@@ -320,12 +322,9 @@ module.exports = function createRace10(deps) {
     _race10.live = true;
     _race10.alive.clear(); _race10.names.clear(); _race10.dmg.clear();
     _race10.fightAt = Date.now() + RACE10_FREEZE_MS;
+    // Портал — в случайной из пятидесяти комнат, свой на каждый забег.
+    _race10.portal = room.racePickPortal();
 
-    // Every lane's monsters have to be back at full strength before this race
-    // starts — they don't respawn on their own (see Room.js's tick loop), so a
-    // second race later in the same window would otherwise find them still
-    // dead from the first one.
-    room.resetRaceMonsters();
     // raceDeploy below needs everyone already present in room.players to
     // assign lanes — force each entrant's own connection onto the race10
     // floor first (bypassing any gate: this is a scheduled deploy, not a
@@ -399,7 +398,7 @@ module.exports = function createRace10(deps) {
       // atBoss: false — flips once in _race10ReachBoss, the instant this
       // lane's monsters are all dead. Guards against teleporting the same
       // racer twice if raceLaneClear somehow gets checked again afterward.
-      _race10.alive.set(socketId, { name, lane, atBoss: false });
+      _race10.alive.set(socketId, { name, lane, atBoss: false, seenPortal: false });
       _race10.names.set(socketId, name);
       _race10.dmg.set(socketId, 0);
       _race10.queue.delete(socketId);
@@ -439,79 +438,40 @@ module.exports = function createRace10(deps) {
     _race10Broadcast();
   }
 
-  // ── страховка от «стою в пустом тупике» ────────────────────────────────────
-  // Коридоров пятьдесят, а комната босса — квадрат в 22 тайла по центру карты
-  // (generateRace10, server/game/dungeon.js): к ней примыкают только четыре
-  // средних коридора, остальные сорок шесть упираются в стену. Единственный
-  // вход туда — _race10ReachBoss, и зовут его ровно из одного места:
-  // _onCombatResult, по убийству, закрывшему дорожку (server/modes.js). Любой
-  // забег, где это последнее убийство случилось НЕ у самого игрока — дорожка
-  // была пуста с самого начала, добил кто-то другой, событие потерялось —
-  // оставлял человека в тупике на все пятнадцать минут: ни монстров, ни
-  // босса, ни награды (она требует урона по боссу).
+  // ── поиск портала ──────────────────────────────────────────────────────────
+  // Все появляются в центральном зале (generateRace10, server/game/
+  // dungeon.js) и ищут портал по пятидесяти комнатам. Где он — клиенту не
+  // говорится, пока игрок сам не зайдёт в ту комнату (race10Portal): иначе
+  // координаты можно было бы просто прочитать из пакета. Шагнул в радиус
+  // портала — переносит к боссу.
   //
-  // Здесь же чинится и вторая половина той же жалобы. Видимость ВСЕГО в этом
-  // режиме висит на p._raceLane (Room._raceVisible) — и коридорных монстров, и
-  // безлейнового босса. Запись игрока, пересозданная без него (реконнект,
-  // любой forceFloor на этот этаж мимо raceDeploy), означает «монстров нет,
-  // босса нет»; клиентские барьеры при этом считаются по ПРИСЛАННОМУ списку
-  // врагов (_raceLaneTierAlive, js/game.js) и на пустом списке просто
-  // открываются, пропуская игрока к тому самому тупику. Раз в
-  // RACE10_SWEEP_MS сверяем запись комнаты с тем, что забег о человеке знает.
+  // Заодно чинится p._raceLane: видимость в этом режиме висит на нём
+  // (Room._raceVisible), и запись игрока, пересозданная без него (реконнект),
+  // означала бы «босса нет».
   function _race10Sweep() {
     if (!_race10.live) return;
     const room = getRoom(FLOOR_IDS.race10);
     if (!room) return;
-    const laneHasMonsters = room.raceLanesAlive();
+    const portal = _race10.portal;
+    const fighting = Date.now() >= _race10.fightAt;
     _race10.alive.forEach((run, sid) => {
       const p = room.players.get(sid);
       // Записи нет — либо человек держится по грейсу реконнекта
-      // (_race10HoldOnDisconnect), либо уже уходит с этажа. У обоих случаев
-      // свой путь, отсюда трогать нечего.
+      // (_race10HoldOnDisconnect), либо уже уходит с этажа.
       if (!p) return;
       if (p._raceLane !== run.lane) { p._raceLane = run.lane; p._profileRev++; }
-      // ── «Игрока кинуло на чужую дорожку» ──────────────────────────────────
-      // The line above only fixes which lane's monsters this racer is TOLD
-      // about (p._raceLane, read by Room._raceVisible) — it never checked
-      // where they were actually STANDING. A racer whose x/y ended up
-      // outside their own lane's row (any placement path other than
-      // raceDeploy/raceLaneSpot writing p.x/p.y directly — the two are not
-      // atomic with each other) could sit there with the right _raceLane and
-      // the right monster list while physically overlapping a neighbour's
-      // corridor, or nowhere near their own — exactly what got reported.
-      // Movement here is client-authoritative (playerMove, server/handlers2/
-      // world.js), so the client is walking off the last position IT sent —
-      // this alone would be overwritten by the next move packet unless the
-      // client is told to relocate too (race10LaneSnap below).
-      if (!run.atBoss && !room.raceLaneRowOk(run.lane, p.y)) {
-        const spot = room.raceLaneSpot(run.lane);
-        if (spot) {
-          console.warn(`[race10] ${sid} off lane ${run.lane} at (${Math.round(p.x)},${Math.round(p.y)}) — snapping back`);
-          p.x = spot.x; p.y = spot.y; p._profileRev++;
-          io.to(sid).emit('race10LaneSnap', { x: spot.x, y: spot.y, lane: run.lane });
-        }
+      if (run.atBoss || !portal || !fighting) return;
+      if (!run.seenPortal && room.raceRoomAt(p.x, p.y) === portal.room) {
+        run.seenPortal = true;
+        io.to(sid).emit('race10Portal', { x: portal.x, y: portal.y, r: portal.r });
       }
-      // ── «в конце коридора телепорт независимо от того убила монстров или
-      //    нет» ──────────────────────────────────────────────────────────────
-      // laneHasMonsters (raceLaneClear's own bookkeeping) is the intended
-      // trigger — but it is a TALLY, and a tally can desync from what is
-      // actually standing on the floor. room.raceAtLaneEnd(p.x) is the other
-      // way to ask the same question: has this racer physically reached the
-      // end of their own corridor at all. Under normal play the two always
-      // agree (js/game.js's client-side barriers physically block any x past
-      // a still-alive tier), so this never fires early — it only rescues a
-      // racer a stuck tally left dead-ended with nothing left to fight and no
-      // way out for the rest of RACE10_MAX_MS.
-      if (!run.atBoss && (!laneHasMonsters.has(run.lane) || room.raceAtLaneEnd(p.x))) _race10ReachBoss(sid, run.lane);
+      const dx = p.x - portal.x, dy = p.y - portal.y;
+      if (dx * dx + dy * dy <= portal.r * portal.r) _race10ReachBoss(sid, run.lane);
     });
   }
 
-  // Teleports one racer into the shared boss room the instant their own lane
-  // is fully cleared — called from modes._onCombatResult on the kill that
-  // could be the lane's last one (see Room.raceLaneClear). Replaces walking
-  // an empty corridor stretch into a room sized to span every lane's row;
-  // see generateRace10's own comment for why that room used to be enormous.
-  // The atBoss guard makes this idempotent: nothing should call it twice for
+  // Переносит участника в комнату босса — как только он шагнул в портал
+  // (_race10Sweep). The atBoss guard makes this idempotent: nothing should call it twice for
   // the same racer, but if it ever did, this must not re-teleport someone
   // already standing at the boss to a fresh ring spot.
   function _race10ReachBoss(socketId, lane) {
@@ -688,6 +648,8 @@ module.exports = function createRace10(deps) {
     }
     const entry = _race10.alive.get(oldSocketId);
     if (!entry) return;
+    // Новый клиент о портале не знает — скажем ещё раз, когда снова зайдёт в комнату.
+    entry.seenPortal = false;
     _race10.alive.delete(oldSocketId);
     _race10.alive.set(newSocketId, entry);
     if (_race10.names.has(oldSocketId)) {
@@ -718,6 +680,7 @@ module.exports = function createRace10(deps) {
     const dmg = new Map(_race10.dmg);
     const participants = [...names.keys()];
     _race10.alive.clear(); _race10.names.clear(); _race10.dmg.clear(); _race10.bossId = null;
+    _race10.portal = null;
     // Everyone still standing goes home too — the race is over for them as
     // well, they just didn't die to get there. Eliminated racers (already
     // dropped from _race10.alive by _race10Eliminate) stay put where they

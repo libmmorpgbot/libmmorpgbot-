@@ -288,6 +288,9 @@ let _race10Registered = false;
 let _race10InMatch = false;
 let _race10Lane = null;
 let _race10MyDamage = 0;
+// Портал к боссу в Кровавой Башне — сервер сообщает его, только когда игрок
+// сам зашёл в нужную комнату (race10Portal, js/network.js). Иначе null.
+let _race10Portal = null;
 
 // Война гильдий (Guild War) — daily 22:00-22:15 MSK zone with four towers;
 // the killing blow takes a tower for your clan, and the clan holding all four

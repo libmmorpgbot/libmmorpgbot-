@@ -1590,9 +1590,9 @@ function _renderUI() {
   drawPvpButton();
   drawProfessionButton();
   drawClassChangeButton();
+  drawOfflineFarmButton();
   drawMailBonusButton();
   drawStarterBonusButton();
-  drawEliteButton();
   drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();
@@ -2321,6 +2321,8 @@ function _buildDecals(ts) {
       (mine ? '' : '\u{1F512} ') + (cd ? cd.name : pad.cls),
       '#f17e8b', '#8ff0c0');
   }
+  // Кровавая Башня: портал к боссу, когда игрок нашёл его комнату.
+  if (_race10Portal && _race10InMatch) _pushSwirlPad(_race10Portal.x, _race10Portal.y, typeof t === 'function' ? t('race10PortalLbl') : '', 'red');
   if (_evtArenaOpen() && _evtPad) _pushSwirlPad(_evtPad.x, _evtPad.y, t('evtArenaLbl'), 'red');
   if (_gwOpen() && _gwPad) _pushSwirlPad(_gwPad.x, _gwPad.y, typeof t === 'function' ? t('guildWarLbl') : '\u0412\u043e\u0439\u043d\u0430 \u0433\u0438\u043b\u044c\u0434\u0438\u0439', 'green');
   // Teleport-stone cast (useTeleportStone, server/index.js) — the same blue

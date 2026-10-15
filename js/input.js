@@ -136,8 +136,20 @@ function getClassChangeBtnPos() {
 // MAIL_BONUS, забирается один раз (openMailBonusPanel, js/ui.js). Место
 // безусловно, как и у «Бонуса» ниже: колонка не должна прыгать в тот момент,
 // когда награду забрали.
-function getMailBonusBtnPos() {
+// Прямо под «Класс» — «Оффлайн» (синяя, openOfflineFarmPanel, js/ui.js).
+// Только у владельцев сезонного билета: без билета кнопки нет вовсе, и
+// слот схлопывается, чтобы «Письмо» встало сразу под «Класс», как раньше.
+function _offlineFarmBtnVisible() {
+  return typeof _seasonTicketActive !== 'undefined' && !!_seasonTicketActive;
+}
+
+function getOfflineFarmBtnPos() {
   const cc = getClassChangeBtnPos();
+  return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
+}
+
+function getMailBonusBtnPos() {
+  const cc = _offlineFarmBtnVisible() ? getOfflineFarmBtnPos() : getClassChangeBtnPos();
   return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
 }
 
@@ -150,17 +162,11 @@ function getStarterBonusBtnPos() {
   return { x: mb.x, y: mb.y + mb.h + 6, w: mb.w, h: mb.h };
 }
 
-// Прямо под «Бонус», та же колонка — «Элитный»: рейтинг убийств элитного
-// монстра сезонных крыльев (openElitePanel, js/ui.js). Там, где раньше стояла
-// «Дружба». Место безусловное, как было у неё: список пати ниже строится от
-// этого слота и не прыгает.
-// Пока событие не закончилось, кнопка выше обычной: под названием строка с
-// таймером (_eliteHudLine, js/ui.js).
+// Бывший слот «Элитный» под «Бонусом». Кнопку убрали с экрана, слот
+// схлопнут до нулевой высоты: от него строятся список пати и панель Guild War.
 function getEliteBtnPos() {
   const bb = getStarterBonusBtnPos();
-  const tall = typeof ELITE_EVENT_END_AT === 'undefined' || typeof _eliteNow !== 'function'
-    || _eliteNow() < ELITE_EVENT_END_AT;
-  return { x: bb.x, y: bb.y + bb.h + 6, w: bb.w, h: tall ? hud(40) : bb.h };
+  return { x: bb.x, y: bb.y + bb.h, w: bb.w, h: 0 };
 }
 
 function getPartyLeaveBtnPos() {
@@ -681,10 +687,11 @@ function _checkStarterBonusBtnTouch(cx, cy) {
   return false;
 }
 
-function _checkEliteBtnTouch(cx, cy) {
-  const eb = getEliteBtnPos();
-  if (cx >= eb.x && cx <= eb.x + eb.w && cy >= eb.y && cy <= eb.y + eb.h) {
-    if (typeof openElitePanel === 'function') openElitePanel();
+function _checkOfflineFarmBtnTouch(cx, cy) {
+  if (!_offlineFarmBtnVisible()) return false;
+  const ob = getOfflineFarmBtnPos();
+  if (cx >= ob.x && cx <= ob.x + ob.w && cy >= ob.y && cy <= ob.y + ob.h) {
+    if (typeof openOfflineFarmPanel === 'function') openOfflineFarmPanel();
     return true;
   }
   return false;
@@ -846,9 +853,9 @@ function onTS(e) {
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
     if (_checkProfessionBtnTouch(p.x, p.y)) continue;
     if (_checkClassChangeBtnTouch(p.x, p.y)) continue;
+    if (_checkOfflineFarmBtnTouch(p.x, p.y)) continue;
     if (_checkMailBonusBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
-    if (_checkEliteBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -941,9 +948,9 @@ function onMD(e) {
   if (_checkPvpBtnTouch(p.x, p.y)) return;
   if (_checkProfessionBtnTouch(p.x, p.y)) return;
   if (_checkClassChangeBtnTouch(p.x, p.y)) return;
+  if (_checkOfflineFarmBtnTouch(p.x, p.y)) return;
   if (_checkMailBonusBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
-  if (_checkEliteBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;

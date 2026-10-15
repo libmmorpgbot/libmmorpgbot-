@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { TILE, WALL, RACE10_LANE_HW } = require('./dungeon');
+const { TILE, WALL } = require('./dungeon');
 const { floorEntry, FLOOR_IDS } = require('./floors');
 const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, rollEventBossDrops,
         ENEMY_AOI_R, enhanceBonus, passiveBonusTotal, skillCooldownFloorMs, skillMaxHitsPerTarget, pvpDamageMult,
@@ -4752,50 +4752,26 @@ class Room {
     return spot && this.canStandAt(spot.x, spot.y) ? spot : null;
   }
 
-  // True if y still sits inside lane `lane`'s own corridor row (its entry
-  // spot's y, ± the corridor's half-width — same RACE10_LANE_HW dungeon.js
-  // paints the row with, plus half a tile of slack for rounding). Lanes are
-  // RACE10_LANE_PITCH tiles apart with solid wall between them, so this row
-  // band can never overlap a neighbour's — a y outside it means this player
-  // is standing somewhere their own corridor never reaches.
-  //
-  // «Игрока кинуло на чужую дорожку» — раньше сверялось только p._raceLane
-  // (см. _race10Sweep, server/game/race10.js), то есть какой корпус монстров
-  // человеку ПОКАЗЫВАЮТ. Само x/y при этом никто не проверял: если оно
-  // разошлось с этим полем — раздачей мимо raceDeploy/raceLaneSpot, гонкой
-  // между двумя путями реконнекта — игрок физически стоял в чужом коридоре,
-  // расхождение никто не замечал вплоть до следующего ручного репорта. Этот
-  // метод — физическая половина той же проверки.
-  raceLaneRowOk(lane, y) {
+  // Комната лабиринта, в которой на этот забег открывается портал к боссу —
+  // случайная из всех (generateRace10, server/game/dungeon.js).
+  racePickPortal() {
     const race = this._dungeon.race10;
-    const spot = race && race.lanes && race.lanes[lane];
-    if (!spot || !Number.isFinite(y)) return false;
-    return Math.abs(y - spot.y) <= (RACE10_LANE_HW + 0.5) * TILE;
+    const rooms = (race && race.rooms) || [];
+    if (!rooms.length) return null;
+    const i = Math.floor(Math.random() * rooms.length);
+    const r = rooms[i];
+    return { room: i, x: r.cx, y: r.cy, r: race.portalR || 48 };
   }
 
-  // True once x has physically reached the far end of a lane — the wall
-  // (or, for the four central lanes, the otherwise-unused boss-room
-  // doorway) RACE10_LANE_LEN tiles in from the entry spot. race.bossRoomX0
-  // is already in pixels (generateRace10, server/game/dungeon.js) and is
-  // the same x _playerLaneKey uses to decide "at the boss" — a corridor
-  // never extends past it.
-  //
-  // «в конце коридора телепорт независимо от того убила монстров или нет»
-  // — _race10Sweep (server/game/race10.js) used to gate _race10ReachBoss
-  // purely on raceLaneClear (every corridor monster's hp<=0), so a lane
-  // whose kill count ever desynced from reality (a monster the AI/perf-mode
-  // skip left stuck alive, an id collision, a corpse the purge missed) left
-  // its racer stuck at a dead end for the rest of RACE10_MAX_MS with
-  // nothing left to fight and no way out. Reaching this x at all already
-  // requires both barrier tiers to be down client-side (js/game.js's
-  // _isRaceBarrierBlocked physically blocks any x past a still-alive
-  // tier), so this is a second, independent read of "done with this
-  // corridor" — physical position instead of a kill tally — not a way to
-  // skip the fight under normal play.
-  raceAtLaneEnd(x) {
+  // Номер комнаты лабиринта, в которой стоит точка (x, y), или -1.
+  raceRoomAt(x, y) {
     const race = this._dungeon.race10;
-    if (!race || !Number.isFinite(race.bossRoomX0) || !Number.isFinite(x)) return false;
-    return x >= race.bossRoomX0 - TILE;
+    const rooms = (race && race.rooms) || [];
+    for (let i = 0; i < rooms.length; i++) {
+      const r = rooms[i];
+      if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) return i;
+    }
+    return -1;
   }
 
   raceDeploy(socketIds) {
