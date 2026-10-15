@@ -48,6 +48,8 @@ const _ZONE_FARMS = {
 };
 // Война гильдий — своя тема: боевая крепость.
 const _ZONE_GW = ['warkeep', 'warkeep'];
+// Кровавая Башня — тёмно-красная цитадель в духе Диабло.
+const _ZONE_RACE10 = ['bloodkeep', 'bloodkeep'];
 
 let _zoneCache = null, _zoneCacheFor = null;
 function _zoneLayout() {
@@ -67,6 +69,7 @@ function _zoneLayout() {
   else if (d.farmHigh) stages = _ZONE_FARMS.farmHigh;
   else if (d.farmZone) stages = _ZONE_FARMS.farmZone;
   else if (d.guildWar) stages = _ZONE_GW;
+  else if (d.race10) stages = _ZONE_RACE10;
   if (!stages) return (_zoneCache = null);
   let x0 = 1e9, x1 = -1e9;
   for (const r of d.rooms) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + r.size); }
@@ -807,4 +810,124 @@ const _ZONE_ST = {
         });
       } else if (h < 0.17) _zTorch(c, x, y, ctx);
     },
-  },};
+  },
+  // Кровавая Башня: тёмно-красные плиты, лужи крови, черепа и кости, красные
+  // свечи, светящиеся печати, цепи и багровые знамёна — в духе Диабло.
+  bloodkeep: {
+    wall: '#2a0b0d', overlay: 'rgba(26,0,3,0.36)',
+    floor(c, x, y, tx, ty) {
+      // Крупные плиты вместо кирпича, с тёмными пятнами въевшейся крови.
+      _zBricks(c, x, y, tx, ty, '#3e1416', '#110304', 40, 20, 0.26);
+      if (_zh(tx, ty, 8) < 0.22) _zBlob(c, x + _zh(tx, ty, 81) * 40, y + _zh(tx, ty, 82) * 40, 8 + _zh(tx, ty, 83) * 10, 5 + _zh(tx, ty, 84) * 6, 'rgba(40,0,2,0.35)');
+      if (_zh(tx, ty, 9) < 0.07) _zCrack(c, x + 20, y + 20, tx, ty, 13, 1.3, 'rgba(10,0,0,0.75)');
+    },
+    wallTile(c, x, y, tx, ty) { _zBricks(c, x, y, tx, ty, '#2a0b0d', '#0b0203', 26, 13, 0.24); },
+    deco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 1);
+      if (h < 0.05) {
+        // лужа крови с бликом
+        const bx = x + 12 + _zh(tx, ty, 2) * 16, by = y + 14 + _zh(tx, ty, 3) * 14;
+        _zBlob(c, bx, by, 13, 8, '#3a0004');
+        _zBlob(c, bx + 6, by + 4, 7, 4, '#3a0004');
+        _zBlob(c, bx - 1, by - 1, 10, 6, '#5c0208');
+        _zBlob(c, bx - 4, by - 3, 3, 1.4, 'rgba(255,120,120,0.35)');
+      } else if (h < 0.08) {
+        // череп
+        const sx = x + 12 + _zh(tx, ty, 4) * 16, sy = y + 14 + _zh(tx, ty, 5) * 14;
+        _zBlob(c, sx + 1, sy + 6, 8, 3, 'rgba(0,0,0,0.45)');
+        _zBlob(c, sx, sy, 6.5, 6, '#d8ccb4');
+        c.fillStyle = '#d8ccb4'; c.fillRect(sx - 4, sy + 3, 8, 4);
+        _zBlob(c, sx - 2.5, sy, 1.8, 2, '#1a0a08'); _zBlob(c, sx + 2.5, sy, 1.8, 2, '#1a0a08');
+        c.fillStyle = '#1a0a08'; c.fillRect(sx - 0.5, sy + 2.5, 1, 1.5);
+        c.fillStyle = 'rgba(0,0,0,0.35)'; for (let k = -1; k <= 1; k++) c.fillRect(sx + k * 2 - 0.5, sy + 5, 1, 2);
+      } else if (h < 0.12) {
+        // кости крест-накрест
+        c.save(); c.translate(x + 20, y + 20); c.rotate(_zh(tx, ty, 6) * 3);
+        for (const a of [0.5, -0.5]) {
+          c.save(); c.rotate(a);
+          c.fillStyle = '#c9bca2'; c.fillRect(-9, -1.5, 18, 3);
+          _zBlob(c, -9, -1.5, 2.4, 2.4, '#c9bca2'); _zBlob(c, -9, 1.5, 2.4, 2.4, '#c9bca2');
+          _zBlob(c, 9, -1.5, 2.4, 2.4, '#c9bca2'); _zBlob(c, 9, 1.5, 2.4, 2.4, '#c9bca2');
+          c.restore();
+        }
+        c.restore();
+      } else if (h < 0.14) {
+        // красные свечи
+        const cx0 = x + 10 + _zh(tx, ty, 7) * 16, cy0 = y + 22 + _zh(tx, ty, 8) * 8;
+        const n = 2 + Math.floor(_zh(tx, ty, 9) * 2);
+        for (let k = 0; k < n; k++) {
+          const px = cx0 + k * 6, ph = 8 + _zh(tx, ty, 10 + k) * 6;
+          _zBlob(c, px + 1, cy0 + 1, 3.5, 1.5, 'rgba(0,0,0,0.4)');
+          c.fillStyle = '#8a1016'; c.fillRect(px - 1.8, cy0 - ph, 3.6, ph);
+          c.fillStyle = '#b8242a'; c.fillRect(px - 1.8, cy0 - ph, 1.2, ph);
+          ctx.glow(g => { _zRadial(g, px, cy0 - ph - 3, 16, 'rgba(255,60,30,0.3)'); _zRadial(g, px, cy0 - ph - 3, 3, 'rgba(255,210,140,0.95)'); });
+        }
+      } else if (h < 0.155) {
+        // светящаяся печать — пентаграмма в круге
+        const rx = x + 20, ry = y + 20, R = 13;
+        ctx.glow(g => {
+          _zRadial(g, rx, ry, 26, 'rgba(255,30,20,0.25)');
+          g.strokeStyle = 'rgba(255,60,40,0.85)'; g.lineWidth = 1.4;
+          g.beginPath(); g.arc(rx, ry, R, 0, Math.PI * 2); g.stroke();
+          g.beginPath();
+          for (let k = 0; k <= 5; k++) {
+            const a = -Math.PI / 2 + k * (Math.PI * 4 / 5);
+            const px = rx + Math.cos(a) * (R - 1), py = ry + Math.sin(a) * (R - 1);
+            if (k) g.lineTo(px, py); else g.moveTo(px, py);
+          }
+          g.stroke();
+        });
+      } else if (h < 0.175) {
+        // железные шипы из пола
+        const bx = x + 10 + _zh(tx, ty, 11) * 14, by = y + 26;
+        _zBlob(c, bx + 8, by + 1, 12, 3, 'rgba(0,0,0,0.45)');
+        for (let k = 0; k < 3; k++) {
+          const px = bx + k * 8, ph = 10 + _zh(tx, ty, 12 + k) * 6;
+          c.fillStyle = '#3a3438'; c.beginPath(); c.moveTo(px - 3, by); c.lineTo(px + 3, by); c.lineTo(px, by - ph); c.closePath(); c.fill();
+          c.fillStyle = '#6a1014'; c.fillRect(px - 1, by - ph + 1, 2, 3);
+        }
+      } else if (h < 0.22) {
+        // брызги крови
+        for (let k = 0; k < 5; k++) {
+          _zBlob(c, x + 6 + _zh(tx, ty, 20 + k) * 28, y + 6 + _zh(tx, ty, 25 + k) * 28, 1 + _zh(tx, ty, 30 + k) * 2.5, 1 + _zh(tx, ty, 35 + k) * 2, '#4a0207');
+        }
+      }
+    },
+    wallDeco(c, x, y, tx, ty, ctx) {
+      const h = _zh(tx, ty, 60);
+      if (h < 0.07) {
+        // свисающие цепи с крюком
+        c.strokeStyle = '#4a4448'; c.lineWidth = 1.6;
+        for (const ox of [12, 28]) {
+          const len = 16 + _zh(tx, ty, 61 + ox) * 10;
+          for (let k = 0; k * 4 < len; k++) {
+            c.beginPath(); c.ellipse(x + ox, y + 6 + k * 4, k & 1 ? 1 : 2, 2.2, 0, 0, Math.PI * 2); c.stroke();
+          }
+          c.beginPath(); c.arc(x + ox + 2, y + 8 + len, 3, 0, Math.PI); c.stroke();
+        }
+      } else if (h < 0.11) {
+        // череп в нише со светящимися глазами
+        const sx = x + 20, sy = y + 18;
+        c.fillStyle = '#0c0203'; c.beginPath(); c.arc(sx, sy, 10, Math.PI, 0); c.lineTo(sx + 10, sy + 12); c.lineTo(sx - 10, sy + 12); c.closePath(); c.fill();
+        _zBlob(c, sx, sy + 2, 5.5, 5, '#cbbfa6');
+        c.fillStyle = '#cbbfa6'; c.fillRect(sx - 3.5, sy + 5, 7, 4);
+        ctx.glow(g => {
+          _zRadial(g, sx, sy + 2, 14, 'rgba(255,30,20,0.3)');
+          g.fillStyle = '#ff3a26'; g.fillRect(sx - 3.2, sy + 0.5, 2, 2); g.fillRect(sx + 1.2, sy + 0.5, 2, 2);
+        });
+      } else if (h < 0.15) {
+        // багровое знамя с печатью
+        const bx = x + 20, by = y + 8;
+        c.fillStyle = '#1a1010'; c.fillRect(bx - 11, by - 2, 22, 3);
+        c.fillStyle = '#5e0a10';
+        c.beginPath(); c.moveTo(bx - 9, by); c.lineTo(bx + 9, by); c.lineTo(bx + 9, by + 28); c.lineTo(bx, by + 22); c.lineTo(bx - 9, by + 28); c.closePath(); c.fill();
+        c.fillStyle = '#8a6a2a'; c.fillRect(bx - 9, by, 18, 2);
+        ctx.glow(g => {
+          g.strokeStyle = 'rgba(255,90,60,0.85)'; g.lineWidth = 1.2;
+          g.beginPath(); g.arc(bx, by + 12, 5, 0, Math.PI * 2); g.stroke();
+          g.beginPath(); g.moveTo(bx, by + 6); g.lineTo(bx, by + 18); g.moveTo(bx - 5, by + 12); g.lineTo(bx + 5, by + 12); g.stroke();
+        });
+      } else if (h < 0.21) _zTorch(c, x, y, ctx);
+    },
+  },
+};
