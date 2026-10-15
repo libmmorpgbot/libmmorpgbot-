@@ -4616,13 +4616,12 @@ function drawClassChangeButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  ОФФЛАЙН BUTTON — под «Класс», синяя. Только у владельцев сезонного
-//  билета (_offlineFarmBtnVisible, js/input.js); сервер проверяет билет сам
-//  (server/offline-farm.js). Открывает окно оффлайн-фарма.
+//  ОФФЛАЙН BUTTON — под «Класс», синяя, видна всем. Окно открывается только
+//  с сезонным билетом (_checkOfflineFarmBtnTouch, js/input.js); сервер
+//  проверяет билет сам (server/offline-farm.js).
 // ─────────────────────────────────────────────────────────
 function drawOfflineFarmButton() {
   if (!player || !player.type) return;
-  if (typeof _offlineFarmBtnVisible === 'function' && !_offlineFarmBtnVisible()) return;
   const ob = getOfflineFarmBtnPos();
   const F = 'system-ui, -apple-system, Arial';
 

@@ -137,9 +137,8 @@ function getClassChangeBtnPos() {
 // безусловно, как и у «Бонуса» ниже: колонка не должна прыгать в тот момент,
 // когда награду забрали.
 // Прямо под «Класс» — «Оффлайн» (синяя, openOfflineFarmPanel, js/ui.js).
-// Только у владельцев сезонного билета: без билета кнопки нет вовсе, и
-// слот схлопывается, чтобы «Письмо» встало сразу под «Класс», как раньше.
-function _offlineFarmBtnVisible() {
+// Видна всем; без сезонного билета нажатие только говорит, что он нужен.
+function _hasSeasonTicket() {
   return typeof _seasonTicketActive !== 'undefined' && !!_seasonTicketActive;
 }
 
@@ -149,7 +148,7 @@ function getOfflineFarmBtnPos() {
 }
 
 function getMailBonusBtnPos() {
-  const cc = _offlineFarmBtnVisible() ? getOfflineFarmBtnPos() : getClassChangeBtnPos();
+  const cc = getOfflineFarmBtnPos();
   return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
 }
 
@@ -688,9 +687,14 @@ function _checkStarterBonusBtnTouch(cx, cy) {
 }
 
 function _checkOfflineFarmBtnTouch(cx, cy) {
-  if (!_offlineFarmBtnVisible()) return false;
   const ob = getOfflineFarmBtnPos();
   if (cx >= ob.x && cx <= ob.x + ob.w && cy >= ob.y && cy <= ob.y + ob.h) {
+    if (!_hasSeasonTicket()) {
+      const msg = typeof t === 'function' ? t('offlineFarmNeedTicket') : 'Нужен сезонный билет';
+      if (typeof _marketToast === 'function') _marketToast(msg, 'err');
+      else if (typeof dmgNum === 'function' && player) dmgNum(player.x, player.y - 30, msg, '#f17e8b');
+      return true;
+    }
     if (typeof openOfflineFarmPanel === 'function') openOfflineFarmPanel();
     return true;
   }
