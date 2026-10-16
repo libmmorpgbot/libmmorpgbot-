@@ -7541,14 +7541,21 @@ function _positionTournamentBtn() {
   btn.style.right  = 'auto';
   btn.style.transform = 'none';
   btn.style.fontSize = hudF(11.5) + 'px';
-  // Обновления — квадрат той же высоты, вплотную слева от «Турнира».
-  const upd = document.getElementById('updates-hud-btn');
-  if (upd) {
-    upd.style.top    = btn.style.top;
-    upd.style.left   = (pRight - w - hud(4) - h) + 'px';
-    upd.style.width  = h + 'px';
-    upd.style.height = h + 'px';
-  }
+}
+
+// «Обновления» — первая в правой колонке, сразу под мини-картой; «Меню» и всё,
+// что под ним, цепляется уже за неё (_positionHudMenuBtn). Её высота — та,
+// на которую сдвинулась колонка.
+const _UPD_BTN_H = 26;
+function _positionUpdatesBtn() {
+  const btn = document.getElementById('updates-hud-btn');
+  if (!btn) return;
+  if (!W) { requestAnimationFrame(_positionHudColumn); return; }
+  const mp = hudMiniMapRect();
+  btn.style.top    = (mp.y + mp.h + 6) + 'px';
+  btn.style.left   = mp.x + 'px';
+  btn.style.width  = mp.w + 'px';
+  btn.style.height = _UPD_BTN_H + 'px';
 }
 
 // ── Обновления (patches.html) ───────────────────────────────────────────────
@@ -7611,7 +7618,10 @@ function _positionHudMenuBtn() {
   // buttons. Come back on the next frame instead of writing NaNpx.
   if (!W) { requestAnimationFrame(_positionHudColumn); return; }
   const mp = hudMiniMapRect();
-  btn.style.top   = (mp.y + mp.h + 6) + 'px';
+  // Под кнопкой «Обновления», если она есть на экране (_positionUpdatesBtn).
+  const upd = document.getElementById('updates-hud-btn');
+  const updOn = upd && upd.dataset.shown === '1';
+  btn.style.top   = (mp.y + mp.h + 6 + (updOn ? _UPD_BTN_H + 4 : 0)) + 'px';
   btn.style.left  = mp.x + 'px';
   btn.style.width = mp.w + 'px';
   btn.style.right = 'auto';
@@ -7623,6 +7633,7 @@ function _positionHudMenuBtn() {
 // never survive on screen.
 function _positionHudColumn() {
   _positionTournamentBtn();
+  _positionUpdatesBtn();
   _positionHudMenuBtn();
   _positionRatingBtn();
   _positionVipBtn();
@@ -7637,7 +7648,11 @@ function showTournamentHudBtn() {
   const btn = document.getElementById('tournament-hud-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionTournamentBtn(); }
   const upd = document.getElementById('updates-hud-btn');
-  if (upd) { upd.dataset.shown = '1'; upd.style.display = (activeTab === 0) ? 'flex' : 'none'; _refreshUpdatesDot(); }
+  if (upd) {
+    upd.dataset.shown = '1'; upd.style.display = (activeTab === 0) ? 'flex' : 'none'; _refreshUpdatesDot();
+    // Колонка под ней сдвигается — пересобирается вся цепочка.
+    _positionHudColumn();
+  }
 }
 
 function showHudMenuBtn() {
