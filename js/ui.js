@@ -6699,7 +6699,7 @@ let _ofarmPending = null;   // итог фарма, пришедший до вх
 let _ofarmLast = null;      // последний список локаций
 let _ofarmError = '';
 let _ofarmVipOk = true;      // есть ли сезонный билет (решает сервер, здесь — только вид)
-let _ofarmFreeWait = 0;      // мс до следующего бесплатного часа, 0 — можно (решает сервер)
+let _ofarmDayOut = false;    // суточный лимит исчерпан (решает сервер)
 let _ofarmOpen = null;       // id локации, у которой раскрыт список дропа
 
 // Весь дроп локации — те же списки, что в бестиарии (кнопка «Монстры»):
@@ -6856,7 +6856,7 @@ function _ofarmRowHtml(l, best) {
       ${_ofarmMeter('Монстров по силам', l.reach, Math.round((l.reach || 0) * 100) + '%', l.reach < 1 ? 'm-warn' : 'm-ok')}`;
   }
   const confirm = _ofarmConfirm === l.id;
-  const go = (l.open && l.ok && !_ofarmFreeWait)
+  const go = (l.open && l.ok && !_ofarmDayOut)
     ? `<button class="of-btn-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : _ofI('play', 13) + 'Начать'}</button>`
     : '';
   return `<div class="of-card${state}${isBest ? ' best' : ''}${open ? ' open' : ''}">
@@ -6873,9 +6873,10 @@ function renderOfflineFarmPanel(data) {
   const d = _ofarmLast;
   const locs = d.locations || [];
   _ofarmVipOk = !!d.seasonTicket;
-  _ofarmFreeWait = Math.max(0, (Number(d.freeReadyAt) || 0) - Date.now());
-  const waitMin = Math.ceil(_ofarmFreeWait / 60000);
-  const waitTxt = waitMin >= 60 ? `${Math.floor(waitMin / 60)} ч${waitMin % 60 ? ' ' + (waitMin % 60) + ' мин' : ''}` : `${waitMin} мин`;
+  // Остаток на сегодня. Старый сервер его не присылает — тогда весь лимит.
+  const leftSec = d.leftSec != null ? Number(d.leftSec) : (d.maxHours || 1) * 3600;
+  const usedSec = Number(d.usedSec) || 0;
+  _ofarmDayOut = leftSec < (d.minSec || 60);
   const ready = locs.filter(l => l.open && l.ok);
   const best = ready.reduce((b, l) => (!b || l.xpPerHour > b.xpPerHour) ? l : b, null);
   const zones = locs.filter(l => l.kind !== 'corridor');
@@ -6887,9 +6888,11 @@ function renderOfflineFarmPanel(data) {
 
   // Шкала лимита: по клетке на час билетного потолка. Горят часы, которые
   // засчитаются ЭТОМУ игроку; без билета остальные — золотистым контуром.
+  // Израсходованные сегодня часы — приглушены.
   const tk = d.ticketHours || 7, mine = d.maxHours || 1;
+  const usedH = usedSec / 3600;
   const segs = Array.from({ length: tk }, (_, i) =>
-    `<div class="of-seg${i < mine ? ' on' : ' tk'}"><span>${i + 1}</span></div>`).join('');
+    `<div class="of-seg${i < mine ? (i + 1 <= usedH ? ' used' : ' on') : ' tk'}"><span>${i + 1}</span></div>`).join('');
 
   body.innerHTML = `
     <div class="of-hero">
@@ -6901,19 +6904,18 @@ function renderOfflineFarmPanel(data) {
     </div>
     <div class="of-limit">
       <div class="of-limit-head">
-        <span>${_ofI('clock', 15)} Лимит времени</span>
-        <b>до ${mine} ч</b>
+        <span>${_ofI('clock', 15)} Лимит на сегодня</span>
+        <b>${_ofarmDayOut ? 'исчерпан' : 'осталось ' + _ofarmDur(leftSec)}</b>
       </div>
       <div class="of-segs">${segs}</div>
       <div class="of-limit-legend">
-        <span><i class="of-dot on"></i>Без билета — ${d.freeHours || 1} ч</span>
-        <span><i class="of-dot tk"></i>С билетом — ${tk} ч</span>
+        <span><i class="of-dot on"></i>Без билета — ${d.freeHours || 1} ч в сутки</span>
+        <span><i class="of-dot tk"></i>С билетом — ${tk} ч в сутки</span>
       </div>
       <div class="of-ticket ${_ofarmVipOk ? 'yes' : 'no'}">${_ofI('ticket', 14)}${_ofarmVipOk
-        ? 'Сезонный билет активен — засчитается до ' + tk + ' ч'
-        : _ofarmFreeWait
-          ? 'Бесплатный час уже использован — снова через ' + waitTxt + '. С билетом — без ожидания, до ' + tk + ' ч'
-          : 'Нет сезонного билета — засчитается ' + mine + ' ч раз в ' + (d.freeCooldownHours || 24) + ' ч. С билетом — до ' + tk + ' ч'}</div>
+        ? 'Сезонный билет активен — до ' + tk + ' ч в сутки'
+        : 'Нет сезонного билета — ' + mine + ' ч в сутки. С билетом — до ' + tk + ' ч'}${_ofarmDayOut
+        ? '. Новый лимит — после 00:00 МСК' : ''}</div>
     </div>
     <div class="of-steps">
       <div><b>1</b>Выберите локацию</div><div><b>2</b>Игра закроется</div><div><b>3</b>Награда при входе</div>
@@ -6989,7 +6991,7 @@ function offlineFarmShowPending() {
     const lib = typeof _nexumIconHtml === 'function' ? _nexumIconHtml(20) : _ofI('coin', 18);
     html = `
       <div class="of-sum-head">${ring}${timeInfo}</div>
-      ${res.capped ? `<div class="of-capped">${_ofI('clock', 14)} Засчитан максимум — ${_ofarmDur(maxSec)}${maxSec < 7 * 3600 ? '. С сезонным билетом можно фармить до 7 ч' : ''}</div>` : ''}
+      ${res.capped ? `<div class="of-capped">${_ofI('clock', 14)} Засчитан остаток лимита на сегодня — ${_ofarmDur(maxSec)}${maxSec < 7 * 3600 ? '. С сезонным билетом — до 7 ч в сутки' : ''}</div>` : ''}
       <div class="of-res-grid">
         ${tile('r-kill', _ofI('sword', 18), 'Убито монстров', _ofarmFmt(res.kills))}
         ${tile('r-xp', _ofI('star', 18), 'Опыт', '+' + _ofarmFmt(res.xp))}

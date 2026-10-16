@@ -31,11 +31,11 @@ const clans = require('./db/repos/clans');
 const loot = require('./game/loot');
 const { query, hasColumn } = require('./db');
 const {
-  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_FREE_COOLDOWN_HOURS, OFFLINE_FARM_MIN_SEC,
+  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC,
   offlineFarmLocations, offlineFarmLocation, offlineFarmRate,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonTicketPeriodOn,
   FARM_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
-  clanBonusOf, oreDropChance, CRAFT_MATS, NEWBIE_BUFF,
+  clanBonusOf, oreDropChance, CRAFT_MATS, NEWBIE_BUFF, seasonDayKey,
 } = require('../shared/definitions');
 
 // Тот же генератор, что у онлайн-наград (handlers2/world.js): бросок решает,
@@ -44,25 +44,23 @@ const rand = () => crypto.randomInt(2 ** 30) / (2 ** 30);
 
 const fail = (msg, code) => { throw Object.assign(new Error(msg), { userMessage: msg, code }); };
 
-// Потолок в часах: с сезонным билетом — полный, без него — пробный час.
+// Суточный лимит в часах: с сезонным билетом — полный, без него — пробный час.
 const hoursFor = ticket => (ticket ? OFFLINE_FARM_MAX_HOURS : OFFLINE_FARM_FREE_HOURS);
 const _MAT_BY_ID = new Map(CRAFT_MATS.map(m => [m.id, m]));
 
 async function available() { return hasColumn('player_progress', 'offline_farm'); }
-// Перезарядка бесплатного часа — миграция 038. До неё — как раньше, без неё.
-async function _freeCdAvailable() { return hasColumn('player_progress', 'offline_farm_free_at'); }
-const FREE_CD_MS = OFFLINE_FARM_FREE_COOLDOWN_HOURS * 3600 * 1000;
+// Суточный лимит — миграция 038. До неё лимит, как раньше, на один запуск.
+async function _dayAvailable() { return hasColumn('player_progress', 'offline_farm_used_sec'); }
 
-// Когда снова можно запустить бесплатный час (мс), или 0 — уже можно.
-function freeReadyAt(freeAt, now = Date.now()) {
-  const last = Number(freeAt) || 0;
-  if (!last) return 0;
-  const ready = last + FREE_CD_MS;
-  return ready > now ? ready : 0;
+// Сколько секунд уже засчитано сегодня. Запись за другой день — ноль: сутки
+// сменились, лимит новый.
+function usedToday(row, day = seasonDayKey()) {
+  if (!row || row.offline_farm_day !== day) return 0;
+  return Math.max(0, Number(row.offline_farm_used_sec) || 0);
 }
-// «5 ч 12 мин» / «12 мин» — сколько ждать до следующего бесплатного часа.
-function _waitText(ms) {
-  const min = Math.max(1, Math.ceil(ms / 60000));
+// «3 ч 12 мин» / «40 мин».
+function _hm(sec) {
+  const min = Math.max(0, Math.floor(sec / 60));
   const h = Math.floor(min / 60), m = min % 60;
   return h ? (m ? `${h} ч ${m} мин` : `${h} ч`) : `${m} мин`;
 }
@@ -112,20 +110,21 @@ async function info(db, playerId) {
     out.reach = r.reach;
     return out;
   });
-  let active = null, freeAt = null;
+  let active = null, used = 0;
   if (await available()) {
-    const cd = await _freeCdAvailable();
+    const day = await _dayAvailable();
     const { rows } = await query(db,
-      `SELECT offline_farm${cd ? ', offline_farm_free_at' : ''} FROM player_progress WHERE player_id = $1`, [playerId]);
+      `SELECT offline_farm${day ? ', offline_farm_day, offline_farm_used_sec' : ''}
+         FROM player_progress WHERE player_id = $1`, [playerId]);
     const f = rows.length ? rows[0].offline_farm : null;
     if (f) active = { loc: f.loc, at: Number(f.at) };
-    if (cd && rows.length) freeAt = rows[0].offline_farm_free_at;
+    if (day) used = usedToday(rows[0]);
   }
   const ticket = !!(await progression.vipOf(db, playerId)).seasonTicket;
-  return { locations: list, active, maxHours: hoursFor(ticket), minSec: OFFLINE_FARM_MIN_SEC,
+  const maxHours = hoursFor(ticket);
+  return { locations: list, active, maxHours, minSec: OFFLINE_FARM_MIN_SEC,
            ticketHours: OFFLINE_FARM_MAX_HOURS, freeHours: OFFLINE_FARM_FREE_HOURS, seasonTicket: ticket,
-           freeCooldownHours: OFFLINE_FARM_FREE_COOLDOWN_HOURS,
-           freeReadyAt: ticket ? 0 : freeReadyAt(freeAt) };
+           usedSec: used, leftSec: Math.max(0, maxHours * 3600 - used) };
 }
 
 // ── запуск ──────────────────────────────────────────────────────────────────
@@ -137,24 +136,26 @@ async function start(db, playerId, locId) {
   // каждую покупку, а билет решает, сколько часов засчитать. Потолок
   // запоминается в записи: купленный или истёкший потом билет его не меняет.
   const ticket = !!(await progression.vipOf(db, playerId)).seasonTicket;
-  const maxHours = hoursFor(ticket);
+  const dayHours = hoursFor(ticket);
 
-  const cd = await _freeCdAvailable();
+  const hasDay = await _dayAvailable();
   const { rows } = await query(db,
-    `SELECT lvl, char_class, offline_farm${cd ? ', offline_farm_free_at' : ''}
+    `SELECT lvl, char_class, offline_farm${hasDay ? ', offline_farm_day, offline_farm_used_sec' : ''}
        FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) fail('Персонаж не найден', 'no_player');
   if (!rows[0].char_class) fail('Сначала выберите класс', 'no_class');
   if (rows[0].offline_farm) fail('Оффлайн-фарм уже запущен', 'already');
   if ((rows[0].lvl || 1) < loc.reqLevel) fail(`Нужен ${loc.reqLevel} уровень`, 'low_level');
-  // Бесплатный час — раз в OFFLINE_FARM_FREE_COOLDOWN_HOURS. Проверка под той
-  // же блокировкой строки, что и запись: два запуска с двух устройств не
-  // проскочат оба.
-  const free = !ticket;
-  if (free && cd) {
-    const ready = freeReadyAt(rows[0].offline_farm_free_at);
-    if (ready) fail(`Бесплатный час снова через ${_waitText(ready - Date.now())}. С сезонным билетом — без ожидания`, 'free_cooldown');
+  // Суточный лимит: засчитается только остаток на сегодня. Проверка под той
+  // же блокировкой строки, что и выдача, — два запуска с двух устройств
+  // остаток не удвоят. Фарм списывается с суток, в которые запущен.
+  const day = seasonDayKey();
+  const leftSec = hasDay ? Math.max(0, dayHours * 3600 - usedToday(rows[0], day)) : dayHours * 3600;
+  if (leftSec < OFFLINE_FARM_MIN_SEC) {
+    fail(`Лимит на сегодня исчерпан (${dayHours} ч в сутки). Новый — после 00:00 МСК`
+      + (ticket ? '' : `. С сезонным билетом — ${OFFLINE_FARM_MAX_HOURS} ч в сутки`), 'day_limit');
   }
+  const maxHours = leftSec / 3600;
 
   const st = await _permanentStats(db, playerId);
   if (!st) fail('Персонаж не найден', 'no_player');
@@ -163,11 +164,10 @@ async function start(db, playerId, locId) {
   if (!r.ok) fail('Монстры здесь пока слишком сильны для вас', 'too_strong');
 
   const at = Date.now();
-  await query(db, `UPDATE player_progress SET offline_farm = $2${free && cd ? ', offline_farm_free_at = $3' : ''},
-      updated_at = now() WHERE player_id = $1`,
-    [playerId, JSON.stringify({ loc: loc.id, at, h: maxHours, st: snap, ...(free ? { free: true } : {}) }),
-     ...(free && cd ? [at] : [])]);
-  return { loc: loc.id, at, killsPerHour: Math.round(r.killsPerHour), maxHours, seasonTicket: ticket };
+  await query(db, 'UPDATE player_progress SET offline_farm = $2, updated_at = now() WHERE player_id = $1',
+    [playerId, JSON.stringify({ loc: loc.id, at, h: maxHours, day, st: snap })]);
+  return { loc: loc.id, at, killsPerHour: Math.round(r.killsPerHour), maxHours, maxText: _hm(leftSec),
+           dayHours, seasonTicket: ticket };
 }
 
 // ── сколько убийств ─────────────────────────────────────────────────────────
@@ -291,23 +291,23 @@ async function claim(db, playerId, s) {
   const at = Number(farm.at) || 0;
   const now = Date.now();
   // Запись без `h` — запущена до появления пробного часа, тогда только с билетом.
-  const maxMs = Math.min(Number(farm.h) || OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_MAX_HOURS) * 3600 * 1000;
+  const maxMs = Math.floor(Math.min(Number(farm.h) || OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_MAX_HOURS) * 3600) * 1000;
   const awayMs = Math.max(0, now - at);
   const ms = Math.min(awayMs, maxMs);
   const sec = Math.floor(ms / 1000);
   const summary = { loc: farm.loc, seconds: sec, maxSeconds: maxMs / 1000, awaySeconds: Math.floor(awayMs / 1000),
                     capped: awayMs > maxMs, kills: 0,
                     xp: 0, gold: 0, nexum: 0, gram: 0, items: [], lost: [], levelsGained: 0 };
-  if (!loc || !farm.st || !at || sec < OFFLINE_FARM_MIN_SEC) {
-    summary.tooShort = true;
-    // Бесплатный час, который ничего не принёс (вошли сразу же), сутки не
-    // сжигает. Прежняя перезарядка к запуску уже истекла — иначе запуска бы
-    // не было, — так что сброс в NULL ничего лишнего не дарит.
-    if (farm.free && await _freeCdAvailable()) {
-      await query(db, 'UPDATE player_progress SET offline_farm_free_at = NULL WHERE player_id = $1 AND offline_farm_free_at = $2',
-        [playerId, at]);
-    }
-    return summary;
+  if (!loc || !farm.st || !at || sec < OFFLINE_FARM_MIN_SEC) { summary.tooShort = true; return summary; }
+
+  // Засчитанное время — в суточный лимит тех суток, в которые фарм запущен.
+  // Та же строка уже заблокирована выше, так что гонки с запуском нет.
+  if (farm.day && await _dayAvailable()) {
+    await query(db, `
+      UPDATE player_progress
+         SET offline_farm_used_sec = CASE WHEN offline_farm_day = $2 THEN offline_farm_used_sec + $3 ELSE $3 END,
+             offline_farm_day = $2
+       WHERE player_id = $1`, [playerId, farm.day, sec]);
   }
 
   const r = offlineFarmRate(farm.st, loc);
@@ -364,4 +364,4 @@ async function claim(db, playerId, s) {
   return summary;
 }
 
-module.exports = { available, info, start, claim, simulate, hoursFor, freeReadyAt, _killsFor, _overlap, _waitText };
+module.exports = { available, info, start, claim, simulate, hoursFor, usedToday, _killsFor, _overlap, _hm };

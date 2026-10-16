@@ -45,6 +45,9 @@ const farmOf = async (pid) => {
 const rewind = (pid, ms) => query(null, `
   UPDATE player_progress SET offline_farm = jsonb_set(offline_farm, '{at}', to_jsonb($2::bigint))
    WHERE player_id = $1`, [pid, Date.now() - ms]);
+// «Счётчик — за вчера»: сутки сменились, не дожидаясь полуночи.
+const yesterday = pid => query(null,
+  `UPDATE player_progress SET offline_farm_day = '2000-01-01' WHERE player_id = $1`, [pid]);
 const start = async (pid, loc) => {
   try { return { ok: true, res: await tx(t => of.start(t, pid, loc)) }; }
   catch (e) { return { ok: false, code: e.code, msg: e.message }; }
@@ -111,6 +114,7 @@ const claim = (pid, s = {}) => tx(t => of.claim(t, pid, s));
   ok(short && short.tooShort && short.kills === 0, 'меньше минуты — без награды');
   ok(await farmOf(pid) === null, 'и запись всё равно снята');
 
+  await yesterday(pid);   // три часа выше уже съели часть сегодняшнего лимита
   await start(pid, fz.id);
   await rewind(pid, 20 * HOUR);
   const capped = await claim(pid);
@@ -127,30 +131,33 @@ const claim = (pid, s = {}) => tx(t => of.claim(t, pid, s));
   ok(freeCap.capped && freeCap.seconds === D.OFFLINE_FARM_FREE_HOURS * 3600,
     `без билета засчитано ${D.OFFLINE_FARM_FREE_HOURS} ч`, freeCap.seconds);
 
-  // Бесплатный час — раз в сутки: забрал — и сразу снова нельзя.
+  // Лимит — на сутки: час забран, и сегодня без билета больше нельзя.
   const s7 = await start(novip, fz.id);
-  ok(!s7.ok && s7.code === 'free_cooldown', 'без билета повторный запуск сразу после часа отклонён', s7.code);
+  ok(!s7.ok && s7.code === 'day_limit', 'без билета после часа сегодня запуск отклонён', s7.code);
   ok(await farmOf(novip) === null, 'и ничего не записано');
   const niv2 = await of.info(null, novip);
-  ok(niv2.freeReadyAt > Date.now() + (D.OFFLINE_FARM_FREE_COOLDOWN_HOURS - 1) * HOUR, 'окно знает, когда снова можно', niv2.freeReadyAt);
-  // Сутки спустя — снова можно.
-  await query(null, 'UPDATE player_progress SET offline_farm_free_at = $2 WHERE player_id = $1',
-    [novip, Date.now() - D.OFFLINE_FARM_FREE_COOLDOWN_HOURS * HOUR - 1000]);
-  ok((await of.info(null, novip)).freeReadyAt === 0, 'через сутки окно снова разрешает');
-  const s8 = await start(novip, fz.id);
-  ok(s8.ok, 'через сутки бесплатный час снова запускается', s8.code);
-  // Вошёл сразу же — пустой фарм сутки не сжигает.
+  ok(niv2.leftSec === 0 && niv2.usedSec === 3600, 'окно знает, что лимит на сегодня исчерпан', `${niv2.usedSec}/${niv2.leftSec}`);
+  // Сутки сменились — лимит снова полный.
+  await yesterday(novip);
+  ok((await of.info(null, novip)).leftSec === D.OFFLINE_FARM_FREE_HOURS * 3600, 'на следующие сутки лимит снова полный');
+  ok((await start(novip, fz.id)).ok, 'и запуск снова разрешён');
   const empty = await claim(novip);
-  ok(empty.tooShort, 'вход через секунду — без награды');
-  const s9 = await start(novip, fz.id);
-  ok(s9.ok, 'пустой бесплатный час перезарядку не включает', s9.code);
-  await claim(novip);
-  // С билетом перезарядки нет.
-  const s10 = await start(pid, fz.id);
-  await rewind(pid, 2 * HOUR); await claim(pid);
-  const s11 = await start(pid, fz.id);
-  ok(s10.ok && s11.ok, 'с билетом — запуск сразу после выдачи', s11.code);
-  await claim(pid);
+  ok(empty.tooShort && (await of.info(null, novip)).usedSec === 0, 'пустой фарм (вошли сразу) лимит не тратит');
+
+  // С билетом — 7 ч в сутки, сколькими запусками ни дели.
+  const tk = await mkPlayer('d', 25);
+  await start(tk, fz.id); await rewind(tk, 3 * HOUR);
+  const a1 = await claim(tk);
+  ok(Math.abs(a1.seconds - 3 * 3600) <= 2, 'с билетом: первый запуск — 3 ч', a1.seconds);
+  const s10 = await start(tk, fz.id);
+  ok(s10.ok && Math.abs(s10.res.maxHours - (D.OFFLINE_FARM_MAX_HOURS - 3)) < 0.01,
+    'второй запуск сразу — разрешён, но только на остаток', s10.res && s10.res.maxHours);
+  await rewind(tk, 10 * HOUR);
+  const a2 = await claim(tk);
+  ok(a2.capped && Math.abs(a2.seconds - (D.OFFLINE_FARM_MAX_HOURS - 3) * 3600) <= 2,
+    `засчитан только остаток — ${D.OFFLINE_FARM_MAX_HOURS - 3} ч`, a2.seconds);
+  const s11 = await start(tk, fz.id);
+  ok(!s11.ok && s11.code === 'day_limit', `после ${D.OFFLINE_FARM_MAX_HOURS} ч за сутки — отказ`, s11.code);
 
   const low = await mkPlayer('b', 5);
   const s4 = await start(low, 'farmZone');
