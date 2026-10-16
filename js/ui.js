@@ -2034,7 +2034,7 @@ function _gemCodexHtml() {
   }).join('');
   return `<div class="gemcx">
     <div class="codex-ms-head"><span class="codex-ms-title">Самоцветы</span></div>
-    <div class="gemcx-hint">Падают в Фарм-зоне. Каждый вид сдаётся отдельно, бонусы порогов складываются. Сданные камни уничтожаются.</div>
+    <div class="gemcx-hint">Падают в Фарм-зоне, Фарм зоне 2 и Подземелье. Каждый вид сдаётся отдельно, бонусы порогов складываются. Сданные камни уничтожаются.</div>
     ${cards}
   </div>`;
 }
@@ -2703,6 +2703,16 @@ function _farmSpeciesBookRows(eid) {
   }).join('');
 }
 
+// Самоцветы Кодекса — одна ставка во всех трёх зонах, где они падают (Фарм-зона,
+// Фарм зона 2, Подземелье), см. FARM_GEM_*_CHANCE и server/game/loot.js.
+function _gemDropRows() {
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  return (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.gem).map(g => {
+    const ch = g.rarity === 'rare' ? FARM_GEM_RARE_CHANCE : FARM_GEM_COMMON_CHANCE;
+    return _dropRow(_mi(g, 16), g.name, _pctSmall(ch * 100), g.rarity === 'rare' ? '#cdb8ec' : '#8fe8a0');
+  }).join('');
+}
+
 function _farmDropBodyHtml(e, { noGems = false } = {}) {
   const normPct  = _pctSmall(FARM_NORM_STONE_CHANCE * 100);
   const blessPct = _pctSmall(FARM_BLESS_STONE_CHANCE * 100);
@@ -2728,10 +2738,7 @@ function _farmDropBodyHtml(e, { noGems = false } = {}) {
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
     ${/* Самоцветы Кодекса — та же ставка, что у камней заточки выше. */ ''}
-    ${(noGems || typeof CRAFT_MATS === 'undefined' ? [] : CRAFT_MATS).filter(m => m.gem).map(g => {
-      const ch = g.rarity === 'rare' ? FARM_GEM_RARE_CHANCE : FARM_GEM_COMMON_CHANCE;
-      return _dropRow(_mi(g, 16), g.name, _pctSmall(ch * 100), g.rarity === 'rare' ? '#cdb8ec' : '#8fe8a0');
-    }).join('')}
+    ${noGems ? '' : _gemDropRows()}
     ${epicRec ? _dropRow(_mi(epicRec, 16), epicRec.name, epicRecPct, '#c98fef') : ''}
     ${legRec  ? _dropRow(_mi(legRec, 16),  legRec.name,  legRecPct,  '#f5c542') : ''}
     ${_farmSpeciesBookRows(e.eid)}
@@ -2840,11 +2847,12 @@ function _farmHighZoneRows(e, opts = {}) {
     ${_zoneOreRow(oreLvl)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  _pctSmall(FARM_HIGH_NORM_STONE_CHANCE * 100),  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, _pctSmall(FARM_HIGH_BLESS_STONE_CHANCE * 100), '#efc680') : ''}
+    ${opts.noGems ? '' : _gemDropRows()}
     ${epicRec   ? _dropRow(_mi(epicRec, 16),   epicRec.name,   _pctSmall(FARM_HIGH_EPIC_RECIPE_CHANCE * 100), '#c98fef') : ''}
     ${legRec    ? _dropRow(_mi(legRec, 16),    legRec.name,    _pctSmall(FARM_HIGH_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : ''}`;
 }
 
-function _farmHighSpeciesBodyHtml(e) {
+function _farmHighSpeciesBodyHtml(e, { noGems = false } = {}) {
   const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
   const S = typeof FARM_HIGH_SPECIES_SKILL_BOOKS   !== 'undefined' ? FARM_HIGH_SPECIES_SKILL_BOOKS[e.eid]   : [];
   const A = typeof FARM_HIGH_SPECIES_ADV_BOOKS     !== 'undefined' ? FARM_HIGH_SPECIES_ADV_BOOKS[e.eid]     : [];
@@ -2856,7 +2864,7 @@ function _farmHighSpeciesBodyHtml(e) {
       <span>DEF <b>${e.def}</b></span>
       <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
     </div>
-    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e))}
+    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e, { noGems }))}
     ${_farmHighGearSections(e.eid)}
     ${sec(t('uniqueShardsHdr'), _farmHighShardRows(e.eid))}
     ${sec(t('farmHighSkillBooksHdr'), _farmHighBookRows(S, FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
@@ -2864,7 +2872,8 @@ function _farmHighSpeciesBodyHtml(e) {
     ${sec(t('farmHighPassiveBooksHdr'), _farmHighBookRows(P, FARM_HIGH_PASSIVE_BOOK_CHANCE, b => _itemIcon(b, 16)))}`;
 }
 
-function _farmHighMonsterListHtml() {
+// noGems — для окна оффлайн-фарма: самоцветы Кодекса там не падают.
+function _farmHighMonsterListHtml({ noGems = false } = {}) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   const lvl = Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2);
   // Имя/цвет ранга — по шкале САМОЙ ЗОНЫ, ровно как их считает её настоящий
@@ -2895,7 +2904,7 @@ function _farmHighMonsterListHtml() {
         </div>
         <span class="mon-chevron">›</span>
       </div>
-      <div class="mon-body">${_farmHighSpeciesBodyHtml(e)}</div>
+      <div class="mon-body">${_farmHighSpeciesBodyHtml(e, { noGems })}</div>
     </div>`;
     }).join('');
   const hint = tVars('farmHighBestiaryHint', { a: FARM_HIGH_LVL_MIN, b: FARM_HIGH_LVL_MAX });
@@ -6788,7 +6797,7 @@ function _ofarmDropHtml(id) {
   if (!loc) return '';
   let html;
   if (loc.kind === 'farmZone') html = _farmZoneMonsterListHtml({ noGems: true });
-  else if (loc.kind === 'farmHigh') html = _farmHighMonsterListHtml();
+  else if (loc.kind === 'farmHigh') html = _farmHighMonsterListHtml({ noGems: true });
   else {
     const arm = ARM_NAMES.indexOf(loc.arm) + 1;
     const base = ENEMY_DEF.find(e => e.eid === loc.species[0]);

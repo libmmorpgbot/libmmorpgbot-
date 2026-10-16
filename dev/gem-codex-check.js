@@ -51,6 +51,18 @@ const made = [];
     for (const d of loot._rollFarmZoneLoot([], 'goblin', 1e6)) got.set(d.id, (got.get(d.id) || 0) + 1);
   }
   ok(['gem_jewel', 'gem_red', 'gem_shard', 'gem_stone'].every(id => got.get(id) > 0), 'Фарм-зона роняет все четыре самоцвета');
+  const all4 = (fn) => {
+    const seen = new Set();
+    for (let i = 0; i < 200; i++) for (const d of fn()) seen.add(d.id);
+    return ['gem_jewel', 'gem_red', 'gem_shard', 'gem_stone'].every(id => seen.has(id));
+  };
+  const real = Math.random;
+  try {
+    // Фарм зона 2 и Подземелье бросают без множителя — броски делаются удачными.
+    Math.random = () => 0;
+    ok(all4(() => loot._rollFarmHighLoot([], D.FARM_HIGH_SPECIES[0])), 'Фарм зона 2 роняет все четыре самоцвета');
+    ok(all4(() => loot._rollDungeonLoot([], 'lich', 'mage')), 'Подземелье — тоже');
+  } finally { Math.random = real; }
   ok(D.FARM_GEM_COMMON_CHANCE === D.FARM_NORM_STONE_CHANCE, 'бусы и красный — шанс обычной заточки');
   ok(D.FARM_GEM_RARE_CHANCE === D.FARM_BLESS_STONE_CHANCE, 'осколок и камень — шанс безопасной');
   const gemDef = D.CRAFT_MATS.find(m => m.id === 'gem_shard');

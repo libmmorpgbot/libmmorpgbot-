@@ -289,6 +289,12 @@ function _rollFarmHighLoot(inv, eid, mult = 1) {
   // (FARM_HIGH_BLESS_STONE_CHANCE === FARM_BLESS_STONE_CHANCE, без ×1.3
   // осколков) — так же, без деления по видам, как обычный камень выше.
   if (Math.random() < FARM_HIGH_BLESS_STONE_CHANCE * mult) addMat('bless_stone', 1);
+  // Самоцветы Кодекса — ставками первой Фарм-зоны. Эта же таблица — дроп
+  // Подземелья (_rollDungeonLoot ниже), так что и там они падают.
+  if (Math.random() < FARM_GEM_COMMON_CHANCE * mult) addMat('gem_jewel', 1);
+  if (Math.random() < FARM_GEM_COMMON_CHANCE * mult) addMat('gem_red', 1);
+  if (Math.random() < FARM_GEM_RARE_CHANCE * mult) addMat('gem_shard', 1);
+  if (Math.random() < FARM_GEM_RARE_CHANCE * mult) addMat('gem_stone', 1);
   if (Math.random() < FARM_HIGH_EPIC_RECIPE_CHANCE * mult) addMat('rece', 1);
   if (Math.random() < FARM_HIGH_LEGENDARY_RECIPE_CHANCE * mult) addMat('recl', 1);
   return granted;

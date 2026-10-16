@@ -91,6 +91,11 @@ ok(new Set(mats.map(d => d.id)).size === mats.length, 'материалы сло
   ok(lucky.drops.length > 0, 'при удачных бросках зона роняет предметы');
   ok(!lucky.drops.some(d => D.CRAFT_MATS.some(m => m.id === d.id && m.gem)),
     'самоцветов Кодекса среди них нет', lucky.drops.map(d => d.id).join(','));
+  Math.random = () => 0;
+  let luckyHigh;
+  try { luckyHigh = of.simulate(D.offlineFarmLocation('farmHigh'), { ...MID, atk: 30000, def: 3000, maxHp: 200000 }, 50); } finally { Math.random = real; }
+  ok(luckyHigh.drops.length > 0 && !luckyHigh.drops.some(d => D.CRAFT_MATS.some(m => m.id === d.id && m.gem)),
+    'и в Фарм зоне 2 оффлайн самоцветов нет', luckyHigh.drops.length);
 }
 
 head('Время');
