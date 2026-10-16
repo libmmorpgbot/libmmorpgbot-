@@ -142,13 +142,21 @@ function _hasSeasonTicket() {
   return typeof _seasonTicketActive !== 'undefined' && !!_seasonTicketActive;
 }
 
+// «Оффлайн» — в строке имени на плашке, вплотную слева от «Турнира», той же
+// высоты. Геометрия плашки — та же формула, что в drawHeader и
+// _positionTournamentBtn (js/ui.js): px/pw/pRight, кнопка турнира шириной
+// hud(78) у правого края. Ник в drawHeader обрезается до этой кнопки.
 function getOfflineFarmBtnPos() {
-  const cc = getClassChangeBtnPos();
-  return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
+  const mp = hudMiniMapRect();
+  const px = hud(6), py = hud(4), pw = mp.x - px - hud(4);
+  const pRight = px + pw - hud(11);
+  const w = hud(64), h = hud(22);
+  return { x: pRight - hud(78) - hud(5) - w, y: py + hud(5), w, h };
 }
 
+// Под «Класс» — место, где раньше стоял «Оффлайн».
 function getMailBonusBtnPos() {
-  const cc = getOfflineFarmBtnPos();
+  const cc = getClassChangeBtnPos();
   return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
 }
 

@@ -3725,7 +3725,15 @@ function drawHeader() {
   const infoX = avX + avR + hud(12);
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   ctx.font = `bold ${hudF(14)}px ${F}`; ctx.fillStyle = HUD_TEXT;
-  ctx.fillText((netUsername || p.charDef.name).slice(0, 14), infoX, py + hud(20));
+  // Ник — до кнопки «Оффлайн» в той же строке (getOfflineFarmBtnPos,
+  // js/input.js): длинный обрезается многоточием, а не уходит под кнопку.
+  let nick = (netUsername || p.charDef.name).slice(0, 14);
+  const nickMaxW = getOfflineFarmBtnPos().x - hud(6) - infoX;
+  if (ctx.measureText(nick).width > nickMaxW) {
+    while (nick.length > 1 && ctx.measureText(nick + '…').width > nickMaxW) nick = nick.slice(0, -1);
+    nick += '…';
+  }
+  ctx.fillText(nick, infoX, py + hud(20));
   ctx.font = `${hudF(11)}px ${F}`; ctx.fillStyle = p.charDef.color + 'e0';
   ctx.fillText(p.charDef.name, infoX, py + hud(35));
   // БМ (battle might) reads as part of the class line — "Танк БМ 3150" — not
@@ -4703,7 +4711,7 @@ function drawClassChangeButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  ОФФЛАЙН BUTTON — под «Класс», синяя, видна всем. Окно открывается только
+//  ОФФЛАЙН BUTTON — на плашке слева от «Турнира», синяя, видна всем. Окно открывается только
 //  с сезонным билетом (_checkOfflineFarmBtnTouch, js/input.js); сервер
 //  проверяет билет сам (server/offline-farm.js).
 // ─────────────────────────────────────────────────────────
@@ -4717,10 +4725,10 @@ function drawOfflineFarmButton() {
   grad.addColorStop(0, '#2f6aa8');
   grad.addColorStop(1, '#1d4a7a');
   ctx.fillStyle = grad;
-  roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 9); ctx.fill();
+  roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 7); ctx.fill();
   ctx.strokeStyle = 'rgba(127,180,232,0.75)';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 9); ctx.stroke();
+  roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 7); ctx.stroke();
 
   const lbl = t('offlineFarmBtn');
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
