@@ -969,5 +969,24 @@
     })();
   })();
 </script>
+<script>
+  // Якоря — прокруткой СВОЕЙ страницы. Страница открывается и внутри игры, в
+  // iframe панели «Обновления» (openUpdatesPanel, js/ui.js), а переход по
+  // #якорю прокручивает заодно все окна над ней: окно игры съезжало вверх,
+  // крестик панели уходил за экран, снизу вылезал чат — и закрыть было нечем.
+  // window.scrollTo двигает только этот документ.
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a) return;
+    var id = decodeURIComponent(a.getAttribute('href').slice(1));
+    var el = id && document.getElementById(id);
+    if (!el) return;
+    e.preventDefault();
+    var margin = parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+    var top = el.getBoundingClientRect().top + window.pageYOffset - margin;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    try { history.replaceState(null, '', '#' + id); } catch (_) { /* file:// */ }
+  });
+</script>
 </body>
 </html>

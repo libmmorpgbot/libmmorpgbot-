@@ -7555,10 +7555,27 @@ function _refreshUpdatesDot() {
   const btn = document.getElementById('updates-hud-btn');
   if (btn) btn.classList.toggle('has-new', !_updatesSeen());
 }
+// Окно игры не должна сдвигать страница в панели. Переход по #якорю внутри
+// iframe прокручивает и все окна над ним — #app с overflow:hidden тоже, — и
+// шапка панели с крестиком уезжала за экран, а снизу показывался чат. Сами
+// страницы это теперь не делают (patches.html, guide.html), а здесь — страховка
+// на любую другую: пока панель открыта, #app возвращается на место.
+function _pinAppScroll() {
+  const app = document.getElementById('app');
+  if (!app || app._updPinned) return;
+  app._updPinned = true;
+  app.addEventListener('scroll', () => {
+    const panel = document.getElementById('updates-panel');
+    if (panel && panel.style.display !== 'none' && (app.scrollTop || app.scrollLeft)) {
+      app.scrollTop = 0; app.scrollLeft = 0;
+    }
+  });
+}
 function openUpdatesPanel() {
   const panel = document.getElementById('updates-panel');
   const frame = document.getElementById('updates-frame');
   if (!panel || !frame) return;
+  _pinAppScroll();
   // Версия в адресе — чтобы новый патч не показывался из кэша старым.
   const src = '/patches.html?v=' + UPDATES_VERSION;
   if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
@@ -7569,6 +7586,8 @@ function openUpdatesPanel() {
 function closeUpdatesPanel() {
   const panel = document.getElementById('updates-panel');
   if (panel) panel.style.display = 'none';
+  const app = document.getElementById('app');
+  if (app) { app.scrollTop = 0; app.scrollLeft = 0; }
 }
 
 // hud-menu-btn sits directly under the minimap plate, aligned to it —
