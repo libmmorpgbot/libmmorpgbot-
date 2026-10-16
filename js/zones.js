@@ -45,6 +45,8 @@ const _ZONE_FARMS = {
   farmZone:  ['frostvault', 'frostvault'],    // Фарм-зона и её сезонное крыло
   farmHigh:  ['crystalmine', 'crystalmine'],  // Фарм зона 2 и её сезонное крыло
   farmZone2: ['goldvault', 'goldvault'],      // Элитная фарм-зона
+  // Мир: болото у входа на западе, мёртвый лес к трону на востоке.
+  openWorld: ['swamp', 'deadwood'],
 };
 // Война гильдий — своя тема: боевая крепость.
 const _ZONE_GW = ['warkeep', 'warkeep'];
@@ -65,7 +67,8 @@ function _zoneLayout() {
   if (d.corridorGates) {
     const r0 = d.rooms.find(r => r.arm);
     stages = r0 && _ZONE_ARMS[r0.arm];
-  } else if (d.farmZone2) stages = _ZONE_FARMS.farmZone2;
+  } else if (d.openWorld) stages = _ZONE_FARMS.openWorld;
+  else if (d.farmZone2) stages = _ZONE_FARMS.farmZone2;
   else if (d.farmHigh) stages = _ZONE_FARMS.farmHigh;
   else if (d.farmZone) stages = _ZONE_FARMS.farmZone;
   else if (d.guildWar) stages = _ZONE_GW;

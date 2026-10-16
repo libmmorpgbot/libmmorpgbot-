@@ -11,7 +11,7 @@
 
 const Room = require('./game/Room');
 const { FLOOR_IDS, FLOOR_REGISTRY } = require('./game/floors');
-const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, DUNGEON_ENTRY_LEVEL, seasonActive, seasonTicketPeriodOn } = require('../shared/definitions');
+const { ARM_LEVEL_REQ, FARM_ENTRY_LEVEL, FARM_HIGH_ENTRY_LEVEL, WORLD_ENTRY_LEVEL, DUNGEON_ENTRY_LEVEL, seasonActive, seasonTicketPeriodOn } = require('../shared/definitions');
 
 const floorRooms = new Map();
 
@@ -22,6 +22,7 @@ const ZONE_LEVEL_REQ = {
   ...ARM_LEVEL_REQ,
   farmZone: FARM_ENTRY_LEVEL,
   farmHigh: FARM_HIGH_ENTRY_LEVEL,
+  openWorld: WORLD_ENTRY_LEVEL,
   // Сезонное крыло — та же зона 20+, только за билетом; уровень с неё никто
   // не снимал, билет добавлен СВЕРХУ (TICKET_ONLY ниже), а не вместо.
   farmSeason: FARM_ENTRY_LEVEL,
@@ -73,6 +74,7 @@ const FLOOR_KEY = Object.fromEntries(Object.entries(FLOOR_IDS).map(([k, v]) => [
 const STANDABLE = new Set([
   FLOOR_IDS.hub, FLOOR_IDS.left, FLOOR_IDS.top, FLOOR_IDS.bottom, FLOOR_IDS.right,
   FLOOR_IDS.farmZone, FLOOR_IDS.farmHigh, FLOOR_IDS.farmSeason, FLOOR_IDS.farmHighSeason, FLOOR_IDS.guildWar, FLOOR_IDS.arena,
+  FLOOR_IDS.openWorld,
   FLOOR_IDS.dungeon, FLOOR_IDS.dungeonLev, FLOOR_IDS.dungeonDeathknight, FLOOR_IDS.dungeonRanger,
   FLOOR_IDS.dungeonMage, FLOOR_IDS.dungeonWarlock, FLOOR_IDS.dungeonRunefighter, FLOOR_IDS.dungeonAssassin,
 ]);

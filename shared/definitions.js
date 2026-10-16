@@ -1852,6 +1852,70 @@ const FARM_HIGH_SPECIES_PASSIVE_BOOKS = _splitAcrossSpecies(
 // чтобы не повторять один-в-один разбивку книг первой профессии (смещение 0).
 const FARM_HIGH_SPECIES_SHARDS = _splitAcrossSpecies(UNIQUE_SHARDS.map(sh => sh.id), FARM_HIGH_SPECIES, 1);
 
+// ── Мир ──────────────────────────────────────────────────────────────────
+// Заказ: «локацию не как сейчас комнаты, а открытая локация, в разных точках
+// спавнятся монстры пачками, локация называется Мир, с 35 уровня, монстры
+// 40-59, споты разные как в ММОРПГ — топ, лоу, так же спот, где появляется
+// босс 60 уровня».
+//
+// Поэтому здесь нет ни комнат, ни коридоров: один большой открытый этаж
+// (generateWorld, server/game/dungeon.js) с камнями и деревьями поперёк
+// поля, а монстры стоят ПАЧКАМИ на именованных спотах. Спот — это точка на
+// карте со своей полосой уровней и видами; чем дальше на восток от входа,
+// тем он злее. Ударил одного из пачки — проснулась вся пачка (packMateIds,
+// Room.js's _wakePack), как в Элитной зоне.
+//
+// Три яруса спотов:
+//   low — 40-45, у входа. Пачки по 3, сами не бросаются (как в фарм-зонах),
+//         чтобы игрок 35-39 уровня мог зайти и осмотреться, не умерев на пороге.
+//   mid — 46-52, середина карты. Пачки по 4, агрятся на подходе.
+//   top — 53-59, дальний восток. Пачки по 5, агрятся.
+// И отдельный спот босса — Владыка Мира, 60 уровень, на краю карты за
+// последним топ-спотом. Его таймер — общий механизм боссов коридоров
+// (arm: 'world', boss_state в базе), так что рестарт сервера его не воскресит.
+//
+// Виды — те же шесть, что у Фарм зоны 2 (FARM_HIGH_SPECIES, рукав 3), и
+// таблица дропа её же (_rollFarmHighLoot): 40-59 лежит в той же полосе
+// рукава, а деление пулов по видам работает без своей копии таблиц.
+const WORLD_ENTRY_LEVEL = 35;
+const WORLD_LVL_MIN = 40;
+const WORLD_LVL_MAX = 59;
+const WORLD_BOSS_LEVEL = 60;
+const WORLD_XP_MULT = 3; // как в фарм-зонах
+const WORLD_LIBERTY_CHANCE = FARM_HIGH_LIBERTY_CHANCE;
+// Владыка — босс 60 уровня по кривой 'boss' (×10 HP) и ещё ×3 сверху: его
+// бьют группой, раз в 1-2 часа, а не в одиночку на проходе коридора.
+const WORLD_BOSS_HP_MULT = 3;
+// Множитель к шансам таблицы зоны для убийства Владыки — плюс обычные
+// боссовые сундуки и камни (rollLoot, server/handlers2/world.js).
+const WORLD_BOSS_DROP_MULT = 50;
+// Размер этажа в тайлах.
+const WORLD_W = 150;
+const WORLD_H = 110;
+// Вход — западный край, середина по высоте.
+const WORLD_SPAWN = { x: 12, y: 55 };
+const WORLD_TIERS = {
+  low: { packSize: 3, selfAggro: false },
+  mid: { packSize: 4, selfAggro: true },
+  top: { packSize: 5, selfAggro: true },
+};
+// x/y — центр спота в тайлах, r — радиус, в котором стоят пачки, packs —
+// сколько пачек, species — индексы в FARM_HIGH_SPECIES (растения 0-1,
+// вампиры 2-3, бехолдеры 4-5). Порядок — от входа к боссу.
+const WORLD_SPOTS = [
+  { id: 'road',     name: 'Заросший тракт',   tier: 'low', x: 32,  y: 40, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
+  { id: 'glade',    name: 'Тихая поляна',     tier: 'low', x: 30,  y: 72, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
+  { id: 'mill',     name: 'Старая мельница',  tier: 'low', x: 50,  y: 24, r: 7, lvl: [43, 45], packs: 5, species: [1, 2] },
+  { id: 'ravine',   name: 'Сырые овраги',     tier: 'low', x: 52,  y: 88, r: 7, lvl: [43, 45], packs: 5, species: [0, 2] },
+  { id: 'grove',    name: 'Гнилая роща',      tier: 'mid', x: 72,  y: 55, r: 8, lvl: [46, 49], packs: 5, species: [2, 3] },
+  { id: 'crypts',   name: 'Вампирьи склепы',  tier: 'mid', x: 84,  y: 20, r: 7, lvl: [49, 52], packs: 4, species: [2, 3] },
+  { id: 'stones',   name: 'Каменный круг',    tier: 'mid', x: 86,  y: 90, r: 7, lvl: [49, 52], packs: 4, species: [3, 4] },
+  { id: 'abyss',    name: 'Око бездны',       tier: 'top', x: 108, y: 30, r: 7, lvl: [53, 56], packs: 4, species: [4, 5] },
+  { id: 'cliff',    name: 'Чёрный утёс',      tier: 'top', x: 110, y: 80, r: 7, lvl: [53, 56], packs: 4, species: [3, 5] },
+  { id: 'throne',   name: 'Преддверие трона', tier: 'top', x: 122, y: 55, r: 6, lvl: [57, 59], packs: 3, species: [4, 5] },
+];
+const WORLD_BOSS_SPOT = { id: 'lord', name: 'Трон Владыки', x: 137, y: 55, r: 4, bossName: 'Владыка Мира' };
+
 // ── Элитная фарм-зона (Elite Farm Zone 2) ────────────────────────────────
 // A second, harder farm zone: level 30-40 monsters, entered only as a full
 // party of FARM2_PARTY_SIZE (see the farm2Group* lobby, server/index.js —
@@ -4567,6 +4631,8 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_HIGH_SPECIES_GEAR_SLOTS, FARM_HIGH_SPECIES_SKILL_BOOKS,
   FARM_HIGH_SPECIES_ADV_BOOKS, FARM_HIGH_SPECIES_PASSIVE_BOOKS,
   FARM_HIGH_SHARD_CHANCE, FARM_HIGH_SPECIES_SHARDS,
+  WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_LIBERTY_CHANCE,
+  WORLD_BOSS_HP_MULT, WORLD_BOSS_DROP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
   FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
   FARM2_LIBERTY_CHANCE, FARM_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,

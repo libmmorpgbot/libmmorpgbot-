@@ -1,5 +1,5 @@
 const {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateWorld, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
 } = require('./dungeon');
 const { FEAR_FLOOR_ID } = require('../../shared/definitions');
@@ -53,6 +53,9 @@ const FLOOR_IDS = {
   // Сезонное крыло Фарм зоны 2 — то же, что farmSeason, только за Фарм зоной 2
   // (generateFarmHighSeason, server/game/dungeon.js).
   farmHighSeason: 26,
+  // Мир — открытая локация со спотами и боссом (generateWorld, server/game/
+  // dungeon.js). Обычный общий этаж, как farmHigh: вход с телепорта хаба.
+  openWorld: 27,
 };
 
 // armIdx (1-4) is the enemy-level/species-curve identity FLOOR_ENEMIES/
@@ -75,6 +78,7 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.farmHigh, key: 'farmHigh', generate: () => generateFarmHigh() },
   { id: FLOOR_IDS.farmSeason, key: 'farmSeason', generate: () => generateFarmSeason() },
   { id: FLOOR_IDS.farmHighSeason, key: 'farmHighSeason', generate: () => generateFarmHighSeason() },
+  { id: FLOOR_IDS.openWorld, key: 'openWorld', generate: () => generateWorld() },
   { id: FLOOR_IDS.tournament, key: 'tournament', generate: () => generateTournamentPit() },
   { id: FLOOR_IDS.trial,     key: 'trial',     generate: () => generateTrial() },
   { id: FLOOR_IDS.dungeon,             key: 'dungeon',             generate: () => generateDungeonHub() },

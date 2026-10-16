@@ -1838,7 +1838,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, dungeonEntry: d.dungeonEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, classPads: d.classPads, dungeonZone: d.dungeonZone, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, worldEntry: d.worldEntry, dungeonEntry: d.dungeonEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, openWorld: d.openWorld, classPads: d.classPads, dungeonZone: d.dungeonZone, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
@@ -1953,7 +1953,8 @@ class Room {
   // back to the same constant used to seed it.
   getBossStatus() {
     const status = {};
-    ARM_NAMES.forEach(arm => {
+    // 'openWorld' — Владыка Мира (generateWorld), тот же механизм таймера.
+    [...ARM_NAMES, 'openWorld'].forEach(arm => {
       const boss = this.enemies.find(e => e.isBoss && e.arm === arm);
       if (!boss) return;
       if (boss.hp > 0) { status[arm] = { alive: true }; return; }
@@ -2360,7 +2361,9 @@ class Room {
       // leash distance. farmZone2's own monsters stand in packs
       // (packMateIds, generateFarmZone2) that wake together on a hit
       // instead — see _wakePack — but never wake on proximity alone.
-      if (!e.aggro && !e.farmZone && !e.farmHigh && !e.farmZone2 && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      // `passive` — лоу-споты Мира (generateWorld): та же логика, пачка
+      // просыпается только от удара.
+      if (!e.aggro && !e.farmZone && !e.farmHigh && !e.farmZone2 && !e.passive && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
@@ -5382,7 +5385,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -5489,7 +5492,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

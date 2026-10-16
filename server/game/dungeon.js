@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_BOSS_HP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB, DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
@@ -234,6 +234,9 @@ function generateHub() {
     // два по имени, и «список фарм-зон» на две зоны стоил бы обеим сторонам
     // больше, чем стоит одна строка.
     farmHighEntry: { req: FARM_HIGH_ENTRY_LEVEL },
+    // Мир — открытая локация со спотами (generateWorld, ниже). Тот же
+    // приём: один пункт списка телепорта со своим гейтом.
+    worldEntry: { req: WORLD_ENTRY_LEVEL },
     // Подземелье — третий пункт того же списка, со своим гейтом. Сама зона
     // (пустой зал с 7 телепортами по классам) живёт на своём этаже
     // (generateDungeonHub, ниже), здесь только запись для пада.
@@ -891,6 +894,167 @@ function generateFarmHigh() {
     spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
     returnPad, seasonPad,
     farmHigh: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_HIGH_ENTRY_LEVEL },
+    enemies: enemyList,
+  };
+}
+
+// Мир (см. блок WORLD_* в shared/definitions.js — там заказ и разбор ярусов).
+// Не комнаты с коридорами, а одно открытое поле: стена только по краю карты
+// и россыпь валунов/деревьев (сгустки WALL) поперёк, которые ломают прямые
+// линии, но не делят карту на части. Монстры стоят ПАЧКАМИ на именованных
+// спотах WORLD_SPOTS; у каждой пачки свои packMateIds, так что удар по одному
+// будит всю пачку (Room.js's _wakePack). Босс — один, на своём споте за
+// кольцом скал с проходом с запада, с тем же таймером 1-2 часа и той же
+// записью в boss_state, что у боссов коридоров (arm 'openWorld').
+//
+// rooms здесь — не геометрия, а квадраты вокруг спотов: клиент по ним
+// сужает автоприцел до «своего» спота (_getRoomAt, js/game.js), чтобы игрок
+// на краю одного спота не убегал бить пачку соседнего.
+function generateWorld() {
+  const rng = seededRng(2026 * 1337 + 777 + 700);
+  const w = WORLD_W, h = WORLD_H;
+  const BORDER = 3;
+  const grid = Array.from({ length: h }, (_, gy) => Array.from({ length: w }, (_, gx) =>
+    (gx < BORDER || gy < BORDER || gx >= w - BORDER || gy >= h - BORDER) ? WALL : FLOOR));
+  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
+  const B = WORLD_BOSS_SPOT, S = WORLD_SPAWN;
+
+  // ── валуны и деревья ────────────────────────────────────────────────────
+  // Не на спотах, не у входа и не у трона: пачка, разрезанная валуном
+  // пополам, и вход, упирающийся в камень, — это не «живой мир», а помеха.
+  const clear = [
+    ...WORLD_SPOTS.map(sp => ({ x: sp.x, y: sp.y, r: sp.r + 3 })),
+    { x: B.x, y: B.y, r: B.r + 6 },
+    { x: S.x, y: S.y, r: 8 },
+  ];
+  const isClear = (gx, gy) => clear.some(c => (gx - c.x) ** 2 + (gy - c.y) ** 2 <= c.r * c.r);
+  for (let i = 0; i < 150; i++) {
+    const cx = BORDER + 2 + Math.floor(rng() * (w - BORDER * 2 - 4));
+    const cy = BORDER + 2 + Math.floor(rng() * (h - BORDER * 2 - 4));
+    const rad = 0.8 + rng() * 2.2;
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      const gx = cx + dx, gy = cy + dy;
+      if (!inBounds(gx, gy) || isClear(gx, gy)) continue;
+      if (dx * dx + dy * dy <= rad * rad + rng() * 0.8) grid[gy][gx] = WALL;
+    }
+  }
+
+  // ── кольцо скал вокруг трона, проход с запада ───────────────────────────
+  const ringIn = B.r + 3, ringOut = B.r + 4.5;
+  for (let gy = B.y - 9; gy <= B.y + 9; gy++) for (let gx = B.x - 9; gx <= B.x + 9; gx++) {
+    if (!inBounds(gx, gy)) continue;
+    const dx = gx - B.x, dy = gy - B.y, d2 = dx * dx + dy * dy;
+    if (d2 < ringIn * ringIn || d2 > ringOut * ringOut) continue;
+    if (dx < 0 && Math.abs(dy) <= 2) continue; // проход
+    grid[gy][gx] = WALL;
+  }
+
+  // ── карман, отрезанный валунами, — тоже стена ───────────────────────────
+  // Россыпь случайная, и раз на сотню раскладок три сгустка смыкаются в
+  // кольцо. Заливка от входа: всё, куда игрок не дойдёт, становится стеной,
+  // чтобы там не встал ни один монстр.
+  const seen = Array.from({ length: h }, () => new Uint8Array(w));
+  const stack = [[S.x, S.y]];
+  seen[S.y][S.x] = 1;
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (!inBounds(nx, ny) || seen[ny][nx] || grid[ny][nx] !== FLOOR) continue;
+      seen[ny][nx] = 1;
+      stack.push([nx, ny]);
+    }
+  }
+  for (let gy = 0; gy < h; gy++) for (let gx = 0; gx < w; gx++) if (!seen[gy][gx]) grid[gy][gx] = WALL;
+
+  function freeTileNear(cx, cy, rad) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const gx = Math.round(cx + (rng() * 2 - 1) * rad), gy = Math.round(cy + (rng() * 2 - 1) * rad);
+      if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) return { gx, gy };
+    }
+    return { gx: cx, gy: cy };
+  }
+
+  const WEAK_MULT = 0.5; // то же половинение, что у пачек коридоров и фарм-зон
+  // Ранг и цвет — по полосе самой локации (40 — «Слабый», 59 — верх), как у
+  // Фарм зоны 2 и по той же причине: рукавная шкала ломается на 40/41.
+  const maxLocalLvl = WORLD_LVL_MAX - WORLD_LVL_MIN + 1;
+  const rooms = [], enemyList = [], spots = [];
+  let eid = 0;
+
+  WORLD_SPOTS.forEach(sp => {
+    const tier = WORLD_TIERS[sp.tier];
+    const size = sp.r * 2 + 5, x = sp.x - Math.floor(size / 2), y = sp.y - Math.floor(size / 2);
+    rooms.push({
+      x, y, size, bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
+      cx: sp.x, cy: sp.y, isWorldSpot: true, spot: sp.id, tier: sp.tier, monsterLvl: sp.lvl[0],
+    });
+    spots.push({
+      id: sp.id, name: sp.name, tier: sp.tier, lvl: sp.lvl.slice(),
+      x: sp.x * TILE + TILE / 2, y: sp.y * TILE + TILE / 2, r: sp.r * TILE,
+    });
+    for (let p = 0; p < sp.packs; p++) {
+      // Пачки разнесены по кругу спота, а не свалены в его центр.
+      const ang = (p / sp.packs) * Math.PI * 2 + rng() * 0.6;
+      const dist = sp.r * (0.4 + rng() * 0.45);
+      const pcx = Math.round(sp.x + Math.cos(ang) * dist), pcy = Math.round(sp.y + Math.sin(ang) * dist);
+      // Пачка — один вид: так их и различают на споте («слева вампиры»).
+      const d = _enemyByEid.get(FARM_HIGH_SPECIES[sp.species[Math.floor(rng() * sp.species.length)]]);
+      if (!d) continue;
+      const pack = [];
+      for (let n = 0; n < tier.packSize; n++) {
+        const lvl = sp.lvl[0] + Math.floor(rng() * (sp.lvl[1] - sp.lvl[0] + 1));
+        const stats = monsterStatsAtLevel(lvl, d.eType);
+        const { gx, gy } = freeTileNear(pcx, pcy, 1.5);
+        const ex = gx * TILE + TILE / 2, ey = gy * TILE + TILE / 2;
+        const localLvl = lvl - WORLD_LVL_MIN + 1;
+        pack.push({
+          id: `world_${sp.id}_${eid++}`, ...d, isBoss: false, arm: 'openWorld', openWorld: true, spot: sp.id,
+          rlvl: lvl,
+          name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
+          color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
+          maxHp: Math.floor(stats.hp * WEAK_MULT), hp: Math.floor(stats.hp * WEAK_MULT),
+          atk: Math.floor(stats.atk * WEAK_MULT), def: stats.def, spd: d.spd,
+          xp: xpAtLevel(lvl) * WORLD_XP_MULT, gold: goldAtLevel(lvl),
+          x: ex, y: ey, spawnX: ex, spawnY: ey,
+          atkTimer: 1 + rng(),
+          // Лоу-споты сами не бросаются (Room.js читает `passive` в проверке
+          // самоагра), мид и топ — агрятся на подходе.
+          aggro: false, aggroR: 175 + rng() * 55, passive: !tier.selfAggro,
+        });
+      }
+      const ids = pack.map(e => e.id);
+      pack.forEach(e => { e.packMateIds = ids.filter(id => id !== e.id); });
+      enemyList.push(...pack);
+    }
+  });
+
+  // ── Владыка Мира ────────────────────────────────────────────────────────
+  const bd = _enemyByEid.get(FLOOR_ENEMIES[3].boss);
+  if (bd) {
+    const bs = monsterStatsAtLevel(WORLD_BOSS_LEVEL, 'boss');
+    const bx = B.x * TILE + TILE / 2, by = B.y * TILE + TILE / 2;
+    const size = B.r * 2 + 5, x = B.x - Math.floor(size / 2), y = B.y - Math.floor(size / 2);
+    rooms.push({
+      x, y, size, bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1,
+      cx: B.x, cy: B.y, isWorldSpot: true, spot: B.id, tier: 'boss', monsterLvl: WORLD_BOSS_LEVEL, isBoss: true,
+    });
+    spots.push({ id: B.id, name: B.name, tier: 'boss', lvl: [WORLD_BOSS_LEVEL, WORLD_BOSS_LEVEL], x: bx, y: by, r: B.r * TILE });
+    enemyList.push({
+      id: 'world_boss', ...bd, isBoss: true, arm: 'openWorld', openWorld: true, spot: B.id,
+      rlvl: WORLD_BOSS_LEVEL, name: B.bossName, size: 34,
+      maxHp: Math.floor(bs.hp * WORLD_BOSS_HP_MULT), hp: Math.floor(bs.hp * WORLD_BOSS_HP_MULT),
+      atk: bs.atk, def: bs.def, spd: bd.spd * 1.5,
+      xp: xpAtLevel(WORLD_BOSS_LEVEL) * WORLD_XP_MULT * 20, gold: goldAtLevel(WORLD_BOSS_LEVEL) * 20,
+      x: bx, y: by, spawnX: bx, spawnY: by,
+      atkTimer: 1 + rng(), aggro: false, aggroR: 220,
+    });
+  }
+
+  const spawn = { x: S.x * TILE + TILE / 2, y: S.y * TILE + TILE / 2 };
+  return {
+    grid, rooms, w, h, spawn,
+    returnPad: { x: (S.x - 5) * TILE + TILE / 2, y: S.y * TILE + TILE / 2 },
+    openWorld: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: WORLD_ENTRY_LEVEL, spots },
     enemies: enemyList,
   };
 }
@@ -1671,7 +1835,7 @@ function generateCoop() {
 }
 
 module.exports = {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateWorld, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
   TILE, WALL, FLOOR,
 };

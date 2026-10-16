@@ -1978,6 +1978,14 @@ function _buildArmGates() {
       { target: 'farmHigh', req: fhe.req || 0, label: typeof t === 'function' ? t('farmHighLbl') : 'Фарм зона 2' }
     );
   }
+  // Мир — открытая локация со спотами (generateWorld, server/game/dungeon.js),
+  // свой пункт того же списка со своим гейтом (35).
+  const wde = dungeon.worldEntry;
+  if (wde) {
+    _portalDestinations.push(
+      { target: 'openWorld', req: wde.req || 0, label: typeof t === 'function' ? t('worldLbl') : 'Мир' }
+    );
+  }
   // Подземелье — свой пункт в том же списке, со своим гейтом. Сама зона
   // (пустой зал с 7 телепортами по классам) живёт на своём этаже —
   // generateDungeonHub, server/game/dungeon.js.
@@ -2287,6 +2295,9 @@ function _pushWall(x, y, hw, hh, fill, edge) {
 
 // Runs once per frame, before the world is rendered, so the shapes it queues
 // are in the same frame as everything else rather than a frame behind.
+// Цвет яруса спота Мира — на подписи над спотом и в списке спотов (js/ui.js).
+const _WORLD_TIER_COLOR = { low: '#8ff0c0', mid: '#e8c15a', top: '#f17e8b', boss: '#c060ff' };
+
 function _buildDecals(ts) {
   _decals.length = 0;
   _decalLbls.length = 0;
@@ -2301,6 +2312,15 @@ function _buildDecals(ts) {
     p.target === 'farmZone' ? (typeof t === 'function' ? t('farmZoneShort') : '\u0424\u0430\u0440\u043c')
       : p.target === 'farmHigh' ? (typeof t === 'function' ? t('farmHighShort') : '\u0424\u0430\u0440\u043c 2') : hallLbl,
     '#f17e8b', '#8ff0c0'));
+  // Мир: подпись над каждым спотом — имя, полоса уровней и цвет яруса, чтобы
+  // лоу от топа отличался ещё до первого удара.
+  if (dungeon.openWorld && dungeon.openWorld.spots) {
+    for (const sp of dungeon.openWorld.spots) {
+      const lv = sp.lvl[0] === sp.lvl[1] ? `${sp.lvl[0]}` : `${sp.lvl[0]}-${sp.lvl[1]}`;
+      _decalLbls.push({ wx: sp.x, wy: sp.y - sp.r, dy: -6, text: `${sp.tier === 'boss' ? '\u{1F480} ' : ''}${sp.name} [${lv}]`,
+        color: _WORLD_TIER_COLOR[sp.tier] || '#fff', px: 12, mid: false });
+    }
+  }
   // Пад в сезонное крыло — то же кольцо, что и у возврата, только запертое,
   // пока билета нет: замок в подписи и красный контур — тот же язык, которым
   // говорят уровневые ворота коридоров, и переучивать игрока незачем.
@@ -3112,7 +3132,11 @@ function playerDie() {
   const info = document.getElementById('death-info');
   if (info && player) {
     const _dRoom = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
-    const _dLoc = (_dRoom?.arm && typeof _armLabel === 'function')
+    const _dSpot = dungeon && dungeon.openWorld && _dRoom && _dRoom.spot
+      && (dungeon.openWorld.spots || []).find(sp => sp.id === _dRoom.spot);
+    const _dLoc = dungeon && dungeon.openWorld
+      ? `${typeof t === 'function' ? t('worldLbl') : 'Мир'}${_dSpot ? ' · ' + _dSpot.name : ''}`
+      : (_dRoom?.arm && typeof _armLabel === 'function')
       ? `${_armLabel(_dRoom.arm)} ${typeof t === 'function' ? t('corridorSuffix') : 'коридор'} · ${typeof t === 'function' ? t('levelAbbrev') : 'Ур.'} ${_dRoom.monsterLvl}` : (typeof t === 'function' ? t('centralHall') : 'Город');
     info.innerHTML =
       `<span class="death-stat">${_dLoc}</span>` +

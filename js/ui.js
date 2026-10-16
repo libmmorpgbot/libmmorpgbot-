@@ -2331,6 +2331,7 @@ function _currentLocationBounds() {
   const namedZones = [
     { z: dungeon.farmZone, zoneLabel: dungeon.farmZone && dungeon.farmZone.seasonWing ? 'farmSeasonLbl' : 'farmZoneLbl' },
     { z: dungeon.farmHigh, zoneLabel: dungeon.farmHigh && dungeon.farmHigh.seasonWing ? 'farmHighSeasonLbl' : 'farmHighLbl' },
+    { z: dungeon.openWorld, zoneLabel: 'worldLbl' },
     { z: dungeon.guildWar, zoneLabel: 'guildWarLbl' },
     { z: dungeon.race10,   zoneLabel: 'race10ArenaLbl' },
   ];
@@ -2513,6 +2514,7 @@ function _floorUISignature() {
   if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) return 'farm';
   if (_b && (_b.zoneLabel === 'farmHighLbl' || _b.zoneLabel === 'farmHighSeasonLbl')) return 'farmHigh';
   if (_b && _b.zoneLabel === 'dungeonLbl') return 'dungeon:' + _b.dungeonClass;
+  if (_b && _b.zoneLabel === 'worldLbl') return 'world';
   return _currentArmIdx() || 'hub';
 }
 let _lastFloorUISignature = null;
@@ -2535,6 +2537,7 @@ function updateFloorUI() {
   if (_b && (_b.zoneLabel === 'farmZoneLbl' || _b.zoneLabel === 'farmSeasonLbl')) { grid.innerHTML = _farmZoneMonsterListHtml(); return; }
   if (_b && (_b.zoneLabel === 'farmHighLbl' || _b.zoneLabel === 'farmHighSeasonLbl')) { grid.innerHTML = _farmHighMonsterListHtml(); return; }
   if (_b && _b.zoneLabel === 'dungeonLbl') { grid.innerHTML = _dungeonMonsterListHtml(_b.dungeonClass); return; }
+  if (_b && _b.zoneLabel === 'worldLbl') { grid.innerHTML = _worldSpotListHtml(); return; }
 
   // Scoped to wherever the player actually is: the hub has no monsters at
   // all, and each corridor only ever spawns its own level band (arm 1 =
@@ -2909,6 +2912,66 @@ function _farmHighMonsterListHtml({ noGems = false } = {}) {
     }).join('');
   const hint = tVars('farmHighBestiaryHint', { a: FARM_HIGH_LVL_MIN, b: FARM_HIGH_LVL_MAX });
   return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${items}`;
+}
+
+// ── Мир: список спотов ────────────────────────────────────────────────────
+// Вместо бестиария по уровням — споты, как их видит игрок на карте: имя,
+// ярус, полоса уровней, сколько пачек и кто в них стоит. Раскрытая строка
+// показывает дроп каждого вида — та же таблица Фарм зоны 2
+// (_farmHighSpeciesBodyHtml), на среднем уровне спота. У трона — жив ли
+// Владыка и когда вернётся (bossStatus.openWorld, js/network.js).
+function _worldSpotListHtml() {
+  const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
+  const tierLbl = { low: 'worldTierLow', mid: 'worldTierMid', top: 'worldTierTop' };
+  const maxLocalLvl = WORLD_LVL_MAX - WORLD_LVL_MIN + 1;
+  const rows = WORLD_SPOTS.map(sp => {
+    const lvl = Math.round((sp.lvl[0] + sp.lvl[1]) / 2);
+    const localLvl = lvl - WORLD_LVL_MIN + 1;
+    const tier = WORLD_TIERS[sp.tier];
+    const species = sp.species.map(i => eMap.get(FARM_HIGH_SPECIES[i])).filter(Boolean).map(base => {
+      const stats = monsterStatsAtLevel(lvl, base.eType);
+      return {
+        ...base,
+        name: monsterNameAtLevel(base.name, localLvl, false, base.fem, maxLocalLvl),
+        color: monsterColorAtLevel(base.color, base.endColor, localLvl, false, maxLocalLvl),
+        hp: Math.floor(stats.hp * 0.5), atk: Math.floor(stats.atk * 0.5), def: stats.def,
+        xp: xpAtLevel(lvl) * WORLD_XP_MULT, gold: goldAtLevel(lvl),
+      };
+    });
+    const color = _WORLD_TIER_COLOR[sp.tier];
+    const note = tier.selfAggro ? t('worldAggroNote') : t('worldPassiveNote');
+    return `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:${color}"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl" style="color:${color}">${t(tierLbl[sp.tier])} · ${tVars('farmHighLevelRangeFmt', { a: sp.lvl[0], b: sp.lvl[1] })}</span>
+          <div class="mon-name-row"><span class="mon-name">${sp.name}</span></div>
+        </div>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div class="mon-body">
+        <div style="padding:4px 0 8px;color:#83725a;font-size:11px">${tVars('worldPacksFmt', { n: sp.packs, k: tier.packSize })} · ${note}</div>
+        ${species.map(e => `<div style="margin:6px 0 2px;font-weight:bold;color:${e.color}">${e.name}</div>${_farmHighSpeciesBodyHtml(e)}`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  const bs = (typeof bossStatus !== 'undefined' && bossStatus && bossStatus.openWorld) || null;
+  const bossLine = !bs || bs.alive ? t('worldBossAlive')
+    : tVars('worldBossRespawnFmt', { m: Math.max(1, Math.ceil(((bs.respawnAt || 0) - Date.now()) / 60000)) });
+  const boss = `
+    <div class="mon-item">
+      <div class="mon-hdr">
+        <span class="dot" style="background:${_WORLD_TIER_COLOR.boss}"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl" style="color:${_WORLD_TIER_COLOR.boss}">${t('worldTierBoss')} · ${t('levelAbbrev')} ${WORLD_BOSS_LEVEL}</span>
+          <div class="mon-name-row"><span class="mon-name">${WORLD_BOSS_SPOT.bossName} — ${WORLD_BOSS_SPOT.name}</span></div>
+        </div>
+      </div>
+      <div style="padding:0 8px 8px;color:#83725a;font-size:11px">${bossLine}</div>
+    </div>`;
+  const hint = tVars('worldSpotsHint', { e: WORLD_ENTRY_LEVEL, b: WORLD_BOSS_LEVEL });
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${rows}${boss}`;
 }
 
 // ── Подземелье: бестиарий зоны (owner's own ask — "на карте виден список

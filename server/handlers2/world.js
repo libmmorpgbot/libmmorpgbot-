@@ -38,7 +38,7 @@ const { query } = require('../db');
 const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
-  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE,
+  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -87,6 +87,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     bottom: 'Нижний коридор', right: 'Правый коридор',
     guildWar: 'Война гильдий', farmZone: 'Фарм-зона', farmHigh: 'Фарм зона 2',
     farmZone2: 'Элитная фарм-зона', farmSeason: 'Сезонное крыло', farmHighSeason: 'Сезонное крыло Фарм зоны 2',
+    openWorld: 'Мир',
     arena: 'Арена мирового босса', pvpArena: 'Арена 3×3', race10: 'Кровавая Башня',
     fear: 'Страх', coop: 'Сотрудничество', tournament: 'Турнир', trial: 'Испытание',
     dungeon: 'Подземелье',
@@ -491,9 +492,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Элитный монстр сезонного крыла: та же таблица зоны, но шанс каждого
     // броска x ELITE_MOB_DROP_MULT (руда ниже — тоже).
     const dropMult = result.elite ? (ELITE_MOB_DROP_MULT || 1) : 1;
+    // Мир — таблица Фарм зоны 2 (те же виды, та же полоса рукава 3); Владыке
+    // Мира — она же с WORLD_BOSS_DROP_MULT к каждому шансу.
+    const worldMult = result.isBoss ? (WORLD_BOSS_DROP_MULT || 1) : 1;
     const rollTable = inv =>
         result.farmZone  ? loot._rollFarmZoneLoot(inv, result.eid, dropMult)
       : result.farmHigh  ? loot._rollFarmHighLoot(inv, result.eid, dropMult)
+      : result.openWorld ? loot._rollFarmHighLoot(inv, result.eid, worldMult)
       : result.farmZone2 ? loot._rollFarm2Loot(inv)
       : result.dungeon   ? loot._rollDungeonLoot(inv, result.eid, result.dungeonClass)
       : loot._rollMobLoot(inv, result.eid, result.rlvl, dropMult);
@@ -703,6 +708,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : result.farmZone ? (FARM_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : result.farmHigh ? (FARM_HIGH_LIBERTY_CHANCE || 0) * ticketLibertyMult
+      : result.openWorld ? (WORLD_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : 0;
     // Руны оружия со строкой «Шанс Liberty» — множитель к шансу, как
     // сезонный билет выше. Множитель, а не прибавка: +10% к шансу 0.1% — это
@@ -718,7 +724,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Элитный монстр сезонного крыла — фиксированные ELITE_MOB_GRAM убийце,
     // хотя обычные монстры фарм-зон GRAM не дают.
     const myGram = result.elite ? (ELITE_MOB_GRAM || 0)
-      : (result.farmZone || result.farmHigh || result.farmZone2 || result.dungeon || result.arm === 'coop') ? 0
+      : (result.farmZone || result.farmHigh || result.farmZone2 || result.openWorld || result.dungeon || result.arm === 'coop') ? 0
       : (rand() < (GRAM_DROP_CHANCE || 0) ? (result.rlvl || 1) * (GRAM_PER_LEVEL || 0) : 0);
 
     // One key per KILL, not per enemy and not per attempt.
