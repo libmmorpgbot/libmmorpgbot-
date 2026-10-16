@@ -7,6 +7,8 @@
 const { COOP_STAGE_LEVELS, COOP_LIBERTY_CHANCE } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
 const Room = require('../game/Room');
+const progression = require('../db/repos/progression');
+const { tx } = require('../db');
 
 module.exports = function createCoop(deps) {
   const { io, _returnToHub } = deps;
@@ -146,6 +148,12 @@ module.exports = function createCoop(deps) {
   // _createFearRoom's own comment, just seating two players instead of one.
   function _createCoopRoom() {
     const room = new Room(FLOOR_IDS.coop, io, {}, null);
+    // Зовётся из тика ИИ комнаты, посреди обхода монстров, — поэтому сам
+    // разбор откладывается: снимать полосу и переносить напарника, пока
+    // комната ходит по своим спискам, нельзя.
+    room.onCoopDeath = (sid) => setImmediate(() => {
+      try { _coopDeathEnd(sid); } catch (err) { console.error('[coop] death end:', err); }
+    });
     _coopRooms.add(room);
     return room;
   }
@@ -216,7 +224,18 @@ module.exports = function createCoop(deps) {
     const reward = winnerSocket?.data?._grantCoopBossReward
       ? await winnerSocket.data._grantCoopBossReward()
       : null;
-    participants.forEach(sid => io.to(sid).emit('coopBossReward', { winnerId, nexum: reward?.nexum || 0 }));
+    // Что именно легло — а не только кому. Клиент показывает это в итоговом
+    // окне: «не дали награду» чаще всего значило «досталась напарнику» или
+    // «камень не влез в полную сумку», и ни того, ни другого игрок не видел.
+    const winnerName = (winnerSocket && winnerSocket.data && winnerSocket.data.username) || null;
+    const payload = {
+      winnerId, winnerName,
+      nexum: reward?.nexum || 0,
+      items: (reward?.items || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
+      missed: (reward?.missed || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
+      failed: !reward,
+    };
+    participants.forEach(sid => io.to(sid).emit('coopBossReward', payload));
     participants.forEach(sid => _coopFinish(sid, true));
   }
 
@@ -225,21 +244,35 @@ module.exports = function createCoop(deps) {
   // partner anything (callers that need to end the run for BOTH — death, the
   // boss falling — call this once per participant). Returns the run it ended,
   // or null if there wasn't one.
+  //
+  // Забег, закончившийся ДО первой волны (обрыв связи или выход за пять
+  // секунд отсчёта), возвращает попытку: ни одного монстра не было, а
+  // попытка в сутки одна, и моргнувшая сеть стоила её целиком. Каждый
+  // участник возвращает свою, когда снимается его половина забега, — по
+  // playerId из записи, потому что сокета отключившегося уже нет.
   function _coopReleaseRun(socketId) {
     const run = _coop.get(socketId);
     if (!run) return null;
     _coop.delete(socketId);
     const room = run.room;
+    run.unstarted = !!(room && room.coopStage() === 0);
     const ownedBefore = room ? room.coopOwnerOf(run.lane) === socketId : false;
     if (room && ownedBefore) room.coopReleaseLane(run.lane);
+    if (run.unstarted && run.pid) {
+      tx(t => progression.refundAttempt(t, run.pid, 'coop'))
+        .catch(err => console.error('[coop] refund:', err.message));
+    }
     return run;
   }
 
-  function _coopFinish(socketId, cleared) {
+  // reason — почему забег кончился, если не победой: 'died' (кто-то погиб)
+  // или 'left' (напарник вышел или отключился). Клиент пишет по нему разное:
+  // «кто-то из вас погиб» на отключение напарника было неправдой.
+  function _coopFinish(socketId, cleared, reason = null) {
     const run = _coopReleaseRun(socketId);
     if (!run) return;
     const spot = _returnToHub(socketId);
-    io.to(socketId).emit('coopFinished', { cleared, x: spot?.x, y: spot?.y });
+    io.to(socketId).emit('coopFinished', { cleared, reason, refunded: run.unstarted && !!run.pid, x: spot?.x, y: spot?.y });
   }
 
   // Wired into _pvpEliminate's fan-out (mirrors _fearEliminate) — dying
@@ -250,9 +283,24 @@ module.exports = function createCoop(deps) {
     const run = _coop.get(socketId);
     if (!run) return false;
     const partnerId = run.partnerId;
-    _coopFinish(socketId, false);
-    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
+    _coopFinish(socketId, false, 'died');
+    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false, 'died');
     return true;
+  }
+
+  // Смерть от монстра (Room.onCoopDeath). Погибший остаётся лежать, где лежит:
+  // окно смерти у него уже открыто, и «Возродиться» штатно отправит его в зал,
+  // — у него только снимается забег. Напарника отправляет домой сразу: забег,
+  // который нельзя закончить, не должен держать живого.
+  function _coopDeathEnd(socketId) {
+    const run = _coop.get(socketId);
+    if (!run || !run.room) return;
+    const p = run.room.players.get(socketId);
+    if (!p || p.hp > 0) return;                  // успели вылечить/уже ушёл
+    const partnerId = run.partnerId;
+    _coopReleaseRun(socketId);
+    io.to(socketId).emit('coopFinished', { cleared: false, reason: 'died' });
+    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false, 'died');
   }
 
   // Wired into _pvpEliminate's fan-out for the disconnect case (opts.fearGrace)
@@ -266,7 +314,7 @@ module.exports = function createCoop(deps) {
     const run = _coopReleaseRun(socketId);
     if (!run) return false;
     const partnerId = run.partnerId;
-    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false);
+    if (partnerId && _coop.has(partnerId)) _coopFinish(partnerId, false, 'left');
     return true;
   }
 
@@ -274,7 +322,7 @@ module.exports = function createCoop(deps) {
     COOP_ATTEMPTS, COOP_MIN_LEVEL, COOP_START_DELAY_MS, COOP_LIBERTY_CHANCE,
     _coop, _coopGroups, _coopGroupOf, _coopGroupStateFor, _coopGroupPush,
     _coopGroupOpenList, _coopGroupBroadcastList, _coopGroupDissolve, _coopGroupDropOnDisconnect,
-    _createCoopRoom, _coopRooms, _liveCoopRooms, _trackCoopRoom,
+    _createCoopRoom, _coopRooms, _liveCoopRooms, _trackCoopRoom, _coopDeathEnd,
     _coopTrackKill, _coopBossTrackKill, _coopReleaseRun, _coopFinish, _coopEliminate, _coopEjectOnDisconnect,
   };
 };

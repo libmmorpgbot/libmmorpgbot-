@@ -2433,6 +2433,11 @@ class Room {
           // hitting me" until the next periodic full refresh (up to
           // ENEMY_REFRESH_CASTS ticks away).
           if (vsock) vsock.emit('playerHurt', { id: closest.socketId, hp: closest.hp, dmg, atkId: e.id });
+          // Смерть в Сотрудничестве заканчивает забег у обоих — это решает
+          // server/game/coop.js (onCoopDeath ставит _createCoopRoom). Без
+          // этого напарник ждал на «Дождитесь напарника», пока погибший не
+          // нажмёт «Возродиться», а не нажать он мог сколько угодно.
+          if (closest.hp <= 0 && closest._coopLane != null && this.onCoopDeath) this.onCoopDeath(closest.socketId);
         }
       }
 

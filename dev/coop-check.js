@@ -111,6 +111,12 @@ async function connect(tg, name) {
   return { sock, scr, id, tg };
 }
 
+// Попытка в Сотрудничество — одна в сутки (COOP_ATTEMPTS), а сценариев
+// несколько: между ними попытки возвращаются, иначе второй сценарий упирается
+// в «попытки закончились» и падает по таймауту, ничего не проверив.
+const resetCoop = (ids) => pool().query(
+  `DELETE FROM player_daily WHERE player_id = ANY($1::bigint[]) AND mode = 'coop'`, [ids]);
+
 const usedOf = async (pid) => {
   const { rows } = await pool().query(
     `SELECT COALESCE(sum(used), 0)::int u FROM player_daily
@@ -188,6 +194,7 @@ const usedOf = async (pid) => {
   // возвращается. Чего быть НЕ должно: один стоит в пустой комнате, а попытка
   // потрачена — «моя комната первая была пуста, слил попытку».
   console.log('  ── обрыв связи в отсчёте ──');
+  await resetCoop([lead.id, mate.id]);
   const lead2 = await connect(TG1, `${TAG}_lead`);
   let mate2 = await connect(TG2, `${TAG}_mate`);
   lead2.sock.emit('coopGroupCreate');
@@ -222,6 +229,10 @@ const usedOf = async (pid) => {
     ok(!(onCoop && seen2 === 0 && spent2 > 0),
       'нет случая «стою в пустой комнате, а попытка списана»',
       `этаж ${mate2.scr.floor}, монстров ${seen2}, списано ${spent2}`);
+    // Забег оборвался до первой волны — монстров не было, попытка вернулась.
+    await wait(300);
+    eq(await usedOf(mate2.id) - before2, 0, 'обрыв в отсчёте — попытка напарника возвращена');
+    eq(await usedOf(lead2.id), 0, 'и лидера тоже');
     // И лидер не должен остаться заперт в забеге, которого больше нет.
     await wait(500);
     lead2.sock.emit('coopReturn');
@@ -247,7 +258,7 @@ const usedOf = async (pid) => {
   console.log('  ── медленный телефон ──');
   {
     const { resetNetCodecMaps } = require('../shared/netcodec');
-    // Свежая пара: у каждого свои две попытки в сутки.
+    // Свежая пара: у каждого своя попытка на сутки.
     const TG3 = TG1 + 2, TG4 = TG1 + 3;
     const lead3 = await connect(TG3, `${TAG}_slowlead`);
 
@@ -332,6 +343,64 @@ const usedOf = async (pid) => {
     ok([...me._eKnown.values()].every(v => v.full === false),
       'всё в снимке помечено как «дескриптор ещё не выдан»');
     room._stopLoop && room._stopLoop();
+  }
+
+  // ── аудит: смерть, награда за босса, возврат попытки ──────────────────────
+  console.log('  ── смерть и награда ──');
+  {
+    const createCoop = require('../server/game/coop');
+    const progression = require('../server/db/repos/progression');
+    const sent = [];
+    const sockets = new Map();
+    const fakeIo = {
+      to: (sid) => ({ emit: (ev, d) => sent.push({ sid, ev, d }) }),
+      emit: () => {}, sockets: { sockets },
+    };
+    const homed = [];
+    const coop = createCoop({ io: fakeIo, _returnToHub: (sid) => { homed.push(sid); return { x: 1, y: 1 }; } });
+    const deploy = () => {
+      const room = coop._createCoopRoom();
+      room.addPlayer('A', 'Аня', null, null, 0, '1', null);
+      room.addPlayer('B', 'Боря', null, null, 0, '2', null);
+      room.coopDeploy('A', 0); room.coopDeploy('B', 1);
+      coop._coop.set('A', { room, lane: 0, partnerId: 'B' });
+      coop._coop.set('B', { room, lane: 1, partnerId: 'A' });
+      return room;
+    };
+
+    // Монстр убил одного — забег кончается у обоих сразу, без «Возродиться».
+    let room = deploy();
+    room.players.get('A').hp = 0;
+    room.onCoopDeath('A');
+    await new Promise(r => setImmediate(r));
+    ok(!coop._coop.has('A') && !coop._coop.has('B'), 'смерть от монстра снимает забег у обоих');
+    ok(homed.includes('B') && !homed.includes('A'), 'живого напарника — домой, погибший лежит до «Возродиться»');
+    ok(sent.some(m => m.sid === 'B' && m.ev === 'coopFinished' && m.d.cleared === false && m.d.reason === 'died'),
+      'напарнику — «забег прерван, кто-то погиб»');
+    ok(sent.some(m => m.sid === 'A' && m.ev === 'coopFinished'), 'погибшему — тоже');
+    room._stopLoop && room._stopLoop();
+
+    // Босс: победитель и что именно легло — в пакете обоим.
+    sent.length = 0; homed.length = 0;
+    room = deploy();
+    const grant = async () => ({ nexum: 100, items: [{ id: 'bless_stone', qty: 1 }], missed: [] });
+    sockets.set('A', { data: { username: 'Аня', _grantCoopBossReward: grant } });
+    sockets.set('B', { data: { username: 'Боря', _grantCoopBossReward: grant } });
+    await coop._coopBossTrackKill('A', { arm: 'coop', isBoss: true });
+    const rw = sent.filter(m => m.ev === 'coopBossReward');
+    ok(rw.length === 2 && rw.every(m => m.d.nexum === 100 && m.d.items.length === 1 && m.d.winnerName),
+      'итог босса несёт победителя, Liberty и предметы', JSON.stringify(rw[0] && rw[0].d));
+    ok(homed.length === 2, 'после босса оба дома');
+    room._stopLoop && room._stopLoop();
+
+    // Попытка, списанная под сорвавшийся вход, возвращается.
+    const pid = lead.id;
+    await resetCoop([pid]);
+    await progression.takeAttempt(null, pid, 'coop', 1);
+    ok(await progression.attemptsLeft(null, pid, 'coop', 1) === 0, 'попытка списана');
+    ok(await progression.refundAttempt(null, pid, 'coop'), 'возврат принят');
+    ok(await progression.attemptsLeft(null, pid, 'coop', 1) === 1, 'и попытка снова есть');
+    ok(!await progression.refundAttempt(null, pid, 'coop'), 'ниже нуля не возвращается');
   }
 
   console.log('');

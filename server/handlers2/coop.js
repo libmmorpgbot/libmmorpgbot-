@@ -79,6 +79,14 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
   const _mayGoHome = (modeFloor, stillInRun) =>
     s.floor === FLOOR_IDS.hub || (s.floor === modeFloor && !stillInRun);
 
+  // Жив ли игрок с этим сокетом — по его комнате, а не по нашей: участник
+  // группы может стоять на другом этаже.
+  const _aliveSid = (sid) => {
+    const ss = modes.sessionOf && modes.sessionOf(sid);
+    const p = ss && ss.room && ss.room.players.get(sid);
+    return !!(p && p.hp > 0);
+  };
+
 
     // ── Сотрудничество (Coop) ────────────────────────────────────────────────
     // Group-based lobby: coopGroupCreate makes this connection a leader,
@@ -109,6 +117,10 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('coopError', { msg: 'Выберите персонажа' });
+      // Мёртвого в группу не берём: Start перенёс бы его в забег с полным
+      // здоровьем поверх открытого окна смерти — клиент и сервер расходятся,
+      // а «Возродиться» потом отправляет в зал посреди забега.
+      if (cp.hp <= 0) return s.socket.emit('coopError', { msg: 'Сначала возродитесь' });
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('coopError', { msg: 'Вы сейчас на арене 3х3' });
       }
@@ -165,6 +177,10 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
       if (!s.room) return;
       const cp = s.room.players.get(s.socket.id);
       if (!cp) return s.socket.emit('coopError', { msg: 'Выберите персонажа' });
+      // Мёртвого в группу не берём: Start перенёс бы его в забег с полным
+      // здоровьем поверх открытого окна смерти — клиент и сервер расходятся,
+      // а «Возродиться» потом отправляет в зал посреди забега.
+      if (cp.hp <= 0) return s.socket.emit('coopError', { msg: 'Сначала возродитесь' });
       if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) {
         return s.socket.emit('coopError', { msg: 'Вы сейчас на арене 3х3' });
       }
@@ -290,6 +306,15 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         // the group than refusing to start.
         const allIds = [s.socket.id, partnerSid];
         const allNames = [s.username, g.memberName];
+        // Погибший после входа в группу — тот же разрыв, что и на входе в неё
+        // (см. coopGroupCreate): в забег он попал бы мёртвым-живым.
+        const deadIdx = allIds.findIndex(sid => !_aliveSid(sid));
+        if (deadIdx !== -1) {
+          _refuse('coopGroupStart', { code: 'dead', who: deadIdx === 0 ? 'leader' : 'member' });
+          return s.socket.emit('coopError', {
+            msg: deadIdx === 0 ? 'Сначала возродитесь' : `${allNames[deadIdx]} сейчас мёртв — дождитесь возрождения`,
+          });
+        }
         const left = await Promise.all(allIds.map(sid => modes.attemptsLeft(sid, 'coop')));
         const exhaustedIdx = left.findIndex(n => n <= 0);
         if (exhaustedIdx !== -1) {
@@ -352,7 +377,9 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           });
         }
         if (!await modes.takeAttempt(s.socket.id, 'coop')) {
-          _refuse('coopGroupStart', { code: 'charge_failed', who: 'leader', charged: 1 });
+          // Напарник уже заплатил — забега не будет, попытка возвращается.
+          await modes.refundAttempt(partnerSid, 'coop');
+          _refuse('coopGroupStart', { code: 'charge_failed', who: 'leader', charged: 1, refunded: 1 });
           return s.socket.emit('coopError', {
             msg: 'Ваши попытки в Сотрудничество на сегодня закончились',
           });
@@ -411,6 +438,18 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
         //
         // То же правило уже соблюдают Кровавая Башня и арена 3х3.
         const LANE_MEMBER = 0, LANE_LEADER = 1;
+        // Вход сорвался уже после списания: попытки возвращаются обоим.
+        // Раньше здесь было «попробуйте ещё раз» при единственной попытке в
+        // день, уже потраченной, — пробовать было нечем. Возврат — после
+        // ответа: между развёртыванием и _coop.set ждать нельзя (см. выше),
+        // а здесь развёртывания уже не будет.
+        const _refundBoth = () => {
+          const msg = 'Не удалось войти — попытка возвращена, соберите группу заново';
+          s.socket.emit('coopError', { msg });
+          partnerSocket.emit('coopError', { msg });
+          Promise.all([modes.refundAttempt(partnerSid, 'coop'), modes.refundAttempt(s.socket.id, 'coop')])
+            .catch(() => { /* refundAttempt сам сообщает об ошибке */ });
+        };
         const ok1 = partnerSocket.data._forceEnterLocation?.('coop',
           { room: coopRoom, pos: coopRoom.coopLaneEntry(LANE_MEMBER) });
         const ok2 = s.socket.data._forceEnterLocation?.('coop',
@@ -424,8 +463,7 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           if (ok1) partnerSocket.data._forceEnterLocation?.('hub');
           if (ok2) s.socket.data._forceEnterLocation?.('hub');
           _refuse('coopGroupStart', { code: 'enter_failed', leader: !!ok2, member: !!ok1 });
-          s.socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
-          partnerSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+          _refundBoth();
           return;
         }
         const spot1 = coopRoom.coopDeploy(partnerSid, LANE_MEMBER);
@@ -434,12 +472,13 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           partnerSocket.data._forceEnterLocation?.('hub');
           s.socket.data._forceEnterLocation?.('hub');
           _refuse('coopGroupStart', { code: 'deploy_failed' });
-          s.socket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
-          partnerSocket.emit('coopError', { msg: 'Не удалось войти — попробуйте ещё раз' });
+          _refundBoth();
           return;
         }
-        _coop.set(partnerSid, { room: coopRoom, lane: spot1.lane, partnerId: s.socket.id });
-        _coop.set(s.socket.id, { room: coopRoom, lane: spot2.lane, partnerId: partnerSid });
+        // pid — чтобы вернуть попытку забегу, оборвавшемуся до первой волны,
+        // даже когда сокета уже нет (см. _coopReleaseRun, server/game/coop.js).
+        _coop.set(partnerSid, { room: coopRoom, lane: spot1.lane, partnerId: s.socket.id, pid: modes.playerIdOf(partnerSid) });
+        _coop.set(s.socket.id, { room: coopRoom, lane: spot2.lane, partnerId: partnerSid, pid: s.playerId });
         const p1 = coopRoom.players.get(partnerSid), p2 = coopRoom.players.get(s.socket.id);
         const readyAt = Date.now() + COOP_START_DELAY_MS;
         // `left[i] - 1` rather than two more attemptsLeft round trips: the

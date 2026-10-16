@@ -123,6 +123,19 @@ async function takeAttempt(socketId, mode) {
   }
 }
 
+// The undo of takeAttempt, for a run that was paid for and then never
+// started. Logged rather than thrown: the caller is already on its way out of
+// a failed start and has nothing better to do with an error.
+async function refundAttempt(socketId, mode) {
+  const pid = playerIdOf(socketId);
+  if (!pid) return false;
+  try { return await tx(t => progression.refundAttempt(t, pid, mode)); }
+  catch (err) {
+    ops.alertError('modes.refund', `Не удалось вернуть попытку (${mode})`, err);
+    return false;
+  }
+}
+
 // ── shared helpers the factories expect ─────────────────────────────────────
 function getRoom(floor) { return world.roomOf(floor); }
 
@@ -731,7 +744,7 @@ function init(io) {
         // A co-op run with one person left is a run whose rules no longer
         // hold: the partner is sent home rather than left waiting on a stage
         // that can now never clear.
-        if (partnerId && modes._coop.has(partnerId)) modes._coopFinish(partnerId, false);
+        if (partnerId && modes._coop.has(partnerId)) modes._coopFinish(partnerId, false, 'left');
         io.to(socketId).emit('coopState', {
           maxAttempts: modes.COOP_ATTEMPTS, maxStage: COOP_STAGE_LEVELS.length,
           minLevel: modes.COOP_MIN_LEVEL, inRun: false, stage: 0,
@@ -868,10 +881,11 @@ function init(io) {
   modes.capOf = capOf;
   modes.attemptsLeft = attemptsLeft;
   modes.takeAttempt = takeAttempt;
+  modes.refundAttempt = refundAttempt;
   modes.payReward = payReward;
   modes.sessionOf = sessionOf;
   modes.playerIdOf = playerIdOf;
   return modes;
 }
 
-module.exports = { init, modes, capOf, attemptsLeft, takeAttempt, payReward, sessionOf, playerIdOf };
+module.exports = { init, modes, capOf, attemptsLeft, takeAttempt, refundAttempt, payReward, sessionOf, playerIdOf };

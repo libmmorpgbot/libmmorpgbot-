@@ -5268,6 +5268,8 @@ function netCoopGroupKick()   { if (socket?.connected) socket.emit('coopGroupKic
 function netCoopGroupLeave()  { if (socket?.connected) socket.emit('coopGroupLeave'); }
 function netCoopGroupStart()  { if (socket?.connected) socket.emit('coopGroupStart'); }
 
+// Итог награды за босса — см. coopBossReward ниже.
+let _coopRewardMsg = '';
 function _initCoopHandlers(s) {
   s.on('coopState', (st) => {
     _coopState = {
@@ -5354,22 +5356,48 @@ function _initCoopHandlers(s) {
 
   // The boss fell — one of the two participants (winnerId) won the fixed
   // reward. coopFinished (below) follows right behind this for both.
-  s.on('coopBossReward', ({ winnerId }) => {
+  //
+  // Баннер здесь больше не показывается: coopFinished приходит следом и
+  // затирал его раньше, чем его успевали прочитать, — победитель не видел, что
+  // выиграл, проигравший — почему остался без награды. Итог запоминается и
+  // показывается баннером coopFinished, а то, что не влезло, — отдельным
+  // уведомлением.
+  s.on('coopBossReward', ({ winnerId, winnerName, nexum, items, missed, failed } = {}) => {
     const won = winnerId === socket.id;
-    if (typeof showEventBossBanner === 'function') {
-      showEventBossBanner(won ? t('coopBossWonMsg') : t('coopBossLostMsg'), '#ffd18a');
+    const nameOf = (id) => {
+      const def = typeof _anyItemDef === 'function' ? _anyItemDef(id) : null;
+      return (def && def.name) || id;
+    };
+    const list = (arr) => (arr || []).map(it => nameOf(it.id) + ((it.qty || 1) > 1 ? ' ×' + it.qty : '')).join(', ');
+    if (!won) {
+      _coopRewardMsg = winnerName
+        ? tVars('coopBossLostNamedMsg', { name: winnerName })
+        : t('coopBossLostMsg');
+    } else if (failed) {
+      _coopRewardMsg = t('coopBossRewardFailedMsg');
+    } else {
+      const got = [nexum ? '+' + nexum + ' Liberty' : '', list(items)].filter(Boolean).join(', ');
+      _coopRewardMsg = got ? tVars('coopBossWonListMsg', { list: got }) : t('coopBossWonMsg');
     }
+    if (won && missed && missed.length && typeof _marketToast === 'function') {
+      _marketToast(tVars('coopBossBagFullMsg', { list: list(missed) }), 'err');
+    }
+    if (won && failed && typeof _marketToast === 'function') _marketToast(t('coopBossRewardFailedMsg'), 'err');
   });
 
   // Run over — either died mid-stage (cleared: false) or beat the boss
   // (cleared: true). A death already sends the player home through the
   // generic death/respawn flow (js/game.js's respawnPlayer), so only the
   // "cleared" case still needs an explicit return trip.
-  s.on('coopFinished', ({ cleared }) => {
+  s.on('coopFinished', ({ cleared, reason, refunded }) => {
     _coopInRun = false;
     _coopStageNo = 0;
     if (typeof hideCoopCountdown === 'function') hideCoopCountdown();
-    const msg = cleared ? t('coopClearedMsg') : t('coopDiedMsg');
+    const msg = cleared
+      ? (_coopRewardMsg ? t('coopClearedMsg') + ' ' + _coopRewardMsg : t('coopClearedMsg'))
+      : (reason === 'left' ? t('coopPartnerLeftMsg') : t('coopDiedMsg'))
+        + (refunded ? ' ' + t('coopRefundedMsg') : '');
+    _coopRewardMsg = '';
     if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
     if (cleared && typeof netCoopReturn === 'function') netCoopReturn();
     if (typeof netCoopSync === 'function') netCoopSync();

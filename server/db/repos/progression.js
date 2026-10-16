@@ -865,6 +865,17 @@ async function takeAttempt(db, playerId, mode, limit) {
   return rows.length ? { used: rows[0].used, left: limit - rows[0].used } : null;
 }
 
+// Вернуть попытку, списанную минуту назад: вход сорвался уже после списания
+// (Сотрудничество — второй участник не смог заплатить или не дошёл до
+// комнаты). За сегодня и не ниже нуля; true — если было что возвращать.
+async function refundAttempt(db, playerId, mode) {
+  const { rows } = await query(db, `
+    UPDATE player_daily SET used = used - 1
+     WHERE player_id = $1 AND day = CURRENT_DATE AND mode = $2 AND used > 0
+    RETURNING used`, [playerId, mode]);
+  return rows.length > 0;
+}
+
 async function attemptsLeft(db, playerId, mode, limit) {
   const { rows } = await query(db, `
     SELECT used FROM player_daily
@@ -924,6 +935,6 @@ module.exports = {
   addSeasonPoints, bumpFarmKill, claimFarmKillPoints, bumpSeasonTask, seasonTasksOf,
   paySeasonReferral, payReferralOnLevel, seasonBoard, seasonOf,
   distributeSeasonPrizes, seasonWinners, claimSeasonPrize,
-  takeAttempt, attemptsLeft, spendSeconds, secondsLeft,
+  takeAttempt, refundAttempt, attemptsLeft, spendSeconds, secondsLeft,
   CURRENT_SEASON, ProgressionError,
 };
