@@ -4289,6 +4289,9 @@ function skillSelfHealOf(charClass, key, adv, skillLvl, skillPct, maxHp) {
 // OFFLINE_FARM_MAX_HOURS. Потолок запоминается при запуске (server/offline-farm.js).
 const OFFLINE_FARM_MAX_HOURS = 7;           // с билетом: всё, что дольше, не засчитывается
 const OFFLINE_FARM_FREE_HOURS = 1;          // без билета
+// Бесплатный час — раз в сутки от запуска: иначе после часа его ставят снова,
+// и без билета выходит тот же круглосуточный фарм. С билетом перезарядки нет.
+const OFFLINE_FARM_FREE_COOLDOWN_HOURS = 24;
 const OFFLINE_FARM_MIN_SEC = 60;            // меньше минуты — не фарм
 const OFFLINE_FARM_EFFICIENCY = 1;          // 100% онлайн-темпа — число владельца
 const OFFLINE_FARM_WALK_SEC = 1;            // от одного монстра до следующего: монстры стоят плотно, как онлайн
@@ -4523,7 +4526,7 @@ if (typeof module !== 'undefined') module.exports = {
   VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
   SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,
   skillHealMult, skillSelfHealOf,
-  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC, OFFLINE_FARM_EFFICIENCY, OFFLINE_FARM_WALK_SEC,
+  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_FREE_COOLDOWN_HOURS, OFFLINE_FARM_MIN_SEC, OFFLINE_FARM_EFFICIENCY, OFFLINE_FARM_WALK_SEC,
   OFFLINE_FARM_MOB_SWING_SEC, OFFLINE_FARM_REST_REGEN_PCT, OFFLINE_FARM_WEAK_MULT,
   offlineFarmLocations, offlineFarmLocation, offlineFarmMobs, offlineFarmRate,
 };

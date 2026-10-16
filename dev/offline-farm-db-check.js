@@ -120,12 +120,37 @@ const claim = (pid, s = {}) => tx(t => of.claim(t, pid, s));
   const novip = await mkPlayer('c', 25, false);
   const niv = await of.info(null, novip);
   ok(niv.seasonTicket === false && niv.maxHours === D.OFFLINE_FARM_FREE_HOURS, 'окно знает, что билета нет, и показывает пробный час');
-  const s6 = await start(novip, 'farmZone');
+  const s6 = await start(novip, fz.id);
   ok(s6.ok, 'без сезонного билета запуск разрешён', s6.code);
   await rewind(novip, 5 * HOUR);
   const freeCap = await claim(novip);
   ok(freeCap.capped && freeCap.seconds === D.OFFLINE_FARM_FREE_HOURS * 3600,
     `без билета засчитано ${D.OFFLINE_FARM_FREE_HOURS} ч`, freeCap.seconds);
+
+  // Бесплатный час — раз в сутки: забрал — и сразу снова нельзя.
+  const s7 = await start(novip, fz.id);
+  ok(!s7.ok && s7.code === 'free_cooldown', 'без билета повторный запуск сразу после часа отклонён', s7.code);
+  ok(await farmOf(novip) === null, 'и ничего не записано');
+  const niv2 = await of.info(null, novip);
+  ok(niv2.freeReadyAt > Date.now() + (D.OFFLINE_FARM_FREE_COOLDOWN_HOURS - 1) * HOUR, 'окно знает, когда снова можно', niv2.freeReadyAt);
+  // Сутки спустя — снова можно.
+  await query(null, 'UPDATE player_progress SET offline_farm_free_at = $2 WHERE player_id = $1',
+    [novip, Date.now() - D.OFFLINE_FARM_FREE_COOLDOWN_HOURS * HOUR - 1000]);
+  ok((await of.info(null, novip)).freeReadyAt === 0, 'через сутки окно снова разрешает');
+  const s8 = await start(novip, fz.id);
+  ok(s8.ok, 'через сутки бесплатный час снова запускается', s8.code);
+  // Вошёл сразу же — пустой фарм сутки не сжигает.
+  const empty = await claim(novip);
+  ok(empty.tooShort, 'вход через секунду — без награды');
+  const s9 = await start(novip, fz.id);
+  ok(s9.ok, 'пустой бесплатный час перезарядку не включает', s9.code);
+  await claim(novip);
+  // С билетом перезарядки нет.
+  const s10 = await start(pid, fz.id);
+  await rewind(pid, 2 * HOUR); await claim(pid);
+  const s11 = await start(pid, fz.id);
+  ok(s10.ok && s11.ok, 'с билетом — запуск сразу после выдачи', s11.code);
+  await claim(pid);
 
   const low = await mkPlayer('b', 5);
   const s4 = await start(low, 'farmZone');

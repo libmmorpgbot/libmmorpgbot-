@@ -31,7 +31,7 @@ const clans = require('./db/repos/clans');
 const loot = require('./game/loot');
 const { query, hasColumn } = require('./db');
 const {
-  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC,
+  OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_FREE_COOLDOWN_HOURS, OFFLINE_FARM_MIN_SEC,
   offlineFarmLocations, offlineFarmLocation, offlineFarmRate,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonTicketPeriodOn,
   FARM_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
@@ -49,6 +49,23 @@ const hoursFor = ticket => (ticket ? OFFLINE_FARM_MAX_HOURS : OFFLINE_FARM_FREE_
 const _MAT_BY_ID = new Map(CRAFT_MATS.map(m => [m.id, m]));
 
 async function available() { return hasColumn('player_progress', 'offline_farm'); }
+// Перезарядка бесплатного часа — миграция 038. До неё — как раньше, без неё.
+async function _freeCdAvailable() { return hasColumn('player_progress', 'offline_farm_free_at'); }
+const FREE_CD_MS = OFFLINE_FARM_FREE_COOLDOWN_HOURS * 3600 * 1000;
+
+// Когда снова можно запустить бесплатный час (мс), или 0 — уже можно.
+function freeReadyAt(freeAt, now = Date.now()) {
+  const last = Number(freeAt) || 0;
+  if (!last) return 0;
+  const ready = last + FREE_CD_MS;
+  return ready > now ? ready : 0;
+}
+// «5 ч 12 мин» / «12 мин» — сколько ждать до следующего бесплатного часа.
+function _waitText(ms) {
+  const min = Math.max(1, Math.ceil(ms / 60000));
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? (m ? `${h} ч ${m} мин` : `${h} ч`) : `${m} мин`;
+}
 
 // Характеристики, по которым считается темп, — постоянные. Зелья сняты, а
 // «Награда новичка» оставлена: она на неделю и переживёт любой фарм.
@@ -95,15 +112,20 @@ async function info(db, playerId) {
     out.reach = r.reach;
     return out;
   });
-  let active = null;
+  let active = null, freeAt = null;
   if (await available()) {
-    const { rows } = await query(db, 'SELECT offline_farm FROM player_progress WHERE player_id = $1', [playerId]);
+    const cd = await _freeCdAvailable();
+    const { rows } = await query(db,
+      `SELECT offline_farm${cd ? ', offline_farm_free_at' : ''} FROM player_progress WHERE player_id = $1`, [playerId]);
     const f = rows.length ? rows[0].offline_farm : null;
     if (f) active = { loc: f.loc, at: Number(f.at) };
+    if (cd && rows.length) freeAt = rows[0].offline_farm_free_at;
   }
   const ticket = !!(await progression.vipOf(db, playerId)).seasonTicket;
   return { locations: list, active, maxHours: hoursFor(ticket), minSec: OFFLINE_FARM_MIN_SEC,
-           ticketHours: OFFLINE_FARM_MAX_HOURS, freeHours: OFFLINE_FARM_FREE_HOURS, seasonTicket: ticket };
+           ticketHours: OFFLINE_FARM_MAX_HOURS, freeHours: OFFLINE_FARM_FREE_HOURS, seasonTicket: ticket,
+           freeCooldownHours: OFFLINE_FARM_FREE_COOLDOWN_HOURS,
+           freeReadyAt: ticket ? 0 : freeReadyAt(freeAt) };
 }
 
 // ── запуск ──────────────────────────────────────────────────────────────────
@@ -117,12 +139,22 @@ async function start(db, playerId, locId) {
   const ticket = !!(await progression.vipOf(db, playerId)).seasonTicket;
   const maxHours = hoursFor(ticket);
 
+  const cd = await _freeCdAvailable();
   const { rows } = await query(db,
-    'SELECT lvl, char_class, offline_farm FROM player_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
+    `SELECT lvl, char_class, offline_farm${cd ? ', offline_farm_free_at' : ''}
+       FROM player_progress WHERE player_id = $1 FOR UPDATE`, [playerId]);
   if (!rows.length) fail('Персонаж не найден', 'no_player');
   if (!rows[0].char_class) fail('Сначала выберите класс', 'no_class');
   if (rows[0].offline_farm) fail('Оффлайн-фарм уже запущен', 'already');
   if ((rows[0].lvl || 1) < loc.reqLevel) fail(`Нужен ${loc.reqLevel} уровень`, 'low_level');
+  // Бесплатный час — раз в OFFLINE_FARM_FREE_COOLDOWN_HOURS. Проверка под той
+  // же блокировкой строки, что и запись: два запуска с двух устройств не
+  // проскочат оба.
+  const free = !ticket;
+  if (free && cd) {
+    const ready = freeReadyAt(rows[0].offline_farm_free_at);
+    if (ready) fail(`Бесплатный час снова через ${_waitText(ready - Date.now())}. С сезонным билетом — без ожидания`, 'free_cooldown');
+  }
 
   const st = await _permanentStats(db, playerId);
   if (!st) fail('Персонаж не найден', 'no_player');
@@ -131,8 +163,10 @@ async function start(db, playerId, locId) {
   if (!r.ok) fail('Монстры здесь пока слишком сильны для вас', 'too_strong');
 
   const at = Date.now();
-  await query(db, 'UPDATE player_progress SET offline_farm = $2, updated_at = now() WHERE player_id = $1',
-    [playerId, JSON.stringify({ loc: loc.id, at, h: maxHours, st: snap })]);
+  await query(db, `UPDATE player_progress SET offline_farm = $2${free && cd ? ', offline_farm_free_at = $3' : ''},
+      updated_at = now() WHERE player_id = $1`,
+    [playerId, JSON.stringify({ loc: loc.id, at, h: maxHours, st: snap, ...(free ? { free: true } : {}) }),
+     ...(free && cd ? [at] : [])]);
   return { loc: loc.id, at, killsPerHour: Math.round(r.killsPerHour), maxHours, seasonTicket: ticket };
 }
 
@@ -264,7 +298,17 @@ async function claim(db, playerId, s) {
   const summary = { loc: farm.loc, seconds: sec, maxSeconds: maxMs / 1000, awaySeconds: Math.floor(awayMs / 1000),
                     capped: awayMs > maxMs, kills: 0,
                     xp: 0, gold: 0, nexum: 0, gram: 0, items: [], lost: [], levelsGained: 0 };
-  if (!loc || !farm.st || !at || sec < OFFLINE_FARM_MIN_SEC) { summary.tooShort = true; return summary; }
+  if (!loc || !farm.st || !at || sec < OFFLINE_FARM_MIN_SEC) {
+    summary.tooShort = true;
+    // Бесплатный час, который ничего не принёс (вошли сразу же), сутки не
+    // сжигает. Прежняя перезарядка к запуску уже истекла — иначе запуска бы
+    // не было, — так что сброс в NULL ничего лишнего не дарит.
+    if (farm.free && await _freeCdAvailable()) {
+      await query(db, 'UPDATE player_progress SET offline_farm_free_at = NULL WHERE player_id = $1 AND offline_farm_free_at = $2',
+        [playerId, at]);
+    }
+    return summary;
+  }
 
   const r = offlineFarmRate(farm.st, loc);
   const kills = r.ok ? _killsFor(r.killsPerHour, sec) : 0;
@@ -320,4 +364,4 @@ async function claim(db, playerId, s) {
   return summary;
 }
 
-module.exports = { available, info, start, claim, simulate, hoursFor, _killsFor, _overlap };
+module.exports = { available, info, start, claim, simulate, hoursFor, freeReadyAt, _killsFor, _overlap, _waitText };

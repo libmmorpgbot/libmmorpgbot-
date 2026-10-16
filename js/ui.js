@@ -6699,6 +6699,7 @@ let _ofarmPending = null;   // итог фарма, пришедший до вх
 let _ofarmLast = null;      // последний список локаций
 let _ofarmError = '';
 let _ofarmVipOk = true;      // есть ли сезонный билет (решает сервер, здесь — только вид)
+let _ofarmFreeWait = 0;      // мс до следующего бесплатного часа, 0 — можно (решает сервер)
 let _ofarmOpen = null;       // id локации, у которой раскрыт список дропа
 
 // Весь дроп локации — те же списки, что в бестиарии (кнопка «Монстры»):
@@ -6855,7 +6856,7 @@ function _ofarmRowHtml(l, best) {
       ${_ofarmMeter('Монстров по силам', l.reach, Math.round((l.reach || 0) * 100) + '%', l.reach < 1 ? 'm-warn' : 'm-ok')}`;
   }
   const confirm = _ofarmConfirm === l.id;
-  const go = (l.open && l.ok)
+  const go = (l.open && l.ok && !_ofarmFreeWait)
     ? `<button class="of-btn-go${confirm ? ' confirm' : ''}" onclick="offlineFarmStartTap('${l.id}')">${confirm ? 'Точно? Игра закроется' : _ofI('play', 13) + 'Начать'}</button>`
     : '';
   return `<div class="of-card${state}${isBest ? ' best' : ''}${open ? ' open' : ''}">
@@ -6872,6 +6873,9 @@ function renderOfflineFarmPanel(data) {
   const d = _ofarmLast;
   const locs = d.locations || [];
   _ofarmVipOk = !!d.seasonTicket;
+  _ofarmFreeWait = Math.max(0, (Number(d.freeReadyAt) || 0) - Date.now());
+  const waitMin = Math.ceil(_ofarmFreeWait / 60000);
+  const waitTxt = waitMin >= 60 ? `${Math.floor(waitMin / 60)} ч${waitMin % 60 ? ' ' + (waitMin % 60) + ' мин' : ''}` : `${waitMin} мин`;
   const ready = locs.filter(l => l.open && l.ok);
   const best = ready.reduce((b, l) => (!b || l.xpPerHour > b.xpPerHour) ? l : b, null);
   const zones = locs.filter(l => l.kind !== 'corridor');
@@ -6907,7 +6911,9 @@ function renderOfflineFarmPanel(data) {
       </div>
       <div class="of-ticket ${_ofarmVipOk ? 'yes' : 'no'}">${_ofI('ticket', 14)}${_ofarmVipOk
         ? 'Сезонный билет активен — засчитается до ' + tk + ' ч'
-        : 'Нет сезонного билета — засчитается ' + mine + ' ч. С билетом — до ' + tk + ' ч'}</div>
+        : _ofarmFreeWait
+          ? 'Бесплатный час уже использован — снова через ' + waitTxt + '. С билетом — без ожидания, до ' + tk + ' ч'
+          : 'Нет сезонного билета — засчитается ' + mine + ' ч раз в ' + (d.freeCooldownHours || 24) + ' ч. С билетом — до ' + tk + ' ч'}</div>
     </div>
     <div class="of-steps">
       <div><b>1</b>Выберите локацию</div><div><b>2</b>Игра закроется</div><div><b>3</b>Награда при входе</div>
