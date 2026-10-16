@@ -76,7 +76,7 @@ const WRITE_ACTIONS = new Set([
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim',
   'clanStorageCancel', 'clanStorageUnlock',
-  'registerCodexSetItem', 'selectChar', 'respawn',
+  'registerCodexSetItem', 'registerCodexGem', 'selectChar', 'respawn',
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
   // player-log row at all.
   'pickupWorldDrop',

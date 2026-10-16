@@ -365,6 +365,16 @@ module.exports = function registerItems(s, safeOn) {
       return { setId, slotIdx, rowId: row, complete: res.complete };
     }, r => r && { setId: r.setId, slotIdx: r.slotIdx, rowId: r.rowId, complete: r.complete }));
 
+  // Кодекс самоцветов: сдать qty штук одного вида (consumables.registerCodexGem).
+  safeOn('registerCodexGem', ({ id, qty } = {}) =>
+    s.act('registerCodexGem', 'itemError', async (t, pid) => {
+      if (typeof id !== 'string') fail('Самоцвет не выбран', 'bad_gem');
+      const res = await consumables.registerCodexGem(t, pid, id, qty);
+      await push(t);
+      s.socket.emit('codexSync', { codex: res.codex, bonus: res.bonus });
+      return { id: res.gemId, taken: res.taken, count: res.count };
+    }, r => r && { id: r.id, taken: r.taken, count: r.count }));
+
   // ── progression the client asks for, the server decides ──────────────────
   safeOn('spendUpgrade', ({ key } = {}) => s.act('spendUpgrade', 'itemError', async (t, pid) => {
     const res = await players.spendUpgrade(t, pid, String(key || ''));

@@ -3721,6 +3721,11 @@ function netRegisterCodexSetItem(setId, slotIdx, idx, item) {
     enhance: it.enhance != null ? it.enhance : null,
   });
 }
+// Сдать qty самоцветов одного вида в Кодекс самоцветов. Ответ — codexSync
+// (счётчики и бонус) или itemError.
+function netRegisterCodexGem(id, qty) {
+  if (socket?.connected) socket.emit('registerCodexGem', { id, qty });
+}
 function netSpendUpgrade(key)    { if (socket?.connected) socket.emit('spendUpgrade', { key }); }
 
 // ── Item placement ──────────────────────────────────────────────────────────

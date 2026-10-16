@@ -12,7 +12,7 @@ const {
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY,
   levelSkillBookPool, levelClassPassivePool, levelUniversalPassivePool,
   FARM_SPECIES_SHARDS, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE, FARM_SPECIES_BOOKS,
-  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE,
+  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_GEM_COMMON_CHANCE, FARM_GEM_RARE_CHANCE,
   FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   FARM_HIGH_GEAR_CHANCE, FARM_HIGH_SKILL_BOOK_CHANCE, FARM_HIGH_ADV_SKILL_BOOK_CHANCE,
   FARM_HIGH_PASSIVE_BOOK_CHANCE, FARM_HIGH_NORM_STONE_CHANCE, FARM_HIGH_BLESS_STONE_CHANCE,
@@ -189,6 +189,11 @@ function _rollFarmZoneLoot(inv, eid, mult = 1) {
   }
   if (Math.random() < FARM_NORM_STONE_CHANCE * mult) addMat('norm_stone', 1);
   if (Math.random() < FARM_BLESS_STONE_CHANCE * mult) addMat('bless_stone', 1);
+  // Самоцветы Кодекса — по броску на каждый вид, ставками заточки выше.
+  if (Math.random() < FARM_GEM_COMMON_CHANCE * mult) addMat('gem_jewel', 1);
+  if (Math.random() < FARM_GEM_COMMON_CHANCE * mult) addMat('gem_red', 1);
+  if (Math.random() < FARM_GEM_RARE_CHANCE * mult) addMat('gem_shard', 1);
+  if (Math.random() < FARM_GEM_RARE_CHANCE * mult) addMat('gem_stone', 1);
   if (Math.random() < FARM_EPIC_RECIPE_CHANCE * mult) addMat('rece', 1);
   if (Math.random() < FARM_LEGENDARY_RECIPE_CHANCE * mult) addMat('recl', 1);
   if (Math.random() < FARM_ADV_SKILL_BOOK_CHANCE * mult) {

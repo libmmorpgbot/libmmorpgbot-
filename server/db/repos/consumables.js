@@ -16,6 +16,7 @@ const money = require('./money');
 const {
   ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
   codexSetById, codexItemMeetsReq, codexTotalBonus,
+  gemCodexEntry, gemCodexCount, GEM_CODEX_KEY, GEM_CODEX_MAX,
 } = require('../../../shared/definitions');
 
 class UseError extends Error {
@@ -427,10 +428,43 @@ async function registerCodexItem(db, playerId, setId, slotIdx, rowId) {
   return { setId, slotIdx: idx, complete, codex, bonus: codexTotalBonus(codex) };
 }
 
+// ── Кодекс самоцветов ───────────────────────────────────────────────────────
+// Сдать `qty` самоцветов одного вида: они уничтожаются, счётчик вида растёт.
+// Больше GEM_CODEX_MAX не берётся — лишнее остаётся в сумке, а не сгорает.
+// Списание и счётчик — в одной транзакции, под блокировкой предметов и строки
+// прогресса: сбой между ними не должен забрать камни и не дать ничего.
+async function registerCodexGem(db, playerId, gemId, qty) {
+  if (!gemCodexEntry(gemId)) err('bad_gem', 'Этот предмет не сдаётся в кодекс');
+  const want = Math.floor(Number(qty));
+  if (!Number.isFinite(want) || want < 1) err('bad_qty', 'Неверное количество');
+
+  await items.lockPlayer(db, playerId);
+  const { rows: prog } = await query(db,
+    'SELECT codex FROM player_progress WHERE player_id = $1 FOR UPDATE', [playerId]);
+  if (!prog.length) err('no_player', 'Персонаж не найден');
+  const codex = prog[0].codex || {};
+  const have = gemCodexCount(codex, gemId);
+  const take = Math.min(want, GEM_CODEX_MAX - have);
+  if (take <= 0) err('maxed', 'Этот самоцвет уже собран полностью');
+
+  const ok = await items.removeQty(db, playerId, gemId, take,
+    { reason: 'codex_gem', refType: 'codex', refId: gemId });
+  if (!ok) err('not_enough', 'Не хватает самоцветов в сумке');
+
+  const gems = { ...(codex[GEM_CODEX_KEY] || {}) };
+  gems[gemId] = have + take;
+  codex[GEM_CODEX_KEY] = gems;
+  await query(db, 'UPDATE player_progress SET codex = $2, updated_at = now() WHERE player_id = $1',
+    [playerId, JSON.stringify(codex)]);
+  // Бонус кодекса — часть боевой оценки, как и у наборов выше.
+  await require('./stats').refreshBm(db, playerId);
+  return { gemId, taken: take, count: have + take, codex, bonus: codexTotalBonus(codex) };
+}
+
 module.exports = {
   usePotion, buyPotions, potionBagOf, useBuffPotion,
   buffsRemaining, buffActive, pruneBuffs,
   useTeleportStone, buyTeleportStone, pickupDrop, grantKillReward,
-  registerCodexItem,
+  registerCodexItem, registerCodexGem,
   HP_POTIONS, BUFF_POTIONS, POTION_CAP, UseError,
 };

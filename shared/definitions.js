@@ -1114,6 +1114,15 @@ const CRAFT_MATS = [
   // ── Enchant stones ──────────────────────────────────────
   { id:'norm_stone',  name:'Камень обычной заточки',    img:'/images/norm.png',  slot:'material', rarity:'uncommon' },
   { id:'bless_stone', name:'Камень безопасной заточки', img:'/images/bless.png', slot:'material', rarity:'rare'    },
+  // ── Самоцветы (Фарм-зона → Кодекс самоцветов) ──────────────────────────
+  // Падают в Фарм-зоне: бусы и красный самоцвет — с шансом обычной заточки,
+  // осколок и камень — с шансом безопасной (FARM_GEM_*_CHANCE ниже). Нужны
+  // только для Кодекса самоцветов (GEM_CODEX): сдаются туда поштучно, и у
+  // каждого своя лесенка бонусов.
+  { id:'gem_jewel', name:'Изумрудные бусы',   img:'/images/material/gem_jewel.png', slot:'material', rarity:'uncommon', gem:true },
+  { id:'gem_red',   name:'Красный самоцвет',  img:'/images/material/gem_red.png',   slot:'material', rarity:'uncommon', gem:true },
+  { id:'gem_shard', name:'Осколок бездны',    img:'/images/material/gem_shard.png', slot:'material', rarity:'rare',     gem:true },
+  { id:'gem_stone', name:'Нефритовый камень', img:'/images/material/gem_stone.png', slot:'material', rarity:'rare',     gem:true },
   // ── Teleport stone (bought from the merchant for Liberty, see
   // TELEPORT_STONE_PRICE below — not a drop) ──────────────────
   { id:'teleport_stone', name:'Камень телепортации', icon:'teleport', slot:'material', rarity:'rare' },
@@ -1641,6 +1650,9 @@ const FARM_ADV_SKILL_BOOK_CHANCE = 0.00002 / 100 * 100; // 0.00002
 // traceable back to that original book×5/book×3 baseline.
 const FARM_NORM_STONE_CHANCE  = 0.00002 / 100 * 5 * 100; // book(orig)×5, ×100 = 0.0001
 const FARM_BLESS_STONE_CHANCE = 0.00002 / 100 * 3 * 50;  // book(orig)×3, ×50  = 0.00003
+// Самоцветы Кодекса (GEM_CODEX) — по броску на каждый вид, ставками заточки.
+const FARM_GEM_COMMON_CHANCE = FARM_NORM_STONE_CHANCE;   // gem_jewel, gem_red
+const FARM_GEM_RARE_CHANCE   = FARM_BLESS_STONE_CHANCE;  // gem_shard, gem_stone
 
 // Epic/legendary recipe scrolls, Фарм-зона's other kill-loot roll — flat
 // rates given directly (0.01%/0.001%, swapped with Фарм зона 2's own pair
@@ -2999,6 +3011,65 @@ const CODEX_MILESTONES = [
   { n: 1000, atk: 300, def: 300, hp: 10000, atkSpeedPct: 0.20 },
 ];
 
+// ── Кодекс самоцветов ───────────────────────────────────────────────────────
+// Самоцветы из Фарм-зоны сдаются в кодекс поштучно (сдача уничтожает их), у
+// каждого вида свой счётчик и своя лесенка. Пороги накопительные, как
+// CODEX_MILESTONES: на 20 сданных бусах действуют и порог 1, и 10, и 20.
+// atkSpeedPct — доля от базовой скорости атаки класса, как у рун и пассивок.
+//
+// Счётчики лежат в той же колонке codex, под служебным ключом GEM_CODEX_KEY:
+// набора с таким id нет, и всё, что перебирает наборы, его не видит, — а
+// codexTotalBonus складывает самоцветы вместе с наборами, так что бонус сам
+// попадает и в серверный compute(), и в recompute() клиента.
+const _GEM_TIERS_COMMON = [
+  { n: 1,   atk: 5 },
+  { n: 10,  atk: 5,  def: 5 },
+  { n: 20,  atk: 5,  def: 5 },
+  { n: 50,  atk: 10 },
+  { n: 100, atk: 10, def: 10 },
+  { n: 300, atk: 30, def: 30, hp: 3000 },
+  { n: 500, atk: 50, def: 50, atkSpeedPct: 0.20 },
+];
+const _GEM_TIERS_RARE = [
+  { n: 1,   atk: 10 },
+  { n: 10,  atk: 10,  def: 10 },
+  { n: 30,  atk: 20 },
+  { n: 60,  atk: 20,  def: 20 },
+  { n: 100, atk: 30 },
+  { n: 150, atk: 30,  def: 30 },
+  { n: 300, atk: 50,  def: 50,  hp: 5000 },
+  { n: 500, atk: 100, def: 100, atkSpeedPct: 0.20 },
+];
+const GEM_CODEX = [
+  { id: 'gem_jewel', tiers: _GEM_TIERS_COMMON },
+  { id: 'gem_red',   tiers: _GEM_TIERS_COMMON },
+  { id: 'gem_shard', tiers: _GEM_TIERS_RARE },
+  { id: 'gem_stone', tiers: _GEM_TIERS_RARE },
+];
+const GEM_CODEX_KEY = '_gems';
+// Сверх последнего порога сдавать незачем — сервер больше не берёт.
+const GEM_CODEX_MAX = 500;
+const _GEM_CODEX_BY_ID = new Map(GEM_CODEX.map(g => [g.id, g]));
+function gemCodexEntry(id) { return _GEM_CODEX_BY_ID.get(id) || null; }
+// Сколько штук этого вида уже сдано (из колонки codex).
+function gemCodexCount(codex, id) {
+  const g = codex && codex[GEM_CODEX_KEY];
+  return Math.max(0, Math.min(GEM_CODEX_MAX, Math.floor(Number(g && g[id]) || 0)));
+}
+// Бонус одного вида при `count` сданных — сумма всех пройденных порогов.
+function gemCodexBonusFor(id, count) {
+  const out = { atk: 0, def: 0, hp: 0, atkSpeedPct: 0 };
+  const g = gemCodexEntry(id);
+  if (!g) return out;
+  for (const t of g.tiers) {
+    if (count < t.n) break;
+    out.atk += t.atk || 0; out.def += t.def || 0; out.hp += t.hp || 0;
+    out.atkSpeedPct += t.atkSpeedPct || 0;
+  }
+  out.atkSpeedPct = Math.round(out.atkSpeedPct * 1000) / 1000;
+  return out;
+}
+
 // Sums every COMPLETED set's bonus. `progress` is { [setId]: boolean[] } —
 // one flag per slot, true once that slot's item has been consumed into it.
 // Plus CODEX_MILESTONES for the number of completed sets.
@@ -3022,6 +3093,12 @@ function codexTotalBonus(progress) {
     total.hp  += m.hp  || 0;
     total.atkSpeedPct  += m.atkSpeedPct  || 0;
     total.critPowerPct += m.critPowerPct || 0;
+  }
+  // Кодекс самоцветов — каждый вид по своей лесенке (GEM_CODEX выше).
+  for (const g of GEM_CODEX) {
+    const b = gemCodexBonusFor(g.id, gemCodexCount(progress, g.id));
+    total.atk += b.atk; total.def += b.def; total.hp += b.hp;
+    total.atkSpeedPct += b.atkSpeedPct;
   }
   total.atkSpeedPct  = Math.round(total.atkSpeedPct * 1000) / 1000;
   total.critPowerPct = Math.round(total.critPowerPct * 1000) / 1000;
@@ -4468,6 +4545,7 @@ if (typeof module !== 'undefined') module.exports = {
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus, CODEX_MILESTONES,
+  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexCount, gemCodexBonusFor,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,
@@ -4477,7 +4555,7 @@ if (typeof module !== 'undefined') module.exports = {
   BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD,
   UNIQUE_SHARD_MIN_LEVEL, UNIQUE_SHARD_CHANCE, UNIQUE_SHARD_MAX_QTY, FARM_SHARD_CHANCE, FARM_ADV_SKILL_BOOK_CHANCE,
-  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
+  FARM_NORM_STONE_CHANCE, FARM_BLESS_STONE_CHANCE, FARM_GEM_COMMON_CHANCE, FARM_GEM_RARE_CHANCE, FARM_SPECIES_BOOKS, FARM_SPECIES_SHARDS,
   FARM_EPIC_RECIPE_CHANCE, FARM_LEGENDARY_RECIPE_CHANCE,
   TELEPORT_STONE_PRICE, TELEPORT_CAST_MS,
   FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES,

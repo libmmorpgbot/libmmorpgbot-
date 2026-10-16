@@ -304,6 +304,20 @@
   .tag.fixd { background: rgba(165,143,196,0.18); color: var(--arcane-bright); }
   .tag.chg { background: rgba(227,148,29,0.16); color: var(--gold); }
   .tag.del { background: rgba(224,122,122,0.16); color: var(--red); }
+  .tag.new { background: rgba(126,224,192,0.16); color: var(--green); }
+  /* свежий патч: самоцветы */
+  .latest-date { color: var(--muted); font-size: 13px; margin: -2px 0 18px; }
+  .gems { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .gem { padding: 16px; }
+  .gem-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .gem-head img { width: 44px; height: 44px; object-fit: contain; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); }
+  .gem-head b { display: block; color: var(--gold-bright); font-size: 15px; }
+  .gem-head span { color: var(--muted); font-size: 12px; }
+  .tiers { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .tiers td { padding: 5px 0; border-top: 1px solid rgba(196,153,74,0.12); }
+  .tiers td:first-child { color: var(--gold); font-weight: 700; width: 64px; }
+  .gem-note { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
+  @media (max-width: 640px) { .gems { grid-template-columns: 1fr; } }
 
   /* появление при прокрутке */
   .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
@@ -372,6 +386,49 @@
 </header>
 
 <main>
+  <!-- ══ Свежий патч · 16 октября 2026 ═══════════════════════════════════
+       Новый патч — новая такая секция сверху, а эта уходит ниже. И поднять
+       UPDATES_VERSION в js/ui.js, чтобы на кнопке в игре загорелась точка. -->
+  <section class="sec reveal" id="latest">
+    <div class="sec-eyebrow">Новое</div>
+    <h2>Самоцветы и Кодекс самоцветов</h2>
+    <p class="latest-date">Обновление · 16 октября 2026</p>
+    <p class="dek">В Фарм-зоне теперь падают четыре самоцвета. Их сдают в Кодекс (вкладка «Самоцветы»),
+      у каждого свой счётчик до 500 и свои бонусы. Бонусы порогов складываются: на 20 бусах действуют
+      пороги 1, 10 и 20 сразу. Самоцветы продаются на рынке, минимальная цена — 0.4 GRAM за штуку.</p>
+    <div class="gems">
+      <div class="card gem">
+        <div class="gem-head"><img src="/images/material/gem_jewel.png" alt=""><div><b>Изумрудные бусы</b><span>шанс как у обычной заточки</span></div></div>
+        <table class="tiers"><tr><td>1 шт.</td><td>+5 атаки</td></tr><tr><td>10 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>20 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>50 шт.</td><td>+10 атаки</td></tr><tr><td>100 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>300 шт.</td><td>+30 атаки, +30 защиты, +3000 здоровья</td></tr><tr><td>500 шт.</td><td>+50 атаки, +50 защиты, +20% скорости атаки</td></tr></table>
+      </div>
+      <div class="card gem">
+        <div class="gem-head"><img src="/images/material/gem_red.png" alt=""><div><b>Красный самоцвет</b><span>шанс как у обычной заточки</span></div></div>
+        <table class="tiers"><tr><td>1 шт.</td><td>+5 атаки</td></tr><tr><td>10 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>20 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>50 шт.</td><td>+10 атаки</td></tr><tr><td>100 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>300 шт.</td><td>+30 атаки, +30 защиты, +3000 здоровья</td></tr><tr><td>500 шт.</td><td>+50 атаки, +50 защиты, +20% скорости атаки</td></tr></table>
+      </div>
+      <div class="card gem">
+        <div class="gem-head"><img src="/images/material/gem_shard.png" alt=""><div><b>Осколок бездны</b><span>шанс как у безопасной заточки</span></div></div>
+        <table class="tiers"><tr><td>1 шт.</td><td>+10 атаки</td></tr><tr><td>10 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>30 шт.</td><td>+20 атаки</td></tr><tr><td>60 шт.</td><td>+20 атаки, +20 защиты</td></tr><tr><td>100 шт.</td><td>+30 атаки</td></tr><tr><td>150 шт.</td><td>+30 атаки, +30 защиты</td></tr><tr><td>300 шт.</td><td>+50 атаки, +50 защиты, +5000 здоровья</td></tr><tr><td>500 шт.</td><td>+100 атаки, +100 защиты, +20% скорости атаки</td></tr></table>
+      </div>
+      <div class="card gem">
+        <div class="gem-head"><img src="/images/material/gem_stone.png" alt=""><div><b>Нефритовый камень</b><span>шанс как у безопасной заточки</span></div></div>
+        <table class="tiers"><tr><td>1 шт.</td><td>+10 атаки</td></tr><tr><td>10 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>30 шт.</td><td>+20 атаки</td></tr><tr><td>60 шт.</td><td>+20 атаки, +20 защиты</td></tr><tr><td>100 шт.</td><td>+30 атаки</td></tr><tr><td>150 шт.</td><td>+30 атаки, +30 защиты</td></tr><tr><td>300 шт.</td><td>+50 атаки, +50 защиты, +5000 здоровья</td></tr><tr><td>500 шт.</td><td>+100 атаки, +100 защиты, +20% скорости атаки</td></tr></table>
+      </div>
+    </div>
+    <p class="gem-note">Сданные самоцветы уничтожаются. Больше 500 штук одного вида кодекс не принимает.</p>
+  </section>
+
+  <section class="sec reveal" id="latest-fixes">
+    <div class="sec-eyebrow">16 октября</div>
+    <h2>Изменения и исправления</h2>
+    <div class="card fixes">
+      <div class="fix"><span class="tag new">Новое</span><span>Кнопка «Обновления» рядом с «Турниром»: здесь все патчи. Красная точка — есть новое.</span></div>
+      <div class="fix"><span class="tag chg">Изменено</span><span>Оффлайн-фарм: лимит считается на сутки (по Москве), а не на один запуск — 7 ч в сутки с сезонным билетом и 1 ч без него.</span></div>
+      <div class="fix"><span class="tag chg">Изменено</span><span>Сотрудничество: в итоге забега видно, кому досталась награда за босса и что именно выдано. Если камень не влез в полную сумку — об этом есть сообщение.</span></div>
+      <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: смерть от монстра сразу заканчивает забег у обоих — напарник больше не застревает на «Дождитесь напарника».</span></div>
+      <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: попытка возвращается, если вход сорвался или связь оборвалась до первой волны.</span></div>
+      <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: в группу и в забег нельзя попасть мёртвым — это выкидывало в зал посреди забега.</span></div>
+    </div>
+  </section>
   <!-- главное -->
   <nav class="tiles stagger">
     <a class="tile" href="#tasks"><img src="/images/props/chest_banded.png" alt="" class="px"><b>Задания</b><span>ежедневные и недельные</span></a>

@@ -1970,6 +1970,75 @@ function _codexSetRowHtml(set) {
 // Раскрыт ли список бонусов за наборы (блок над наборами).
 let _codexMsOpen = false;
 
+// ── Кодекс самоцветов ───────────────────────────────────────────────────────
+// Четыре вида, у каждого свой счётчик и своя лесенка (GEM_CODEX,
+// shared/definitions.js). Сдача уничтожает камни, поэтому «Сдать все» —
+// с подтверждением; всё решает сервер (registerCodexGem).
+let _gemCodexOpen = null;          // id вида с раскрытой лесенкой
+function _gemInvCount(id) {
+  return (player && player.inventory || []).reduce((n, it) => n + (it && it.id === id ? (it.qty || 1) : 0), 0);
+}
+function _gemTierText(t) {
+  return [
+    t.atk ? `+${t.atk} АТК` : '', t.def ? `+${t.def} ЗАЩ` : '',
+    t.hp ? `+${t.hp.toLocaleString('ru-RU')} HP` : '',
+    t.atkSpeedPct ? `+${Math.round(t.atkSpeedPct * 100)}% скор. атаки` : '',
+  ].filter(Boolean).join(' · ');
+}
+function gemCodexSubmit(id, all) {
+  if (typeof gemCodexCount !== 'function') return;
+  const left = GEM_CODEX_MAX - gemCodexCount(player.codex || {}, id);
+  const have = _gemInvCount(id);
+  const qty = Math.min(all ? have : 1, left);
+  if (qty <= 0) return;
+  const mat = CRAFT_MATS.find(m => m.id === id);
+  if (all && qty > 1 && !confirm(`Сдать в кодекс ${qty} шт. «${mat ? mat.name : id}»? Камни будут уничтожены.`)) return;
+  netRegisterCodexGem(id, qty);
+}
+function _gemCodexHtml() {
+  if (typeof GEM_CODEX === 'undefined') return '';
+  const codex = (player && player.codex) || {};
+  const cards = GEM_CODEX.map(g => {
+    const mat = CRAFT_MATS.find(m => m.id === g.id) || { name: g.id, img: '' };
+    const n = gemCodexCount(codex, g.id);
+    const have = _gemInvCount(g.id);
+    const cur = gemCodexBonusFor(g.id, n);
+    const next = g.tiers.find(t => n < t.n) || null;
+    const prevN = next ? ((g.tiers[g.tiers.indexOf(next) - 1] || {}).n || 0) : 0;
+    const pct = next ? Math.max(0, Math.min(100, Math.round((n - prevN) / (next.n - prevN) * 100))) : 100;
+    const open = _gemCodexOpen === g.id;
+    const rows = open ? g.tiers.map(t => `<div class="codex-ms-row ${n >= t.n ? 'done' : (t === next ? 'next' : 'locked')}">
+        <span class="codex-ms-n">${n >= t.n ? '✓' : t.n}</span>
+        <span class="codex-ms-txt">${n >= t.n ? `<b>${t.n}</b> · ` : ''}${_gemTierText(t)}</span></div>`).join('') : '';
+    const canAdd = have > 0 && n < GEM_CODEX_MAX;
+    return `<div class="gemcx-card">
+      <div class="gemcx-top">
+        <img class="gemcx-img" src="${mat.img}" alt="">
+        <div class="gemcx-main">
+          <div class="gemcx-name">${mat.name}</div>
+          <div class="gemcx-bonus">${_gemTierText(cur) || 'Бонуса пока нет'}</div>
+        </div>
+        <div class="gemcx-count"><b>${n}</b>/${GEM_CODEX_MAX}</div>
+      </div>
+      ${next ? `<div class="codex-ms-next">Следующий: <b>${next.n} шт.</b> — ${_gemTierText(next)}</div>
+        <div class="codex-ms-bar"><div class="codex-ms-fill" style="width:${pct}%"></div></div>`
+      : `<div class="codex-ms-next">Собран полностью!</div>`}
+      <div class="gemcx-actions">
+        <span class="gemcx-have">В сумке: ${have}</span>
+        <button class="gemcx-btn" ${canAdd ? '' : 'disabled'} onclick="gemCodexSubmit('${g.id}', false)">Сдать 1</button>
+        <button class="gemcx-btn all" ${canAdd && have > 1 ? '' : 'disabled'} onclick="gemCodexSubmit('${g.id}', true)">Сдать все</button>
+        <button class="codex-ms-toggle" onclick="_gemCodexOpen=_gemCodexOpen==='${g.id}'?null:'${g.id}';renderCodexPanel()">${open ? '▴' : 'Пороги ▾'}</button>
+      </div>
+      ${open ? `<div class="codex-ms-list">${rows}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `<div class="gemcx">
+    <div class="codex-ms-head"><span class="codex-ms-title">Самоцветы</span></div>
+    <div class="gemcx-hint">Падают в Фарм-зоне. Каждый вид сдаётся отдельно, бонусы порогов складываются. Сданные камни уничтожаются.</div>
+    ${cards}
+  </div>`;
+}
+
 function renderCodexPanel() {
   const body = document.getElementById('codex-panel-body');
   if (!body || !player) return;
@@ -2045,6 +2114,7 @@ function renderCodexPanel() {
       <div class="codex-total-label">Бонус кодекса · наборов завершено ${doneTotal}/${allSets.length}</div>
       <div class="codex-total-stats">${bonusParts.length ? bonusParts.join(' &nbsp; ') : '—'}</div>
     </div>
+    ${_gemCodexHtml()}
     ${milestonesHtml}
     <div class="codex-toolbar">
       <input id="codex-search-input" class="codex-search" type="text" placeholder="Поиск по названию…"
@@ -2657,6 +2727,11 @@ function _farmDropBodyHtml(e) {
     ${_farmSpeciesShardRows(e.eid)}
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
+    ${/* Самоцветы Кодекса — та же ставка, что у камней заточки выше. */ ''}
+    ${(typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.gem).map(g => {
+      const ch = g.rarity === 'rare' ? FARM_GEM_RARE_CHANCE : FARM_GEM_COMMON_CHANCE;
+      return _dropRow(_mi(g, 16), g.name, _pctSmall(ch * 100), g.rarity === 'rare' ? '#cdb8ec' : '#8fe8a0');
+    }).join('')}
     ${epicRec ? _dropRow(_mi(epicRec, 16), epicRec.name, epicRecPct, '#c98fef') : ''}
     ${legRec  ? _dropRow(_mi(legRec, 16),  legRec.name,  legRecPct,  '#f5c542') : ''}
     ${_farmSpeciesBookRows(e.eid)}
@@ -3221,6 +3296,8 @@ function _syncGameOnlyBtns(n) {
   if (menuEl && menuEl.dataset.shown === '1') menuEl.style.display = (n === 0) ? 'flex' : 'none';
   const tourEl = document.getElementById('tournament-hud-btn');
   if (tourEl && tourEl.dataset.shown === '1') tourEl.style.display = (n === 0) ? 'flex' : 'none';
+  const updEl = document.getElementById('updates-hud-btn');
+  if (updEl && updEl.dataset.shown === '1') updEl.style.display = (n === 0) ? 'flex' : 'none';
   const subDisplay = (n === 0 && _hudMenuExpanded) ? 'flex' : 'none';
   _HUD_MENU_BTN_IDS.forEach(id => {
     const el = document.getElementById(id);
@@ -7454,6 +7531,43 @@ function _positionTournamentBtn() {
   btn.style.right  = 'auto';
   btn.style.transform = 'none';
   btn.style.fontSize = hudF(11.5) + 'px';
+  // Обновления — квадрат той же высоты, вплотную слева от «Турнира».
+  const upd = document.getElementById('updates-hud-btn');
+  if (upd) {
+    upd.style.top    = btn.style.top;
+    upd.style.left   = (pRight - w - hud(4) - h) + 'px';
+    upd.style.width  = h + 'px';
+    upd.style.height = h + 'px';
+  }
+}
+
+// ── Обновления (patches.html) ───────────────────────────────────────────────
+// Новый патч — поднять UPDATES_VERSION: у всех, кто его ещё не открывал,
+// загорится точка на кнопке. Хранится у игрока в браузере — это удобство, а
+// не данные, и без хранилища точка просто горит, пока панель не открыта.
+const UPDATES_VERSION = '2026-10-16';
+const _UPD_SEEN_KEY = 'liberty_updates_seen';
+function _updatesSeen() {
+  try { return localStorage.getItem(_UPD_SEEN_KEY) === UPDATES_VERSION; } catch { return false; }
+}
+function _refreshUpdatesDot() {
+  const btn = document.getElementById('updates-hud-btn');
+  if (btn) btn.classList.toggle('has-new', !_updatesSeen());
+}
+function openUpdatesPanel() {
+  const panel = document.getElementById('updates-panel');
+  const frame = document.getElementById('updates-frame');
+  if (!panel || !frame) return;
+  // Версия в адресе — чтобы новый патч не показывался из кэша старым.
+  const src = '/patches.html?v=' + UPDATES_VERSION;
+  if (frame.getAttribute('src') !== src) frame.setAttribute('src', src);
+  panel.style.display = 'flex';
+  try { localStorage.setItem(_UPD_SEEN_KEY, UPDATES_VERSION); } catch { /* приватный режим */ }
+  _refreshUpdatesDot();
+}
+function closeUpdatesPanel() {
+  const panel = document.getElementById('updates-panel');
+  if (panel) panel.style.display = 'none';
 }
 
 // hud-menu-btn sits directly under the minimap plate, aligned to it —
@@ -7493,6 +7607,8 @@ function _positionHudColumn() {
 function showTournamentHudBtn() {
   const btn = document.getElementById('tournament-hud-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = (activeTab === 0) ? 'flex' : 'none'; _positionTournamentBtn(); }
+  const upd = document.getElementById('updates-hud-btn');
+  if (upd) { upd.dataset.shown = '1'; upd.style.display = (activeTab === 0) ? 'flex' : 'none'; _refreshUpdatesDot(); }
 }
 
 function showHudMenuBtn() {
@@ -7842,6 +7958,7 @@ function _marketMinPriceForRaw(it, qty) {
   const n = qty || it.qty || 1;
   if (it.id === 'norm_stone') return 0.40 * n;
   if (it.id === 'bless_stone') return 0.75 * n;
+  if (it.gem) return 0.40 * n;                  // самоцветы Кодекса — MARKET_MIN_PRICE_GEM
   if (it.id === 'key_rare') return 0.006 * n;
   if (it.id && it.id.startsWith('key_')) return 0.003 * n;
   if (it.slot === 'recipe') return 0.01 * n;

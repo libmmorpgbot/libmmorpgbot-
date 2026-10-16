@@ -450,7 +450,7 @@ const HEAVY = new Set([
   'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'buyTeleportStone', 'useTeleportStone',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
-  'registerCodexSetItem', 'codexSync', 'spendUpgrade', 'usePotion', 'useBuffPotion',
+  'registerCodexSetItem', 'registerCodexGem', 'codexSync', 'spendUpgrade', 'usePotion', 'useBuffPotion',
   'learnSkill', 'upgradeSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
   'seasonRating', 'seasonSync', 'seasonBurnBook', 'itemDisassemble',
