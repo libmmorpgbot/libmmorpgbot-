@@ -305,19 +305,161 @@
   .tag.chg { background: rgba(227,148,29,0.16); color: var(--gold); }
   .tag.del { background: rgba(224,122,122,0.16); color: var(--red); }
   .tag.new { background: rgba(126,224,192,0.16); color: var(--green); }
-  /* свежий патч: самоцветы */
-  .latest-date { color: var(--muted); font-size: 13px; margin: -2px 0 18px; }
+  /* ── Шапка: самоцветы на орбите ─────────────────────────────── */
+  .orbit { position: relative; width: 190px; height: 190px; margin: 0 auto 18px; }
+  .orbit-core {
+    position: absolute; inset: 30px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,226,170,.55) 0%, rgba(227,148,29,.22) 32%, rgba(165,143,196,.12) 55%, transparent 70%);
+    filter: blur(2px); animation: corePulse 3.4s ease-in-out infinite;
+  }
+  .orbit-core::after {
+    content: '✦'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 34px; color: #ffe7b8; text-shadow: 0 0 18px rgba(255,200,110,.9), 0 0 40px rgba(227,148,29,.6);
+  }
+  .orbit::before { content: ''; position: absolute; inset: 8px; border-radius: 50%; border: 1px dashed rgba(196,153,74,.45); animation: spin 40s linear infinite; }
+  .orbit-ring { position: absolute; inset: 0; }
+  .orbit-ring img {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; object-fit: contain;
+    transform: rotate(var(--a)) translateY(var(--r, -80px)) rotate(calc(-1 * var(--a)));
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,.7)) drop-shadow(0 0 12px rgba(255,220,160,.25));
+    animation: orbit 26s linear infinite;
+  }
+  /* По кругу, но каждый камень остаётся стоять прямо. */
+  @keyframes orbit {
+    from { transform: rotate(var(--a)) translateY(var(--r, -80px)) rotate(calc(-1 * var(--a))); }
+    to   { transform: rotate(calc(var(--a) + 360deg)) translateY(var(--r, -80px)) rotate(calc(-1 * var(--a) - 360deg)); }
+  }
+  @media (max-width: 720px) {
+    .orbit-ring img { width: 46px; height: 46px; margin: -23px 0 0 -23px; --r: -66px; }
+  }
+  @keyframes corePulse { 50% { transform: scale(1.08); opacity: .85; } }
+  .hero-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 22px; }
+  .hero-chips span {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--gold-bright);
+    padding: 6px 12px; border-radius: 20px; background: rgba(32,26,16,.75); border: 1px solid var(--hairline-strong);
+  }
+  .hero-chips img { width: 20px; height: 20px; object-fit: contain; }
+
+  /* ── Навигация по патчам ───────────────────────────────────── */
+  .patch-nav {
+    position: sticky; top: 59px; z-index: 30; display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px;
+    background: rgba(11,8,5,.92); border-bottom: 1px solid var(--hairline); backdrop-filter: blur(6px);
+    scrollbar-width: none; justify-content: center;
+  }
+  .patch-nav::-webkit-scrollbar { display: none; }
+  .patch-nav a {
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; text-decoration: none; white-space: nowrap;
+    font-size: 12.5px; color: var(--muted); padding: 6px 12px; border-radius: 20px; border: 1px solid var(--hairline);
+    background: rgba(32,26,16,.6);
+  }
+  .patch-nav a b { color: var(--gold-bright); font-weight: 800; }
+  .patch-nav a.on { border-color: var(--hairline-strong); background: rgba(227,148,29,.10); }
+  .patch-nav .pn-guide { color: var(--arcane-bright); }
+  .pn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .pn-dot.new { background: #ff5b5b; box-shadow: 0 0 8px #ff5b5b; animation: pulse 1.6s ease-in-out infinite; }
+
+  /* ── Лента патчей ──────────────────────────────────────────── */
+  .patch { position: relative; padding-left: 28px; margin-bottom: 40px; scroll-margin-top: 120px; }
+  .patch::before { content: ''; position: absolute; left: 7px; top: 10px; bottom: 0; width: 2px; background: linear-gradient(180deg, var(--gold), rgba(196,153,74,.15) 30%, rgba(196,153,74,.08)); }
+  .patch-head { position: relative; margin-bottom: 34px; }
+  .patch-head::before {
+    content: ''; position: absolute; left: -28px; top: 6px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--ink); border: 3px solid var(--gold); box-shadow: 0 0 14px rgba(227,148,29,.6);
+  }
+  .patch-head h2 { font-size: clamp(26px, 5vw, 38px); margin-top: 8px; }
+  .patch-date {
+    display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 6px; color: var(--muted); background: rgba(255,255,255,.04); border: 1px solid var(--hairline);
+  }
+  .patch-date.new { color: #0b0805; background: linear-gradient(180deg, #f6c665, #c4821f); border-color: #f2b84b; }
+  .patch-head.season { padding: 22px 20px 20px; border-radius: 18px; border: 1px solid var(--hairline-strong);
+    background: radial-gradient(ellipse 380px 220px at 85% 0%, rgba(165,143,196,.18), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel)); }
+  .patch-head.season::before { left: -28px; top: 28px; }
+  .patch-ico { position: absolute; right: 18px; top: 16px; width: 64px; height: 64px; filter: drop-shadow(0 0 14px rgba(255,190,90,.55)); animation: bob 3.2s ease-in-out infinite; }
+  .patch-head.season .countdown { margin-top: 10px; }
+  .patch-head.season .cd-cap { margin-top: 8px; }
+
+  /* ── Карточки самоцветов ──────────────────────────────────── */
   .gems { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
-  .gem { padding: 16px; }
-  .gem-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .gem-head img { width: 44px; height: 44px; object-fit: contain; filter: drop-shadow(0 3px 6px rgba(0,0,0,.6)); }
-  .gem-head b { display: block; color: var(--gold-bright); font-size: 15px; }
-  .gem-head span { color: var(--muted); font-size: 12px; }
-  .tiers { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .tiers td { padding: 5px 0; border-top: 1px solid rgba(196,153,74,0.12); }
-  .tiers td:first-child { color: var(--gold); font-weight: 700; width: 64px; }
-  .gem-note { color: var(--muted); font-size: 13px; margin: 14px 0 0; }
-  @media (max-width: 640px) { .gems { grid-template-columns: 1fr; } }
+  .gem-card {
+    --gc: 87,224,143; position: relative; overflow: hidden; padding: 18px 16px 14px; border-radius: 18px;
+    border: 1px solid rgba(var(--gc), .38);
+    background: radial-gradient(ellipse 260px 170px at 0% 0%, rgba(var(--gc), .16), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel));
+    box-shadow: 0 22px 44px -28px rgba(0,0,0,.95), inset 0 1px 0 rgba(255,255,255,.04);
+    transition: transform .25s, box-shadow .25s;
+  }
+  .gem-card.r-rare { --gc: 186,140,255; }
+  .gem-card:hover { transform: translateY(-4px); box-shadow: 0 26px 46px -24px rgba(var(--gc), .45); }
+  .gem-card::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(110deg, transparent 42%, rgba(255,255,255,.06) 50%, transparent 58%);
+    background-size: 260% 100%; animation: sweep 6s ease-in-out infinite;
+  }
+  .gem-top { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .gem-art {
+    flex-shrink: 0; width: 64px; height: 64px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 45%, rgba(var(--gc), .30), rgba(0,0,0,.35) 70%); border: 1px solid rgba(var(--gc), .35);
+  }
+  .gem-art img { width: 50px; height: 50px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,.6)); animation: bob 3.6s ease-in-out infinite; }
+  .gem-card:nth-child(2) .gem-art img { animation-delay: -.9s; } .gem-card:nth-child(3) .gem-art img { animation-delay: -1.8s; } .gem-card:nth-child(4) .gem-art img { animation-delay: -2.7s; }
+  .gem-name { font-family: var(--serif); font-size: 19px; font-weight: 700; color: var(--gold-bright); line-height: 1.2; }
+  .gem-drop { display: inline-block; margin-top: 5px; font-size: 11.5px; font-weight: 700; color: rgb(var(--gc)); padding: 2px 9px; border-radius: 20px; background: rgba(var(--gc), .10); border: 1px solid rgba(var(--gc), .30); }
+  .ladder { list-style: none; margin: 0; padding: 0; position: relative; }
+  .ladder::before { content: ''; position: absolute; left: 21px; top: 12px; bottom: 12px; width: 2px; background: linear-gradient(180deg, rgba(var(--gc), .55), rgba(var(--gc), .12)); }
+  .ladder li { position: relative; display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .ladder .n {
+    position: relative; z-index: 1; flex-shrink: 0; min-width: 44px; text-align: center; font-size: 12px; font-weight: 900;
+    color: rgb(var(--gc)); padding: 3px 0; border-radius: 8px; background: #120e07; border: 1px solid rgba(var(--gc), .45);
+  }
+  .ladder li:last-child .n { color: #0b0805; background: rgb(var(--gc)); box-shadow: 0 0 14px rgba(var(--gc), .6); }
+  .ladder .b { display: flex; flex-wrap: wrap; gap: 4px; }
+  .st { font-style: normal; font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+  .st.atk { color: #ffb08a; background: rgba(255,120,70,.12); }
+  .st.def { color: #9cc8ff; background: rgba(90,150,255,.12); }
+  .st.hp  { color: #9ff0b0; background: rgba(90,220,120,.12); }
+  .st.spd { color: #ffe08a; background: rgba(255,200,60,.14); }
+  .gem-max { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,.28); border: 1px dashed rgba(var(--gc), .35); }
+  .gem-max span { display: block; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .gem-max div { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  /* ── Как собирать ─────────────────────────────────────────── */
+  .steps3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .step { position: relative; text-align: center; padding: 22px 14px 16px; border-radius: 16px; border: 1px solid var(--hairline); background: linear-gradient(180deg, var(--panel-raised), var(--panel)); }
+  .step img { width: 46px; height: 46px; object-fit: contain; margin: 0 auto 8px; animation: float 4s ease-in-out infinite; }
+  .step b { display: block; color: var(--gold-bright); font-size: 15px; margin-bottom: 4px; }
+  .step > span:last-child { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .step-n { position: absolute; top: 10px; left: 12px; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 900; line-height: 22px; color: #0b0805; background: linear-gradient(180deg, #f6c665, #c4821f); }
+  .market-note { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 16px; font-size: 13.5px; }
+  .market-note img { width: 30px; height: 30px; flex-shrink: 0; }
+  .market-note b { color: var(--gold-bright); }
+
+  /* ── Оффлайн-лимит ────────────────────────────────────────── */
+  .limits { padding: 16px 18px; display: grid; gap: 14px; }
+  .lim-head { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 6px; }
+  .lim-head b { color: var(--gold-bright); }
+  .lim-bar { display: flex; gap: 5px; }
+  .lim-bar i { flex: 1; height: 14px; border-radius: 5px; background: rgba(0,0,0,.45); border: 1px dashed rgba(196,153,74,.3); }
+  .lim-bar i.on { border: 1px solid #4a8fd4; background: linear-gradient(180deg, #4a8fd4, #275e9c); box-shadow: 0 0 10px rgba(74,143,212,.45); }
+
+  /* ── Сотрудничество ───────────────────────────────────────── */
+  .coop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .coop-item { display: flex; gap: 12px; padding: 14px 16px; align-items: flex-start; }
+  .coop-item .ci { font-size: 24px; line-height: 1; flex-shrink: 0; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(126,224,192,.08); border: 1px solid rgba(126,224,192,.25); }
+  .coop-item b { display: block; color: var(--gold-bright); font-size: 14.5px; }
+  .coop-item span { font-size: 13px; color: var(--muted); line-height: 1.45; }
+
+  @media (max-width: 720px) {
+    .gems, .coop-grid, .steps3 { grid-template-columns: 1fr; }
+    .patch { padding-left: 22px; }
+    .patch-head::before, .patch-head.season::before { left: -22px; }
+    .patch::before { left: 4px; }
+    .patch-nav { justify-content: flex-start; top: 55px; }
+    .patch-ico { width: 48px; height: 48px; }
+    .orbit { width: 170px; height: 170px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .orbit-ring img, .orbit-core, .gem-art img, .gem-card::after, .step img { animation: none !important; }
+  }
 
   /* появление при прокрутке */
   .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
@@ -362,73 +504,179 @@
   </div>
 </div>
 
-<!-- ══ Витрина: Сезон 4 «Баланс» ══════════════════════════════════════ -->
+<!-- ══ Витрина: свежий патч ═════════════════════════════════════════
+     Новый патч: новая витрина здесь, новый <article class="patch"> первым в
+     ленте ниже, строка в .patch-nav — и поднять UPDATES_VERSION в js/ui.js,
+     чтобы на кнопке в игре загорелась точка. -->
 <header class="hero">
   <canvas id="fx"></canvas>
   <div class="hero-inner">
-    <div class="sigil"><img src="/images/season_ticket.png?v=2" alt="" class="px"></div>
-    <div class="eyebrow"><span class="dot"></span>Обновление · 2 октября 2026</div>
-    <h1 class="title">Сезон 4: Баланс</h1>
-    <p class="lede">В этом сезоне мы сделали баланс персонажей, но это не конечный итог: идеал невозможен,
-      а отличное требует времени. <b>Приятной игры в 4 сезоне!</b></p>
-    <div class="countdown" id="cd" aria-label="До конца сезона">
-      <div class="cd-cell"><div class="cd-num" id="cd-d">–</div><div class="cd-lbl">дней</div></div>
-      <div class="cd-cell"><div class="cd-num" id="cd-h">–</div><div class="cd-lbl">часов</div></div>
-      <div class="cd-cell"><div class="cd-num" id="cd-m">–</div><div class="cd-lbl">минут</div></div>
-      <div class="cd-cell"><div class="cd-num" id="cd-s">–</div><div class="cd-lbl">секунд</div></div>
+    <div class="orbit" aria-hidden="true">
+      <div class="orbit-core"></div>
+      <div class="orbit-ring">
+        <img src="/images/material/gem_jewel.png" alt="" style="--a:0deg">
+        <img src="/images/material/gem_red.png" alt="" style="--a:90deg">
+        <img src="/images/material/gem_shard.png" alt="" style="--a:180deg">
+        <img src="/images/material/gem_stone.png" alt="" style="--a:270deg">
+      </div>
     </div>
-    <div class="cd-cap" id="cd-cap">до конца сезона · 1 ноября, 18:00 МСК</div>
+    <div class="eyebrow"><span class="dot"></span>Патч · 16 октября 2026</div>
+    <h1 class="title">Самоцветы</h1>
+    <p class="lede">В Фарм-зоне появились четыре самоцвета. Сдавайте их в <b>Кодекс самоцветов</b> —
+      у каждого своя лесенка бонусов до <b>+20% скорости атаки</b>.</p>
+    <div class="hero-chips">
+      <span><img src="/images/material/gem_jewel.png" alt="">4 новых предмета</span>
+      <span><img src="/images/material/gem_shard.png" alt="">Кодекс самоцветов</span>
+      <span>⏳ Оффлайн-фарм</span>
+      <span>🤝 Сотрудничество</span>
+    </div>
     <div class="cta">
-      <a class="btn primary" href="#tasks">Что нового ↓</a>
-      <a class="btn" href="guide.html">Гайд по игре</a>
+      <a class="btn primary" href="#p-1016">Что нового ↓</a>
+      <a class="btn" href="#p-s4">Сезон 4</a>
     </div>
   </div>
 </header>
 
-<main>
-  <!-- ══ Свежий патч · 16 октября 2026 ═══════════════════════════════════
-       Новый патч — новая такая секция сверху, а эта уходит ниже. И поднять
-       UPDATES_VERSION в js/ui.js, чтобы на кнопке в игре загорелась точка. -->
-  <section class="sec reveal" id="latest">
-    <div class="sec-eyebrow">Новое</div>
-    <h2>Самоцветы и Кодекс самоцветов</h2>
-    <p class="latest-date">Обновление · 16 октября 2026</p>
-    <p class="dek">В Фарм-зоне теперь падают четыре самоцвета (только в живой игре — в оффлайн-фарме их нет). Их сдают в Кодекс (вкладка «Самоцветы»),
-      у каждого свой счётчик до 500 и свои бонусы. Бонусы порогов складываются: на 20 бусах действуют
-      пороги 1, 10 и 20 сразу. Самоцветы продаются на рынке, минимальная цена — 0.4 GRAM за штуку.</p>
-    <div class="gems">
-      <div class="card gem">
-        <div class="gem-head"><img src="/images/material/gem_jewel.png" alt=""><div><b>Изумрудные бусы</b><span>шанс как у обычной заточки</span></div></div>
-        <table class="tiers"><tr><td>1 шт.</td><td>+5 атаки</td></tr><tr><td>10 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>20 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>50 шт.</td><td>+10 атаки</td></tr><tr><td>100 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>300 шт.</td><td>+30 атаки, +30 защиты, +3000 здоровья</td></tr><tr><td>500 шт.</td><td>+50 атаки, +50 защиты, +20% скорости атаки</td></tr></table>
-      </div>
-      <div class="card gem">
-        <div class="gem-head"><img src="/images/material/gem_red.png" alt=""><div><b>Красный самоцвет</b><span>шанс как у обычной заточки</span></div></div>
-        <table class="tiers"><tr><td>1 шт.</td><td>+5 атаки</td></tr><tr><td>10 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>20 шт.</td><td>+5 атаки, +5 защиты</td></tr><tr><td>50 шт.</td><td>+10 атаки</td></tr><tr><td>100 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>300 шт.</td><td>+30 атаки, +30 защиты, +3000 здоровья</td></tr><tr><td>500 шт.</td><td>+50 атаки, +50 защиты, +20% скорости атаки</td></tr></table>
-      </div>
-      <div class="card gem">
-        <div class="gem-head"><img src="/images/material/gem_shard.png" alt=""><div><b>Осколок бездны</b><span>шанс как у безопасной заточки</span></div></div>
-        <table class="tiers"><tr><td>1 шт.</td><td>+10 атаки</td></tr><tr><td>10 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>30 шт.</td><td>+20 атаки</td></tr><tr><td>60 шт.</td><td>+20 атаки, +20 защиты</td></tr><tr><td>100 шт.</td><td>+30 атаки</td></tr><tr><td>150 шт.</td><td>+30 атаки, +30 защиты</td></tr><tr><td>300 шт.</td><td>+50 атаки, +50 защиты, +5000 здоровья</td></tr><tr><td>500 шт.</td><td>+100 атаки, +100 защиты, +20% скорости атаки</td></tr></table>
-      </div>
-      <div class="card gem">
-        <div class="gem-head"><img src="/images/material/gem_stone.png" alt=""><div><b>Нефритовый камень</b><span>шанс как у безопасной заточки</span></div></div>
-        <table class="tiers"><tr><td>1 шт.</td><td>+10 атаки</td></tr><tr><td>10 шт.</td><td>+10 атаки, +10 защиты</td></tr><tr><td>30 шт.</td><td>+20 атаки</td></tr><tr><td>60 шт.</td><td>+20 атаки, +20 защиты</td></tr><tr><td>100 шт.</td><td>+30 атаки</td></tr><tr><td>150 шт.</td><td>+30 атаки, +30 защиты</td></tr><tr><td>300 шт.</td><td>+50 атаки, +50 защиты, +5000 здоровья</td></tr><tr><td>500 шт.</td><td>+100 атаки, +100 защиты, +20% скорости атаки</td></tr></table>
-      </div>
-    </div>
-    <p class="gem-note">Сданные самоцветы уничтожаются. Больше 500 штук одного вида кодекс не принимает.</p>
-  </section>
+<nav class="patch-nav" aria-label="Патчи">
+  <a href="#p-1016" class="on"><i class="pn-dot new"></i><b>16 окт</b><span>Самоцветы</span></a>
+  <a href="#p-s4"><i class="pn-dot"></i><b>2 окт</b><span>Сезон 4: Баланс</span></a>
+  <a href="guide.html" class="pn-guide">Гайд →</a>
+</nav>
 
-  <section class="sec reveal" id="latest-fixes">
-    <div class="sec-eyebrow">16 октября</div>
-    <h2>Изменения и исправления</h2>
-    <div class="card fixes">
-      <div class="fix"><span class="tag new">Новое</span><span>Кнопка «Обновления» рядом с «Турниром»: здесь все патчи. Красная точка — есть новое.</span></div>
-      <div class="fix"><span class="tag chg">Изменено</span><span>Оффлайн-фарм: лимит считается на сутки (по Москве), а не на один запуск — 7 ч в сутки с сезонным билетом и 1 ч без него.</span></div>
-      <div class="fix"><span class="tag chg">Изменено</span><span>Сотрудничество: в итоге забега видно, кому досталась награда за босса и что именно выдано. Если камень не влез в полную сумку — об этом есть сообщение.</span></div>
-      <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: смерть от монстра сразу заканчивает забег у обоих — напарник больше не застревает на «Дождитесь напарника».</span></div>
-      <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: попытка возвращается, если вход сорвался или связь оборвалась до первой волны.</span></div>
-      <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: в группу и в забег нельзя попасть мёртвым — это выкидывало в зал посреди забега.</span></div>
-    </div>
-  </section>
+<main>
+  <!-- ══ Патч · 16 октября 2026 ══════════════════════════════════════ -->
+  <article class="patch" id="p-1016">
+    <header class="patch-head reveal">
+      <span class="patch-date new">16 октября 2026</span>
+      <h2>Самоцветы и Кодекс самоцветов</h2>
+      <p class="dek">Новые предметы в Фарм-зоне, новый раздел Кодекса, суточный лимит оффлайн-фарма
+        и большая работа над Сотрудничеством.</p>
+    </header>
+
+    <section class="sec reveal" id="gems">
+      <div class="sec-eyebrow">Новое · Фарм-зона</div>
+      <h2>Четыре самоцвета</h2>
+      <p class="dek">Падают с монстров Фарм-зоны в живой игре — в оффлайн-фарме их нет. Каждый вид собирается
+        отдельно, бонусы порогов складываются: на 20 бусах действуют пороги 1, 10 и 20 сразу.</p>
+      <div class="gems stagger">
+        <div class="gem-card r-common">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/material/gem_jewel.png" alt=""></div>
+            <div>
+              <div class="gem-name">Изумрудные бусы</div>
+              <div class="gem-drop">Шанс как у обычной заточки</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="st atk">+5 АТК</i></span></li><li><span class="n">10</span><span class="b"><i class="st atk">+5 АТК</i><i class="st def">+5 ЗАЩ</i></span></li><li><span class="n">20</span><span class="b"><i class="st atk">+5 АТК</i><i class="st def">+5 ЗАЩ</i></span></li><li><span class="n">50</span><span class="b"><i class="st atk">+10 АТК</i></span></li><li><span class="n">100</span><span class="b"><i class="st atk">+10 АТК</i><i class="st def">+10 ЗАЩ</i></span></li><li><span class="n">300</span><span class="b"><i class="st atk">+30 АТК</i><i class="st def">+30 ЗАЩ</i><i class="st hp">+3000 HP</i></span></li><li><span class="n">500</span><span class="b"><i class="st atk">+50 АТК</i><i class="st def">+50 ЗАЩ</i><i class="st spd">+20% скорость атаки</i></span></li></ol>
+          <div class="gem-max"><span>Собрано 500 — всего</span><div><i class="st atk">+115 АТК</i><i class="st def">+100 ЗАЩ</i><i class="st hp">+3000 HP</i><i class="st spd">+20% скорость атаки</i></div></div>
+        </div>
+        <div class="gem-card r-common">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/material/gem_red.png" alt=""></div>
+            <div>
+              <div class="gem-name">Красный самоцвет</div>
+              <div class="gem-drop">Шанс как у обычной заточки</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="st atk">+5 АТК</i></span></li><li><span class="n">10</span><span class="b"><i class="st atk">+5 АТК</i><i class="st def">+5 ЗАЩ</i></span></li><li><span class="n">20</span><span class="b"><i class="st atk">+5 АТК</i><i class="st def">+5 ЗАЩ</i></span></li><li><span class="n">50</span><span class="b"><i class="st atk">+10 АТК</i></span></li><li><span class="n">100</span><span class="b"><i class="st atk">+10 АТК</i><i class="st def">+10 ЗАЩ</i></span></li><li><span class="n">300</span><span class="b"><i class="st atk">+30 АТК</i><i class="st def">+30 ЗАЩ</i><i class="st hp">+3000 HP</i></span></li><li><span class="n">500</span><span class="b"><i class="st atk">+50 АТК</i><i class="st def">+50 ЗАЩ</i><i class="st spd">+20% скорость атаки</i></span></li></ol>
+          <div class="gem-max"><span>Собрано 500 — всего</span><div><i class="st atk">+115 АТК</i><i class="st def">+100 ЗАЩ</i><i class="st hp">+3000 HP</i><i class="st spd">+20% скорость атаки</i></div></div>
+        </div>
+        <div class="gem-card r-rare">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/material/gem_shard.png" alt=""></div>
+            <div>
+              <div class="gem-name">Осколок бездны</div>
+              <div class="gem-drop">Шанс как у безопасной заточки</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="st atk">+10 АТК</i></span></li><li><span class="n">10</span><span class="b"><i class="st atk">+10 АТК</i><i class="st def">+10 ЗАЩ</i></span></li><li><span class="n">30</span><span class="b"><i class="st atk">+20 АТК</i></span></li><li><span class="n">60</span><span class="b"><i class="st atk">+20 АТК</i><i class="st def">+20 ЗАЩ</i></span></li><li><span class="n">100</span><span class="b"><i class="st atk">+30 АТК</i></span></li><li><span class="n">150</span><span class="b"><i class="st atk">+30 АТК</i><i class="st def">+30 ЗАЩ</i></span></li><li><span class="n">300</span><span class="b"><i class="st atk">+50 АТК</i><i class="st def">+50 ЗАЩ</i><i class="st hp">+5000 HP</i></span></li><li><span class="n">500</span><span class="b"><i class="st atk">+100 АТК</i><i class="st def">+100 ЗАЩ</i><i class="st spd">+20% скорость атаки</i></span></li></ol>
+          <div class="gem-max"><span>Собрано 500 — всего</span><div><i class="st atk">+270 АТК</i><i class="st def">+210 ЗАЩ</i><i class="st hp">+5000 HP</i><i class="st spd">+20% скорость атаки</i></div></div>
+        </div>
+        <div class="gem-card r-rare">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/material/gem_stone.png" alt=""></div>
+            <div>
+              <div class="gem-name">Нефритовый камень</div>
+              <div class="gem-drop">Шанс как у безопасной заточки</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="st atk">+10 АТК</i></span></li><li><span class="n">10</span><span class="b"><i class="st atk">+10 АТК</i><i class="st def">+10 ЗАЩ</i></span></li><li><span class="n">30</span><span class="b"><i class="st atk">+20 АТК</i></span></li><li><span class="n">60</span><span class="b"><i class="st atk">+20 АТК</i><i class="st def">+20 ЗАЩ</i></span></li><li><span class="n">100</span><span class="b"><i class="st atk">+30 АТК</i></span></li><li><span class="n">150</span><span class="b"><i class="st atk">+30 АТК</i><i class="st def">+30 ЗАЩ</i></span></li><li><span class="n">300</span><span class="b"><i class="st atk">+50 АТК</i><i class="st def">+50 ЗАЩ</i><i class="st hp">+5000 HP</i></span></li><li><span class="n">500</span><span class="b"><i class="st atk">+100 АТК</i><i class="st def">+100 ЗАЩ</i><i class="st spd">+20% скорость атаки</i></span></li></ol>
+          <div class="gem-max"><span>Собрано 500 — всего</span><div><i class="st atk">+270 АТК</i><i class="st def">+210 ЗАЩ</i><i class="st hp">+5000 HP</i><i class="st spd">+20% скорость атаки</i></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="codex">
+      <div class="sec-eyebrow">Кодекс</div>
+      <h2>Как собирать</h2>
+      <div class="steps3 stagger">
+        <div class="step"><span class="step-n">1</span><img src="/images/material/gem_red.png" alt=""><b>Фармите</b><span>Самоцветы падают в Фарм-зоне — у бус и красного самоцвета шанс чаще.</span></div>
+        <div class="step"><span class="step-n">2</span><img src="/images/material/gem_shard.png" alt=""><b>Сдаёте в Кодекс</b><span>Кодекс → раздел «Самоцветы» → «Сдать 1» или «Сдать все». До 500 штук каждого вида.</span></div>
+        <div class="step"><span class="step-n">3</span><img src="/images/material/gem_stone.png" alt=""><b>Бонус навсегда</b><span>Атака, защита, здоровье и скорость атаки — сразу в характеристиках.</span></div>
+      </div>
+      <div class="card market-note">
+        <img src="/images/gram-icon.png" alt="">
+        <span>Самоцветы можно продавать и покупать на рынке. Минимальная цена — <b>0.4 GRAM</b> за штуку.
+          Сданные в Кодекс камни уничтожаются.</span>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="offline">
+      <div class="sec-eyebrow">Изменено</div>
+      <h2>Оффлайн-фарм: лимит на сутки</h2>
+      <p class="dek">Лимит теперь общий на сутки (по Москве), а не на один запуск — его можно делить на несколько
+        выходов из игры. Новый лимит — после 00:00 МСК.</p>
+      <div class="card limits">
+        <div class="lim">
+          <div class="lim-head"><span>🎟 С сезонным билетом</span><b>7 ч в сутки</b></div>
+          <div class="lim-bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
+        </div>
+        <div class="lim">
+          <div class="lim-head"><span>Без билета</span><b>1 ч в сутки</b></div>
+          <div class="lim-bar"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="coop">
+      <div class="sec-eyebrow">Сотрудничество</div>
+      <h2>Награда и честный забег</h2>
+      <div class="coop-grid stagger">
+        <div class="card coop-item"><span class="ci">🏆</span><div><b>Видно, что выпало</b><span>В итоге забега написано, кому по жребию досталась награда за босса и что именно выдано.</span></div></div>
+        <div class="card coop-item"><span class="ci">🎒</span><div><b>Полная сумка</b><span>Если Камень безопасной заточки не поместился — появится сообщение, а не тишина.</span></div></div>
+        <div class="card coop-item"><span class="ci">↩️</span><div><b>Попытка возвращается</b><span>Если вход сорвался или связь оборвалась до первой волны.</span></div></div>
+        <div class="card coop-item"><span class="ci">💀</span><div><b>Смерть заканчивает забег</b><span>Напарник сразу уходит домой, а не ждёт на «Дождитесь напарника».</span></div></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="fixes-1016">
+      <div class="sec-eyebrow">Стабильность</div>
+      <h2>Исправления</h2>
+      <div class="card fixes">
+        <div class="fix"><span class="tag new">Новое</span><span>Кнопка «Обновления» рядом с «Турниром» — здесь все патчи. Красная точка — есть новое.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: в группу и в забег нельзя попасть мёртвым — это выкидывало в зал посреди забега.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Сотрудничество: при отключении напарника пишется «напарник вышел», а не «кто-то из вас погиб».</span></div>
+      </div>
+    </section>
+  </article>
+
+  <!-- ══ Патч · 2 октября 2026 · Сезон 4 ═══════════════════════════════ -->
+  <article class="patch" id="p-s4">
+    <header class="patch-head season reveal">
+      <img src="/images/season_ticket.png?v=2" alt="" class="px patch-ico">
+      <span class="patch-date">2 октября 2026</span>
+      <h2>Сезон 4: Баланс</h2>
+      <p class="dek">В этом сезоне мы сделали баланс персонажей, но это не конечный итог: идеал невозможен,
+        а отличное требует времени. <b>Приятной игры в 4 сезоне!</b></p>
+      <div class="countdown" id="cd" aria-label="До конца сезона">
+        <div class="cd-cell"><div class="cd-num" id="cd-d">–</div><div class="cd-lbl">дней</div></div>
+        <div class="cd-cell"><div class="cd-num" id="cd-h">–</div><div class="cd-lbl">часов</div></div>
+        <div class="cd-cell"><div class="cd-num" id="cd-m">–</div><div class="cd-lbl">минут</div></div>
+        <div class="cd-cell"><div class="cd-num" id="cd-s">–</div><div class="cd-lbl">секунд</div></div>
+      </div>
+      <div class="cd-cap" id="cd-cap">до конца сезона · 1 ноября, 18:00 МСК</div>
+    </header>
+
   <!-- главное -->
   <nav class="tiles stagger">
     <a class="tile" href="#tasks"><img src="/images/props/chest_banded.png" alt="" class="px"><b>Задания</b><span>ежедневные и недельные</span></a>
@@ -644,6 +892,8 @@
     </div>
   </section>
 
+  </article>
+
   <footer>Liberty · обновления · перезайдите в игру, чтобы загрузилась новая версия</footer>
 </main>
 
@@ -673,6 +923,19 @@
       entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
     }, { threshold: 0.12 });
     els.forEach(function (e) { io.observe(e); });
+  })();
+
+  // Навигация по патчам: подсвечен тот, что сейчас на экране.
+  (function () {
+    var links = document.querySelectorAll('.patch-nav a[href^="#"]');
+    if (!links.length || !('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        links.forEach(function (l) { l.classList.toggle('on', l.getAttribute('href') === '#' + en.target.id); });
+      });
+    }, { rootMargin: '-40% 0px -55% 0px' });
+    document.querySelectorAll('article.patch').forEach(function (a) { io.observe(a); });
   })();
 
   // Частицы в шапке — золотые и сиреневые искры.
