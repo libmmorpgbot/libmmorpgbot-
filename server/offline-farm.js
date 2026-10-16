@@ -219,7 +219,10 @@ function simulate(loc, snap, kills, bonus = {}) {
   // не стакается, и каждая вещь ляжет в свою ячейку.
   const stacks = new Map();
   const push = (d) => {
-    if (_MAT_BY_ID.has(d.id)) {
+    // Самоцветы Кодекса в оффлайне не падают — только в живой игре.
+    const mat = _MAT_BY_ID.get(d.id);
+    if (mat && mat.gem) return;
+    if (mat) {
       const cur = stacks.get(d.id);
       if (cur) cur.qty += d.qty || 1;
       else stacks.set(d.id, { id: d.id, name: d.name, rarity: d.rarity, qty: d.qty || 1 });

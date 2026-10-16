@@ -2703,7 +2703,7 @@ function _farmSpeciesBookRows(eid) {
   }).join('');
 }
 
-function _farmDropBodyHtml(e) {
+function _farmDropBodyHtml(e, { noGems = false } = {}) {
   const normPct  = _pctSmall(FARM_NORM_STONE_CHANCE * 100);
   const blessPct = _pctSmall(FARM_BLESS_STONE_CHANCE * 100);
   const epicRecPct = _pctSmall(FARM_EPIC_RECIPE_CHANCE * 100);
@@ -2728,7 +2728,7 @@ function _farmDropBodyHtml(e) {
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  normPct,  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, blessPct, '#efc680') : ''}
     ${/* Самоцветы Кодекса — та же ставка, что у камней заточки выше. */ ''}
-    ${(typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.gem).map(g => {
+    ${(noGems || typeof CRAFT_MATS === 'undefined' ? [] : CRAFT_MATS).filter(m => m.gem).map(g => {
       const ch = g.rarity === 'rare' ? FARM_GEM_RARE_CHANCE : FARM_GEM_COMMON_CHANCE;
       return _dropRow(_mi(g, 16), g.name, _pctSmall(ch * 100), g.rarity === 'rare' ? '#cdb8ec' : '#8fe8a0');
     }).join('')}
@@ -2738,7 +2738,8 @@ function _farmDropBodyHtml(e) {
   `;
 }
 
-function _farmZoneMonsterListHtml() {
+// noGems — для окна оффлайн-фарма: самоцветы Кодекса там не падают.
+function _farmZoneMonsterListHtml({ noGems = false } = {}) {
   const eMap = new Map(ENEMY_DEF.map(e => [e.eid, e]));
   const species = (typeof FARM_SPECIES !== 'undefined' ? FARM_SPECIES : [])
     .map(eid => eMap.get(eid)).filter(Boolean).map(_liveFarmEnemy);
@@ -2752,7 +2753,7 @@ function _farmZoneMonsterListHtml() {
         </div>
         <span class="mon-chevron">›</span>
       </div>
-      <div class="mon-body">${_farmDropBodyHtml(e)}</div>
+      <div class="mon-body">${_farmDropBodyHtml(e, { noGems })}</div>
     </div>`).join('');
   return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('farmBestiaryHint')}</div>${items}`;
 }
@@ -6786,7 +6787,7 @@ function _ofarmDropHtml(id) {
   const loc = (typeof offlineFarmLocation === 'function') ? offlineFarmLocation(id) : null;
   if (!loc) return '';
   let html;
-  if (loc.kind === 'farmZone') html = _farmZoneMonsterListHtml();
+  if (loc.kind === 'farmZone') html = _farmZoneMonsterListHtml({ noGems: true });
   else if (loc.kind === 'farmHigh') html = _farmHighMonsterListHtml();
   else {
     const arm = ARM_NAMES.indexOf(loc.arm) + 1;
@@ -6796,7 +6797,7 @@ function _ofarmDropHtml(id) {
     html = `<div class="mon-variant">${_monsterDropBodyHtml(e, arm, loc.lvl)}</div>`;
   }
   return `<div class="ofarm-drop">
-    <div class="ofarm-drop-note">Каждое убийство в оффлайне бросает ту же таблицу, что и в игре, вместе со вторым броском за VIP, сезонный билет и вещи.</div>
+    <div class="ofarm-drop-note">Каждое убийство в оффлайне бросает ту же таблицу, что и в игре, вместе со вторым броском за VIP, сезонный билет и вещи. Самоцветы для Кодекса в оффлайне не падают.</div>
     ${html}
   </div>`;
 }

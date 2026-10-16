@@ -81,6 +81,18 @@ ok(zone.gram === 0, 'в фарм-зоне GRAM не падает (как онл�
 const mats = zone.drops.filter(d => D.CRAFT_MATS.some(m => m.id === d.id));
 ok(new Set(mats.map(d => d.id)).size === mats.length, 'материалы сложены в одну стопку на вид');
 
+// Самоцветы Кодекса в оффлайне не падают. Каждый бросок таблицы зоны
+// (Math.random в loot.js) делается удачным — самоцветы выпали бы наверняка.
+{
+  const real = Math.random;
+  Math.random = () => 0;
+  let lucky;
+  try { lucky = of.simulate(D.offlineFarmLocation('farmZone'), { ...MID, atk: 3000 }, 50); } finally { Math.random = real; }
+  ok(lucky.drops.length > 0, 'при удачных бросках зона роняет предметы');
+  ok(!lucky.drops.some(d => D.CRAFT_MATS.some(m => m.id === d.id && m.gem)),
+    'самоцветов Кодекса среди них нет', lucky.drops.map(d => d.id).join(','));
+}
+
 head('Время');
 ok(of._overlap(0, 1000, 2000) === 0, 'зелье, кончившееся до фарма, не действует');
 ok(of._overlap(1500, 1000, 2000) === 0.5, 'зелье на половину фарма — половина');
