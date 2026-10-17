@@ -141,6 +141,16 @@ ok(classes.every(c => byTier('top').has(c)), 'топ-споты вместе д�
 ok(WORLD_SPOTS.filter(s => s.tier !== 'top').every(s => s.scrolls.length === 1), 'на лоу и мид — по одному свитку на спот');
 ok(/WORLD_SPOTS\.find\(x => x\.id === result\.spot\)/.test(src) && (roomSrc.match(/spot: enemy\.spot/g) || []).length === 2, 'спот доходит до броска свитка');
 
+console.log('\n── сила монстров ──');
+{
+  const e = mobs.find(m => m.rlvl === 50);
+  const st = D.monsterStatsAtLevel(50, e.eType);
+  ok(e.maxHp === Math.floor(st.hp * 0.5 * 2) && e.atk === Math.floor(st.atk * 0.5 * 2) && e.def === Math.floor(st.def * 2),
+    'здоровье, атака и защита обычных монстров ×2', `${e.maxHp}/${e.atk}/${e.def}`);
+  const boss = d.enemies.find(x => x.isBoss), bs = D.monsterStatsAtLevel(60, 'boss');
+  ok(boss.def === bs.def, 'Владыка не задет');
+}
+
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (fail) { console.log('  впало: ' + failures.join('; ')); process.exit(1); }
 process.exit(0);

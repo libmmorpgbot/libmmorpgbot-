@@ -1885,6 +1885,11 @@ const WORLD_ENTRY_LEVEL = 35;
 const WORLD_LVL_MIN = 40;
 const WORLD_LVL_MAX = 59;
 const WORLD_BOSS_LEVEL = 60;
+// Сила обычных монстров Мира: здоровье, атака и защита ×2 («усиль защиту,
+// атаку, здоровье монстров на карте Мир в 2 раза») — поверх половинения
+// пачек (WEAK_MULT в generateWorld), то есть hp/atk = базовая кривая ×1,
+// def = ×2. Владыка Мира этим не задет — у него свой WORLD_BOSS_HP_MULT.
+const WORLD_MOB_STAT_MULT = 2;
 const WORLD_XP_MULT = 10; // «опыт х10» — владелец; было ×3, как в фарм-зонах
 const WORLD_LIBERTY_CHANCE = FARM_HIGH_LIBERTY_CHANCE;
 // Свитки уникальных сетов (dungeon_scroll_<класс>, те же, что в Подземелье —
@@ -4661,7 +4666,7 @@ if (typeof module !== 'undefined') module.exports = {
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus, CODEX_MILESTONES,
-  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexMax, gemCodexCount, gemCodexBonusFor, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE,
+  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexMax, gemCodexCount, gemCodexBonusFor, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_MOB_STAT_MULT,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,

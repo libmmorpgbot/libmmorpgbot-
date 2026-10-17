@@ -3122,7 +3122,7 @@ function _worldSpotListHtml() {
         ...base,
         name: monsterNameAtLevel(base.name, localLvl, false, base.fem, maxLocalLvl),
         color: monsterColorAtLevel(base.color, base.endColor, localLvl, false, maxLocalLvl),
-        hp: Math.floor(stats.hp * 0.5), atk: Math.floor(stats.atk * 0.5), def: stats.def,
+        hp: Math.floor(stats.hp * 0.5 * WORLD_MOB_STAT_MULT), atk: Math.floor(stats.atk * 0.5 * WORLD_MOB_STAT_MULT), def: Math.floor(stats.def * WORLD_MOB_STAT_MULT),
         xp: xpAtLevel(lvl) * WORLD_XP_MULT, gold: goldAtLevel(lvl),
       };
     });
