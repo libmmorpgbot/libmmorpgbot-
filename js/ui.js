@@ -3021,6 +3021,7 @@ function _farmHighZoneRows(e, opts = {}) {
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, _pctSmall(FARM_HIGH_BLESS_STONE_CHANCE * 100), '#efc680') : ''}
     ${opts.noGems ? '' : _gemDropRows()}
     ${opts.coin ? _worldCoinDropRow() : ''}
+    ${(opts.scrolls || []).map(_worldScrollDropRow).join('')}
     ${epicRec   ? _dropRow(_mi(epicRec, 16),   epicRec.name,   _pctSmall(FARM_HIGH_EPIC_RECIPE_CHANCE * 100), '#c98fef') : ''}
     ${legRec    ? _dropRow(_mi(legRec, 16),    legRec.name,    _pctSmall(FARM_HIGH_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : ''}`;
 }
@@ -3034,7 +3035,15 @@ function _worldCoinDropRow() {
   return _dropRow(_mi(coin, 16), coin.name, _pctSmall(WORLD_CLOVER_CHANCE * 100), '#b6e26a');
 }
 
-function _farmHighSpeciesBodyHtml(e, { noGems = false, coin = false } = {}) {
+// Свиток уникального сета — у каждого спота Мира свои (WORLD_SPOTS[].scrolls).
+function _worldScrollDropRow(cls) {
+  const sc = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === `dungeon_scroll_${cls}`) : null;
+  if (!sc || typeof WORLD_SCROLL_CHANCE === 'undefined') return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  return _dropRow(_mi(sc, 16), sc.name, _pctSmall(WORLD_SCROLL_CHANCE * 100), '#f5c542');
+}
+
+function _farmHighSpeciesBodyHtml(e, { noGems = false, coin = false, scrolls = null } = {}) {
   const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
   const S = typeof FARM_HIGH_SPECIES_SKILL_BOOKS   !== 'undefined' ? FARM_HIGH_SPECIES_SKILL_BOOKS[e.eid]   : [];
   const A = typeof FARM_HIGH_SPECIES_ADV_BOOKS     !== 'undefined' ? FARM_HIGH_SPECIES_ADV_BOOKS[e.eid]     : [];
@@ -3046,7 +3055,7 @@ function _farmHighSpeciesBodyHtml(e, { noGems = false, coin = false } = {}) {
       <span>DEF <b>${e.def}</b></span>
       <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
     </div>
-    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e, { noGems, coin }))}
+    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e, { noGems, coin, scrolls }))}
     ${_farmHighGearSections(e.eid)}
     ${sec(t('uniqueShardsHdr'), _farmHighShardRows(e.eid))}
     ${sec(t('farmHighSkillBooksHdr'), _farmHighBookRows(S, FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
@@ -3131,7 +3140,7 @@ function _worldSpotListHtml() {
       </div>
       <div class="mon-body">
         <div style="padding:4px 0 8px;color:#83725a;font-size:11px">${tVars('worldPacksFmt', { n: sp.packs, k: tier.packSize })} · ${note}</div>
-        ${species.map(e => `<div style="margin:6px 0 2px;font-weight:bold;color:${e.color}">${e.name}</div>${_farmHighSpeciesBodyHtml(e, { coin: true })}`).join('')}
+        ${species.map(e => `<div style="margin:6px 0 2px;font-weight:bold;color:${e.color}">${e.name}</div>${_farmHighSpeciesBodyHtml(e, { coin: true, scrolls: sp.scrolls })}`).join('')}
       </div>
     </div>`;
   }).join('');

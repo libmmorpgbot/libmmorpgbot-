@@ -5385,7 +5385,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -5492,7 +5492,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

@@ -1885,8 +1885,14 @@ const WORLD_ENTRY_LEVEL = 35;
 const WORLD_LVL_MIN = 40;
 const WORLD_LVL_MAX = 59;
 const WORLD_BOSS_LEVEL = 60;
-const WORLD_XP_MULT = 3; // как в фарм-зонах
+const WORLD_XP_MULT = 10; // «опыт х10» — владелец; было ×3, как в фарм-зонах
 const WORLD_LIBERTY_CHANCE = FARM_HIGH_LIBERTY_CHANCE;
+// Свитки уникальных сетов (dungeon_scroll_<класс>, те же, что в Подземелье —
+// UNIQUE_SET_CRAFT_RECIPES) — у каждого спота свой набор (WORLD_SPOTS[].scrolls):
+// лоу и мид — по одному классу на спот, а три топ-спота вместе дают все семь.
+// По независимому броску на каждый свиток спота, 0.003% — «шансы у всех свитков
+// 0.003%», и падают любому классу, а не только своему.
+const WORLD_SCROLL_CHANCE = 0.003 / 100;
 // Монета удачи (clover_coin, Кодекс самоцветов) — 0.003% за убийство любого
 // монстра Мира (уточнение владельца: «настоящий шанс 0.003%»): один бросок,
 // отдельный от таблицы зоны. Владыке — со своим WORLD_BOSS_DROP_MULT, как и
@@ -1920,16 +1926,16 @@ const WORLD_TIERS = {
 const WORLD_RIVER_X = 61;
 const WORLD_RIDGE_X = 99;
 const WORLD_SPOTS = [
-  { id: 'road',     name: 'Заросший тракт',   tier: 'low', x: 30,  y: 40, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
-  { id: 'glade',    name: 'Тихая поляна',     tier: 'low', x: 30,  y: 72, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
-  { id: 'mill',     name: 'Старая мельница',  tier: 'low', x: 46,  y: 22, r: 7, lvl: [43, 45], packs: 5, species: [1, 2] },
-  { id: 'ravine',   name: 'Сырые овраги',     tier: 'low', x: 47,  y: 88, r: 7, lvl: [43, 45], packs: 5, species: [0, 2] },
-  { id: 'grove',    name: 'Гнилая роща',      tier: 'mid', x: 78,  y: 66, r: 8, lvl: [46, 49], packs: 5, species: [2, 3] },
-  { id: 'crypts',   name: 'Вампирьи склепы',  tier: 'mid', x: 82,  y: 22, r: 7, lvl: [49, 52], packs: 4, species: [2, 3] },
-  { id: 'stones',   name: 'Каменный круг',    tier: 'mid', x: 84,  y: 92, r: 6, lvl: [49, 52], packs: 4, species: [3, 4] },
-  { id: 'abyss',    name: 'Око бездны',       tier: 'top', x: 112, y: 28, r: 7, lvl: [53, 56], packs: 4, species: [4, 5] },
-  { id: 'cliff',    name: 'Чёрный утёс',      tier: 'top', x: 113, y: 84, r: 7, lvl: [53, 56], packs: 4, species: [3, 5] },
-  { id: 'throne',   name: 'Преддверие трона', tier: 'top', x: 120, y: 55, r: 6, lvl: [57, 59], packs: 3, species: [4, 5] },
+  { id: 'road',     name: 'Заросший тракт',   tier: 'low', x: 30,  y: 40, r: 6, lvl: [40, 42], packs: 4, species: [0, 1], scrolls: ['lev'] },
+  { id: 'glade',    name: 'Тихая поляна',     tier: 'low', x: 30,  y: 72, r: 6, lvl: [40, 42], packs: 4, species: [0, 1], scrolls: ['deathknight'] },
+  { id: 'mill',     name: 'Старая мельница',  tier: 'low', x: 46,  y: 22, r: 7, lvl: [43, 45], packs: 5, species: [1, 2], scrolls: ['ranger'] },
+  { id: 'ravine',   name: 'Сырые овраги',     tier: 'low', x: 47,  y: 88, r: 7, lvl: [43, 45], packs: 5, species: [0, 2], scrolls: ['mage'] },
+  { id: 'grove',    name: 'Гнилая роща',      tier: 'mid', x: 78,  y: 66, r: 8, lvl: [46, 49], packs: 5, species: [2, 3], scrolls: ['warlock'] },
+  { id: 'crypts',   name: 'Вампирьи склепы',  tier: 'mid', x: 82,  y: 22, r: 7, lvl: [49, 52], packs: 4, species: [2, 3], scrolls: ['runefighter'] },
+  { id: 'stones',   name: 'Каменный круг',    tier: 'mid', x: 84,  y: 92, r: 6, lvl: [49, 52], packs: 4, species: [3, 4], scrolls: ['assassin'] },
+  { id: 'abyss',    name: 'Око бездны',       tier: 'top', x: 112, y: 28, r: 7, lvl: [53, 56], packs: 4, species: [4, 5], scrolls: ['lev', 'deathknight', 'ranger'] },
+  { id: 'cliff',    name: 'Чёрный утёс',      tier: 'top', x: 113, y: 84, r: 7, lvl: [53, 56], packs: 4, species: [3, 5], scrolls: ['mage', 'warlock'] },
+  { id: 'throne',   name: 'Преддверие трона', tier: 'top', x: 120, y: 55, r: 6, lvl: [57, 59], packs: 3, species: [4, 5], scrolls: ['runefighter', 'assassin'] },
 ];
 const WORLD_BOSS_SPOT = { id: 'lord', name: 'Трон Владыки', x: 137, y: 55, r: 4, bossName: 'Владыка Мира' };
 // Дороги — ломаные по тайлам. Первая — тракт от входа через средний мост и
@@ -4655,7 +4661,7 @@ if (typeof module !== 'undefined') module.exports = {
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus, CODEX_MILESTONES,
-  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexMax, gemCodexCount, gemCodexBonusFor, WORLD_CLOVER_CHANCE,
+  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexMax, gemCodexCount, gemCodexBonusFor, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,

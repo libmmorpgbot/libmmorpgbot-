@@ -130,6 +130,17 @@ ok(D.gemCodexMax('clover_coin') === 200 && D.gemCodexMax('gem_jewel') === 500, '
 ok(D.codexTotalBonus({ [D.GEM_CODEX_KEY]: { clover_coin: 9999 } }).atk === 220, 'сверх 200 не считается');
 ok(/result\.openWorld && rand\(\) < \(WORLD_CLOVER_CHANCE/.test(src), 'бросок монеты — только для убийств в Мире');
 
+console.log('\n── свитки и опыт ──');
+ok(D.WORLD_XP_MULT === 10, 'опыт ×10', D.WORLD_XP_MULT);
+ok(Math.abs(D.WORLD_SCROLL_CHANCE - 0.00003) < 1e-12, 'шанс свитка 0.003%');
+const classes = Object.keys(D.CHAR_DEF);
+const byTier = t => new Set(WORLD_SPOTS.filter(s => s.tier === t).flatMap(s => s.scrolls || []));
+ok(WORLD_SPOTS.every(s => (s.scrolls || []).length > 0 && s.scrolls.every(c => D.CRAFT_MATS.some(m => m.id === `dungeon_scroll_${c}`))), 'у каждого спота есть свиток, и такой предмет существует');
+ok(classes.every(c => byTier('low').has(c) || byTier('mid').has(c)), 'лоу + мид вместе дают все 7 классов');
+ok(classes.every(c => byTier('top').has(c)), 'топ-споты вместе дают все 7 классов');
+ok(WORLD_SPOTS.filter(s => s.tier !== 'top').every(s => s.scrolls.length === 1), 'на лоу и мид — по одному свитку на спот');
+ok(/WORLD_SPOTS\.find\(x => x\.id === result\.spot\)/.test(src) && (roomSrc.match(/spot: enemy\.spot/g) || []).length === 2, 'спот доходит до броска свитка');
+
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (fail) { console.log('  впало: ' + failures.join('; ')); process.exit(1); }
 process.exit(0);

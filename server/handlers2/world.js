@@ -38,7 +38,7 @@ const { query } = require('../db');
 const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
-  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_CLOVER_CHANCE,
+  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_SPOTS,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -508,6 +508,16 @@ module.exports = function registerWorld(s, safeOn, deps) {
     if (result.openWorld && rand() < (WORLD_CLOVER_CHANCE || 0) * worldMult) {
       const coin = CRAFT_MATS.find(m => m.id === 'clover_coin');
       if (coin) out.items.push({ id: coin.id, name: coin.name, rarity: coin.rarity, qty: 1 });
+    }
+    // Свитки уникальных сетов — свои у каждого спота Мира (WORLD_SPOTS[].scrolls),
+    // по броску на свиток. Спот приходит с убийством (result.spot, Room.js).
+    if (result.openWorld && result.spot) {
+      const sp = WORLD_SPOTS.find(x => x.id === result.spot);
+      for (const cls of (sp && sp.scrolls) || []) {
+        if (rand() >= (WORLD_SCROLL_CHANCE || 0)) continue;
+        const sc = CRAFT_MATS.find(m => m.id === `dungeon_scroll_${cls}`);
+        if (sc) out.items.push({ id: sc.id, name: sc.name, rarity: sc.rarity, qty: 1 });
+      }
     }
 
     // ── руда ────────────────────────────────────────────────────────────────
