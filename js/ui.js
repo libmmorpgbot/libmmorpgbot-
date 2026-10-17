@@ -7812,7 +7812,7 @@ function _positionUpdatesBtn() {
 // Новый патч — поднять UPDATES_VERSION: у всех, кто его ещё не открывал,
 // загорится точка на кнопке. Хранится у игрока в браузере — это удобство, а
 // не данные, и без хранилища точка просто горит, пока панель не открыта.
-const UPDATES_VERSION = '2026-10-16';
+const UPDATES_VERSION = '2026-10-17';
 const _UPD_SEEN_KEY = 'liberty_updates_seen';
 function _updatesSeen() {
   try { return localStorage.getItem(_UPD_SEEN_KEY) === UPDATES_VERSION; } catch { return false; }

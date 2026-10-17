@@ -448,6 +448,72 @@
   .coop-item b { display: block; color: var(--gold-bright); font-size: 14.5px; }
   .coop-item span { font-size: 13px; color: var(--muted); line-height: 1.45; }
 
+  /* ── Мир: шапка-карта ─────────────────────────────────────── */
+  .hero-map {
+    position: relative; max-width: 560px; margin: 0 auto 22px; border-radius: 18px; overflow: hidden;
+    border: 2px solid #c9a45c; box-shadow: 0 0 0 5px rgba(201,164,92,.12), 0 30px 60px -28px rgba(0,0,0,.95), 0 0 46px -12px rgba(227,148,29,.45);
+    animation: mapGlow 4.5s ease-in-out infinite;
+  }
+  .hero-map img { display: block; width: 100%; animation: mapDrift 22s ease-in-out infinite alternate; transform-origin: 60% 50%; }
+  .hero-map .boss-ping {
+    position: absolute; left: 90.5%; top: 50.5%; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%;
+    border: 2px solid rgba(205,140,255,.9); animation: ping 2.2s ease-out infinite; pointer-events: none;
+  }
+  @keyframes mapDrift { from { transform: scale(1.0); } to { transform: scale(1.06) translate(-1.5%, 0.5%); } }
+  @keyframes mapGlow { 50% { box-shadow: 0 0 0 5px rgba(201,164,92,.18), 0 30px 60px -28px rgba(0,0,0,.95), 0 0 60px -8px rgba(227,148,29,.6); } }
+  @keyframes ping { 0% { transform: scale(.6); opacity: 1; } 100% { transform: scale(2.2); opacity: 0; } }
+
+  /* ── Мир: ярусы спотов ─────────────────────────────────────── */
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .tier {
+    --tc: 143,240,192; position: relative; overflow: hidden; padding: 16px 16px 12px; border-radius: 18px;
+    border: 1px solid rgba(var(--tc), .38);
+    background: radial-gradient(ellipse 240px 150px at 0% 0%, rgba(var(--tc), .15), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel));
+    box-shadow: 0 22px 44px -28px rgba(0,0,0,.95);
+  }
+  .tier.mid { --tc: 232,193,90; } .tier.top { --tc: 241,126,139; }
+  .tier-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .tier-name { font-family: var(--serif); font-size: 20px; font-weight: 700; color: rgb(var(--tc)); }
+  .tier-lvl { font-size: 12px; font-weight: 800; color: #0b0805; background: rgb(var(--tc)); padding: 2px 9px; border-radius: 20px; }
+  .tier-rule { margin: 8px 0 10px; font-size: 12.5px; color: var(--muted); }
+  .tier-rule b { color: var(--gold-bright); }
+  .spot-list { list-style: none; margin: 0; padding: 0; }
+  .spot-list li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid rgba(var(--tc), .14); font-size: 13.5px; }
+  .spot-list li span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  /* ── Мир: Владыка ──────────────────────────────────────────── */
+  .boss-card {
+    position: relative; overflow: hidden; display: grid; grid-template-columns: 120px 1fr; gap: 18px; align-items: center;
+    padding: 20px; border-radius: 20px; border: 1px solid rgba(192,96,255,.45);
+    background: radial-gradient(ellipse 320px 220px at 0% 50%, rgba(192,96,255,.20), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel));
+    box-shadow: 0 26px 50px -26px rgba(0,0,0,.95), 0 0 40px -18px rgba(192,96,255,.6);
+  }
+  .boss-skull {
+    width: 120px; height: 120px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 58px;
+    background: radial-gradient(circle, rgba(192,96,255,.45), rgba(40,10,60,.6) 60%, transparent 72%);
+    border: 2px dashed rgba(205,140,255,.55); animation: spin 30s linear infinite;
+  }
+  .boss-skull span { display: inline-block; animation: spin 30s linear infinite reverse, bob 3.2s ease-in-out infinite; }
+  .boss-card h3 { margin: 0 0 6px; font-family: var(--serif); font-size: 24px; color: #e8d4ff; }
+  .boss-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+  .boss-facts i { font-style: normal; font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 20px; color: #e8d4ff; background: rgba(192,96,255,.14); border: 1px solid rgba(192,96,255,.35); }
+
+  /* ── Мир: скриншоты местности ──────────────────────────────── */
+  .shots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .shots .phone { max-width: 200px; }
+  .shots .phone:nth-child(even) { transform: rotate(-1.5deg); }
+  .shots .phone-cap b { display: block; color: var(--gold-bright); font-size: 13px; }
+  .map-card { padding: 10px; border-radius: 18px; }
+  .map-card img { display: block; width: 100%; border-radius: 12px; }
+
+  @media (max-width: 720px) {
+    .tiers { grid-template-columns: 1fr; }
+    .shots { grid-template-columns: repeat(2, 1fr); }
+    .boss-card { grid-template-columns: 1fr; text-align: center; }
+    .boss-skull { margin: 0 auto; }
+    .boss-facts { justify-content: center; }
+  }
+
   @media (max-width: 720px) {
     .gems, .coop-grid, .steps3 { grid-template-columns: 1fr; }
     .patch { padding-left: 22px; }
@@ -458,7 +524,8 @@
     .orbit { width: 170px; height: 170px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .orbit-ring img, .orbit-core, .gem-art img, .gem-card::after, .step img { animation: none !important; }
+    .orbit-ring img, .orbit-core, .gem-art img, .gem-card::after, .step img,
+    .hero-map, .hero-map img, .hero-map .boss-ping, .boss-skull, .boss-skull span { animation: none !important; }
   }
 
   /* появление при прокрутке */
@@ -511,43 +578,143 @@
 <header class="hero">
   <canvas id="fx"></canvas>
   <div class="hero-inner">
-    <div class="orbit" aria-hidden="true">
-      <div class="orbit-core"></div>
-      <div class="orbit-ring">
-        <img src="/images/material/gem_jewel.png" alt="" style="--a:0deg">
-        <img src="/images/material/gem_red.png" alt="" style="--a:90deg">
-        <img src="/images/material/gem_shard.png" alt="" style="--a:180deg">
-        <img src="/images/material/gem_stone.png" alt="" style="--a:270deg">
-      </div>
+    <div class="hero-map">
+      <img src="/images/patches/world-map.jpg" alt="Карта Мира: луг, река, лес, гряда, пустоши и трон Владыки">
+      <span class="boss-ping" aria-hidden="true"></span>
     </div>
-    <div class="eyebrow"><span class="dot"></span>Патч · 16 октября 2026</div>
-    <h1 class="title">Самоцветы</h1>
-    <p class="lede">В Фарм-зонах и Подземелье появились четыре самоцвета. Сдавайте их в <b>Кодекс самоцветов</b> —
-      у каждого своя лесенка бонусов до <b>+20% скорости атаки</b>.</p>
+    <div class="eyebrow"><span class="dot"></span>Патч · 17 октября 2026</div>
+    <h1 class="title">Мир</h1>
+    <p class="lede">Новая открытая локация — не комнаты и коридоры, а целая местность: луг, река с мостами, лес,
+      скальная гряда и выжженные пустоши. Монстры <b>40–59 уровня</b> стоят пачками на спотах, а за кольцом колонн
+      на востоке ждёт <b>Владыка Мира, 60 уровень</b>.</p>
     <div class="hero-chips">
-      <span><img src="/images/material/gem_jewel.png" alt="">4 новых предмета</span>
-      <span><img src="/images/material/gem_shard.png" alt="">Кодекс самоцветов</span>
-      <span>⏳ Оффлайн-фарм</span>
-      <span>🤝 Сотрудничество</span>
+      <span>🌍 Вход с 35 уровня</span>
+      <span>⚔ 10 спотов: лоу · мид · топ</span>
+      <span>💀 Босс 60 уровня</span>
+      <span>🗺 Карта мира</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#p-1016">Что нового ↓</a>
-      <a class="btn" href="#p-s4">Сезон 4</a>
+      <a class="btn primary" href="#p-1017">Что нового ↓</a>
+      <a class="btn" href="#p-1016">Самоцветы</a>
     </div>
   </div>
 </header>
 
 <nav class="patch-nav" aria-label="Патчи">
-  <a href="#p-1016" class="on"><i class="pn-dot new"></i><b>16 окт</b><span>Самоцветы</span></a>
+  <a href="#p-1017" class="on"><i class="pn-dot new"></i><b>17 окт</b><span>Мир</span></a>
+  <a href="#p-1016"><i class="pn-dot"></i><b>16 окт</b><span>Самоцветы</span></a>
   <a href="#p-s4"><i class="pn-dot"></i><b>2 окт</b><span>Сезон 4: Баланс</span></a>
   <a href="guide.html" class="pn-guide">Гайд →</a>
 </nav>
 
 <main>
+  <!-- ══ Патч · 17 октября 2026 · Мир ══════════════════════════════════ -->
+  <article class="patch" id="p-1017">
+    <header class="patch-head reveal">
+      <span class="patch-date new">17 октября 2026</span>
+      <h2>Мир</h2>
+      <p class="dek">Открытая локация со спотами, как в настоящих MMORPG: выбирайте место по силам, бейте пачки
+        и охотьтесь на Владыку.</p>
+    </header>
+
+    <section class="sec reveal" id="world-main">
+      <div class="tiles stagger">
+        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>С 35 уровня</b><span>Телепорт в городе → «🌍 Мир»</span></div>
+        <div class="card tile"><img src="/images/material/gem_red.png" alt=""><b>Монстры 40–59</b><span>Чем дальше на восток — тем сильнее</span></div>
+        <div class="card tile"><img src="/images/material/gem_shard.png" alt=""><b>Опыт ×3</b><span>Как в фарм-зонах</span></div>
+        <div class="card tile"><img src="/images/nexum-coin_v2.png" alt=""><b>Дроп Фарм зоны 2</b><span>Снаряжение, книги, осколки, самоцветы, Liberty</span></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="world-map">
+      <div class="sec-eyebrow">Новое · Карта</div>
+      <h2>Три края и две преграды</h2>
+      <p class="dek">У входа — светлый луг с перелесками. Дальше река с тремя мостами, за ней лес, потом скальная
+        гряда с тремя перевалами и выжженные пустоши. Между спотами проложены дороги, по краю — сплошной лес.
+        Вся карта — во вкладке <b>«Карта»</b>, а мини-карта в углу теперь цветная.</p>
+      <div class="card map-card"><img src="/images/patches/world-map.jpg" alt="Карта Мира" loading="lazy"></div>
+    </section>
+
+    <section class="sec reveal" id="world-spots">
+      <div class="sec-eyebrow">Споты</div>
+      <h2>Лоу, мид и топ</h2>
+      <p class="dek">Монстры стоят пачками: ударишь одного — придёт вся пачка. Над каждым спотом подписаны название
+        и уровни, цвет подписи — ярус.</p>
+      <div class="tiers stagger">
+        <div class="tier low">
+          <div class="tier-head"><span class="tier-name">Лоу</span><span class="tier-lvl">40–45</span></div>
+          <div class="tier-rule">Пачки по <b>3</b> · <b>сами не нападают</b> — можно осмотреться с 35 уровня</div>
+          <ul class="spot-list">
+            <li>Заросший тракт<span>40–42</span></li>
+            <li>Тихая поляна<span>40–42</span></li>
+            <li>Старая мельница<span>43–45</span></li>
+            <li>Сырые овраги<span>43–45</span></li>
+          </ul>
+        </div>
+        <div class="tier mid">
+          <div class="tier-head"><span class="tier-name">Мид</span><span class="tier-lvl">46–52</span></div>
+          <div class="tier-rule">Пачки по <b>4</b> · <b>нападают</b>, если подойти близко</div>
+          <ul class="spot-list">
+            <li>Гнилая роща<span>46–49</span></li>
+            <li>Вампирьи склепы<span>49–52</span></li>
+            <li>Каменный круг<span>49–52</span></li>
+          </ul>
+        </div>
+        <div class="tier top">
+          <div class="tier-head"><span class="tier-name">Топ</span><span class="tier-lvl">53–59</span></div>
+          <div class="tier-rule">Пачки по <b>5</b> · <b>нападают</b>, если подойти близко</div>
+          <ul class="spot-list">
+            <li>Око бездны<span>53–56</span></li>
+            <li>Чёрный утёс<span>53–56</span></li>
+            <li>Преддверие трона<span>57–59</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="world-boss">
+      <div class="sec-eyebrow">Босс</div>
+      <h2>Владыка Мира</h2>
+      <div class="boss-card">
+        <div class="boss-skull"><span>💀</span></div>
+        <div>
+          <h3>Трон Владыки · 60 уровень</h3>
+          <p class="dek" style="margin:0">Стоит на каменной площади за кольцом колонн, проход — с запада, через
+            «Преддверие трона». Бить лучше группой. После смерти возвращается через 1–2 часа — сколько осталось,
+            видно на карте.</p>
+          <div class="boss-facts">
+            <i>Дроп зоны ×50</i><i>Сундуки и камни заточки</i><i>Возрождение 1–2 ч</i>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="world-shots">
+      <div class="sec-eyebrow">Как это выглядит</div>
+      <h2>Местность</h2>
+      <div class="shots stagger">
+        <div><div class="phone"><img src="/images/patches/world-meadow.jpg" alt="Луг у входа" loading="lazy"></div><div class="phone-cap"><b>Луг</b>у входа</div></div>
+        <div><div class="phone"><img src="/images/patches/world-river.jpg" alt="Мост через реку" loading="lazy"></div><div class="phone-cap"><b>Река</b>и мосты</div></div>
+        <div><div class="phone"><img src="/images/patches/world-top.jpg" alt="Пустоши, топ-спот" loading="lazy"></div><div class="phone-cap"><b>Пустоши</b>топ-споты</div></div>
+        <div><div class="phone"><img src="/images/patches/world-throne.jpg" alt="Трон Владыки" loading="lazy"></div><div class="phone-cap"><b>Трон</b>Владыки</div></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="fixes-1017">
+      <div class="sec-eyebrow">Ещё</div>
+      <h2>Изменения</h2>
+      <div class="card fixes">
+        <div class="fix"><span class="tag new">Новое</span><span>Во вкладке «Карта» в Мире — карта мира: споты с уровнями, трон Владыки и таймер его возвращения.</span></div>
+        <div class="fix"><span class="tag new">Новое</span><span>Самоцветы Кодекса падают и в Мире — по той же таблице, что в Фарм зоне 2.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Над именами монстров, игроков и подписями больше не торчат чёрные «шипы» у букв М, К, Й.</span></div>
+      </div>
+    </section>
+  </article>
+
   <!-- ══ Патч · 16 октября 2026 ══════════════════════════════════════ -->
   <article class="patch" id="p-1016">
     <header class="patch-head reveal">
-      <span class="patch-date new">16 октября 2026</span>
+      <span class="patch-date">16 октября 2026</span>
       <h2>Самоцветы и Кодекс самоцветов</h2>
       <p class="dek">Новые предметы в Фарм-зонах и Подземелье, новый раздел Кодекса, суточный лимит оффлайн-фарма
         и большая работа над Сотрудничеством.</p>

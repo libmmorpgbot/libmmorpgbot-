@@ -1839,7 +1839,9 @@ function _getEnemy(id) {
   const spr = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4, align: 'center' });
+  // lineJoin 'round': с острыми углами (по умолчанию) у «М», «К», «Й» над
+  // именем торчали чёрные шипы.
+  const lbl = new PIXI.Text('', { fontFamily: 'system-ui,Arial', fontWeight: 'bold', fontSize: 14, fill: '#e8e8e8', stroke: '#000', strokeThickness: 4, align: 'center', lineJoin: 'round' });
   lbl.anchor.set(0.5, 1);
   // Аура элитного монстра — под спрайтом, как у персонажей.
   const aura = new PIXI.Graphics();
