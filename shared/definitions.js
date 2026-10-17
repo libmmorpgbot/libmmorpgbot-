@@ -1902,19 +1902,47 @@ const WORLD_TIERS = {
 // x/y — центр спота в тайлах, r — радиус, в котором стоят пачки, packs —
 // сколько пачек, species — индексы в FARM_HIGH_SPECIES (растения 0-1,
 // вампиры 2-3, бехолдеры 4-5). Порядок — от входа к боссу.
+//
+// Карта делится на три края двумя естественными преградами (generateWorld):
+// река WORLD_RIVER_X с тремя мостами отделяет луг лоу-спотов от леса
+// мид-спотов, скальная гряда WORLD_RIDGE_X с тремя перевалами — лес от
+// выжженных пустошей топ-спотов. Споты расставлены так, чтобы ни один не
+// касался ни реки, ни гряды.
+const WORLD_RIVER_X = 61;
+const WORLD_RIDGE_X = 99;
 const WORLD_SPOTS = [
-  { id: 'road',     name: 'Заросший тракт',   tier: 'low', x: 32,  y: 40, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
+  { id: 'road',     name: 'Заросший тракт',   tier: 'low', x: 30,  y: 40, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
   { id: 'glade',    name: 'Тихая поляна',     tier: 'low', x: 30,  y: 72, r: 6, lvl: [40, 42], packs: 4, species: [0, 1] },
-  { id: 'mill',     name: 'Старая мельница',  tier: 'low', x: 50,  y: 24, r: 7, lvl: [43, 45], packs: 5, species: [1, 2] },
-  { id: 'ravine',   name: 'Сырые овраги',     tier: 'low', x: 52,  y: 88, r: 7, lvl: [43, 45], packs: 5, species: [0, 2] },
-  { id: 'grove',    name: 'Гнилая роща',      tier: 'mid', x: 72,  y: 55, r: 8, lvl: [46, 49], packs: 5, species: [2, 3] },
-  { id: 'crypts',   name: 'Вампирьи склепы',  tier: 'mid', x: 84,  y: 20, r: 7, lvl: [49, 52], packs: 4, species: [2, 3] },
-  { id: 'stones',   name: 'Каменный круг',    tier: 'mid', x: 86,  y: 90, r: 7, lvl: [49, 52], packs: 4, species: [3, 4] },
-  { id: 'abyss',    name: 'Око бездны',       tier: 'top', x: 108, y: 30, r: 7, lvl: [53, 56], packs: 4, species: [4, 5] },
-  { id: 'cliff',    name: 'Чёрный утёс',      tier: 'top', x: 110, y: 80, r: 7, lvl: [53, 56], packs: 4, species: [3, 5] },
-  { id: 'throne',   name: 'Преддверие трона', tier: 'top', x: 122, y: 55, r: 6, lvl: [57, 59], packs: 3, species: [4, 5] },
+  { id: 'mill',     name: 'Старая мельница',  tier: 'low', x: 46,  y: 22, r: 7, lvl: [43, 45], packs: 5, species: [1, 2] },
+  { id: 'ravine',   name: 'Сырые овраги',     tier: 'low', x: 47,  y: 88, r: 7, lvl: [43, 45], packs: 5, species: [0, 2] },
+  { id: 'grove',    name: 'Гнилая роща',      tier: 'mid', x: 78,  y: 66, r: 8, lvl: [46, 49], packs: 5, species: [2, 3] },
+  { id: 'crypts',   name: 'Вампирьи склепы',  tier: 'mid', x: 82,  y: 22, r: 7, lvl: [49, 52], packs: 4, species: [2, 3] },
+  { id: 'stones',   name: 'Каменный круг',    tier: 'mid', x: 84,  y: 92, r: 6, lvl: [49, 52], packs: 4, species: [3, 4] },
+  { id: 'abyss',    name: 'Око бездны',       tier: 'top', x: 112, y: 28, r: 7, lvl: [53, 56], packs: 4, species: [4, 5] },
+  { id: 'cliff',    name: 'Чёрный утёс',      tier: 'top', x: 113, y: 84, r: 7, lvl: [53, 56], packs: 4, species: [3, 5] },
+  { id: 'throne',   name: 'Преддверие трона', tier: 'top', x: 120, y: 55, r: 6, lvl: [57, 59], packs: 3, species: [4, 5] },
 ];
 const WORLD_BOSS_SPOT = { id: 'lord', name: 'Трон Владыки', x: 137, y: 55, r: 4, bossName: 'Владыка Мира' };
+// Дороги — ломаные по тайлам. Первая — тракт от входа через средний мост и
+// средний перевал к трону; остальные — ответвления к спотам и северный/южный
+// обходы через свои мосты и перевалы. Там, где дорога пересекает реку,
+// получается мост, где гряду — перевал.
+const WORLD_ROADS = [
+  [[6, 55], [22, 55], [40, 57], [61, 56], [88, 52], [99, 55], [114, 55], [131, 55]],
+  [[22, 55], [27, 47]],
+  [[22, 55], [27, 65]],
+  [[40, 57], [44, 30]],
+  [[40, 57], [45, 80]],
+  [[46, 22], [61, 19], [82, 22], [99, 26], [112, 28]],
+  [[47, 88], [61, 91], [84, 92], [99, 88], [113, 84]],
+  [[88, 52], [80, 58]],
+  [[88, 52], [84, 30]],
+  [[80, 74], [84, 86]],
+];
+// Коды местности, которые сервер шлёт клиенту в openWorld.terrain (RLE, см.
+// _worldTerrainRle, server/game/dungeon.js) — по ним js/zones.js выбирает,
+// как рисовать клетку. Проходимость решает grid; это — только картинка.
+const WORLD_T = { GRASS: 0, ROAD: 1, TREE: 2, WATER: 3, ROCK: 4, BRIDGE: 5, PLAZA: 6 };
 
 // ── Элитная фарм-зона (Elite Farm Zone 2) ────────────────────────────────
 // A second, harder farm zone: level 30-40 monsters, entered only as a full
@@ -4633,6 +4661,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM_HIGH_SHARD_CHANCE, FARM_HIGH_SPECIES_SHARDS,
   WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_LIBERTY_CHANCE,
   WORLD_BOSS_HP_MULT, WORLD_BOSS_DROP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT,
+  WORLD_RIVER_X, WORLD_RIDGE_X, WORLD_ROADS, WORLD_T,
   FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_ROOM_COUNT,
   FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_DAILY_MINUTES, FARM2_SPECIES,
   FARM2_LIBERTY_CHANCE, FARM_LIBERTY_CHANCE, FARM2_BOX_RARE_CHANCE, FARM2_BOX_UNCOMMON_CHANCE,

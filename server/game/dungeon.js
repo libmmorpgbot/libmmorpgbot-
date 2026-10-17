@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_BOSS_HP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
+const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_BOSS_HP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT, WORLD_RIVER_X, WORLD_RIDGE_X, WORLD_ROADS, WORLD_T, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB, DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
@@ -899,60 +899,144 @@ function generateFarmHigh() {
 }
 
 // Мир (см. блок WORLD_* в shared/definitions.js — там заказ и разбор ярусов).
-// Не комнаты с коридорами, а одно открытое поле: стена только по краю карты
-// и россыпь валунов/деревьев (сгустки WALL) поперёк, которые ломают прямые
-// линии, но не делят карту на части. Монстры стоят ПАЧКАМИ на именованных
-// спотах WORLD_SPOTS; у каждой пачки свои packMateIds, так что удар по одному
-// будит всю пачку (Room.js's _wakePack). Босс — один, на своём споте за
-// кольцом скал с проходом с запада, с тем же таймером 1-2 часа и той же
-// записью в boss_state, что у боссов коридоров (arm 'openWorld').
+// Не комнаты с коридорами, а одна открытая местность, как в MMORPG: луг у
+// входа, река с мостами, лес, скальная гряда с перевалами, выжженные пустоши
+// и каменная площадь трона. По краю — сплошной лес, между спотами —
+// грунтовые дороги. Проходимость по-прежнему решает grid (лес, вода и скалы —
+// WALL); что именно нарисовать на клетке, клиент берёт из terrain
+// (WORLD_T, отдаётся в openWorld.terrain).
+//
+// Монстры стоят ПАЧКАМИ на именованных спотах WORLD_SPOTS; у каждой пачки
+// свои packMateIds, так что удар по одному будит всю пачку (Room.js's
+// _wakePack). Босс — один, на площади трона за кольцом колонн, с тем же
+// таймером 1-2 часа и той же записью в boss_state, что у боссов коридоров
+// (arm 'openWorld').
 //
 // rooms здесь — не геометрия, а квадраты вокруг спотов: клиент по ним
 // сужает автоприцел до «своего» спота (_getRoomAt, js/game.js), чтобы игрок
 // на краю одного спота не убегал бить пачку соседнего.
+
+// RLE местности: «код + длина серии в base36 + точка», построчно подряд.
+// 150×110 клеток сжимаются в несколько килобайт — карта едет в том же
+// снимке этажа, что и grid.
+function _worldTerrainRle(terrain) {
+  const flat = [];
+  for (const row of terrain) for (const v of row) flat.push(v);
+  let out = '';
+  for (let i = 0; i < flat.length;) {
+    let j = i;
+    while (j < flat.length && flat[j] === flat[i]) j++;
+    out += flat[i] + (j - i).toString(36) + '.';
+    i = j;
+  }
+  return out;
+}
+
 function generateWorld() {
   const rng = seededRng(2026 * 1337 + 777 + 700);
   const w = WORLD_W, h = WORLD_H;
-  const BORDER = 3;
-  const grid = Array.from({ length: h }, (_, gy) => Array.from({ length: w }, (_, gx) =>
-    (gx < BORDER || gy < BORDER || gx >= w - BORDER || gy >= h - BORDER) ? WALL : FLOOR));
+  const T = WORLD_T;
+  const terrain = Array.from({ length: h }, () => new Array(w).fill(T.GRASS));
   function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
   const B = WORLD_BOSS_SPOT, S = WORLD_SPAWN;
+  // Гладкий шум для «рваных» краёв леса и берегов: сумма синусов с
+  // фазами из rng — детерминированно и без сетки.
+  const ph = Array.from({ length: 6 }, () => rng() * Math.PI * 2);
+  const wob = (x, y, s) => Math.sin(x * 0.21 * s + ph[0]) * 0.5 + Math.sin(y * 0.17 * s + ph[1]) * 0.5
+    + Math.sin((x + y) * 0.11 * s + ph[2]) * 0.6;
+  const near = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+  const spotPad = (x, y, pad) => WORLD_SPOTS.some(sp => near(x, y, sp.x, sp.y, sp.r + pad))
+    || near(x, y, B.x, B.y, B.r + 5 + pad) || near(x, y, S.x, S.y, 5 + pad);
 
-  // ── валуны и деревья ────────────────────────────────────────────────────
-  // Не на спотах, не у входа и не у трона: пачка, разрезанная валуном
-  // пополам, и вход, упирающийся в камень, — это не «живой мир», а помеха.
-  const clear = [
-    ...WORLD_SPOTS.map(sp => ({ x: sp.x, y: sp.y, r: sp.r + 3 })),
-    { x: B.x, y: B.y, r: B.r + 6 },
-    { x: S.x, y: S.y, r: 8 },
-  ];
-  const isClear = (gx, gy) => clear.some(c => (gx - c.x) ** 2 + (gy - c.y) ** 2 <= c.r * c.r);
-  for (let i = 0; i < 150; i++) {
-    const cx = BORDER + 2 + Math.floor(rng() * (w - BORDER * 2 - 4));
-    const cy = BORDER + 2 + Math.floor(rng() * (h - BORDER * 2 - 4));
-    const rad = 0.8 + rng() * 2.2;
-    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-      const gx = cx + dx, gy = cy + dy;
-      if (!inBounds(gx, gy) || isClear(gx, gy)) continue;
-      if (dx * dx + dy * dy <= rad * rad + rng() * 0.8) grid[gy][gx] = WALL;
+  // ── лес по краю карты ───────────────────────────────────────────────────
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const edge = Math.min(x, y, w - 1 - x, h - 1 - y);
+    if (edge < 3 + 1.6 * (wob(x, y, 1) + 1.6)) terrain[y][x] = T.TREE;
+  }
+
+  // ── река: петляет с севера на юг ────────────────────────────────────────
+  const riverX = y => WORLD_RIVER_X + Math.sin(y / 13 + ph[3]) * 2.2 + Math.sin(y / 5.5) * 0.7;
+  for (let y = 0; y < h; y++) {
+    const cx = riverX(y), hw = 1.6 + (Math.sin(y / 9 + ph[4]) + 1) * 0.5;
+    for (let x = Math.floor(cx - hw - 1); x <= Math.ceil(cx + hw + 1); x++) {
+      if (inBounds(x, y) && Math.abs(x - cx) <= hw) terrain[y][x] = T.WATER;
     }
   }
 
-  // ── кольцо скал вокруг трона, проход с запада ───────────────────────────
-  const ringIn = B.r + 3, ringOut = B.r + 4.5;
-  for (let gy = B.y - 9; gy <= B.y + 9; gy++) for (let gx = B.x - 9; gx <= B.x + 9; gx++) {
-    if (!inBounds(gx, gy)) continue;
-    const dx = gx - B.x, dy = gy - B.y, d2 = dx * dx + dy * dy;
-    if (d2 < ringIn * ringIn || d2 > ringOut * ringOut) continue;
-    if (dx < 0 && Math.abs(dy) <= 2) continue; // проход
-    grid[gy][gx] = WALL;
+  // ── скальная гряда ──────────────────────────────────────────────────────
+  const ridgeX = y => WORLD_RIDGE_X + Math.sin(y / 11 + ph[5]) * 1.8;
+  for (let y = 0; y < h; y++) {
+    const cx = ridgeX(y), hw = 1.3 + (wob(cx, y, 2) + 1.6) * 0.45;
+    for (let x = Math.floor(cx - hw - 1); x <= Math.ceil(cx + hw + 1); x++) {
+      if (inBounds(x, y) && Math.abs(x - cx) <= hw && terrain[y][x] !== T.TREE) terrain[y][x] = T.ROCK;
+    }
   }
 
-  // ── карман, отрезанный валунами, — тоже стена ───────────────────────────
-  // Россыпь случайная, и раз на сотню раскладок три сгустка смыкаются в
-  // кольцо. Заливка от входа: всё, куда игрок не дойдёт, становится стеной,
-  // чтобы там не встал ни один монстр.
+  // ── рощи на лугу и в лесу, валуны в пустошах ────────────────────────────
+  const groves = [];
+  for (let i = 0; i < 600 && groves.length < 80; i++) {
+    const x = 8 + rng() * (w - 16), y = 8 + rng() * (h - 16);
+    if (spotPad(x, y, 4)) continue;
+    if (Math.abs(x - WORLD_RIVER_X) < 6 || Math.abs(x - WORLD_RIDGE_X) < 6) continue;
+    const ash = x > WORLD_RIDGE_X;
+    // Луг — редкие перелески: половина бросков мимо, лес между рекой и
+    // грядой — густой.
+    if (x < WORLD_RIVER_X && rng() < 0.45) continue;
+    groves.push({ x, y, r: ash ? 1 + rng() * 1.6 : 1.6 + rng() * (x < WORLD_RIVER_X ? 2.2 : 3.4), kind: ash ? T.ROCK : T.TREE });
+    if (!ash && x > WORLD_RIVER_X) groves[groves.length - 1].r += 1;
+  }
+  for (const g of groves) {
+    for (let y = Math.floor(g.y - g.r - 2); y <= g.y + g.r + 2; y++) for (let x = Math.floor(g.x - g.r - 2); x <= g.x + g.r + 2; x++) {
+      if (!inBounds(x, y) || terrain[y][x] !== T.GRASS || spotPad(x, y, 2)) continue;
+      if (near(x, y, g.x, g.y, g.r + wob(x, y, 3) * 0.5)) terrain[y][x] = g.kind;
+    }
+  }
+
+  // ── площадь трона и кольцо колонн, проход с запада ──────────────────────
+  for (let y = B.y - 12; y <= B.y + 12; y++) for (let x = B.x - 12; x <= B.x + 12; x++) {
+    if (!inBounds(x, y)) continue;
+    const dx = x - B.x, dy = y - B.y, d = Math.sqrt(dx * dx + dy * dy);
+    if (d <= B.r + 3) terrain[y][x] = T.PLAZA;
+    else if (d <= B.r + 4.6 && !(dx < 0 && Math.abs(dy) <= 2)) terrain[y][x] = T.ROCK;
+    else if (d <= B.r + 7 && terrain[y][x] !== T.TREE) terrain[y][x] = T.GRASS;
+  }
+
+  // ── дороги: мост через реку, перевал через гряду ────────────────────────
+  // Дорога расчищает себе полосу шириной 3 клетки (и по клетке обочины —
+  // чтобы роща не прижималась к самой колее). Вода под дорогой — мост.
+  function paintRoad(x0, y0, x1, y1) {
+    const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const bend = Math.sin(t * Math.PI) * Math.sin((x0 + y1) * 0.7) * 1.5;
+      const cx = x0 + (x1 - x0) * t + bend * (y1 - y0) / Math.max(1, Math.hypot(x1 - x0, y1 - y0));
+      const cy = y0 + (y1 - y0) * t - bend * (x1 - x0) / Math.max(1, Math.hypot(x1 - x0, y1 - y0));
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const x = Math.round(cx + dx), y = Math.round(cy + dy);
+        if (!inBounds(x, y) || x < 2 || y < 2 || x > w - 3 || y > h - 3) continue;
+        const d2 = dx * dx + dy * dy;
+        const cur = terrain[y][x];
+        if (d2 <= 2) {
+          if (cur === T.WATER || cur === T.BRIDGE) terrain[y][x] = T.BRIDGE;
+          else if (cur !== T.PLAZA) terrain[y][x] = T.ROAD;
+        } else if (d2 <= 5 && (cur === T.TREE || cur === T.ROCK) && Math.abs(x - WORLD_RIVER_X) > 4) {
+          terrain[y][x] = T.GRASS;
+        } else if (d2 <= 5 && cur === T.WATER) {
+          terrain[y][x] = T.BRIDGE;
+        }
+      }
+    }
+  }
+  for (const road of WORLD_ROADS) {
+    for (let i = 0; i + 1 < road.length; i++) paintRoad(road[i][0], road[i][1], road[i + 1][0], road[i + 1][1]);
+  }
+
+  const passable = v => v === T.GRASS || v === T.ROAD || v === T.BRIDGE || v === T.PLAZA;
+  const grid = terrain.map(row => row.map(v => (passable(v) ? FLOOR : WALL)));
+
+  // ── карман, куда не дойти от входа, — тоже лес ──────────────────────────
+  // Рощи случайные, и изредка две смыкаются кольцом. Заливка от входа: всё,
+  // куда игрок не дойдёт, становится стеной, чтобы там не встал монстр.
   const seen = Array.from({ length: h }, () => new Uint8Array(w));
   const stack = [[S.x, S.y]];
   seen[S.y][S.x] = 1;
@@ -964,7 +1048,11 @@ function generateWorld() {
       stack.push([nx, ny]);
     }
   }
-  for (let gy = 0; gy < h; gy++) for (let gx = 0; gx < w; gx++) if (!seen[gy][gx]) grid[gy][gx] = WALL;
+  for (let gy = 0; gy < h; gy++) for (let gx = 0; gx < w; gx++) {
+    if (seen[gy][gx] || grid[gy][gx] !== FLOOR) continue;
+    grid[gy][gx] = WALL;
+    terrain[gy][gx] = gx > WORLD_RIDGE_X ? T.ROCK : T.TREE;
+  }
 
   function freeTileNear(cx, cy, rad) {
     for (let attempt = 0; attempt < 60; attempt++) {
@@ -1061,7 +1149,7 @@ function generateWorld() {
   return {
     grid, rooms, w, h, spawn,
     returnPad: { x: (S.x - 5) * TILE + TILE / 2, y: S.y * TILE + TILE / 2 },
-    openWorld: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: WORLD_ENTRY_LEVEL, spots },
+    openWorld: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: WORLD_ENTRY_LEVEL, spots, terrain: _worldTerrainRle(terrain) },
     enemies: enemyList,
   };
 }

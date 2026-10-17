@@ -2965,6 +2965,8 @@ function _buildChunk(cx, cy) {
         : _isGuildWarTile(tx, ty) ? _GW_WALL
         : _isFarmZoneTile(tx, ty) ? _FARM_WALL
         : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
+      // Дерево или вода в Мире (js/zones.js): у них нет каменного «обрыва».
+      if (!wallBase) continue;
       if (lava && lava.relief && !zone) {
         // Передняя грань стены: та же фактура, затемнённая книзу, и светлая
         // кромка по верху — стена встаёт над полом, как в играх с видом сверху.
@@ -3011,7 +3013,8 @@ function _buildChunk(cx, cy) {
         c.fillStyle = g; c.fillRect(x + TILE - 14, y, 14, TILE);
       }
     }
-  } else {
+  } else if (!(zone && zone.world)) {
+  // (Мир — без этих полос: у рощи и реки нет прямоугольной «тени стены».)
   c.fillStyle = 'rgba(0,0,0,0.4)';
   for (let ty = ty0; ty <= ty1; ty++) {
     for (let tx = tx0; tx <= tx1; tx++) {
