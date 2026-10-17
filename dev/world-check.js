@@ -117,6 +117,19 @@ ok(/result\.openWorld \? \(WORLD_LIBERTY_CHANCE/.test(src) && WORLD_LIBERTY_CHAN
 const roomSrc = fs.readFileSync(path.join(__dirname, '../server/game/Room.js'), 'utf8');
 ok((roomSrc.match(/openWorld: !!enemy\.openWorld/g) || []).length === 2, 'оба пути убийства несут флаг openWorld');
 
+console.log('\n── монета удачи ──');
+const D = require('../shared/definitions');
+const coin = D.CRAFT_MATS.find(m => m.id === 'clover_coin');
+ok(coin && coin.gem && coin.worldOnly, 'предмет есть, сдаётся в кодекс и помечен «только Мир»');
+ok(D.WORLD_CLOVER_CHANCE === 0.003, 'шанс 0.003 за убийство', D.WORLD_CLOVER_CHANCE);
+const cb = n => D.gemCodexBonusFor('clover_coin', n).atk;
+ok(cb(29) === 0 && cb(30) === 40, '30 штук — +40 атаки', `${cb(29)} / ${cb(30)}`);
+ok(cb(79) === 40 && cb(80) === 110, '80 штук — ещё +70', `${cb(79)} / ${cb(80)}`);
+ok(cb(199) === 110 && cb(200) === 220, '200 штук — ещё +110', `${cb(199)} / ${cb(200)}`);
+ok(D.gemCodexMax('clover_coin') === 200 && D.gemCodexMax('gem_jewel') === 500, 'потолок монеты 200, у самоцветов прежние 500');
+ok(D.codexTotalBonus({ [D.GEM_CODEX_KEY]: { clover_coin: 9999 } }).atk === 220, 'сверх 200 не считается');
+ok(/result\.openWorld && rand\(\) < \(WORLD_CLOVER_CHANCE/.test(src), 'бросок монеты — только для убийств в Мире');
+
 console.log(`\n  ${pass} пройшло, ${fail} впало`);
 if (fail) { console.log('  впало: ' + failures.join('; ')); process.exit(1); }
 process.exit(0);

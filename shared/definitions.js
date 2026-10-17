@@ -1123,6 +1123,10 @@ const CRAFT_MATS = [
   { id:'gem_red',   name:'Красный самоцвет',  img:'/images/material/gem_red.png',   slot:'material', rarity:'uncommon', gem:true },
   { id:'gem_shard', name:'Осколок бездны',    img:'/images/material/gem_shard.png', slot:'material', rarity:'rare',     gem:true },
   { id:'gem_stone', name:'Нефритовый камень', img:'/images/material/gem_stone.png', slot:'material', rarity:'rare',     gem:true },
+  // Монета удачи — тоже для Кодекса самоцветов, но падает только в Мире
+  // (WORLD_CLOVER_CHANCE ниже); worldOnly убирает её из таблиц дропа
+  // фарм-зон, где самоцветы перечислены списком «все gem».
+  { id:'clover_coin', name:'Монета удачи', img:'/images/material/clover_coin.png', slot:'material', rarity:'epic', gem:true, worldOnly:true },
   // ── Teleport stone (bought from the merchant for Liberty, see
   // TELEPORT_STONE_PRICE below — not a drop) ──────────────────
   { id:'teleport_stone', name:'Камень телепортации', icon:'teleport', slot:'material', rarity:'rare' },
@@ -1883,6 +1887,10 @@ const WORLD_LVL_MAX = 59;
 const WORLD_BOSS_LEVEL = 60;
 const WORLD_XP_MULT = 3; // как в фарм-зонах
 const WORLD_LIBERTY_CHANCE = FARM_HIGH_LIBERTY_CHANCE;
+// Монета удачи (clover_coin, Кодекс самоцветов) — «шанс 0.003» за убийство
+// любого монстра Мира, то есть 0.3%: один бросок, отдельный от таблицы зоны.
+// Владыке — со своим WORLD_BOSS_DROP_MULT, как и всей его таблице.
+const WORLD_CLOVER_CHANCE = 0.003;
 // Владыка — босс 60 уровня по кривой 'boss' (×10 HP) и ещё ×3 сверху: его
 // бьют группой, раз в 1-2 часа, а не в одиночку на проходе коридора.
 const WORLD_BOSS_HP_MULT = 3;
@@ -3137,16 +3145,25 @@ const GEM_CODEX = [
   { id: 'gem_red',   tiers: _GEM_TIERS_COMMON },
   { id: 'gem_shard', tiers: _GEM_TIERS_RARE },
   { id: 'gem_stone', tiers: _GEM_TIERS_RARE },
+  // Монета удачи из Мира: только атака, три порога, складываются как у
+  // самоцветов — на 200 сданных +40 +70 +110 = +220. Свой потолок `max`.
+  { id: 'clover_coin', max: 200, tiers: [
+    { n: 30,  atk: 40 },
+    { n: 80,  atk: 70 },
+    { n: 200, atk: 110 },
+  ] },
 ];
 const GEM_CODEX_KEY = '_gems';
 // Сверх последнего порога сдавать незачем — сервер больше не берёт.
 const GEM_CODEX_MAX = 500;
 const _GEM_CODEX_BY_ID = new Map(GEM_CODEX.map(g => [g.id, g]));
 function gemCodexEntry(id) { return _GEM_CODEX_BY_ID.get(id) || null; }
+// Потолок вида: свой `max` (монета удачи — 200) или общий GEM_CODEX_MAX.
+function gemCodexMax(id) { const g = gemCodexEntry(id); return (g && g.max) || GEM_CODEX_MAX; }
 // Сколько штук этого вида уже сдано (из колонки codex).
 function gemCodexCount(codex, id) {
   const g = codex && codex[GEM_CODEX_KEY];
-  return Math.max(0, Math.min(GEM_CODEX_MAX, Math.floor(Number(g && g[id]) || 0)));
+  return Math.max(0, Math.min(gemCodexMax(id), Math.floor(Number(g && g[id]) || 0)));
 }
 // Бонус одного вида при `count` сданных — сумма всех пройденных порогов.
 function gemCodexBonusFor(id, count) {
@@ -4637,7 +4654,7 @@ if (typeof module !== 'undefined') module.exports = {
   rollRuneQuality, rollRuneStats, rerollRuneLine, runeBonusTotals, runeIconOf,
   runeSocketsOf, runeKindForSlot,
   CODEX_SETS, codexSetById, codexItemMeetsReq, codexTotalBonus, CODEX_MILESTONES,
-  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexCount, gemCodexBonusFor,
+  GEM_CODEX, GEM_CODEX_KEY, GEM_CODEX_MAX, gemCodexEntry, gemCodexMax, gemCodexCount, gemCodexBonusFor, WORLD_CLOVER_CHANCE,
   PET_CRAFT_RECIPES, BUFF_POTION_CRAFT_RECIPES, MAT_UPGRADE_RECIPES,
   MAT_UPGRADE_MAX_BATCH,
   ADV_SKILL_BOOK_CRAFT,

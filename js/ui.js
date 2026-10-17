@@ -1987,7 +1987,7 @@ function _gemTierText(t) {
 }
 function gemCodexSubmit(id, all) {
   if (typeof gemCodexCount !== 'function') return;
-  const left = GEM_CODEX_MAX - gemCodexCount(player.codex || {}, id);
+  const left = gemCodexMax(id) - gemCodexCount(player.codex || {}, id);
   const have = _gemInvCount(id);
   const qty = Math.min(all ? have : 1, left);
   if (qty <= 0) return;
@@ -2010,7 +2010,8 @@ function _gemCodexHtml() {
     const rows = open ? g.tiers.map(t => `<div class="codex-ms-row ${n >= t.n ? 'done' : (t === next ? 'next' : 'locked')}">
         <span class="codex-ms-n">${n >= t.n ? '✓' : t.n}</span>
         <span class="codex-ms-txt">${n >= t.n ? `<b>${t.n}</b> · ` : ''}${_gemTierText(t)}</span></div>`).join('') : '';
-    const canAdd = have > 0 && n < GEM_CODEX_MAX;
+    const max = gemCodexMax(g.id);
+    const canAdd = have > 0 && n < max;
     return `<div class="gemcx-card">
       <div class="gemcx-top">
         <img class="gemcx-img" src="${mat.img}" alt="">
@@ -2018,7 +2019,7 @@ function _gemCodexHtml() {
           <div class="gemcx-name">${mat.name}</div>
           <div class="gemcx-bonus">${_gemTierText(cur) || 'Бонуса пока нет'}</div>
         </div>
-        <div class="gemcx-count"><b>${n}</b>/${GEM_CODEX_MAX}</div>
+        <div class="gemcx-count"><b>${n}</b>/${max}</div>
       </div>
       ${next ? `<div class="codex-ms-next">Следующий: <b>${next.n} шт.</b> — ${_gemTierText(next)}</div>
         <div class="codex-ms-bar"><div class="codex-ms-fill" style="width:${pct}%"></div></div>`
@@ -2034,7 +2035,7 @@ function _gemCodexHtml() {
   }).join('');
   return `<div class="gemcx">
     <div class="codex-ms-head"><span class="codex-ms-title">Самоцветы</span></div>
-    <div class="gemcx-hint">Падают в Фарм-зоне, Фарм зоне 2 и Подземелье. Каждый вид сдаётся отдельно, бонусы порогов складываются. Сданные камни уничтожаются.</div>
+    <div class="gemcx-hint">Самоцветы падают в Фарм-зоне, Фарм зоне 2, Подземелье и Мире, Монета удачи — только в Мире. Каждый вид сдаётся отдельно, бонусы порогов складываются. Сданные предметы уничтожаются.</div>
     ${cards}
   </div>`;
 }
@@ -2878,7 +2879,7 @@ function _farmSpeciesBookRows(eid) {
 // Фарм зона 2, Подземелье), см. FARM_GEM_*_CHANCE и server/game/loot.js.
 function _gemDropRows() {
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
-  return (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.gem).map(g => {
+  return (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).filter(m => m.gem && !m.worldOnly).map(g => {
     const ch = g.rarity === 'rare' ? FARM_GEM_RARE_CHANCE : FARM_GEM_COMMON_CHANCE;
     return _dropRow(_mi(g, 16), g.name, _pctSmall(ch * 100), g.rarity === 'rare' ? '#cdb8ec' : '#8fe8a0');
   }).join('');
@@ -3139,7 +3140,12 @@ function _worldSpotListHtml() {
       <div style="padding:0 8px 8px;color:#83725a;font-size:11px">${bossLine}</div>
     </div>`;
   const hint = tVars('worldSpotsHint', { e: WORLD_ENTRY_LEVEL, b: WORLD_BOSS_LEVEL });
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${rows}${boss}`;
+  // Монета удачи — дроп только этой локации, поэтому отдельной строкой над спотами.
+  const coin = CRAFT_MATS.find(m => m.id === 'clover_coin');
+  const coinRow = coin ? `<div style="display:flex;align-items:center;gap:8px;margin:0 4px 12px;padding:8px 10px;border-radius:10px;background:rgba(140,220,90,.08);border:1px solid rgba(140,220,90,.3);font-size:12px;color:#cfe9b8">
+      <img src="${coin.img}" alt="" style="width:26px;height:26px">
+      <span><b>${coin.name}</b> — ${_pctSmall(WORLD_CLOVER_CHANCE * 100)} с любого монстра Мира. Сдаётся в Кодекс самоцветов: до +220 атаки.</span></div>` : '';
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${coinRow}${rows}${boss}`;
 }
 
 // ── Подземелье: бестиарий зоны (owner's own ask — "на карте виден список

@@ -16,7 +16,7 @@ const money = require('./money');
 const {
   ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
   codexSetById, codexItemMeetsReq, codexTotalBonus,
-  gemCodexEntry, gemCodexCount, GEM_CODEX_KEY, GEM_CODEX_MAX,
+  gemCodexEntry, gemCodexCount, gemCodexMax, GEM_CODEX_KEY,
 } = require('../../../shared/definitions');
 
 class UseError extends Error {
@@ -430,7 +430,7 @@ async function registerCodexItem(db, playerId, setId, slotIdx, rowId) {
 
 // ── Кодекс самоцветов ───────────────────────────────────────────────────────
 // Сдать `qty` самоцветов одного вида: они уничтожаются, счётчик вида растёт.
-// Больше GEM_CODEX_MAX не берётся — лишнее остаётся в сумке, а не сгорает.
+// Больше потолка вида (gemCodexMax) не берётся — лишнее остаётся в сумке, а не сгорает.
 // Списание и счётчик — в одной транзакции, под блокировкой предметов и строки
 // прогресса: сбой между ними не должен забрать камни и не дать ничего.
 async function registerCodexGem(db, playerId, gemId, qty) {
@@ -444,7 +444,7 @@ async function registerCodexGem(db, playerId, gemId, qty) {
   if (!prog.length) err('no_player', 'Персонаж не найден');
   const codex = prog[0].codex || {};
   const have = gemCodexCount(codex, gemId);
-  const take = Math.min(want, GEM_CODEX_MAX - have);
+  const take = Math.min(want, gemCodexMax(gemId) - have);
   if (take <= 0) err('maxed', 'Этот самоцвет уже собран полностью');
 
   const ok = await items.removeQty(db, playerId, gemId, take,

@@ -399,6 +399,35 @@ const AUTO_SKILL_GAP = 1.2;
 // бьют по площади (Целитель) и лечат CP, так что ждать просадки HP незачем.
 let _autoSkillTimer = 0;
 
+// ── АВТО в Мире: стоять на своём споте ──────────────────────────────────────
+// Открытая локация (dungeon.openWorld) — не комната, и «ближайший монстр»
+// там часто стоит уже на соседнем споте: авто бегало от пачки к пачке через
+// всю карту. Теперь у авто есть точка — где игрок сам остановился (или где
+// включил АВТО) — и радиус AUTO_LEASH_R вокруг неё: цель берётся только
+// внутри круга, а когда бить некого, персонаж возвращается в точку.
+// Джойстик переносит точку: куда отошёл сам — там и стоишь.
+// Только в Мире: в коридорах автоприцел и так ограничен комнатой, а в
+// Кровавой Башне авто обязано идти по лабиринту.
+const AUTO_LEASH_R = 9 * TILE;
+let _autoAnchor = null;
+function _autoLeashOn() {
+  return autoAttackMode && !_chaseArmed && !!player && !!dungeon && !!dungeon.openWorld;
+}
+function _autoAnchorPt() {
+  const a = _autoAnchor;
+  // Новый этаж, смерть с возрождением, телепорт — точка осталась где-то
+  // далеко позади, и тащиться к ней через карту незачем: она ставится заново.
+  if (!a || a.d !== dungeon || dist(a.x, a.y, player.x, player.y) > AUTO_LEASH_R * 3) {
+    _autoAnchor = { x: player.x, y: player.y, d: dungeon };
+  }
+  return _autoAnchor;
+}
+function _inAutoLeash(x, y) {
+  const a = _autoAnchorPt();
+  const dx = x - a.x, dy = y - a.y;
+  return dx * dx + dy * dy <= AUTO_LEASH_R * AUTO_LEASH_R;
+}
+
 function _autoCastSkills(dt) {
   if (_autoSkillTimer > 0) _autoSkillTimer -= dt;
   if (!autoAttackMode || !player || state !== 'playing') return;
@@ -479,6 +508,8 @@ function update(dt, realDt) {
       if ((player.atkSlowTimer || 0) > 0) _spdMult = Math.min(_spdMult, 1 - (player.atkSlowPct || 0));
       if (inp.len > 0) {
         player._chasing = false;
+        _autoAnchor = null; // точка АВТО — там, где игрок остановится сам
+
         // Manual joystick input cancels a manually-armed sustained attack
         // (autoAttackMode is a separate persistent toggle and stays as-is),
         // and any skill still approaching its target (see the skill-chase
@@ -560,6 +591,21 @@ function update(dt, realDt) {
             if (player._chasing && !autoAttackMode) player.atkTimer = 0;
             player._chasing = false;
           }
+        } else {
+          player._chasing = false;
+        }
+      } else if (_autoLeashOn()) {
+        // АВТО в Мире и бить некого — назад в свою точку, а не стоять там,
+        // куда занесла погоня за последней целью.
+        const a = _autoAnchorPt();
+        const _rdx = a.x - player.x, _rdy = a.y - player.y, _rlen = Math.hypot(_rdx, _rdy);
+        if (_rlen > TILE * 0.75) {
+          const nvx = (_rdx / _rlen) * player.speed * _spdMult * dt;
+          const nvy = (_rdy / _rlen) * player.speed * _spdMult * dt;
+          if (canMoveX(player, nvx, 12)) player.x += nvx;
+          if (canMoveY(player, nvy, 12)) player.y += nvy;
+          player.facing = facing8FromDelta(_rdx / _rlen, _rdy / _rlen, player.facing);
+          player._chasing = true;
         } else {
           player._chasing = false;
         }
@@ -744,7 +790,7 @@ function update(dt, realDt) {
     // that fallback scan find a real target instead.
     if (targetId && !targetIsPlayer) {
       const t = serverEnemiesMap.get(targetId);
-      if (t && (t.hp || 0) > 0 && hasLOS(player.x, player.y, t.x, t.y)) {
+      if (t && (t.hp || 0) > 0 && hasLOS(player.x, player.y, t.x, t.y) && (!_autoLeashOn() || _inAutoLeash(t.x, t.y))) {
         closest = t; closestD = dist(t.x, t.y, player.x, player.y);
       } else {
         // Not reset here on purpose: like the room-boundary release just
@@ -775,6 +821,7 @@ function update(dt, realDt) {
     // Fall back to nearest enemy using squared distance (avoids sqrt per candidate)
     if (!closest) {
       const _pRoom = _getRoomAt(player.x, player.y);
+      const _leash = _autoLeashOn();
       let closestD2 = Infinity;
       serverEnemies.forEach(e => {
         // Own castle excluded the same reason the ally exclusion just below
@@ -783,6 +830,8 @@ function update(dt, realDt) {
         // blocked a real target from being picked instead (see
         // _gwTowerUnselectable, js/input.js).
         if ((e.hp || 0) <= 0 || _gwTowerUnselectable(e)) return;
+        // АВТО в Мире — только внутри своего круга (см. AUTO_LEASH_R).
+        if (_leash && !_inAutoLeash(e.x, e.y)) return;
         // When player is inside a room, only target enemies in that same room
         if (_pRoom) {
           const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);
@@ -1684,6 +1733,7 @@ function render(dt, ts) {
   // видно поверх мира, а не наоборот.
   if (player && dungeon) _drawPlayerNameOnUI();
   if (dungeon) _drawOtherPlayerNamesOnUI();
+  drawAutoLeashRing();
   drawDecalLabels();
 
   if (_hudCv) {
@@ -2439,6 +2489,26 @@ function _pushDecalsToGpu(ts) {
 // The overlay half: text only. Measured cheaper as live strokeText than as
 // cached bitmaps blitted per frame (0.147ms vs 0.180ms for twelve labels on
 // the dev bench), so these stay direct draws.
+// Круг АВТО в Мире — пунктиром по земле вокруг точки, где стоит персонаж:
+// видно, докуда авто будет бить и куда вернётся.
+function drawAutoLeashRing() {
+  if (!_autoLeashOn()) return;
+  const a = _autoAnchorPt();
+  const sx = (a.x - _lastCamX) * ZOOM, sy = (a.y - _lastCamY) * ZOOM + HEADER_H;
+  const r = AUTO_LEASH_R * ZOOM;
+  ctx.save();
+  ctx.setLineDash([8, 7]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(144,214,83,0.55)';
+  ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(144,214,83,0.07)';
+  ctx.fill();
+  ctx.fillStyle = 'rgba(144,214,83,0.8)';
+  ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 function drawDecalLabels() {
   if (!_decalLbls.length) return;
   ctx.textAlign = 'center';
