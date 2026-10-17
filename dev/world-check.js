@@ -121,7 +121,7 @@ console.log('\n── монета удачи ──');
 const D = require('../shared/definitions');
 const coin = D.CRAFT_MATS.find(m => m.id === 'clover_coin');
 ok(coin && coin.gem && coin.worldOnly, 'предмет есть, сдаётся в кодекс и помечен «только Мир»');
-ok(D.WORLD_CLOVER_CHANCE === 0.003, 'шанс 0.003 за убийство', D.WORLD_CLOVER_CHANCE);
+ok(Math.abs(D.WORLD_CLOVER_CHANCE - 0.00003) < 1e-12, 'шанс 0.003% за убийство', D.WORLD_CLOVER_CHANCE);
 const cb = n => D.gemCodexBonusFor('clover_coin', n).atk;
 ok(cb(29) === 0 && cb(30) === 40, '30 штук — +40 атаки', `${cb(29)} / ${cb(30)}`);
 ok(cb(79) === 40 && cb(80) === 110, '80 штук — ещё +70', `${cb(79)} / ${cb(80)}`);

@@ -3020,11 +3020,21 @@ function _farmHighZoneRows(e, opts = {}) {
     ${normStone  ? _dropRow(_mi(normStone, 16),  normStone.name,  _pctSmall(FARM_HIGH_NORM_STONE_CHANCE * 100),  '#f17e8b') : ''}
     ${blessStone ? _dropRow(_mi(blessStone, 16), blessStone.name, _pctSmall(FARM_HIGH_BLESS_STONE_CHANCE * 100), '#efc680') : ''}
     ${opts.noGems ? '' : _gemDropRows()}
+    ${opts.coin ? _worldCoinDropRow() : ''}
     ${epicRec   ? _dropRow(_mi(epicRec, 16),   epicRec.name,   _pctSmall(FARM_HIGH_EPIC_RECIPE_CHANCE * 100), '#c98fef') : ''}
     ${legRec    ? _dropRow(_mi(legRec, 16),    legRec.name,    _pctSmall(FARM_HIGH_LEGENDARY_RECIPE_CHANCE * 100), '#f5c542') : ''}`;
 }
 
-function _farmHighSpeciesBodyHtml(e, { noGems = false } = {}) {
+// Монета удачи — дроп только Мира, поэтому строкой в таблице зоны лишь там
+// (opts.coin, _worldSpotListHtml), рядом с самоцветами, которые сдаются туда же.
+function _worldCoinDropRow() {
+  const coin = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === 'clover_coin') : null;
+  if (!coin || typeof WORLD_CLOVER_CHANCE === 'undefined') return '';
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  return _dropRow(_mi(coin, 16), coin.name, _pctSmall(WORLD_CLOVER_CHANCE * 100), '#b6e26a');
+}
+
+function _farmHighSpeciesBodyHtml(e, { noGems = false, coin = false } = {}) {
   const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
   const S = typeof FARM_HIGH_SPECIES_SKILL_BOOKS   !== 'undefined' ? FARM_HIGH_SPECIES_SKILL_BOOKS[e.eid]   : [];
   const A = typeof FARM_HIGH_SPECIES_ADV_BOOKS     !== 'undefined' ? FARM_HIGH_SPECIES_ADV_BOOKS[e.eid]     : [];
@@ -3036,7 +3046,7 @@ function _farmHighSpeciesBodyHtml(e, { noGems = false } = {}) {
       <span>DEF <b>${e.def}</b></span>
       <span>${t('spdAbbrev')} <b>${e.spd}</b></span>
     </div>
-    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e, { noGems }))}
+    ${sec(t('farmHighZoneDropHdr'), _farmHighZoneRows(e, { noGems, coin }))}
     ${_farmHighGearSections(e.eid)}
     ${sec(t('uniqueShardsHdr'), _farmHighShardRows(e.eid))}
     ${sec(t('farmHighSkillBooksHdr'), _farmHighBookRows(S, FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
@@ -3121,7 +3131,7 @@ function _worldSpotListHtml() {
       </div>
       <div class="mon-body">
         <div style="padding:4px 0 8px;color:#83725a;font-size:11px">${tVars('worldPacksFmt', { n: sp.packs, k: tier.packSize })} · ${note}</div>
-        ${species.map(e => `<div style="margin:6px 0 2px;font-weight:bold;color:${e.color}">${e.name}</div>${_farmHighSpeciesBodyHtml(e)}`).join('')}
+        ${species.map(e => `<div style="margin:6px 0 2px;font-weight:bold;color:${e.color}">${e.name}</div>${_farmHighSpeciesBodyHtml(e, { coin: true })}`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -3140,12 +3150,7 @@ function _worldSpotListHtml() {
       <div style="padding:0 8px 8px;color:#83725a;font-size:11px">${bossLine}</div>
     </div>`;
   const hint = tVars('worldSpotsHint', { e: WORLD_ENTRY_LEVEL, b: WORLD_BOSS_LEVEL });
-  // Монета удачи — дроп только этой локации, поэтому отдельной строкой над спотами.
-  const coin = CRAFT_MATS.find(m => m.id === 'clover_coin');
-  const coinRow = coin ? `<div style="display:flex;align-items:center;gap:8px;margin:0 4px 12px;padding:8px 10px;border-radius:10px;background:rgba(140,220,90,.08);border:1px solid rgba(140,220,90,.3);font-size:12px;color:#cfe9b8">
-      <img src="${coin.img}" alt="" style="width:26px;height:26px">
-      <span><b>${coin.name}</b> — ${_pctSmall(WORLD_CLOVER_CHANCE * 100)} с любого монстра Мира. Сдаётся в Кодекс самоцветов: до +220 атаки.</span></div>` : '';
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${coinRow}${rows}${boss}`;
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${hint}</div>${rows}${boss}`;
 }
 
 // ── Подземелье: бестиарий зоны (owner's own ask — "на карте виден список
