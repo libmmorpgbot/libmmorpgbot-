@@ -5273,8 +5273,10 @@ function netCoopGroupKick()   { if (socket?.connected) socket.emit('coopGroupKic
 function netCoopGroupLeave()  { if (socket?.connected) socket.emit('coopGroupLeave'); }
 function netCoopGroupStart()  { if (socket?.connected) socket.emit('coopGroupStart'); }
 
-// Итог награды за босса — см. coopBossReward ниже.
+// Итог награды за босса — см. coopBossReward ниже. _coopReward — то же самое
+// целиком, для окна итога (showCoopResult, js/ui.js).
 let _coopRewardMsg = '';
+let _coopReward = null;
 function _initCoopHandlers(s) {
   s.on('coopState', (st) => {
     _coopState = {
@@ -5384,10 +5386,7 @@ function _initCoopHandlers(s) {
       const got = [nexum ? '+' + nexum + ' Liberty' : '', list(items)].filter(Boolean).join(', ');
       _coopRewardMsg = got ? tVars('coopBossWonListMsg', { list: got }) : t('coopBossWonMsg');
     }
-    if (won && missed && missed.length && typeof _marketToast === 'function') {
-      _marketToast(tVars('coopBossBagFullMsg', { list: list(missed) }), 'err');
-    }
-    if (won && failed && typeof _marketToast === 'function') _marketToast(t('coopBossRewardFailedMsg'), 'err');
+    _coopReward = { won, winnerName, nexum, items: items || [], missed: missed || [], failed: !!failed };
   });
 
   // Run over — either died mid-stage (cleared: false) or beat the boss
@@ -5403,7 +5402,11 @@ function _initCoopHandlers(s) {
       : (reason === 'left' ? t('coopPartnerLeftMsg') : t('coopDiedMsg'))
         + (refunded ? ' ' + t('coopRefundedMsg') : '');
     _coopRewardMsg = '';
-    if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
+    // Победа с известным итогом — окном (кто получил и что именно); всё
+    // остальное — баннером, как и было.
+    if (cleared && _coopReward && typeof showCoopResult === 'function') showCoopResult(_coopReward);
+    else if (typeof showEventBossBanner === 'function') showEventBossBanner(msg, cleared ? '#ffd18a' : '#f07886');
+    _coopReward = null;
     if (cleared && typeof netCoopReturn === 'function') netCoopReturn();
     if (typeof netCoopSync === 'function') netCoopSync();
     if (typeof onCoopState === 'function') onCoopState();

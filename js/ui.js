@@ -9146,6 +9146,43 @@ function showBossLairResult(level, reward) {
   modal.style.display = 'flex';
 }
 
+// Сотрудничество пройдено: окно, а не баннер. Баннер жил в том же элементе,
+// что и отсчёт до мирового босса, а сервер сразу после победы переносит обоих
+// в город — новый мир приходил следом, сбрасывал отсчёт и прятал итог через
+// долю секунды. Окно закрывает только сам игрок.
+// r — что прислал coopBossReward: кому досталось (won/winnerName) и что именно.
+function showCoopResult(r) {
+  const modal = document.getElementById('coop-result-modal');
+  if (!modal || !r) return;
+  const nameOf = id => {
+    const def = typeof _anyItemDef === 'function' ? _anyItemDef(id) : null;
+    return (def && def.name) || id;
+  };
+  const imgOf = id => {
+    const def = typeof _anyItemDef === 'function' ? _anyItemDef(id) : null;
+    return def && def.img;
+  };
+  const row = (img, name, qty, note) => `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}
+      <span>${name}${note ? ` <small style="color:#f07886">${note}</small>` : ''}</span><span class="db-reward-qty">${qty}</span></div>`;
+  const rows = [];
+  if (r.nexum) rows.push(row('/images/nexum-coin_v2.png', 'Liberty', '+' + r.nexum));
+  (r.items || []).forEach(it => rows.push(row(imgOf(it.id), nameOf(it.id), '×' + (it.qty || 1))));
+  (r.missed || []).forEach(it => rows.push(row(imgOf(it.id), nameOf(it.id), '×' + (it.qty || 1), t('coopResultMissedNote'))));
+  let sub;
+  if (r.won) sub = r.failed ? t('coopBossRewardFailedMsg') : t('coopResultYoursMsg');
+  else sub = r.winnerName ? tVars('coopBossLostNamedMsg', { name: r.winnerName }) : t('coopBossLostMsg');
+  document.getElementById('coop-result-icon').textContent = r.won ? '👑' : '🏆';
+  document.getElementById('coop-result-title').textContent = t('coopClearedMsg');
+  document.getElementById('coop-result-sub').textContent = sub;
+  document.getElementById('coop-result-rewards').innerHTML = rows.join('');
+  modal.style.display = 'flex';
+}
+
+function closeCoopResult() {
+  const modal = document.getElementById('coop-result-modal');
+  if (modal) modal.style.display = 'none';
+}
+
 function closeBossLairResult() {
   const modal = document.getElementById('lair-result-modal');
   if (modal) modal.style.display = 'none';
@@ -10302,7 +10339,14 @@ function setEventBossCountdown(spawnAt) {
   clearInterval(_evtBossTick);
   _evtBossTick = null;
   const el = _evtBossEl();
-  if (!_evtBossSpawnAt || _evtBossSpawnAt <= Date.now()) { el.style.display = 'none'; return; }
+  // Прятать только СВОЙ отсчёт: тем же элементом показываются сообщения
+  // режимов (showEventBossBanner), и каждый новый мир, сбрасывая отсчёт в 0,
+  // стирал их — итог Сотрудничества мелькал на долю секунды.
+  if (!_evtBossSpawnAt || _evtBossSpawnAt <= Date.now()) {
+    if (el.dataset.kind !== 'msg') el.style.display = 'none';
+    return;
+  }
+  el.dataset.kind = 'countdown';
   const paint = () => {
     const left = Math.max(0, _evtBossSpawnAt - Date.now());
     if (left <= 0) { clearInterval(_evtBossTick); _evtBossTick = null; el.style.display = 'none'; return; }
@@ -10362,11 +10406,12 @@ function showEventBossBanner(text, color) {
   _evtBossTick = null;
   _evtBossSpawnAt = 0;
   const el = _evtBossEl();
+  el.dataset.kind = 'msg';
   el.style.borderColor = color || '#d55d6b';
   el.style.display = 'block';
   el.textContent = text;
   clearTimeout(showEventBossBanner._t);
-  showEventBossBanner._t = setTimeout(() => { el.style.display = 'none'; }, 8000);
+  showEventBossBanner._t = setTimeout(() => { el.style.display = 'none'; el.dataset.kind = ''; }, 8000);
 }
 
 // ── Guild War (Война гильдий) HP bar + capture banner ────────────────────────
