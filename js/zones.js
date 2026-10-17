@@ -988,61 +988,97 @@ function _worldStage(Z, tx, ty) {
   return _WS.grass[r];
 }
 
-const _WG = ['#4f7d34', '#2f4f27', '#5b4c3e'];   // земля трёх краёв
+// Земля трёх краёв — насыщенная, как в MMORPG: сочный луг, зелёный (а не
+// чёрный) лес, тёплые рыжие пустоши.
+const _WG = ['#5c9a36', '#2c6430', '#86684a'];
+const _WBLADE = [['#7fc04a', '#3f7424'], ['#4f9a4a', '#143c1a'], ['#a3825c', '#5a4430']];
 
-// Земля без шахматки: ровный тон края, пятна поверх переходят через клетки.
-function _wGround(c, x, y, tx, ty, base) {
-  c.fillStyle = base; c.fillRect(x, y, TILE, TILE);
+// Плавный шум по координатам клетки: крупные пятна светлой и тёмной травы
+// через всю карту — то, что делает поле живым, а не ровной заливкой. Соседние
+// клетки отличаются на проценты, поэтому сетки не видно.
+function _wNoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const h = (a, b) => _zh(a, b, 91);
+  const sm = t => t * t * (3 - 2 * t);
+  const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+  const u = sm(xf), v = sm(yf);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+// Земля без шахматки: тон клетки — от шума, пятна поверх переходят через клетки.
+function _wGround(c, x, y, tx, ty, base, amp = 0.34) {
+  const n = _wNoise(tx / 6, ty / 6) * 0.7 + _wNoise(tx / 2.5 + 40, ty / 2.5) * 0.3;
+  c.fillStyle = _zShade(base, (n - 0.5) * amp); c.fillRect(x, y, TILE, TILE);
   for (let k = 0; k < 4; k++) {
     const bx = x + _zh(tx, ty, 40 + k) * TILE, by = y + _zh(tx, ty, 45 + k) * TILE;
-    _zBlob(c, bx, by, 8 + _zh(tx, ty, 50 + k) * 10, 5 + _zh(tx, ty, 55 + k) * 7, k & 1 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.07)');
+    _zBlob(c, bx, by, 6 + _zh(tx, ty, 50 + k) * 8, 4 + _zh(tx, ty, 55 + k) * 5, k & 1 ? 'rgba(255,255,210,0.06)' : 'rgba(0,0,0,0.10)');
   }
 }
 function _wGrass(c, x, y, tx, ty, r) {
   _wGround(c, x, y, tx, ty, _WG[r]);
-  const blade = ['#6fa04a', '#43683a', '#6e6050'][r];
-  const n = r === 2 ? 1 : 4;
+  const n = r === 2 ? 2 : 6;
+  c.lineWidth = 1.8; c.lineCap = 'round';
   for (let k = 0; k < n; k++) {
-    const gx = x + _zh(tx, ty, 60 + k) * TILE, gy = y + _zh(tx, ty, 64 + k) * TILE;
-    c.strokeStyle = blade; c.lineWidth = 1.6;
-    c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx - 2, gy - 5); c.moveTo(gx, gy); c.lineTo(gx + 2, gy - 6); c.stroke();
+    const gx = x + _zh(tx, ty, 60 + k) * TILE, gy = y + _zh(tx, ty, 66 + k) * TILE;
+    // тёмный стебель и светлый — пучок читается объёмным
+    c.strokeStyle = _WBLADE[r][1];
+    c.beginPath(); c.moveTo(gx + 1, gy + 1); c.lineTo(gx - 1, gy - 5); c.stroke();
+    c.strokeStyle = _WBLADE[r][0];
+    c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx - 2, gy - 6); c.moveTo(gx, gy); c.lineTo(gx + 2.5, gy - 6); c.stroke();
   }
-  if (r === 2 && _zh(tx, ty, 68) < 0.25) _zCrack(c, x + 20, y + 20, tx, ty, 5, 1.5, 'rgba(20,12,8,0.6)');
+  c.lineCap = 'butt';
+  if (r === 2 && _zh(tx, ty, 68) < 0.3) _zCrack(c, x + 20, y + 20, tx, ty, 5, 1.6, 'rgba(40,18,6,0.7)');
 }
 
 // Крона лиственного дерева / ель / сухое дерево — поверх земли своего края.
 function _wTree(c, x, y, tx, ty, r) {
   const cx = x + 20 + (_zh(tx, ty, 3) - 0.5) * 14, cy = y + 22 + (_zh(tx, ty, 4) - 0.5) * 12;
   const R = 21 + _zh(tx, ty, 5) * 8;
-  _zBlob(c, cx + 5, cy + R * 0.45, R * 0.9, R * 0.45, 'rgba(0,0,0,0.3)');
+  // Плотная тень вправо-вниз — свет сверху слева, как у спрайтов персонажей.
+  _zBlob(c, cx + 7, cy + R * 0.5, R * 0.95, R * 0.5, 'rgba(0,0,0,0.42)');
   if (r === 2) {
-    c.strokeStyle = '#3e3226'; c.lineCap = 'round';
-    c.lineWidth = 5; c.beginPath(); c.moveTo(cx, cy + 10); c.lineTo(cx, cy - 12); c.stroke();
-    c.lineWidth = 3;
-    c.beginPath(); c.moveTo(cx, cy - 4); c.lineTo(cx - 10, cy - 14); c.moveTo(cx, cy - 8); c.lineTo(cx + 11, cy - 17); c.stroke();
-    c.lineWidth = 2;
-    c.beginPath(); c.moveTo(cx - 6, cy - 10); c.lineTo(cx - 9, cy - 19); c.moveTo(cx + 6, cy - 12); c.lineTo(cx + 13, cy - 11); c.stroke();
+    // сухое дерево: тёмный контур под светлым стволом
+    c.lineCap = 'round';
+    for (const [col, extra] of [['#1a120a', 2.5], ['#7a5e40', 0]]) {
+      c.strokeStyle = col;
+      c.lineWidth = 5 + extra; c.beginPath(); c.moveTo(cx, cy + 10); c.lineTo(cx, cy - 12); c.stroke();
+      c.lineWidth = 3 + extra;
+      c.beginPath(); c.moveTo(cx, cy - 4); c.lineTo(cx - 10, cy - 14); c.moveTo(cx, cy - 8); c.lineTo(cx + 11, cy - 17); c.stroke();
+      c.lineWidth = 2 + extra;
+      c.beginPath(); c.moveTo(cx - 6, cy - 10); c.lineTo(cx - 9, cy - 19); c.moveTo(cx + 6, cy - 12); c.lineTo(cx + 13, cy - 11); c.stroke();
+    }
     c.lineCap = 'butt';
     return;
   }
   if (r === 1 && _zh(tx, ty, 6) < 0.6) {
-    // ель: три яруса
-    const cols = ['#1c3a22', '#24492a', '#2e5a33'];
+    // ель: три яруса с тёмным контуром и светлой кромкой слева
+    const cols = ['#1f5a2a', '#287033', '#35883e'];
+    c.fillStyle = '#4a2e18'; c.fillRect(cx - 2.5, cy + 6, 5, 8);
     for (let k = 0; k < 3; k++) {
       const wy = cy + 8 - k * 9, hw = R * (0.95 - k * 0.22);
-      c.fillStyle = cols[k];
-      c.beginPath(); c.moveTo(cx - hw, wy); c.lineTo(cx + hw, wy); c.lineTo(cx, wy - 16); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(cx - hw, wy); c.lineTo(cx + hw, wy); c.lineTo(cx, wy - 16); c.closePath();
+      c.fillStyle = cols[k]; c.fill();
+      c.lineWidth = 2; c.strokeStyle = '#0c2410'; c.stroke();
+      c.fillStyle = 'rgba(190,255,150,0.22)';
+      c.beginPath(); c.moveTo(cx - hw + 3, wy - 1); c.lineTo(cx - 2, wy - 14); c.lineTo(cx - 2, wy - 1); c.closePath(); c.fill();
     }
     return;
   }
-  const base = r === 0 ? ['#2f5d23', '#3e7a2c', '#5a9a3a'] : ['#21401f', '#2c5428', '#3c6a32'];
+  const base = r === 0 ? ['#2f6a1f', '#47912e', '#7cc24a'] : ['#245a22', '#33782d', '#5aa043'];
+  const blobs = [];
   for (let j = 0; j < 5; j++) {
     const a = j / 5 * Math.PI * 2 + _zh(tx, ty, 8 + j) * 0.8;
-    c.fillStyle = base[0];
-    c.beginPath(); c.arc(cx + Math.cos(a) * R * 0.42, cy - R * 0.2 + Math.sin(a) * R * 0.32, R * 0.55, 0, Math.PI * 2); c.fill();
+    blobs.push([cx + Math.cos(a) * R * 0.42, cy - R * 0.2 + Math.sin(a) * R * 0.32, R * 0.55]);
   }
+  blobs.push([cx, cy - R * 0.25, R * 0.6]);
+  // Контур кроны: те же круги чуть шире, тёмным — силуэт читается на любой траве.
+  c.fillStyle = '#0f2a0c';
+  for (const [bx, by, br] of blobs) { c.beginPath(); c.arc(bx, by, br + 2, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = base[0];
+  for (const [bx, by, br] of blobs.slice(0, 5)) { c.beginPath(); c.arc(bx, by, br, 0, Math.PI * 2); c.fill(); }
   c.fillStyle = base[1]; c.beginPath(); c.arc(cx, cy - R * 0.25, R * 0.6, 0, Math.PI * 2); c.fill();
   c.fillStyle = base[2]; c.beginPath(); c.arc(cx - R * 0.2, cy - R * 0.45, R * 0.3, 0, Math.PI * 2); c.fill();
+  c.fillStyle = 'rgba(255,255,220,0.35)'; c.beginPath(); c.arc(cx - R * 0.28, cy - R * 0.55, R * 0.12, 0, Math.PI * 2); c.fill();
   if (r === 0 && _zh(tx, ty, 14) < 0.2) {
     c.fillStyle = '#d24a3a';
     for (let j = 0; j < 3; j++) { c.beginPath(); c.arc(cx + (_zh(tx, ty, 15 + j) - 0.5) * R, cy - R * 0.3 + (_zh(tx, ty, 18 + j) - 0.5) * R * 0.6, 2.2, 0, Math.PI * 2); c.fill(); }
@@ -1052,8 +1088,10 @@ function _wTree(c, x, y, tx, ty, r) {
 function _wRock(c, x, y, tx, ty, r) {
   const cx = x + 20 + (_zh(tx, ty, 3) - 0.5) * 6, cy = y + 22;
   const R = 16 + _zh(tx, ty, 5) * 6;
-  _zBlob(c, cx + 4, cy + 8, R, R * 0.45, 'rgba(0,0,0,0.35)');
-  const tone = r === 2 ? ['#4a3f38', '#62564c', '#7d7064'] : ['#4e5254', '#686d70', '#8a9094'];
+  _zBlob(c, cx + 6, cy + 9, R * 1.05, R * 0.5, 'rgba(0,0,0,0.45)');
+  const tone = r === 2 ? ['#5a4434', '#7e6450', '#a88a6c'] : ['#5a6066', '#7f878e', '#b4bcc2'];
+  c.fillStyle = '#16120e';
+  c.beginPath(); c.ellipse(cx, cy, R + 2, R * 0.78 + 2, 0, 0, Math.PI * 2); c.fill();
   c.fillStyle = tone[0];
   c.beginPath(); c.ellipse(cx, cy, R, R * 0.78, 0, 0, Math.PI * 2); c.fill();
   c.fillStyle = tone[1];
@@ -1066,7 +1104,7 @@ function _wRock(c, x, y, tx, ty, r) {
 
 const _WS = {
   grass: [0, 1, 2].map(r => ({
-    wall: '#3a5a2a', overlay: ['rgba(0,0,0,0)', 'rgba(0,10,4,0.10)', 'rgba(20,6,0,0.10)'][r],
+    wall: '#3a5a2a', overlay: 'rgba(0,0,0,0)',
     floor(c, x, y, tx, ty) { _wGrass(c, x, y, tx, ty, r); },
     wallTile(c, x, y, tx, ty) { _wGrass(c, x, y, tx, ty, r); },
     deco(c, x, y, tx, ty, ctx) {
@@ -1093,7 +1131,7 @@ const _WS = {
     },
   })),
   tree: [0, 1, 2].map(r => ({
-    wall: null, overlay: ['rgba(0,0,0,0)', 'rgba(0,10,4,0.10)', 'rgba(20,6,0,0.10)'][r],
+    wall: null, overlay: 'rgba(0,0,0,0)',
     floor(c, x, y, tx, ty) { _wGrass(c, x, y, tx, ty, r); },
     wallTile(c, x, y, tx, ty) { _wGrass(c, x, y, tx, ty, r); },
     over(c, x, y, tx, ty) { _wTree(c, x, y, tx, ty, r); },
@@ -1110,38 +1148,48 @@ const _WS = {
     wall: null, overlay: 'rgba(0,0,0,0)',
     floor() {},
     wallTile(c, x, y, tx, ty) {
-      c.fillStyle = '#2b6f9c'; c.fillRect(x, y, TILE, TILE);
-      c.strokeStyle = 'rgba(200,235,255,0.28)'; c.lineWidth = 1.5;
+      // Глубокая синяя вода: светлее к середине русла, темнее у берега.
+      const land = (dx, dy) => { const v = _wAt(tx + dx, ty + dy); return v !== WORLD_T.WATER && v !== WORLD_T.BRIDGE; };
+      c.fillStyle = '#2a7fc0'; c.fillRect(x, y, TILE, TILE);
+      c.strokeStyle = 'rgba(220,245,255,0.55)'; c.lineWidth = 2; c.lineCap = 'round';
       for (let k = 0; k < 2; k++) {
         const wx = x + 4 + _zh(tx, ty, 22 + k) * 24, wy = y + 8 + _zh(tx, ty, 24 + k) * 26;
         c.beginPath(); c.moveTo(wx, wy); c.quadraticCurveTo(wx + 5, wy - 3, wx + 10, wy); c.stroke();
       }
-      // берег: светлая пена со стороны суши
-      const land = (dx, dy) => { const v = _wAt(tx + dx, ty + dy); return v !== WORLD_T.WATER && v !== WORLD_T.BRIDGE; };
-      c.fillStyle = 'rgba(225,245,255,0.45)';
-      if (land(-1, 0)) c.fillRect(x, y, 4, TILE);
-      if (land(1, 0)) c.fillRect(x + TILE - 4, y, 4, TILE);
-      if (land(0, -1)) c.fillRect(x, y, TILE, 4);
-      if (land(0, 1)) c.fillRect(x, y + TILE - 4, TILE, 4);
+      c.lineCap = 'butt';
+      // берег: тёмная кромка мокрой земли, поверх неё — белая пена
+      const rim = (fx, fy, fw, fh, px, py, pw, ph) => {
+        c.fillStyle = '#123247'; c.fillRect(fx, fy, fw, fh);
+        c.fillStyle = 'rgba(235,250,255,0.75)'; c.fillRect(px, py, pw, ph);
+      };
+      if (land(-1, 0)) rim(x, y, 5, TILE, x + 5, y, 2, TILE);
+      if (land(1, 0)) rim(x + TILE - 5, y, 5, TILE, x + TILE - 7, y, 2, TILE);
+      if (land(0, -1)) rim(x, y, TILE, 5, x, y + 5, TILE, 2);
+      if (land(0, 1)) rim(x, y + TILE - 5, TILE, 5, x, y + TILE - 7, TILE, 2);
     },
     deco() {},
   },
   road: {
     wall: '#3a5a2a', overlay: 'rgba(0,0,0,0)',
     floor(c, x, y, tx, ty) {
-      _wGround(c, x, y, tx, ty, '#8a6e48');
-      c.fillStyle = 'rgba(60,40,20,0.25)';
-      for (let k = 0; k < 4; k++) c.fillRect(x + _zh(tx, ty, 30 + k) * 34, y + _zh(tx, ty, 34 + k) * 34, 4, 3);
-      // обочина: трава заходит на край колеи там, где по соседству луг/лес
+      _wGround(c, x, y, tx, ty, '#c29a62', 0.18);
+      c.fillStyle = 'rgba(90,60,28,0.35)';
+      for (let k = 0; k < 5; k++) c.fillRect(x + _zh(tx, ty, 30 + k) * 34, y + _zh(tx, ty, 35 + k) * 34, 4, 3);
+      c.fillStyle = 'rgba(255,240,200,0.35)';
+      for (let k = 0; k < 3; k++) c.fillRect(x + _zh(tx, ty, 70 + k) * 34, y + _zh(tx, ty, 74 + k) * 34, 3, 2);
+      // обочина: трава заходит на край колеи там, где по соседству луг/лес,
+      // а под ней — тёмная кромка, чтобы дорога читалась издалека
       const r = _wRegion(tx, ty);
       const grassy = (dx, dy) => { const v = _wAt(tx + dx, ty + dy); return v !== WORLD_T.ROAD && v !== WORLD_T.BRIDGE && v !== WORLD_T.PLAZA; };
-      c.fillStyle = _WG[r];
-      for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
-        if (!grassy(dx, dy)) continue;
-        for (let k = 0; k < 4; k++) {
-          const t = (k + 0.5) / 4 * TILE, j = _zh(tx * 3 + dx, ty * 3 + dy, 40 + k) * 7 + 2;
-          const bx = dx ? (dx < 0 ? x : x + TILE) : x + t, by = dy ? (dy < 0 ? y : y + TILE) : y + t;
-          c.beginPath(); c.arc(bx, by, j, 0, Math.PI * 2); c.fill();
+      const sides = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([dx, dy]) => grassy(dx, dy));
+      for (const pass of [0, 1]) {
+        c.fillStyle = pass ? _zShade(_WG[r], (_wNoise(tx / 6, ty / 6) - 0.5) * 0.34) : 'rgba(70,44,18,0.55)';
+        for (const [dx, dy] of sides) {
+          for (let k = 0; k < 4; k++) {
+            const t = (k + 0.5) / 4 * TILE, j = _zh(tx * 3 + dx, ty * 3 + dy, 40 + k) * 7 + 2 + (pass ? 0 : 3);
+            const bx = dx ? (dx < 0 ? x : x + TILE) : x + t, by = dy ? (dy < 0 ? y : y + TILE) : y + t;
+            c.beginPath(); c.arc(bx, by, j, 0, Math.PI * 2); c.fill();
+          }
         }
       }
     },
@@ -1215,14 +1263,14 @@ function worldMapCanvas() {
   const cv = document.createElement('canvas');
   cv.width = d.w * P; cv.height = d.h * P;
   const c = cv.getContext('2d');
-  const GR = ['#5b8a3c', '#355a2c', '#6a5a48'];
-  const TREE = [['#2c5a22', '#3d7a2e'], ['#18361c', '#24492a'], ['#3e3226', '#54442f']];
+  const GR = ['#62a23a', '#2f6a32', '#8c6c4c'];
+  const TREE = [['#2f6a1f', '#4c9a30'], ['#1f5a2a', '#35883e'], ['#4a3624', '#7a5e40']];
   const ROCK = ['#7a7f82', '#8c8f91', '#76685a'];
   // земля и дороги
   for (let ty = 0; ty < d.h; ty++) for (let tx = 0; tx < d.w; tx++) {
     const k = _wAt(tx, ty), r = _wRegion(tx, ty);
-    c.fillStyle = k === W.ROAD ? '#a68657' : k === W.BRIDGE ? '#9a6e3e' : k === W.PLAZA ? '#6a6274'
-      : k === W.WATER ? '#2f7cb0' : _zVar(GR[r], tx, ty, 12, 0.07);
+    c.fillStyle = k === W.ROAD ? '#c8a068' : k === W.BRIDGE ? '#9a6e3e' : k === W.PLAZA ? '#6a6274'
+      : k === W.WATER ? '#2a7fc0' : _zShade(GR[r], (_wNoise(tx / 6, ty / 6) - 0.5) * 0.3);
     c.fillRect(tx * P, ty * P, P, P);
   }
   // берег — светлая кайма по краю воды
