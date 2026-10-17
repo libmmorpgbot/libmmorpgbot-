@@ -1001,10 +1001,17 @@ function generateWorld() {
       const d = _enemyByEid.get(FARM_HIGH_SPECIES[sp.species[Math.floor(rng() * sp.species.length)]]);
       if (!d) continue;
       const pack = [];
+      const taken = new Set();
       for (let n = 0; n < tier.packSize; n++) {
         const lvl = sp.lvl[0] + Math.floor(rng() * (sp.lvl[1] - sp.lvl[0] + 1));
         const stats = monsterStatsAtLevel(lvl, d.eType);
-        const { gx, gy } = freeTileNear(pcx, pcy, 1.5);
+        // Члены пачки — кольцом вокруг её центра, каждый на своём тайле:
+        // сваленные в одну клетку, они сливались в одну фигуру, а их имена и
+        // полоски HP ложились друг на друга нечитаемой кашей.
+        const a = (n / tier.packSize) * Math.PI * 2 + rng() * 0.5;
+        let gx = Math.round(pcx + Math.cos(a) * 1.6), gy = Math.round(pcy + Math.sin(a) * 1.6);
+        if (!inBounds(gx, gy) || grid[gy][gx] !== FLOOR || taken.has(gy * w + gx)) ({ gx, gy } = freeTileNear(pcx, pcy, 2.5));
+        taken.add(gy * w + gx);
         const ex = gx * TILE + TILE / 2, ey = gy * TILE + TILE / 2;
         const localLvl = lvl - WORLD_LVL_MIN + 1;
         pack.push({
