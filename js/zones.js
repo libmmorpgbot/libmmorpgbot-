@@ -953,7 +953,7 @@ const _ZONE_ST = {
 // коду и краю карты: луг до реки, лес до гряды, пустоши за ней. Лес, вода и
 // скалы — стены grid, но рисуются деревьями, водой и камнем, а не кладкой, и
 // не уходят в черноту, как толща стен в коридорах (Z.world в zonesDrawDecor).
-let _wT = null, _wW = 0, _wH = 0;
+let _wT = null, _wW = 0, _wH = 0, _wFor = null;
 function _worldLayout(d) {
   const flat = new Uint8Array(d.w * d.h);
   let i = 0;
@@ -963,7 +963,7 @@ function _worldLayout(d) {
     flat.fill(v, i, Math.min(flat.length, i + n));
     i += n;
   }
-  _wT = flat; _wW = d.w; _wH = d.h;
+  _wT = flat; _wW = d.w; _wH = d.h; _wFor = d;
   return { world: true, stages: null, x0: 0, x1: d.w };
 }
 function _wAt(tx, ty) {
@@ -1197,3 +1197,71 @@ _WS.rock = _WS.rock.map(st => ({
     c.fillStyle = '#4a4456'; c.fillRect(x + 7, y + 28, 26, 6); c.fillRect(x + 7, y, 26, 5);
   },
 }));
+
+// ── Карта Мира: вкладка «Карта» и мини-карта ─────────────────
+// Одна картинка всей местности, WORLD_MAP_PX пикселей на клетку, рисуется
+// один раз на этаж и дальше только масштабируется: вкладка карты вписывает
+// её целиком (drawWorldMapPanel, js/ui.js), мини-карта вырезает окно вокруг
+// игрока (drawMiniMapPanel). Цвета — те же, что у земли в самом мире, чтобы
+// карта и экран читались как одно место.
+const WORLD_MAP_PX = 4;
+let _wMapCv = null, _wMapFor = null;
+function worldMapCanvas() {
+  const d = typeof dungeon !== 'undefined' ? dungeon : null;
+  if (!d || !d.openWorld || !d.openWorld.terrain) return null;
+  if (_wMapCv && _wMapFor === d) return _wMapCv;
+  if (_wFor !== d) _worldLayout(d);
+  const P = WORLD_MAP_PX, W = WORLD_T;
+  const cv = document.createElement('canvas');
+  cv.width = d.w * P; cv.height = d.h * P;
+  const c = cv.getContext('2d');
+  const GR = ['#5b8a3c', '#355a2c', '#6a5a48'];
+  const TREE = [['#2c5a22', '#3d7a2e'], ['#18361c', '#24492a'], ['#3e3226', '#54442f']];
+  const ROCK = ['#7a7f82', '#8c8f91', '#76685a'];
+  // земля и дороги
+  for (let ty = 0; ty < d.h; ty++) for (let tx = 0; tx < d.w; tx++) {
+    const k = _wAt(tx, ty), r = _wRegion(tx, ty);
+    c.fillStyle = k === W.ROAD ? '#a68657' : k === W.BRIDGE ? '#9a6e3e' : k === W.PLAZA ? '#6a6274'
+      : k === W.WATER ? '#2f7cb0' : _zVar(GR[r], tx, ty, 12, 0.07);
+    c.fillRect(tx * P, ty * P, P, P);
+  }
+  // берег — светлая кайма по краю воды
+  c.fillStyle = 'rgba(220,240,255,0.55)';
+  for (let ty = 0; ty < d.h; ty++) for (let tx = 0; tx < d.w; tx++) {
+    if (_wAt(tx, ty) !== W.WATER) continue;
+    const land = (dx, dy) => { const v = _wAt(tx + dx, ty + dy); return v !== W.WATER && v !== W.BRIDGE; };
+    if (land(-1, 0)) c.fillRect(tx * P, ty * P, 1, P);
+    if (land(1, 0)) c.fillRect(tx * P + P - 1, ty * P, 1, P);
+  }
+  // доски мостов
+  c.fillStyle = 'rgba(50,30,12,0.5)';
+  for (let ty = 0; ty < d.h; ty++) for (let tx = 0; tx < d.w; tx++) {
+    if (_wAt(tx, ty) === W.BRIDGE) c.fillRect(tx * P + 1, ty * P, 1, P);
+  }
+  // кроны и камни — кружками поверх, с тенью, чтобы лес читался лесом, а не
+  // заливкой
+  for (let ty = 0; ty < d.h; ty++) for (let tx = 0; tx < d.w; tx++) {
+    const k = _wAt(tx, ty);
+    if (k !== W.TREE && k !== W.ROCK) continue;
+    const r = _wRegion(tx, ty);
+    const cx = tx * P + P / 2 + (_zh(tx, ty, 3) - 0.5) * 2, cy = ty * P + P / 2 + (_zh(tx, ty, 4) - 0.5) * 2;
+    const R = P * (k === W.TREE ? 0.78 : 0.62);
+    c.fillStyle = 'rgba(0,0,0,0.28)';
+    c.beginPath(); c.arc(cx + 0.8, cy + 1, R, 0, Math.PI * 2); c.fill();
+    if (k === W.TREE) {
+      c.fillStyle = TREE[r][0]; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
+      c.fillStyle = TREE[r][1]; c.beginPath(); c.arc(cx - R * 0.25, cy - R * 0.3, R * 0.5, 0, Math.PI * 2); c.fill();
+    } else {
+      c.fillStyle = _wNearPlaza(tx, ty) ? '#9a92a8' : ROCK[r];
+      c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.25)'; c.beginPath(); c.arc(cx - R * 0.3, cy - R * 0.3, R * 0.35, 0, Math.PI * 2); c.fill();
+    }
+  }
+  // мягкая виньетка к краям
+  const g = c.createRadialGradient(cv.width / 2, cv.height / 2, Math.min(cv.width, cv.height) * 0.35,
+    cv.width / 2, cv.height / 2, Math.max(cv.width, cv.height) * 0.7);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.35)');
+  c.fillStyle = g; c.fillRect(0, 0, cv.width, cv.height);
+  _wMapCv = cv; _wMapFor = d;
+  return cv;
+}

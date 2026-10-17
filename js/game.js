@@ -1419,6 +1419,9 @@ function _buildNameBitmap(text, color, fontPx, px) {
   c.font = `bold ${fontPx * px}px system-ui, Arial`;
   c.textAlign = 'center'; c.textBaseline = 'alphabetic';
   c.lineWidth = 3 * px; c.strokeStyle = '#000000';
+  // Скруглённые углы обводки: с острыми (по умолчанию) у «М», «К», «Й»
+  // выстреливали чёрные шипы над именем.
+  c.lineJoin = 'round';
   const bx = cv.width / 2, by = cv.height - padBottom;
   c.strokeText(text, bx, by);
   c.fillStyle = color;
@@ -1456,6 +1459,7 @@ function _buildClanTagBitmap(text, color, fontPx, px) {
   c.font = `bold ${fontPx * px}px system-ui, Arial`;
   c.textAlign = 'left'; c.textBaseline = 'middle';
   c.lineWidth = 2.5 * px; c.strokeStyle = '#000000';
+  c.lineJoin = 'round'; // см. _buildNameBitmap
   const ax = padL, ay = cv.height / 2;
   c.strokeText(text, ax, ay);
   c.fillStyle = color;
@@ -2439,6 +2443,7 @@ function drawDecalLabels() {
   if (!_decalLbls.length) return;
   ctx.textAlign = 'center';
   ctx.lineWidth = 3;
+  ctx.lineJoin = 'round'; // см. _buildNameBitmap
   for (let i = 0; i < _decalLbls.length; i++) {
     const L = _decalLbls[i];
     const sx = (L.wx - _lastCamX) * ZOOM;

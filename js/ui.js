@@ -2371,6 +2371,10 @@ function _currentLocationBounds() {
 
 function drawMapPanel() {
   if (!dungeon || !player) return;
+  // Заголовок вкладки: в Мире — «Карта мира», везде ещё — как был.
+  const _mt = document.querySelector('#panel-map [data-i18n="mapPanelTitle"]');
+  if (_mt) _mt.textContent = t(dungeon.openWorld ? 'worldMapTitle' : 'mapPanelTitle');
+  if (dungeon.openWorld && typeof worldMapCanvas === 'function' && worldMapCanvas()) { drawWorldMapPanel(); return; }
   const th = getTheme(dungeonLvl);
   const mc = document.getElementById('map-canvas');
   const panel = document.getElementById('panel-map');
@@ -2461,6 +2465,170 @@ function drawMapPanel() {
     : t('centralHall');
   document.getElementById('map-status').textContent =
     _locLabel + ' · ' + tVars('enemiesCountFmt', { n: aliveEnemies.length });
+}
+
+// ── Карта Мира ──────────────────────────────────────────────────────────────
+// Вместо сетки «пол/стена» — картинка местности (worldMapCanvas, js/zones.js)
+// целиком, в рамке, и поверх неё то, ради чего на карту смотрят: споты с
+// именами и уровнями в цвете яруса, трон Владыки (жив или когда вернётся),
+// вход, игрок, монстры и другие игроки. Холст — в разрешении экрана, иначе
+// подписи на телефоне расплываются.
+function drawWorldMapPanel() {
+  const img = worldMapCanvas();
+  const mc = document.getElementById('map-canvas');
+  const panel = document.getElementById('panel-map');
+  const pw = panel.clientWidth;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const pad = 10, legendH = 30;
+  const mapW = pw - pad * 2, sc = mapW / dungeon.w, mapH = dungeon.h * sc;
+  const ph = Math.ceil(mapH + pad * 2 + legendH);
+  mc.width = Math.round(pw * dpr); mc.height = Math.round(ph * dpr);
+  mc.style.width = pw + 'px'; mc.style.height = ph + 'px';
+  const c = mc.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = '#0b0f14'; c.fillRect(0, 0, pw, ph);
+  const wx = tx => pad + tx * sc, wy = ty => pad + ty * sc;
+
+  // рамка и сама местность
+  const rr = (x, y, w, h, r) => {
+    c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  };
+  c.save();
+  rr(pad, pad, mapW, mapH, 10); c.clip();
+  c.imageSmoothingEnabled = true;
+  c.drawImage(img, pad, pad, mapW, mapH);
+
+  // споты: круг яруса и пунктир по краю
+  const spots = dungeon.openWorld.spots || [];
+  for (const sp of spots) {
+    const col = _WORLD_TIER_COLOR[sp.tier] || '#fff';
+    const x = wx(sp.x / TILE), y = wy(sp.y / TILE), r = (sp.r / TILE + 1.5) * sc;
+    c.fillStyle = col + '30';
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    c.setLineDash([4, 3]); c.lineWidth = 1.5; c.strokeStyle = col + 'cc';
+    c.stroke(); c.setLineDash([]);
+  }
+
+  // монстры — с ленты карты, пока она не пришла — ближние
+  const dotR = Math.max(1.3, sc * 0.32);
+  c.fillStyle = '#ff4a5e';
+  c.beginPath();
+  if (_mapBlips) {
+    for (let i = 0; i < _mapBlips.length; i += 2) {
+      const x = wx(_mapBlips[i]), y = wy(_mapBlips[i + 1]);
+      c.moveTo(x + dotR, y); c.arc(x, y, dotR, 0, Math.PI * 2);
+    }
+  } else {
+    serverEnemies.forEach(e => {
+      if ((e.hp || 0) <= 0 || e.isBoss) return;
+      const x = wx(e.x / TILE), y = wy(e.y / TILE);
+      c.moveTo(x + dotR, y); c.arc(x, y, dotR, 0, Math.PI * 2);
+    });
+  }
+  c.fill();
+
+  // другие игроки
+  c.fillStyle = '#7ec4ff';
+  c.beginPath();
+  otherPlayers.forEach(op => {
+    if (op.x == null) return;
+    const x = wx(op.x / TILE), y = wy(op.y / TILE);
+    c.moveTo(x + 2.5, y); c.arc(x, y, 2.5, 0, Math.PI * 2);
+  });
+  c.fill();
+
+  // вход
+  const rp = dungeon.returnPad;
+  if (rp) {
+    const x = wx(rp.x / TILE), y = wy(rp.y / TILE);
+    c.lineWidth = 2; c.strokeStyle = '#4ee69a';
+    c.beginPath(); c.arc(x, y, 5, 0, Math.PI * 2); c.stroke();
+  }
+
+  // трон Владыки: череп, серый и с таймером, пока босс мёртв
+  const boss = spots.find(sp => sp.tier === 'boss');
+  const bs = (typeof bossStatus !== 'undefined' && bossStatus && bossStatus.openWorld) || null;
+  const bossAlive = !bs || bs.alive;
+  if (boss) {
+    const x = wx(boss.x / TILE), y = wy(boss.y / TILE);
+    if (bossAlive) {
+      const g = c.createRadialGradient(x, y, 0, x, y, 16);
+      g.addColorStop(0, 'rgba(192,96,255,0.7)'); g.addColorStop(1, 'rgba(192,96,255,0)');
+      c.fillStyle = g; c.fillRect(x - 16, y - 16, 32, 32);
+    }
+    c.globalAlpha = bossAlive ? 1 : 0.45;
+    c.font = '16px serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('\u{1F480}', x, y);
+    c.globalAlpha = 1;
+  }
+
+  // игрок: белое кольцо и зелёная точка — видно на любой земле
+  const px = wx(player.x / TILE), py = wy(player.y / TILE);
+  c.fillStyle = 'rgba(141,238,70,0.25)';
+  c.beginPath(); c.arc(px, py, 9, 0, Math.PI * 2); c.fill();
+  c.lineWidth = 2; c.strokeStyle = '#fff';
+  c.beginPath(); c.arc(px, py, 5, 0, Math.PI * 2); c.stroke();
+  c.fillStyle = '#8dee46';
+  c.beginPath(); c.arc(px, py, 3.5, 0, Math.PI * 2); c.fill();
+
+  // подписи — последними, поверх всего
+  const lbl = (text, x, y, col, size) => {
+    c.font = `bold ${size}px system-ui, Arial`; c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+    c.lineWidth = 3; c.lineJoin = 'round'; c.strokeStyle = 'rgba(0,0,0,0.85)'; c.strokeText(text, x, y);
+    c.fillStyle = col; c.fillText(text, x, y);
+  };
+  const fs = Math.max(9, Math.min(12, sc * 3.2));
+  for (const sp of spots) {
+    const x = wx(sp.x / TILE), top = wy(sp.y / TILE) - (sp.r / TILE + 1.5) * sc;
+    const lv = sp.lvl[0] === sp.lvl[1] ? `${sp.lvl[0]}` : `${sp.lvl[0]}-${sp.lvl[1]}`;
+    if (sp.tier === 'boss') {
+      // Подписи трона — ПОД черепом: сверху над ним уже стоит подпись
+      // «Преддверия трона», и две строки ложились друг на друга.
+      // Одна строка: вторая под ней ложилась на подпись «Чёрного утёса».
+      const text = bossAlive ? `${sp.name} [${lv}]`
+        : `${sp.name} · ${tVars('worldBossShortFmt', { m: Math.max(1, Math.ceil(((bs.respawnAt || 0) - Date.now()) / 60000)) })}`;
+      // Трон у самого края карты: подпись прижимается к рамке по своей
+      // настоящей ширине, а не уезжает за неё.
+      c.font = `bold ${fs}px system-ui, Arial`;
+      const half = c.measureText(text).width / 2 + 4;
+      const bx = Math.min(x, pad + mapW - half), below = wy(sp.y / TILE) + (sp.r / TILE + 1.5) * sc;
+      lbl(text, bx, below + fs + 2, bossAlive ? _WORLD_TIER_COLOR.boss : '#9a8aa8', fs);
+    } else {
+      lbl(sp.name, x, top - fs - 2, _WORLD_TIER_COLOR[sp.tier], fs);
+      lbl(`[${lv}]`, x, top - 2, '#f2ead8', fs - 1);
+    }
+  }
+  if (rp) lbl(t('worldEntranceLbl'), wx(rp.x / TILE) + 4, wy(rp.y / TILE) + fs + 8, '#8ff0c0', fs);
+  c.restore();
+
+  // рамка поверх краёв
+  rr(pad, pad, mapW, mapH, 10);
+  c.lineWidth = 2; c.strokeStyle = '#c9a45c'; c.stroke();
+  rr(pad - 3, pad - 3, mapW + 6, mapH + 6, 12);
+  c.lineWidth = 1; c.strokeStyle = 'rgba(201,164,92,0.35)'; c.stroke();
+
+  // легенда ярусов под картой
+  const items = [
+    [_WORLD_TIER_COLOR.low, t('worldTierLow')], [_WORLD_TIER_COLOR.mid, t('worldTierMid')],
+    [_WORLD_TIER_COLOR.top, t('worldTierTop')], [_WORLD_TIER_COLOR.boss, t('worldTierBoss')],
+  ];
+  c.font = '11px system-ui, Arial'; c.textBaseline = 'middle'; c.textAlign = 'left';
+  const widths = items.map(([, s]) => c.measureText(s).width + 22);
+  let lx = (pw - widths.reduce((a, b) => a + b, 0)) / 2;
+  const ly = pad * 2 + mapH + legendH / 2 - 4;
+  items.forEach(([col, s], i) => {
+    c.fillStyle = col; c.beginPath(); c.arc(lx + 5, ly, 4.5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#c9c2b4'; c.fillText(s, lx + 13, ly);
+    lx += widths[i];
+  });
+
+  // строка статуса: где стоишь
+  const room = (typeof _getRoomAt === 'function') ? _getRoomAt(player.x, player.y) : null;
+  const here = room && room.spot && spots.find(sp => sp.id === room.spot);
+  const alive = _mapBlips ? _mapBlips.length / 2 : serverEnemies.filter(e => (e.hp || 0) > 0).length;
+  document.getElementById('map-status').textContent =
+    t('worldLbl') + (here ? ' · ' + here.name : '') + ' · ' + tVars('enemiesCountFmt', { n: alive });
 }
 
 // Which corridor arm (1-4) the player currently stands in, by the same
@@ -3639,8 +3807,17 @@ function drawMiniMapPanel() {
   // Redraw the static pattern into an offscreen buffer only on a tile
   // crossing (or scale/theme change); every other frame just blits it,
   // repositioned for the current sub-tile offset.
+  // Мир: вместо силуэта «пол/стена» — окно той же картинки местности, что и
+  // во вкладке карты (worldMapCanvas, js/zones.js): лес, река, дороги в цвете.
+  const _wmc = dungeon.openWorld && typeof worldMapCanvas === 'function' ? worldMapCanvas() : null;
+  if (_wmc) {
+    ctx.imageSmoothingEnabled = true;
+    const P = WORLD_MAP_PX;
+    ctx.drawImage(_wmc, winTx * P, winTy * P, winTilesX * P, winTilesY * P, mmX, mmY, mmW, mmH);
+    ctx.imageSmoothingEnabled = false;
+  }
   const _mmTileFx = Math.floor(winTx), _mmTileFy = Math.floor(winTy);
-  if (!_mmTileCv || _mmTileCvTx !== _mmTileFx || _mmTileCvTy !== _mmTileFy || _mmTileCvSc !== mmSc || _mmTileCvTheme !== th.mmFloor) {
+  if (_wmc) { /* местность уже нарисована */ } else if (!_mmTileCv || _mmTileCvTx !== _mmTileFx || _mmTileCvTy !== _mmTileFy || _mmTileCvSc !== mmSc || _mmTileCvTheme !== th.mmFloor) {
     _mmTileCvTx = _mmTileFx; _mmTileCvTy = _mmTileFy; _mmTileCvSc = mmSc; _mmTileCvTheme = th.mmFloor;
     const bufTilesX = Math.ceil(winTilesX) + _MM_MARGIN * 2 + 2;
     const bufTilesY = Math.ceil(winTilesY) + _MM_MARGIN * 2 + 2;
@@ -3667,9 +3844,11 @@ function drawMiniMapPanel() {
   const _mmBlitY = mmY - (winTy - (_mmTileCvTy - _MM_MARGIN)) * mmSc;
   // Half strength: each location's own floor colour still identifies where you
   // are, but at full opacity it shouts over the blips, which are the point.
-  ctx.globalAlpha = 0.42;
-  ctx.drawImage(_mmTileCv, _mmBlitX, _mmBlitY);
-  ctx.globalAlpha = 1;
+  if (!_wmc) {
+    ctx.globalAlpha = 0.42;
+    ctx.drawImage(_mmTileCv, _mmBlitX, _mmBlitY);
+    ctx.globalAlpha = 1;
+  }
 
   const mmEnemies = serverEnemies;
   const _mmR = Math.max(1, mmSc * 0.8);
