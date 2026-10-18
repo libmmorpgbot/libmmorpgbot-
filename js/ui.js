@@ -9164,10 +9164,16 @@ function showCoopResult(r) {
   };
   const row = (img, name, qty, note) => `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}
       <span>${name}${note ? ` <small style="color:#f07886">${note}</small>` : ''}</span><span class="db-reward-qty">${qty}</span></div>`;
+  // Строки наград — только тому, кому они достались. Проигравший жребий видел
+  // тот же список «+100 Liberty, Камень ×1», что и победитель, и под ним мелкую
+  // подпись «досталась напарнику»: окно читалось как «награда выдана», а в
+  // сумке ничего не было.
   const rows = [];
-  if (r.nexum) rows.push(row('/images/nexum-coin_v2.png', 'Liberty', '+' + r.nexum));
-  (r.items || []).forEach(it => rows.push(row(imgOf(it.id), nameOf(it.id), '×' + (it.qty || 1))));
-  (r.missed || []).forEach(it => rows.push(row(imgOf(it.id), nameOf(it.id), '×' + (it.qty || 1), t('coopResultMissedNote'))));
+  if (r.won) {
+    if (r.nexum) rows.push(row('/images/nexum-coin_v2.png', 'Liberty', '+' + r.nexum));
+    (r.items || []).forEach(it => rows.push(row(imgOf(it.id), nameOf(it.id), '×' + (it.qty || 1))));
+    (r.missed || []).forEach(it => rows.push(row(imgOf(it.id), nameOf(it.id), '×' + (it.qty || 1), t('coopResultMissedNote'))));
+  }
   let sub;
   if (r.won) sub = r.failed ? t('coopBossRewardFailedMsg') : t('coopResultYoursMsg');
   else sub = r.winnerName ? tVars('coopBossLostNamedMsg', { name: r.winnerName }) : t('coopBossLostMsg');

@@ -235,7 +235,8 @@ module.exports = function createCoop(deps) {
       missed: (reward?.missed || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
       failed: !reward,
     };
-    participants.forEach(sid => io.to(sid).emit('coopBossReward', payload));
+    // `won` — каждому своё: клиент сравнивал winnerId со своим socket.id сам.
+    participants.forEach(sid => io.to(sid).emit('coopBossReward', { ...payload, won: sid === winnerId }));
     participants.forEach(sid => _coopFinish(sid, true));
   }
 

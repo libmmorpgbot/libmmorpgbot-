@@ -5369,8 +5369,10 @@ function _initCoopHandlers(s) {
   // выиграл, проигравший — почему остался без награды. Итог запоминается и
   // показывается баннером coopFinished, а то, что не влезло, — отдельным
   // уведомлением.
-  s.on('coopBossReward', ({ winnerId, winnerName, nexum, items, missed, failed } = {}) => {
-    const won = winnerId === socket.id;
+  s.on('coopBossReward', ({ won: wonFlag, winnerId, winnerName, nexum, items, missed, failed } = {}) => {
+    // Сервер сам говорит каждому, его ли это награда; сравнение с socket.id —
+    // запасной путь для старого сервера.
+    const won = typeof wonFlag === 'boolean' ? wonFlag : winnerId === socket.id;
     const nameOf = (id) => {
       const def = typeof _anyItemDef === 'function' ? _anyItemDef(id) : null;
       return (def && def.name) || id;

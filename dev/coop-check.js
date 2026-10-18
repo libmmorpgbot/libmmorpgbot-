@@ -390,6 +390,8 @@ const usedOf = async (pid) => {
     const rw = sent.filter(m => m.ev === 'coopBossReward');
     ok(rw.length === 2 && rw.every(m => m.d.nexum === 100 && m.d.items.length === 1 && m.d.winnerName),
       'итог босса несёт победителя, Liberty и предметы', JSON.stringify(rw[0] && rw[0].d));
+    ok(rw.filter(m => m.d.won === true).length === 1 && rw.every(m => m.d.won === (m.sid === m.d.winnerId)),
+      'won — только победителю жребия', JSON.stringify(rw.map(m => [m.sid, m.d.won])));
     ok(homed.length === 2, 'после босса оба дома');
     room._stopLoop && room._stopLoop();
 
