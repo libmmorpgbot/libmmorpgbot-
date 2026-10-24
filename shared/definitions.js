@@ -764,7 +764,7 @@ function eliteEventOn(now = Date.now()) {
 // когда счётчик дошёл до цели (bumpSeasonTask, progression.js), один раз за
 // период. target у mbuy/msell — в GRAM.
 const SEASON_DAILY_TASKS = [
-  { id: 'chat',  target: 10, points: 30 },   // сообщения в общий чат
+  { id: 'chat',  target: 3,  points: 30 },   // сообщения в общий чат
   { id: 'mbuy',  target: 3,  points: 100 },  // купить на маркете на 3 GRAM
   { id: 'msell', target: 3,  points: 100 },  // продать на маркете на 3 GRAM
   { id: 'killDung', target: 20000, points: 50 },  // убить 20 000 монстров в Подземелье
