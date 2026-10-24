@@ -17,6 +17,7 @@ const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, CHAR_DEF,
   ENHANCE_MAX, ENHANCEABLE_SLOTS, isStackableItem,
   xpToNext, skillPointCeiling, spentSkillPoints,
+  AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
 } = require('../shared/definitions');
 
 const SERVER_INV_MAX = 150; // matches invHasSpace() in js/player.js
@@ -338,6 +339,8 @@ function _sanitizeSavedStats(raw) {
   // owns (nothing on this side reads them), so the only job here is to keep a
   // junk blob from being stored and handed back.
   if (s.autoSkillsOn != null) s.autoSkillsOn = !!s.autoSkillsOn;
+  // Радиус АВТО (в клетках) — тоже настройка клиента, только в границах.
+  if (s.autoRadius != null) s.autoRadius = _clampInt(s.autoRadius, AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT);
   if (s.autoSkillOff !== undefined) {
     const as = {};
     if (s.autoSkillOff && typeof s.autoSkillOff === 'object' && !Array.isArray(s.autoSkillOff)) {

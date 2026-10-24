@@ -113,6 +113,9 @@ function makePlayer(type) {
     // everyone who upgraded.
     autoSkillsOn: true,
     autoSkillOff: {},
+    // Радиус круга АВТО в Мире, в клетках; null — AUTO_RADIUS_DEFAULT
+    // (_autoLeashR, js/game.js).
+    autoRadius: null,
     // FOREIGN_SKILL_KEY ('X') is the fifth, independent slot's own cooldown
     // — see useForeignSkill, shared/definitions.js.
     skillCooldowns: { Q:0, W:0, E:0, R:0, [FOREIGN_SKILL_KEY]: 0 },
@@ -1668,6 +1671,7 @@ function restoreFromSave(data) {
   // account had before the switch existed.
   player.autoSkillsOn  = data.autoSkillsOn !== false;
   player.autoSkillOff  = data.autoSkillOff || {};
+  player.autoRadius    = data.autoRadius != null ? data.autoRadius : null;
   player.baseAtk  = data.baseAtk  || player.baseAtk;
   player.baseDef  = data.baseDef  || player.baseDef;
   player.baseMaxHp= data.baseMaxHp|| player.baseMaxHp;

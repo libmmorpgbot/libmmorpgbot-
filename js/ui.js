@@ -603,15 +603,29 @@ function openAutoSkillsPicker() {
     ? `<div style="font-size:11px;color:#eaa742;margin-top:10px">🔒 ${tVars('autoSkillsVipHintFmt', { n: vipMin })}</div>`
     : '';
 
+  // Радиус круга АВТО в Мире (_autoLeashR, js/game.js). Пока окно открыто,
+  // круг рисуется вокруг персонажа — поэтому фон здесь светлее и без размытия.
+  const radius = Math.round(_autoLeashR() / TILE);
+  const radiusRow = `<div style="font-size:11.5px;color:#b2a288;margin-bottom:4px;display:flex;justify-content:space-between">
+      <span>${t('autoRadiusLbl')}</span>
+      <span id="auto-radius-val" style="color:#90d653;font-weight:800">${tVars('autoRadiusValFmt', { n: radius })}</span>
+    </div>
+    <input type="range" min="${AUTO_RADIUS_MIN}" max="${AUTO_RADIUS_MAX}" step="1" value="${radius}"
+      oninput="setAutoRadius(this.value, false)" onchange="setAutoRadius(this.value, true)"
+      style="width:100%;accent-color:#90d653;margin:2px 0 4px">
+    <div style="font-size:10.5px;color:#72685a;margin-bottom:14px">${t('autoRadiusHint')}</div>`;
+
+  _autoRadiusPreview = true;
   const ov = document.createElement('div');
   ov.id = 'auto-skills-ov';
-  ov.onclick = () => ov.remove();
-  ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
+  ov.onclick = () => closeAutoSkillsPicker();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;';
   ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <div style="font-size:15px;font-weight:800;color:#90d653">${t('autoSkillsHdr')}</div>
-      <button onclick="document.getElementById('auto-skills-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
+      <button onclick="closeAutoSkillsPicker()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
     </div>
+    ${radiusRow}
     <div style="font-size:11px;color:#72685a;margin-bottom:10px">${t('autoSkillsHint')}</div>
     <div style="font-size:11.5px;color:#b2a288;margin-bottom:6px">${t('autoSkillsMasterLbl')}</div>
     <div style="display:flex;gap:8px;margin-bottom:14px">${masterBtns}</div>
@@ -619,6 +633,23 @@ function openAutoSkillsPicker() {
     ${vipWarn}
   </div>`;
   document.getElementById('app').appendChild(ov);
+}
+
+function closeAutoSkillsPicker() {
+  _autoRadiusPreview = false;
+  const el = document.getElementById('auto-skills-ov');
+  if (el) el.remove();
+}
+
+// Ползунок двигается — круг на карте и число меняются сразу; сохраняется,
+// когда палец отпущен (save), чтобы не слать настройки на каждый шаг.
+function setAutoRadius(v, save) {
+  if (!player) return;
+  const n = Math.min(AUTO_RADIUS_MAX, Math.max(AUTO_RADIUS_MIN, Math.round(Number(v) || AUTO_RADIUS_DEFAULT)));
+  player.autoRadius = n;
+  const lbl = document.getElementById('auto-radius-val');
+  if (lbl) lbl.textContent = tVars('autoRadiusValFmt', { n });
+  if (save) netSaveProgress();
 }
 
 function setAutoSkillsOn(on) {

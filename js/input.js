@@ -804,7 +804,7 @@ function _autoPressEnd(touchId) {
     return;
   }
   autoAttackMode = !autoAttackMode;
-  // Включил АВТО — точка круга там, где стоишь сейчас (js/game.js, AUTO_LEASH_R).
+  // Включил АВТО — точка круга там, где стоишь сейчас (js/game.js, _autoLeashR).
   if (typeof _autoAnchor !== 'undefined') _autoAnchor = null;
 }
 

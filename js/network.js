@@ -3498,6 +3498,7 @@ function _buildSaveStats() {
     autoBuffTypes: player.autoBuffTypes || {},
     autoSkillsOn: player.autoSkillsOn !== false,
     autoSkillOff: player.autoSkillOff || {},
+    ...(player.autoRadius != null ? { autoRadius: player.autoRadius } : {}),
     lang: (typeof currentLang !== 'undefined' && currentLang) || 'ru',
     savedAt: Date.now(),
   };
@@ -3580,6 +3581,7 @@ function _buildPrefs() {
     autoHpPct: player.autoHpPct != null ? player.autoHpPct : 0,
     autoSkillsOn: player.autoSkillsOn !== false,
     autoSkillOff: player.autoSkillOff || {},
+    ...(player.autoRadius != null ? { autoRadius: player.autoRadius } : {}),
     autoBuffTypes: player.autoBuffTypes || {},
   };
 }

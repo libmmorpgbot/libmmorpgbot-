@@ -978,6 +978,7 @@ class Session {
       autoSkillsOn: prefs.autoSkillsOn,
       autoSkillOff: prefs.autoSkillOff || {},
       autoBuffTypes: prefs.autoBuffTypes || {},
+      autoRadius: prefs.autoRadius ?? null,
     };
   }
 

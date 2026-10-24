@@ -757,6 +757,15 @@ function eliteEventOn(now = Date.now()) {
   return now >= ELITE_EVENT_START_AT && now < ELITE_EVENT_END_AT;
 }
 
+// ── Радиус АВТО в Мире ───────────────────────────────────────────────────
+// Круг вокруг точки, где игрок встал (или включил АВТО): цель берётся только
+// внутри него, а когда бить некого — персонаж возвращается в точку. Игрок
+// выбирает радиус сам ползунком (долгое нажатие на АВТО, js/ui.js). В клетках
+// (TILE); хранится в player_prefs.auto_radius, NULL — значит по умолчанию.
+const AUTO_RADIUS_MIN = 3;
+const AUTO_RADIUS_MAX = 20;
+const AUTO_RADIUS_DEFAULT = 9;
+
 // ── Сезон 4: ежедневные и еженедельные задания ──────────────────────────
 // Счётчики живут в player_season.quests (строка 4-го сезона): d — день,
 // w — неделя, у каждого свой ключ периода (seasonDayKey/seasonWeekKey, по
@@ -4730,4 +4739,5 @@ if (typeof module !== 'undefined') module.exports = {
   OFFLINE_FARM_MAX_HOURS, OFFLINE_FARM_FREE_HOURS, OFFLINE_FARM_MIN_SEC, OFFLINE_FARM_EFFICIENCY, OFFLINE_FARM_WALK_SEC,
   OFFLINE_FARM_MOB_SWING_SEC, OFFLINE_FARM_REST_REGEN_PCT, OFFLINE_FARM_WEAK_MULT,
   offlineFarmLocations, offlineFarmLocation, offlineFarmMobs, offlineFarmRate,
+  AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
 };

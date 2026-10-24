@@ -403,12 +403,22 @@ let _autoSkillTimer = 0;
 // Открытая локация (dungeon.openWorld) — не комната, и «ближайший монстр»
 // там часто стоит уже на соседнем споте: авто бегало от пачки к пачке через
 // всю карту. Теперь у авто есть точка — где игрок сам остановился (или где
-// включил АВТО) — и радиус AUTO_LEASH_R вокруг неё: цель берётся только
+// включил АВТО) — и радиус _autoLeashR() вокруг неё: цель берётся только
 // внутри круга, а когда бить некого, персонаж возвращается в точку.
+// Радиус игрок выбирает сам ползунком (долгое нажатие на АВТО, js/ui.js),
+// в клетках AUTO_RADIUS_MIN..AUTO_RADIUS_MAX (shared/definitions.js).
 // Джойстик переносит точку: куда отошёл сам — там и стоишь.
 // Только в Мире: в коридорах автоприцел и так ограничен комнатой, а в
 // Кровавой Башне авто обязано идти по лабиринту.
-const AUTO_LEASH_R = 9 * TILE;
+function _autoLeashR() {
+  const n = Number(player && player.autoRadius);
+  const tiles = Number.isFinite(n)
+    ? Math.min(AUTO_RADIUS_MAX, Math.max(AUTO_RADIUS_MIN, Math.round(n)))
+    : AUTO_RADIUS_DEFAULT;
+  return tiles * TILE;
+}
+// Пока открыт ползунок — круг виден и без АВТО, чтобы было видно, что выбираешь.
+let _autoRadiusPreview = false;
 let _autoAnchor = null;
 function _autoLeashOn() {
   return autoAttackMode && !_chaseArmed && !!player && !!dungeon && !!dungeon.openWorld;
@@ -417,7 +427,7 @@ function _autoAnchorPt() {
   const a = _autoAnchor;
   // Новый этаж, смерть с возрождением, телепорт — точка осталась где-то
   // далеко позади, и тащиться к ней через карту незачем: она ставится заново.
-  if (!a || a.d !== dungeon || dist(a.x, a.y, player.x, player.y) > AUTO_LEASH_R * 3) {
+  if (!a || a.d !== dungeon || dist(a.x, a.y, player.x, player.y) > _autoLeashR() * 3) {
     _autoAnchor = { x: player.x, y: player.y, d: dungeon };
   }
   return _autoAnchor;
@@ -425,7 +435,8 @@ function _autoAnchorPt() {
 function _inAutoLeash(x, y) {
   const a = _autoAnchorPt();
   const dx = x - a.x, dy = y - a.y;
-  return dx * dx + dy * dy <= AUTO_LEASH_R * AUTO_LEASH_R;
+  const r = _autoLeashR();
+  return dx * dx + dy * dy <= r * r;
 }
 
 function _autoCastSkills(dt) {
@@ -830,7 +841,7 @@ function update(dt, realDt) {
         // blocked a real target from being picked instead (see
         // _gwTowerUnselectable, js/input.js).
         if ((e.hp || 0) <= 0 || _gwTowerUnselectable(e)) return;
-        // АВТО в Мире — только внутри своего круга (см. AUTO_LEASH_R).
+        // АВТО в Мире — только внутри своего круга (см. _autoLeashR).
         if (_leash && !_inAutoLeash(e.x, e.y)) return;
         // When player is inside a room, only target enemies in that same room
         if (_pRoom) {
@@ -2491,11 +2502,16 @@ function _pushDecalsToGpu(ts) {
 // the dev bench), so these stay direct draws.
 // Круг АВТО в Мире — пунктиром по земле вокруг точки, где стоит персонаж:
 // видно, докуда авто будет бить и куда вернётся.
+// Пока открыт ползунок радиуса — круг вокруг персонажа и подпись с числом
+// клеток, даже если АВТО выключено или ты не в Мире.
 function drawAutoLeashRing() {
-  if (!_autoLeashOn()) return;
-  const a = _autoAnchorPt();
+  // Окно могли закрыть и не через closeAutoSkillsPicker (смена экрана и т.п.).
+  if (_autoRadiusPreview && !document.getElementById('auto-skills-ov')) _autoRadiusPreview = false;
+  const preview = _autoRadiusPreview && !!player;
+  if (!preview && !_autoLeashOn()) return;
+  const a = _autoLeashOn() ? _autoAnchorPt() : player;
   const sx = (a.x - _lastCamX) * ZOOM, sy = (a.y - _lastCamY) * ZOOM + HEADER_H;
-  const r = AUTO_LEASH_R * ZOOM;
+  const r = _autoLeashR() * ZOOM;
   ctx.save();
   ctx.setLineDash([8, 7]);
   ctx.lineWidth = 2;
@@ -2506,6 +2522,17 @@ function drawAutoLeashRing() {
   ctx.fill();
   ctx.fillStyle = 'rgba(144,214,83,0.8)';
   ctx.beginPath(); ctx.arc(sx, sy, 4, 0, Math.PI * 2); ctx.fill();
+  if (preview) {
+    ctx.font = 'bold 13px system-ui, Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#000';
+    const lbl = tVars('autoRadiusValFmt', { n: Math.round(_autoLeashR() / TILE) });
+    ctx.strokeText(lbl, sx, sy - r - 4);
+    ctx.fillStyle = '#90d653';
+    ctx.fillText(lbl, sx, sy - r - 4);
+  }
   ctx.restore();
 }
 

@@ -34,7 +34,8 @@ const { query, hasColumn } = require('../index');
 const ton = require('../../ton');
 const { xpToNext, skillPointBudget, availableSkillPoints, upgradeCost, CHAR_DEF, UPGRADE_KEYS,
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL,
-  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty, PASSIVE_CLASS_DEF, UPGRADE_MAX } = require('../../../shared/definitions');
+  DEATH_XP_PENALTY_KEY, xpAfterDeathPenalty, PASSIVE_CLASS_DEF, UPGRADE_MAX,
+  AUTO_RADIUS_MIN, AUTO_RADIUS_MAX } = require('../../../shared/definitions');
 
 // ── identity ────────────────────────────────────────────────────────────────
 
@@ -589,6 +590,8 @@ async function prefsOf(db, playerId) {
     lang: r.lang, hudPotion: r.hud_potion, autoHpPct: r.auto_hp_pct,
     autoSkillsOn: r.auto_skills_on, autoSkillOff: r.auto_skill_off,
     autoBuffTypes: r.auto_buff_types,
+    // Колонка из 039_auto_radius.sql; до миграции её нет — undefined.
+    autoRadius: r.auto_radius ?? null,
   };
 }
 
@@ -633,6 +636,7 @@ const PREF_FIELDS = {
   autoSkillsOn:  { col: 'auto_skills_on',  ok: v => typeof v === 'boolean' },
   autoSkillOff:  { col: 'auto_skill_off',  ok: v => _smallMap(v, k => ['Q','W','E','R'].includes(k)) },
   autoBuffTypes: { col: 'auto_buff_types', ok: v => _smallMap(v, k => k.length <= 32) },
+  autoRadius:    { col: 'auto_radius',     ok: v => Number.isInteger(v) && v >= AUTO_RADIUS_MIN && v <= AUTO_RADIUS_MAX },
 };
 
 // A plain object, small, with keys the caller vouches for and boolean values.
@@ -668,6 +672,9 @@ async function savePrefs(db, playerId, raw) {
     const field = Object.hasOwn(PREF_FIELDS, key) ? PREF_FIELDS[key] : null;
     if (!field) { ignored++; continue; }            // not ours — see above
     if (!field.ok(value)) { rejected.push(key); continue; }
+    // Колонку добавляет 039_auto_radius.sql, а миграции катаются руками: до
+    // неё UPDATE с этим полем уронил бы и все остальные настройки.
+    if (field.col === 'auto_radius' && !(await hasColumn('player_prefs', 'auto_radius'))) { ignored++; continue; }
     vals.push(field.col === 'auto_skill_off' || field.col === 'auto_buff_types'
       ? JSON.stringify(value) : value);
     sets.push(`${field.col} = $${vals.length}`);
