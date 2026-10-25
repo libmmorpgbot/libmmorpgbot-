@@ -139,7 +139,7 @@ async function claim(db, playerId, achId) {
     if (r.t === 'rune') {
       const got = await runes.grantRune(db, playerId, r.kind, r.rarity, ref);
       if (!got) err('no_room', 'Инвентарь полон — освободите место и заберите награду снова');
-      granted.push({ t: 'rune', itemId: got.itemId, rowId: got.rowId, stats: got.stats });
+      granted.push({ t: 'rune', kind: r.kind, rarity: r.rarity, itemId: got.itemId, rowId: got.rowId, stats: got.stats });
     } else if (r.t === 'item') {
       const rowId = await items.add(db, playerId, r.id, { qty: r.qty || 1, source: 'achievement', sourceRef: ref });
       if (rowId === null) err('no_room', 'Инвентарь полон — освободите место и заберите награду снова');

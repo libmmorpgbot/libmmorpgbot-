@@ -2968,6 +2968,23 @@ canvas { display:block; width:100%; height:100%; }
   color: #0b131d; font-size: 14px; font-weight: 800; cursor: pointer;
 }
 .whatsnew-cta:active { filter: brightness(1.08); }
+.whatsnew-cta.ghost { margin-top: 8px; background: rgba(193,204,213,.07); color: #a3957c; border: 1px solid rgba(193,204,213,.12); }
+/* Золотой вариант окна — для достижений. */
+.whatsnew-modal-sheet.gold .whatsnew-hero { background: radial-gradient(120% 90% at 50% -15%, rgba(255,190,80,.24), transparent 60%); }
+.whatsnew-modal-sheet.gold .whatsnew-badge {
+  background: linear-gradient(150deg, rgba(255,190,80,.25), rgba(6,10,15,.55));
+  border-color: rgba(255,207,92,.6); box-shadow: 0 0 22px rgba(255,190,80,.4), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.whatsnew-modal-sheet.gold .whatsnew-eyebrow { color: #e3a53a; }
+.whatsnew-modal-sheet.gold .whatsnew-cta:not(.ghost) { background: linear-gradient(135deg, #f0b84a, #ffe08a); }
+.whatsnew-medals { display: flex; justify-content: center; gap: 8px; margin: 14px 0 6px; }
+.whatsnew-medals img {
+  width: 34px; height: 34px; object-fit: contain; image-rendering: pixelated; padding: 4px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,207,92,.18), rgba(0,0,0,.4) 70%); border: 1px solid rgba(255,207,92,.35);
+  animation: achPop .5s cubic-bezier(.2,.9,.3,1.25) both;
+}
+.whatsnew-medals img:nth-child(2) { animation-delay: .08s; } .whatsnew-medals img:nth-child(3) { animation-delay: .16s; }
+.whatsnew-medals img:nth-child(4) { animation-delay: .24s; } .whatsnew-medals img:nth-child(5) { animation-delay: .32s; }
 
 .market-pick-grid {
   display: grid;
@@ -4702,21 +4719,167 @@ canvas { display:block; width:100%; height:100%; }
   border-radius: 8px; background: #e8574f; color: #fff; font-style: normal; vertical-align: 1px;
   font-size: 10px; font-weight: 800; line-height: 15px; text-align: center;
 }
-.ach-row.ready { border-color: rgba(255,207,86,.55); box-shadow: 0 0 12px rgba(255,207,86,.12); }
-.ach-row.ready .s4-bar-fill { background: linear-gradient(90deg, #e0a63a, #ffe08a); }
+.ach-wrap { padding-top: 12px; }
+
+/* шапка: кольцо общего прогресса + раздел */
+.ach-hero {
+  display: flex; align-items: center; gap: 16px; padding: 16px; margin-bottom: 14px; border-radius: 16px;
+  background:
+    radial-gradient(ellipse 220px 140px at 0% 0%, color-mix(in srgb, var(--cc) 26%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(40,32,20,.95), rgba(20,16,10,.95));
+  border: 1px solid rgba(201,162,92,.35);
+  box-shadow: 0 14px 30px -18px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,220,150,.08);
+}
+.ach-ring {
+  --p: 0; flex: 0 0 86px; height: 86px; border-radius: 50%; position: relative;
+  background: conic-gradient(#ffcf5c calc(var(--p) * 1%), rgba(255,255,255,.07) 0);
+  box-shadow: 0 0 22px -6px rgba(255,190,80,.6);
+}
+.ach-ring-in {
+  position: absolute; inset: 7px; border-radius: 50%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; background: radial-gradient(circle at 40% 30%, #2b2214, #120d07);
+}
+.ach-ring-in b { font-size: 24px; font-weight: 900; color: #ffd98a; line-height: 1; }
+.ach-ring-in span { font-size: 10.5px; color: #9a8e7a; font-weight: 700; }
+.ach-hero-txt { flex: 1; min-width: 0; }
+.ach-hero-title { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #c9a45c; }
+.ach-hero-cat { margin-top: 6px; font-size: 13.5px; color: #e2d6c1; }
+.ach-hero-cat b { color: #ffd98a; }
+.ach-hero-bar { margin-top: 6px; height: 6px; border-radius: 4px; background: rgba(0,0,0,.45); overflow: hidden; }
+.ach-hero-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--cc), #ffe08a); }
+.ach-hero-ready {
+  display: inline-block; margin-top: 9px; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 800;
+  color: #1a1206; background: linear-gradient(180deg, #ffd56b, #e0a63a); animation: achPulse 1.8s ease-in-out infinite;
+}
+
+/* карточка цели */
+.ach-card {
+  --ac: #c4a276; position: relative; display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px 12px 11px; margin-bottom: 10px; border-radius: 14px; overflow: hidden;
+  background:
+    radial-gradient(ellipse 160px 100px at 0% 0%, color-mix(in srgb, var(--ac) 16%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(34,30,24,.95), rgba(18,16,12,.95));
+  border: 1px solid color-mix(in srgb, var(--ac) 28%, rgba(255,255,255,.04));
+  border-left: 3px solid var(--ac);
+}
+.ach-card.ready {
+  border-color: rgba(255,207,86,.7); border-left-color: #ffcf56;
+  box-shadow: 0 0 0 1px rgba(255,207,86,.15), 0 0 22px -6px rgba(255,190,80,.55);
+  animation: achGlow 2.4s ease-in-out infinite;
+}
+.ach-card.ready::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,230,160,.10) 50%, transparent 60%);
+  background-size: 250% 100%; animation: achSheen 3.2s linear infinite;
+}
+.ach-card.done { opacity: .78; border-left-color: #7ee0c0; }
+.ach-card.idle .ach-medal { filter: grayscale(.65) brightness(.8); }
+
+/* медаль-значок: металл = ступень */
+.ach-medal {
+  --m1: #e0a46e; --m2: #7a4a26; position: relative; flex: 0 0 46px; height: 46px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 35% 30%, #2c241a, #0e0a06 75%);
+  border: 2px solid var(--m1);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 0 14px -4px var(--m1), inset 0 0 10px rgba(0,0,0,.6);
+}
+.ach-medal.silver  { --m1: #d6dee6; --m2: #6d7a86; }
+.ach-medal.gold    { --m1: #ffcf56; --m2: #9a6a12; }
+.ach-medal.emerald { --m1: #6fe0b4; --m2: #1f6e52; }
+.ach-medal.legend  { --m1: #d29bff; --m2: #6a2fa0; box-shadow: 0 0 0 2px rgba(0,0,0,.55), 0 0 18px -2px #d29bff, inset 0 0 10px rgba(0,0,0,.6); }
+.ach-ico-img { width: 30px; height: 30px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+.ach-ico-emo { font-size: 21px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+.ach-step {
+  position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%);
+  min-width: 18px; padding: 0 5px; height: 15px; border-radius: 8px; font-style: normal;
+  font-size: 9.5px; font-weight: 900; line-height: 15px; text-align: center; letter-spacing: .02em;
+  color: #120c05; background: linear-gradient(180deg, var(--m1), var(--m2)); box-shadow: 0 1px 3px rgba(0,0,0,.7);
+}
+.ach-body { flex: 1; min-width: 0; }
+.ach-top { display: flex; align-items: flex-start; gap: 8px; }
+.ach-titles { flex: 1; min-width: 0; }
+.ach-title { color: #f1e6d0; font-size: 13px; font-weight: 700; line-height: 1.3; }
+.ach-sub { margin-top: 2px; color: #8f8370; font-size: 10.5px; font-weight: 700; }
+.ach-pct { flex-shrink: 0; color: var(--ac); font-size: 12px; font-weight: 900; padding-top: 1px; }
+.ach-stamp {
+  flex-shrink: 0; padding: 2px 8px; border-radius: 6px; transform: rotate(-4deg);
+  color: #7ee0c0; border: 1.5px solid rgba(126,224,192,.6); font-size: 10.5px; font-weight: 900; letter-spacing: .04em;
+}
 .ach-claim {
-  flex-shrink: 0; padding: 4px 12px; border-radius: 8px; cursor: pointer;
-  background: linear-gradient(180deg, #f0b84a, #c4842a); border: 1px solid #8d5c17;
-  color: #1a1206; font-size: 11.5px; font-weight: 800;
+  position: relative; overflow: hidden; flex-shrink: 0; padding: 6px 14px; border-radius: 9px; cursor: pointer;
+  background: linear-gradient(180deg, #ffd56b, #d98f22); border: 1px solid #8d5c17;
+  color: #1a1206; font-size: 12px; font-weight: 900; letter-spacing: .02em;
+  box-shadow: 0 4px 14px -4px rgba(255,180,60,.75), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.ach-claim::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 40%; left: -60%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); animation: achBtnSheen 2.2s ease-in-out infinite;
 }
 .ach-claim:disabled { opacity: .5; cursor: default; }
-.ach-prog { flex-shrink: 0; color: #8197ab; font-size: 10.5px; font-weight: 700; }
-.ach-done-lbl { flex-shrink: 0; color: #7ee0c0; font-size: 11px; font-weight: 800; }
-.ach-rws { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.ach-bar { margin-top: 8px; height: 7px; border-radius: 6px; background: rgba(0,0,0,.5); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); }
+.ach-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, color-mix(in srgb, var(--ac) 70%, #000), var(--ac)); transition: width .5s ease; }
+.ach-card.ready .ach-bar-fill { background: linear-gradient(90deg, #e0a63a, #ffe08a); }
+.ach-card.done .ach-bar-fill { background: linear-gradient(90deg, #3aa883, #7ee0c0); }
+.ach-rws { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .ach-rw {
-  display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px 2px 3px;
-  border-radius: 7px; border: 1px solid rgba(201,162,92,.35); background: rgba(0,0,0,.28);
-  color: #e2d6c1; font-size: 10.5px; font-weight: 700;
+  --rc: #c4a276; display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 3px;
+  border-radius: 8px; border: 1px solid color-mix(in srgb, var(--rc) 45%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 14%, rgba(0,0,0,.3)), rgba(0,0,0,.3));
+  color: var(--rc); font-size: 10.5px; font-weight: 800;
 }
 .ach-rw-img { width: 18px; height: 18px; object-fit: contain; image-rendering: pixelated; }
 .ach-rw-ico { width: 18px; text-align: center; }
+
+/* окно «Достижение выполнено!» */
+.ach-win-ov {
+  position: fixed; inset: 0; z-index: 420; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgba(4,6,10,.78); animation: achFade .25s ease;
+}
+.ach-win {
+  width: 100%; max-width: 360px; overflow: hidden; text-align: center; animation: achPop .45s cubic-bezier(.2,.9,.3,1.25);
+  background:
+    radial-gradient(ellipse 260px 200px at 50% 0%, rgba(255,190,80,.22), transparent 70%),
+    linear-gradient(180deg, #241c10, #120d07);
+  border: 1px solid rgba(255,207,92,.45);
+  box-shadow: 0 30px 70px -20px rgba(0,0,0,.95), 0 0 50px -12px rgba(255,180,60,.45);
+}
+.ach-win-rays {
+  position: absolute; left: 50%; top: 58px; width: 260px; height: 260px; margin: -130px 0 0 -130px; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(255,207,110,.16) 0 10deg, transparent 10deg 30deg);
+  -webkit-mask: radial-gradient(circle, #000 20%, transparent 68%); mask: radial-gradient(circle, #000 20%, transparent 68%);
+  animation: enh-spin 18s linear infinite;
+}
+.ach-medal.big { flex: none; width: 84px; height: 84px; margin: 4px auto 14px; border-width: 3px; }
+.ach-ico-img.big { width: 54px; height: 54px; }
+.ach-ico-emo.big { font-size: 40px; }
+.ach-medal.big .ach-step { height: 19px; line-height: 19px; font-size: 11px; bottom: -8px; }
+.ach-win .db-win-title { position: relative; letter-spacing: 1px; }
+.ach-win .db-win-sub { position: relative; color: #e2d6c1; font-size: 13px; }
+.ach-win-list { position: relative; display: flex; flex-direction: column; gap: 8px; margin: 4px 0 18px; text-align: left; }
+.ach-win-rw {
+  --rc: #c4a276; display: flex; gap: 10px; align-items: center; padding: 9px 11px; border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 14%, rgba(0,0,0,.35)), rgba(0,0,0,.35));
+  border: 1px solid color-mix(in srgb, var(--rc) 50%, transparent);
+  animation: achPop .5s cubic-bezier(.2,.9,.3,1.25) both;
+}
+.ach-win-rw:nth-child(2) { animation-delay: .12s; } .ach-win-rw:nth-child(3) { animation-delay: .24s; }
+.ach-win-pic {
+  flex: 0 0 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--rc) 35%, transparent), rgba(0,0,0,.4) 70%);
+}
+.ach-win-pic img { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
+.ach-win-name { color: var(--rc); font-size: 13px; font-weight: 800; }
+.ach-win-stats { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.ach-win-stats span { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #d8d2c8; }
+.ach-win-stats i { width: 8px; height: 8px; border-radius: 50%; background: var(--qc); box-shadow: 0 0 6px var(--qc); }
+.ach-win-stats b { color: var(--qc); }
+
+@keyframes achGlow { 50% { box-shadow: 0 0 0 1px rgba(255,207,86,.25), 0 0 30px -4px rgba(255,190,80,.75); } }
+@keyframes achSheen { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+@keyframes achBtnSheen { 0% { left: -60%; } 60%, 100% { left: 130%; } }
+@keyframes achPulse { 50% { transform: scale(1.05); filter: brightness(1.1); } }
+@keyframes achPop { from { opacity: 0; transform: scale(.85) translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes achFade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .ach-card.ready, .ach-card.ready::after, .ach-claim::after, .ach-hero-ready, .ach-win, .ach-win-rays, .ach-win-rw { animation: none !important; }
+}

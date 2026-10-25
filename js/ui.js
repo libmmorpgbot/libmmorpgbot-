@@ -7087,14 +7087,25 @@ let _achCat = 'runes';
 let _achBusy = null;   // id, по которому только что нажали «Забрать»
 
 const _ACH_CAT_ICON = { runes: '🔮', enhance: '⚒️', battle: '⚔️', craft: '🧪', social: '💬' };
-const _ACH_METRIC_ICON = {
-  runeCommon: '🔮', runeUncommon: '🔮', runeRare: '🔮', runeEpic: '🔮', runeLegendary: '🔮',
-  runeFail: '💥', runeReroll: '🎲', runeSocket: '💠',
-  enhMax: '⚒️', enhOk: '✨', enhBurn: '🔥',
-  kills: '⚔️', boss: '👹', elite: '💎', lvl: '⭐',
-  petCraft: '🐾', gearCraft: '🛡️', potionCraft: '⚗️', boxOpen: '🎁',
-  mktSell: '💰', mktBuy: '🛒', chat: '💬',
+// Цвет раздела — рамка карточки, если у метрики нет своего (у рун — цвет
+// редкости, см. _achAccent).
+const _ACH_CAT_COLOR = { runes: '#a58fc4', enhance: '#e3941d', battle: '#e8574f', craft: '#6fbf73', social: '#5aa9e6' };
+// Значок цели: картинка из игры, где она есть, иначе эмодзи.
+const _ACH_METRIC_IMG = {
+  runeCommon: '/images/rune/armor/chp.png', runeUncommon: '/images/rune/armor/uhp.png',
+  runeRare: '/images/rune/armor/rhp.png', runeEpic: '/images/rune/armor/ehp.png',
+  runeLegendary: '/images/rune/armor/lhp.png', runeSocket: '/images/rune/weapon/wrare.png',
+  runeFail: '/images/ore/cres.png', enhMax: '/images/bless.png', enhOk: '/images/norm.png',
+  elite: '/images/material/shard.png', potionCraft: '/images/potion/atk.png', boxOpen: '/images/material/boxu.png',
 };
+const _ACH_METRIC_ICON = {
+  runeReroll: '🎲', enhBurn: '🔥', kills: '⚔️', boss: '👹', lvl: '⭐',
+  petCraft: '🐾', gearCraft: '🛡️', mktSell: '💰', mktBuy: '🛒', chat: '💬',
+};
+// Ступени лестницы одной метрики: бронза → серебро → золото → изумруд →
+// легендарная. Длинные лестницы (заточка, уровень) растягиваются на те же пять.
+const _ACH_TIERS = ['bronze', 'silver', 'gold', 'emerald', 'legend'];
+const _ACH_ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
 function _achProgress(a) { return Number((_achState.metrics || {})[a.metric] || 0); }
 function _achClaimed(a) { return (_achState.claimed || []).includes(a.id); }
@@ -7106,37 +7117,90 @@ function _achReadyCount(cat) {
 function _achName(a) {
   return tVars('achM_' + a.metric, { n: Number(a.target).toLocaleString('ru-RU') });
 }
+// Номер ступени в лестнице своей метрики и её металл.
+function _achStep(a) {
+  const ladder = ACHIEVEMENTS.filter(x => x.metric === a.metric).sort((x, y) => x.target - y.target);
+  const i = Math.max(0, ladder.indexOf(a));
+  const tier = ladder.length <= 1 ? 0 : Math.round((i / (ladder.length - 1)) * (ladder.length <= 3 ? 2 : 4));
+  return { i, n: ladder.length, tier: _ACH_TIERS[tier] };
+}
+function _achAccent(a) {
+  const m = ACH_METRICS[a.metric] || {};
+  if (m.rarity && typeof RARITY_COLOR !== 'undefined') return RARITY_COLOR[m.rarity];
+  return _ACH_CAT_COLOR[m.cat] || '#c4a276';
+}
+function _achIconHTML(a, big) {
+  const img = _ACH_METRIC_IMG[a.metric];
+  return img ? `<img class="ach-ico-img${big ? ' big' : ''}" src="${img}" alt="">`
+    : `<span class="ach-ico-emo${big ? ' big' : ''}">${_ACH_METRIC_ICON[a.metric] || '★'}</span>`;
+}
 
 // Картинка и подпись награды — из того же каталога, что и инвентарь.
-function _achRewardHTML(r) {
-  if (r.t === 'gold') return `<span class="ach-rw"><span class="ach-rw-ico">🪙</span>${Number(r.n).toLocaleString('ru-RU')} ${t('achGold')}</span>`;
-  if (r.t === 'nexum') return `<span class="ach-rw"><span class="ach-rw-ico">💠</span>${Number(r.n).toLocaleString('ru-RU')} Liberty</span>`;
-  const id = r.t === 'rune' ? runeCatalogId(r.kind, r.rarity) : r.id;
+function _achRewardInfo(r) {
+  if (r.t === 'gold') return { img: '', ico: '🪙', name: `${Number(r.n).toLocaleString('ru-RU')} ${t('achGold')}`, col: '#ffd35c' };
+  if (r.t === 'nexum') return { img: '/images/nexum-coin_v2.png', name: `${Number(r.n).toLocaleString('ru-RU')} Liberty`, col: '#7fd3ff' };
+  const id = r.itemId || (r.t === 'rune' ? runeCatalogId(r.kind, r.rarity) : r.id);
   const def = itemCatalogBase(id);
-  const rar = r.t === 'rune' ? r.rarity : (def && def.rarity);
+  const rar = r.t === 'rune' ? (r.rarity || (def && def.rarity)) : (def && def.rarity);
   const col = (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[rar]) || '#c4a276';
-  const img = def && def.img ? `<img class="ach-rw-img" src="${def.img}" alt="">` : '';
   const name = r.t === 'rune'
-    ? `${(def && def.name) || t('achRune')} · ${(typeof _RARITY_NAMES !== 'undefined' && _RARITY_NAMES[r.rarity]) || r.rarity}`
+    ? `${(def && def.name) || t('achRune')} · ${(typeof _RARITY_NAMES !== 'undefined' && _RARITY_NAMES[rar]) || rar}`
     : ((def && def.name) || id);
   const qty = r.t === 'item' && (r.qty || 1) > 1 ? ` ×${Number(r.qty).toLocaleString('ru-RU')}` : '';
-  return `<span class="ach-rw" style="border-color:${col}66;color:${col}">${img}${name}${qty}</span>`;
+  return { img: (def && def.img) || '', name: name + qty, col, rar };
+}
+function _achRewardHTML(r) {
+  const x = _achRewardInfo(r);
+  const pic = x.img ? `<img class="ach-rw-img" src="${x.img}" alt="">` : `<span class="ach-rw-ico">${x.ico || '★'}</span>`;
+  return `<span class="ach-rw" style="--rc:${x.col}">${pic}<span>${x.name}</span></span>`;
 }
 
 function _achRowHTML(a) {
   const claimed = _achClaimed(a), ok = _achClaimable(a);
   const cur = Math.min(_achProgress(a), a.target);
-  const pct = Math.max(0, Math.min(100, Math.round((cur / Math.max(1, a.target)) * 100)));
-  const btn = claimed ? `<span class="ach-done-lbl">✓ ${t('achClaimedLbl')}</span>`
+  const pct = Math.max(0, Math.min(100, Math.floor((cur / Math.max(1, a.target)) * 100)));
+  const st = _achStep(a);
+  const state = claimed ? 'done' : ok ? 'ready' : (cur > 0 ? 'going' : 'idle');
+  const right = claimed ? `<span class="ach-stamp">✓ ${t('achClaimedLbl')}</span>`
     : ok ? `<button class="ach-claim" ${_achBusy === a.id ? 'disabled' : ''} onclick="claimAchievement('${a.id}')">${t('achClaimBtn')}</button>`
-    : `<span class="ach-prog">${cur.toLocaleString('ru-RU')} / ${Number(a.target).toLocaleString('ru-RU')}</span>`;
+    : `<span class="ach-pct">${pct}%</span>`;
   return `
-    <div class="s4-task ach-row${claimed ? ' done' : ''}${ok ? ' ready' : ''}">
-      <div class="s4-ico">${claimed ? '✓' : (_ACH_METRIC_ICON[a.metric] || '★')}</div>
-      <div class="s4-task-body">
-        <div class="s4-task-top"><span class="s4-task-name">${_achName(a)}</span>${btn}</div>
-        <div class="s4-bar"><div class="s4-bar-fill" style="width:${pct}%"></div></div>
+    <div class="ach-card ${state}" style="--ac:${_achAccent(a)}">
+      <div class="ach-medal ${st.tier}">
+        ${_achIconHTML(a)}
+        <i class="ach-step">${_ACH_ROMAN[st.i] || st.i + 1}</i>
+      </div>
+      <div class="ach-body">
+        <div class="ach-top">
+          <div class="ach-titles">
+            <div class="ach-title">${_achName(a)}</div>
+            <div class="ach-sub">${t('achStageLbl')} ${st.i + 1}/${st.n} · ${cur.toLocaleString('ru-RU')} / ${Number(a.target).toLocaleString('ru-RU')}</div>
+          </div>
+          ${right}
+        </div>
+        <div class="ach-bar"><div class="ach-bar-fill" style="width:${claimed ? 100 : pct}%"></div></div>
         <div class="ach-rws">${a.rewards.map(_achRewardHTML).join('')}</div>
+      </div>
+    </div>`;
+}
+
+function _achHeroHTML() {
+  const total = ACHIEVEMENTS.length;
+  const done = ACHIEVEMENTS.filter(_achClaimed).length;
+  const inCat = ACHIEVEMENTS.filter(a => ACH_METRICS[a.metric].cat === _achCat);
+  const catDone = inCat.filter(_achClaimed).length;
+  const ready = _achReadyCount(null);
+  const pct = Math.round((done / Math.max(1, total)) * 100);
+  return `
+    <div class="ach-hero" style="--cc:${_ACH_CAT_COLOR[_achCat] || '#e3941d'}">
+      <div class="ach-ring" style="--p:${pct}">
+        <div class="ach-ring-in"><b>${done}</b><span>/ ${total}</span></div>
+      </div>
+      <div class="ach-hero-txt">
+        <div class="ach-hero-title">🏆 ${t('achTotalLbl')}</div>
+        <div class="ach-hero-cat">${_ACH_CAT_ICON[_achCat] || ''} ${t('achCat_' + _achCat)}: <b>${catDone} / ${inCat.length}</b></div>
+        <div class="ach-hero-bar"><i style="width:${Math.round((catDone / Math.max(1, inCat.length)) * 100)}%"></i></div>
+        ${ready ? `<div class="ach-hero-ready">✨ ${tVars('achReadyLbl', { n: ready })}</div>` : ''}
       </div>
     </div>`;
 }
@@ -7154,18 +7218,43 @@ function _renderAchPanel() {
     return;
   }
   const list = ACHIEVEMENTS.filter(a => ACH_METRICS[a.metric].cat === _achCat);
-  const done = ACHIEVEMENTS.filter(_achClaimed).length;
   // Готовые к выдаче — сверху, полученные — вниз, остальные — как в каталоге.
   const rank = a => (_achClaimable(a) ? 0 : _achClaimed(a) ? 2 : 1);
   const sorted = list.map((a, i) => ({ a, i })).sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i).map(x => x.a);
-  body.innerHTML = `
-    <div class="s4-wrap">
-      <div class="s4-hero">
-        <div class="s4-hero-num">${done} / ${ACHIEVEMENTS.length}</div>
-        <div class="s4-hero-lbl">${t('achTotalLbl')}</div>
-      </div>
-      ${sorted.map(_achRowHTML).join('')}
+  body.innerHTML = `<div class="s4-wrap ach-wrap">${_achHeroHTML()}${sorted.map(_achRowHTML).join('')}</div>`;
+}
+
+// ── окно «Достижение выполнено!» ────────────────────────────────────────────
+// Что именно пришло — из ответа сервера (granted), а не из каталога: у руны
+// показываются ВЫПАВШИЕ характеристики, их каталог не знает.
+function showAchClaimed(id, granted) {
+  const a = achievementById(id);
+  if (!a) return;
+  document.getElementById('ach-win-ov')?.remove();
+  const st = _achStep(a);
+  const rows = (Array.isArray(granted) && granted.length ? granted : a.rewards).map(g => {
+    const x = _achRewardInfo(g);
+    const pic = x.img ? `<img src="${x.img}" alt="">` : `<span>${x.ico || '★'}</span>`;
+    const lines = (g.t === 'rune' && Array.isArray(g.stats)) ? `<div class="ach-win-stats">${g.stats.map(sl => {
+      const col = RUNE_QUALITY_COLOR[sl.q] || '#aea599';
+      return `<span style="--qc:${col}"><i></i>${RUNE_STAT_NAME[sl.stat] || sl.stat} <b>+${runeStatPct(x.rar, sl.q)}%</b></span>`;
+    }).join('')}</div>` : '';
+    return `<div class="ach-win-rw" style="--rc:${x.col}"><div class="ach-win-pic">${pic}</div><div><div class="ach-win-name">${x.name}</div>${lines}</div></div>`;
+  }).join('');
+  const ov = document.createElement('div');
+  ov.id = 'ach-win-ov';
+  ov.className = 'ach-win-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="db-win-panel ach-win" onclick="event.stopPropagation()" style="--ac:${_achAccent(a)}">
+      <div class="ach-win-rays"></div>
+      <div class="ach-medal big ${st.tier}">${_achIconHTML(a, true)}<i class="ach-step">${_ACH_ROMAN[st.i] || st.i + 1}</i></div>
+      <div class="db-win-title">${t('achWinTitle')}</div>
+      <div class="db-win-sub">${_achName(a)}</div>
+      <div class="ach-win-list">${rows}</div>
+      <button class="db-win-btn" onclick="document.getElementById('ach-win-ov')?.remove()">${t('achWinBtn')}</button>
     </div>`;
+  document.body.appendChild(ov);
 }
 
 function _refreshAchDot() {
@@ -8011,7 +8100,7 @@ function _positionUpdatesBtn() {
 // Новый патч — поднять UPDATES_VERSION: у всех, кто его ещё не открывал,
 // загорится точка на кнопке. Хранится у игрока в браузере — это удобство, а
 // не данные, и без хранилища точка просто горит, пока панель не открыта.
-const UPDATES_VERSION = '2026-10-17';
+const UPDATES_VERSION = '2026-10-25';
 const _UPD_SEEN_KEY = 'liberty_updates_seen';
 function _updatesSeen() {
   try { return localStorage.getItem(_UPD_SEEN_KEY) === UPDATES_VERSION; } catch { return false; }
@@ -13483,8 +13572,8 @@ function _gramMsg(text, type) { _gramSay(text, type); }
 // text — consistent with the rest of the UI, which never uses emoji as an
 // icon, and the badge/eyebrow/display-font title read as a considered
 // moment rather than a plain text popup.
-const WHATS_NEW_VERSION = 'codex1';
-const WHATS_NEW_ICON = 'chest';
+const WHATS_NEW_VERSION = 'ach1';
+const WHATS_NEW_ICON = 'crown';
 function openWhatsNewModal() {
   const existing = document.getElementById('whatsnew-ov');
   if (existing) existing.remove();
@@ -13493,16 +13582,22 @@ function openWhatsNewModal() {
   ov.id = 'whatsnew-ov';
   ov.onclick = () => closeWhatsNewModal();
   ov.innerHTML = `
-    <div class="market-modal-sheet whatsnew-modal-sheet" onclick="event.stopPropagation()">
+    <div class="market-modal-sheet whatsnew-modal-sheet gold" onclick="event.stopPropagation()">
       <div class="whatsnew-hero">
         <button class="whatsnew-close" onclick="closeWhatsNewModal()">✕</button>
-        <div class="whatsnew-badge">${iconHTML(WHATS_NEW_ICON, 28, '#c9a6f0')}</div>
+        <div class="whatsnew-badge">${iconHTML(WHATS_NEW_ICON, 28, '#ffcf5c')}</div>
         <div class="whatsnew-eyebrow">${t('whatsNewTitle')}</div>
-        <div class="whatsnew-title">${t('whatsNewCodexTitle')}</div>
+        <div class="whatsnew-title">${t('whatsNewAchTitle')}</div>
+        <div class="whatsnew-medals">
+          <img src="/images/rune/armor/chp.png" alt=""><img src="/images/rune/armor/uhp.png" alt="">
+          <img src="/images/rune/armor/rhp.png" alt=""><img src="/images/rune/armor/ehp.png" alt="">
+          <img src="/images/rune/armor/lhp.png" alt="">
+        </div>
       </div>
       <div class="whatsnew-body">
-        <div class="whatsnew-desc">${t('whatsNewCodexDesc')}</div>
-        <button class="whatsnew-cta" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
+        <div class="whatsnew-desc">${t('whatsNewAchDesc')}</div>
+        <button class="whatsnew-cta" onclick="closeWhatsNewModal(); if (typeof openAchPanel === 'function') openAchPanel()">${t('whatsNewAchOpen')}</button>
+        <button class="whatsnew-cta ghost" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
       </div>
     </div>`;
   document.body.appendChild(ov);

@@ -528,6 +528,41 @@
     .hero-map, .hero-map img, .hero-map .boss-ping, .boss-skull, .boss-skull span { animation: none !important; }
   }
 
+  /* ── Достижения ─────────────────────────────────────────── */
+  .ach-orbit .orbit-core { filter: none; }
+  .ach-orbit .orbit-core::after { content: '🏆'; font-size: 44px; filter: drop-shadow(0 0 14px rgba(255,200,110,.8)); }
+  .ach-orbit .orbit-ring img { image-rendering: pixelated; width: 46px; height: 46px; margin: -23px 0 0 -23px; }
+  .gem-card.ach-c .ladder::before { left: 30px; }
+  .gem-card.ach-c .ladder .n { min-width: 62px; }
+  .gem-card.ach-c .ladder .b { gap: 5px; }
+  .gem-art .emo { font-size: 36px; line-height: 1; filter: drop-shadow(0 4px 8px rgba(0,0,0,.6)); animation: bob 3.6s ease-in-out infinite; }
+  .gem-card.ach-c .gem-art img { image-rendering: pixelated; }
+  .rw {
+    --rc: #c4a276; display: inline-flex; align-items: center; gap: 5px; font-style: normal; font-size: 11.5px; font-weight: 800;
+    padding: 2px 8px 2px 3px; border-radius: 7px; color: var(--rc); white-space: nowrap;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 14%, transparent), rgba(0,0,0,.25));
+    border: 1px solid color-mix(in srgb, var(--rc) 40%, transparent);
+  }
+  .rw img { width: 18px; height: 18px; object-fit: contain; image-rendering: pixelated; }
+  .rw span { width: 18px; text-align: center; }
+  .rw.rune { box-shadow: 0 0 10px -3px var(--rc); }
+  /* ступени: пять металлов */
+  .tiers5 { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 6px 0 4px; }
+  .tier5 { text-align: center; font-size: 11.5px; color: var(--muted); font-weight: 700; }
+  .medal {
+    --m1: #e0a46e; --m2: #7a4a26; position: relative; width: 58px; height: 58px; margin: 0 auto 10px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-weight: 900; font-size: 18px; color: var(--m1);
+    background: radial-gradient(circle at 35% 30%, #2c241a, #0e0a06 75%); border: 3px solid var(--m1);
+    box-shadow: 0 0 0 3px rgba(0,0,0,.55), 0 0 22px -4px var(--m1); animation: float 4s ease-in-out infinite;
+  }
+  .medal.silver { --m1: #d6dee6; } .medal.gold { --m1: #ffcf56; } .medal.emerald { --m1: #6fe0b4; } .medal.legend { --m1: #d29bff; }
+  .tier5:nth-child(2) .medal { animation-delay: -.8s; } .tier5:nth-child(3) .medal { animation-delay: -1.6s; }
+  .tier5:nth-child(4) .medal { animation-delay: -2.4s; } .tier5:nth-child(5) .medal { animation-delay: -3.2s; }
+  .ach-note { margin-top: 14px; padding: 12px 16px; display: flex; gap: 12px; align-items: center; font-size: 13.5px; }
+  .ach-note .big { font-size: 28px; flex-shrink: 0; }
+  @media (max-width: 720px) { .gem-card.ach-c .ladder .b { flex-direction: column; align-items: flex-start; } }
+  @media (prefers-reduced-motion: reduce) { .gem-art .emo, .medal { animation: none !important; } }
+
   /* появление при прокрутке */
   .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s ease, transform .7s ease; }
   .reveal.in { opacity: 1; transform: none; }
@@ -578,41 +613,364 @@
 <header class="hero">
   <canvas id="fx"></canvas>
   <div class="hero-inner">
-    <div class="hero-map">
-      <img src="/images/patches/world-map.jpg" alt="Карта Мира: луг, река, лес, гряда, пустоши и трон Владыки">
-      <span class="boss-ping" aria-hidden="true"></span>
+    <div class="orbit ach-orbit">
+      <div class="orbit-core"></div>
+      <div class="orbit-ring">
+        <img src="/images/rune/armor/chp.png" alt="" style="--a:0deg">
+        <img src="/images/rune/armor/uhp.png" alt="" style="--a:72deg">
+        <img src="/images/rune/armor/rhp.png" alt="" style="--a:144deg">
+        <img src="/images/rune/armor/ehp.png" alt="" style="--a:216deg">
+        <img src="/images/rune/armor/lhp.png" alt="" style="--a:288deg">
+      </div>
     </div>
-    <div class="eyebrow"><span class="dot"></span>Патч · 17 октября 2026</div>
-    <h1 class="title">Мир</h1>
-    <p class="lede">Новая открытая локация — не комнаты и коридоры, а целая местность: луг, река с мостами, лес,
-      скальная гряда и выжженные пустоши. Монстры <b>40–59 уровня</b> стоят пачками на спотах, а за кольцом колонн
-      на востоке ждёт <b>Владыка Мира, 60 уровень</b>.</p>
+    <div class="eyebrow"><span class="dot"></span>Патч · 25 октября 2026</div>
+    <h1 class="title">Достижения</h1>
+    <p class="lede"><b>74 постоянные цели</b> на весь аккаунт — и за каждую настоящая награда. Скуй 10 серых рун —
+      получи серую руну. Дотяни предмет до <b>+15</b> — получи <b>легендарную руну оружия</b>. Ничего не сгорает
+      и не сбрасывается: прогресс копится навсегда.</p>
     <div class="hero-chips">
-      <span>🌍 Вход с 35 уровня</span>
-      <span>⚔ 10 спотов: лоу · мид · топ</span>
-      <span>💀 Босс 60 уровня</span>
-      <span><img src="/images/material/clover_coin.png" alt="">Монета удачи</span>
-      <span>🗺 Карта мира</span>
+      <span>🏆 74 достижения</span>
+      <span><img src="/images/rune/armor/lhp.png" alt="">Руны в награду</span>
+      <span><img src="/images/bless.png" alt="">Заточка до +15</span>
+      <span>⚔ Бой · ремесло · рынок</span>
+      <span><img src="/images/material/boxr.png" alt="">Забирай кнопкой</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#p-1017">Что нового ↓</a>
-      <a class="btn" href="#p-1016">Самоцветы</a>
+      <a class="btn primary" href="#p-1025">Все достижения ↓</a>
+      <a class="btn" href="#p-1017">Мир</a>
     </div>
   </div>
 </header>
 
 <nav class="patch-nav" aria-label="Патчи">
-  <a href="#p-1017" class="on"><i class="pn-dot new"></i><b>17 окт</b><span>Мир</span></a>
+  <a href="#p-1025" class="on"><i class="pn-dot new"></i><b>25 окт</b><span>Достижения</span></a>
+  <a href="#p-1017"><i class="pn-dot"></i><b>17 окт</b><span>Мир</span></a>
   <a href="#p-1016"><i class="pn-dot"></i><b>16 окт</b><span>Самоцветы</span></a>
   <a href="#p-s4"><i class="pn-dot"></i><b>2 окт</b><span>Сезон 4: Баланс</span></a>
   <a href="guide.html" class="pn-guide">Гайд →</a>
 </nav>
 
 <main>
+  <!-- ══ Патч · 25 октября 2026 · Достижения ═══════════════════════════ -->
+  <article class="patch" id="p-1025">
+    <header class="patch-head reveal">
+      <span class="patch-date new">25 октября 2026</span>
+      <h2>Достижения</h2>
+      <p class="dek">Новая кнопка «Достижения» в Меню на HUD. Пять разделов, 74 цели, у каждой — лестница из ступеней
+        и награда, которую забираете сами.</p>
+    </header>
+
+    <section class="sec reveal" id="ach-main">
+      <div class="tiles stagger">
+        <div class="card tile"><img src="/images/material/boxr.png" alt=""><b>74 цели</b><span>Руны, заточка, бой, ремесло, общение</span></div>
+        <div class="card tile"><img src="/images/rune/weapon/wlegendary.png" alt=""><b>Руны в награду</b><span>С характеристиками, как из кузницы</span></div>
+        <div class="card tile"><img src="/images/bless.png" alt=""><b>Камни и осколки</b><span>Безопасная заточка, звёздные осколки</span></div>
+        <div class="card tile"><img src="/images/nexum-coin_v2.png" alt=""><b>Навсегда</b><span>Прогресс не сбрасывается ни днём, ни сезоном</span></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="ach-how">
+      <div class="sec-eyebrow">Как это работает</div>
+      <h2>Играйте — забирайте</h2>
+      <div class="steps3 stagger">
+        <div class="step"><span class="step-n">1</span><img src="/images/rune/armor/chp.png" alt=""><b>Играете как обычно</b><span>Куёте руны, точите, бьёте монстров — счётчики двигаются сами, в тот же миг.</span></div>
+        <div class="step"><span class="step-n">2</span><img src="/images/material/shard.png" alt=""><b>Цель выполнена</b><span>Всплывает «🏆 Достижение выполнено», на кнопке загорается красная точка.</span></div>
+        <div class="step"><span class="step-n">3</span><img src="/images/material/boxu.png" alt=""><b>«Забрать»</b><span>Награда — в сумку. Сумка полна? Ничего не теряется: освободите место и заберите снова.</span></div>
+      </div>
+      <div class="tiers5 stagger" style="margin-top:26px">
+        <div class="tier5"><div class="medal">I</div>Бронза</div>
+        <div class="tier5"><div class="medal silver">II</div>Серебро</div>
+        <div class="tier5"><div class="medal gold">III</div>Золото</div>
+        <div class="tier5"><div class="medal emerald">IV</div>Изумруд</div>
+        <div class="tier5"><div class="medal legend">V</div>Легенда</div>
+      </div>
+      <p class="dek" style="text-align:center;margin:12px auto 0">Чем выше ступень лестницы — тем благороднее металл значка в окне.</p>
+    </section>
+
+    <section class="sec reveal" id="ach-runes">
+      <div class="sec-eyebrow">Раздел · Руны</div>
+      <h2>Куй руну — получи руну</h2>
+      <p class="dek">Засчитывается <b>удачная ковка</b> руны нужной редкости — доспеха или оружия, неважно. На первой
+        ступени — руна той же редкости, на третьей — уже следующей.</p>
+      <div class="gems stagger">
+        <div class="gem-card ach-c" style="--gc:156,144,134">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/rune/armor/chp.png" alt=""></div>
+            <div>
+              <div class="gem-name">Серые руны</div>
+              <div class="gem-drop">удачная ковка обычной руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#b8aea4"><img src="/images/rune/armor/chp.png" alt="">Руна доспеха · Обычная</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#b8aea4"><img src="/images/rune/weapon/wcommon.png" alt="">Руна оружия · Обычная</i><i class="rw" style="--rc:#b8aea4"><img src="/images/ore/cres.png" alt="">Обычная руда ×500</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/armor/uhp.png" alt="">Руна доспеха · Необычная</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:111,156,74">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/rune/armor/uhp.png" alt=""></div>
+            <div>
+              <div class="gem-name">Зелёные руны</div>
+              <div class="gem-drop">удачная ковка необычной руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/armor/uhp.png" alt="">Руна доспеха · Необычная</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/weapon/wuncommon.png" alt="">Руна оружия · Необычная</i><i class="rw" style="--rc:#8fc461"><img src="/images/ore/ures.png" alt="">Необычная руда ×300</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:74,123,171">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/rune/armor/rhp.png" alt=""></div>
+            <div>
+              <div class="gem-name">Синие руны</div>
+              <div class="gem-drop">удачная ковка редкой руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/weapon/wrare.png" alt="">Руна оружия · Редкая</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/ore/rres.png" alt="">Редкая руда ×200</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:138,92,194">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/rune/armor/ehp.png" alt=""></div>
+            <div>
+              <div class="gem-name">Фиолетовые руны</div>
+              <div class="gem-drop">удачная ковка эпической руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">5</span><span class="b"><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li><li><span class="n">25</span><span class="b"><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i><i class="rw" style="--rc:#b48ae6"><img src="/images/ore/eres.png" alt="">Эпическая руда ×100</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/armor/lhp.png" alt="">Руна доспеха · Легендарная</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:232,185,62">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/rune/armor/lhp.png" alt=""></div>
+            <div>
+              <div class="gem-name">Золотые руны</div>
+              <div class="gem-drop">удачная ковка легендарной руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">3</span><span class="b"><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/armor/lhp.png" alt="">Руна доспеха · Легендарная</i></span></li><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/weapon/wlegendary.png" alt="">Руна оружия · Легендарная</i></span></li><li><span class="n">25</span><span class="b"><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/weapon/wlegendary.png" alt="">Руна оружия · Легендарная</i><i class="rw" style="--rc:#f2c64e"><img src="/images/ore/lres.png" alt="">Легендарная руда ×100</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:74,123,171">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/rune/weapon/wrare.png" alt=""></div>
+            <div>
+              <div class="gem-name">Гнёзда</div>
+              <div class="gem-drop">руна вставлена в предмет · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#b8aea4"><img src="/images/ore/cres.png" alt="">Обычная руда ×300</i></span></li><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/weapon/wuncommon.png" alt="">Руна оружия · Необычная</i></span></li></ol>
+        </div>
+      </div>
+      <div class="gems stagger" style="margin-top:14px">
+        <div class="gem-card ach-c" style="--gc:224,122,122">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/ore/cres.png" alt=""></div>
+            <div>
+              <div class="gem-name">Невезучий кузнец</div>
+              <div class="gem-drop">неудачная ковка руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#b8aea4"><img src="/images/ore/cres.png" alt="">Обычная руда ×1 000</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/ore/ures.png" alt="">Необычная руда ×800</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/ore/rres.png" alt="">Редкая руда ×500</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:127,211,255">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">🎲</span></div>
+            <div>
+              <div class="gem-name">Переработка</div>
+              <div class="gem-drop">перебросы характеристик руны · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">200 Liberty</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">1 000 Liberty</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">3 000 Liberty</i></span></li></ol>
+        </div>
+      </div>
+      <div class="card ach-note"><span class="big">💥</span><span>Даже неудачная ковка не пропадает зря — она идёт в «Невезучего кузнеца» и возвращает руду.</span></div>
+    </section>
+
+    <section class="sec reveal" id="ach-enhance">
+      <div class="sec-eyebrow">Раздел · Заточка</div>
+      <h2>От +3 до +15</h2>
+      <p class="dek">Считается только <b>успешный бросок</b> на вашей вещи: купленный на рынке +10 цель не закроет.
+        Сгоревший предмет тоже засчитан — утешительным камнем.</p>
+      <div class="gems stagger">
+        <div class="gem-card ach-c" style="--gc:255,207,86">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/bless.png" alt=""></div>
+            <div>
+              <div class="gem-name">Мастер заточки</div>
+              <div class="gem-drop">предмет заточен до уровня · 10 ступеней</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">+3</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">+5</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×10</i></span></li><li><span class="n">+7</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×3</i></span></li><li><span class="n">+9</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">+10</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">+11</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×10</i></span></li><li><span class="n">+12</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×15</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×20</i></span></li><li><span class="n">+13</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×20</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×30</i></span></li><li><span class="n">+14</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×30</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li><li><span class="n">+15</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×50</i><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/weapon/wlegendary.png" alt="">Руна оружия · Легендарная</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:111,156,74">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/norm.png" alt=""></div>
+            <div>
+              <div class="gem-name">Удачные броски</div>
+              <div class="gem-drop">успешная заточка · 4 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×30</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×20</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×50</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:241,126,98">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">🔥</span></div>
+            <div>
+              <div class="gem-name">Пепел</div>
+              <div class="gem-drop">предмет сгорел на заточке · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×15</i></span></li></ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="ach-battle">
+      <div class="sec-eyebrow">Раздел · Бой</div>
+      <h2>Монстры, боссы, уровни</h2>
+      <p class="dek">Убийство засчитывается тому, кто добил. Уровень засчитан <b>сразу</b> — даже если вы взяли его
+        задолго до обновления.</p>
+      <div class="gems stagger">
+        <div class="gem-card ach-c" style="--gc:232,87,79">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">⚔️</span></div>
+            <div>
+              <div class="gem-name">Охотник</div>
+              <div class="gem-drop">убитые монстры · 6 ступеней</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>1 000 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>5 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">10 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×3</i></span></li><li><span class="n">50 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i></span></li><li><span class="n">100 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">500 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×10</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:192,96,255">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">👹</span></div>
+            <div>
+              <div class="gem-name">Убийца боссов</div>
+              <div class="gem-drop">добитые боссы · 4 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×3</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:255,207,86">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">⭐</span></div>
+            <div>
+              <div class="gem-name">Путь героя</div>
+              <div class="gem-drop">уровень персонажа — засчитан сразу · 7 ступеней</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">ур. 10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>1 000 золота</i></span></li><li><span class="n">ур. 20</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>3 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">ур. 30</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li><li><span class="n">ур. 40</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">ур. 50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">ур. 60</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">ур. 70</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:127,211,255">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/material/shard.png" alt=""></div>
+            <div>
+              <div class="gem-name">Элита</div>
+              <div class="gem-drop">убитые элитные монстры · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×5</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×30</i></span></li></ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="ach-craft">
+      <div class="sec-eyebrow">Разделы · Ремесло и Общение</div>
+      <h2>Кузня, алхимия, рынок, чат</h2>
+      <div class="gems stagger">
+        <div class="gem-card ach-c" style="--gc:111,191,115">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">🐾</span></div>
+            <div>
+              <div class="gem-name">Питомцы</div>
+              <div class="gem-drop">созданные питомцы · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>2 000 золота</i></span></li><li><span class="n">5</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:154,163,171">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">🛡️</span></div>
+            <div>
+              <div class="gem-name">Кузнец</div>
+              <div class="gem-drop">скованное снаряжение · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×3</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×3</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:255,120,70">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/potion/atk.png" alt=""></div>
+            <div>
+              <div class="gem-name">Алхимик</div>
+              <div class="gem-drop">сваренные зелья бафа · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>2 000 золота</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:111,156,74">
+          <div class="gem-top">
+            <div class="gem-art"><img src="/images/material/boxu.png" alt=""></div>
+            <div>
+              <div class="gem-name">Боксы</div>
+              <div class="gem-drop">открытые боксы · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:255,207,86">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">💰</span></div>
+            <div>
+              <div class="gem-name">Торговец</div>
+              <div class="gem-drop">проданные лоты на маркете · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>500 золота</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:90,169,230">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">🛒</span></div>
+            <div>
+              <div class="gem-name">Покупатель</div>
+              <div class="gem-drop">купленные лоты на маркете · 2 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>500 золота</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+        </div>
+        <div class="gem-card ach-c" style="--gc:90,169,230">
+          <div class="gem-top">
+            <div class="gem-art"><span class="emo">💬</span></div>
+            <div>
+              <div class="gem-name">Душа компании</div>
+              <div class="gem-drop">сообщения в чат · 3 ступени</div>
+            </div>
+          </div>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>300 золота</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>1 500 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="ach-shots">
+      <div class="sec-eyebrow">Как это выглядит</div>
+      <h2>Окно достижений</h2>
+      <div class="shots stagger">
+        <div><div class="phone"><img src="/images/patches/ach-runes.jpg" alt="Раздел «Руны»" loading="lazy"></div><div class="phone-cap"><b>Руны</b>готово к получению</div></div>
+        <div><div class="phone"><img src="/images/patches/ach-enhance.jpg" alt="Раздел «Заточка»" loading="lazy"></div><div class="phone-cap"><b>Заточка</b>лестница до +15</div></div>
+        <div><div class="phone"><img src="/images/patches/ach-claim.jpg" alt="Окно награды" loading="lazy"></div><div class="phone-cap"><b>Награда</b>с характеристиками руны</div></div>
+        <div><div class="phone"><img src="/images/patches/ach-news.jpg" alt="Окно обновления" loading="lazy"></div><div class="phone-cap"><b>Новость</b>при входе в игру</div></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="fixes-1025">
+      <div class="sec-eyebrow">Ещё</div>
+      <h2>Изменения</h2>
+      <div class="card fixes">
+        <div class="fix"><span class="tag new">Новое</span><span>Кнопка «Достижения» в Меню на HUD. Красная точка — есть награда, которую можно забрать; число на вкладке — сколько в разделе.</span></div>
+        <div class="fix"><span class="tag new">Новое</span><span>Окно «Достижение выполнено!» показывает, что пришло: у руны — её выпавшие характеристики.</span></div>
+        <div class="fix"><span class="tag chg">Изменено</span><span>Окно «Обновление» при входе теперь рассказывает о достижениях и открывает их одной кнопкой.</span></div>
+        <div class="fix"><span class="tag fixd">Важно</span><span>Ковка, заточка, убийства и торговля считаются с момента обновления; уровень персонажа засчитан задним числом.</span></div>
+      </div>
+    </section>
+  </article>
+
   <!-- ══ Патч · 17 октября 2026 · Мир ══════════════════════════════════ -->
   <article class="patch" id="p-1017">
     <header class="patch-head reveal">
-      <span class="patch-date new">17 октября 2026</span>
+      <span class="patch-date">17 октября 2026</span>
       <h2>Мир</h2>
       <p class="dek">Открытая локация со спотами, как в настоящих MMORPG: выбирайте место по силам, бейте пачки
         и охотьтесь на Владыку.</p>

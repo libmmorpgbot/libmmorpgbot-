@@ -2785,9 +2785,8 @@ function netConnect(onReady) {
     }
     netAchSync();
   });
-  socket.on('achClaimed', ({ id } = {}) => {
-    const a = achievementById(id);
-    if (a && typeof _marketToast === 'function') _marketToast(tVars('achClaimedToast', { name: _achName(a) }), 'ok');
+  socket.on('achClaimed', ({ id, granted } = {}) => {
+    if (typeof showAchClaimed === 'function') showAchClaimed(id, granted);
   });
   socket.on('achError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
