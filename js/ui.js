@@ -6318,15 +6318,24 @@ function onRuneCrafted(itemId, stats, delivered) {
   // её как раз _refreshRuneTab() ниже.
   if (typeof _pendingRuneCraft !== 'undefined') _pendingRuneCraft = null;
   if (typeof updateInvUI === 'function') updateInvUI();
-  if (!delivered) {
-    _shopMsgOrToast('Ковка не удалась — вложенное сгорело', false);
-  } else {
-    const base = itemCatalogBase(itemId) || {};
-    const line = (stats || []).map(st =>
-      `${RUNE_STAT_NAME[st.stat] || st.stat} +${runeStatPct(base.rarity, st.q)}%`).join(', ');
-    _shopMsgOrToast(`✓ ${base.name || 'Руна'}: ${line}`, true);
-  }
+  // Что ковали — из открытой карточки рецепта: при неудаче сервер itemId не
+  // присылает, а показать надо ту самую руну, что не вышла.
+  const tried = (typeof _openRuneRecipe !== 'undefined' && _openRuneRecipe) || null;
+  const id = itemId || (tried ? runeCatalogId(tried.kind, tried.rarity) : null);
+  const base = (id && itemCatalogBase(id)) || {};
   if (typeof _refreshRuneTab === 'function') _refreshRuneTab();
+  const lines = delivered ? `<div class="craft-res-stats">${(stats || []).map(st => {
+    const col = RUNE_QUALITY_COLOR[st.q] || '#aea599';
+    return `<span style="--qc:${col}"><i></i>${RUNE_STAT_NAME[st.stat] || st.stat} <b>+${runeStatPct(base.rarity, st.q)}%</b></span>`;
+  }).join('')}</div>` : '';
+  if (typeof showCraftResult === 'function') {
+    showCraftResult({
+      ok: !!delivered, icon: base.img ? _itemIcon(base, 64) : '',
+      name: `${base.name || 'Руна'} · ${_RARITY_NAMES[base.rarity] || ''}`,
+      color: RARITY_COLOR[base.rarity], extra: lines,
+      retry: tried ? () => craftRune(tried.kind, tried.rarity) : null,
+    });
+  }
 }
 function onRuneCraftError(msg) {
   if (typeof _pendingRuneCraft !== 'undefined') _pendingRuneCraft = null;

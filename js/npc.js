@@ -17,6 +17,9 @@ function openNpc(npcId) {
   document.getElementById('npc-name-lbl').textContent  = def.name;
   document.getElementById('npc-desc-lbl').textContent  = def.desc;
   document.getElementById('npc-body').innerHTML = _buildNpcBody(npcId);
+  // Кузнец оформлен отдельно (#npc-dialog[data-npc="craftsman"], css/style.css),
+  // лавка и хранилище — как были.
+  document.getElementById('npc-dialog').dataset.npc = npcId;
   const ov = document.getElementById('npc-overlay');
   ov.style.display = 'flex';
   _openNpcId = npcId;
@@ -213,6 +216,17 @@ function _matAvailable(m) {
   return countMaterial(m.id) >= m.n;
 }
 
+// Шанс успеха — полоской, а не голым числом: 30% и 90% должны выглядеть
+// по-разному ещё до того, как прочитаешь цифру.
+function _craftChanceHTML(chance) {
+  const pct = Math.round((Number(chance) || 0) * 100);
+  const tone = pct >= 80 ? 'hi' : pct >= 40 ? 'mid' : 'lo';
+  return `<div class="craft-chance ${tone}">
+    <div class="craft-chance-top"><span>${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}</span><b>${pct}%</b></div>
+    <div class="craft-chance-bar"><i style="width:${pct}%"></i></div>
+  </div>`;
+}
+
 function _setCraftsmanTab(tab) {
   _craftsmanTab = tab;
   document.getElementById('npc-body').innerHTML = _buildNpcBody('craftsman');
@@ -220,15 +234,18 @@ function _setCraftsmanTab(tab) {
 
 function _craftsmanBody() {
   const p = player;
+  const tab = (id, ico, key, dflt) => `<button class="craft-tab${_craftsmanTab === id ? ' active' : ''}" onclick="_setCraftsmanTab('${id}')"><span class="craft-tab-ico">${ico}</span>${typeof t === 'function' ? t(key) : dflt}</button>`;
   const tabs = `<div class="craft-tabs">
-    <button class="craft-tab${_craftsmanTab==='items'?' active':''}" onclick="_setCraftsmanTab('items')">${typeof t === 'function' ? t('craftTabItems') : 'Предметы'}</button>
-    <button class="craft-tab${_craftsmanTab==='mats'?' active':''}" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftTabMats') : 'Материалы'}</button>
-    <button class="craft-tab${_craftsmanTab==='consumables'?' active':''}" onclick="_setCraftsmanTab('consumables')">${typeof t === 'function' ? t('craftTabConsumables') : 'Расходники'}</button>
-    <button class="craft-tab${_craftsmanTab==='runes'?' active':''}" onclick="_setCraftsmanTab('runes')">${typeof t === 'function' ? t('craftTabRunes') : 'Руны'}</button>
+    ${tab('items', '⚔️', 'craftTabItems', 'Предметы')}
+    ${tab('mats', '📜', 'craftTabMats', 'Материалы')}
+    ${tab('consumables', '🧪', 'craftTabConsumables', 'Расходники')}
+    ${tab('runes', '🔮', 'craftTabRunes', 'Руны')}
   </div>`;
 
-  let html = `<div class="shop-gold">${iconHTML('coin',16,'#e3941d')} ${typeof t === 'function' ? t('npcGoldLbl') : 'Золото'}: <b>${Math.floor(p.gold)}</b>
-    &nbsp;·&nbsp; ${_nexumIconHtml(16)} Liberty: <b>${window._nexumBalance || 0}</b></div>`;
+  let html = `<div class="shop-gold craft-wallet">
+    <span class="craft-coin">${iconHTML('coin', 16, '#e3941d')}<b>${Math.floor(p.gold).toLocaleString('ru-RU')}</b></span>
+    <span class="craft-coin">${_nexumIconHtml(16)}<b>${(window._nexumBalance || 0).toLocaleString('ru-RU')}</b><small>Liberty</small></span>
+  </div>`;
   html += tabs;
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab()
     : _craftsmanTab === 'consumables' ? _craftsmanConsumablesTab()
@@ -278,7 +295,7 @@ function _craftsmanRunesTab() {
       // по просьбе владельца. Зелёная подсветка ячейки (класс .craftable,
       // css/style.css) никуда не делась и по-прежнему честно показывает,
       // хватает ли руды, — без самих цифр.
-      html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openRuneCraftModal('${kind}','${rec.rarity}')" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openRuneCraftModal('${kind}','${rec.rarity}')" style="--rc:${rc}">
         <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
       </div>`;
@@ -306,7 +323,7 @@ function _craftsmanRunesTab() {
     // стопроцентная (см. MAT_UPGRADE_RECIPES), так что «· 100%» в подписи
     // всё равно ничего не решала; зелёная подсветка ячейки (.craftable)
     // по-прежнему честно показывает, хватает ли руды.
-    ladder.push(`<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
+    ladder.push(`<div class="craft-item-cell${can ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="--rc:${rc}">
       <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
       <div class="craft-item-cell-name" style="color:${rc}">${toMat.name}</div>
     </div>`);
@@ -368,7 +385,7 @@ function openRuneCraftModal(kind, rarity) {
   // такого блока вовсе).
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('runes')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-icon">${_itemIcon(def, 52)}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${def.name}</div>
@@ -377,7 +394,7 @@ function openRuneCraftModal(kind, rarity) {
     </div>
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">${matsHtml}</div>
-    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
+    ${_craftChanceHTML(rec.chance)}
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftRune('${kind}','${rarity}')">${pending ? (typeof t === 'function' ? t('listingBusyLbl') : '...') : (typeof t === 'function' ? t('craftDoBtn') : 'Крафтить')}</button>
   `;
 }
@@ -446,7 +463,7 @@ function _uniqueCraftGroupHTML() {
   entries.forEach(({ rec, idx, item }) => {
     const rc = RARITY_COLOR[item.rarity] || '#aea599';
     const canCraft = invHasSpace() && rec.mats.every(m => _matAvailable(m));
-    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66;position:relative">
+    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="--rc:${rc}">
       <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
       <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
     </div>`;
@@ -480,7 +497,7 @@ function _uniqueSetCraftGroupHTML() {
     clsEntries.forEach(({ rec, idx, item }) => {
       const rc = RARITY_COLOR[item.rarity] || '#aea599';
       const canCraft = invHasSpace() && rec.mats.every(m => _matAvailable(m));
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="border-color:${rc}66;position:relative">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openCraftModal(${idx})" style="--rc:${rc}">
         <div class="craft-item-cell-icon">${_itemIcon(item, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${item.name}</div>
       </div>`;
@@ -505,7 +522,7 @@ function _craftsmanConsumablesTab() {
     if (!def) return;
     const rc = RARITY_COLOR[def.rarity] || '#aea599';
     const canCraft = invHasSpace() && nexumBal >= (rec.nexumCost || 0);
-    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBuffPotionCraftModal(${idx})" style="border-color:${rc}66">
+    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBuffPotionCraftModal(${idx})" style="--rc:${rc}">
       <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
       <div class="craft-item-cell-name" style="color:${rc}">${def.name}</div>
     </div>`;
@@ -535,7 +552,7 @@ function openBuffPotionCraftModal(idx) {
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('consumables')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-icon">${_itemIcon(def, 52)}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${def.name}</div>
@@ -569,9 +586,12 @@ function onBuffPotionCrafted(itemId, qty) {
   // всегда успех: зелёным, той же _shopMsgOk, что уже красит покупку в
   // лавке. Обычный _shopMsg по умолчанию КРАСНЫЙ (см. .shop-msg в
   // css/style.css) — раньше успех и провал крафта выглядели одинаково.
-  _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (def ? def.name : itemId) + ' ×' + (qty || 1));
   if (typeof updateInvUI === 'function') updateInvUI();
   if (idx !== null) openBuffPotionCraftModal(idx);
+  showCraftResult({
+    ok: true, icon: def ? _itemIcon(def, 64) : '', name: (def ? def.name : itemId) + ' ×' + (qty || 1),
+    color: def && RARITY_COLOR[def.rarity], retry: idx !== null ? () => craftBuffPotion(idx) : null,
+  });
 }
 
 function onBuffPotionCraftError(msg) {
@@ -652,7 +672,7 @@ function openCraftModal(idx) {
   const _backTab = rec.matId ? 'mats' : 'items';
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('${_backTab}')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-icon">${resultIconHtml}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${resultDef.name}${enhBadge}</div>
@@ -661,7 +681,7 @@ function openCraftModal(idx) {
     </div>
     <div class="craft-reqs-title">${typeof t === 'function' ? t('craftRequiredLbl') : 'Требуется:'}</div>
     <div class="craft-reqs-list">${matsHtml}${costRow}</div>
-    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(rec.chance * 100)}%</b></div>
+    ${_craftChanceHTML(rec.chance)}
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftSpecificItem(${idx})">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
 }
@@ -713,7 +733,7 @@ function _craftsmanMatsTab() {
     const have = countMaterial(recipe.from);
     const canCraft = have >= recipe.count && (window._nexumBalance || 0) >= (recipe.nexumCost || 0) && invHasSpace();
     const rc = RARITY_COLOR[toMat.rarity] || '#aea599';
-    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="border-color:${rc}66">
+    html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openMatModal(${idx})" style="--rc:${rc}">
       <div class="craft-item-cell-icon">${_matIcon(toMat, 32)}</div>
       <div class="craft-item-cell-name" style="color:${rc}">${toMat.name}</div>
     </div>`;
@@ -728,7 +748,7 @@ function _craftsmanMatsTab() {
     const haveBooks = countSkillBooks();
     const canCraftBook = haveBooks >= ADV_SKILL_BOOK_CRAFT.count && invHasSpace();
     html += `<div class="craft-group-hdr" style="color:#f5c542">${typeof t === 'function' ? t('craftAdvBooksHdr') : 'Книги 2 профессии'}</div><div class="craft-items-grid">
-      <div class="craft-item-cell${canCraftBook ? ' craftable' : ''}" onclick="openAdvBookCraftModal()" style="border-color:#f5c54266">
+      <div class="craft-item-cell${canCraftBook ? ' craftable' : ''}" onclick="openAdvBookCraftModal()" style="--rc:#f5c542">
         <div class="craft-item-cell-icon">${iconHTML('book', 32, '#f5c542')}</div>
         <div class="craft-item-cell-name" style="color:#f5c542">${typeof t === 'function' ? t('craftAdvBookRandom') : 'Случайная книга'}</div>
       </div>
@@ -746,7 +766,7 @@ function _craftsmanMatsTab() {
       const canCraft = (box.nexumCost ? (window._nexumBalance || 0) >= box.nexumCost : countMaterial(box.keyId) >= box.keyCost)
         && invHasSpace();
       const rc = RARITY_COLOR[box.rarity] || '#aea599';
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBoxCraftModal('${box.id}')" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openBoxCraftModal('${box.id}')" style="--rc:${rc}">
         <div class="craft-item-cell-icon">${_itemIcon(box, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${box.name}</div>
       </div>`;
@@ -762,7 +782,7 @@ function _craftsmanMatsTab() {
       if (!pets.length) return;
       const rc = RARITY_COLOR[rec.rarity] || '#aea599';
       const canCraft = invHasSpace() && nexumBal >= (rec.nexumCost || 0);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openPetCraftModal(${idx})" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openPetCraftModal(${idx})" style="--rc:${rc}">
         <div class="craft-item-cell-icon">${_itemIcon(pets[0], 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
       </div>`;
@@ -785,7 +805,7 @@ function _craftsmanMatsTab() {
       const canCraft = invHasSpace()
         && _wingsMatCount(need.rarity) >= need.n
         && nexumBal >= (rec.nexumCost || 0);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openWingsCraftModal('${rec.itemId}')" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openWingsCraftModal('${rec.itemId}')" style="--rc:${rc}">
         <div class="craft-item-cell-icon">${_itemIcon(def, 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${_RARITY_NAMES[def.rarity] || def.rarity}</div>
       </div>`;
@@ -808,7 +828,7 @@ function _craftsmanMatsTab() {
         && nexumBal >= (rec.nexumCost || 0);
       const label = (rec.resultSlot === 'cloak' ? (_SLOT_NAMES.cloak || 'Плащ') : (_SLOT_NAMES.artifact || 'Артефакт'))
         + ' · ' + (_RARITY_NAMES[rec.resultRarity] || rec.resultRarity);
-      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openClassGearCraftModal(${idx})" style="border-color:${rc}66">
+      html += `<div class="craft-item-cell${canCraft ? ' craftable' : ''}" onclick="openClassGearCraftModal(${idx})" style="--rc:${rc}">
         <div class="craft-item-cell-icon">${_itemIcon(pool[0], 32)}</div>
         <div class="craft-item-cell-name" style="color:${rc}">${label}</div>
       </div>`;
@@ -884,7 +904,7 @@ function openWingsCraftModal(itemId) {
   const canCraft = can && _pendingWingsCraft !== rec.itemId;
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-icon">${_itemIcon(def, 56)}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${def.name} · ${_RARITY_NAMES[def.rarity] || def.rarity}</div>
@@ -962,7 +982,7 @@ function openClassGearCraftModal(idx) {
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${(rec.resultSlot === 'cloak' ? (_SLOT_NAMES.cloak || 'Плащ') : (_SLOT_NAMES.artifact || 'Артефакт'))} · ${_RARITY_NAMES[rec.resultRarity] || rec.resultRarity}</div>
         <div class="craft-detail-stats">${pickOneOfN}</div>
@@ -998,16 +1018,18 @@ function onClassGearCrafted(item, delivered) {
     // thing is to say so. Adding it here instead, as this used to, both
     // duplicated it when the server HAD delivered and forged one when it
     // hadn't; the save path now rejects the latter outright.
-    if (delivered) {
-      _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + item.name);
-    } else {
-      _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
-    }
+    if (!delivered) _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
     if (typeof updateInvUI === 'function') updateInvUI();
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }
   if (idx !== null) openClassGearCraftModal(idx);
+  const rec = idx !== null ? CLASS_GEAR_SALVAGE_RECIPES[idx] : null;
+  const shown = item || (rec ? _classGearOfRarity(rec.resultSlot, rec.resultRarity)[0] : null);
+  if (shown && (!item || delivered)) {
+    showCraftResult({
+      ok: !!item, icon: _itemIcon(shown, 64), name: shown.name, color: RARITY_COLOR[shown.rarity],
+      extra: item ? (statStr(item) || '') : '', retry: idx !== null ? () => craftClassGear(idx) : null,
+    });
+  }
 }
 
 function onClassGearCraftError(msg) {
@@ -1063,12 +1085,16 @@ function onGearCrafted(itemId, success) {
   if (typeof updateInvUI === 'function') updateInvUI();
   // Единственный крафт, где исход и правда неясен без броска (chance<1) —
   // зелёное «Создано» либо красный «Провал», а не один и тот же цвет на оба.
-  if (success) {
-    _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (item ? item.name : itemId));
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
-  }
   if (idx !== null) openCraftModal(idx);
+  const isWings = typeof WINGS_CRAFT_RECIPES !== 'undefined' && WINGS_CRAFT_RECIPES.some(r => r.itemId === itemId);
+  const enh = (success && idx !== null && ITEM_CRAFT_RECIPES[idx]) ? _craftResultEnhance(ITEM_CRAFT_RECIPES[idx]) : 0;
+  showCraftResult({
+    ok: !!success, icon: item ? _itemIcon(item, 64) : '',
+    name: (item ? item.name : itemId) + (enh ? ` <b style="color:#e69419">+${enh}</b>` : ''),
+    color: item && RARITY_COLOR[item.rarity],
+    extra: success && item ? (statStr(_itemWithEnhance(item, enh)) || '') : '',
+    retry: isWings ? () => craftWings(itemId) : (idx !== null ? () => craftSpecificItem(idx) : null),
+  });
 }
 function onGearCraftError(msg) {
   const idx = _pendingGearCraftIdx;
@@ -1145,7 +1171,7 @@ function openPetCraftModal(idx) {
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${_RARITY_NAMES[rec.rarity] || rec.rarity}</div>
         <div class="craft-detail-stats">${typeof t === 'function' ? t('craftPetPickOneOf') : 'Один случайный из 3'}</div>
@@ -1177,16 +1203,19 @@ function onPetCrafted(pet, delivered) {
   if (pet) {
     // Same rule as onClassGearCrafted above — the server owns the grant, and
     // delivered:false means it had no room to hand the pet over.
-    if (delivered) {
-      _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + pet.name);
-    } else {
-      _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
-    }
+    if (!delivered) _shopMsg(typeof t === 'function' ? t('invFull') : 'Инвентарь полон!');
     if (typeof updateInvUI === 'function') updateInvUI();
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
   }
   if (idx !== null) openPetCraftModal(idx);
+  const rec = idx !== null ? PET_CRAFT_RECIPES[idx] : null;
+  const shown = pet || (rec ? _petsOfRarity(rec.rarity)[0] : null);
+  if (shown && (!pet || delivered)) {
+    showCraftResult({
+      ok: !!pet, icon: _itemIcon(shown, 64), name: pet ? pet.name : (_RARITY_NAMES[shown.rarity] || ''),
+      color: RARITY_COLOR[shown.rarity], extra: pet ? (statStr(pet) || '') : '',
+      retry: idx !== null ? () => craftPet(idx) : null,
+    });
+  }
 }
 
 function onPetCraftError(msg) {
@@ -1238,7 +1267,7 @@ function openBoxCraftModal(boxId) {
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rc}">
       <div class="craft-detail-icon">${_itemIcon(box, 52)}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rc};text-shadow:0 0 8px ${rc}66">${box.name}</div>
@@ -1278,8 +1307,11 @@ function onBoxCrafted(boxId) {
   const box = BOX_DEF.find(b => b.id === boxId);
   if (typeof updateInvUI === 'function') updateInvUI();
   // Ключи → бокс, 100% — как и у зелий, без броска, значит всегда успех.
-  _shopMsgOk((typeof t === 'function' ? t('craftCreatedPrefix') : '✓ Создано: ') + (box ? box.name : boxId));
   if (id !== null) openBoxCraftModal(id);
+  showCraftResult({
+    ok: true, icon: box ? _itemIcon(box, 64) : '', name: box ? box.name : boxId,
+    color: box && RARITY_COLOR[box.rarity], retry: id !== null ? () => craftBox(id) : null,
+  });
 }
 function onBoxCraftError(msg) {
   const id = _pendingBoxCraftId;
@@ -1330,7 +1362,7 @@ function openMatModal(idx) {
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:${rcTo}">
       <div class="craft-detail-icon">${_matIcon(toMat, 52)}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:${rcTo};text-shadow:0 0 8px ${rcTo}66">${toMat.name}</div>
@@ -1362,7 +1394,7 @@ function openMatModal(idx) {
         <span class="craft-req-count" style="color:${nexumOk ? '#98e456' : '#eb4e61'}">${nexumBal}/${nexumNeed}</span>
       </div>` : ''}
     </div>
-    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(recipe.chance * 100)}%</b></div>
+    ${_craftChanceHTML(recipe.chance)}
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftMatUpgrade(${idx})">${btnLbl}</button>
   `;
 }
@@ -1412,20 +1444,16 @@ function onMatUpgraded(from, to, success, count, succeeded) {
   const mat = CRAFT_MATS.find(m => m.id === to);
   if (typeof updateInvUI === 'function') updateInvUI();
   const matName = mat ? mat.name : to;
-  if (count > 1) {
-    if (succeeded > 0) {
-      _shopMsgOk(typeof tVars === 'function'
-        ? tVars('craftReceivedQtyFmt', { n: succeeded, of: count, name: matName })
-        : `✓ Получено: ${matName} ×${succeeded} из ${count}`);
-    } else {
-      _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
-    }
-  } else if (success) {
-    _shopMsgOk((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + matName);
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
-  }
   if (idx !== null) openMatModal(idx);
+  // Партия: успех, если вышла хоть одна; сколько из скольких — подписью.
+  const batch = count > 1;
+  const got = batch ? succeeded : (success ? 1 : 0);
+  showCraftResult({
+    ok: got > 0, icon: mat ? _matIcon(mat, 64) : '', name: matName + (got > 1 ? ' ×' + got : ''),
+    color: mat && RARITY_COLOR[mat.rarity],
+    sub: batch ? (typeof tVars === 'function' ? tVars('craftResBatch', { n: succeeded, of: count }) : `Успешно: ${succeeded} из ${count}`) : '',
+    retry: idx !== null ? () => craftMatUpgrade(idx) : null,
+  });
 }
 function onMatUpgradeError(msg) {
   const idx = _pendingMatUpgradeIdx;
@@ -1444,7 +1472,7 @@ function openAdvBookCraftModal() {
 
   document.getElementById('npc-body').innerHTML = `
     <button class="craft-back-btn" onclick="_setCraftsmanTab('mats')">${typeof t === 'function' ? t('craftBackBtn') : '← Назад'}</button>
-    <div class="craft-detail-header">
+    <div class="craft-detail-header" style="--rc:#f5c542">
       <div class="craft-detail-icon">${iconHTML('book', 52, '#f5c542')}</div>
       <div class="craft-detail-info">
         <div class="craft-detail-name" style="color:#f5c542;text-shadow:0 0 8px #f5c54266">${typeof t === 'function' ? t('craftAdvBookRandom') : 'Случайная книга 2 профессии'}</div>
@@ -1458,7 +1486,7 @@ function openAdvBookCraftModal() {
         <span class="craft-req-count" style="color:${ok ? '#98e456' : '#eb4e61'}">${have}/${ADV_SKILL_BOOK_CRAFT.count}</span>
       </div>
     </div>
-    <div class="craft-chance-row">${typeof t === 'function' ? t('craftChanceLbl') : 'Шанс успеха: '}<b style="color:#ebab4b">${Math.round(ADV_SKILL_BOOK_CRAFT.chance * 100)}%</b></div>
+    ${_craftChanceHTML(ADV_SKILL_BOOK_CRAFT.chance)}
     <button class="shop-btn craft-do-btn${canCraft ? '' : ' disabled'}" onclick="craftAdvSkillBook()">${typeof t === 'function' ? t('craftDoBtn') : 'Крафтить'}</button>
   `;
 }
@@ -1479,12 +1507,12 @@ function craftAdvSkillBook() {
 function onAdvSkillBookCrafted(success, id) {
   const book = CRAFT_MATS.find(m => m.id === id);
   if (typeof updateInvUI === 'function') updateInvUI();
-  if (success) {
-    _shopMsgOk((typeof t === 'function' ? t('craftReceivedPrefix') : '✓ Получено: ') + (book ? book.name : ''));
-  } else {
-    _shopMsg(typeof t === 'function' ? t('craftFailMsg') : 'Провал! Материалы потеряны.');
-  }
   openAdvBookCraftModal();
+  showCraftResult({
+    ok: !!success, icon: book ? _matIcon(book, 64) : iconHTML('book', 64, '#f5c542'),
+    name: book ? book.name : (typeof t === 'function' ? t('craftAdvBookRandom') : 'Книга 2 профессии'),
+    color: book ? RARITY_COLOR[book.rarity] : '#f5c542', retry: craftAdvSkillBook,
+  });
 }
 function onAdvSkillBookCraftError(msg) {
   _shopMsg(msg || t('genericErrorLbl'));
@@ -1563,7 +1591,7 @@ function _storageItemCell(it, idx, onclickFn) {
   const rc = RARITY_COLOR[it.rarity] || '#aea599';
   const cnt = it.qty > 1 ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${it.qty}</span>` : '';
   const enh = it.enhance ? `<span style="position:absolute;top:1px;right:3px;font-size:8px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
-  return `<div class="craft-item-cell craftable" style="border-color:${rc}66;position:relative" onclick="${onclickFn}(${idx})" title="${it.name}">
+  return `<div class="craft-item-cell craftable" style="--rc:${rc}" onclick="${onclickFn}(${idx})" title="${it.name}">
     ${enh}${cnt}
     <div class="craft-item-cell-icon">${_itemIcon(it, 32)}</div>
     <div class="craft-item-cell-name" style="color:${rc}">${it.name}</div>
@@ -1645,7 +1673,7 @@ function _openStorageQty(mode, idx) {
   el.innerHTML = `<div class="stq-panel">
     <div class="stq-title">${title}</div>
     <div class="stq-item">
-      <div class="stq-icon" style="border-color:${rc}66">${_itemIcon(it, 40)}</div>
+      <div class="stq-icon" style="--rc:${rc}">${_itemIcon(it, 40)}</div>
       <div>
         <div class="stq-name" style="color:${rc}">${it.name}${it.enhance ? ' +' + it.enhance : ''}</div>
         <div class="stq-have">${tVars('storageQtyHave', { n: max })}</div>
@@ -1735,6 +1763,55 @@ function _shopMsg(msg) {
   el.textContent = msg;
   body.insertBefore(el, body.firstChild);
   setTimeout(() => el.remove(), 2500);
+}
+
+// ── Окно результата крафта ─────────────────────────────────────────────────
+// Одно на все рецепты кузнеца: успех — золотые лучи и предмет в свечении его
+// редкости, неудача — красная вспышка и треснувший, потускневший предмет.
+// Раньше исход писался строкой над карточкой рецепта, одного цвета для
+// «получено» и «сгорело», и пропустить её было проще, чем заметить.
+//
+// opts: ok — успех; icon — HTML значка; name — что крафтили; color — цвет
+// редкости; extra — HTML под названием (характеристики руны, «×10»);
+// sub — подпись вместо стандартной; retry — функция «Ещё раз».
+let _craftResRetry = null;
+function showCraftResult(opts) {
+  const o = opts || {};
+  closeCraftResult();
+  _craftResRetry = typeof o.retry === 'function' ? o.retry : null;
+  const ok = !!o.ok;
+  const col = o.color || (ok ? '#ffcf56' : '#eb4e61');
+  const _t = (k, d) => (typeof t === 'function' ? t(k) : d);
+  const ov = document.createElement('div');
+  ov.id = 'craft-res-ov';
+  ov.className = 'craft-res-ov ' + (ok ? 'ok' : 'fail');
+  ov.onclick = closeCraftResult;
+  ov.innerHTML = `
+    <div class="craft-res" onclick="event.stopPropagation()" style="--rc:${col}">
+      <div class="craft-res-rays"></div>
+      <div class="craft-res-art">
+        <div class="craft-res-icon">${o.icon || ''}</div>
+        ${ok ? '<i class="craft-res-spark s1">✦</i><i class="craft-res-spark s2">✦</i><i class="craft-res-spark s3">✦</i>'
+             : '<i class="craft-res-crack"></i>'}
+      </div>
+      <div class="craft-res-title">${ok ? _t('craftResOk', 'Успешно!') : _t('craftResFail', 'Неудача')}</div>
+      <div class="craft-res-name">${o.name || ''}</div>
+      ${o.extra ? `<div class="craft-res-extra">${o.extra}</div>` : ''}
+      <div class="craft-res-sub">${o.sub || (ok ? _t('craftResOkSub', 'Предмет уже в инвентаре') : _t('craftResFailSub', 'Материалы сгорели'))}</div>
+      <div class="craft-res-btns">
+        ${_craftResRetry ? `<button class="craft-res-btn again" onclick="_craftResAgain()">${_t('craftResAgain', 'Ещё раз')}</button>` : ''}
+        <button class="craft-res-btn" onclick="closeCraftResult()">${ok ? _t('craftResOkBtn', 'Отлично!') : _t('craftResFailBtn', 'Понятно')}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+function closeCraftResult() {
+  document.getElementById('craft-res-ov')?.remove();
+}
+function _craftResAgain() {
+  const fn = _craftResRetry;
+  closeCraftResult();
+  if (fn) fn();
 }
 
 function _shopMsgOk(msg) {

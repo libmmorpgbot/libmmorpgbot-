@@ -14,9 +14,12 @@
 // версия (_shopMsgOk/.shop-msg-ok) уже существовала — её использовала только
 // покупка на рынке, но ни один из семи путей крафта её не звал.
 //
-// Проверяется буквально по исходнику: каждый путь, где исход крафта известен
-// СРАЗУ (без второго прохода через сервер), зовёт _shopMsgOk на успехе и
-// обычный _shopMsg на провале — а не одну и ту же функцию на оба.
+// Следующий шаг, тоже по просьбе владельца: «во время нажатия скрафтить —
+// чтобы понятно было, успех или неудача, окошко как в достижении». Строка над
+// карточкой рецепта сменилась окном результата (showCraftResult, js/npc.js):
+// успех — золотое, неудача — красное, с треснувшим предметом. Здесь
+// проверяется, что окно и правда различает исходы и что его открывает КАЖДЫЙ
+// путь крафта, передавая исход броска, а не константу.
 
 const fs = require('fs');
 const path = require('path');
@@ -50,55 +53,54 @@ function fn(src, name, nextName) {
   return src.slice(at, end > at ? end : undefined);
 }
 
-console.log('\n  ── без броска: зелья, боксы — всегда успех ──');
+console.log('\n  ── окно результата различает успех и неудачу ──');
 {
-  const potion = fn(npc, 'onBuffPotionCrafted');
-  ok(potion && /_shopMsgOk\(/.test(potion), 'зелье баффа: _shopMsgOk');
-  const box = fn(npc, 'onBoxCrafted');
-  ok(box && /_shopMsgOk\(/.test(box), 'бокс: _shopMsgOk');
+  const show = fn(npc, 'showCraftResult');
+  const close = fn(npc, 'closeCraftResult');
+  ok(!!show && !!close, 'showCraftResult и closeCraftResult найдены');
+  // Само окно — настоящим вызовом на заглушке DOM, а не поиском по тексту.
+  const made = [];
+  const fakeDoc = {
+    getElementById: () => null,
+    createElement: () => ({ className: '', innerHTML: '', remove() {} }),
+    body: { appendChild: (el) => made.push(el) },
+  };
+  const run = new Function('document', `let _craftResRetry = null;\n${show}\n${close}\nreturn showCraftResult;`)(fakeDoc);
+  run({ ok: true, name: 'X' });
+  run({ ok: false, name: 'X' });
+  const [good, bad] = made;
+  ok(good && /\bok\b/.test(good.className) && !/\bfail\b/.test(good.className), 'успех — окно с классом ok', good && good.className);
+  ok(bad && /\bfail\b/.test(bad.className) && !/\bok\b/.test(bad.className), 'неудача — окно с классом fail', bad && bad.className);
+  ok(good && /Успешно/.test(good.innerHTML) && !/Неудача/.test(good.innerHTML), 'успех подписан «Успешно!»');
+  ok(bad && /Неудача/.test(bad.innerHTML) && /Материалы сгорели/.test(bad.innerHTML), 'неудача подписана «Неудача» и «Материалы сгорели»');
+
+  const css = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
+  const okCss = css.slice(css.indexOf('.craft-res-ov.ok .craft-res {'), css.indexOf('.craft-res-ov.fail .craft-res {'));
+  const failCss = css.slice(css.indexOf('.craft-res-ov.fail .craft-res {'), css.indexOf('.craft-res-rays {'));
+  ok(/255,\s*(207|190)/.test(okCss) && !/235,\s*78|220,\s*60/.test(okCss), 'успех — золотая палитра');
+  ok(/235,\s*78|220,\s*60/.test(failCss), 'неудача — красная палитра');
 }
 
-console.log('\n  ── доставка отдельно от броска: классовая экипировка, питомец ──');
+console.log('\n  ── окно открывает каждый путь крафта, с исходом броска ──');
+for (const [name, next, src, okExpr] of [
+  ['onBuffPotionCrafted', 'onBuffPotionCraftError', npc, /ok: true/],
+  ['onBoxCrafted', 'onBoxCraftError', npc, /ok: true/],
+  ['onClassGearCrafted', 'onClassGearCraftError', npc, /ok: !!item/],
+  ['onPetCrafted', 'onPetCraftError', npc, /ok: !!pet/],
+  ['onGearCrafted', 'onGearCraftError', npc, /ok: !!success/],
+  ['onMatUpgraded', 'onMatUpgradeError', npc, /ok: got > 0/],
+  ['onAdvSkillBookCrafted', 'onAdvSkillBookCraftError', npc, /ok: !!success/],
+  ['onRuneCrafted', 'onRuneCraftError', ui, /ok: !!delivered/],
+]) {
+  const body = fn(src, name, next);
+  ok(!!body && /showCraftResult\(\{/.test(body), `${name}: открывает окно результата`);
+  ok(!!body && okExpr.test(body), `${name}: исход — ${okExpr.source.replace('ok: ', '')}`);
+}
+// «Нет места» — не исход броска: остаётся строкой, а не окном «Неудача».
 for (const name of ['onClassGearCrafted', 'onPetCrafted']) {
   const body = fn(npc, name);
-  ok(!!body, `${name} найдена`);
-  if (!body) continue;
-  ok(/if \(delivered\) \{\s*\n\s*_shopMsgOk\(/.test(body),
-    `${name}: доставлено — _shopMsgOk`);
-  ok(!/\? \(typeof t === 'function' \? t\('craftCreatedPrefix'\)/.test(body),
-    `${name}: больше не тернарник в один _shopMsg (успех и провал разными вызовами)`);
-}
-
-console.log('\n  ── бросок прямо здесь: снаряжение, материалы, вторая профессия ──');
-for (const [name, next] of [
-  ['onGearCrafted', 'onGearCraftError'],
-  ['onMatUpgraded', 'onMatUpgradeError'],
-  ['onAdvSkillBookCrafted', 'onAdvSkillBookCraftError'],
-]) {
-  const body = fn(npc, name, next);
-  ok(!!body, `${name} найдена`);
-  if (!body) continue;
-  ok(/if \(success\) \{\s*\n\s*_shopMsgOk\(/.test(body),
-    `${name}: успех — _shopMsgOk`);
-  ok(/\} else \{\s*\n\s*_shopMsg\(/.test(body),
-    `${name}: провал — обычный (красный) _shopMsg`);
-  ok(!new RegExp(`_shopMsg\\(success\\s*\\n?\\s*\\?`).test(body),
-    `${name}: не тернарник в одну функцию — успех и провал зовут РАЗНОЕ`);
-}
-
-console.log('\n  ── руна: _shopMsgOrToast умеет красить, а не всегда один цвет ──');
-{
-  const toastFn = fn(ui, '_shopMsgOrToast');
-  ok(!!toastFn && /ok === true/.test(toastFn) && /ok === false/.test(toastFn),
-    '_shopMsgOrToast принимает ok и различает true/false, а не только есть/нет');
-  ok(/_shopMsgOk\(msg\); return;/.test(toastFn || ''),
-    'ok===true уходит в зелёный _shopMsgOk, когда панель кузнеца открыта');
-
-  const crafted = fn(ui, 'onRuneCrafted');
-  ok(!!crafted && /_shopMsgOrToast\([^)]*,\s*true\)/.test(crafted),
-    'ковка руны удалась — вызов помечен true');
-  ok(!!crafted && /_shopMsgOrToast\([^)]*,\s*false\)/.test(crafted),
-    'ковка руны провалилась — вызов помечен false');
+  ok(!!body && /if \(!delivered\) _shopMsg\(/.test(body) && /\|\| delivered\)\)/.test(body),
+    `${name}: полный инвентарь — строкой, окно только для настоящего исхода`);
 }
 
 console.log('');
