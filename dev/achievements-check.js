@@ -91,6 +91,7 @@ const SRC = ['server/handlers2', 'server'].flatMap(dir =>
     .map(f => fs.readFileSync(path.join(__dirname, '..', dir, f), 'utf8'))).join('\n');
 const unbumped = Object.entries(ACH_METRICS).filter(([k, m]) => {
   if (m.kind === 'lvl') return !/ach\.onLevel\(/.test(SRC);
+  if (m.kind === 'live') return !new RegExp(`ach\\.liveAfter\\([^)]*'${k}'`).test(SRC);
   if (/^rune(Common|Uncommon|Rare|Epic|Legendary)$/.test(k)) return !/ach\.bumpIn\(t, s, 'rune' \+ rarity/.test(SRC);
   return !new RegExp(`ach\\.bumpIn\\([^)]*'${k}'`).test(SRC);
 }).map(([k]) => k);
@@ -240,6 +241,67 @@ const countItem = async (pid, id) => {
   eq(await metric(pid, 'enhOk'), okCount, 'enhOk — число удачных бросков');
   if (best >= 3) ok(readySeen.includes('enh_max_3'), 'дошёл до +3 — клиенту сказали «выполнено»');
 
+  // ── руны в надетых вещах — состояние, а не число нажатий ──────────────────
+  // Жалоба: «снять-надеть одну руну 10 раз» закрывало цель. Теперь считаются
+  // надетые вещи, в которых руна стоит СЕЙЧАС.
+  console.log('  ── руны в надетых вещах ──');
+  const runesRepo = require('../server/db/repos/runes');
+  const liveOf = async () => {
+    const st = once(sock, 'achState');
+    sock.emit('achSync');
+    return Number((await st).metrics.runeSocket || 0);
+  };
+  const eqRowOf = async (slot) => {
+    const { rows: e } = await q(`SELECT id FROM player_items WHERE player_id = $1 AND container = 'equipment' AND slot = $2`, [pid, slot]);
+    return e.length ? Number(e[0].id) : null;
+  };
+  // Хозяин в каждом слоте под руну: надетое, а если пусто — первая вещь
+  // каталога для этого слота.
+  const hosts = {};
+  for (const slot of D.ACH_RUNE_SLOTS) {
+    hosts[slot] = await eqRowOf(slot) || await tx(async (t) => {
+      await items.lockPlayer(t, pid);
+      const def = D.ITEM_DEF.find(d => d.slot === slot && !d.classItem && (!d.forClass || d.forClass.includes('warlock')));
+      const row = await items.add(t, pid, def.id, { qty: 1, source: 'test' });
+      await items.moveTo(t, row, pid, 'equipment', slot);
+      return row;
+    });
+  }
+  const runeRows = {};
+  for (const slot of D.ACH_RUNE_SLOTS) {
+    runeRows[slot] = await tx(async (t) => {
+      await items.lockPlayer(t, pid);
+      const got = await runesRepo.grantRune(t, pid, slot === 'weapon' ? 'weapon' : 'armor', 'common', 'test');
+      return got.rowId;
+    });
+  }
+  eq(await liveOf(), 0, 'рун в надетых вещах нет — 0');
+  // Одна руна в шлем — через настоящий сокет, и ещё пять раз вынуть/вставить.
+  const sockRune = async (ev, payload) => { sock.emit(ev, payload); await wait(350); };
+  await sockRune('runeSocket', { hostRowId: hosts.helmet, runeRowId: runeRows.helmet, socketIdx: 0 });
+  eq(await liveOf(), 1, 'руна в надетом шлеме — 1');
+  for (let i = 0; i < 5; i++) {
+    await sockRune('runeUnsocket', { runeRowId: runeRows.helmet });
+    await sockRune('runeSocket', { hostRowId: hosts.helmet, runeRowId: runeRows.helmet, socketIdx: 0 });
+  }
+  eq(await liveOf(), 1, 'вынуть и вставить ту же руну 5 раз — всё равно 1, а не 6');
+  rep = claimReply(sock);
+  sock.emit('achClaim', { id: 'rune_socket_10' });
+  rep = await rep;
+  eq(rep.ev, 'achError', `«руны во всём снаряжении» не выдаётся, пока не все ${D.ACH_RUNE_SLOTS.length} слотов`);
+  // Остальные слоты — напрямую в базе: сама вставка проверена выше, здесь
+  // нужен только результат «руна в каждом слоте».
+  for (const slot of D.ACH_RUNE_SLOTS) {
+    if (slot === 'helmet') continue;
+    await q(`UPDATE player_items SET socket_of = $1, socket_idx = 0, container = 'inventory', slot = NULL WHERE id = $2`,
+      [hosts[slot], runeRows[slot]]);
+  }
+  eq(await liveOf(), D.ACH_RUNE_SLOTS.length, `руны во всех ${D.ACH_RUNE_SLOTS.length} надетых вещах`);
+  rep = claimReply(sock);
+  sock.emit('achClaim', { id: 'rune_socket_10' });
+  rep = await rep;
+  eq(rep.ev, 'achClaimed', '«руны во всём снаряжении» — выдано');
+
   // ── уровень и золото ─────────────────────────────────────────────────────
   await q('UPDATE player_progress SET lvl = 10 WHERE player_id = $1', [pid]);
   const goldOf = async () => {
@@ -257,17 +319,18 @@ const countItem = async (pid, id) => {
   console.log('  ── полная сумка ──');
   await tx(async (t) => {
     await items.lockPlayer(t, pid);
+    // Руна в гнезде места в сумке не занимает (usedSlots, repos/items.js).
     const { rows: u } = await q(`SELECT count(*)::int n FROM player_items
-                                  WHERE player_id = $1 AND container = 'inventory'`, [pid]);
+                                  WHERE player_id = $1 AND container = 'inventory' AND socket_of IS NULL`, [pid]);
     for (let i = u[0].n; i < SERVER_INV_MAX; i++) await items.add(t, pid, 'sw1', { qty: 1, source: 'test' });
   });
-  await q(`INSERT INTO player_ach_progress (player_id, metric, value) VALUES ($1, 'runeSocket', 10)
-           ON CONFLICT (player_id, metric) DO UPDATE SET value = 10`, [pid]);
+  // Награда с руной (не складывается в стопку — ей нужен свободный слот).
+  await q(`UPDATE player_ach_progress SET value = 50 WHERE player_id = $1 AND metric = 'runeCommon'`, [pid]);
   rep = claimReply(sock);
-  sock.emit('achClaim', { id: 'rune_socket_10' });
+  sock.emit('achClaim', { id: 'rune_common_50' });
   rep = await rep;
   eq(rep.ev, 'achError', 'сумка полна — отказ');
-  const { rows: cl } = await q(`SELECT 1 FROM player_ach_claims WHERE player_id = $1 AND ach_id = 'rune_socket_10'`, [pid]);
+  const { rows: cl } = await q(`SELECT 1 FROM player_ach_claims WHERE player_id = $1 AND ach_id = 'rune_common_50'`, [pid]);
   eq(cl.length, 0, 'и награда не записана как забранная — её можно забрать позже');
 
   sock.disconnect();

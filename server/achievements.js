@@ -18,7 +18,7 @@ const { query, hasColumn } = require('./db');
 const items = require('./db/repos/items');
 const money = require('./db/repos/money');
 const runes = require('./db/repos/runes');
-const { ACH_METRICS, ACHIEVEMENTS, achievementById } = require('../shared/definitions');
+const { ACH_METRICS, ACH_RUNE_SLOTS, ACHIEVEMENTS, achievementById } = require('../shared/definitions');
 
 class AchError extends Error {
   constructor(code, msg) { super(msg); this.code = code; this.userMessage = msg; }
@@ -63,7 +63,7 @@ function _markMaxed(s, metric, value) {
 async function bumpIn(t, s, metric, amount = 1) {
   const def = Object.hasOwn(ACH_METRICS, metric) ? ACH_METRICS[metric] : null;
   const n = Math.floor(Number(amount) || 0);
-  if (!def || def.kind === 'lvl' || !(n > 0)) return null;
+  if (!def || def.kind === 'lvl' || def.kind === 'live' || !(n > 0)) return null;
   if (!s || !s.playerId || _maxed(s, metric)) return null;
   if (!await _ready()) return null;
   // «Было» — для уведомления о только что открытом. У суммы это просто
@@ -95,6 +95,35 @@ function onLevel(s, lvl, gained) {
   if (now > was) _notify(s, 'lvl', was, now);
 }
 
+// ── «живые» метрики (kind 'live') ───────────────────────────────────────────
+// Не счётчик, а состояние: сколько надетых вещей прямо сейчас с руной в
+// гнезде. Счётчик вставок закрывался тем, что одну руну вынимали и вставляли
+// десять раз. Старая строка player_ach_progress 'runeSocket' от того счётчика
+// просто перекрывается этим значением.
+async function _runeSocketed(db, playerId) {
+  if (!await hasColumn('player_items', 'socket_of')) return 0;
+  const { rows } = await query(db, `
+    SELECT count(DISTINCT h.id)::int AS n
+      FROM player_items h
+      JOIN player_items r ON r.socket_of = h.id
+     WHERE h.player_id = $1 AND h.container = 'equipment' AND h.slot = ANY($2::text[])`,
+    [playerId, ACH_RUNE_SLOTS]);
+  return rows[0].n;
+}
+const _LIVE = { runeSocket: _runeSocketed };
+function liveValue(db, playerId, metric) { return _LIVE[metric](db, playerId); }
+
+// Вокруг действия, которое меняет живую метрику (вставка руны, надевание):
+// было → стало, и уведомление, если цель только что достигнута.
+async function liveBefore(db, s, metric) {
+  if (!s || !s.playerId || !await _ready()) return null;
+  return liveValue(db, s.playerId, metric);
+}
+async function liveAfter(db, s, metric, was) {
+  if (was == null) return;
+  _notify(s, metric, was, await liveValue(db, s.playerId, metric));
+}
+
 async function _metricsOf(db, playerId) {
   const out = {};
   const { rows } = await query(db,
@@ -103,6 +132,7 @@ async function _metricsOf(db, playerId) {
   const { rows: p } = await query(db,
     'SELECT lvl FROM player_progress WHERE player_id = $1', [playerId]);
   out.lvl = p.length ? Number(p[0].lvl) || 0 : 0;
+  for (const m of Object.keys(_LIVE)) out[m] = await liveValue(db, playerId, m);
   return out;
 }
 
@@ -155,4 +185,4 @@ async function claim(db, playerId, achId) {
   return { id: def.id, granted };
 }
 
-module.exports = { bumpIn, onLevel, stateOf, claim, AchError };
+module.exports = { bumpIn, onLevel, liveBefore, liveAfter, stateOf, claim, AchError };

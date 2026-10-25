@@ -4619,7 +4619,10 @@ function offlineFarmRate(st, loc) {
 //
 // kind 'sum' — прибавляется (сколько раз); 'max' — держит лучший результат
 // (до какой заточки дошёл); 'lvl' — не хранится вовсе, читается из уровня
-// персонажа: уровень, набранный ДО появления достижений, тоже засчитан.
+// персонажа: уровень, набранный ДО появления достижений, тоже засчитан;
+// 'live' — тоже не хранится, считается по базе в момент чтения (сколько
+// надетых вещей с руной СЕЙЧАС) — снять и вставить ту же руну десять раз
+// ничего не даёт.
 //
 // Награды: { t:'rune', kind, rarity } — руна с выпавшими характеристиками,
 // как из кузницы; { t:'item', id, qty }; { t:'gold', n }; { t:'nexum', n }
@@ -4633,7 +4636,7 @@ const ACH_METRICS = {
   runeLegendary: { kind: 'sum', cat: 'runes', rarity: 'legendary' },
   runeFail:      { kind: 'sum', cat: 'runes' },
   runeReroll:    { kind: 'sum', cat: 'runes' },
-  runeSocket:    { kind: 'sum', cat: 'runes' },
+  runeSocket:    { kind: 'live', cat: 'runes' },
   enhMax:        { kind: 'max', cat: 'enhance' },
   enhOk:         { kind: 'sum', cat: 'enhance' },
   enhBurn:       { kind: 'sum', cat: 'enhance' },
@@ -4650,6 +4653,9 @@ const ACH_METRICS = {
   chat:          { kind: 'sum', cat: 'social' },
 };
 const ACH_CATEGORIES = ['runes', 'enhance', 'battle', 'craft', 'social'];
+// Слоты, куда вставляется руна: оружие и шесть слотов брони (runeSocketsOf).
+// «Руны во всём снаряжении» — руна в надетой вещи каждого из них.
+const ACH_RUNE_SLOTS = ['weapon', ..._RUNE_ARMOR_SLOTS];
 
 const _achRune = (kind, rarity) => ({ t: 'rune', kind, rarity });
 const _achItem = (id, qty = 1) => ({ t: 'item', id, qty });
@@ -4677,8 +4683,11 @@ const ACHIEVEMENTS = [
   { id: 'rune_reroll_10',     metric: 'runeReroll',    target: 10,  rewards: [{ t: 'nexum', n: 200 }] },
   { id: 'rune_reroll_100',    metric: 'runeReroll',    target: 100, rewards: [{ t: 'nexum', n: 1000 }] },
   { id: 'rune_reroll_500',    metric: 'runeReroll',    target: 500, rewards: [{ t: 'nexum', n: 3000 }] },
+  // Надетые вещи с руной — прямо сейчас. Вторая ступень — руна в КАЖДОМ
+  // слоте, куда её можно вставить. id «_10» остался от прежней цели «вставь
+  // 10 раз»: сменить его значило бы дать забравшим награду второй раз.
   { id: 'rune_socket_1',      metric: 'runeSocket',    target: 1,   rewards: [_achItem('ore_common', 300)] },
-  { id: 'rune_socket_10',     metric: 'runeSocket',    target: 10,  rewards: [_achRune('weapon', 'uncommon')] },
+  { id: 'rune_socket_10',     metric: 'runeSocket',    target: ACH_RUNE_SLOTS.length, rewards: [_achRune('weapon', 'uncommon')] },
 
   // ── Заточка ─────────────────────────────────────────────────────────────
   { id: 'enh_max_3',   metric: 'enhMax', target: 3,  rewards: [_achItem('norm_stone', 5)] },
@@ -4877,5 +4886,5 @@ if (typeof module !== 'undefined') module.exports = {
   OFFLINE_FARM_MOB_SWING_SEC, OFFLINE_FARM_REST_REGEN_PCT, OFFLINE_FARM_WEAK_MULT,
   offlineFarmLocations, offlineFarmLocation, offlineFarmMobs, offlineFarmRate,
   AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
-  ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
+  ACH_METRICS, ACH_CATEGORIES, ACH_RUNE_SLOTS, ACHIEVEMENTS, achievementById,
 };

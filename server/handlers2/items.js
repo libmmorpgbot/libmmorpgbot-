@@ -118,6 +118,9 @@ module.exports = function registerItems(s, safeOn) {
       }
     }
 
+    // Надел вещь с уже вставленной руной — это тоже шаг к «рунам во всём
+    // снаряжении».
+    const achWas = await ach.liveBefore(t, s, 'runeSocket');
     const occupying = inv.equipment[slot];
     if (occupying) {
       if (!await items.moveTo(t, occupying.rowId, pid, 'inventory')) {
@@ -127,6 +130,7 @@ module.exports = function registerItems(s, safeOn) {
     if (!await items.moveTo(t, row, pid, 'equipment', slot)) {
       throw Object.assign(new Error('cannot equip'), { userMessage: 'Не удалось надеть предмет' });
     }
+    await ach.liveAfter(t, s, 'runeSocket', achWas);
     await push(t);
   }));
 
@@ -153,8 +157,11 @@ module.exports = function registerItems(s, safeOn) {
   // Поэтому здесь нет ни платы, ни бросков — только разговор.
   safeOn('runeSocket', ({ hostRowId, runeRowId, socketIdx } = {}) =>
     s.act('runeSocket', 'runeError', async (t, pid) => {
+      // Достижение — по надетым вещам с руной ПОСЛЕ вставки, а не по числу
+      // нажатий (см. _runeSocketed, server/achievements.js).
+      const was = await ach.liveBefore(t, s, 'runeSocket');
       const res = await runes.socketRune(t, pid, hostRowId, runeRowId, socketIdx);
-      await ach.bumpIn(t, s, 'runeSocket', 1);
+      await ach.liveAfter(t, s, 'runeSocket', was);
       await push(t);
       return res;
     }));

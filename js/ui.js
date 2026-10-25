@@ -7124,7 +7124,7 @@ function _achReadyCount(cat) {
 }
 
 function _achName(a) {
-  return tVars('achM_' + a.metric, { n: Number(a.target).toLocaleString('ru-RU') });
+  return tVars('achM_' + a.metric, { n: Number(a.target).toLocaleString('ru-RU'), all: ACH_RUNE_SLOTS.length });
 }
 // Номер ступени в лестнице своей метрики и её металл.
 function _achStep(a) {
