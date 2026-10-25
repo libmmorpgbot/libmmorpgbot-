@@ -4654,7 +4654,8 @@ const ACH_CATEGORIES = ['runes', 'enhance', 'battle', 'craft', 'social'];
 const _achRune = (kind, rarity) => ({ t: 'rune', kind, rarity });
 const _achItem = (id, qty = 1) => ({ t: 'item', id, qty });
 const ACHIEVEMENTS = [
-  // ── Руны: ковка по редкости. «Скуй 10 серых — получи серую руну» ─────────
+  // ── Руны: попытки ковки по редкости — удачные и нет. «10 раз ковал серую —
+  // получи серую руну» ────────────────────────────────────────────────────
   { id: 'rune_common_10',     metric: 'runeCommon',    target: 10,  rewards: [_achRune('armor', 'common')] },
   { id: 'rune_common_50',     metric: 'runeCommon',    target: 50,  rewards: [_achRune('weapon', 'common'), _achItem('ore_common', 500)] },
   { id: 'rune_common_100',    metric: 'runeCommon',    target: 100, rewards: [_achRune('armor', 'uncommon')] },

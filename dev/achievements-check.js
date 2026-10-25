@@ -186,7 +186,7 @@ const countItem = async (pid, id) => {
     await wait(150);
   }
   ok(wins > 0 && losses > 0, `за попытки вышли и удача, и неудача (${wins}/${losses})`);
-  eq(await metric(pid, 'runeCommon'), wins, 'удачные ковки — в счётчик обычных рун');
+  eq(await metric(pid, 'runeCommon'), wins + losses, 'каждая попытка ковки — в счётчик обычных рун, удачная или нет');
   eq(await metric(pid, 'runeFail'), losses, 'неудачные — в «невезучего кузнеца»');
   eq(await metric(pid, 'runeRare'), 0, 'чужая редкость не тронута');
 

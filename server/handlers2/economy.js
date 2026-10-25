@@ -136,13 +136,11 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   safeOn('craftRune', ({ kind, rarity } = {}) => s.act('craftRune', 'runeCraftError', async (t, pid) => {
     if (typeof kind !== 'string' || typeof rarity !== 'string') fail('Не выбран рецепт руны', 'bad_recipe');
     const res = await runes.craftRune(t, pid, kind, rarity);
-    // Достижения: удачная ковка — в счётчик своей редкости, неудачная — в
+    // Достижения: любая попытка — в счётчик своей редкости (по просьбе
+    // владельца: «не обязательно чтоб удачно было»), неудачная — ещё и в
     // «невезучего кузнеца». Та же транзакция, что и сама ковка.
-    if (res.outcome === 'success') {
-      await ach.bumpIn(t, s, 'rune' + rarity.charAt(0).toUpperCase() + rarity.slice(1), 1);
-    } else {
-      await ach.bumpIn(t, s, 'runeFail', 1);
-    }
+    await ach.bumpIn(t, s, 'rune' + rarity.charAt(0).toUpperCase() + rarity.slice(1), 1);
+    if (res.outcome !== 'success') await ach.bumpIn(t, s, 'runeFail', 1);
     await pushAll(t);
     s.socket.emit('runeCrafted', {
       delivered: res.outcome === 'success',
