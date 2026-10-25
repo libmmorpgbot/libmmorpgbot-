@@ -17,6 +17,7 @@
 
 const items = require('../db/repos/items');
 const runes = require('../db/repos/runes');
+const ach = require('../achievements');
 const consumables = require('../db/repos/consumables');
 const players = require('../db/repos/players');
 const { CODEX_SETS, ITEM_DEF } = require('../../shared/definitions');
@@ -153,6 +154,7 @@ module.exports = function registerItems(s, safeOn) {
   safeOn('runeSocket', ({ hostRowId, runeRowId, socketIdx } = {}) =>
     s.act('runeSocket', 'runeError', async (t, pid) => {
       const res = await runes.socketRune(t, pid, hostRowId, runeRowId, socketIdx);
+      await ach.bumpIn(t, s, 'runeSocket', 1);
       await push(t);
       return res;
     }));
@@ -170,6 +172,7 @@ module.exports = function registerItems(s, safeOn) {
   safeOn('runeReroll', ({ runeRowId, statIdx } = {}) =>
     s.act('runeReroll', 'runeError', async (t, pid) => {
       const res = await runes.rerollRuneStat(t, pid, runeRowId, statIdx);
+      await ach.bumpIn(t, s, 'runeReroll', 1);
       await push(t);
       await s.pushBalances(t);
       s.socket.emit('runeRerolled', res);
@@ -185,6 +188,7 @@ module.exports = function registerItems(s, safeOn) {
   safeOn('runeRerollAll', ({ runeRowId, locked } = {}) =>
     s.act('runeRerollAll', 'runeError', async (t, pid) => {
       const res = await runes.rerollRuneStats(t, pid, runeRowId, locked);
+      await ach.bumpIn(t, s, 'runeReroll', 1);
       await push(t);
       await s.pushBalances(t);
       s.socket.emit('runeRerolledAll', res);

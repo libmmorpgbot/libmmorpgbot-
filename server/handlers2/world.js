@@ -28,6 +28,7 @@ const stats = require('../db/repos/stats');
 const consumables = require('../db/repos/consumables');
 const progression = require('../db/repos/progression');
 const seasonTasks = require('../season-tasks');
+const ach = require('../achievements');
 const clans = require('../db/repos/clans');
 const plog = require('../db/repos/playerlog');
 const ops = require('../tg-ops');
@@ -817,6 +818,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // Сезон 4, еженедельные: убийства на 1 этаже (левый коридор), на 2
       // этаже (верхний) и в фарм зоне. Фарм-задания 3-го сезона сняты.
       await _seasonKillTask(t, s, result);
+      // Достижения — только тому, кто добил, как и элитный рейтинг выше.
+      await ach.bumpIn(t, s, 'kills', 1);
+      if (result.isBoss) await ach.bumpIn(t, s, 'boss', 1);
+      if (result.elite) await ach.bumpIn(t, s, 'elite', 1);
       let refBonus = null;
       // The stats.refreshBm that used to be here has moved into
       // players.grantXp. It was the only refresh in the build, and it sat on
@@ -830,6 +835,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
         // invited friend could hit the threshold and the referrer was neither
         // paid nor told.
         refBonus = await progression.payReferralOnLevel(t, pid, reward.xp.lvl || 0);
+        ach.onLevel(s, reward.xp.lvl, reward.xp.levelsGained);
       }
       return { reward, drops, refBonus, paidGold, paidXp };
     });
@@ -954,6 +960,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
         // actually lands the kill was the only one whose farm2Kills counter
         // ever moved — «в элитной фарм зоне квест не считается сезонный».
         await _seasonKillTask(t, mate, result);
+        if (r.xp && r.xp.levelsGained > 0) ach.onLevel(mate, r.xp.lvl, r.xp.levelsGained);
         await mate.pushBalances(t);
         if (r.xp && r.xp.levelsGained > 0) { await mate.pushStats(t); await mate.pushProgress(t); }
         mate.socket.emit('enemyKilled', {

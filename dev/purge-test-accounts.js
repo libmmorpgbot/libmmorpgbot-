@@ -41,7 +41,7 @@ const APPLY = process.argv.includes('--apply');
 const A = `telegram_id !~ '^[0-9]+$'`;
 // Правило B: socket-логин проверок. Все три условия сразу.
 const B = `(username ~ '^(ilchk|pchk|mfix|mkt|gchk|pvp|cchk|ichk|cn|cr|etl|enh|expl|gr|qchk`
-        + `|mchk|pt|st|adm|ad|ev|pl|sk|boot|rl|se|pcl|stackchk|bot|gw)-[0-9]{2,7}_[a-z0-9]+$'`
+        + `|mchk|pt|st|adm|ad|ev|pl|sk|boot|rl|se|pcl|stackchk|bot|gw|ach)-[0-9]{2,7}_[a-z0-9]+$'`
         + ` AND telegram_id ~ '^[0-9]+$' AND telegram_id::bigint BETWEEN 930000000 AND 990000000`
         + ` AND created_at >= timestamptz '2026-08-01')`;
 const WHERE = `(${A} OR ${B})`;
@@ -85,7 +85,7 @@ const n = async (sql, args) => Number((await q(sql, args)).rows[0].n);
   // «привет<ESC>[31m xxxxx» от boot-*_u остались висеть в общем чате после
   // того, как сами аккаунты уже убрали. Убирать надо и их.
   const CHAT_PAT = "^(ilchk|pchk|mfix|mkt|gchk|pvp|cchk|ichk|cn|cr|etl|enh|expl|gr|qchk"
-                 + "|mchk|pt|st|adm|ad|ev|pl|sk|boot|rl|se|pcl|stackchk|bot|gw)-?[0-9]{2,7}(_[a-z0-9]+)?$";
+                 + "|mchk|pt|st|adm|ad|ev|pl|sk|boot|rl|se|pcl|stackchk|bot|gw|ach)-?[0-9]{2,7}(_[a-z0-9]+)?$";
   const chat = await n(
     'SELECT count(*)::int n FROM chat_messages WHERE player_id = ANY($1) OR username ~ $2',
     [ids, CHAT_PAT]);

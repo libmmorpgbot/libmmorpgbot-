@@ -2772,6 +2772,28 @@ function netConnect(onReady) {
 
   // Refused band switch (below the level it needs) and anything else the
   // season panel can be told "no" about.
+  // ── достижения ──────────────────────────────────────────────────────────
+  socket.on('achState', (st) => { if (typeof onAchState === 'function') onAchState(st); });
+  // Счётчик дошёл до цели — сказать сразу. Числа и точку на кнопке
+  // обновляет свежий achState: локально ничего не досчитывается. Событие
+  // редкое (одно на цель за всю жизнь аккаунта), так что запрос дешёвый.
+  socket.on('achReady', ({ ids } = {}) => {
+    const list = (Array.isArray(ids) ? ids : []).map(achievementById).filter(Boolean);
+    if (!list.length) return;
+    if (typeof _marketToast === 'function') {
+      _marketToast(tVars('achReadyToast', { name: list.map(_achName).join(', ') }), 'ok');
+    }
+    netAchSync();
+  });
+  socket.on('achClaimed', ({ id } = {}) => {
+    const a = achievementById(id);
+    if (a && typeof _marketToast === 'function') _marketToast(tVars('achClaimedToast', { name: _achName(a) }), 'ok');
+  });
+  socket.on('achError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+    if (typeof onAchError === 'function') onAchError();
+  });
+
   socket.on('seasonError', ({ msg } = {}) => {
     if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
     // Отказ «Забрать» — вернуть кнопку, которую нажатие выключило.
@@ -4177,6 +4199,10 @@ function _finishOnlineStart() {
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
   if (typeof showCodexBtn === 'function') showCodexBtn();
+  // Достижения: кнопка и — сразу — счётчики, чтобы точка «есть что забрать»
+  // горела, не дожидаясь, пока окно откроют.
+  if (typeof showAchBtn === 'function') showAchBtn();
+  netAchSync();
   // Итог оффлайн-фарма пришёл сразу после authOk, когда показывать его было
   // некуда, — показывается здесь, как только игрок в мире.
   if (typeof offlineFarmShowPending === 'function') offlineFarmShowPending();
@@ -5519,6 +5545,8 @@ function netClaimQuest(idx) {
 
 // ── Сезон ───────────────────────────────────────────────────────────────────
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
+function netAchSync()       { if (socket?.connected) socket.emit('achSync'); }
+function netAchClaim(id)    { if (socket?.connected) socket.emit('achClaim', { id }); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
 function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'); }
 function netSeasonClaimPrize(season) { if (socket?.connected) socket.emit('seasonClaimPrize', { season }); }

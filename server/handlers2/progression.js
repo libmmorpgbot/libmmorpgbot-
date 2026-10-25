@@ -30,6 +30,7 @@ const {
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
 } = require('../../shared/definitions');
 const shop = require('../shop');
+const ach = require('../achievements');
 
 const SLOTS = new Set(['Q', 'W', 'E', 'R']);
 // ── why the guards below fail instead of returning ──────────────────────────
@@ -361,6 +362,23 @@ module.exports = function registerProgression(s, safeOn) {
     const list = await progression.seasonWinners(t, shown, pid);
     s.socket.emit('seasonWinnersData', { list, season: shown });
   }));
+
+  // ── достижения ───────────────────────────────────────────────────────────
+  // Окно читает счётчики и забранные награды целиком; что из этого готово к
+  // выдаче, клиент решает по тем же ACHIEVEMENTS (shared/definitions.js), а
+  // сервер — заново при нажатии (achievements.claim).
+  safeOn('achSync', () => s.act('achSync', 'achError', async (t, pid) => {
+    s.socket.emit('achState', await ach.stateOf(t, pid));
+  }));
+
+  safeOn('achClaim', ({ id } = {}) => s.act('achClaim', 'achError', async (t, pid) => {
+    if (typeof id !== 'string' || !id) fail('Не выбрано достижение', 'bad_ach');
+    const res = await ach.claim(t, pid, id);
+    await s.pushItems(t); await s.pushBalances(t);
+    s.socket.emit('achClaimed', { id: res.id, granted: res.granted });
+    s.socket.emit('achState', await ach.stateOf(t, pid));
+    return res;
+  }, r => r && { id: r.id, granted: r.granted.length }));
 
   // ── season ───────────────────────────────────────────────────────────────
   // Burning destroys gear for points — no gold back, no materials. The old

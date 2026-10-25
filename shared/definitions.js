@@ -4607,6 +4607,142 @@ function offlineFarmRate(st, loc) {
   };
 }
 
+// ── Достижения ──────────────────────────────────────────────────────────────
+// Постоянные, на весь аккаунт: не сбрасываются ни днём, ни сезоном. Каждое —
+// это «счётчик дошёл до цели» плюс награда, которую игрок забирает кнопкой.
+//
+// Счётчики (ACH_METRICS) пишет только сервер — в той же транзакции, что и
+// само действие (server/achievements.js): ковка руны, заточка, убийство.
+// Клиент получает готовые числа и ничего не считает сам. Одно и то же
+// действие двигает один счётчик, а на счётчике висит лестница целей — так
+// «скуй 10 обычных рун» и «скуй 50» не считают ковку дважды.
+//
+// kind 'sum' — прибавляется (сколько раз); 'max' — держит лучший результат
+// (до какой заточки дошёл); 'lvl' — не хранится вовсе, читается из уровня
+// персонажа: уровень, набранный ДО появления достижений, тоже засчитан.
+//
+// Награды: { t:'rune', kind, rarity } — руна с выпавшими характеристиками,
+// как из кузницы; { t:'item', id, qty }; { t:'gold', n }; { t:'nexum', n }
+// (Liberty). id достижения — ключ строки в player_ach_claims (миграция 040):
+// менять уже выпущенный id нельзя, иначе награда станет доступна второй раз.
+const ACH_METRICS = {
+  runeCommon:    { kind: 'sum', cat: 'runes', rarity: 'common' },
+  runeUncommon:  { kind: 'sum', cat: 'runes', rarity: 'uncommon' },
+  runeRare:      { kind: 'sum', cat: 'runes', rarity: 'rare' },
+  runeEpic:      { kind: 'sum', cat: 'runes', rarity: 'epic' },
+  runeLegendary: { kind: 'sum', cat: 'runes', rarity: 'legendary' },
+  runeFail:      { kind: 'sum', cat: 'runes' },
+  runeReroll:    { kind: 'sum', cat: 'runes' },
+  runeSocket:    { kind: 'sum', cat: 'runes' },
+  enhMax:        { kind: 'max', cat: 'enhance' },
+  enhOk:         { kind: 'sum', cat: 'enhance' },
+  enhBurn:       { kind: 'sum', cat: 'enhance' },
+  kills:         { kind: 'sum', cat: 'battle' },
+  boss:          { kind: 'sum', cat: 'battle' },
+  elite:         { kind: 'sum', cat: 'battle' },
+  lvl:           { kind: 'lvl', cat: 'battle' },
+  petCraft:      { kind: 'sum', cat: 'craft' },
+  gearCraft:     { kind: 'sum', cat: 'craft' },
+  potionCraft:   { kind: 'sum', cat: 'craft' },
+  boxOpen:       { kind: 'sum', cat: 'craft' },
+  mktSell:       { kind: 'sum', cat: 'social' },
+  mktBuy:        { kind: 'sum', cat: 'social' },
+  chat:          { kind: 'sum', cat: 'social' },
+};
+const ACH_CATEGORIES = ['runes', 'enhance', 'battle', 'craft', 'social'];
+
+const _achRune = (kind, rarity) => ({ t: 'rune', kind, rarity });
+const _achItem = (id, qty = 1) => ({ t: 'item', id, qty });
+const ACHIEVEMENTS = [
+  // ── Руны: ковка по редкости. «Скуй 10 серых — получи серую руну» ─────────
+  { id: 'rune_common_10',     metric: 'runeCommon',    target: 10,  rewards: [_achRune('armor', 'common')] },
+  { id: 'rune_common_50',     metric: 'runeCommon',    target: 50,  rewards: [_achRune('weapon', 'common'), _achItem('ore_common', 500)] },
+  { id: 'rune_common_100',    metric: 'runeCommon',    target: 100, rewards: [_achRune('armor', 'uncommon')] },
+  { id: 'rune_uncommon_10',   metric: 'runeUncommon',  target: 10,  rewards: [_achRune('armor', 'uncommon')] },
+  { id: 'rune_uncommon_50',   metric: 'runeUncommon',  target: 50,  rewards: [_achRune('weapon', 'uncommon'), _achItem('ore_uncommon', 300)] },
+  { id: 'rune_uncommon_100',  metric: 'runeUncommon',  target: 100, rewards: [_achRune('armor', 'rare')] },
+  { id: 'rune_rare_10',       metric: 'runeRare',      target: 10,  rewards: [_achRune('armor', 'rare')] },
+  { id: 'rune_rare_50',       metric: 'runeRare',      target: 50,  rewards: [_achRune('weapon', 'rare'), _achItem('ore_rare', 200)] },
+  { id: 'rune_rare_100',      metric: 'runeRare',      target: 100, rewards: [_achRune('armor', 'epic')] },
+  { id: 'rune_epic_5',        metric: 'runeEpic',      target: 5,   rewards: [_achRune('armor', 'epic')] },
+  { id: 'rune_epic_25',       metric: 'runeEpic',      target: 25,  rewards: [_achRune('weapon', 'epic'), _achItem('ore_epic', 100)] },
+  { id: 'rune_epic_50',       metric: 'runeEpic',      target: 50,  rewards: [_achRune('armor', 'legendary')] },
+  { id: 'rune_legendary_3',   metric: 'runeLegendary', target: 3,   rewards: [_achRune('armor', 'legendary')] },
+  { id: 'rune_legendary_10',  metric: 'runeLegendary', target: 10,  rewards: [_achRune('weapon', 'legendary')] },
+  { id: 'rune_legendary_25',  metric: 'runeLegendary', target: 25,  rewards: [_achRune('weapon', 'legendary'), _achItem('ore_legendary', 100)] },
+  { id: 'rune_fail_10',       metric: 'runeFail',      target: 10,  rewards: [_achItem('ore_common', 1000)] },
+  { id: 'rune_fail_100',      metric: 'runeFail',      target: 100, rewards: [_achItem('ore_uncommon', 800)] },
+  { id: 'rune_fail_500',      metric: 'runeFail',      target: 500, rewards: [_achItem('ore_rare', 500)] },
+  { id: 'rune_reroll_10',     metric: 'runeReroll',    target: 10,  rewards: [{ t: 'nexum', n: 200 }] },
+  { id: 'rune_reroll_100',    metric: 'runeReroll',    target: 100, rewards: [{ t: 'nexum', n: 1000 }] },
+  { id: 'rune_reroll_500',    metric: 'runeReroll',    target: 500, rewards: [{ t: 'nexum', n: 3000 }] },
+  { id: 'rune_socket_1',      metric: 'runeSocket',    target: 1,   rewards: [_achItem('ore_common', 300)] },
+  { id: 'rune_socket_10',     metric: 'runeSocket',    target: 10,  rewards: [_achRune('weapon', 'uncommon')] },
+
+  // ── Заточка ─────────────────────────────────────────────────────────────
+  { id: 'enh_max_3',   metric: 'enhMax', target: 3,  rewards: [_achItem('norm_stone', 5)] },
+  { id: 'enh_max_5',   metric: 'enhMax', target: 5,  rewards: [_achItem('norm_stone', 10)] },
+  { id: 'enh_max_7',   metric: 'enhMax', target: 7,  rewards: [_achItem('bless_stone', 3)] },
+  { id: 'enh_max_9',   metric: 'enhMax', target: 9,  rewards: [_achItem('bless_stone', 5)] },
+  { id: 'enh_max_10',  metric: 'enhMax', target: 10, rewards: [_achItem('bless_stone', 10)] },
+  { id: 'enh_max_11',  metric: 'enhMax', target: 11, rewards: [_achItem('bless_stone', 10), _achItem('star_shard', 10)] },
+  { id: 'enh_max_12',  metric: 'enhMax', target: 12, rewards: [_achItem('bless_stone', 15), _achItem('star_shard', 20)] },
+  { id: 'enh_max_13',  metric: 'enhMax', target: 13, rewards: [_achItem('bless_stone', 20), _achItem('star_shard', 30)] },
+  { id: 'enh_max_14',  metric: 'enhMax', target: 14, rewards: [_achItem('bless_stone', 30), _achRune('armor', 'epic')] },
+  { id: 'enh_max_15',  metric: 'enhMax', target: 15, rewards: [_achItem('bless_stone', 50), _achRune('weapon', 'legendary')] },
+  { id: 'enh_ok_10',   metric: 'enhOk',  target: 10,   rewards: [_achItem('norm_stone', 5)] },
+  { id: 'enh_ok_100',  metric: 'enhOk',  target: 100,  rewards: [_achItem('norm_stone', 30)] },
+  { id: 'enh_ok_500',  metric: 'enhOk',  target: 500,  rewards: [_achItem('bless_stone', 20)] },
+  { id: 'enh_ok_1000', metric: 'enhOk',  target: 1000, rewards: [_achItem('bless_stone', 50)] },
+  { id: 'enh_burn_1',  metric: 'enhBurn', target: 1,  rewards: [_achItem('bless_stone', 1)] },
+  { id: 'enh_burn_10', metric: 'enhBurn', target: 10, rewards: [_achItem('bless_stone', 5)] },
+  { id: 'enh_burn_50', metric: 'enhBurn', target: 50, rewards: [_achItem('bless_stone', 15)] },
+
+  // ── Бой ─────────────────────────────────────────────────────────────────
+  { id: 'kills_100',    metric: 'kills', target: 100,    rewards: [{ t: 'gold', n: 1000 }] },
+  { id: 'kills_1000',   metric: 'kills', target: 1000,   rewards: [{ t: 'gold', n: 5000 }, _achItem('norm_stone', 5)] },
+  { id: 'kills_10000',  metric: 'kills', target: 10000,  rewards: [_achItem('box_uncommon', 3)] },
+  { id: 'kills_50000',  metric: 'kills', target: 50000,  rewards: [_achItem('box_rare', 3)] },
+  { id: 'kills_100000', metric: 'kills', target: 100000, rewards: [_achItem('box_rare', 5), _achItem('bless_stone', 10)] },
+  { id: 'kills_500000', metric: 'kills', target: 500000, rewards: [_achItem('box_rare', 10), _achRune('weapon', 'epic')] },
+  { id: 'boss_1',       metric: 'boss',  target: 1,   rewards: [_achItem('norm_stone', 3)] },
+  { id: 'boss_10',      metric: 'boss',  target: 10,  rewards: [_achItem('box_uncommon', 1)] },
+  { id: 'boss_50',      metric: 'boss',  target: 50,  rewards: [_achItem('box_rare', 2)] },
+  { id: 'boss_100',     metric: 'boss',  target: 100, rewards: [_achItem('box_rare', 5)] },
+  { id: 'elite_1',      metric: 'elite', target: 1,   rewards: [_achItem('star_shard', 5)] },
+  { id: 'elite_10',     metric: 'elite', target: 10,  rewards: [_achItem('star_shard', 30)] },
+  { id: 'lvl_10',       metric: 'lvl',   target: 10,  rewards: [{ t: 'gold', n: 1000 }] },
+  { id: 'lvl_20',       metric: 'lvl',   target: 20,  rewards: [{ t: 'gold', n: 3000 }, _achItem('norm_stone', 5)] },
+  { id: 'lvl_30',       metric: 'lvl',   target: 30,  rewards: [_achItem('box_uncommon', 2)] },
+  { id: 'lvl_40',       metric: 'lvl',   target: 40,  rewards: [_achItem('bless_stone', 5)] },
+  { id: 'lvl_50',       metric: 'lvl',   target: 50,  rewards: [_achItem('box_rare', 2)] },
+  { id: 'lvl_60',       metric: 'lvl',   target: 60,  rewards: [_achItem('box_rare', 3), _achRune('armor', 'rare')] },
+  { id: 'lvl_70',       metric: 'lvl',   target: 70,  rewards: [_achItem('box_rare', 5), _achRune('weapon', 'epic')] },
+
+  // ── Ремесло ─────────────────────────────────────────────────────────────
+  { id: 'pet_1',       metric: 'petCraft',    target: 1,   rewards: [{ t: 'gold', n: 2000 }] },
+  { id: 'pet_5',       metric: 'petCraft',    target: 5,   rewards: [_achItem('box_uncommon', 2)] },
+  { id: 'gear_1',      metric: 'gearCraft',   target: 1,   rewards: [_achItem('norm_stone', 3)] },
+  { id: 'gear_10',     metric: 'gearCraft',   target: 10,  rewards: [_achItem('bless_stone', 3)] },
+  { id: 'potion_10',   metric: 'potionCraft', target: 10,  rewards: [{ t: 'gold', n: 2000 }] },
+  { id: 'potion_100',  metric: 'potionCraft', target: 100, rewards: [_achItem('box_uncommon', 2)] },
+  { id: 'box_10',      metric: 'boxOpen',     target: 10,  rewards: [_achItem('box_uncommon', 1)] },
+  { id: 'box_100',     metric: 'boxOpen',     target: 100, rewards: [_achItem('box_rare', 2)] },
+
+  // ── Общение и рынок ─────────────────────────────────────────────────────
+  { id: 'mkt_sell_1',  metric: 'mktSell', target: 1,    rewards: [{ t: 'gold', n: 500 }] },
+  { id: 'mkt_sell_50', metric: 'mktSell', target: 50,   rewards: [_achItem('box_uncommon', 2)] },
+  { id: 'mkt_buy_1',   metric: 'mktBuy',  target: 1,    rewards: [{ t: 'gold', n: 500 }] },
+  { id: 'mkt_buy_50',  metric: 'mktBuy',  target: 50,   rewards: [_achItem('box_uncommon', 2)] },
+  { id: 'chat_10',     metric: 'chat',    target: 10,   rewards: [{ t: 'gold', n: 300 }] },
+  { id: 'chat_100',    metric: 'chat',    target: 100,  rewards: [{ t: 'gold', n: 1500 }] },
+  { id: 'chat_1000',   metric: 'chat',    target: 1000, rewards: [_achItem('box_uncommon', 2)] },
+];
+const ACH_BY_ID = new Map(ACHIEVEMENTS.map(a => [a.id, a]));
+function achievementById(id) {
+  return (typeof id === 'string' && ACH_BY_ID.get(id)) || null;
+}
+
 if (typeof module !== 'undefined') module.exports = {
   TILE, WALL, FLOOR, ENEMY_AOI_R, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, calcGoldDrop,
   xpAtLevel, goldAtLevel, xpToNext, xpTotalAt,
@@ -4740,4 +4876,5 @@ if (typeof module !== 'undefined') module.exports = {
   OFFLINE_FARM_MOB_SWING_SEC, OFFLINE_FARM_REST_REGEN_PCT, OFFLINE_FARM_WEAK_MULT,
   offlineFarmLocations, offlineFarmLocation, offlineFarmMobs, offlineFarmRate,
   AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
+  ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
 };

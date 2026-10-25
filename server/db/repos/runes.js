@@ -142,6 +142,23 @@ async function craftRune(db, playerId, kind, rarity) {
   return { outcome: 'success', kind, rarity, chance, cost: rec.nexumCost, itemId, rowId, stats };
 }
 
+// ── руна в награду ──────────────────────────────────────────────────────────
+// Достижения (server/achievements.js) выдают руну такой же, как из кузницы:
+// с характеристиками, брошенными здесь и из того же crypto-источника. Без
+// платы и без шанса — награда уже заработана. null — нет места или руны
+// ещё не включены; вызывающая сторона решает, отказ это или нет.
+async function grantRune(db, playerId, kind, rarity, sourceRef) {
+  if (!await _runesReady(db)) return null;
+  const itemId = runeCatalogId(kind, rarity);
+  if (!ITEM_DEF.some(d => d.id === itemId)) return null;
+  const stats = rollRuneStats(kind, rarity, rand);
+  if (!stats.length) return null;
+  const rowId = await items.add(db, playerId, itemId, {
+    source: 'achievement', sourceRef: sourceRef || ('rune:' + itemId), rune: { stats },
+  });
+  return rowId === null ? null : { rowId, itemId, stats };
+}
+
 // ── переработка одной характеристики ────────────────────────────────────────
 // Именно переработка, а не повышение: бросается заново И характеристика, И
 // её цвет — по прямому указанию владельца («если опыт, может выпасть
@@ -390,4 +407,4 @@ async function upgradeBonusSkill(db, playerId) {
 // которые об руны ничего не знают и знать не должны. Две функции с одним
 // ответом разошлись бы на первом же изменении правила.
 
-module.exports = { craftRune, rerollRuneStat, rerollRuneStats, socketRune, unsocketRune, upgradeBonusSkill };
+module.exports = { craftRune, grantRune, rerollRuneStat, rerollRuneStats, socketRune, unsocketRune, upgradeBonusSkill };

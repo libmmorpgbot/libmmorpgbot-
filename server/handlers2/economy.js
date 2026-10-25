@@ -19,6 +19,7 @@ const gram = require('../db/repos/gram');
 const money = require('../db/repos/money');
 const progression = require('../db/repos/progression');
 const seasonTasks = require('../season-tasks');
+const ach = require('../achievements');
 const players = require('../db/repos/players');
 const { query } = require('../db');
 const crypto = require('crypto');
@@ -105,6 +106,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     if (typeof itemId !== 'string' || !itemId) fail('Не выбран предмет для ковки', 'bad_item');
     const { family, index } = craft.gearRecipeByItemId(itemId);
     const res = await craft.craft(t, pid, family, index);
+    if (res.outcome === 'success') await ach.bumpIn(t, s, 'gearCraft', 1);
     await pushAll(t);
     s.socket.emit('gearCrafted', {
       itemId, success: res.outcome === 'success', newNexumBalance: await nexumOf(t, pid),
@@ -115,6 +117,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   safeOn('craftPet', ({ rarity } = {}) => s.act('craftPet', 'petCraftError', async (t, pid) => {
     if (typeof rarity !== 'string' || !rarity) fail('Не выбрана редкость питомца', 'bad_rarity');
     const res = await craft.craftPet(t, pid, rarity);
+    if (res.outcome === 'success') await ach.bumpIn(t, s, 'petCraft', 1);
     await pushAll(t);
     // The client wants the pet's catalog entry, not just its id — it draws the
     // reward card from it before the inventory panel is next opened.
@@ -133,6 +136,13 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   safeOn('craftRune', ({ kind, rarity } = {}) => s.act('craftRune', 'runeCraftError', async (t, pid) => {
     if (typeof kind !== 'string' || typeof rarity !== 'string') fail('Не выбран рецепт руны', 'bad_recipe');
     const res = await runes.craftRune(t, pid, kind, rarity);
+    // Достижения: удачная ковка — в счётчик своей редкости, неудачная — в
+    // «невезучего кузнеца». Та же транзакция, что и сама ковка.
+    if (res.outcome === 'success') {
+      await ach.bumpIn(t, s, 'rune' + rarity.charAt(0).toUpperCase() + rarity.slice(1), 1);
+    } else {
+      await ach.bumpIn(t, s, 'runeFail', 1);
+    }
     await pushAll(t);
     s.socket.emit('runeCrafted', {
       delivered: res.outcome === 'success',
@@ -147,6 +157,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const res = await craft.craftBuffPotion(t, pid, itemId);
     // Сезон 4, еженедельное: скрафтить зелье атаки 10 раз.
     if (itemId === 'bp_atk') await seasonTasks.bumpIn(t, s, 'potAtk', 1);
+    await ach.bumpIn(t, s, 'potionCraft', 1);
     await pushAll(t);
     s.socket.emit('buffPotionCrafted', {
       itemId, qty: res.qty, newNexumBalance: await nexumOf(t, pid),
@@ -160,6 +171,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
         fail('Не выбран слот или редкость', 'bad_recipe');
       }
       const res = await craft.craftClassGear(t, pid, slot, rarity);
+      if (res.outcome === 'success') await ach.bumpIn(t, s, 'gearCraft', 1);
       await pushAll(t);
       const item = ITEM_DEF.find(d => d.id === res.itemId) || null;
       s.socket.emit('classGearCrafted', {
@@ -328,6 +340,15 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // Отдельным шагом после неё зачёт мог бы не случиться на удавшемся броске:
     // камень потрачен, вещь заточена, квест стоит. Порог и «только текущий
     // квест» проверяются внутри questOnEnhance.
+    // Достижения: удачная заточка, лучший достигнутый уровень, сгоревший
+    // предмет. Как и квест ниже — только по результату броска: купленный +10
+    // достижение не закрывает.
+    if (res && res.outcome === 'success') {
+      await ach.bumpIn(t, s, 'enhOk', 1);
+      await ach.bumpIn(t, s, 'enhMax', res.to);
+    } else if (res && res.outcome === 'burned') {
+      await ach.bumpIn(t, s, 'enhBurn', 1);
+    }
     if (res && res.outcome === 'success') {
       const _q = await progression.questOnEnhance(t, pid, res.to);
       if (_q) s.socket.emit('questSync', _q);
@@ -384,6 +405,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   // ── boxes ────────────────────────────────────────────────────────────────
   safeOn('openLootBox', ({ id } = {}) => s.act('openLootBox', 'openBoxError', async (t, pid) => {
     const res = await craft.openBox(t, pid, String(id || ''));
+    await ach.bumpIn(t, s, 'boxOpen', 1);
     await pushAll(t);
     s.socket.emit('boxOpened', res);
     return res;
@@ -476,6 +498,10 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     // может быть не в сети — его счётчик двигается по id, уведомление ниже.
     await seasonTasks.bumpIn(t, s, 'mbuy', res.price);
     const sellerTask = await progression.bumpSeasonTask(t, res.sellerId, 'msell', res.price);
+    // Достижения. Продавца может не быть в сети — счётчик по id, без
+    // уведомления: окно покажет готовое, когда он его откроет.
+    await ach.bumpIn(t, s, 'mktBuy', 1);
+    await ach.bumpIn(t, { playerId: res.sellerId }, 'mktSell', 1);
     await pushAll(t);
     // Buying counts toward VIP, and the panel reads its level from this reply.
     const vip = await progression.vipOf(t, pid);

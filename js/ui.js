@@ -3567,7 +3567,7 @@ const _TELEPORT_BTN_ID = 'teleport-btn';
 // to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
 // whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
 // only ever show while the menu is expanded.
-const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn'];
+const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn', 'ach-btn'];
 let _hudMenuExpanded = false;
 // hud-menu-btn's own visibility is tab-only (like chat); the seven behind it
 // need tab AND expanded — this is that second check, shared by every
@@ -7077,6 +7077,154 @@ function showCodexBtn() {
   if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionCodexBtn(); }
 }
 
+// ── Достижения ──────────────────────────────────────────────────────────────
+// Постоянные цели на весь аккаунт (ACHIEVEMENTS, shared/definitions.js).
+// Счётчики и «уже забрано» — с сервера (achState); здесь только рисуется,
+// что пришло, и по тем же целям решается, гореть ли кнопке «Забрать».
+// Выдачу сервер проверяет заново (server/achievements.js).
+let _achState = { ready: false, metrics: {}, claimed: [] };
+let _achCat = 'runes';
+let _achBusy = null;   // id, по которому только что нажали «Забрать»
+
+const _ACH_CAT_ICON = { runes: '🔮', enhance: '⚒️', battle: '⚔️', craft: '🧪', social: '💬' };
+const _ACH_METRIC_ICON = {
+  runeCommon: '🔮', runeUncommon: '🔮', runeRare: '🔮', runeEpic: '🔮', runeLegendary: '🔮',
+  runeFail: '💥', runeReroll: '🎲', runeSocket: '💠',
+  enhMax: '⚒️', enhOk: '✨', enhBurn: '🔥',
+  kills: '⚔️', boss: '👹', elite: '💎', lvl: '⭐',
+  petCraft: '🐾', gearCraft: '🛡️', potionCraft: '⚗️', boxOpen: '🎁',
+  mktSell: '💰', mktBuy: '🛒', chat: '💬',
+};
+
+function _achProgress(a) { return Number((_achState.metrics || {})[a.metric] || 0); }
+function _achClaimed(a) { return (_achState.claimed || []).includes(a.id); }
+function _achClaimable(a) { return _achState.ready && !_achClaimed(a) && _achProgress(a) >= a.target; }
+function _achReadyCount(cat) {
+  return ACHIEVEMENTS.filter(a => (!cat || ACH_METRICS[a.metric].cat === cat) && _achClaimable(a)).length;
+}
+
+function _achName(a) {
+  return tVars('achM_' + a.metric, { n: Number(a.target).toLocaleString('ru-RU') });
+}
+
+// Картинка и подпись награды — из того же каталога, что и инвентарь.
+function _achRewardHTML(r) {
+  if (r.t === 'gold') return `<span class="ach-rw"><span class="ach-rw-ico">🪙</span>${Number(r.n).toLocaleString('ru-RU')} ${t('achGold')}</span>`;
+  if (r.t === 'nexum') return `<span class="ach-rw"><span class="ach-rw-ico">💠</span>${Number(r.n).toLocaleString('ru-RU')} Liberty</span>`;
+  const id = r.t === 'rune' ? runeCatalogId(r.kind, r.rarity) : r.id;
+  const def = itemCatalogBase(id);
+  const rar = r.t === 'rune' ? r.rarity : (def && def.rarity);
+  const col = (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[rar]) || '#c4a276';
+  const img = def && def.img ? `<img class="ach-rw-img" src="${def.img}" alt="">` : '';
+  const name = r.t === 'rune'
+    ? `${(def && def.name) || t('achRune')} · ${(typeof _RARITY_NAMES !== 'undefined' && _RARITY_NAMES[r.rarity]) || r.rarity}`
+    : ((def && def.name) || id);
+  const qty = r.t === 'item' && (r.qty || 1) > 1 ? ` ×${Number(r.qty).toLocaleString('ru-RU')}` : '';
+  return `<span class="ach-rw" style="border-color:${col}66;color:${col}">${img}${name}${qty}</span>`;
+}
+
+function _achRowHTML(a) {
+  const claimed = _achClaimed(a), ok = _achClaimable(a);
+  const cur = Math.min(_achProgress(a), a.target);
+  const pct = Math.max(0, Math.min(100, Math.round((cur / Math.max(1, a.target)) * 100)));
+  const btn = claimed ? `<span class="ach-done-lbl">✓ ${t('achClaimedLbl')}</span>`
+    : ok ? `<button class="ach-claim" ${_achBusy === a.id ? 'disabled' : ''} onclick="claimAchievement('${a.id}')">${t('achClaimBtn')}</button>`
+    : `<span class="ach-prog">${cur.toLocaleString('ru-RU')} / ${Number(a.target).toLocaleString('ru-RU')}</span>`;
+  return `
+    <div class="s4-task ach-row${claimed ? ' done' : ''}${ok ? ' ready' : ''}">
+      <div class="s4-ico">${claimed ? '✓' : (_ACH_METRIC_ICON[a.metric] || '★')}</div>
+      <div class="s4-task-body">
+        <div class="s4-task-top"><span class="s4-task-name">${_achName(a)}</span>${btn}</div>
+        <div class="s4-bar"><div class="s4-bar-fill" style="width:${pct}%"></div></div>
+        <div class="ach-rws">${a.rewards.map(_achRewardHTML).join('')}</div>
+      </div>
+    </div>`;
+}
+
+function _renderAchPanel() {
+  const body = document.getElementById('ach-panel-body');
+  const tabs = document.getElementById('ach-tabs');
+  if (!body || !tabs) return;
+  tabs.innerHTML = ACH_CATEGORIES.map(c => {
+    const n = _achReadyCount(c);
+    return `<button class="rating-tab${c === _achCat ? ' active' : ''}" onclick="switchAchCat('${c}')">${_ACH_CAT_ICON[c] || ''} ${t('achCat_' + c)}${n ? `<i class="ach-badge">${n}</i>` : ''}</button>`;
+  }).join('');
+  if (!_achState.ready) {
+    body.innerHTML = `<div class="s4-wrap"><div class="s4-empty">${t('achSoon')}</div></div>`;
+    return;
+  }
+  const list = ACHIEVEMENTS.filter(a => ACH_METRICS[a.metric].cat === _achCat);
+  const done = ACHIEVEMENTS.filter(_achClaimed).length;
+  // Готовые к выдаче — сверху, полученные — вниз, остальные — как в каталоге.
+  const rank = a => (_achClaimable(a) ? 0 : _achClaimed(a) ? 2 : 1);
+  const sorted = list.map((a, i) => ({ a, i })).sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i).map(x => x.a);
+  body.innerHTML = `
+    <div class="s4-wrap">
+      <div class="s4-hero">
+        <div class="s4-hero-num">${done} / ${ACHIEVEMENTS.length}</div>
+        <div class="s4-hero-lbl">${t('achTotalLbl')}</div>
+      </div>
+      ${sorted.map(_achRowHTML).join('')}
+    </div>`;
+}
+
+function _refreshAchDot() {
+  const btn = document.getElementById('ach-btn');
+  if (btn) btn.classList.toggle('has-ready', _achReadyCount(null) > 0);
+}
+
+function onAchState(st) {
+  _achState = { ready: !!(st && st.ready), metrics: (st && st.metrics) || {}, claimed: (st && st.claimed) || [] };
+  _achBusy = null;
+  _refreshAchDot();
+  if (_achPanelOpen()) _renderAchPanel();
+}
+
+function openAchPanel() {
+  const panel = document.getElementById('ach-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  _renderAchPanel();
+  if (typeof netAchSync === 'function') netAchSync();
+}
+function closeAchPanel() {
+  const panel = document.getElementById('ach-panel');
+  if (panel) panel.style.display = 'none';
+}
+function _achPanelOpen() { return document.getElementById('ach-panel')?.style.display === 'flex'; }
+function switchAchCat(c) {
+  if (!ACH_CATEGORIES.includes(c)) return;
+  _achCat = c;
+  _renderAchPanel();
+}
+function claimAchievement(id) {
+  if (_achBusy) return;
+  _achBusy = id;
+  _renderAchPanel();
+  if (typeof netAchClaim === 'function') netAchClaim(id);
+}
+function onAchError() {
+  _achBusy = null;
+  if (_achPanelOpen()) _renderAchPanel();
+}
+
+// Под кнопкой «Кодекс», тем же шагом, что и вся колонка.
+function _positionAchBtn() {
+  const codexBtn = document.getElementById('codex-btn');
+  const btn = document.getElementById('ach-btn');
+  if (!btn || !codexBtn) return;
+  const cTop = parseFloat(codexBtn.style.top) || 0;
+  btn.style.top       = (cTop + 28 + 4) + 'px';
+  btn.style.left      = codexBtn.style.left;
+  btn.style.width     = codexBtn.style.width;
+  btn.style.right     = 'auto';
+  btn.style.transform = 'none';
+}
+function showAchBtn() {
+  const btn = document.getElementById('ach-btn');
+  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionAchBtn(); }
+}
+
 // ── Оффлайн-фарм ────────────────────────────────────────────────────────────
 // Окно выбора: сервер присылает список локаций с темпом ДЛЯ ЭТОГО игрока
 // (offlineFarmInfo, server/offline-farm.js) — клиент ничего не считает сам,
@@ -7943,6 +8091,7 @@ function _positionHudColumn() {
   _positionEventsBtn();
   _positionSeasonBtn();
   _positionCodexBtn();
+  _positionAchBtn();
 }
 
 function showTournamentHudBtn() {

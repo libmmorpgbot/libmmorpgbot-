@@ -209,6 +209,24 @@
   <span data-i18n="navCodexBtn">Кодекс</span>
 </button>
 
+<!-- Achievements button (below Codex) — permanent account goals with rewards.
+     The dot means something is ready to claim (_refreshAchDot, js/ui.js). -->
+<button id="ach-btn" onclick="openAchPanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>
+  <span data-i18n="achBtn">Достижения</span>
+  <i class="upd-dot"></i>
+</button>
+
+<!-- Achievements overlay panel: category tabs + goals (js/ui.js, _renderAchPanel). -->
+<div id="ach-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title" style="color:#ffcf8a"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg><span data-i18n="achBtn">Достижения</span></div>
+    <button class="vip-close" onclick="closeAchPanel()">✕</button>
+  </div>
+  <div class="rating-tabs" id="ach-tabs"></div>
+  <div id="ach-panel-body" class="vip-body"></div>
+</div>
+
 <!-- Offline farm overlay panel: pick a location, leave, collect on return.
      Rates come from the server (offlineFarmInfo, server/offline-farm.js). -->
 <div id="offline-farm-panel" style="display:none">
