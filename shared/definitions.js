@@ -4704,7 +4704,7 @@ const ACHIEVEMENTS = [
   { id: 'kills_10000',  metric: 'kills', target: 10000,  rewards: [_achItem('box_uncommon', 3)] },
   { id: 'kills_50000',  metric: 'kills', target: 50000,  rewards: [_achItem('box_rare', 3)] },
   { id: 'kills_100000', metric: 'kills', target: 100000, rewards: [_achItem('box_rare', 5), _achItem('bless_stone', 10)] },
-  { id: 'kills_500000', metric: 'kills', target: 500000, rewards: [_achItem('box_rare', 10), _achRune('weapon', 'epic')] },
+  { id: 'kills_500000', metric: 'kills', target: 500000, rewards: [_achItem('box_rare', 10), _achItem('ore_epic', 200)] },
   { id: 'boss_1',       metric: 'boss',  target: 1,   rewards: [_achItem('norm_stone', 3)] },
   { id: 'boss_10',      metric: 'boss',  target: 10,  rewards: [_achItem('box_uncommon', 1)] },
   { id: 'boss_50',      metric: 'boss',  target: 50,  rewards: [_achItem('box_rare', 2)] },

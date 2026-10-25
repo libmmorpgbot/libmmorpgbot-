@@ -58,6 +58,21 @@ const _DMG_BAKE_PX = 32;
 let _dmgFontChars = null;   // Set<charCode>, or false once baking has failed
 const _dmgBmp = []; let _dmgBmpN = 0;
 const _dmgTxt = []; let _dmgTxtN = 0;
+// Иконка перед летящим текстом — вместо эмодзи, которым он раньше начинался
+// («🔒 Навык не изучен», «+12💰»): см. emojiSplit, js/icons.js.
+const _dmgIco = []; let _dmgIcoN = 0;
+const _dmgIcoTex = new Map();
+function _dmgIconTex(name, color) {
+  const key = name + '|' + color;
+  let tex = _dmgIcoTex.get(key);
+  if (!tex) {
+    const img = typeof _getIconImg === 'function' ? _getIconImg(name, color, 48) : null;
+    if (!img) return null;
+    tex = PIXI.Texture.from(img);
+    _dmgIcoTex.set(key, tex);
+  }
+  return tex;
+}
 
 function _ensureDmgFont() {
   if (_dmgFontChars) return true;
@@ -438,7 +453,7 @@ function _dropGpuState() {
   _partSpr.length = 0; _partN = 0;
   _decSpr.length = 0; _decN = 0;
   _wallSpr.length = 0; _wallN = 0;
-  _dmgBmp.length = 0; _dmgTxt.length = 0;
+  _dmgBmp.length = 0; _dmgTxt.length = 0; _dmgIco.length = 0; _dmgIcoTex.clear();
   // The glyph atlas was uploaded to the context that just died. Uninstall so
   // the name is free and _ensureDmgFont() bakes a fresh one on demand.
   try { if (_dmgFontChars) PIXI.BitmapFont.uninstall(_DMG_FONT); } catch (e) { /* never installed */ }
@@ -1748,12 +1763,13 @@ function _updateProjs() {
 
 function _updateDmgNums() {
   const bmpOk = _ensureDmgFont();
-  _dmgBmpN = 0; _dmgTxtN = 0;
+  _dmgBmpN = 0; _dmgTxtN = 0; _dmgIcoN = 0;
   for (let i = 0; i < dmgNums.length; i++) {
     const d = dmgNums[i];
     const size  = d.fontSize || 15;
     const tint  = _tintOf(d.color, 0xffffff);
     const alpha = d.life * 1.5 < 1 ? d.life * 1.5 : 1;
+    let shown;
     if (bmpOk && _dmgSpellable(d.text)) {
       let t = _dmgBmp[_dmgBmpN];
       if (!t) {
@@ -1771,6 +1787,7 @@ function _updateDmgNums() {
       if (t.scale.x !== sc) t.scale.set(sc);
       t.tint = tint; t.alpha = alpha;
       t.x = d.x; t.y = d.y;
+      shown = t;
     } else {
       let t = _dmgTxt[_dmgTxtN];
       if (!t) {
@@ -1791,10 +1808,31 @@ function _updateDmgNums() {
       if (t.style.fontSize !== size) t.style.fontSize = size;
       t.tint = tint; t.alpha = alpha;
       t.x = d.x; t.y = d.y;
+      shown = t;
+    }
+    const tex = d.icon ? _dmgIconTex(d.icon[0], d.icon[1]) : null;
+    if (tex && shown) {
+      let ic = _dmgIco[_dmgIcoN];
+      if (!ic) {
+        ic = new PIXI.Sprite(tex);
+        ic.anchor.set(0.5, 0.5);
+        _dmgNumCt.addChild(ic);
+        _dmgIco[_dmgIcoN] = ic;
+      }
+      _dmgIcoN++;
+      ic.visible = true;
+      if (ic.texture !== tex) ic.texture = tex;
+      const isz = size * 1.25;
+      ic.width = isz; ic.height = isz;
+      ic.alpha = alpha;
+      // Пустая строка (было только «💰») — иконка по центру.
+      ic.x = d.text ? d.x - shown.width / 2 - isz * 0.6 : d.x;
+      ic.y = d.y;
     }
   }
   _hideRest(_dmgBmp, _dmgBmpN);
   _hideRest(_dmgTxt, _dmgTxtN);
+  _hideRest(_dmgIco, _dmgIcoN);
 }
 
 // ── стикеры над головой ──────────────────────────────────
@@ -1846,9 +1884,13 @@ function _getEnemy(id) {
   // Аура элитного монстра — под спрайтом, как у персонажей.
   const aura = new PIXI.Graphics();
   aura.visible = false;
-  ct.addChild(aura, spr, gfx, lbl);
+  // Знак «осторожно» перед «БОСС» — иконкой, а не эмодзи ⚠ в строке.
+  const warn = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  warn.anchor.set(1, 0.5);
+  warn.visible = false;
+  ct.addChild(aura, spr, gfx, lbl, warn);
   _enemyCt.addChild(ct);
-  const obj = { ct, spr, gfx, lbl, aura };
+  const obj = { ct, spr, gfx, lbl, aura, warn };
   _enemyPool.set(id, obj);
   return obj;
 }
@@ -2087,7 +2129,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     ? (typeof tVars === 'function' ? tVars('charLevelFmt', { lvl: e.rlvl }) : 'Уровень ' + e.rlvl) + '\n'
     : '';
   const boss = typeof t === 'function' ? t('bossTag') : 'БОСС';
-  const nameLine = e.isBoss ? `⚠ ${boss} · ${e.name || ''}` : e.elite ? `★ ${e.name || ''}` : `${e.name || ''}`;
+  const nameLine = e.isBoss ? `${boss} · ${e.name || ''}` : e.elite ? `★ ${e.name || ''}` : `${e.name || ''}`;
   const lblText  = lvlLine + nameLine;
   if (lbl.text !== lblText) lbl.text = lblText;
   const big = e.isBoss || e.elite;
@@ -2096,6 +2138,19 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   lbl.style.strokeThickness = big ? 5 : 4;
   lbl.x = 0;
   lbl.y = by - 4;
+  const { warn } = obj;
+  if (warn) {
+    const tex = e.isBoss ? _dmgIconTex('warning', '#ffb347') : null;
+    warn.visible = !!tex;
+    if (tex) {
+      if (warn.texture !== tex) warn.texture = tex;
+      warn.width = warn.height = 20;
+      // Строка имени — нижняя строка подписи (якорь подписи — низ по центру).
+      const w = PIXI.TextMetrics.measureText(nameLine, lbl.style).width;
+      warn.x = -w / 2 - 4;
+      warn.y = lbl.y - 12;
+    }
+  }
 }
 
 let _enemyVisGen = 0;

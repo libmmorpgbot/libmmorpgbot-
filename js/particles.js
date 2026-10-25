@@ -56,8 +56,11 @@ function _dmgLegible(color) {
 }
 
 function dmgNum(x, y, text, color, fontSize) {
-  const t = String(text);
-  dmgNums.push({ x, y, text: t, color: _dmgLegible(color), life: 1.1, vy: -52, fontSize: fontSize || (isNaN(t) ? 12 : 15) });
+  // Эмодзи в строке («🔒 Навык не изучен», «+12💰») рисуется иконкой рядом с
+  // текстом (_updateDmgNums, js/pixi-world.js), а не глифом шрифта.
+  const sp = typeof emojiSplit === 'function' ? emojiSplit(text) : { icon: null, text: String(text) };
+  const t = sp.text;
+  dmgNums.push({ x, y, text: t, icon: sp.icon, color: _dmgLegible(color), life: 1.1, vy: -52, fontSize: fontSize || (isNaN(t) || t === '' ? 12 : 15) });
 }
 
 

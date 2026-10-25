@@ -530,7 +530,11 @@
 
   /* ── Достижения ─────────────────────────────────────────── */
   .ach-orbit .orbit-core { filter: none; }
-  .ach-orbit .orbit-core::after { content: '🏆'; font-size: 44px; filter: drop-shadow(0 0 14px rgba(255,200,110,.8)); }
+  .ach-orbit .orbit-core::after { content: none; }
+  .ach-orbit .orbit-core { display: flex; align-items: center; justify-content: center; }
+  .ach-orbit .orbit-core svg { width: 52px; height: 52px; filter: drop-shadow(0 0 14px rgba(255,200,110,.8)); }
+  /* иконки вместо эмодзи — по высоте строки, как текст рядом */
+  svg.ico { display: inline-block; vertical-align: -0.2em; flex-shrink: 0; }
   .ach-orbit .orbit-ring img { image-rendering: pixelated; width: 46px; height: 46px; margin: -23px 0 0 -23px; }
   .gem-card.ach-c .ladder::before { left: 30px; }
   .gem-card.ach-c .ladder .n { min-width: 62px; }
@@ -614,7 +618,7 @@
   <canvas id="fx"></canvas>
   <div class="hero-inner">
     <div class="orbit ach-orbit">
-      <div class="orbit-core"></div>
+      <div class="orbit-core"><svg viewBox="0 0 24 24" stroke="#ffcf5c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></div>
       <div class="orbit-ring">
         <img src="/images/rune/armor/chp.png" alt="" style="--a:0deg">
         <img src="/images/rune/armor/uhp.png" alt="" style="--a:72deg">
@@ -629,10 +633,10 @@
       получи серую руну. Дотяни предмет до <b>+15</b> — получи <b>легендарную руну оружия</b>. Ничего не сгорает
       и не сбрасывается: прогресс копится навсегда.</p>
     <div class="hero-chips">
-      <span>🏆 74 достижения</span>
+      <span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg> 74 достижения</span>
       <span><img src="/images/rune/armor/lhp.png" alt="">Руны в награду</span>
       <span><img src="/images/bless.png" alt="">Заточка до +15</span>
-      <span>⚔ Бой · ремесло · рынок</span>
+      <span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e6c27a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5,17.5 3,6 3,3 6,3 17.5,14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5,6.5 18,3 21,3 21,6 17.5,9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg> Бой · ремесло · рынок</span>
       <span><img src="/images/material/boxr.png" alt="">Забирай кнопкой</span>
     </div>
     <div class="cta">
@@ -674,7 +678,7 @@
       <h2>Играйте — забирайте</h2>
       <div class="steps3 stagger">
         <div class="step"><span class="step-n">1</span><img src="/images/rune/armor/chp.png" alt=""><b>Играете как обычно</b><span>Куёте руны, точите, бьёте монстров — счётчики двигаются сами, в тот же миг.</span></div>
-        <div class="step"><span class="step-n">2</span><img src="/images/material/shard.png" alt=""><b>Цель выполнена</b><span>Всплывает «🏆 Достижение выполнено», на кнопке загорается красная точка.</span></div>
+        <div class="step"><span class="step-n">2</span><img src="/images/material/shard.png" alt=""><b>Цель выполнена</b><span>Всплывает «<svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg> Достижение выполнено», на кнопке загорается красная точка.</span></div>
         <div class="step"><span class="step-n">3</span><img src="/images/material/boxu.png" alt=""><b>«Забрать»</b><span>Награда — в сумку. Сумка полна? Ничего не теряется: освободите место и заберите снова.</span></div>
       </div>
       <div class="tiers5 stagger" style="margin-top:26px">
@@ -767,7 +771,7 @@
         </div>
         <div class="gem-card ach-c" style="--gc:127,211,255">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">🎲</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e2d6c1" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h.01"/><path d="M16 8h.01"/><path d="M12 12h.01"/><path d="M8 16h.01"/><path d="M16 16h.01"/></svg></span></div>
             <div>
               <div class="gem-name">Переработка</div>
               <div class="gem-drop">перебросы характеристик руны · 3 ступени</div>
@@ -776,7 +780,7 @@
           <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">200 Liberty</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">1 000 Liberty</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">3 000 Liberty</i></span></li></ol>
         </div>
       </div>
-      <div class="card ach-note"><span class="big">💥</span><span>Даже неудачная ковка не пропадает зря — она идёт в «Невезучего кузнеца» и возвращает руду.</span></div>
+      <div class="card ach-note"><span class="big"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ff8a3d" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z"/><line x1="3.5" y1="19" x2="5.5" y2="17"/><line x1="20.5" y1="19" x2="18.5" y2="17"/><line x1="12" y1="18.5" x2="12" y2="21.5"/></svg></span><span>Даже неудачная ковка не пропадает зря — она идёт в «Невезучего кузнеца» и возвращает руду.</span></div>
     </section>
 
     <section class="sec reveal" id="ach-enhance">
@@ -807,7 +811,7 @@
         </div>
         <div class="gem-card ach-c" style="--gc:241,126,98">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">🔥</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ff8a3d" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span></div>
             <div>
               <div class="gem-name">Пепел</div>
               <div class="gem-drop">предмет сгорел на заточке · 3 ступени</div>
@@ -826,17 +830,17 @@
       <div class="gems stagger">
         <div class="gem-card ach-c" style="--gc:232,87,79">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">⚔️</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e6c27a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5,17.5 3,6 3,3 6,3 17.5,14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5,6.5 18,3 21,3 21,6 17.5,9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg></span></div>
             <div>
               <div class="gem-name">Охотник</div>
               <div class="gem-drop">убитые монстры · 6 ступеней</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>1 000 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>5 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">10 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×3</i></span></li><li><span class="n">50 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i></span></li><li><span class="n">100 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">500 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×10</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 000 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>5 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">10 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×3</i></span></li><li><span class="n">50 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i></span></li><li><span class="n">100 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">500 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×10</i><i class="rw" style="--rc:#b48ae6"><img src="/images/ore/eres.png" alt="">Эпическая руда ×200</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:192,96,255">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">👹</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e8574f" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l2.5 4.5"/><path d="M19 3l-2.5 4.5"/><path d="M12 21c-4.4 0-7-3.1-7-7.5S7.6 6 12 6s7 3.1 7 7.5-2.6 7.5-7 7.5z"/><path d="M8.5 12l2 1"/><path d="M15.5 12l-2 1"/><path d="M9 17c1.8-1 4.2-1 6 0"/></svg></span></div>
             <div>
               <div class="gem-name">Убийца боссов</div>
               <div class="gem-drop">добитые боссы · 4 ступени</div>
@@ -846,13 +850,13 @@
         </div>
         <div class="gem-card ach-c" style="--gc:255,207,86">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">⭐</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg></span></div>
             <div>
               <div class="gem-name">Путь героя</div>
               <div class="gem-drop">уровень персонажа — засчитан сразу · 7 ступеней</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">ур. 10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>1 000 золота</i></span></li><li><span class="n">ур. 20</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>3 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">ур. 30</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li><li><span class="n">ур. 40</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">ур. 50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">ур. 60</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">ур. 70</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">ур. 10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 000 золота</i></span></li><li><span class="n">ур. 20</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>3 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">ур. 30</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li><li><span class="n">ур. 40</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">ур. 50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">ур. 60</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">ур. 70</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:127,211,255">
           <div class="gem-top">
@@ -873,17 +877,17 @@
       <div class="gems stagger">
         <div class="gem-card ach-c" style="--gc:111,191,115">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">🐾</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#d6b38a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="6" r="1.8"/><circle cx="12" cy="4.5" r="1.8"/><circle cx="17" cy="6" r="1.8"/><circle cx="19" cy="10.5" r="1.8"/><path d="M8.5 21c-2 0-3.5-1.4-3.5-3.4 0-3.6 3.6-6.6 7-6.6s7 3 7 6.6c0 2-1.5 3.4-3.5 3.4-1.3 0-2-.5-3.5-.5s-2.2.5-3.5.5z"/></svg></span></div>
             <div>
               <div class="gem-name">Питомцы</div>
               <div class="gem-drop">созданные питомцы · 2 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>2 000 золота</i></span></li><li><span class="n">5</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>2 000 золота</i></span></li><li><span class="n">5</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:154,163,171">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">🛡️</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fb4e8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span></div>
             <div>
               <div class="gem-name">Кузнец</div>
               <div class="gem-drop">скованное снаряжение · 2 ступени</div>
@@ -899,7 +903,7 @@
               <div class="gem-drop">сваренные зелья бафа · 2 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>2 000 золота</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>2 000 золота</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:111,156,74">
           <div class="gem-top">
@@ -913,33 +917,33 @@
         </div>
         <div class="gem-card ach-c" style="--gc:255,207,86">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">💰</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1.5 3h-3z"/><path d="M10.5 6C6 8 4 12 4 15.5 4 19 7 21 12 21s8-2 8-5.5C20 12 18 8 13.5 6"/><path d="M14 11.5c-.4-.8-1.2-1-2-1-1.1 0-2 .6-2 1.5s.9 1.3 2 1.5 2 .6 2 1.5-.9 1.5-2 1.5c-.8 0-1.6-.3-2-1"/><path d="M12 9.5v1"/><path d="M12 16.5v1"/></svg></span></div>
             <div>
               <div class="gem-name">Торговец</div>
               <div class="gem-drop">проданные лоты на маркете · 2 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>500 золота</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>500 золота</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:90,169,230">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">🛒</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fd3a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span></div>
             <div>
               <div class="gem-name">Покупатель</div>
               <div class="gem-drop">купленные лоты на маркете · 2 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>500 золота</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>500 золота</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:90,169,230">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo">💬</span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
             <div>
               <div class="gem-name">Душа компании</div>
               <div class="gem-drop">сообщения в чат · 3 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>300 золота</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span>🪙</span>1 500 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>300 золота</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 500 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li></ol>
         </div>
       </div>
     </section>
@@ -980,7 +984,7 @@
 
     <section class="sec reveal" id="world-main">
       <div class="tiles stagger">
-        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>С 35 уровня</b><span>Телепорт в городе → «🌍 Мир»</span></div>
+        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>С 35 уровня</b><span>Телепорт в городе → «<svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fb4e8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg> Мир»</span></div>
         <div class="card tile"><img src="/images/material/gem_red.png" alt=""><b>Монстры 40–59</b><span>Чем дальше на восток — тем сильнее</span></div>
         <div class="card tile"><img src="/images/material/gem_shard.png" alt=""><b>Опыт ×10</b><span>Втрое больше, чем в фарм-зонах</span></div>
         <div class="card tile"><img src="/images/nexum-coin_v2.png" alt=""><b>Дроп Фарм зоны 2</b><span>Снаряжение, книги, осколки, самоцветы, Liberty</span></div>
@@ -1037,7 +1041,7 @@
       <div class="sec-eyebrow">Босс</div>
       <h2>Владыка Мира</h2>
       <div class="boss-card">
-        <div class="boss-skull"><span>💀</span></div>
+        <div class="boss-skull"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e0d6c8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg></span></div>
         <div>
           <h3>Трон Владыки · 60 уровень</h3>
           <p class="dek" style="margin:0">Стоит на каменной площади за кольцом колонн, проход — с запада, через
@@ -1189,7 +1193,7 @@
         выходов из игры. Новый лимит — после 00:00 МСК.</p>
       <div class="card limits">
         <div class="lim">
-          <div class="lim-head"><span>🎟 С сезонным билетом</span><b>7 ч в сутки</b></div>
+          <div class="lim-head"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffb347" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 17v2"/><path d="M13 11v2"/></svg> С сезонным билетом</span><b>7 ч в сутки</b></div>
           <div class="lim-bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div>
         </div>
         <div class="lim">
@@ -1203,10 +1207,10 @@
       <div class="sec-eyebrow">Сотрудничество</div>
       <h2>Награда и честный забег</h2>
       <div class="coop-grid stagger">
-        <div class="card coop-item"><span class="ci">🏆</span><div><b>Видно, что выпало</b><span>В итоге забега написано, кому по жребию досталась награда за босса и что именно выдано.</span></div></div>
-        <div class="card coop-item"><span class="ci">🎒</span><div><b>Полная сумка</b><span>Если Камень безопасной заточки не поместился — появится сообщение, а не тишина.</span></div></div>
-        <div class="card coop-item"><span class="ci">↩️</span><div><b>Попытка возвращается</b><span>Если вход сорвался или связь оборвалась до первой волны.</span></div></div>
-        <div class="card coop-item"><span class="ci">💀</span><div><b>Смерть заканчивает забег</b><span>Напарник сразу уходит домой, а не ждёт на «Дождитесь напарника».</span></div></div>
+        <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span><div><b>Видно, что выпало</b><span>В итоге забега написано, кому по жребию досталась награда за босса и что именно выдано.</span></div></div>
+        <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#c9a45c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span><div><b>Полная сумка</b><span>Если Камень безопасной заточки не поместился — появится сообщение, а не тишина.</span></div></div>
+        <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span><div><b>Попытка возвращается</b><span>Если вход сорвался или связь оборвалась до первой волны.</span></div></div>
+        <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e0d6c8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg></span><div><b>Смерть заканчивает забег</b><span>Напарник сразу уходит домой, а не ждёт на «Дождитесь напарника».</span></div></div>
       </div>
     </section>
 
@@ -1257,23 +1261,23 @@
     <div class="split">
       <div>
         <div class="card task-group">
-          <div class="tg-head"><b>📈 Постоянно</b></div>
-          <div class="task"><div class="t-ico">🛒</div><div class="t-name">Покупка на маркете — за каждый GRAM</div><span class="pill">+10</span></div>
+          <div class="tg-head"><b><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#8fd65a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22,7 13.5,15.5 8.5,10.5 2,17"/><polyline points="16,7 22,7 22,13"/></svg> Постоянно</b></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fd3a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div><div class="t-name">Покупка на маркете — за каждый GRAM</div><span class="pill">+10</span></div>
         </div>
         <div class="card task-group">
-          <div class="tg-head"><b>☀️ Ежедневные</b><span>сброс в 00:00 МСК</span></div>
-          <div class="task"><div class="t-ico">💬</div><div class="t-name">Отправить 10 сообщений в игровой чат</div><span class="pill">+30</span></div>
-          <div class="task"><div class="t-ico">🛒</div><div class="t-name">Купить на маркете на 3 GRAM</div><span class="pill">+100</span></div>
-          <div class="task"><div class="t-ico">💰</div><div class="t-name">Продать на маркете на 3 GRAM</div><span class="pill">+100</span></div>
+          <div class="tg-head"><b><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg> Ежедневные</b><span>сброс в 00:00 МСК</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="t-name">Отправить 10 сообщений в игровой чат</div><span class="pill">+30</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fd3a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div><div class="t-name">Купить на маркете на 3 GRAM</div><span class="pill">+100</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1.5 3h-3z"/><path d="M10.5 6C6 8 4 12 4 15.5 4 19 7 21 12 21s8-2 8-5.5C20 12 18 8 13.5 6"/><path d="M14 11.5c-.4-.8-1.2-1-2-1-1.1 0-2 .6-2 1.5s.9 1.3 2 1.5 2 .6 2 1.5-.9 1.5-2 1.5c-.8 0-1.6-.3-2-1"/><path d="M12 9.5v1"/><path d="M12 16.5v1"/></svg></div><div class="t-name">Продать на маркете на 3 GRAM</div><span class="pill">+100</span></div>
         </div>
         <div class="card task-group">
-          <div class="tg-head"><b>📅 Еженедельные</b><span>сброс в понедельник</span></div>
-          <div class="task"><div class="t-ico">⚔️</div><div class="t-name">Убить 100 000 монстров на 1 этаже</div><span class="pill">+300</span></div>
-          <div class="task"><div class="t-ico">🗡️</div><div class="t-name">Убить 100 000 монстров на 2 этаже</div><span class="pill">+300</span></div>
-          <div class="task"><div class="t-ico">🌾</div><div class="t-name">Убить 100 000 монстров в фарм зоне</div><span class="pill">+300</span></div>
+          <div class="tg-head"><b><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/></svg> Еженедельные</b><span>сброс в понедельник</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e6c27a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5,17.5 3,6 3,3 6,3 17.5,14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5,6.5 18,3 21,3 21,6 17.5,9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg></div><div class="t-name">Убить 100 000 монстров на 1 этаже</div><span class="pill">+300</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#d6dee6" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4l-9.5 9.5"/><path d="M20 4h-3.5L8.5 12"/><path d="M20 4v3.5L12 15.5"/><path d="M6.5 13.5l4 4"/><path d="M8.5 15.5L4 20"/></svg></div><div class="t-name">Убить 100 000 монстров на 2 этаже</div><span class="pill">+300</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e3c35c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 22 16 8"/><path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/></svg></div><div class="t-name">Убить 100 000 монстров в фарм зоне</div><span class="pill">+300</span></div>
           <div class="task"><div class="t-ico"><img src="/images/potion/atk.png" alt="" class="px"></div><div class="t-name">Скрафтить зелье атаки 10 раз</div><span class="pill">+50</span></div>
-          <div class="task"><div class="t-ico">🏰</div><div class="t-name">Участвовать в Кровавой Башне 3 раза</div><span class="pill">+200</span></div>
-          <div class="task"><div class="t-ico">👹</div><div class="t-name">Ударить мирового босса 3 раза</div><span class="pill">+200</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#c9a45c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 20v-9H2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2Z"/><path d="M18 11V4H6v7"/><path d="M15 22v-4a3 3 0 0 0-6 0v4"/><path d="M22 11V9"/><path d="M2 11V9"/><path d="M6 4V2"/><path d="M18 4V2"/><path d="M10 4V2"/><path d="M14 4V2"/></svg></div><div class="t-name">Участвовать в Кровавой Башне 3 раза</div><span class="pill">+200</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e8574f" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3l2.5 4.5"/><path d="M19 3l-2.5 4.5"/><path d="M12 21c-4.4 0-7-3.1-7-7.5S7.6 6 12 6s7 3.1 7 7.5-2.6 7.5-7 7.5z"/><path d="M8.5 12l2 1"/><path d="M15.5 12l-2 1"/><path d="M9 17c1.8-1 4.2-1 6 0"/></svg></div><div class="t-name">Ударить мирового босса 3 раза</div><span class="pill">+200</span></div>
           <div class="removed">✖ Задания 3 сезона и сжигание книг убраны.</div>
         </div>
       </div>
@@ -1292,9 +1296,9 @@
     <div class="split">
       <div class="card">
         <div class="podium">
-          <div class="pod p2"><div class="medal">🥈</div><div class="usd">50 USDT</div><div class="place">2 место</div><div class="base">2</div></div>
-          <div class="pod p1"><div class="medal">🥇</div><div class="usd">100 USDT</div><div class="place">1 место</div><div class="base">1</div></div>
-          <div class="pod p3"><div class="medal">🥉</div><div class="usd">50 USDT</div><div class="place">3 место</div><div class="base">3</div></div>
+          <div class="pod p2"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#d6dee6" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">50 USDT</div><div class="place">2 место</div><div class="base">2</div></div>
+          <div class="pod p1"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf56" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">100 USDT</div><div class="place">1 место</div><div class="base">1</div></div>
+          <div class="pod p3"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e0a46e" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">50 USDT</div><div class="place">3 место</div><div class="base">3</div></div>
         </div>
         <div class="rest">
           <div>4–10 место · <b>10 USDT</b></div>
@@ -1324,7 +1328,7 @@
       </div>
     </div>
     <div class="shop-row stagger">
-      <div class="shop-item"><span style="font-size:26px;width:30px;text-align:center">📚</span>Книги и оружие · 5 GRAM</div>
+      <div class="shop-item"><span style="font-size:26px;width:30px;text-align:center"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e3c48a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5"/><path d="M4 4.5v17"/><line x1="9" y1="7" x2="16" y2="7"/><line x1="9" y1="11" x2="16" y2="11"/></svg></span>Книги и оружие · 5 GRAM</div>
       <div class="shop-item"><img src="/images/potion/atk.png" alt="" class="px">Зелья и золото · 1 GRAM</div>
       <div class="shop-item"><img src="/images/nexum-coin_v2.png" alt="">700 Либерти · 10 GRAM</div>
     </div>
@@ -1339,12 +1343,12 @@
     <div class="classes stagger">
       <div class="card cls" style="--accent: var(--c-tank)">
         <div class="cls-top"><div class="portrait"><img src="/images/classicon/lev.png" alt=""></div><div><div class="cls-name">Танк</div><div class="cls-role">ближний бой · защита</div></div></div>
-        <div class="chg"><div class="sk">🐌</div><div>Каждый обычный удар замедляет цель на <b>10%</b> (до <b>50%</b>) на 10 сек.</div></div>
+        <div class="chg"><div class="sk"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#c9a45c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13a6 6 0 1 0 12 0 4 4 0 1 0-8 0 2 2 0 0 0 4 0"/><circle cx="10" cy="13" r="8"/><path d="M2 21h12c4.4 0 8-3.6 8-8V7a2 2 0 1 0-4 0v6"/><path d="M18 3 19.1 5.2"/><path d="M22 3 20.9 5.2"/></svg></div><div>Каждый обычный удар замедляет цель на <b>10%</b> (до <b>50%</b>) на 10 сек.</div></div>
         <div class="chg"><div class="sk"><img src="/images/skill/audarteni.png" alt="" class="px"></div><div><b>Кувырок / Рывок</b> приземляет точно у врага, а не перелетает его.</div></div>
       </div>
       <div class="card cls" style="--accent: var(--c-dk)">
         <div class="cls-top"><div class="portrait"><img src="/images/classicon/deathknight.png" alt=""></div><div><div class="cls-name">Рыцарь Смерти</div><div class="cls-role">ближний бой · урон</div></div></div>
-        <div class="chg"><div class="sk">🐌</div><div>Каждый обычный удар замедляет цель на <b>10%</b> (до <b>50%</b>) на 10 сек.</div></div>
+        <div class="chg"><div class="sk"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#c9a45c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13a6 6 0 1 0 12 0 4 4 0 1 0-8 0 2 2 0 0 0 4 0"/><circle cx="10" cy="13" r="8"/><path d="M2 21h12c4.4 0 8-3.6 8-8V7a2 2 0 1 0-4 0v6"/><path d="M18 3 19.1 5.2"/><path d="M22 3 20.9 5.2"/></svg></div><div>Каждый обычный удар замедляет цель на <b>10%</b> (до <b>50%</b>) на 10 сек.</div></div>
         <div class="chg"><div class="sk"><img src="/images/skill/wstun_v2.png" alt="" class="px"></div><div>С шансом <b>20%</b> удар оглушает цель на <b>0,3 сек</b>.</div></div>
       </div>
       <div class="card cls" style="--accent: var(--c-heal)">
@@ -1366,13 +1370,13 @@
     <div class="card cp-card">
       <div class="cp-x">×10</div>
       <div class="cp-body">
-        <h3>❤️ Лечение восстанавливает ЦП</h3>
+        <h3><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ff6b7a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> Лечение восстанавливает ЦП</h3>
         <div>Все лечащие навыки восстанавливают и <b>ЦП</b> — <b>в 10 раз больше</b>, чем здоровья. Запас ЦП тоже в 10 раз больше здоровья, так что лечение одинаково заметно для обоих.</div>
         <div class="cp-ex stagger">
           <span><img src="/images/skill/sheal.png" alt="" class="px">+200 HP → <b>+2000 ЦП</b></span>
           <span><img src="/images/skill/adv/adv_babochki.png" alt="" class="px">Бабочки: каждый тик ×10 ЦП</span>
           <span><img src="/images/skill/adim_v2.png" alt="" class="px">Вампиризм: +20 HP → <b>+200 ЦП</b></span>
-          <span>🌿 Регенерация: +5 HP и <b>+50 ЦП</b>/сек</span>
+          <span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#8fd65a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg> Регенерация: +5 HP и <b>+50 ЦП</b>/сек</span>
         </div>
       </div>
     </div>
@@ -1384,7 +1388,7 @@
     <h2>Вторая профессия и смена класса</h2>
     <div class="prof">
       <div class="card">
-        <h3>📚 Продвинутые навыки — до 10 уровня</h3>
+        <h3><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e3c48a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v17H6.5A2.5 2.5 0 0 0 4 21.5"/><path d="M4 4.5v17"/><line x1="9" y1="7" x2="16" y2="7"/><line x1="9" y1="11" x2="16" y2="11"/></svg> Продвинутые навыки — до 10 уровня</h3>
         <div>Качаются как обычные: <b>2 книги продвинутого навыка</b>, шанс <b>30%</b>. Каждый уровень усиливает навык.</div>
         <div class="lvl">
           <i style="animation-delay:.05s"></i><i style="animation-delay:.15s"></i><i style="animation-delay:.25s"></i><i style="animation-delay:.35s"></i><i style="animation-delay:.45s"></i>
@@ -1393,7 +1397,7 @@
         <div class="lvl-cap"><span>ур. 1</span><span>ур. 10</span></div>
       </div>
       <div class="card">
-        <h3>🔁 Смена класса</h3>
+        <h3><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg> Смена класса</h3>
         <div>Теперь можно выбрать <b>Ассасина</b> и <b>Рунного бойца</b>.</div>
         <div class="cls-row">
           <img src="/images/classicon/assassin.png" alt="Ассасин" style="--accent: var(--c-assassin)">
@@ -1434,9 +1438,9 @@
       </div>
       <div class="card" style="padding: 8px 18px">
         <ul class="wlist">
-          <li><span class="e">🌙</span><span>Город оформлен заново — ночные улицы, фонари и площадь <b>LIBERTY</b> в центре.</span></li>
-          <li><span class="e">🏪</span><span>У NPC свои лавки: хранилище наверху, кузнец справа, торговец слева.</span></li>
-          <li><span class="e">🧱</span><span>Новый вид у локаций 1, 20, 40, 60 и фарм зон.</span></li>
+          <li><span class="e"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffe08a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></span><span>Город оформлен заново — ночные улицы, фонари и площадь <b>LIBERTY</b> в центре.</span></li>
+          <li><span class="e"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fd3a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M2 7v3a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0V7"/></svg></span><span>У NPC свои лавки: хранилище наверху, кузнец справа, торговец слева.</span></li>
+          <li><span class="e"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#d08a52" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/></svg></span><span>Новый вид у локаций 1, 20, 40, 60 и фарм зон.</span></li>
           <li><span class="e">✖</span><span>Событие «Битва на смерть» убрано.</span></li>
         </ul>
       </div>

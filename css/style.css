@@ -5100,3 +5100,13 @@ canvas { display:block; width:100%; height:100%; }
   .craft-res, .craft-res-rays, .craft-res-icon > *, .craft-res-spark, .craft-res-crack,
   #npc-dialog[data-npc="craftsman"] .craft-detail-icon > *, #npc-dialog[data-npc="craftsman"] .craft-do-btn::after { animation: none !important; }
 }
+
+/* ── Эмодзи → иконки (emojifyDom, js/icons.js) ───────────────────────────────
+   Сам эмодзи остаётся внутри невидимым текстом: textContent не меняется, а
+   экранный диктор его прочтёт. */
+.emo-ico { display: inline-flex; align-items: center; vertical-align: middle; line-height: 1; }
+.emo-ico + .emo-ico { margin-left: 1px; }
+.emo-t {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
