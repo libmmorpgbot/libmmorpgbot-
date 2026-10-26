@@ -1751,6 +1751,9 @@ function netConnect(onReady) {
       // Вспышка — только когда HP УБАВИЛОСЬ. Этим же событием приходит всё
       // серверное лечение (setPlayerHp шлёт hp без dmg), и мигать красным на
       // выпитое зелье оно не должно.
+      // Толчок камеры по силе удара: мелкие тычки — не трясут.
+      const _frac = (_was - player.hp) / Math.max(1, player.maxHp || 1);
+      if (_frac >= 0.05 && typeof camShake === 'function') camShake(Math.min(7, 2 + _frac * 25), 0.18);
       if (player.hp < _was) player.hurtTimer = 0.1;
       else if (player.hp > _was) {
         // И цифра. Клиент больше не прибавляет HP сам — значит, показать, на
@@ -1880,6 +1883,7 @@ function netConnect(onReady) {
     const actual = Math.max(1, Math.floor(dmg || 0));
     player.hp = hp != null ? Math.max(0, hp) : Math.max(0, player.hp - actual);
     player.hurtTimer = 0.1;
+    if (typeof camShake === 'function') camShake(Math.min(7, 2 + actual / Math.max(1, player.maxHp || 1) * 25), 0.18);
     dmgNum(player.x, player.y - 24, actual, '#ff5a5a');
     spawnBurst(player.x, player.y, '#f44', 5);
     if (player.hp <= 0 && state === 'playing') { player.hp = 0; playerDie(); }
@@ -1901,7 +1905,7 @@ function netConnect(onReady) {
     const op = otherPlayers.get(sid);
     if (!op || (op.hp ?? 1) <= 0) return;
     op._skillAnim = 'skill' + k;
-    op.atkAnimTimer = 0.675; op.castDuration = 0.675; op.animFrame = 0; op.animTimer = 0;
+    op.atkAnimTimer = SKILL_CAST_TIME; op.castDuration = SKILL_CAST_TIME; op.animFrame = 0; op.animTimer = 0;
   });
 
   socket.on('sticker', ({ sid, id } = {}) => {
@@ -1970,6 +1974,15 @@ function netConnect(onReady) {
     if (e) {
       e.hp = hp; // overrides any optimistic hp=0 if kill was wrong
       e.hurtTimer = 0.3;
+      // Вздрагивает — отлетает от игрока на пару пикселей и возвращается
+      // (только вид, _updateEnemyObj в js/pixi-world.js); крит по своей цели
+      // ещё и толкает камеру.
+      if (player) {
+        const _dx = e.x - player.x, _dy = e.y - player.y, _l = Math.hypot(_dx, _dy) || 1;
+        e._flinchT = isCrit ? 0.2 : 0.14; e._flinchMax = e._flinchT;
+        e._flinchX = _dx / _l; e._flinchY = _dy / _l; e._flinchPx = isCrit ? 9 : 5;
+      }
+      if (isCrit && id === targetId && !targetIsPlayer && typeof camShake === 'function') camShake(3, 0.14);
       if (dmg) {
         _lastOwnDmg = dmg; // track for optimistic kill prediction
         if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c8c', 19);

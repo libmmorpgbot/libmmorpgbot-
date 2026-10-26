@@ -910,7 +910,8 @@ function useSkill(idx) {
 
   player.skillCooldowns[sk.key] = sk.cd * (1 - (player.cdrPct || 0));
   skillFlash = { key: sk.key, timer: 0.4 };
-  player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
+  player.atkAnimTimer = SKILL_CAST_TIME; player.castDuration = SKILL_CAST_TIME; player.animFrame = 0; player.animTimer = 0;
+  if (typeof camShake === 'function') camShake(sk.key === 'W' ? 3.5 : 2, 0.16);
   // Своя анимация на каждый навык (castAnimKey, js/sprites.js); тем, кто
   // рядом, — та же, через сервер.
   player._skillAnim = 'skill' + sk.key.toLowerCase();
@@ -960,7 +961,7 @@ function useForeignSkill() {
 
   player.skillCooldowns[FOREIGN_SKILL_KEY] = sk.cd * (1 - (player.cdrPct || 0));
   skillFlash = { key: FOREIGN_SKILL_KEY, timer: 0.4 };
-  player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
+  player.atkAnimTimer = SKILL_CAST_TIME; player.castDuration = SKILL_CAST_TIME; player.animFrame = 0; player.animTimer = 0;
   // Чужой навык — анимации под него у класса нет, играет обычный замах.
   player._skillAnim = null;
 

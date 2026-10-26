@@ -53,6 +53,10 @@ const ZOOM = 0.75;
 // purely visual snappiness knob, independent of actual attack rate/DPS
 // (governed separately by player.atkTimer).
 const ATTACK_ANIM_SPEEDUP = 2;
+// Сколько длится анимация каста навыка (и на сколько он держит персонажа на
+// месте). Было 0.675 с — каст ощущался вязким; у каждого навыка теперь своя
+// анимация, и проигрывается она быстрее.
+const SKILL_CAST_TIME = 0.5;
 
 // Player level required to use auto-attack / Market / Rating
 const FEATURE_UNLOCK_LEVEL = 3;

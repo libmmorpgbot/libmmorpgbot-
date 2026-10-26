@@ -925,6 +925,23 @@ function pixiInvalidateChunks() {
 
 // ── texture helpers ───────────────────────────────────────
 
+// Выпад на замахе: ближний бой подаётся к цели на 8 px и возвращается,
+// дальний — отдача на 3 px назад. Только вид — позиция не меняется.
+const _lungeOut = { x: 0, y: 0 };
+function _lungeOffset(p) {
+  _lungeOut.x = 0; _lungeOut.y = 0;
+  const t = p.atkAnimTimer || 0, d = p.castDuration || 0;
+  if (t <= 0 || d <= 0 || !p.type) return _lungeOut;
+  const cd = CHAR_DEF[p.type];
+  const amp = cd && cd.atkType === 'melee' ? 8 : -3;
+  const idx = Math.max(0, FACING8_DIRS.indexOf(p.facing || 'front'));
+  const a = idx * Math.PI / 4;
+  // пик на середине каста — там же, где срабатывает удар (8-й кадр из 15)
+  const k = Math.sin(Math.PI * Math.min(1, (1 - t / d) * 1.1)) * amp;
+  _lungeOut.x = Math.cos(a) * k; _lungeOut.y = Math.sin(a) * k;
+  return _lungeOut;
+}
+
 function _playerTextures(charType, animKey) {
   const k = charType + '|' + animKey;
   if (_pTex[k]) return _pTex[k];
@@ -2048,8 +2065,14 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     const tex    = rowTex?.[frame];
     if (tex) {
       _setTexSize(spr, tex, ds, ds);
-      spr.x        = -ds * 0.5;
-      spr.y        = -ds * 0.55;
+      let _fx = 0, _fy = 0;
+      if ((e._flinchT || 0) > 0) {
+        e._flinchT = Math.max(0, e._flinchT - dt);
+        const k = Math.sin(Math.PI * (1 - e._flinchT / e._flinchMax)) * e._flinchPx;
+        _fx = e._flinchX * k; _fy = e._flinchY * k;
+      }
+      spr.x        = -ds * 0.5 + _fx;
+      spr.y        = -ds * 0.55 + _fy;
       spr.tint    = (e.hurtTimer > 0) ? 0xff4444 : 0xffffff;
       spr.visible = true;
     } else { spr.visible = false; }
@@ -2348,7 +2371,8 @@ function _updateOtherPlayers(pulse, ts) {
       const fh    = img?.frameH || def.frameH || 64;
       const dh = _PLAYER_DISPLAY_H * (def.dispScale || 1), dw = dh * fw / fh;
       _setTexSize(spr, textures[fi] || PIXI.Texture.WHITE, dw, dh);
-      spr.x = -dw / 2; spr.y = -dh * 0.62;
+      const _lg = _lungeOffset(p);
+      spr.x = -dw / 2 + _lg.x; spr.y = -dh * 0.62 + _lg.y;
       spr.visible = true;
       usedSprite = true;
     } else {
@@ -2469,8 +2493,9 @@ function _updatePlayer(dt, ts) {
     const fh    = img?.frameH || def.frameH || 64;
     const dh = _PLAYER_DISPLAY_H * (def.dispScale || 1), dw = dh * fw / fh;
     _setTexSize(_plSpr, textures[fi] || PIXI.Texture.WHITE, dw, dh);
-    _plSpr.x = player.x - dw / 2;
-    _plSpr.y = player.y - dh * 0.62;
+    const _lg = _lungeOffset(player);
+    _plSpr.x = player.x - dw / 2 + _lg.x;
+    _plSpr.y = player.y - dh * 0.62 + _lg.y;
     _plSpr.tint    = (player.hurtTimer > 0) ? 0xff4444 : 0xffffff;
     _plSpr.visible = true;
     usedSprite = true;

@@ -715,13 +715,14 @@ function update(dt, realDt) {
     if (_act !== _prevAct) { player.animFrame = 0; player.animTimer = 0; }
     player._lastAnimKey = ak;
     const ad = SPRITE_DEF[player.type].anims[ak];
+    const _v = animMoveSpeed(player, dt);
     if (ad) {
       player.animTimer += dt;
       const maxF = ad.n;
       // Spread attack frames evenly across the full cast duration
       const step = (!ad.loop && player.atkAnimTimer > 0 && player.castDuration > 0)
         ? player.castDuration / maxF
-        : 1 / ad.fps;
+        : 1 / (ak.endsWith('-run') ? runAnimFps(player.type, Math.max(_v, player.speed * 0.5)) : ad.fps);
       while (player.animTimer >= step) {
         player.animTimer -= step;
         if (ad.loop) { player.animFrame = (player.animFrame + 1) % maxF; }
@@ -1291,6 +1292,7 @@ function update(dt, realDt) {
       if (_oAct !== _oPrev) { op.animFrame = 0; op.animTimer = 0; }
       op._prevAnimKey = ak;
       const ad = SPRITE_DEF[op.type].anims[ak];
+      const _ov = animMoveSpeed(op, dt);
       if (ad) {
         op.animTimer = (op.animTimer || 0) + dt;
         const maxF = ad.n;
@@ -1298,9 +1300,10 @@ function update(dt, realDt) {
         // evenly across the (already speed-adjusted) cast duration instead
         // of the sprite's own fps, so a shorter castDuration actually plays
         // the swing faster instead of just cutting it off early.
+        const _base = (CHAR_DEF[op.type] && CHAR_DEF[op.type].speed) || 150;
         const step = (!ad.loop && (op.atkAnimTimer || 0) > 0 && op.castDuration > 0)
           ? op.castDuration / maxF
-          : 1 / ad.fps;
+          : 1 / (ak.endsWith('-run') ? runAnimFps(op.type, Math.max(_ov, _base * 0.5)) : ad.fps);
         while (op.animTimer >= step) {
           op.animTimer -= step;
           if (ad.loop) { op.animFrame = (op.animFrame + 1) % maxF; }
@@ -1700,8 +1703,9 @@ function render(dt, ts) {
   // last frame stays on the hidden canvas and is revealed intact on close.
   if (state === 'playing' && activeTab !== 0 && ts >= _menuGraceUntil) return;
 
-  const _camX = _lastCamX = camera.x;
-  const _camY = _lastCamY = camera.y;
+  const _sh = _shakeOffset(dt);
+  const _camX = _lastCamX = camera.x + _sh.x;
+  const _camY = _lastCamY = camera.y + _sh.y;
   const _vM = 60;
   _vL = _camX - _vM; _vR = _camX + W / ZOOM + _vM;
   _vT = _camY - _vM; _vB = _camY + (H - HEADER_H) / ZOOM + _vM;
@@ -1854,6 +1858,29 @@ function startTrial(type) {
 // character worth losing, that is the whole point of a trial.
 function leaveTrial() {
   if (typeof netTrialLeave === 'function') netTrialLeave();
+}
+
+
+// ── тряска камеры ─────────────────────────────────────────
+// Короткий толчок на крит, сильный удар по себе и каст навыка — чтобы удар
+// чувствовался. Затухает линейно; новый толчок слабее идущего его не гасит.
+// При «уменьшить движение» в системе — выключено.
+let _shakeT = 0, _shakeDur = 0, _shakeAmp = 0;
+const _shakeOff = { x: 0, y: 0 };
+const _reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function camShake(amp, dur) {
+  if (_reduceMotion) return;
+  const cur = _shakeDur > 0 ? _shakeAmp * (_shakeT / _shakeDur) : 0;
+  if (amp < cur) return;
+  _shakeAmp = amp; _shakeDur = dur; _shakeT = dur;
+}
+function _shakeOffset(dt) {
+  if (_shakeT <= 0) { _shakeOff.x = 0; _shakeOff.y = 0; return _shakeOff; }
+  _shakeT = Math.max(0, _shakeT - dt);
+  const a = _shakeAmp * (_shakeT / _shakeDur);
+  _shakeOff.x = (Math.random() * 2 - 1) * a;
+  _shakeOff.y = (Math.random() * 2 - 1) * a;
+  return _shakeOff;
 }
 
 

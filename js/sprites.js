@@ -700,6 +700,31 @@ function loadSprites(charType, onDone, onProgress) {
   _spriteLoadPromises[charType].then(onDone);
 }
 
+// ── скорость анимации бега ───────────────────────────────────────────────
+// Опорная нога в листах Running проходит 4–5 px листа за кадр (замерено по
+// Right - Running у всех классов). Лист крутился на постоянных 15 к/с, а
+// персонаж едет 130–175 px/с — ноги шли вдвое медленнее земли, и он будто
+// полз на месте. Теперь кадры идут с той скоростью, с какой он реально
+// движется: шаг совпадает с землёй при любом бонусе к бегу или замедлении.
+const RUN_STRIDE_SRC_PX = 4.5;
+function runAnimFps(type, speed) {
+  const def = SPRITE_DEF[type];
+  if (!def) return 15;
+  const dh = (typeof _PLAYER_DISPLAY_H !== 'undefined' ? _PLAYER_DISPLAY_H : 74.8) * (def.dispScale || 1);
+  const px = RUN_STRIDE_SRC_PX * dh / (def.frameH || 128);
+  return Math.max(12, Math.min(48, speed / px));
+}
+// Сглаженная фактическая скорость сущности (px/с) — по ней runAnimFps. Не
+// по заявленной скорости: та не знает ни про стену, ни про джойстик вполсилы.
+function animMoveSpeed(o, dt) {
+  if (o._ax !== undefined && dt > 0) {
+    const v = Math.min(400, Math.hypot(o.x - o._ax, o.y - o._ay) / dt);
+    o._vSm = o._vSm === undefined ? v : o._vSm + (v - o._vSm) * Math.min(1, dt * 8);
+  }
+  o._ax = o.x; o._ay = o.y;
+  return o._vSm || 0;
+}
+
 function _isCastExtra(key) { return /-(skill[qwer]|attack2)$/.test(key); }
 
 // Ключ замаха или навыка. p._skillAnim ('skillq'..'skillr') ставит каст
