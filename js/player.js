@@ -341,6 +341,20 @@ function recompute() {
     if (it.critPower)  critPowerAdd += it.critPower;
     if (it.uniqueSet)  uniqueSetCount++;
   });
+  // Помощник — то же слагаемое и на том же месте, что в compute() на
+  // сервере (server/db/repos/stats.js): плоские к плоским, проценты к
+  // процентам. Кто летает и какого он уровня — с сервера (js/helpers.js).
+  const _ha = typeof helperActiveForStats === 'function' ? helperActiveForStats() : null;
+  const _hb = _ha ? helperBonusAt(_ha.id, _ha.level) : null;
+  if (_hb) {
+    a += _hb.atk || 0; d += _hb.def || 0; h += _hb.hp || 0;
+    extraCrit    += _hb.critChance || 0;
+    extraAS      += _hb.atkSpeed   || 0;
+    hpPct        += _hb.hpPct      || 0;
+    atkPct       += _hb.atkPct     || 0;
+    speedPct     += _hb.speedPct   || 0;
+    critPowerAdd += _hb.critPower  || 0;
+  }
   if (typeof uniqueSetBonusFor === 'function') {
     const usb = uniqueSetBonusFor(uniqueSetCount);
     atkPct += usb.atkPct; hpPct += usb.hpPct; critPowerAdd += usb.critPowerPct;

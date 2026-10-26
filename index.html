@@ -217,6 +217,21 @@
   <i class="upd-dot"></i>
 </button>
 
+<!-- Helpers button (below Achievements) — flying companions crafted from shards (js/helpers.js). -->
+<button id="helpers-btn" onclick="openHelpersPanel()" style="display:none">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="4"/><path d="M8 12c-3-1-5-4-5-7 3 0 5 2 6 4"/><path d="M16 12c3-1 5-4 5-7-3 0-5 2-6 4"/><path d="M12 3v2"/></svg>
+  <span>Помощники</span>
+</button>
+
+<!-- Helpers overlay panel: showcase + feeding, craft by rarity, collection (js/helpers.js). -->
+<div id="helpers-panel" style="display:none">
+  <div class="vip-header">
+    <div class="vip-title" style="color:#9fe4ff"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><circle cx="12" cy="13" r="4"/><path d="M8 12c-3-1-5-4-5-7 3 0 5 2 6 4"/><path d="M16 12c3-1 5-4 5-7-3 0-5 2-6 4"/><path d="M12 3v2"/></svg><span>Помощники</span></div>
+    <button class="vip-close" onclick="closeHelpersPanel()">✕</button>
+  </div>
+  <div id="helpers-panel-body" class="vip-body"></div>
+</div>
+
 <!-- Achievements overlay panel: category tabs + goals (js/ui.js, _renderAchPanel). -->
 <div id="ach-panel" style="display:none">
   <div class="vip-header">

@@ -3567,7 +3567,7 @@ const _TELEPORT_BTN_ID = 'teleport-btn';
 // to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
 // whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
 // only ever show while the menu is expanded.
-const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn', 'ach-btn'];
+const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn', 'ach-btn', 'helpers-btn'];
 let _hudMenuExpanded = false;
 // hud-menu-btn's own visibility is tab-only (like chat); the seven behind it
 // need tab AND expanded — this is that second check, shared by every
@@ -8190,6 +8190,7 @@ function _positionHudColumn() {
   _positionSeasonBtn();
   _positionCodexBtn();
   _positionAchBtn();
+  if (typeof _positionHelpersBtn === 'function') _positionHelpersBtn();
 }
 
 function showTournamentHudBtn() {

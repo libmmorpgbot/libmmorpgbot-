@@ -43,6 +43,7 @@ const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
   clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, gearSetBonusFor, UPGRADE_STEP, upgLvlCapped,
+  helperBonusAt,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -157,11 +158,25 @@ const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
 // игра висела на загрузке. До миграции эти три читаются как нули.
 const _UPG_NEW_COLS = 'pr.upg_cp, pr.upg_xp, pr.upg_drop,';
 const _UPG_NEW_ZERO = '0 AS upg_cp, 0 AS upg_xp, 0 AS upg_drop,';
+// ── помощник ────────────────────────────────────────────────────────────────
+// Тот, что сейчас летает рядом (player_helpers.active, миграция 041), — id и
+// уровень; что он даёт, решает helperBonusAt (shared/definitions.js). Тем же
+// приёмом, что руны выше: до миграции таблицы нет, и запрос, который её
+// спрашивает, ронял бы загрузку характеристик каждому входящему.
+const _HELPER_FRAGMENT = `
+    (
+      SELECT json_build_object('id', h.helper_id, 'level', h.level)
+        FROM player_helpers h
+       WHERE h.player_id = pr.player_id AND h.active
+       LIMIT 1
+    ) AS helper,`;
 async function load(db, playerId) {
   const runesOk = await hasColumn('player_items', 'socket_of');
   const upgOk = await hasColumn('player_progress', 'upg_cp');
+  const helpersOk = await hasColumn('player_helpers', 'helper_id');
   let sql = runesOk ? LOAD_SQL_WITH_RUNES : LOAD_SQL_NO_RUNES;
   if (!upgOk) sql = sql.replace(_UPG_NEW_COLS, _UPG_NEW_ZERO);
+  if (helpersOk) sql = sql.replace('    COALESCE((\n      SELECT c.level FROM clan_members', _HELPER_FRAGMENT + '\n    COALESCE((\n      SELECT c.level FROM clan_members');
   const { rows } = await query(db, sql, [playerId]);
   return rows.length ? rows[0] : null;
 }
@@ -276,6 +291,21 @@ function compute(row) {
     if (base.xpPct)      xpPct     += base.xpPct;
     if (base.dropPct)    dropPct   += base.dropPct;
     if (base.uniqueSet)  uniqueSetCount++;
+  }
+  // Помощник — те же поля, что у снаряжения, и туда же: плоские к плоским,
+  // проценты к процентам, до того как проценты применены. recompute()
+  // (js/player.js) складывает его на том же месте.
+  const hb = row.helper ? helperBonusAt(row.helper.id, row.helper.level) : null;
+  if (hb) {
+    a += hb.atk || 0; d += hb.def || 0; h += hb.hp || 0;
+    extraCrit    += hb.critChance || 0;
+    extraAS      += hb.atkSpeed   || 0;
+    hpPct        += hb.hpPct      || 0;
+    atkPct       += hb.atkPct     || 0;
+    speedPct     += hb.speedPct   || 0;
+    critPowerAdd += hb.critPower  || 0;
+    xpPct        += hb.xpPct      || 0;
+    dropPct      += hb.dropPct    || 0;
   }
   // Бонус за ношение сета (2/3/4/5 штук) — тем же процентам, что и всё
   // остальное здесь, сразу после того, как штуки посчитаны. uniqueSetBonusFor

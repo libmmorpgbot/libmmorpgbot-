@@ -13,6 +13,7 @@
 const craft = require('../db/repos/craft');
 const plog = require('../db/repos/playerlog');
 const runes = require('../db/repos/runes');
+const helpers = require('../db/repos/helpers');
 const items = require('../db/repos/items');
 const market = require('../db/repos/market');
 const gram = require('../db/repos/gram');
@@ -127,6 +128,44 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     });
     return res;
   }, craftMeta));
+
+  // ── помощники ─────────────────────────────────────────────────────────────
+  // Окно читает весь список разом (helpersState) после каждого действия —
+  // уровень, опыт и кто летает. Что сколько стоит, клиент считает по тем же
+  // HELPER_* (shared/definitions.js), а сервер — заново при нажатии.
+  const pushHelpers = async (t, pid) => { s.socket.emit('helpersState', await helpers.stateOf(t, pid)); };
+
+  safeOn('helpersSync', () => s.act('helpersSync', 'helperError', async (t, pid) => {
+    await pushHelpers(t, pid);
+  }));
+
+  safeOn('helperCraft', ({ rarity } = {}) => s.act('helperCraft', 'helperError', async (t, pid) => {
+    if (typeof rarity !== 'string' || !rarity) fail('Не выбрана редкость помощника', 'bad_rarity');
+    const res = await helpers.craft(t, pid, rarity);
+    await s.pushItems(t); await s.pushStats(t);
+    s.socket.emit('helperCrafted', res);
+    await pushHelpers(t, pid);
+    return res;
+  }, r => r && { outcome: r.outcome, id: r.id, rarity: r.rarity, to: r.to }));
+
+  safeOn('helperFeed', ({ id, times } = {}) => s.act('helperFeed', 'helperError', async (t, pid) => {
+    if (typeof id !== 'string' || !id) fail('Не выбран помощник', 'bad_helper');
+    const n = Math.floor(Number(times) || 1);
+    if (!(n >= 1)) fail('Неверное число кормлений', 'bad_times');
+    const res = await helpers.feed(t, pid, id, n);
+    await s.pushItems(t); await s.pushStats(t);
+    s.socket.emit('helperFed', res);
+    await pushHelpers(t, pid);
+    return res;
+  }, r => r && { id: r.id, feeds: r.feeds, cost: r.cost, from: r.from, to: r.to }));
+
+  safeOn('helperSetActive', ({ id } = {}) => s.act('helperSetActive', 'helperError', async (t, pid) => {
+    if (id != null && (typeof id !== 'string' || !id)) fail('Не выбран помощник', 'bad_helper');
+    const res = await helpers.setActive(t, pid, id == null ? null : id);
+    await s.pushStats(t);
+    await pushHelpers(t, pid);
+    return res;
+  }));
 
   // Ковка руны. 30% успеха, при неудаче вложенное сгорает — как и сказано в
   // окне кузнеца перед подтверждением. Содержимое выпавшей руны бросается на
