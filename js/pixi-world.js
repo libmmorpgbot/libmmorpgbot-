@@ -13,6 +13,7 @@ let _npcCt    = null;   // NPC bodies (Container — pooled per-npc sprite+gfx)
 let _npcNames = [];      // PIXI.Text per NPC
 let _dropCt   = null;   // ground loot (pooled sprites — see _updateDrops)
 let _partCt   = null;   // particles (pooled sprites — see _updateParticles)
+let _fxGroundCt = null, _fxTopCt = null, _fxSmokeCt = null; // боевые эффекты (js/fx.js)
 let _enemyCt  = null;
 let _otherPCt = null;
 let _projGfx  = null;   // arrows (a stroked line + a head — cheap as geometry)
@@ -229,6 +230,100 @@ function _ensureBaked() {
   _texGemEdge = _bakeRoundSquare(64, 14, 5);
 }
 let _texDisc = null, _texRing = null, _texRingThin = null, _texRingDash = null;
+
+// ── боевые эффекты (js/fx.js) ─────────────────────────────────────────────
+// Текстуры запекаются один раз на холсте; все частицы — спрайты из пулов,
+// по контейнеру на слой, так что любое их число — три вызова отрисовки.
+let _fxTex = null;
+function _fxCanvas(size, draw) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  draw(cv.getContext('2d'), size);
+  return PIXI.Texture.from(cv);
+}
+function _ensureFxTex() {
+  if (_fxTex) return;
+  _ensureBaked();
+  _fxTex = {
+    dot: _texDot,
+    glow: _texGlow,
+    ring: _bakeRing(256, 0.9, 10, null),
+    smoke: _bakeRadial(128, [[0, 0.9], [0.5, 0.45], [1, 0]]),
+    // полумесяц: выпуклость вправо (+x), к краям тает
+    slash: _fxCanvas(256, (c, s) => {
+      const h = s / 2;
+      const g = c.createRadialGradient(h - 40, h, 40, h - 40, h, 120);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.55, 'rgba(255,255,255,0.15)');
+      g.addColorStop(0.85, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g;
+      c.beginPath(); c.arc(h - 40, h, 120, -1.25, 1.25); c.arc(h - 75, h, 95, 1.1, -1.1, true); c.closePath(); c.fill();
+    }),
+    shard: _fxCanvas(64, (c, s) => {
+      c.fillStyle = '#fff'; c.shadowColor = '#fff'; c.shadowBlur = 6;
+      c.beginPath(); c.moveTo(s * 0.5, 4); c.lineTo(s * 0.66, s * 0.5); c.lineTo(s * 0.5, s - 4); c.lineTo(s * 0.34, s * 0.5); c.closePath(); c.fill();
+    }),
+    star: _fxCanvas(64, (c, s) => {
+      const h = s / 2;
+      const g = c.createRadialGradient(h, h, 0, h, h, h * 0.45);
+      g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g; c.fillRect(0, 0, s, s);
+      c.fillStyle = '#fff';
+      for (const [w, l] of [[3, h], [2, h * 0.6]]) {
+        c.save(); c.translate(h, h); if (l < h) c.rotate(Math.PI / 4);
+        c.beginPath(); c.moveTo(0, -l); c.lineTo(w, 0); c.lineTo(0, l); c.lineTo(-w, 0); c.closePath(); c.fill();
+        c.beginPath(); c.moveTo(-l, 0); c.lineTo(0, w); c.lineTo(l, 0); c.lineTo(0, -w); c.closePath(); c.fill();
+        c.restore();
+      }
+    }),
+    // рунный круг: два кольца, засечки, шестиконечная звезда и знаки
+    rune: _fxCanvas(256, (c, s) => {
+      const h = s / 2;
+      c.strokeStyle = '#fff'; c.fillStyle = '#fff'; c.shadowColor = '#fff'; c.shadowBlur = 8;
+      c.lineWidth = 6; c.beginPath(); c.arc(h, h, h * 0.9, 0, 6.283); c.stroke();
+      c.lineWidth = 3; c.beginPath(); c.arc(h, h, h * 0.74, 0, 6.283); c.stroke();
+      for (let i = 0; i < 24; i++) {
+        const a = i / 24 * 6.283, r1 = h * 0.76, r2 = h * (i % 3 ? 0.82 : 0.88);
+        c.beginPath(); c.moveTo(h + Math.cos(a) * r1, h + Math.sin(a) * r1); c.lineTo(h + Math.cos(a) * r2, h + Math.sin(a) * r2); c.stroke();
+      }
+      for (let k = 0; k < 2; k++) {
+        c.beginPath();
+        for (let i = 0; i <= 3; i++) { const a = i / 3 * 6.283 + k * Math.PI / 3 - Math.PI / 2; const x = h + Math.cos(a) * h * 0.72, y = h + Math.sin(a) * h * 0.72; if (i) c.lineTo(x, y); else c.moveTo(x, y); }
+        c.stroke();
+      }
+      c.lineWidth = 2.5; c.beginPath(); c.arc(h, h, h * 0.28, 0, 6.283); c.stroke();
+    }),
+  };
+}
+const _fxPools = { ground: [], top: [], smoke: [] };
+const _fxN = { ground: 0, top: 0, smoke: 0 };
+function _updateFx() {
+  if (typeof fxParts === 'undefined') return;
+  _fxN.ground = 0; _fxN.top = 0; _fxN.smoke = 0;
+  if (fxParts.length) _ensureFxTex();
+  for (let i = 0; i < fxParts.length; i++) {
+    const p = fxParts[i];
+    if (p.delay > 0) continue;
+    if (p.x < _vL - 80 || p.x > _vR + 80 || p.y < _vT - 80 || p.y > _vB + 120) continue;
+    const prog = 1 - p.life / p.max;
+    const a = p.fade === 'inout' ? Math.sin(Math.PI * prog) : (1 - prog * prog);
+    if (a <= 0.01) continue;
+    const layer = p.layer;
+    const ct = layer === 'ground' ? _fxGroundCt : layer === 'smoke' ? _fxSmokeCt : _fxTopCt;
+    const tex = _fxTex[p.k] || _fxTex.dot;
+    const sp = _takePooled(_fxPools[layer], _fxN[layer]++, ct, tex, layer === 'smoke' ? null : PIXI.BLEND_MODES.ADD);
+    if (sp.texture !== tex) sp.texture = tex;
+    const size = (p.s0 + (p.s1 - p.s0) * prog) * (p.k === 'ring' || p.k === 'rune' ? 1 : FX_SCALE);
+    const k = size / tex.width;
+    sp.scale.set(k * p.sx, k);
+    sp.x = p.x; sp.y = p.y - p.z;
+    sp.rotation = p.align ? Math.atan2(p.vy - p.vz, p.vx) : p.rot;
+    sp.tint = p.tint;
+    sp.alpha = a * p.a0;
+  }
+  _hideRest(_fxPools.ground, _fxN.ground);
+  _hideRest(_fxPools.top, _fxN.top);
+  _hideRest(_fxPools.smoke, _fxN.smoke);
+}
 let _texGemFill = null, _texGemEdge = null;
 
 // Sprite recycling. Each frame fills a pool from index 0 upward and then hides
@@ -451,6 +546,7 @@ function _dropGpuState() {
   _projSpr.length = 0; _projN = 0;
   _lightSpr.length = 0; _lightN = 0;
   _partSpr.length = 0; _partN = 0;
+  _fxTex = null; _fxPools.ground.length = 0; _fxPools.top.length = 0; _fxPools.smoke.length = 0;
   _decSpr.length = 0; _decN = 0;
   _wallSpr.length = 0; _wallN = 0;
   _dmgBmp.length = 0; _dmgTxt.length = 0; _dmgIco.length = 0; _dmgIcoTex.clear();
@@ -592,6 +688,9 @@ function pixiInit(canvasEl) {
   _npcCt    = new PIXI.Container();
   _dropCt   = new PIXI.Container();
   _partCt   = new PIXI.Container();
+  _fxGroundCt = new PIXI.Container();
+  _fxTopCt    = new PIXI.Container();
+  _fxSmokeCt  = new PIXI.Container();
   _enemyCt  = new PIXI.Container();
   _otherPCt = new PIXI.Container();
   _projGfx  = new PIXI.Graphics();
@@ -605,10 +704,10 @@ function pixiInit(canvasEl) {
   // _voidSpr идёт ПЕРВЫМ ребёнком — под всеми тайлами. Он не часть мира и
   // не двигается вместе с ним: это фон за краем карты (см. _makeVoidSprite).
   _worldCt.addChild(
-    _voidSpr, _tileCt, _decalCt, _lightsCt, _aoeGfx,
+    _voidSpr, _tileCt, _decalCt, _lightsCt, _aoeGfx, _fxGroundCt,
     _npcCt, _dropCt, _partCt,
     _enemyCt, _otherPCt, _projGfx, _projCt,
-    _petCt, _playerCt, _wallCt, _dmgNumCt
+    _petCt, _playerCt, _fxSmokeCt, _fxTopCt, _wallCt, _dmgNumCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -2784,6 +2883,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _layer('projs', () => _updateProjs());
   _layer('pets', () => _updatePets(dt));
   _layer('player', () => _updatePlayer(dt, ts));
+  _layer('fx', () => _updateFx());
   _layer('dmg', () => _updateDmgNums());
   _layer('stickers', () => _updateStickers(camX, camY));
   _layer('sheets', () => _sweepSheets(ts));

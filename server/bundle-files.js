@@ -21,6 +21,7 @@ module.exports = [
   'js/tonconnect.js',
   'js/sprites.js',
   'js/particles.js',
+  'js/fx.js',
   'js/sound.js',
   'js/player.js',
   'js/combat.js',

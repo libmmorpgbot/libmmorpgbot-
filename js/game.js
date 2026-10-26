@@ -928,6 +928,7 @@ function update(dt, realDt) {
         const _animDur = Math.min(0.825, 1 / _as) / ATTACK_ANIM_SPEEDUP;
         player._skillAnim = null; player._atkAlt = !player._atkAlt;
         player.atkAnimTimer = _animDur; player.castDuration = _animDur; player.animFrame = 0; player.animTimer = 0;
+        if (typeof fxAttack === 'function') fxAttack(player.type, player, player._atkAlt);
       }
       player.pendingAttack = closestIsPlayer
         ? { isPlayer: true, socketId: closest._socketId, x: closest.x, y: closest.y }
@@ -1065,6 +1066,7 @@ function update(dt, realDt) {
     });
   }
 
+  if (typeof fxUpdate === 'function') fxUpdate(dt);
   {
     let j = 0;
     for (let i = 0; i < aoeRings.length; i++) {

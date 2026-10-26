@@ -1172,7 +1172,7 @@ function netConnect(onReady) {
     // The tile raster is a pure function of the grid, so it only needs
     // rebuilding when the grid did (see _resumeSameFloor above).
     if (!_resumeSameFloor) buildTileCanvas();
-    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = [];
+    projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = []; if (typeof fxParts !== 'undefined') { fxParts = []; fxEmitters = []; }
     _stickerFx.forEach(s => s.el && s.el.remove()); _stickerFx = [];
     // Event-boss ground loot and the map panel's dot cache are both scoped to
     // whatever floor they were fetched/claimed on — stale entries from the
@@ -1536,6 +1536,7 @@ function netConnect(onReady) {
             if (!(op._skillAnim && (op.atkAnimTimer || 0) > 0)) {
               op._skillAnim = null; op._atkAlt = !op._atkAlt;
               op.atkAnimTimer = 0.55 / ATTACK_ANIM_SPEEDUP; op.castDuration = op.atkAnimTimer;
+              if (typeof fxAttack === 'function' && op.type) fxAttack(op.type, op, op._atkAlt);
               op.animFrame = 0; op.animTimer = 0;
             }
           }
@@ -1905,6 +1906,7 @@ function netConnect(onReady) {
     const op = otherPlayers.get(sid);
     if (!op || (op.hp ?? 1) <= 0) return;
     op._skillAnim = 'skill' + k;
+    if (typeof skillFx === 'function' && op.type) skillFx(op.type, k.toUpperCase(), false, op);
     op.atkAnimTimer = SKILL_CAST_TIME; op.castDuration = SKILL_CAST_TIME; op.animFrame = 0; op.animTimer = 0;
   });
 
@@ -1983,6 +1985,7 @@ function netConnect(onReady) {
         e._flinchX = _dx / _l; e._flinchY = _dy / _l; e._flinchPx = isCrit ? 9 : 5;
       }
       if (isCrit && id === targetId && !targetIsPlayer && typeof camShake === 'function') camShake(3, 0.14);
+      if (dmg && typeof fxHit === 'function') fxHit(e.x, e.y, !!isCrit, (typeof FX_PAL !== 'undefined' && player && FX_PAL[player.type] && id === targetId) ? FX_PAL[player.type].c3 : null);
       if (dmg) {
         _lastOwnDmg = dmg; // track for optimistic kill prediction
         if (isCrit) dmgNum(e.x, e.y - e.size - 4, `⚡ ${dmg}`, '#ff8c8c', 19);
@@ -2023,6 +2026,7 @@ function netConnect(onReady) {
       if (typeof _applyVampirism === 'function') _applyVampirism(dmg);
     }
     spawnBurst(px, py, color || '#f80', 8);
+    if (typeof fxKill === 'function') fxKill(px, py, color || '#ff8a4a');
     const _seen = typeof _isPosVisible !== 'function' || _isPosVisible(px, py);
     if (typeof Sound !== 'undefined' && _seen) Sound.death();
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;

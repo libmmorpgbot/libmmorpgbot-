@@ -918,6 +918,7 @@ function useSkill(idx) {
   if (typeof netCastAnim === 'function') netCastAnim(sk.key);
 
   _dispatchSkillEffect(player.type, sk);
+  if (typeof skillFx === 'function') skillFx(player.type, sk.key, _advActive(sk.key), player);
 }
 
 // ── пятый слот: заимствованная способность ──────────────────────────────
