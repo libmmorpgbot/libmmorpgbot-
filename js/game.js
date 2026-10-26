@@ -921,8 +921,13 @@ function update(dt, realDt) {
       player.atkTimer = Math.max(1 / _as, ATTACK_MIN_INTERVAL);
       faceTowards(closest.x, closest.y);
       swingAngle = Math.atan2(closest.y - player.y, closest.x - player.x);
-      const _animDur = Math.min(0.825, 1 / _as) / ATTACK_ANIM_SPEEDUP;
-      player.atkAnimTimer = _animDur; player.castDuration = _animDur; player.animFrame = 0; player.animTimer = 0;
+      // Идёт анимация навыка — удар её не обрывает: он сработает на её 8-м
+      // кадре (ниже, «Fire pending attack»), как сработал бы на своём.
+      if (!(player._skillAnim && player.atkAnimTimer > 0)) {
+        const _animDur = Math.min(0.825, 1 / _as) / ATTACK_ANIM_SPEEDUP;
+        player._skillAnim = null; player._atkAlt = !player._atkAlt;
+        player.atkAnimTimer = _animDur; player.castDuration = _animDur; player.animFrame = 0; player.animTimer = 0;
+      }
       player.pendingAttack = closestIsPlayer
         ? { isPlayer: true, socketId: closest._socketId, x: closest.x, y: closest.y }
         : { isPlayer: false, id: closest.id, x: closest.x, y: closest.y };
@@ -1855,7 +1860,7 @@ function leaveTrial() {
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
   const dir = p.facing || 'front';
-  if ((p.atkAnimTimer || 0) > 0) return `${dir}-attack`;
+  if ((p.atkAnimTimer || 0) > 0) return castAnimKey(p, dir, false);
   if (p.moving) return `${dir}-run`;
   return `${dir}-idle`;
 }

@@ -1531,8 +1531,13 @@ function netConnect(onReady) {
 
           if (p.atkSeq !== undefined && p.atkSeq !== (op.atkSeq || 0)) {
             op.atkSeq = p.atkSeq;
-            op.atkAnimTimer = 0.55 / ATTACK_ANIM_SPEEDUP; op.castDuration = op.atkAnimTimer;
-            op.animFrame = 0; op.animTimer = 0;
+            // Урон навыка тоже двигает atkSeq — анимацию навыка (castAnim
+            // ниже) он не перебивает.
+            if (!(op._skillAnim && (op.atkAnimTimer || 0) > 0)) {
+              op._skillAnim = null; op._atkAlt = !op._atkAlt;
+              op.atkAnimTimer = 0.55 / ATTACK_ANIM_SPEEDUP; op.castDuration = op.atkAnimTimer;
+              op.animFrame = 0; op.animTimer = 0;
+            }
           }
         }
       });
@@ -1889,6 +1894,16 @@ function netConnect(onReady) {
   });
 
   // Стикер другого игрока рядом (свой клиент рисует сам, см. _stickerSend).
+  // Кто-то рядом кастует навык — у его персонажа своя анимация на навык
+  // (castAnimKey, js/sprites.js). Длительность та же, что у своего каста.
+  socket.on('castAnim', ({ sid, k } = {}) => {
+    if (!sid || sid === socket.id || !/^[qwer]$/.test(k || '')) return;
+    const op = otherPlayers.get(sid);
+    if (!op || (op.hp ?? 1) <= 0) return;
+    op._skillAnim = 'skill' + k;
+    op.atkAnimTimer = 0.675; op.castDuration = 0.675; op.animFrame = 0; op.animTimer = 0;
+  });
+
   socket.on('sticker', ({ sid, id } = {}) => {
     if (!sid || sid === socket.id) return;
     _stickerSpawn(sid, id, false);
@@ -4353,6 +4368,10 @@ function netAttack(enemyId, splash) {
   if (typeof inSafeZone === 'function' && player && inSafeZone(player.x, player.y)) return;
   if (invisTimer > 0) { invisTimer = 0; socket.emit('playerInvis', { invis: false }); }
   socket.emit('attack', splash ? { enemyId, splash: true } : { enemyId });
+}
+
+function netCastAnim(key) {
+  if (socket?.connected) socket.emit('castAnim', { k: String(key || '').toLowerCase() });
 }
 
 function netSendSticker(id) {

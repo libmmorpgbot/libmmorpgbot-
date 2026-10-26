@@ -1,3 +1,25 @@
+// Полный набор анимаций класса: images/<Dir>/<Facing> - <Action>.png, по
+// полосе 15 кадров на каждое из 8 направлений. Кроме стойки/бега/атаки/смерти
+// у класса есть attack2 (второй замах, чередуется с первым — у Егеря его нет,
+// выстрел один) и skillq..skillr — своя анимация на каждый навык, её выбирает
+// getSpriteAnimKey по player._skillAnim. ?v=4: под теми же именами раньше
+// лежали другие кадры атаки, а картинки кэшируются по URL.
+const _FACINGS = [['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right'],
+  ['frontright', 'FrontRight'], ['frontleft', 'FrontLeft'], ['backright', 'BackRight'], ['backleft', 'BackLeft']];
+function _classAnims(dir, hasAttack2) {
+  const acts = [['idle', 'Idle', 7, true], ['run', 'Running', 15, true], ['attack', 'Attacking', 14, false],
+    ['skillq', 'SkillQ', 14, false], ['skillw', 'SkillW', 14, false], ['skille', 'SkillE', 14, false], ['skillr', 'SkillR', 14, false]];
+  if (hasAttack2) acts.push(['attack2', 'Attacking2', 14, false]);
+  const anims = {};
+  for (const [fk, fn] of _FACINGS) {
+    for (const [ak, an, fps, loop] of acts) {
+      anims[`${fk}-${ak}`] = { src: `images/${dir}/${fn} - ${an}.png?v=4`, cols: 15, rows: 1, n: 15, fps, loop };
+    }
+  }
+  anims['die'] = { src: `images/${dir}/Dying.png?v=4`, cols: 15, rows: 1, n: 15, fps: 12, loop: false };
+  return anims;
+}
+
 const SPRITE_DEF = {
   deathknight: {
     frameW: 128, frameH: 128,
@@ -30,135 +52,13 @@ const SPRITE_DEF = {
       'die':          { src:'images/DeathKnight/Dying.png?v=2',              cols:15, rows:1, n:15, fps:12, loop:false },
     }
   },
-  ranger: {
-    frameW: 128, frameH: 128,
-    dispScale: 1.5,
-    anims: {
-      'front-idle':   { src:'images/Ranger/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'back-idle':    { src:'images/Ranger/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'left-idle':    { src:'images/Ranger/Left - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'right-idle':   { src:'images/Ranger/Right - Idle.png?v=2',       cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'front-run':    { src:'images/Ranger/Front - Running.png?v=2',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'back-run':     { src:'images/Ranger/Back - Running.png?v=2',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'left-run':     { src:'images/Ranger/Left - Running.png?v=2',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'right-run':    { src:'images/Ranger/Right - Running.png?v=2',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'front-attack': { src:'images/Ranger/Front - Attacking.png?v=2',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'back-attack':  { src:'images/Ranger/Back - Attacking.png?v=2',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'left-attack':  { src:'images/Ranger/Left - Attacking.png?v=2',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'right-attack': { src:'images/Ranger/Right - Attacking.png?v=2',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontright-idle':   { src:'images/Ranger/FrontRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontleft-idle':   { src:'images/Ranger/FrontLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backright-idle':   { src:'images/Ranger/BackRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backleft-idle':   { src:'images/Ranger/BackLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontright-run':    { src:'images/Ranger/FrontRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontleft-run':    { src:'images/Ranger/FrontLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backright-run':    { src:'images/Ranger/BackRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backleft-run':    { src:'images/Ranger/BackLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontright-attack': { src:'images/Ranger/FrontRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontleft-attack': { src:'images/Ranger/FrontLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backright-attack': { src:'images/Ranger/BackRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backleft-attack': { src:'images/Ranger/BackLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'die':          { src:'images/Ranger/Dying.png?v=2',              cols:15, rows:1, n:15, fps:12, loop:false },
-    }
-  },
-  mage: {
-    frameW: 128, frameH: 128,
-    dispScale: 1.5,
-    anims: {
-      'front-idle':   { src:'images/Mage/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'back-idle':    { src:'images/Mage/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'left-idle':    { src:'images/Mage/Left - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'right-idle':   { src:'images/Mage/Right - Idle.png?v=2',       cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'front-run':    { src:'images/Mage/Front - Running.png?v=2',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'back-run':     { src:'images/Mage/Back - Running.png?v=2',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'left-run':     { src:'images/Mage/Left - Running.png?v=2',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'right-run':    { src:'images/Mage/Right - Running.png?v=2',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'front-attack': { src:'images/Mage/Front - Attacking.png?v=2',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'back-attack':  { src:'images/Mage/Back - Attacking.png?v=2',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'left-attack':  { src:'images/Mage/Left - Attacking.png?v=2',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'right-attack': { src:'images/Mage/Right - Attacking.png?v=2',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontright-idle':   { src:'images/Mage/FrontRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontleft-idle':   { src:'images/Mage/FrontLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backright-idle':   { src:'images/Mage/BackRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backleft-idle':   { src:'images/Mage/BackLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontright-run':    { src:'images/Mage/FrontRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontleft-run':    { src:'images/Mage/FrontLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backright-run':    { src:'images/Mage/BackRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backleft-run':    { src:'images/Mage/BackLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontright-attack': { src:'images/Mage/FrontRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontleft-attack': { src:'images/Mage/FrontLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backright-attack': { src:'images/Mage/BackRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backleft-attack': { src:'images/Mage/BackLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'die':          { src:'images/Mage/Dying.png?v=2',              cols:15, rows:1, n:15, fps:12, loop:false },
-    }
-  },
-  warlock: {
-    frameW: 128, frameH: 128,
-    dispScale: 1.5,
-    anims: {
-      'front-idle':   { src:'images/Warlock/Front - Idle.png?v=2',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'back-idle':    { src:'images/Warlock/Back - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'left-idle':    { src:'images/Warlock/Left - Idle.png?v=2',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'right-idle':   { src:'images/Warlock/Right - Idle.png?v=2',       cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'front-run':    { src:'images/Warlock/Front - Running.png?v=2',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'back-run':     { src:'images/Warlock/Back - Running.png?v=2',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'left-run':     { src:'images/Warlock/Left - Running.png?v=2',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'right-run':    { src:'images/Warlock/Right - Running.png?v=2',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'front-attack': { src:'images/Warlock/Front - Attacking.png?v=2',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'back-attack':  { src:'images/Warlock/Back - Attacking.png?v=2',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'left-attack':  { src:'images/Warlock/Left - Attacking.png?v=2',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'right-attack': { src:'images/Warlock/Right - Attacking.png?v=2',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontright-idle':   { src:'images/Warlock/FrontRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontleft-idle':   { src:'images/Warlock/FrontLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backright-idle':   { src:'images/Warlock/BackRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backleft-idle':   { src:'images/Warlock/BackLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontright-run':    { src:'images/Warlock/FrontRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontleft-run':    { src:'images/Warlock/FrontLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backright-run':    { src:'images/Warlock/BackRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backleft-run':    { src:'images/Warlock/BackLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontright-attack': { src:'images/Warlock/FrontRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontleft-attack': { src:'images/Warlock/FrontLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backright-attack': { src:'images/Warlock/BackRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backleft-attack': { src:'images/Warlock/BackLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'die':          { src:'images/Warlock/Dying.png?v=2',              cols:15, rows:1, n:15, fps:12, loop:false },
-    }
-  },
-  lev: {
-    frameW: 128, frameH: 128,
-    dispScale: 1.5,
-    anims: {
-      // ?v=3 cache-busts these paths: the underlying PNGs were re-extracted
-      // (correcting left/right) multiple times under the same filenames, and
-      // browsers/Telegram's WebView cache images by URL — without a version
-      // bump, clients that had already loaded Lev once kept rendering the
-      // stale, pre-fix sprites no matter what the server now serves.
-      'front-idle':   { src:'images/Lev/Front - Idle.png?v=3',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'back-idle':    { src:'images/Lev/Back - Idle.png?v=3',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'left-idle':    { src:'images/Lev/Left - Idle.png?v=3',        cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'right-idle':   { src:'images/Lev/Right - Idle.png?v=3',       cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'front-run':    { src:'images/Lev/Front - Running.png?v=3',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'back-run':     { src:'images/Lev/Back - Running.png?v=3',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'left-run':     { src:'images/Lev/Left - Running.png?v=3',     cols:15, rows:1, n:15, fps:15, loop:true  },
-      'right-run':    { src:'images/Lev/Right - Running.png?v=3',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'front-attack': { src:'images/Lev/Front - Attacking.png?v=3',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'back-attack':  { src:'images/Lev/Back - Attacking.png?v=3',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'left-attack':  { src:'images/Lev/Left - Attacking.png?v=3',   cols:15, rows:1, n:15, fps:14, loop:false },
-      'right-attack': { src:'images/Lev/Right - Attacking.png?v=3',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontright-idle':   { src:'images/Lev/FrontRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontleft-idle':   { src:'images/Lev/FrontLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backright-idle':   { src:'images/Lev/BackRight - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'backleft-idle':   { src:'images/Lev/BackLeft - Idle.png',      cols:15, rows:1, n:15, fps:7,  loop:true  },
-      'frontright-run':    { src:'images/Lev/FrontRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontleft-run':    { src:'images/Lev/FrontLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backright-run':    { src:'images/Lev/BackRight - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'backleft-run':    { src:'images/Lev/BackLeft - Running.png',    cols:15, rows:1, n:15, fps:15, loop:true  },
-      'frontright-attack': { src:'images/Lev/FrontRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'frontleft-attack': { src:'images/Lev/FrontLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backright-attack': { src:'images/Lev/BackRight - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'backleft-attack': { src:'images/Lev/BackLeft - Attacking.png',  cols:15, rows:1, n:15, fps:14, loop:false },
-      'die':          { src:'images/Lev/Dying.png',              cols:15, rows:1, n:15, fps:12, loop:false },
-    }
-  },
+  // Танк, Маг, Егерь и Целитель — из полных паков (8 направлений × 30
+  // анимаций): у каждого навыка и рывка своя анимация, а не общий замах.
+  // Какие листы у них есть — см. _classAnims выше.
+  ranger:  { frameW: 128, frameH: 128, dispScale: 1.5, anims: _classAnims('Ranger',  false) },
+  mage:    { frameW: 128, frameH: 128, dispScale: 1.5, anims: _classAnims('Mage',    true) },
+  warlock: { frameW: 128, frameH: 128, dispScale: 1.5, anims: _classAnims('Warlock', true) },
+  lev:     { frameW: 128, frameH: 128, dispScale: 1.5, anims: _classAnims('Lev',     true) },
   runefighter: {
     frameW: 128, frameH: 128,
     // 1.75, not 1.5 like every other class: the sheets THEMSELVES draw this
@@ -440,305 +340,61 @@ function preloadAllSprites() {
 }
 
 // ── ENEMY SPRITE SHEETS ─────────────────────────────────────────────────────
-// 64×64 frames (Rat/Ent/Demon 128×128), 4 directional rows: 0=down 1=up 2=left 3=right.
-// Each species has 3 tiers (Species1 weakest look → Species3 strongest); guard
-// uses tier1, warrior uses tier2, and whichever species is that arm's boss
-// reuses its own tier3 for the boss look — see shared/definitions.js ENEMY_DEF.
+// images/monsters/<Вид><ярус>/{idle,walk,attack,death}.png — свои, отрендерены
+// в том же ракурсе и свете, что и листы классов. У всех одна раскладка: кадр
+// 128×128, 4 ряда направлений (0=вниз 1=вверх 2=влево 3=вправо), стоит — 6
+// кадров, идёт / бьёт / умирает — по 8. Ярус 1 — страж, 2 — воин, 3 — босс
+// своего рукава (shared/definitions.js ENEMY_DEF).
+function _monsterSheets(name, slow) {
+  const f = slow ? 0.8 : 1;
+  const sh = (key, cols, fps, loop) => ({ src: `images/monsters/${name}/${key}.png`, cols, fps: Math.round(fps * f), loop });
+  return { frameW: 128, frameH: 128, sheets: {
+    idle: sh('idle', 6, 8, true), walk: sh('walk', 8, 12, true),
+    attack: sh('attack', 8, 14, false), death: sh('death', 8, 10, false),
+  } };
+}
 const ENEMY_SPRITE_DEF = {
   // ── Arm 1 (levels 1-30) ──────────────────────────────────────────────────
-  rat_guard: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Idle_with_shadow.png',     cols:6, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Run_with_shadow.png',      cols:6, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Attack_with_shadow.png',   cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster2/Rat/Rat1/With_shadow/Rat1_Death_with_shadow.png',    cols:5, fps:8,  loop:false },
-    }
-  },
-  rat_warrior: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Idle_with_shadow.png',     cols:6, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Run_with_shadow.png',      cols:6, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Attack_with_shadow.png',   cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster2/Rat/Rat2/With_shadow/Rat2_Death_with_shadow.png',    cols:5, fps:8,  loop:false },
-    }
-  },
-  slime_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Idle_with_shadow.png',     cols:6,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
-      death:  { src:'images/Monster2/Slime/Slime1/With_shadow/Slime1_Death_with_shadow.png',     cols:8,  fps:8,  loop:false },
-    }
-  },
-  slime_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Idle_with_shadow.png',     cols:6,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
-      death:  { src:'images/Monster2/Slime/Slime2/With_shadow/Slime2_Death_with_shadow.png',     cols:10, fps:8,  loop:false },
-    }
-  },
-  imp_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Attack_with_shadow.png',   cols:6,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Imp/Imp1/With_shadow/Imp1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  imp_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Attack_with_shadow.png',   cols:6,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Imp/Imp2/With_shadow/Imp2_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  imp_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Attack_with_shadow.png',   cols:6,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Imp/Imp3/With_shadow/Imp3_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
+  rat_guard:         _monsterSheets('Rat1'),
+  rat_warrior:       _monsterSheets('Rat2'),
+  slime_guard:       _monsterSheets('Slime1'),
+  slime_warrior:     _monsterSheets('Slime2'),
+  imp_guard:         _monsterSheets('Imp1'),
+  imp_warrior:       _monsterSheets('Imp2'),
+  imp_boss:          _monsterSheets('Imp3'),
   // ── Arm 2 (levels 31-60) ─────────────────────────────────────────────────
-  zombie_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
-      death:  { src:'images/Monster2/Zombie/Zombie1/With_shadow/Zombie1_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
-    }
-  },
-  zombie_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Attack_with_shadow.png',   cols:10, fps:14, loop:false },
-      death:  { src:'images/Monster2/Zombie/Zombie2/With_shadow/Zombie2_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
-    }
-  },
-  lizardman_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Run_with_shadow.png',      cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Attack_with_shadow.png',   cols:7, fps:14, loop:false },
-      death:  { src:'images/Monster2/Lizardman/Lizardman1/With_shadow/Lizardman1_Death_with_shadow.png',    cols:7, fps:8,  loop:false },
-    }
-  },
-  lizardman_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Run_with_shadow.png',      cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Attack_with_shadow.png',   cols:7, fps:14, loop:false },
-      death:  { src:'images/Monster2/Lizardman/Lizardman2/With_shadow/Lizardman2_Death_with_shadow.png',    cols:7, fps:8,  loop:false },
-    }
-  },
-  orc_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_run_with_shadow.png',      cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_attack_with_shadow.png',   cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster2/Orc/Orc1/With_shadow/orc1_death_with_shadow.png',    cols:8, fps:8,  loop:false },
-    }
-  },
-  orc_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_run_with_shadow.png',      cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_attack_with_shadow.png',   cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster2/Orc/Orc2/With_shadow/orc2_death_with_shadow.png',    cols:8, fps:8,  loop:false },
-    }
-  },
-  orc_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_idle_with_shadow.png',     cols:4, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_run_with_shadow.png',      cols:8, fps:12, loop:true  },
-      attack: { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_attack_with_shadow.png',   cols:8, fps:14, loop:false },
-      death:  { src:'images/Monster2/Orc/Orc3/With_shadow/orc3_death_with_shadow.png',    cols:8, fps:8,  loop:false },
-    }
-  },
+  zombie_guard:      _monsterSheets('Zombie1'),
+  zombie_warrior:    _monsterSheets('Zombie2'),
+  lizardman_guard:   _monsterSheets('Lizardman1'),
+  lizardman_warrior: _monsterSheets('Lizardman2'),
+  orc_guard:         _monsterSheets('Orc1'),
+  orc_warrior:       _monsterSheets('Orc2'),
+  orc_boss:          _monsterSheets('Orc3'),
   // ── Arm 3 (levels 61-90) ─────────────────────────────────────────────────
-  plant_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Attack_with_shadow.png',   cols:7,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Plant/Plant1/With_shadow/Plant1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  plant_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Attack_with_shadow.png',   cols:7,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Plant/Plant2/With_shadow/Plant2_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  vampire_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster2/Vampire/Vampires1/With_shadow/Vampires1_Death_with_shadow.png',    cols:11, fps:8,  loop:false },
-    }
-  },
-  vampire_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster2/Vampire/Vampires2/With_shadow/Vampires2_Death_with_shadow.png',    cols:11, fps:8,  loop:false },
-    }
-  },
-  beholder_guard: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Idle_with_shadow.png',     cols:12, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster2/Beholder/Beholder1/With_shadow/Beholder1_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
-    }
-  },
-  beholder_warrior: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Idle_with_shadow.png',     cols:12, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster2/Beholder/Beholder2/With_shadow/Beholder2_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
-    }
-  },
-  beholder_boss: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Idle_with_shadow.png',     cols:12, fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Run_with_shadow.png',      cols:8,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Attack_with_shadow.png',   cols:12, fps:14, loop:false },
-      death:  { src:'images/Monster2/Beholder/Beholder3/With_shadow/Beholder3_Death_with_shadow.png',    cols:9,  fps:8,  loop:false },
-    }
-  },
-  // ── Arm 4 (levels 91-120) ────────────────────────────────────────────────
-  ent_guard: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Idle_with_shadow.png',     cols:4, fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Run_with_shadow.png',      cols:8, fps:10, loop:true  },
-      attack: { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Attack_with_shadow.png',   cols:7, fps:12, loop:false },
-      death:  { src:'images/Monster2/Ent/Ent1/With_shadow/Ent1_Death_with_shadow.png',    cols:6, fps:7,  loop:false },
-    }
-  },
-  ent_warrior: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Attack_with_shadow.png',   cols:7,  fps:12, loop:false },
-      death:  { src:'images/Monster2/Ent/Ent2/With_shadow/Ent2_Death_with_shadow.png',    cols:12, fps:7,  loop:false },
-    }
-  },
-  demon_guard: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
-      death:  { src:'images/Monster2/Demon/Demon1/With_shadow/Demon1_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
-    }
-  },
-  demon_warrior: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
-      death:  { src:'images/Monster2/Demon/Demon2/With_shadow/Demon2_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
-    }
-  },
-  demon_boss: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
-      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
-    }
-  },
-  // Admin-summoned world-event boss (shared/definitions.js EVENT_BOSS) — same
-  // Demon3 sheets as the arm boss above, just drawn far larger via its own
-  // size. Needs its own entry because sprites are looked up by eid.
-  demon_event_boss: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
-      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
-    }
-  },
-  // Подземелье (Dungeon) zone guards — shared/definitions.js's DUNGEON_LICH.
-  // frameW/frameH are 64, not the 128 the Demon/Rat family above uses: this
-  // source sheet's own per-frame cell is smaller (256px-tall sheet ÷ 4
-  // facing rows = 64), same scale the Slime/Imp family already uses.
-  dungeon_lich_commander: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Run_with_shadow.png',      cols:6,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Attack_with_shadow.png',   cols:8,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Lich/Lich3/With_shadow/Lich3_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  dungeon_lich_blue: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Run_with_shadow.png',      cols:6,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Attack_with_shadow.png',   cols:8,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Lich/Lich2/With_shadow/Lich2_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  dungeon_lich_skeleton: {
-    frameW: 64, frameH: 64,
-    sheets: {
-      idle:   { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Idle_with_shadow.png',     cols:4,  fps:8,  loop:true  },
-      walk:   { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Run_with_shadow.png',      cols:6,  fps:12, loop:true  },
-      attack: { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Attack_with_shadow.png',   cols:8,  fps:14, loop:false },
-      death:  { src:'images/Monster2/Lich/Lich1/With_shadow/Lich1_Death_with_shadow.png',    cols:10, fps:8,  loop:false },
-    }
-  },
-  // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) —
-  // visually the world event boss, but its own eid so it doesn't show up in
-  // the real world boss's HP-bar/alive tracking (js/ui.js
+  plant_guard:       _monsterSheets('Plant1'),
+  plant_warrior:     _monsterSheets('Plant2'),
+  vampire_guard:     _monsterSheets('Vampire1'),
+  vampire_warrior:   _monsterSheets('Vampire2'),
+  beholder_guard:    _monsterSheets('Beholder1'),
+  beholder_warrior:  _monsterSheets('Beholder2'),
+  beholder_boss:     _monsterSheets('Beholder3'),
+  // ── Arm 4 (levels 91-120) — крупные, двигаются чуть медленнее ─────────────
+  ent_guard:         _monsterSheets('Ent1', true),
+  ent_warrior:       _monsterSheets('Ent2', true),
+  demon_guard:       _monsterSheets('Demon1', true),
+  demon_warrior:     _monsterSheets('Demon2', true),
+  demon_boss:        _monsterSheets('Demon3', true),
+  // Admin-summoned world-event boss (shared/definitions.js EVENT_BOSS) and the
+  // 10-player corridor race boss (server/game/Room.js spawnRaceBoss) — the same
+  // Demon3 art as the arm boss, drawn far larger via their own size. Each needs
+  // its own entry because sprites are looked up by eid (js/ui.js
   // updateEventBossHpBar keys off eid === 'demon_event_boss').
-  race10_boss: {
-    frameW: 128, frameH: 128,
-    sheets: {
-      idle:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Idle_with_shadow.png',     cols:4,  fps:6,  loop:true  },
-      walk:   { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Run_with_shadow.png',      cols:8,  fps:10, loop:true  },
-      attack: { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Attack_with_shadow.png',   cols:10, fps:12, loop:false },
-      death:  { src:'images/Monster2/Demon/Demon3/With_shadow/Demon3_Death_with_shadow.png',    cols:13, fps:7,  loop:false },
-    }
-  },
+  demon_event_boss:  _monsterSheets('Demon3', true),
+  race10_boss:       _monsterSheets('Demon3', true),
+  // Подземелье (Dungeon) zone guards — shared/definitions.js's DUNGEON_LICH.
+  dungeon_lich_skeleton:  _monsterSheets('Lich1'),
+  dungeon_lich_blue:      _monsterSheets('Lich2'),
+  dungeon_lich_commander: _monsterSheets('Lich3'),
 };
 
 const enemySpriteCache = {};
@@ -998,7 +654,11 @@ function loadSprites(charType, onDone, onProgress) {
   if (_spriteLoadPromises[charType]) { _spriteLoadPromises[charType].then(onDone); return; }
   spriteCache[charType] = spriteCache[charType] || {};
   const cache = spriteCache[charType];
-  const keys = Object.keys(def.anims);
+  // Навыки и второй замах в полосу загрузки не входят: без них в игру войти
+  // можно, а это 40 листов на класс. Они догружаются следом, по одному за
+  // кадр (_queueRaster), пока игрок уже бегает.
+  const all = Object.keys(def.anims);
+  const keys = all.filter(k => !_isCastExtra(k));
   let total = keys.length, done = 0;
   let resolveReady;
   _spriteLoadPromises[charType] = new Promise(res => { resolveReady = res; });
@@ -1034,13 +694,35 @@ function loadSprites(charType, onDone, onProgress) {
     cache[key] = img;
   });
   if (total === 0) { if (onProgress) onProgress(1, 1); resolveReady(); }
+  _spriteLoadPromises[charType].then(() => {
+    all.forEach(k => { if (_isCastExtra(k)) _loadOneSheet(spriteCache, charType, def, k); });
+  });
   _spriteLoadPromises[charType].then(onDone);
+}
+
+function _isCastExtra(key) { return /-(skill[qwer]|attack2)$/.test(key); }
+
+// Ключ замаха или навыка. p._skillAnim ('skillq'..'skillr') ставит каст
+// навыка, обычный удар его снимает и чередует attack/attack2 через p._atkAlt.
+// Если нужного листа нет (класс без таких анимаций) или он ещё не готов —
+// играет обычная атака, а лист заказывается: свой класс в полном размере,
+// чужой — как все чужие листы (loadSpriteSheet).
+function castAnimKey(p, dir, own) {
+  const base = `${dir}-attack`;
+  const def = SPRITE_DEF[p.type];
+  if (!def) return base;
+  const want = p._skillAnim ? `${dir}-${p._skillAnim}` : (p._atkAlt ? `${dir}-attack2` : base);
+  if (want === base || !def.anims[want]) return base;
+  if (_sheetReady(spriteCache[p.type] && spriteCache[p.type][want])) return want;
+  if (own) _loadOneSheet(spriteCache, p.type, def, want);
+  else loadSpriteSheet(p.type, want);
+  return base;
 }
 
 function getSpriteAnimKey(p) {
   if (state === 'dead') return 'die';
   const dir = p.facing || 'front';
-  if (p.atkAnimTimer > 0)  return `${dir}-attack`;
+  if (p.atkAnimTimer > 0)  return castAnimKey(p, dir, true);
   const inp = inputDir();
   if (inp.len > 0.05 || p._chasing) return `${dir}-run`;
   return `${dir}-idle`;

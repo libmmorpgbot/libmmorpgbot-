@@ -911,6 +911,10 @@ function useSkill(idx) {
   player.skillCooldowns[sk.key] = sk.cd * (1 - (player.cdrPct || 0));
   skillFlash = { key: sk.key, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
+  // Своя анимация на каждый навык (castAnimKey, js/sprites.js); тем, кто
+  // рядом, — та же, через сервер.
+  player._skillAnim = 'skill' + sk.key.toLowerCase();
+  if (typeof netCastAnim === 'function') netCastAnim(sk.key);
 
   _dispatchSkillEffect(player.type, sk);
 }
@@ -957,6 +961,8 @@ function useForeignSkill() {
   player.skillCooldowns[FOREIGN_SKILL_KEY] = sk.cd * (1 - (player.cdrPct || 0));
   skillFlash = { key: FOREIGN_SKILL_KEY, timer: 0.4 };
   player.atkAnimTimer = 0.675; player.castDuration = 0.675; player.animFrame = 0; player.animTimer = 0;
+  // Чужой навык — анимации под него у класса нет, играет обычный замах.
+  player._skillAnim = null;
 
   _foreignCastCtx = { cls: fs.cls, key: sk.key };
   try {

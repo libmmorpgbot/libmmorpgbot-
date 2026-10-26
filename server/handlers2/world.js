@@ -1067,6 +1067,19 @@ module.exports = function registerWorld(s, safeOn, deps) {
     s.emitNearby(me.x, me.y, 'sticker', { sid: s.socket.id, id });
   });
 
+  // Только вид: какую анимацию навыка показать тем, кто видит игрока. Урон и
+  // перезарядки тут ни при чём, поэтому проверок — буква и частота.
+  safeOn('castAnim', ({ k } = {}) => {
+    if (!s.room || !s.authed) return;
+    if (typeof k !== 'string' || !/^[qwer]$/.test(k)) return;
+    const me = s.room.players.get(s.socket.id);
+    if (!me || me.hp <= 0) return;
+    const now = Date.now();
+    if (now - (s._castAnimAt || 0) < 250) return;
+    s._castAnimAt = now;
+    s.emitNearby(me.x, me.y, 'castAnim', { sid: s.socket.id, k });
+  });
+
   safeOn('attack', ({ enemyId, splash } = {}) => {
     if (!s.room || !s.authed) return;
     // splash: "Безумие" (advanced deathknight E) — a half-damage hit that
