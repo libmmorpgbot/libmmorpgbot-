@@ -231,6 +231,33 @@ function _ensureBaked() {
 }
 let _texDisc = null, _texRing = null, _texRingThin = null, _texRingDash = null;
 
+// ── затемнение Подземелья ─────────────────────────────────────────────────
+// Склеп в духе Diablo: вокруг героя светлое пятно, к краям экрана — темнота
+// с холодным оттенком. Один спрайт поверх мира (под HUD, он на своём холсте).
+let _darkSpr = null;
+function _updateAbyssDark(camX, camY) {
+  const on = typeof _abyssFloor === 'function' && _abyssFloor() && typeof player !== 'undefined' && player;
+  if (!on) { if (_darkSpr) _darkSpr.visible = false; return; }
+  if (!_darkSpr) {
+    _darkSpr = new PIXI.Sprite(_fxCanvas(512, (c, s) => {
+      const h = s / 2;
+      const g = c.createRadialGradient(h, h, s * 0.08, h, h, h);
+      g.addColorStop(0, 'rgba(4,6,12,0)'); g.addColorStop(0.35, 'rgba(4,6,12,0.18)');
+      g.addColorStop(0.7, 'rgba(4,6,12,0.62)'); g.addColorStop(1, 'rgba(2,3,8,0.88)');
+      c.fillStyle = g; c.fillRect(0, 0, s, s);
+    }));
+    _darkSpr.anchor.set(0.5);
+    _pixiApp.stage.addChild(_darkSpr);
+  }
+  const sw = _pixiApp.screen.width, sh = _pixiApp.screen.height;
+  _darkSpr.visible = true;
+  _darkSpr.x = (player.x - camX) * ZOOM;
+  _darkSpr.y = HEADER_H + (player.y - 24 - camY) * ZOOM;
+  // вписать так, чтобы до любого угла экрана доставал тёмный край
+  const reach = Math.hypot(Math.max(_darkSpr.x, sw - _darkSpr.x), Math.max(_darkSpr.y, sh - _darkSpr.y));
+  _darkSpr.scale.set(reach * 2.15 / 512);
+}
+
 // ── боевые эффекты (js/fx.js) ─────────────────────────────────────────────
 // Текстуры запекаются один раз на холсте; все частицы — спрайты из пулов,
 // по контейнеру на слой, так что любое их число — три вызова отрисовки.
@@ -546,7 +573,7 @@ function _dropGpuState() {
   _projSpr.length = 0; _projN = 0;
   _lightSpr.length = 0; _lightN = 0;
   _partSpr.length = 0; _partN = 0;
-  _fxTex = null; _fxPools.ground.length = 0; _fxPools.top.length = 0; _fxPools.smoke.length = 0;
+  _fxTex = null; if (_darkSpr) { try { _darkSpr.parent && _darkSpr.parent.removeChild(_darkSpr); } catch (e) { /* stage gone */ } } _darkSpr = null; _fxPools.ground.length = 0; _fxPools.top.length = 0; _fxPools.smoke.length = 0;
   _decSpr.length = 0; _decN = 0;
   _wallSpr.length = 0; _wallN = 0;
   _dmgBmp.length = 0; _dmgTxt.length = 0; _dmgIco.length = 0; _dmgIcoTex.clear();
@@ -1435,7 +1462,19 @@ function _updateLights(ts) {
     const flick = 0.8 + 0.15 * Math.sin(ts * 0.006 + t.x * 0.11) + 0.08 * Math.sin(ts * 0.023 + t.y * 0.05);
     const fx = t.x + Math.sin(ts * 0.014 + t.x) * 1.2;
     const fy = t.y - 2 + Math.sin(ts * 0.02 + t.y) * 1;
-    if (!lite) _glowSpr(t.x, t.y + 10, 60 * flick, 0xff9d3c, 0.10 * flick, _texGlow, 128);
+    if (t.big) {
+      // Жаровня Подземелья: широкое тёплое пятно и крупное пламя языками.
+      if (!lite) _glowSpr(t.x, t.y + 8, 130 * flick, 0xff6a20, 0.16 * flick, _texGlow, 128);
+      _glowSpr(t.x, t.y + 4, 62 * flick, 0xff9a40, 0.26 * flick, _texGlow, 128);
+      for (let k = 0; k < 3; k++) {
+        const ph = ts * 0.012 + k * 2.1 + t.x;
+        _glowSpr(t.x + Math.sin(ph) * 3 + (k - 1) * 4, t.y - 4 - k * 3 - Math.abs(Math.sin(ph * 1.3)) * 3, (7 - k) * flick, k ? 0xff7a26 : 0xffb04a, 0.8, _texDot, 64);
+      }
+      _glowSpr(t.x, t.y - 4, 4 * flick, 0xfff0c0, 0.95, _texDot, 64);
+      continue;
+    }
+    const abyss = typeof _abyssFloor === 'function' && _abyssFloor();
+    if (!lite) _glowSpr(t.x, t.y + 10, (abyss ? 85 : 60) * flick, 0xff9d3c, (abyss ? 0.14 : 0.10) * flick, _texGlow, 128);
     _glowSpr(t.x, t.y + 10, 32 * flick, 0xffb85c, 0.18 * flick, _texGlow, 128);
     _glowSpr(fx, fy + 2, 5 * flick, 0xff8a2e, 0.75, _texDot, 64);
     _glowSpr(fx, fy, 3.2 * flick, 0xffe6a8, 0.9, _texDot, 64);
@@ -2884,6 +2923,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _layer('pets', () => _updatePets(dt));
   _layer('player', () => _updatePlayer(dt, ts));
   _layer('fx', () => _updateFx());
+  _layer('dark', () => _updateAbyssDark(camX, camY));
   _layer('dmg', () => _updateDmgNums());
   _layer('stickers', () => _updateStickers(camX, camY));
   _layer('sheets', () => _sweepSheets(ts));

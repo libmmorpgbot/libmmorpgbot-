@@ -287,6 +287,12 @@ const _FLOOR_IMG = {
   fan20:  { src: '/images/floor/fan20_floor.jpg', px: 300, wall: '/images/floor/fan20_wall.jpg', wallPx: 220, wallBase: '#5a3214' },
   fan40:  { src: '/images/floor/fan40_floor.jpg', px: 340, wall: '/images/floor/fan40_wall.jpg', wallPx: 300, wallBase: '#3a4430' },
   fan60:  { src: '/images/floor/fan60_floor.jpg', px: 360, wall: '/images/floor/fan60_wall.jpg', wallPx: 300, wallBase: '#56677a' },
+  // Подземелье (зал телепортов и 7 классовых зон) — готический склеп в духе
+  // Diablo Immortal: треснувшие плиты в комнатах, плитняк в проходах, грубая
+  // замковая кладка. ambientCG CC0: Tiles130 / PavingStones054 / Bricks076A,
+  // запечены с AO и светом из карты нормалей, холодный тон (см. LICENSE.txt).
+  abyss:  { src: '/images/floor/abyss_floor.jpg', px: 380, src2: '/images/floor/abyss_floor2.jpg', px2: 300,
+            wall: '/images/floor/abyss_wall.jpg', wallPx: 240, wallBase: '#15171c', abyss: true },
 };
 const _floorImgCache = {};
 function _floorImgTex(key) {
@@ -306,13 +312,14 @@ function _floorImgTex(key) {
     return c.createPattern(cv, 'repeat');
   };
   const load = src => new Promise((res, rej) => { const img = new Image(); img.onload = () => res(img); img.onerror = rej; img.src = src; });
-  Promise.all([load(def.src), def.wall ? load(def.wall) : null]).then(([fl, wl]) => {
+  Promise.all([load(def.src), def.wall ? load(def.wall) : null, def.src2 ? load(def.src2) : null]).then(([fl, wl, f2]) => {
     const floor = pattern(fl, def.px);
     const wall = wl ? pattern(wl, def.wallPx || def.px) : _brickWallPattern(def.brick);
     if (!floor || !wall) return;
     // relief — стены коридоров рисуются с высотой: видимая грань над
     // полом и толща, темнеющая вглубь (_buildChunk, js/game.js).
-    ent.tex = { floor, wall, wallBase: def.wallBase, relief: !!def.wall };
+    ent.tex = { floor, wall, wallBase: def.wallBase, relief: !!def.wall,
+      floor2: f2 ? pattern(f2, def.px2 || def.px) : null, abyss: !!def.abyss };
     if (typeof buildTileCanvas === 'function' && typeof dungeon !== 'undefined' && dungeon) buildTileCanvas();
   }).catch(() => {});
   return null;
@@ -353,3 +360,146 @@ function _armDecorKey() {
   const r = d.rooms.find(x => x.arm);
   return (r && _ARM_DECOR_SETS[_armStyleSet][r.arm]) || null;
 }
+
+
+// ── Подземелье в духе Diablo Immortal ────────────────────────────────────────
+// Пол и стены — фото-текстуры (abyss в _FLOOR_IMG), поверх них — то, что
+// делает склеп склепом: кровь и щебень на плитах, ритуальный круг с рунами в
+// центре каждой комнаты, высокие стены с контрфорсами и факелами, жаровни по
+// углам комнат. Всё запекается в чанки один раз (_buildChunk, js/game.js);
+// живое — пламя и его свет (_updateLights), затемнение краёв экрана
+// (_updateAbyssDark, js/pixi-world.js) и искры с туманом (_fxAmbient, js/fx.js).
+function _abyssFloor() {
+  const d = typeof dungeon !== 'undefined' ? dungeon : null;
+  return !!(d && (d.dungeonZone || d.classPads));
+}
+function _abyssRoomAt(tx, ty) {
+  const rs = (typeof dungeon !== 'undefined' && dungeon && dungeon.rooms) || [];
+  for (let i = 0; i < rs.length; i++) {
+    const r = rs[i], sz = r.size || 0;
+    if (tx >= r.x && tx < r.x + sz && ty >= r.y && ty < r.y + sz) return r;
+  }
+  return null;
+}
+// Пятна на плитах: кровь, щебень, копоть, светящиеся трещины. Детерминировано
+// по клетке — чанк, собранный заново, выглядит так же.
+function _abyssFloorDecor(c, tx, ty, x, y, inRoom) {
+  const h = (k) => _tileHash(tx, ty, k);
+  if (h(40) < (inRoom ? 0.07 : 0.04)) {             // лужа крови из нескольких капель
+    const cx = x + TILE * (0.25 + h(41) * 0.5), cy = y + TILE * (0.25 + h(42) * 0.5);
+    const n = 3 + Math.floor(h(43) * 4);
+    for (let i = 0; i < n; i++) {
+      const a = h(44 + i) * 6.28, d = h(50 + i) * 12;
+      _drawStain(c, cx + Math.cos(a) * d, cy + Math.sin(a) * d * 0.7, 5 + h(56 + i) * 9, 'rgba(92,8,10,0.55)');
+    }
+    _drawStain(c, cx, cy, 6, 'rgba(40,2,4,0.5)');
+  }
+  if (h(60) < 0.12) {                               // щебень
+    const n = 2 + Math.floor(h(61) * 4);
+    for (let i = 0; i < n; i++) {
+      const px = x + h(62 + i) * TILE, py = y + h(68 + i) * TILE, s = 2 + h(74 + i) * 3;
+      c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(px + 1, py + 1, s, s * 0.8);
+      c.fillStyle = h(80 + i) < 0.5 ? '#3a3c42' : '#2c2e33'; c.fillRect(px, py, s, s * 0.8);
+    }
+  }
+  if (h(86) < 0.05) _drawStain(c, x + TILE / 2, y + TILE / 2, 14 + h(87) * 10, 'rgba(0,0,0,0.38)');
+  if (h(88) < 0.006) {                              // трещина, тлеющая изнутри
+    c.save(); c.shadowColor = '#ff5a1a'; c.shadowBlur = 6;
+    _drawCrack(c, x + 8 + h(89) * (TILE - 16), y + 8 + h(90) * (TILE - 16), tx, ty, 'rgba(255,110,40,0.75)', 9);
+    c.restore();
+  }
+}
+// Ритуальный круг в центре комнаты: два кольца, пентаграмма, руны по кругу,
+// тусклое алое свечение. Рисуется в каждом чанке, который его задевает, —
+// холст обрежет лишнее сам.
+function _abyssRoomDecor(c, x0, y0, x1, y1) {
+  const rs = (typeof dungeon !== 'undefined' && dungeon && dungeon.rooms) || [];
+  for (const r of rs) {
+    const cx = (r.cx + 0.5) * TILE, cy = (r.cy + 0.5) * TILE;
+    const R = Math.min(r.size || 10, 18) * TILE * 0.2;
+    if (cx + R < x0 || cx - R > x1 || cy + R < y0 || cy - R > y1) continue;
+    c.save();
+    const g = c.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.25);
+    g.addColorStop(0, 'rgba(120,10,14,0.16)'); g.addColorStop(1, 'rgba(120,10,14,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(cx, cy, R * 1.25, 0, 6.283); c.fill();
+    c.strokeStyle = 'rgba(10,8,10,0.7)'; c.lineWidth = 7;            // выбитая в камне канавка
+    c.beginPath(); c.arc(cx, cy, R, 0, 6.283); c.stroke();
+    c.shadowColor = '#ff2a1a'; c.shadowBlur = 7;
+    c.strokeStyle = 'rgba(190,28,22,0.45)'; c.lineWidth = 2.5;
+    c.beginPath(); c.arc(cx, cy, R, 0, 6.283); c.stroke();
+    c.beginPath(); c.arc(cx, cy, R * 0.8, 0, 6.283); c.stroke();
+    c.beginPath();
+    for (let i = 0; i <= 5; i++) {
+      const a = -Math.PI / 2 + i * Math.PI * 4 / 5;
+      const px = cx + Math.cos(a) * R * 0.8, py = cy + Math.sin(a) * R * 0.8;
+      if (i) c.lineTo(px, py); else c.moveTo(px, py);
+    }
+    c.stroke();
+    c.fillStyle = 'rgba(220,46,30,0.55)';
+    for (let i = 0; i < 12; i++) {                   // руны между кольцами
+      const a = i / 12 * 6.283, rr = R * 0.9;
+      const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+      c.save(); c.translate(px, py); c.rotate(a + Math.PI / 2);
+      const k = (i * 7) % 4;
+      c.fillRect(-1, -5, 2, 10);
+      if (k === 0) c.fillRect(-4, -5, 8, 2);
+      if (k === 1) { c.fillRect(-4, 0, 8, 2); c.fillRect(2, -5, 2, 5); }
+      if (k === 2) { c.fillRect(-4, 3, 8, 2); c.fillRect(-4, -5, 2, 4); }
+      if (k === 3) { c.rotate(0.6); c.fillRect(-1, -4, 2, 8); }
+      c.restore();
+    }
+    c.restore();
+  }
+}
+// Передняя грань стены: высокая кладка, затемнённая книзу, контрфорс через
+// каждые 4 клетки (на нём факел, _abyssTorches) и светлая кромка по верху.
+const ABYSS_WALL_H = 34;
+function _abyssWallFace(c, tex, tx, ty) {
+  const fx = tx * TILE, fy = ty * TILE + TILE - ABYSS_WALL_H;
+  c.fillStyle = tex.wall; c.fillRect(fx, fy, TILE, ABYSS_WALL_H);
+  const fg = c.createLinearGradient(0, fy, 0, fy + ABYSS_WALL_H);
+  fg.addColorStop(0, 'rgba(0,0,0,0.15)'); fg.addColorStop(1, 'rgba(0,0,0,0.7)');
+  c.fillStyle = fg; c.fillRect(fx, fy, TILE, ABYSS_WALL_H);
+  if (tx % 4 === 0) {
+    const px = fx + 8, pw = TILE - 16;
+    const pg = c.createLinearGradient(px, 0, px + pw, 0);
+    pg.addColorStop(0, 'rgba(120,125,140,0.22)'); pg.addColorStop(0.5, 'rgba(0,0,0,0)'); pg.addColorStop(1, 'rgba(0,0,0,0.5)');
+    c.fillStyle = tex.wall; c.fillRect(px, fy - 6, pw, ABYSS_WALL_H + 8);
+    c.fillStyle = pg; c.fillRect(px, fy - 6, pw, ABYSS_WALL_H + 8);
+    c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(px + pw, fy, 3, ABYSS_WALL_H);   // тень контрфорса
+    c.fillStyle = 'rgba(170,175,190,0.25)'; c.fillRect(px - 2, fy - 8, pw + 4, 3); // капитель
+  }
+  c.fillStyle = 'rgba(200,205,220,0.14)'; c.fillRect(fx, fy, TILE, 2);
+  c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(fx, fy - 2, TILE, 2);
+}
+// Факелы на контрфорсах и жаровни по углам комнат. Кронштейн и чаша
+// запекаются в чанк, огонь и свет — живые (big — жаровня, пятно света шире).
+function _abyssTorches(c, ptx0, pty0, ptx1, pty1, isFloor, list) {
+  for (let ty = pty0; ty <= pty1; ty++) for (let tx = ptx0; tx <= ptx1; tx++) {
+    if (dungeon.grid[ty][tx] !== WALL || !isFloor(tx, ty + 1) || tx % 4 !== 0) continue;
+    const bx = tx * TILE + TILE / 2, by = ty * TILE + TILE - 14;
+    c.fillStyle = '#1a1612'; c.fillRect(bx - 2, by - 6, 4, 12);
+    c.fillStyle = '#3a2c20'; c.fillRect(bx - 6, by - 9, 12, 4);
+    c.fillStyle = '#5a4630'; c.fillRect(bx - 6, by - 9, 12, 1);
+    list.push({ x: bx, y: by - 9 });
+  }
+  const rs = dungeon.rooms || [];
+  for (const r of rs) {
+    const sz = r.size || 0;
+    if (!sz) continue;
+    for (const [ox, oy] of [[1, 1], [sz - 2, 1], [1, sz - 2], [sz - 2, sz - 2]]) {
+      const tx = r.x + ox, ty = r.y + oy;
+      if (tx < ptx0 || tx > ptx1 || ty < pty0 || ty > pty1 || !isFloor(tx, ty)) continue;
+      const bx = tx * TILE + TILE / 2, by = ty * TILE + TILE / 2 + 6;
+      c.fillStyle = 'rgba(0,0,0,0.45)'; c.beginPath(); c.ellipse(bx + 3, by + 8, 16, 6, 0, 0, 6.283); c.fill();
+      c.fillStyle = '#16120e';
+      c.fillRect(bx - 9, by - 2, 3, 12); c.fillRect(bx + 6, by - 2, 3, 12); c.fillRect(bx - 1, by, 2, 11);
+      c.fillStyle = '#2e241a'; c.beginPath(); c.ellipse(bx, by - 4, 13, 6, 0, 0, 6.283); c.fill();
+      c.fillStyle = '#4a3a28'; c.beginPath(); c.ellipse(bx, by - 6, 11, 4, 0, 0, 6.283); c.fill();
+      c.fillStyle = '#1c0a04'; c.beginPath(); c.ellipse(bx, by - 6, 9, 3, 0, 0, 6.283); c.fill();
+      list.push({ x: bx, y: by - 8, big: true });
+    }
+  }
+}
+const _ABYSS_PROPS = _floorProps(130, [{ key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'bone_long' }, { key: 'bone_small' },
+  { key: 'bone_skull' }, { key: 'pillar' }, { key: 'spikes_row' }, { key: 'chest_banded' }]);

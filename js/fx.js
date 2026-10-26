@@ -162,6 +162,7 @@ function fxUpdate(dt) {
     fxEmitters.length = j;
   }
   _fxTrails(dt);
+  if (typeof _abyssFloor === 'function' && _abyssFloor()) _fxAmbient(dt);
   let j = 0;
   for (let i = 0; i < fxParts.length; i++) {
     const p = fxParts[i];
@@ -465,4 +466,28 @@ function fxKill(x, y, col) {
   fxBurst(x, y - 16, { n: 18, col: [c, '#ffffff'], sp0: 90, sp1: 300, size: 6, life: 0.5 });
   fxRise(x, y, ['#ffffff', c], { n: 10, r: 18, size: 5, life: 0.9, spreadT: 0.2 });
   fxSmoke(x, y, '#20181a', { n: 4, a: 0.4 });
+}
+
+// ── атмосфера Подземелья ───────────────────────────────────────────────────
+// Искры над жаровнями и факелами, пылинки в свете вокруг героя и стелющийся
+// по полу холодный туман. Частота подобрана так, чтобы держать десятки
+// частиц, а не сотни.
+let _ambAcc = 0;
+function _fxAmbient(dt) {
+  _ambAcc += dt;
+  if (_ambAcc < 0.05) return;
+  _ambAcc = 0;
+  if (typeof _visibleTorches !== 'undefined') {
+    for (let i = 0; i < _visibleTorches.length; i++) {
+      const t = _visibleTorches[i];
+      if (Math.random() > (t.big ? 0.7 : 0.2)) continue;
+      fxP({ k: 'dot', x: t.x + _rnd(-6, 6), y: t.y, z: 2, vx: _rnd(-12, 12), vz: _rnd(30, 70), drag: 0.6, az: -4,
+        life: _rnd(0.8, 1.6), s0: _rnd(2, 3.5), s1: 0.5, col: Math.random() < 0.5 ? '#ffb050' : '#ff6a20', fade: 'inout' });
+    }
+  }
+  if (typeof player === 'undefined' || !player) return;
+  if (Math.random() < 0.5) fxP({ k: 'dot', x: player.x + _rnd(-220, 220), y: player.y + _rnd(-260, 200), z: _rnd(10, 70),
+    vx: _rnd(-6, 6), vz: _rnd(-4, 4), life: _rnd(2, 4), s0: _rnd(1.2, 2.2), s1: 1, col: '#c8d4ff', a0: 0.5, fade: 'inout' });
+  if (Math.random() < 0.35) fxP({ k: 'smoke', layer: 'ground', x: player.x + _rnd(-320, 320), y: player.y + _rnd(-320, 260),
+    vx: _rnd(6, 18), vy: _rnd(-3, 3), life: _rnd(4, 7), s0: _rnd(90, 140), s1: 200, col: '#6a7898', a0: 0.07, fade: 'inout' });
 }

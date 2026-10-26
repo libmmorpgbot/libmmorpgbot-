@@ -2901,6 +2901,7 @@ function _drawGrassTuft(c, x, y, tx, ty, color) {
 function _floorTexOfFloor() {
   if (!dungeon || typeof _floorImgTex !== 'function') return null;
   if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
+  if (typeof _abyssFloor === 'function' && _abyssFloor()) return _floorImgTex('abyss');
   if (dungeon.armEntries) return _floorImgTex('temple');
   const arm = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
   if (arm) return _floorImgTex(arm);
@@ -2986,7 +2987,7 @@ function _buildChunk(cx, cy) {
           for (let r = 1; r <= 2 && d === 3; r++) {
             for (let oy = -r; oy <= r && d === 3; oy++) for (let ox = -r; ox <= r; ox++) if (isFloor(tx + ox, ty + oy)) { d = r; break; }
           }
-          c.fillStyle = `rgba(0,0,0,${[0, 0.07, 0.15, 0.22][d]})`;
+          c.fillStyle = `rgba(0,0,0,${(lava.abyss ? [0, 0.18, 0.4, 0.62] : [0, 0.07, 0.15, 0.22])[d]})`;
           c.fillRect(x, y, TILE, TILE);
         }
         continue;
@@ -3025,7 +3026,16 @@ function _buildChunk(cx, cy) {
       const floorA = inTower ? _RACE10_FLOOR_A : inGw ? _GW_FLOOR_A : inFarm ? _FARM_FLOOR_A : inCoop ? _COOP_FLOOR_A : th.floorA;
       const floorB = inTower ? _RACE10_FLOOR_B : inGw ? _GW_FLOOR_B : inFarm ? _FARM_FLOOR_B : inCoop ? _COOP_FLOOR_B : th.floorB;
       const mortar = inTower ? mortarFloorRace10 : inGw ? mortarFloorGw : inFarm ? mortarFloorFarm : inCoop ? mortarFloorCoop : mortarFloor;
-      if (lava && !inTower && !inGw && !inCoop) { c.fillStyle = lava.floor; c.fillRect(x, y, TILE, TILE); continue; }
+      if (lava && !inTower && !inGw && !inCoop) {
+        if (lava.abyss) {
+          // Подземелье: треснувшие плиты в комнатах, плитняк в проходах.
+          const inRoom = !!_abyssRoomAt(tx, ty);
+          c.fillStyle = (!inRoom && lava.floor2) ? lava.floor2 : lava.floor; c.fillRect(x, y, TILE, TILE);
+          _abyssFloorDecor(c, tx, ty, x, y, inRoom);
+          continue;
+        }
+        c.fillStyle = lava.floor; c.fillRect(x, y, TILE, TILE); continue;
+      }
       c.fillStyle = _lerpHexColor(floorA, floorB, _tileHash(tx, ty, 0));
       c.fillRect(x, y, TILE, TILE);
       c.fillStyle = mortar;
@@ -3080,6 +3090,7 @@ function _buildChunk(cx, cy) {
     }
   }
 
+  if (lava && lava.abyss) _abyssRoomDecor(c, x0 - _CHUNK_G, y0 - _CHUNK_G, x0 + _CHUNK_PX + _CHUNK_G, y0 + _CHUNK_PX + _CHUNK_G);
   // Хаб оформлен городом (js/city.js): улицы, площадь и скверы — поверх пола.
   const city = typeof _cityLayout === 'function' ? _cityLayout() : null;
   const cX0 = x0 - TILE, cY0 = y0 - TILE, cX1 = x0 + _CHUNK_PX + TILE, cY1 = y0 + _CHUNK_PX + TILE;
@@ -3103,6 +3114,7 @@ function _buildChunk(cx, cy) {
         : _isCoopTile(tx, ty) ? _COOP_WALL : th.wallColor;
       // Дерево или вода в Мире (js/zones.js): у них нет каменного «обрыва».
       if (!wallBase) continue;
+      if (lava && lava.abyss && !zone) { _abyssWallFace(c, lava, tx, ty); continue; }
       if (lava && lava.relief && !zone) {
         // Передняя грань стены: та же фактура, затемнённая книзу, и светлая
         // кромка по верху — стена встаёт над полом, как в играх с видом сверху.
@@ -3134,9 +3146,10 @@ function _buildChunk(cx, cy) {
       if (dungeon.grid[ty][tx] !== FLOOR) continue;
       const x = tx * TILE, y = ty * TILE;
       if (!isFloor(tx, ty - 1)) {
-        const g = c.createLinearGradient(0, y, 0, y + 22);
-        g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-        c.fillStyle = g; c.fillRect(x, y, TILE, 22);
+        const sh = lava.abyss ? 30 : 22;
+        const g = c.createLinearGradient(0, y, 0, y + sh);
+        g.addColorStop(0, `rgba(0,0,0,${lava.abyss ? 0.75 : 0.55})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = g; c.fillRect(x, y, TILE, sh);
       }
       if (!isFloor(tx - 1, ty)) {
         const g = c.createLinearGradient(x, 0, x + 14, 0);
@@ -3176,7 +3189,7 @@ function _buildChunk(cx, cy) {
   const ptx1 = Math.min(dungeon.w - 1, ptx0 + _CHUNK_T - 1);
   const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
   const armKey = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
-  const floorProp = (armKey && _ARM_PROPS[armKey]) || th.drawFloorProp;
+  const floorProp = (lava && lava.abyss) ? _ABYSS_PROPS : ((armKey && _ARM_PROPS[armKey]) || th.drawFloorProp);
   if (floorProp && !city && !zone) {
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
@@ -3198,6 +3211,7 @@ function _buildChunk(cx, cy) {
   const torchList = [];
   if (city) cityDrawStructures(c, city, cX0, cY0, cX1, cY1, { x0, y0, x1: x0 + _CHUNK_PX, y1: y0 + _CHUNK_PX }, torchList);
   else if (zone) zonesDrawDecor(c, zone, tx0, ty0, tx1, ty1, ptx0, pty0, ptx1, pty1, torchList);
+  else if (lava && lava.abyss) _abyssTorches(c, ptx0, pty0, ptx1, pty1, isFloor, torchList);
   else for (let ty = pty0; ty <= pty1; ty++) {
     for (let tx = ptx0; tx <= ptx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL || !isFloor(tx, ty + 1)) continue;

@@ -23,3 +23,9 @@ Leveling corridors, fantasy set (same processing):
   fan40_wall.jpg   <- Rock063            (1K Color + AO), brightness 0.6
   fan60_floor.jpg  <- Ice003             (1K Color),      brightness 0.92, blue tint
   fan60_wall.jpg   <- Rock026            (1K Color + AO), brightness 0.62, blue tint
+
+Подземелье (Dungeon hub + class zones), gothic crypt look — 512px, AO and a
+normal-map light from the upper left baked in, desaturated, cold tint:
+  abyss_floor.jpg  <- Tiles130        (1K Color + AO + Normal), rooms
+  abyss_floor2.jpg <- PavingStones054 (1K Color + AO + Normal), passages
+  abyss_wall.jpg   <- Bricks076A      (1K Color + AO + Normal), walls
