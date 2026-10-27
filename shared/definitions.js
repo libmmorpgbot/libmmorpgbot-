@@ -4204,7 +4204,7 @@ const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop c
 // callers in server/game/Room.js's computeStats.
 // Пятнадцать уровней. Опыт клана больше не идёт за убийства — только за
 // пожертвования участников (CLAN_DONATIONS ниже), поэтому кривая под них:
-// один активный участник приносит до 330 очков в сутки (3 × 10 + 3 × 100).
+// один активный участник приносит до 390 очков в сутки (3 × 30 + 3 × 100).
 // Пороги уровней 2–10 не выше прежних, так что ни один клан, набравший опыт
 // убийствами, при переходе уровень не теряет.
 const CLAN_LEVELS = [
@@ -4232,7 +4232,7 @@ const CLAN_LEVELS = [
 // пробыв в клане CLAN_DONATE_MIN_HOURS: иначе опыт можно было бы носить из
 // клана в клан.
 const CLAN_DONATIONS = {
-  normal: { shards: 30,   xp: 10,  perDay: 3 },
+  normal: { shards: 30,   xp: 30,  perDay: 3 },
   big:    { liberty: 100, xp: 100, perDay: 3 },
 };
 const CLAN_DONATION_KINDS = ['normal', 'big'];
