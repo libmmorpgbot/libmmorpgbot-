@@ -922,6 +922,10 @@ function _clanStorageHTML() {
     return `<div class="clan-empty">${typeof t === 'function' ? t('clanStorageLoading') : 'Загрузка...'}</div>`;
   }
 
+  // Казна Liberty — сверху и всегда, даже у закрытого хранилища: сюда
+  // приходит награда Войны гильдий, и клан должен её видеть.
+  const treasury = _clanTreasuryHTML(s);
+
   // Not bought yet — that is the whole tab until it is. The leader gets the
   // button (with what it costs and what they hold); everyone else is told who
   // can open it, so nobody is left guessing why the tab is empty.
@@ -929,7 +933,7 @@ function _clanStorageHTML() {
     const cost = s.unlockCost || 0;
     const gold = (player && player.gold) || 0;
     const afford = gold >= cost;
-    return `
+    return `${treasury}
       <div class="clan-storage-gate">${tVars('clanStorageLockedFmt', { n: _num(cost) })}</div>
       ${s.isLeader
         ? `<div class="clan-storage-row">
@@ -1001,15 +1005,72 @@ function _clanStorageHTML() {
     : '';
 
   return `
+    ${treasury}
     ${gate}
     <div class="clan-section-hdr">${t('clanStorageHdr')}</div>
     <div class="clan-storage-list">${poolRows}</div>
     <div class="clan-section-hdr">${s.isLeader ? t('clanStorageAllocHdrLeader') : t('clanStorageAllocHdr')}</div>
     <div class="clan-storage-list">${allocRows}</div>
     ${claimBtn}
-    ${s.canUse ? `<div class="clan-section-hdr">${t('clanStorageDepositHdr')}</div>
+    ${s.depositsClosed
+      ? `<div class="clan-storage-gate">Осколки больше нельзя класть в хранилище. То, что уже лежит, лидер раздаёт как раньше.</div>`
+      : (s.canUse ? `<div class="clan-section-hdr">${t('clanStorageDepositHdr')}</div>
     <div class="clan-storage-list">${depositRows}</div>
-    ${depositAllBtn}` : ''}`;
+    ${depositAllBtn}` : '')}`;
+}
+
+// ── Казна клана (Liberty) ─────────────────────────────────────────────────
+// Приходит с Войны гильдий: обе правые вышки — 200 в сутки, обе левые — 100.
+// Раздаёт лидер, сразу на баланс участника (clanTreasuryGive).
+const _CLAN_NX_REASON = {
+  guild_war_right: 'Война гильдий · правые вышки',
+  guild_war_left: 'Война гильдий · левые вышки',
+};
+function _clanTreasuryHTML(s) {
+  const tr = s && s.treasury;
+  if (!tr) return '';
+  const n = tr.nexum || 0;
+  const log = (tr.log || []).slice(0, 8).map(l => {
+    const plus = l.delta > 0;
+    const what = plus ? (_CLAN_NX_REASON[l.reason] || l.reason) : `Выдано: ${_esc(l.username || '—')}`;
+    const when = l.at ? new Date(l.at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '';
+    return `<div class="clan-storage-row clan-tr-row">
+      <span class="clan-storage-name">${what}<span class="clan-storage-who"> ${when}</span></span>
+      <span class="clan-storage-qty" style="color:${plus ? '#8fe08a' : '#e8a35a'}">${plus ? '+' : '−'}${_num(Math.abs(l.delta))}</span>
+    </div>`;
+  }).join('');
+  const canGive = s.isLeader && n > 0;
+  return `
+    <div class="clan-section-hdr">Казна клана</div>
+    <div class="clan-treasury">
+      <img class="clan-treasury-coin" src="/images/nexum-coin_v2.png" alt="">
+      <div class="clan-treasury-body">
+        <div class="clan-treasury-sum">${_num(n)} <small>Liberty</small></div>
+        <div class="clan-treasury-note">Награда Войны гильдий: правые вышки — 200, левые — 100 в сутки. Раздаёт лидер.</div>
+      </div>
+      ${canGive ? `<button class="clan-btn-sm" onclick="_clanTreasuryGivePrompt()">Выдать</button>` : ''}
+    </div>
+    ${log ? `<div class="clan-storage-list">${log}</div>` : ''}`;
+}
+
+function _clanTreasuryGivePrompt() {
+  const s = _clanStorage;
+  const max = (s && s.treasury && s.treasury.nexum) || 0;
+  if (!s || !s.members || !s.members.length) {
+    _marketToast(t('clanStorageNoEligible'), 'err');
+    return;
+  }
+  const list = s.members.map((m, i) => `${i + 1}. ${m.username}`).join('\n');
+  const pick = prompt(`Кому выдать Liberty из казны?\n${list}`, '1');
+  if (pick == null) return;
+  const target = s.members[Math.floor(Number(pick)) - 1];
+  if (!target) { _marketToast(t('clanStorageBadPick'), 'err'); return; }
+  const raw = prompt(`Сколько Liberty выдать игроку ${target.username}? (в казне ${max})`, String(max));
+  if (raw == null) return;
+  const n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n <= 0) return;
+  if (n > max) { _marketToast(tVars('clanStorageTooMany', { max }), 'err'); return; }
+  netClanTreasuryGive(target.telegramId, n);
 }
 
 // ── Активность клана ──────────────────────────────────────

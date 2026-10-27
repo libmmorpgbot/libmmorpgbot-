@@ -1084,6 +1084,17 @@ canvas { display:block; width:100%; height:100%; }
   background: rgba(230,148,25,.10); border: 1px solid rgba(230,148,25,.28); color: #e6af5e;
 }
 .clan-storage-list { display: flex; flex-direction: column; gap: 6px; }
+.clan-treasury {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 10px 12px; border-radius: 10px;
+  background: linear-gradient(90deg, rgba(90,180,255,.16), rgba(10,20,34,.6));
+  border: 1px solid rgba(110,190,255,.35); box-shadow: 0 0 18px -8px rgba(110,190,255,.7);
+}
+.clan-treasury-coin { width: 34px; height: 34px; flex: none; filter: drop-shadow(0 0 6px rgba(110,190,255,.6)); }
+.clan-treasury-body { flex: 1; min-width: 0; }
+.clan-treasury-sum { font-size: 18px; font-weight: 800; color: #9fdcff; }
+.clan-treasury-sum small { font-size: 11px; color: #7fb4d8; font-weight: 700; }
+.clan-treasury-note { font-size: 10.5px; color: #8ea4b8; line-height: 1.35; }
+.clan-tr-row { padding: 5px 9px; }
 .clan-storage-row {
   display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 8px;
   background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.06);
@@ -4622,6 +4633,9 @@ canvas { display:block; width:100%; height:100%; }
   background: rgba(255,207,138,.06); border: 1px solid rgba(255,207,138,.22); }
 .gwr-shards { display: grid; grid-template-columns: repeat(3, 22px); gap: 3px; flex: 0 0 auto; }
 .gwr-shards img { width: 22px; height: 22px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(0 0 4px rgba(255,200,120,.35)); }
+.gwr-shards img[src*="nexum-coin"] { width: 40px; height: 40px; image-rendering: auto; grid-column: 1 / -1; filter: drop-shadow(0 0 8px rgba(110,190,255,.6)); }
+.gwo-hdr { margin-top: 12px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #cfc4f0; }
+.gwo + .gwo { margin-top: 6px; }
 .gwr-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .gwr-txt b { color: #ffcf8a; font-size: 13px; }
 .gwr-txt span { color: #b9a990; font-size: 11.5px; line-height: 1.35; }

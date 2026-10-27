@@ -3071,6 +3071,9 @@ function netClanStorageDepositAll() {
 function netClanStorageGive(telegramId, id, qty) {
   if (socket?.connected) socket.emit('clanStorageGive', { telegramId, id, qty });
 }
+function netClanTreasuryGive(telegramId, amount) {
+  if (socket?.connected) socket.emit('clanTreasuryGive', { telegramId, amount });
+}
 function netClanStorageCancel(telegramId, id) {
   if (socket?.connected) socket.emit('clanStorageCancel', { telegramId, id });
 }

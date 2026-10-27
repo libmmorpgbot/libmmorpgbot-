@@ -252,6 +252,28 @@ module.exports = function registerSocial(s, safeOn, deps) {
       if (sock) sock.emit('clanStorageOk', { msg: 'Вам выдали предмет из хранилища клана' });
     }));
 
+  // Казна клана: лидер отдаёт Liberty участнику — сразу на баланс.
+  safeOn('clanTreasuryGive', ({ telegramId, amount } = {}) =>
+    s.act('clanTreasuryGive', 'clanError', async (t, pid) => {
+      const target = await byTg(t, telegramId);
+      const m = await clans.clanOf(t, pid);
+      if (!target) fail('Игрок не найден', 'no_user');
+      if (!m) fail('Вы не состоите в клане', 'no_clan');
+      const n = Math.floor(Number(amount));
+      if (!Number.isSafeInteger(n) || n <= 0) fail('Неверная сумма', 'bad_amount');
+      const res = await clans.giveNexum(t, pid, m.clanId, target, n);
+      const self = Number(target) === Number(pid);
+      if (self) await s.pushBalances(t);
+      await pushClanStorage(t);
+      s.socket.emit('clanStorageOk', { msg: `Выдано из казны: ${res.qty} Liberty` });
+      const sock = !self && deps.socketForPlayerId && deps.socketForPlayerId(target);
+      if (sock) {
+        sock.emit('nexumBalanceUpdate', { balance: res.balance });
+        sock.emit('clanStorageOk', { msg: `Лидер выдал вам ${res.qty} Liberty из казны клана` });
+      }
+      return res;
+    }, r => r && { qty: r.qty, left: r.left }));
+
   // No payload: the client's button takes everything waiting for it.
   safeOn('clanStorageClaim', () =>
     s.act('clanStorageClaim', 'clanError', async (t, pid) => {

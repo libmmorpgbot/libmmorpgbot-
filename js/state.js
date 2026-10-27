@@ -305,7 +305,7 @@ let _race10Portal = null;
 // sit in this initializer with nothing reading it, and the only thing it
 // could do was invite someone to point the bar at a number that moves only
 // when a whole guildWarState packet happens to arrive.
-let _gwState = { phase: 'closed', nextAt: 0, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0, towers: [], holdClanName: null, holdUntil: 0 };
+let _gwState = { phase: 'closed', nextAt: 0, sides: {}, ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0, towers: [], holdClanName: null, holdUntil: 0 };
 
 // Страх (Fear) — on-demand, solo wave-survival instance: no registration
 // queue and no scheduled window, unlike the arena/race above — entering IS

@@ -3386,12 +3386,14 @@ const ARENA3_HOURS_MSK = [21];
 const ARENA3_WINDOW_MS = 60 * 60 * 1000;
 
 // ── Guild War ("Война гильдий") schedule ─────────────────────────────────────
-// Every day, 22:00–22:15 Moscow time — one sealed zone, one stationary tower.
-// Whichever clan lands the killing blow owns it until another clan re-fights
-// it down to 0 (full HP reset on every capture). Ownership itself has no
-// schedule — it persists across the closed 22:15-22:00 gap, only the zone's
-// combat access opens and closes on this window.
-const GUILD_WAR_DAYS_MSK  = [0, 1, 2, 3, 4, 5, 6];
+// Два раза в неделю — среда и суббота, 22:00–22:15 по Москве (0 = воскресенье,
+// как у турнира ниже). Четыре вышки по углам: две левые и две правые.
+// Клан, который к концу окна держит ОБЕ вышки своей стороны, становится её
+// владельцем и получает Liberty каждый день (GUILD_WAR_SIDE_LIBERTY) прямо в
+// казну клана — раздаёт её лидер. Обе стороны у одного клана — обе выплаты,
+// 300 в день. Сторона, которую никто не собрал целиком, остаётся у прежнего
+// владельца. Владение живёт между окнами, вышки в начале окна — ничьи.
+const GUILD_WAR_DAYS_MSK  = [3, 6];
 const GUILD_WAR_HOURS_MSK = [22];
 const GUILD_WAR_WINDOW_MS = 15 * 60 * 1000;
 
@@ -3400,15 +3402,23 @@ const GUILD_WAR_WINDOW_MS = 15 * 60 * 1000;
 // четверти EVENT_BOSS.hp каждая (и меняются вместе с ним).
 const GUILD_WAR_TOWER_COUNT = 4;
 const GUILD_WAR_TOWER_HP = Math.round(EVENT_BOSS.hp / GUILD_WAR_TOWER_COUNT);
-// Сколько клан должен непрерывно держать ВСЕ четыре вышки, чтобы победить.
-// Потеря любой вышки сбрасывает отсчёт.
+// Если один клан непрерывно держит ВСЕ четыре вышки столько времени — война
+// заканчивается досрочно, и обе стороны его. Потеря любой вышки сбрасывает
+// отсчёт.
 const GUILD_WAR_HOLD_MS = 5 * 60 * 1000;
 
-// Passive income while owned: a random total of 10-30 shard units per hour,
-// spread across UNIQUE_SHARDS' kinds (see _rollGuildWarIncome, server/
-// index.js), credited 24/7 regardless of whether the zone is currently open.
-const GUILD_WAR_SHARD_MIN = 10;
-const GUILD_WAR_SHARD_MAX = 30;
+// Стороны поля: номера вышек (Room.spawnGuildWarTowers — 0 левая верхняя,
+// 1 правая верхняя, 2 левая нижняя, 3 правая нижняя) и сколько Liberty в
+// сутки даёт владение стороной. Выплата — раз в московские сутки, в 00:00
+// (server/game/guildwar.js, _gwPayDaily), в казну клана (clans.nexum).
+const GUILD_WAR_SIDES = {
+  right: { towers: [1, 3], liberty: 200 },
+  left:  { towers: [0, 2], liberty: 100 },
+};
+const GUILD_WAR_SIDE_KEYS = ['right', 'left'];
+// Как часто проверять, не пора ли платить. Выплата идемпотентна (paid_day в
+// guild_war_state), так что частая проверка ничего не платит дважды, а
+// перезапуск сервера в полночь не теряет день.
 const GUILD_WAR_INCOME_INTERVAL_MS = 60 * 60 * 1000;
 
 // ── Tournament ("Турнир", 32-player double elimination) ─────────────────────
@@ -4865,7 +4875,8 @@ if (typeof module !== 'undefined') module.exports = {
   TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, TOURNAMENT_WINDOW_MS, TOURNAMENT_SIZE, TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_FIGHT_MS, TOURNAMENT_COUNTDOWN_MS, TOURNAMENT_ROUND_GAP_MS,
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
-  GUILD_WAR_TOWER_HP, GUILD_WAR_TOWER_COUNT, GUILD_WAR_HOLD_MS, GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
+  GUILD_WAR_TOWER_HP, GUILD_WAR_TOWER_COUNT, GUILD_WAR_HOLD_MS, GUILD_WAR_INCOME_INTERVAL_MS,
+  GUILD_WAR_SIDES, GUILD_WAR_SIDE_KEYS,
   GRAM_MIN_WITHDRAW,
   SKILL_SELF_HEAL, SKILL_HASTE, skillHasteOf,
   SKILL_BUFFS, skillBuffOf,

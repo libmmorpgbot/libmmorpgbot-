@@ -4,35 +4,41 @@
 // (createGuildWar(deps)), same pattern as arena3.js/death-battle.js.
 const {
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS, GUILD_WAR_TOWER_HP, GUILD_WAR_HOLD_MS,
-  GUILD_WAR_SHARD_MIN, GUILD_WAR_SHARD_MAX, GUILD_WAR_INCOME_INTERVAL_MS,
+  GUILD_WAR_INCOME_INTERVAL_MS, GUILD_WAR_SIDES, GUILD_WAR_SIDE_KEYS,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
-  UNIQUE_SHARDS,
 } = require('../../shared/definitions');
 const { FLOOR_IDS } = require('../game/floors');
 // Storage is INJECTED. This file used to require two Mongo models directly,
 // which made the last piece of game logic in the tree that could not run
 // without Mongo — and none of what it does with them is Mongo-shaped: load the
-// castle's owner, save it, add shards to a clan's storage, tell that clan.
-// Four functions, handed in, so the schedule and the capture rules stay here
-// and the persistence lives with the rest of the persistence.
+// sides' owners, save one, pay the day's Liberty, tell that clan. Handed in,
+// so the schedule and the capture rules stay here and the persistence lives
+// with the rest of the persistence (server/db/repos/guildwar.js).
 module.exports = function createGuildWar(deps) {
   const {
     io, playerFloorMap, _socketForTelegramId, notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
-    loadCastle, saveCastle, grantClanStorage, clanForStorage, clanStorageViewFor,
+    loadSides, saveSide, payDaily, clanForStorage, clanStorageViewFor,
   } = deps;
 
   // ── Война гильдий (Guild War) ────────────────────────────────────────────────
-  // Daily window 22:00-22:15 MSK on its own floor with four crystal towers,
-  // one per corner room (Room.spawnGuildWarTowers). A tower changes hands the
-  // way the old castle did: whoever lands the killing blow takes it for their
-  // clan and it comes back at full health (Room.attackEnemy). The clan that
-  // holds ALL FOUR at once for GUILD_WAR_HOLD_MS unbroken wins: it becomes the
-  // castle's owner (persisted, paid hourly shards by _gwGrantIncome) and the
-  // window ends early. Losing any tower resets that clock. A window that ends
-  // with no winner leaves the previous owner in place. Every window starts
-  // with all four towers neutral.
+  // Twice a week (GUILD_WAR_DAYS_MSK), 22:00-22:15 MSK, on its own floor with
+  // four crystal towers, one per corner room (Room.spawnGuildWarTowers).
+  // Whoever lands the killing blow takes a tower for their clan and it comes
+  // back at full health (Room.attackEnemy).
+  //
+  // Награда — стороны поля, а не один замок. Клан, который к концу окна держит
+  // обе правые вышки, владеет правой стороной (200 Liberty в сутки), обе
+  // левые — левой (100). Сторона, которую никто не собрал целиком, остаётся у
+  // прежнего владельца. Держать все четыре GUILD_WAR_HOLD_MS подряд — это
+  // досрочная победа: обе стороны сразу, окно закрывается. Каждое окно
+  // начинается с ничьих вышек. Деньги — раз в московские сутки, в казну
+  // клана (_gwPayDaily), раздаёт их лидер.
   const _gw = {
     phase: 'closed',      // 'closed' → 'live' → ('won' for a few seconds) → 'closed'
+    // Владельцы сторон: { clanId, name, icon, capturedAt } или null.
+    sides: { right: null, left: null },
+    // Клан, у которого ОБЕ стороны (иначе null) — для старых полей пакета и
+    // строки в логе загрузки.
     ownerClanId: null, ownerClanName: null, ownerClanIcon: null, capturedAt: 0,
     // Кто сейчас держит все четыре и с какого момента.
     holdClanId: null, holdClanName: null, holdClanIcon: null, holdSince: 0,
@@ -55,9 +61,38 @@ module.exports = function createGuildWar(deps) {
     return nextEventStartAt(GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, from);
   }
 
+  function _gwSyncOwner() {
+    const r = _gw.sides.right, l = _gw.sides.left;
+    const both = r && l && r.clanId === l.clanId ? r : null;
+    _gw.ownerClanId = both ? both.clanId : null;
+    _gw.ownerClanName = both ? both.name : null;
+    _gw.ownerClanIcon = both ? both.icon : null;
+    _gw.capturedAt = both ? Math.max(r.capturedAt || 0, l.capturedAt || 0) : 0;
+  }
+
+  function _gwSideView(key) {
+    const sd = _gw.sides[key];
+    return {
+      clanId: sd ? sd.clanId : null, clanName: sd ? sd.name : null, clanIcon: sd ? sd.icon : null,
+      liberty: GUILD_WAR_SIDES[key].liberty, towers: GUILD_WAR_SIDES[key].towers,
+    };
+  }
+
+  // Сторона перешла клану (или осталась у него). Запоминается сразу и
+  // пишется в базу — перезапуск не должен отдавать сторону никому.
+  function _gwSetSide(key, owner) {
+    const prev = _gw.sides[key];
+    const at = (prev && prev.clanId === owner.clanId) ? (prev.capturedAt || Date.now()) : Date.now();
+    _gw.sides[key] = { clanId: owner.clanId, name: owner.name, icon: owner.icon, capturedAt: at };
+    _gwSyncOwner();
+    saveSide(key, owner.clanId, at).catch(err => console.error('[guildwar] persist side failed', err));
+    return !prev || prev.clanId !== owner.clanId;
+  }
+
   function _gwPublicState() {
     return {
       phase: _gw.phase,
+      sides: { right: _gwSideView('right'), left: _gwSideView('left') },
       nextAt: _gwNextOpenAt(),
       closesAt: _gw.closesAt || 0,
       ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName, ownerClanIcon: _gw.ownerClanIcon,
@@ -106,25 +141,19 @@ module.exports = function createGuildWar(deps) {
     _gwVictory({ clanId: _gw.holdClanId, clanName: _gw.holdClanName, clanIcon: _gw.holdClanIcon });
   }
 
-  // The clan that held all four for the full clock owns the castle from now
-  // on — same persistence and hourly income the old castle capture had.
+  // The clan that held all four for the full clock takes BOTH sides — the
+  // full 300 Liberty a day — and the window ends early.
   function _gwVictory(w) {
     const prevOwnerClanName = _gw.ownerClanName;
-    _gw.ownerClanId = w.clanId;
-    _gw.ownerClanName = w.clanName;
-    _gw.ownerClanIcon = w.clanIcon;
-    _gw.capturedAt = Date.now();
-    saveCastle({
-      ownerClanId: _gw.ownerClanId, ownerClanName: _gw.ownerClanName,
-      ownerClanIcon: _gw.ownerClanIcon, capturedAt: _gw.capturedAt,
-    }).catch(err => console.error('[guildwar] persist failed', err));
+    const owner = { clanId: w.clanId, name: w.clanName, icon: w.clanIcon };
+    for (const key of GUILD_WAR_SIDE_KEYS) _gwSetSide(key, owner);
     _gw.phase = 'won';
     clearTimeout(_gw.closeTimer);
     _gw.closeTimer = safeTimeout('gwClose', _gwCloseWindow, GW_VICTORY_LINGER_MS);
     io.emit('guildWarVictory', { clanName: w.clanName, clanIcon: w.clanIcon, prevOwnerClanName });
     io.emit('chatMsg', {
       username: 'СОБЫТИЕ',
-      text: `🏆 Клан «${w.clanName}» удержал все 4 вышки и победил в Войне гильдий!`,
+      text: `🏆 Клан «${w.clanName}» удержал все 4 вышки и победил в Войне гильдий! Обе стороны его — ${GUILD_WAR_SIDES.right.liberty + GUILD_WAR_SIDES.left.liberty} Liberty в казну каждый день.`,
       time: new Date().toISOString(),
     });
     _gwClearHold();
@@ -171,7 +200,31 @@ module.exports = function createGuildWar(deps) {
   // connection near the enterLocation handler) exists for: this runs from a
   // module-level timer with no socket of its own in scope, so it has to reach
   // into each affected connection from outside.
+  // Конец окна без досрочной победы: каждая сторона — тому, кто держит обе её
+  // вышки. Не собранная целиком сторона остаётся у прежнего владельца.
+  function _gwSettleSides() {
+    const byIdx = new Map(_gwTowers().map(t => [t.gwIndex, t]));
+    const lines = [];
+    for (const key of GUILD_WAR_SIDE_KEYS) {
+      const [a, b] = GUILD_WAR_SIDES[key].towers.map(i => byIdx.get(i));
+      const sideRu = key === 'right' ? 'правые' : 'левые';
+      if (a && b && a.ownerClanId != null && a.ownerClanId === b.ownerClanId) {
+        _gwSetSide(key, { clanId: a.ownerClanId, name: a.ownerClanName, icon: a.ownerClanIcon });
+        lines.push(`клан «${a.ownerClanName}» держит обе ${sideRu} вышки — ${GUILD_WAR_SIDES[key].liberty} Liberty в казну каждый день`);
+      } else {
+        const prev = _gw.sides[key];
+        lines.push(prev ? `${sideRu} вышки никто не собрал — остаются у «${prev.name}»` : `${sideRu} вышки никто не собрал`);
+      }
+    }
+    io.emit('chatMsg', {
+      username: 'СОБЫТИЕ',
+      text: `🏰 Война гильдий окончена: ${lines.join('; ')}.`,
+      time: new Date().toISOString(),
+    });
+  }
+
   function _gwCloseWindow() {
+    if (_gw.phase === 'live') _gwSettleSides();
     _gw.phase = 'closed';
     _gw.closesAt = 0;
     clearTimeout(_gw.closeTimer);
@@ -200,11 +253,6 @@ module.exports = function createGuildWar(deps) {
     io.emit('guildWarState', _gwPublicState());
   }
 
-  // Same $inc-then-$push pattern already inlined a few times elsewhere for
-  // clan storage credit (e.g. the deposit/allocation-return handlers further
-  // down) — factored out here since the income job needs it and there was no
-  // shared top-level version yet.
-
   // Pushes a fresh clanStorage payload to every online member — top-level twin
   // of the per-connection pushClanStorage (handlers2/social.js), needed
   // because there is no socket in scope inside the income job.
@@ -212,83 +260,70 @@ module.exports = function createGuildWar(deps) {
   // ── «хранилище клана закрыто», хотя оно открыто ────────────────────────────
   // Здесь стояла своя, урезанная копия пакета: { storageUnlocked, storage }.
   // Клиент (_clanStorageHTML, js/clans.js) читает поле `unlocked`, а не
-  // `storageUnlocked`, и заменяет пакетом ВСЁ состояние хранилища. Раз в час,
-  // когда клан-владелец замка получал осколки, у каждого его участника в сети
-  // вкладка показывала «закрыто» (а заодно теряла canUse, isLeader и раздачи)
-  // — до следующей синхронизации. Теперь каждому уходит тот же полный вид,
-  // что и по clanStorageSync: одна форма пакета на всю игру.
-  async function _gwStoragePushToClan(clan) {
+  // `storageUnlocked`, и заменяет пакетом ВСЁ состояние хранилища. Теперь
+  // каждому уходит тот же полный вид, что и по clanStorageSync: одна форма
+  // пакета на всю игру.
+  async function _gwStoragePushToClan(clan, note) {
     for (const m of clan.members) {
       const target = _socketForTelegramId(m.telegramId);
       if (!target || m.playerId == null) continue;
       const view = await clanStorageViewFor(clan._id, m.playerId).catch(() => null);
       if (view) target.emit('clanStorage', view);
+      if (note) target.emit('clanStorageOk', { msg: note });
     }
   }
 
-  // A random total of GUILD_WAR_SHARD_MIN..MAX shard units, each an
-  // independent uniform-random pick across UNIQUE_SHARDS' kinds — reads as
-  // "assorted" without any rarity weighting, which nothing in the brief asked
-  // for. Pure function, easy to sanity-check in isolation (see plan's
-  // verification section).
-  function _rollGuildWarIncome() {
-    const total = GUILD_WAR_SHARD_MIN + Math.floor(Math.random() * (GUILD_WAR_SHARD_MAX - GUILD_WAR_SHARD_MIN + 1));
-    const counts = new Map();
-    for (let i = 0; i < total; i++) {
-      const sh = UNIQUE_SHARDS[Math.floor(Math.random() * UNIQUE_SHARDS.length)];
-      counts.set(sh.id, (counts.get(sh.id) || 0) + 1);
+  // Раз в час: не наступили ли новые московские сутки, за которые владельцам
+  // сторон ещё не заплачено. Сама выплата идемпотентна (paid_day, repos/
+  // guildwar.js), поэтому лишняя проверка ничего не стоит, а перезапуск
+  // ровно в полночь не теряет день — его доплатит первая же проверка.
+  async function _gwPayDaily() {
+    const paid = await payDaily();
+    if (!paid.length) return paid;
+    const byClan = new Map();
+    for (const p of paid) {
+      const cur = byClan.get(p.clanId) || { amount: 0, keys: [] };
+      cur.amount += p.amount; cur.keys.push(p.key);
+      byClan.set(p.clanId, cur);
     }
-    return [...counts.entries()].map(([id, qty]) => ({ id, qty }));
-  }
-
-  // The first sub-daily recurring job in this codebase — every other scheduled
-  // event is a daily (or less frequent) nextEventStartAt chain. Aligns to the
-  // next wall-clock hour boundary (not "boot + 1h") so a mid-hour redeploy
-  // doesn't reset the cadence, and re-reads the owning clan fresh from Mongo
-  // on every fire (never trusts the cached name/icon) since it may have been
-  // renamed, or disbanded (handled by the clanDisband hook releasing
-  // _gw.ownerClanId) since the last grant. No retroactive back-pay for a
-  // missed hour during downtime — it's simply skipped, matching how nothing
-  // else in this codebase back-pays offline time.
-  async function _gwGrantIncome() {
-    if (!_gw.ownerClanId) return;
-    // A clan that no longer exists loses the castle rather than holding it
-    // forever: the income would otherwise be paid into nothing every hour.
-    const clan = await clanForStorage(_gw.ownerClanId).catch(() => null);
-    if (!clan) { _gw.ownerClanId = null; _gw.ownerClanName = null; _gw.ownerClanIcon = null; return; }
-    for (const { id, qty } of _rollGuildWarIncome()) {
-      await grantClanStorage(_gw.ownerClanId, id, qty);
+    for (const [clanId, { amount, keys }] of byClan) {
+      const clan = await clanForStorage(clanId).catch(() => null);
+      if (!clan) continue;
+      const what = keys.length > 1 ? 'все вышки' : (keys[0] === 'right' ? 'правые вышки' : 'левые вышки');
+      await _gwStoragePushToClan(clan, `Война гильдий: +${amount} Liberty в казну клана за ${what}`);
     }
-    const fresh = await clanForStorage(_gw.ownerClanId).catch(() => null);
-    if (fresh) await _gwStoragePushToClan(fresh);
+    // Владельцы могли смениться (клан распущен — строка обнулилась сама),
+    // так что состояние перечитывается из базы, а не правится по месту.
+    await _gwRestore();
+    return paid;
   }
 
   function _gwIncomeSafe() {
-    _gwGrantIncome().catch(err => console.error('_gwGrantIncome:', err));
+    _gwPayDaily().catch(err => console.error('_gwPayDaily:', err));
     _gw.incomeTimer = safeTimeout('gwIncome', _gwIncomeSafe, GUILD_WAR_INCOME_INTERVAL_MS);
   }
 
   function _gwIncomeSchedule() {
     clearTimeout(_gw.incomeTimer);
+    // Сразу — доплатить сутки, если сервер лежал в полночь, — и дальше с
+    // начала каждого часа.
+    _gwPayDaily().catch(err => console.error('_gwPayDaily:', err));
     const now = Date.now();
     const nextHour = Math.ceil(now / GUILD_WAR_INCOME_INTERVAL_MS) * GUILD_WAR_INCOME_INTERVAL_MS;
-    _gw.incomeTimer = safeTimeout('gwIncome', _gwIncomeSafe, nextHour - now);
+    _gw.incomeTimer = safeTimeout('gwIncome', _gwIncomeSafe, nextHour - now + 1000);
   }
 
-  // Restores the castle's owner at boot. Without it a restart hands the
-  // castle back to nobody and the next window starts from an empty tower —
-  // which is a week of a clan's work undone by a deploy.
+  // Restores the sides' owners at boot. Without it a restart hands both
+  // sides back to nobody — a war's worth of a clan's work undone by a deploy.
   async function _gwRestore() {
-    const st = await loadCastle().catch(() => null);
+    const st = await loadSides().catch(() => null);
     if (!st) return;
-    _gw.ownerClanId = st.ownerClanId || null;
-    _gw.ownerClanName = st.ownerClanName || null;
-    _gw.ownerClanIcon = st.ownerClanIcon || null;
-    _gw.capturedAt = st.capturedAt || 0;
+    for (const key of GUILD_WAR_SIDE_KEYS) _gw.sides[key] = st[key] || null;
+    _gwSyncOwner();
   }
 
   return {
     _gw, _gwNextOpenAt, _gwPublicState, _gwSchedule, _gwOpenWindow, _gwCloseWindow,
-    _gwApplyCapture, _gwHoldDone, _gwIncomeSchedule, _gwRestore,
+    _gwApplyCapture, _gwHoldDone, _gwIncomeSchedule, _gwRestore, _gwPayDaily, _gwSettleSides,
   };
 };

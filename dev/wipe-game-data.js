@@ -28,7 +28,7 @@ const TABLES = [
   'ledger', 'balances', 'gram_tx', 'unmatched_deposits',
   'player_items', 'player_progress', 'player_prefs', 'player_skills',
   'player_vip', 'player_season', 'player_special_quests', 'player_daily',
-  'clan_members', 'clan_applications', 'clan_storage', 'clan_allocations', 'clans',
+  'clan_members', 'clan_applications', 'clan_storage', 'clan_allocations', 'clan_nexum_log', 'clans',
   'market_listings', 'chat_messages', 'clan_chat', 'direct_messages',
   'pvp_history', 'guild_war_state', 'boss_state', 'players',
   // Partitioned. Truncating the parent empties every partition, and the

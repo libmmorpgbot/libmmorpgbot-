@@ -18,7 +18,7 @@
 //                                 a new one" (the $ne guard in the old code
 //                                 was working around exactly that)
 
-const { query } = require('../index');
+const { query, hasColumn } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
@@ -262,6 +262,12 @@ async function disband(db, leaderId, clanId) {
   const { rows: alloc } = await query(db,
     'SELECT count(*)::int n FROM clan_allocations WHERE clan_id = $1', [clanId]);
   if (alloc[0].n > 0) err('allocations_pending', 'Є нероздані Осколки — дочекайтесь, поки їх заберуть');
+  if (await nexumReady()) {
+    const { rows: nx } = await query(db, 'SELECT nexum FROM clans WHERE id = $1', [clanId]);
+    if (nx.length && Number(nx[0].nexum) > 0) {
+      err('treasury_not_empty', `Сначала раздайте Liberty из казны клана (осталось ${Number(nx[0].nexum)})`);
+    }
+  }
 
   await query(db, 'DELETE FROM clan_applications WHERE clan_id = $1', [clanId]);
   const { rows: gone } = await query(db,
@@ -356,7 +362,16 @@ async function _recordContribution(db, clanId, playerId, n) {
     [clanId, playerId, n]);
 }
 
+// ── класть в хранилище больше нельзя ────────────────────────────────────────
+// Решение владельца: осколки в хранилище клана больше не кладутся — теперь
+// туда приходит только Liberty с Войны гильдий (казна, ниже). То, что уже
+// лежит, лидер по-прежнему раздаёт (allocate). Обработчики остаются — старый
+// клиент ещё может прислать пакет, — но отвечают отказом, ничего не трогая.
+const DEPOSITS_CLOSED = true;
+const _depositsClosed = () => err('deposits_closed', 'Осколки больше нельзя класть в хранилище клана');
+
 async function deposit(db, playerId, clanId, itemId, qty) {
+  if (DEPOSITS_CLOSED) _depositsClosed();
   if (!SHARD_IDS.has(itemId)) err('not_shard', 'У сховище можна класти лише Осколки');
   const n = Math.max(1, Math.floor(Number(qty) || 0));
 
@@ -388,6 +403,7 @@ async function deposit(db, playerId, clanId, itemId, qty) {
 // still what actually decides what can be taken, so a stale count here can
 // only skip a kind, never over-take one.
 async function depositAll(db, playerId, clanId) {
+  if (DEPOSITS_CLOSED) _depositsClosed();
   await items.lockPlayer(db, playerId);
   await _requireMember(db, playerId, clanId);
   if (!await canUseStorage(db, clanId, playerId)) {
@@ -544,6 +560,66 @@ async function unlockStorage(db, playerId, clanId, cost) {
   return { newGold: paid.balance, cost, goldLeft: paid.balance };
 }
 
+// ── казна: Liberty клана ────────────────────────────────────────────────────
+// Приходит с Войны гильдий (server/game/guildwar.js → treasuryCredit), уходит
+// только раздачей лидера (giveNexum). Колонки до миграции 041 нет — тогда
+// казны просто нет: вид её не показывает, раздача отказывает.
+async function nexumReady() { return hasColumn('clans', 'nexum'); }
+
+async function treasuryCredit(db, clanId, amount, reason, ref = null) {
+  const n = Math.floor(Number(amount) || 0);
+  if (!(n > 0)) return null;
+  const { rows } = await query(db,
+    'UPDATE clans SET nexum = nexum + $2 WHERE id = $1 RETURNING nexum', [clanId, n]);
+  if (!rows.length) return null;             // клана уже нет — платить некому
+  await query(db, `
+    INSERT INTO clan_nexum_log (clan_id, delta, reason, ref) VALUES ($1, $2, $3, $4)`,
+    [clanId, n, reason, ref]);
+  return Number(rows[0].nexum);
+}
+
+// Лидер отдаёт `amount` Liberty участнику — сразу на баланс, без «забрать».
+// Списание с казны — одним UPDATE с `nexum >= $2`: две раздачи в одну
+// секунду не потратят одни и те же деньги. Кому можно — то же правило дней в
+// клане, что у осколков (canUseStorage): казна не должна стать способом
+// вывести деньги через только что принятого.
+async function giveNexum(db, leaderId, clanId, playerId, amount) {
+  if (!await nexumReady()) err('treasury_off', 'Казна клана ещё не включена');
+  const n = Math.floor(Number(amount) || 0);
+  if (!(n > 0)) err('bad_amount', 'Неверная сумма');
+  await _requireLeader(db, leaderId, clanId, { lock: true });
+  await _requireMember(db, playerId, clanId);
+  if (!await canUseStorage(db, clanId, playerId)) {
+    err('too_new', `Получать из казны можно с ${CLAN_STORAGE_MIN_DAYS} дней в клане`);
+  }
+  const { rows } = await query(db,
+    'UPDATE clans SET nexum = nexum - $2 WHERE id = $1 AND nexum >= $2 RETURNING nexum', [clanId, n]);
+  if (!rows.length) err('not_enough', 'В казне столько нет');
+  const { rows: lg } = await query(db, `
+    INSERT INTO clan_nexum_log (clan_id, delta, reason, player_id, by_id)
+    VALUES ($1, $2, 'give', $3, $4) RETURNING id`, [clanId, -n, playerId, leaderId]);
+  // Ключ — строка журнала казны: одна раздача — одно зачисление, повтор той
+  // же раздачи ledger узнает и не заплатит второй раз.
+  const paid = await money.credit(db, playerId, 'nexum', n, {
+    reason: 'clan_treasury', refType: 'clan', refId: String(clanId),
+    idemKey: `clan_treasury:${lg[0].id}`,
+  });
+  return { qty: n, left: Number(rows[0].nexum), balance: paid.balance };
+}
+
+async function _treasuryView(db, clanId) {
+  if (!await nexumReady()) return null;
+  const { rows: c } = await query(db, 'SELECT nexum FROM clans WHERE id = $1', [clanId]);
+  const { rows: log } = await query(db, `
+    SELECT l.delta, l.reason, l.created_at, p.username
+      FROM clan_nexum_log l LEFT JOIN players p ON p.id = l.player_id
+     WHERE l.clan_id = $1 ORDER BY l.created_at DESC, l.id DESC LIMIT 15`, [clanId]);
+  return {
+    nexum: c.length ? Number(c[0].nexum) : 0,
+    log: log.map(r => ({ delta: Number(r.delta), reason: r.reason, at: r.created_at, username: r.username })),
+  };
+}
+
 // ── reads ───────────────────────────────────────────────────────────────────
 
 // ── who may touch the storage ───────────────────────────────────────────────
@@ -627,7 +703,12 @@ async function storageView(db, clanId, playerId) {
     return { name: d ? d.name : id, img: d ? d.img : null };
   };
 
+  const treasury = await _treasuryView(db, clanId);
   return {
+    // Казна Liberty (null до миграции 041). Вклад в неё — только Война
+    // гильдий; кладут в хранилище больше ничего (DEPOSITS_CLOSED выше).
+    treasury,
+    depositsClosed: DEPOSITS_CLOSED,
     minDays: CLAN_STORAGE_MIN_DAYS,
     daysIn: days === Infinity ? null : Math.floor(Math.max(0, days || 0)),
     canUse: (days == null ? -1 : days) >= CLAN_STORAGE_MIN_DAYS,
@@ -805,6 +886,7 @@ module.exports = {
   create, apply, accept, decline, kick, leave, disband, setDescription,
   transferLeadership,
   addXp, deposit, depositAll, allocate, claim, cancelAllocation, unlockStorage,
+  nexumReady, treasuryCredit, giveNexum,
   fullView, clanOf, badgeOf, search, levelFor, ClanError,
   CLAN_XP_PER_KILL,
 };

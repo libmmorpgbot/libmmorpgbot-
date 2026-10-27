@@ -9941,27 +9941,33 @@ function _gwHoldHTML(st) {
   </div>`;
 }
 
-// Кто сейчас владеет замком и что ему это даёт.
+// Кто владеет правой и левой стороной и сколько Liberty это даёт в сутки.
+// Своя сторона подсвечена — та же пара «мы / чужие», что и на схеме.
 function _gwOwnerHTML(st) {
-  const has = !!st.ownerClanName;
-  const icon = has && typeof clanIconSVG === 'function' ? clanIconSVG(st.ownerClanIcon || 1, 34) : '🏰';
-  const mine = has && st.ownerClanName === _gwMyClan();
-  return `<div class="gwo${mine ? ' gwo-mine' : ''}">
-    <div class="gwo-ico">${icon}</div>
-    <div class="gwo-body">
-      <div class="gwo-k">${t('gwOwnerHdr')}</div>
-      <div class="gwo-v">${has ? _escHtml(st.ownerClanName) : t('guildWarNoOwnerLbl')}</div>
-      ${has ? `<div class="gwo-note">${t('gwOwnerIncome')}</div>` : ''}
-    </div>
-  </div>`;
+  const sides = st.sides || {};
+  const row = (key) => {
+    const sd = sides[key] || {};
+    const def = (typeof GUILD_WAR_SIDES !== 'undefined' && GUILD_WAR_SIDES[key]) || { liberty: 0 };
+    const has = !!sd.clanName;
+    const mine = has && sd.clanName === _gwMyClan();
+    const icon = has && typeof clanIconSVG === 'function' ? clanIconSVG(sd.clanIcon || 1, 30) : '🏰';
+    return `<div class="gwo${mine ? ' gwo-mine' : ''}">
+      <div class="gwo-ico">${icon}</div>
+      <div class="gwo-body">
+        <div class="gwo-k">${t(key === 'right' ? 'gwSideRight' : 'gwSideLeft')} · ${tVars('gwSidePerDayFmt', { n: def.liberty })}</div>
+        <div class="gwo-v">${has ? _escHtml(sd.clanName) : t('guildWarNoOwnerLbl')}</div>
+        ${has ? `<div class="gwo-note">${t('gwOwnerIncome')}</div>` : ''}
+      </div>
+    </div>`;
+  };
+  return `<div class="gwo-hdr">${t('gwOwnerHdr')}</div>${row('right')}${row('left')}`;
 }
 
 function _gwRewardsHTML() {
-  const shards = (typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : []).slice(0, 6)
-    .map(sh => `<img src="${sh.img}" alt="" title="${_escHtml(sh.name)}">`).join('');
+  const S = (typeof GUILD_WAR_SIDES !== 'undefined') ? GUILD_WAR_SIDES : { right: { liberty: 200 }, left: { liberty: 100 } };
   return `<div class="gwr">
-    <div class="gwr-shards">${shards}</div>
-    <div class="gwr-txt"><b>${tVars('gwRewardShardsFmt', { a: GUILD_WAR_SHARD_MIN, b: GUILD_WAR_SHARD_MAX })}</b>
+    <div class="gwr-shards"><img src="/images/nexum-coin_v2.png" alt="" title="Liberty"></div>
+    <div class="gwr-txt"><b>${tVars('gwRewardShardsFmt', { r: S.right.liberty, l: S.left.liberty, a: S.right.liberty + S.left.liberty })}</b>
       <span>${t('gwRewardShardsNote')}</span></div>
   </div>`;
 }

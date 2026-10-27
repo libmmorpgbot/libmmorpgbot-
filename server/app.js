@@ -458,7 +458,7 @@ const HEAVY = new Set([
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanSetDescription', 'clanSearch', 'clanRequest',
   'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
-  'clanStorageUnlock', 'clanStorageSync', 'clanActivitySync',
+  'clanStorageUnlock', 'clanStorageSync', 'clanActivitySync', 'clanTreasuryGive',
   'chat', 'chatHistory', 'clanChat', 'clanChatHistory', 'privMsg', 'privMsgHistory',
   'requestPlayerProfile', 'getPvpHistory', 'getReferrals', 'savePrefs',
   'selectChar', 'enterLocation', 'respawn',
@@ -549,7 +549,7 @@ for (const [channel, events] of Object.entries({
   clanError: ['clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
     'clanDisband', 'clanTransferLeader', 'clanSetDescription', 'clanSearch', 'clanRequest',
     'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
-    'clanStorageUnlock'],
+    'clanStorageUnlock', 'clanTreasuryGive'],
   clanStorageError: ['clanStorageSync', 'clanActivitySync'],
   chatError: ['chat', 'chatHistory', 'clanChat', 'clanChatHistory'],
   privMsgError: ['privMsg', 'privMsgHistory'],
@@ -1641,7 +1641,8 @@ async function boot() {
     gwRoom._gwIsOpen = () => !!(modesRuntime._gw && modesRuntime._gw.phase === 'live');
     const towers = gwRoom.spawnGuildWarTowers();
     console.log(`guild war: вышек ${towers.length}`
-      + `${modesRuntime._gw.ownerClanName ? ` · замком владеет «${modesRuntime._gw.ownerClanName}»` : ' · замок ничей'}`);
+      + ` · правые: ${modesRuntime._gw.sides.right ? `«${modesRuntime._gw.sides.right.name}»` : 'ничьи'}`
+      + ` · левые: ${modesRuntime._gw.sides.left ? `«${modesRuntime._gw.sides.left.name}»` : 'ничьи'}`);
   } else {
     console.error('[boot] вышки Войны гильдий не созданы — комната или режим недоступны');
   }
