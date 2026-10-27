@@ -884,6 +884,8 @@ const I18N_UI = {
   clanMembersByBmFmt: { ru: 'Участники ({n}) · по БМ', en: 'Members ({n}) · by BM', uk: 'Учасники ({n}) · за БМ', es: 'Miembros ({n}) · por PC', tr: 'Üyeler ({n}) · SG\'ye göre', pt: 'Membros ({n}) · por PC' },
   clanPerkGold:    { ru: 'Золото', en: 'Gold', uk: 'Золото', es: 'Oro', tr: 'Altın', pt: 'Ouro' },
   clanPerkXp:      { ru: 'Опыт', en: 'XP', uk: 'Досвід', es: 'XP', tr: 'Tecrübe', pt: 'XP' },
+  clanPerkAspd:    { ru: 'Скорость атаки', en: 'Attack speed', uk: 'Швидкість атаки', es: 'Velocidad de ataque', tr: 'Saldırı hızı', pt: 'Velocidade de ataque' },
+  clanPerkCrit:    { ru: 'Сила крита', en: 'Crit power', uk: 'Сила криту', es: 'Poder crítico', tr: 'Kritik gücü', pt: 'Poder crítico' },
   clanPerkAtk:     { ru: 'Атака', en: 'Attack', uk: 'Атака', es: 'Ataque', tr: 'Saldırı', pt: 'Ataque' },
   clanPerksHdr:    { ru: 'Бонусы клана по уровням', en: 'Clan Bonuses by Level', uk: 'Бонуси клану за рівнями', es: 'Bonos del Clan por Nivel', tr: 'Seviyeye Göre Klan Bonusları', pt: 'Bônus do Clã por Nível' },
   clanConfirmLeave:{ ru: 'Покинуть клан?', en: 'Leave the clan?', uk: 'Покинути клан?', es: '¿Abandonar el clan?', tr: 'Klandan ayrılınsın mı?', pt: 'Sair do clã?' },

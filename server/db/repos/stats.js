@@ -42,7 +42,7 @@
 const { query, hasColumn } = require('../index');
 const {
   CHAR_DEF, enhanceBonus, passiveBonusTotal, codexTotalBonus,
-  clanAtkBonusPct, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, gearSetBonusFor, UPGRADE_STEP, upgLvlCapped,
+  clanAtkBonusPct, clanBonusOf, xpToNext, runeBonusTotals, NEWBIE_BUFF, uniqueSetBonusFor, gearSetBonusFor, UPGRADE_STEP, upgLvlCapped,
 } = require('../../../shared/definitions');
 
 // Everything the computation needs, in ONE round trip. Three queries would be
@@ -366,6 +366,11 @@ function compute(row) {
   extraAS += (cd.atkSpeed || 0) * pt.atkSpeedPct;
 
   const clanPct = clanAtkBonusPct(row.clan_level || 0);
+  // Уровни клана 11–15: скорость атаки — доля от базовой скорости класса,
+  // сила крита — прибавкой. Тем же шагом, что в recompute() (js/player.js).
+  const clanB = clanBonusOf(row.clan_level || 0);
+  extraAS += (cd.atkSpeed || 0) * (clanB.aspd / 100);
+  critPowerAdd += clanB.crit / 100;
   if (clanPct > 0) a = Math.floor(a * (1 + clanPct / 100));
 
   return {

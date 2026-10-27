@@ -560,9 +560,8 @@ function clanIconSVG(id, size) {
 
 // ── Active clan bonuses (cumulative at current level) ─────
 function getClanBonus() {
-  if (!clanData) return { gold: 0, xp: 0, atk: 0 };
-  const lvl = CLAN_LEVELS[(clanData.level || 1) - 1];
-  return lvl ? { ...lvl.bonus } : { gold: 0, xp: 0, atk: 0 };
+  if (!clanData) return { gold: 0, xp: 0, atk: 0, aspd: 0, crit: 0 };
+  return clanBonusOf(clanData.level || 1);
 }
 
 // ── UI state ──────────────────────────────────────────────
@@ -768,6 +767,8 @@ function _renderClanHome(el) {
   if (bonus.gold > 0) bonusLines.push(`+${bonus.gold}% ${typeof t === 'function' ? t('clanPerkGold').toLowerCase() : 'золото'}`);
   if (bonus.xp   > 0) bonusLines.push(`+${bonus.xp}% ${typeof t === 'function' ? t('clanPerkXp').toLowerCase() : 'опыт'}`);
   if (bonus.atk  > 0) bonusLines.push(`+${bonus.atk}% ${typeof t === 'function' ? t('clanPerkAtk').toLowerCase() : 'атака'}`);
+  if (bonus.aspd > 0) bonusLines.push(`+${bonus.aspd}% ${t('clanPerkAspd').toLowerCase()}`);
+  if (bonus.crit > 0) bonusLines.push(`+${bonus.crit}% ${t('clanPerkCrit').toLowerCase()}`);
   const bonusHtml = bonusLines.length
     ? bonusLines.map(l => `<span class="clan-bonus-tag">${l}</span>`).join('')
     : `<span class="clan-bonus-tag clan-bonus-none">${typeof t === 'function' ? t('clanNoBonusYet') : 'бонусов пока нет'}</span>`;
@@ -868,11 +869,13 @@ function _renderClanHome(el) {
       gold: { icon: '💰', key: 'clanPerkGold', ru: 'Золото' },
       xp:   { icon: '⚡', key: 'clanPerkXp',   ru: 'Опыт' },
       atk:  { icon: '⚔️', key: 'clanPerkAtk',  ru: 'Атака' },
+      aspd: { icon: '💨', key: 'clanPerkAspd', ru: 'Скорость атаки' },
+      crit: { icon: '💥', key: 'clanPerkCrit', ru: 'Сила крита' },
     };
     const perks = [];
     CLAN_LEVELS.forEach((def, i) => {
-      const prev = i ? CLAN_LEVELS[i - 1].bonus : { gold: 0, xp: 0, atk: 0 };
-      for (const k of ['gold', 'xp', 'atk']) {
+      const prev = i ? CLAN_LEVELS[i - 1].bonus : {};
+      for (const k of ['gold', 'xp', 'atk', 'aspd', 'crit']) {
         if ((def.bonus[k] || 0) > (prev[k] || 0)) perks.push({ lvl: def.lvl, k, v: def.bonus[k] });
       }
     });

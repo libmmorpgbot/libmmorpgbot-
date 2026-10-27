@@ -434,6 +434,11 @@ function recompute() {
   // this file doesn't otherwise depend on clans.js loading first.
   const clanBonus = typeof getClanBonus === 'function' ? getClanBonus() : null;
   if (clanBonus && clanBonus.atk > 0) a = Math.floor(a * (1 + clanBonus.atk / 100));
+  // Уровни клана 11–15 — то же, что в compute() на сервере.
+  if (clanBonus) {
+    extraAS += (player.charDef.atkSpeed || 0) * ((clanBonus.aspd || 0) / 100);
+    critPowerAdd += (clanBonus.crit || 0) / 100;
+  }
 
   // Active skill buffs (timers live in js/state.js, ticked in js/game.js).
   // Derived here rather than mutating player.atk/def at cast time: this

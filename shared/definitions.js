@@ -4208,6 +4208,8 @@ const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop c
 // Пороги уровней 1–10 — ровно прежние, по просьбе владельца: каждый клан,
 // набравший опыт убийствами, остаётся на своём уровне. Новые 11–15 — выше
 // прежнего потолка в 800 000.
+// aspd и crit (с 11-го) — проценты скорости атаки (доля от базовой скорости
+// класса, как у рун и пассивок) и силы крита (прибавка к ней: 5 → +0.05).
 const CLAN_LEVELS = [
   { lvl:1,  xpReq:0,      bonus:{ gold:0,  xp:0,  atk:0  }, label:'Новообразованный' },
   { lvl:2,  xpReq:500,    bonus:{ gold:5,  xp:0,  atk:0  }, label:'Слаженный'        },
@@ -4219,11 +4221,11 @@ const CLAN_LEVELS = [
   { lvl:8,  xpReq:150000, bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
   { lvl:9,  xpReq:350000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
   { lvl:10, xpReq:800000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
-  { lvl:11, xpReq:1100000, bonus:{ gold:25, xp:20, atk:15 }, label:'Титанический'     },
-  { lvl:12, xpReq:1500000, bonus:{ gold:25, xp:25, atk:15 }, label:'Мифический'       },
-  { lvl:13, xpReq:2000000, bonus:{ gold:25, xp:25, atk:20 }, label:'Небесный'         },
-  { lvl:14, xpReq:2600000, bonus:{ gold:30, xp:25, atk:20 }, label:'Вечный'           },
-  { lvl:15, xpReq:3300000, bonus:{ gold:30, xp:30, atk:25 }, label:'Божественный'     },
+  { lvl:11, xpReq:1100000, bonus:{ gold:25, xp:20, atk:15, aspd:5, crit:5 }, label:'Титанический'     },
+  { lvl:12, xpReq:1500000, bonus:{ gold:25, xp:25, atk:15, aspd:10, crit:10 }, label:'Мифический'       },
+  { lvl:13, xpReq:2000000, bonus:{ gold:25, xp:25, atk:20, aspd:15, crit:15 }, label:'Небесный'         },
+  { lvl:14, xpReq:2600000, bonus:{ gold:30, xp:25, atk:20, aspd:20, crit:20 }, label:'Вечный'           },
+  { lvl:15, xpReq:3300000, bonus:{ gold:30, xp:30, atk:25, aspd:25, crit:25 }, label:'Божественный'     },
 ];
 
 // ── Пожертвования в клан ─────────────────────────────────────────────────────
@@ -4253,7 +4255,7 @@ const CLAN_DONATE_MIN_HOURS = 24;
 // accessor nobody notices is missing.
 function clanBonusOf(level) {
   const b = CLAN_LEVELS[(level || 1) - 1]?.bonus;
-  return { gold: b?.gold || 0, xp: b?.xp || 0, atk: b?.atk || 0 };
+  return { gold: b?.gold || 0, xp: b?.xp || 0, atk: b?.atk || 0, aspd: b?.aspd || 0, crit: b?.crit || 0 };
 }
 
 // The % attack bonus for a clan currently at `level` — used identically by
