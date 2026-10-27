@@ -5124,3 +5124,30 @@ canvas { display:block; width:100%; height:100%; }
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+/* ── Пожертвования в клан ──────────────────────────────────────────────────────
+   Две карточки во вкладке «Клан» (_clanDonateHTML, js/clans.js): обычное —
+   осколки, большое — Liberty. Точки — сколько из трёх сделано сегодня. */
+.clan-don-note { font-size: 11px; color: #8ea4b8; margin: -2px 0 8px; }
+.clan-don-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.clan-don {
+  display: flex; flex-direction: column; gap: 5px; padding: 10px; border-radius: 10px;
+  background: linear-gradient(180deg, rgba(232,185,62,.12), rgba(10,15,24,.6));
+  border: 1px solid rgba(232,185,62,.35);
+}
+.clan-don-big {
+  background: linear-gradient(180deg, rgba(110,190,255,.16), rgba(10,15,24,.6));
+  border-color: rgba(110,190,255,.45); box-shadow: 0 0 16px -8px rgba(110,190,255,.8);
+}
+.clan-don.off { opacity: .65; }
+.clan-don-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.clan-don-top b { font-size: 13px; color: #fff; }
+.clan-don-left { font-size: 10px; color: #8ea4b8; white-space: nowrap; }
+.clan-don-cost { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #cfd8e2; line-height: 1.25; }
+.clan-don-cost img { width: 20px; height: 20px; object-fit: contain; flex: none; }
+.clan-don-pts { font-size: 12px; font-weight: 800; color: #8fe08a; }
+.clan-don-dots { display: flex; gap: 4px; }
+.clan-don-dots i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,.15); }
+.clan-don-dots i.on { background: #e8b93e; box-shadow: 0 0 6px #e8b93e; }
+.clan-don .clan-btn-sm { margin-top: 2px; }
+.clan-don .clan-btn-sm:disabled { opacity: .45; cursor: default; }

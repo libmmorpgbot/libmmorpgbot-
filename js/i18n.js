@@ -862,9 +862,21 @@ const I18N_UI = {
   clanKickAsk: { ru: 'Исключить «{name}» из клана?', en: 'Kick "{name}" from the clan?', uk: 'Виключити «{name}» з клану?', es: '¿Expulsar a "{name}" del clan?', tr: '"{name}" klandan atılsın mı?', pt: 'Expulsar "{name}" do clã?' },
   clanTransferBtn: { ru: 'Сделать лидером', en: 'Make leader', uk: 'Зробити лідером', es: 'Nombrar líder', tr: 'Lider yap', pt: 'Tornar líder' },
   clanTransferAsk: { ru: 'Сделать «{name}» лидером клана? Вы станете обычным участником.', en: 'Make "{name}" the clan leader? You will become a regular member.', uk: 'Зробити «{name}» лідером клану? Ви станете звичайним учасником.', es: '¿Nombrar a "{name}" líder del clan? Pasarás a ser un miembro normal.', tr: '"{name}" klan lideri yapılsın mı? Siz sıradan bir üye olacaksınız.', pt: 'Tornar "{name}" líder do clã? Você se tornará um membro comum.' },
-  clanActivityHdr: { ru: 'Кто сколько внёс Осколков', en: 'Who has contributed how many Shards', uk: 'Хто скільки вніс Осколків', es: 'Quién aportó cuántos Fragmentos', tr: 'Kim kaç Parça bağışladı', pt: 'Quem contribuiu com quantos Fragmentos' },
-  clanActivityEmpty: { ru: 'Пока никто ничего не положил в хранилище', en: 'Nobody has deposited anything yet', uk: 'Поки ніхто нічого не поклав у сховище', es: 'Nadie ha depositado nada todavía', tr: 'Henüz kimse bir şey yatırmadı', pt: 'Ainda ninguém depositou nada' },
+  clanActivityHdr: { ru: 'Вклад участников', en: 'Members’ contributions', uk: 'Внесок учасників', es: 'Aportes de los miembros', tr: 'Üyelerin katkıları', pt: 'Contribuições dos membros' },
+  clanActivityEmpty: { ru: 'Пока никто ничего не пожертвовал', en: 'Nobody has donated anything yet', uk: 'Поки ніхто нічого не пожертвував', es: 'Nadie ha donado nada aún', tr: 'Henüz kimse bağış yapmadı', pt: 'Ninguém doou nada ainda' },
   clanActivityLeftClan: { ru: 'покинул клан', en: 'left the clan', uk: 'покинув клан', es: 'dejó el clan', tr: 'klandan ayrıldı', pt: 'saiu do clã' },
+  clanActivityPtsFmt: { ru: '{n} очков', en: '{n} pts', uk: '{n} очок', es: '{n} pts', tr: '{n} puan', pt: '{n} pts' },
+  clanDonateHdr: { ru: 'Пожертвования клану', en: 'Donate to the clan', uk: 'Пожертви клану', es: 'Donar al clan', tr: 'Klana bağış', pt: 'Doar ao clã' },
+  clanDonateNote: { ru: 'Только так растёт уровень клана. До {n} раз в сутки (МСК).', en: 'The only way the clan levels up. Up to {n} times a day (MSK).', uk: 'Лише так росте рівень клану. До {n} разів на добу (МСК).', es: 'La única forma de subir el nivel del clan. Hasta {n} veces al día (MSK).', tr: 'Klan seviyesi yalnızca böyle artar. Günde en fazla {n} kez (MSK).', pt: 'É a única forma de o clã subir de nível. Até {n} vezes por dia (MSK).' },
+  clanDonateNormal: { ru: 'Обычное', en: 'Regular', uk: 'Звичайне', es: 'Normal', tr: 'Normal', pt: 'Normal' },
+  clanDonateBig: { ru: 'Большое', en: 'Large', uk: 'Велике', es: 'Grande', tr: 'Büyük', pt: 'Grande' },
+  clanDonateShardsFmt: { ru: '{n} осколков каждого вида', en: '{n} of every shard kind', uk: '{n} осколків кожного виду', es: '{n} de cada tipo de fragmento', tr: 'her parça türünden {n}', pt: '{n} de cada tipo de fragmento' },
+  clanDonatePtsFmt: { ru: '+{n} очков клана', en: '+{n} clan points', uk: '+{n} очок клану', es: '+{n} puntos de clan', tr: '+{n} klan puanı', pt: '+{n} pontos de clã' },
+  clanDonateLeftFmt: { ru: 'сегодня {u}/{m}', en: 'today {u}/{m}', uk: 'сьогодні {u}/{m}', es: 'hoy {u}/{m}', tr: 'bugün {u}/{m}', pt: 'hoje {u}/{m}' },
+  clanDonateBtn: { ru: 'Пожертвовать', en: 'Donate', uk: 'Пожертвувати', es: 'Donar', tr: 'Bağışla', pt: 'Doar' },
+  clanDonateWaitFmt: { ru: 'Жертвовать можно через {h} ч после вступления — осталось {left} ч', en: 'You can donate {h} h after joining — {left} h left', uk: 'Жертвувати можна через {h} год після вступу — лишилось {left} год', es: 'Puedes donar {h} h después de unirte — faltan {left} h', tr: 'Katıldıktan {h} saat sonra bağış yapabilirsin — {left} saat kaldı', pt: 'Pode doar {h} h após entrar — faltam {left} h' },
+  clanDonateSoon: { ru: 'Пожертвования скоро появятся', en: 'Donations are coming soon', uk: 'Пожертви скоро зʼявляться', es: 'Las donaciones llegarán pronto', tr: 'Bağışlar yakında', pt: 'Doações em breve' },
+  clanDonateAsk: { ru: 'Пожертвовать клану: {what}?', en: 'Donate to the clan: {what}?', uk: 'Пожертвувати клану: {what}?', es: '¿Donar al clan: {what}?', tr: 'Klana bağışla: {what}?', pt: 'Doar ao clã: {what}?' },
   clanActivityQtyFmt: { ru: '{n} Осколков', en: '{n} Shards', uk: '{n} Осколків', es: '{n} Fragmentos', tr: '{n} Parça', pt: '{n} Fragmentos' },
   clanApplicationsFmt: { ru: 'Заявки ({n})', en: 'Applications ({n})', uk: 'Заявки ({n})', es: 'Solicitudes ({n})', tr: 'Başvurular ({n})', pt: 'Solicitações ({n})' },
   clanApproveBtn:  { ru: 'Принять', en: 'Accept', uk: 'Прийняти', es: 'Aceptar', tr: 'Kabul Et', pt: 'Aceitar' },
@@ -913,8 +925,6 @@ const I18N_UI = {
   tut_final_d:  { ru: 'Дальше — кланы, PvP, подземелья и рынок. Загляни в «Меню» справа вверху. Удачи, герой!', en: 'Next up: clans, PvP, dungeons and the market. Check the "Menu" in the top right. Good luck, hero!', uk: 'Далі — клани, PvP, підземелля і ринок. Зазирни в «Меню» праворуч угорі. Удачі, герою!', es: 'Lo siguiente: clanes, PvP, mazmorras y el mercado. Mira el «Menú» arriba a la derecha. ¡Suerte, héroe!', tr: 'Sırada klanlar, PvP, zindanlar ve pazar var. Sağ üstteki "Menü"ye göz at. Bol şans, kahraman!', pt: 'A seguir: clãs, PvP, masmorras e o mercado. Veja o «Menu» no canto superior direito. Boa sorte, herói!' },
 };
 
-// Clan perk-tree descriptions (js/clans.js's PERKS_RU array) — index-aligned,
-// since two entries share lvl:10 and can't be keyed by level alone.
 // ── In-world HUD/canvas text ──
 Object.assign(I18N_UI, {
   pvpOffToast:     { ru: 'ПК режим выключен', en: 'PvP mode off', uk: 'PvP режим вимкнено', es: 'Modo PvP desactivado', tr: 'PvP modu kapalı', pt: 'Modo PvP desativado' },
@@ -1621,20 +1631,6 @@ Object.assign(I18N_UI, {
   skillLevelUpToast: { ru: '↑ Навык +{n} ур.!', en: '↑ Skill +{n} lvl.!', uk: '↑ Навик +{n} рів.!', es: '↑ ¡Habilidad +{n} niv.!', tr: '↑ Yetenek +{n} sv.!', pt: '↑ Habilidade +{n} nív.!' },
   passiveLevelUpToast: { ru: '↑ Пассивка +{n} ур.!', en: '↑ Passive +{n} lvl.!', uk: '↑ Пасивка +{n} рів.!', es: '↑ ¡Pasiva +{n} niv.!', tr: '↑ Pasif +{n} sv.!', pt: '↑ Passiva +{n} nív.!' },
 });
-
-const I18N_CLAN_PERK_DESC = [
-  { en: '+5% gold from enemies',      uk: '+5% золота з ворогів',       es: '+5% de oro de enemigos',        tr: 'Düşmanlardan +%5 altın',        pt: '+5% de ouro de inimigos' },
-  { en: '+5% XP from enemies',        uk: '+5% досвіду з ворогів',      es: '+5% de XP de enemigos',         tr: 'Düşmanlardan +%5 tecrübe',      pt: '+5% de XP de inimigos' },
-  { en: '+10% total gold',            uk: '+10% до золота сумарно',     es: '+10% de oro total',             tr: 'Toplamda +%10 altın',           pt: '+10% de ouro total' },
-  { en: '+5% attack for members',     uk: '+5% до атаки учасників',     es: '+5% de ataque para miembros',   tr: 'Üyeler için +%5 saldırı',       pt: '+5% de ataque para membros' },
-  { en: '+10% total XP',              uk: '+10% до досвіду сумарно',    es: '+10% de XP total',              tr: 'Toplamda +%10 tecrübe',         pt: '+10% de XP total' },
-  { en: '+15% total gold',            uk: '+15% до золота сумарно',     es: '+15% de oro total',             tr: 'Toplamda +%15 altın',           pt: '+15% de ouro total' },
-  { en: '+10% total attack',          uk: '+10% до атаки сумарно',      es: '+10% de ataque total',          tr: 'Toplamda +%10 saldırı',         pt: '+10% de ataque total' },
-  { en: '+15% total XP',              uk: '+15% до досвіду сумарно',    es: '+15% de XP total',              tr: 'Toplamda +%15 tecrübe',         pt: '+15% de XP total' },
-  { en: '+20% gold',                  uk: '+20% до золота',             es: '+20% de oro',                   tr: '+%20 altın',                    pt: '+20% de ouro' },
-  { en: '+20% XP',                    uk: '+20% до досвіду',            es: '+20% de XP',                    tr: '+%20 tecrübe',                  pt: '+20% de XP' },
-  { en: '+15% attack',                uk: '+15% до атаки',              es: '+15% de ataque',                tr: '+%15 saldırı',                  pt: '+15% de ataque' },
-];
 
 function t(key) {
   const e = I18N_UI[key];

@@ -75,7 +75,7 @@ const WRITE_ACTIONS = new Set([
   'gramDepositRequest', 'gramWithdrawRequest',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim',
-  'clanStorageCancel', 'clanStorageUnlock', 'clanTreasuryGive',
+  'clanStorageCancel', 'clanStorageUnlock', 'clanTreasuryGive', 'clanDonate',
   'registerCodexSetItem', 'registerCodexGem', 'selectChar', 'respawn',
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
   // player-log row at all.

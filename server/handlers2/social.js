@@ -252,6 +252,41 @@ module.exports = function registerSocial(s, safeOn, deps) {
       if (sock) sock.emit('clanStorageOk', { msg: 'Вам выдали предмет из хранилища клана' });
     }));
 
+  // ── пожертвования ─────────────────────────────────────────────────────────
+  // Единственный путь опыта клана (clans.donate). Новый уровень разносится
+  // ПОСЛЕ коммита, как у старого опыта за убийства (afterClanXp, handlers2/
+  // world.js): атака клана входит в БМ каждого участника, а в бой попадает
+  // только через сессию — refreshClan кладёт новый % на игрока в комнате.
+  async function announceClanLevel(clanId) {
+    const view = await clans.fullView(null, clanId);
+    if (!view) return;
+    for (const m of (view.members || [])) {
+      await stats.refreshBm(null, m.playerId).catch(err =>
+        console.error(`[clanDonate] refreshBm ${m.playerId}:`, err.message));
+    }
+    for (const m of (view.members || [])) {
+      const sock = deps.socketForPlayerId && deps.socketForPlayerId(m.playerId);
+      if (!sock || !sock.data || !sock.data.session) continue;
+      await sock.data.session.refreshClan();
+      sock.emit('clanData', await clans.dataView(null, clanId, m.playerId));
+    }
+  }
+
+  safeOn('clanDonate', async ({ kind } = {}) => {
+    const res = await s.act('clanDonate', 'clanError', async (t, pid) => {
+      if (typeof kind !== 'string' || !kind) fail('Не выбран вид пожертвования', 'bad_kind');
+      const r = await clans.donate(t, pid, kind);
+      await s.pushItems(t); await s.pushBalances(t);
+      await pushClan(t);
+      s.socket.emit('clanStorageOk', { msg: `Спасибо! Клан получил +${r.xp} очков` });
+      return r;
+    }, r => r && { kind: r.kind, xp: r.xp, level: r.level });
+    if (res && res.leveledUp) {
+      await announceClanLevel(res.clanId).catch(err =>
+        console.error('[clanDonate] announce:', err.message));
+    }
+  });
+
   // Казна клана: лидер отдаёт Liberty участнику — сразу на баланс.
   safeOn('clanTreasuryGive', ({ telegramId, amount } = {}) =>
     s.act('clanTreasuryGive', 'clanError', async (t, pid) => {

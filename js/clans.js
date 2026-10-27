@@ -815,6 +815,7 @@ function _renderClanHome(el) {
         <div class="clan-xp-bar-bg"><div class="clan-xp-bar-fill" style="width:${xpPct}%"></div></div>
       </div>
       <div class="clan-bonus-row" style="margin-bottom:14px">${bonusHtml}</div>
+      ${_clanDonateHTML(c)}
       ${myBM ? `<div class="clan-my-bm">${typeof t === 'function' ? t('clanYourBmLbl') : 'Ваша БМ'}: <span>${myBM.toLocaleString()}</span></div>` : ''}
       <div style="margin-top:16px">
         ${isLeader
@@ -859,31 +860,31 @@ function _renderClanHome(el) {
       ${appsHtml}`;
   } else if (_clanHomeTab === 2) {
     // ── Навыки tab: perk tree by level ────────────────────
-    const PERKS_RU = [
-      { lvl:2,  icon:'💰', label:'Золото', desc:'+5% к золоту с врагов'   },
-      { lvl:3,  icon:'⚡', label:'Опыт',   desc:'+5% к опыту с врагов'    },
-      { lvl:4,  icon:'💰', label:'Золото', desc:'+10% к золоту суммарно'  },
-      { lvl:5,  icon:'⚔️', label:'Атака',  desc:'+5% к атаке участников'  },
-      { lvl:6,  icon:'⚡', label:'Опыт',   desc:'+10% к опыту суммарно'   },
-      { lvl:7,  icon:'💰', label:'Золото', desc:'+15% к золоту суммарно'  },
-      { lvl:8,  icon:'⚔️', label:'Атака',  desc:'+10% к атаке суммарно'   },
-      { lvl:9,  icon:'⚡', label:'Опыт',   desc:'+15% к опыту суммарно'   },
-      { lvl:10, icon:'💰', label:'Золото', desc:'+20% к золоту'            },
-      { lvl:10, icon:'⚡', label:'Опыт',   desc:'+20% к опыту'             },
-      { lvl:10, icon:'⚔️', label:'Атака',  desc:'+15% к атаке'             },
-    ];
-    const PERK_LABEL_KEY = { 'Золото':'clanPerkGold', 'Опыт':'clanPerkXp', 'Атака':'clanPerkAtk' };
-    const perksHtml = PERKS_RU.map((pk, idx) => {
+    // Дерево бонусов строится из самой таблицы CLAN_LEVELS: на каждом уровне —
+    // то, что выросло по сравнению с предыдущим. Раньше здесь был список,
+    // написанный руками, и он разошёлся бы с таблицей при первом же новом
+    // уровне.
+    const PERK_META = {
+      gold: { icon: '💰', key: 'clanPerkGold', ru: 'Золото' },
+      xp:   { icon: '⚡', key: 'clanPerkXp',   ru: 'Опыт' },
+      atk:  { icon: '⚔️', key: 'clanPerkAtk',  ru: 'Атака' },
+    };
+    const perks = [];
+    CLAN_LEVELS.forEach((def, i) => {
+      const prev = i ? CLAN_LEVELS[i - 1].bonus : { gold: 0, xp: 0, atk: 0 };
+      for (const k of ['gold', 'xp', 'atk']) {
+        if ((def.bonus[k] || 0) > (prev[k] || 0)) perks.push({ lvl: def.lvl, k, v: def.bonus[k] });
+      }
+    });
+    const perksHtml = perks.map(pk => {
+      const meta = PERK_META[pk.k];
       const unlocked = c.level >= pk.lvl;
-      const cls = unlocked ? 'clan-perk unlocked' : 'clan-perk locked';
-      const label = (typeof t === 'function' && PERK_LABEL_KEY[pk.label]) ? t(PERK_LABEL_KEY[pk.label]) : pk.label;
-      const descEntry = typeof I18N_CLAN_PERK_DESC !== 'undefined' ? I18N_CLAN_PERK_DESC[idx] : null;
-      const desc = (descEntry && typeof currentLang !== 'undefined' && descEntry[currentLang]) || pk.desc;
-      return `<div class="${cls}">
-        <div class="clan-perk-icon">${pk.icon}</div>
+      const label = typeof t === 'function' ? t(meta.key) : meta.ru;
+      return `<div class="${unlocked ? 'clan-perk unlocked' : 'clan-perk locked'}">
+        <div class="clan-perk-icon">${meta.icon}</div>
         <div class="clan-perk-body">
           <div class="clan-perk-name">${label} <span class="clan-perk-lvl">Ур.${pk.lvl}</span></div>
-          <div class="clan-perk-desc">${desc}</div>
+          <div class="clan-perk-desc">+${pk.v}% ${label.toLowerCase()}</div>
         </div>
       </div>`;
     }).join('');
@@ -902,12 +903,68 @@ function _renderClanHome(el) {
         <div class="clan-hdr-icon">${clanIconSVG(c.icon, 48)}</div>
         <div class="clan-hdr-info">
           <div class="clan-hdr-name">${_esc(c.name)}</div>
-          <div class="clan-hdr-level">${lvlDef.label} · Ур. ${c.level}/10</div>
+          <div class="clan-hdr-level">${lvlDef.label} · Ур. ${c.level}/${CLAN_LEVELS.length}</div>
         </div>
       </div>
       <div class="clan-tabs">${tabHtml}</div>
       ${bodyHtml}
     </div>`;
+}
+
+// ── Пожертвования ─────────────────────────────────────────
+// Единственный источник опыта клана. Сколько уже сделано сегодня и сколько
+// ждать новичку — с сервера (clanData.donations, repos/clans.js); здесь только
+// рисуется и проверяется то, что видно глазами: хватает ли осколков и Liberty.
+function _clanShardMin() {
+  if (typeof UNIQUE_SHARDS === 'undefined' || !player) return 0;
+  return Math.min(...UNIQUE_SHARDS.map(sh =>
+    (player.inventory || []).reduce((n, it) => n + (it && it.id === sh.id ? (it.qty || 1) : 0), 0)));
+}
+function _clanDonateHTML(c) {
+  const d = c.donations;
+  if (typeof CLAN_DONATIONS === 'undefined') return '';
+  const hdr = `<div class="clan-section-hdr">${t('clanDonateHdr')}</div>`;
+  if (!d || !d.ready) return `${hdr}<div class="clan-empty">${t('clanDonateSoon')}</div>`;
+  const total = CLAN_DONATION_KINDS.reduce((n, k) => n + CLAN_DONATIONS[k].perDay, 0);
+  const wait = d.waitHours > 0
+    ? `<div class="clan-storage-gate">${tVars('clanDonateWaitFmt', { h: d.minHours, left: d.waitHours })}</div>` : '';
+  const shardMin = _clanShardMin();
+  const nexum = Number(window._nexumBalance) || 0;
+  const card = (kind) => {
+    const def = CLAN_DONATIONS[kind];
+    const used = (d.used && d.used[kind]) || 0;
+    const left = def.perDay - used;
+    const enough = kind === 'normal' ? shardMin >= def.shards : nexum >= def.liberty;
+    const ok = left > 0 && !(d.waitHours > 0) && enough;
+    const cost = kind === 'normal'
+      ? `<img src="/images/uniq/shard/gold.png" alt="">${tVars('clanDonateShardsFmt', { n: def.shards })}`
+      : `<img src="/images/nexum-coin_v2.png" alt="">${def.liberty} Liberty`;
+    return `<div class="clan-don clan-don-${kind}${ok ? '' : ' off'}">
+      <div class="clan-don-top">
+        <b>${t(kind === 'normal' ? 'clanDonateNormal' : 'clanDonateBig')}</b>
+        <span class="clan-don-left">${tVars('clanDonateLeftFmt', { u: used, m: def.perDay })}</span>
+      </div>
+      <div class="clan-don-cost">${cost}</div>
+      <div class="clan-don-pts">${tVars('clanDonatePtsFmt', { n: def.xp })}</div>
+      <div class="clan-don-dots">${Array.from({ length: def.perDay }, (_, i) => `<i class="${i < used ? 'on' : ''}"></i>`).join('')}</div>
+      <button class="clan-btn-sm" ${ok ? '' : 'disabled'} onclick="_clanDonate('${kind}')">${t('clanDonateBtn')}</button>
+    </div>`;
+  };
+  return `${hdr}
+    <div class="clan-don-note">${tVars('clanDonateNote', { n: total })}</div>
+    ${wait}
+    <div class="clan-don-row">${CLAN_DONATION_KINDS.map(card).join('')}</div>`;
+}
+let _clanDonating = false;
+function _clanDonate(kind) {
+  if (_clanDonating || typeof CLAN_DONATIONS === 'undefined' || !CLAN_DONATIONS[kind]) return;
+  const def = CLAN_DONATIONS[kind];
+  const what = kind === 'normal' ? tVars('clanDonateShardsFmt', { n: def.shards }) : `${def.liberty} Liberty`;
+  _showConfirmModal(tVars('clanDonateAsk', { what }), () => {
+    _clanDonating = true;
+    setTimeout(() => { _clanDonating = false; }, 1500);
+    netClanDonate(kind);
+  }, t('clanDonateBtn'));
 }
 
 // ── Хранилище клана ───────────────────────────────────────
@@ -1093,7 +1150,10 @@ function _clanActivityHTML() {
     <div class="clan-member${r.telegramId === myTg ? ' clan-member-me' : ''}">
       <span class="clan-member-role">${i + 1}.</span>
       <span class="clan-member-name">${_esc(r.username)}${r.inClan ? '' : ` <span class="clan-storage-who">(${typeof t === 'function' ? t('clanActivityLeftClan') : 'покинул клан'})</span>`}</span>
-      <span class="clan-member-bm">${typeof tVars === 'function' ? tVars('clanActivityQtyFmt', { n: _num(r.qty) }) : _num(r.qty) + ' Осколков'}</span>
+      <span class="clan-member-bm">${[
+        r.points ? tVars('clanActivityPtsFmt', { n: _num(r.points) }) : '',
+        r.qty ? tVars('clanActivityQtyFmt', { n: _num(r.qty) }) : '',
+      ].filter(Boolean).join(' · ')}</span>
     </div>`).join('');
   return `
     <div class="clan-section-hdr">${typeof t === 'function' ? t('clanActivityHdr') : 'Кто сколько внёс Осколков'}</div>

@@ -4202,6 +4202,11 @@ const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop c
 // Shared (not just js/definitions.js) because the server needs the same atk%
 // the client's recompute() applies — see clanAtkBonusPct below and its
 // callers in server/game/Room.js's computeStats.
+// Пятнадцать уровней. Опыт клана больше не идёт за убийства — только за
+// пожертвования участников (CLAN_DONATIONS ниже), поэтому кривая под них:
+// один активный участник приносит до 330 очков в сутки (3 × 10 + 3 × 100).
+// Пороги уровней 2–10 не выше прежних, так что ни один клан, набравший опыт
+// убийствами, при переходе уровень не теряет.
 const CLAN_LEVELS = [
   { lvl:1,  xpReq:0,      bonus:{ gold:0,  xp:0,  atk:0  }, label:'Новообразованный' },
   { lvl:2,  xpReq:500,    bonus:{ gold:5,  xp:0,  atk:0  }, label:'Слаженный'        },
@@ -4209,11 +4214,29 @@ const CLAN_LEVELS = [
   { lvl:4,  xpReq:4000,   bonus:{ gold:10, xp:5,  atk:0  }, label:'Опытный'          },
   { lvl:5,  xpReq:10000,  bonus:{ gold:10, xp:5,  atk:5  }, label:'Именитый'         },
   { lvl:6,  xpReq:25000,  bonus:{ gold:10, xp:10, atk:5  }, label:'Прославленный'    },
-  { lvl:7,  xpReq:60000,  bonus:{ gold:15, xp:10, atk:5  }, label:'Легендарный'      },
-  { lvl:8,  xpReq:150000, bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
-  { lvl:9,  xpReq:350000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
-  { lvl:10, xpReq:800000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
+  { lvl:7,  xpReq:50000,  bonus:{ gold:15, xp:10, atk:5  }, label:'Легендарный'      },
+  { lvl:8,  xpReq:80000,  bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
+  { lvl:9,  xpReq:120000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
+  { lvl:10, xpReq:170000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
+  { lvl:11, xpReq:240000, bonus:{ gold:25, xp:20, atk:15 }, label:'Титанический'     },
+  { lvl:12, xpReq:330000, bonus:{ gold:25, xp:25, atk:15 }, label:'Мифический'       },
+  { lvl:13, xpReq:450000, bonus:{ gold:25, xp:25, atk:20 }, label:'Небесный'         },
+  { lvl:14, xpReq:600000, bonus:{ gold:30, xp:25, atk:20 }, label:'Вечный'           },
+  { lvl:15, xpReq:800000, bonus:{ gold:30, xp:30, atk:25 }, label:'Божественный'     },
 ];
+
+// ── Пожертвования в клан ─────────────────────────────────────────────────────
+// Единственный источник опыта клана. В сутки (московские) — по perDay раз
+// каждого вида, всего шесть. Обычное — `shards` осколков КАЖДОГО из двадцати
+// видов (UNIQUE_SHARDS), большое — `liberty` Liberty. Жертвовать можно, только
+// пробыв в клане CLAN_DONATE_MIN_HOURS: иначе опыт можно было бы носить из
+// клана в клан.
+const CLAN_DONATIONS = {
+  normal: { shards: 30,   xp: 10,  perDay: 3 },
+  big:    { liberty: 100, xp: 100, perDay: 3 },
+};
+const CLAN_DONATION_KINDS = ['normal', 'big'];
+const CLAN_DONATE_MIN_HOURS = 24;
 // Every perk the clan panel advertises at this level, as one object.
 //
 // clanAtkBonusPct was the only accessor for years, and `gold` and `xp` sat in
@@ -4762,6 +4785,7 @@ if (typeof module !== 'undefined') module.exports = {
   spentSkillPoints, availableSkillPoints, skillPointCeiling,
   migrateKeptSP,
   CLAN_LEVELS, clanAtkBonusPct, clanBonusOf,
+  CLAN_DONATIONS, CLAN_DONATION_KINDS, CLAN_DONATE_MIN_HOURS,
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS, BOSS_LAIR_STONES, BOSS_LAIR_NORM_MAX_LEVEL, BOSS_LAIR_SHARD_ID, bossLairStoneId,

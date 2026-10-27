@@ -348,6 +348,11 @@ async function syncBm() {
   if (_bmSyncing) return;
   _bmSyncing = true;
   try {
+    // Пороги CLAN_LEVELS могли поменяться с выкаткой — сперва привести
+    // сохранённые уровни кланов к опыту, иначе БМ ниже посчитается со старым
+    // % атаки клана.
+    const moved = await require('./db/repos/clans').syncLevels();
+    if (moved.length) console.log(`[workers] уровень клана пересчитан: ${moved.length}`);
     const res = await require('./db/repos/stats').syncAllBm();
     if (res.changed) console.log(`[workers] БМ пересчитан: ${res.changed} из ${res.total}`);
   } catch (err) {

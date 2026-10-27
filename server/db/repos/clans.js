@@ -24,6 +24,7 @@ const money = require('./money');
 const {
   CLAN_MAX_MEMBERS, CLAN_CREATE_COST, CLAN_DESC_MAX_CHARS, CLAN_LEVELS,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD, UNIQUE_SHARDS, clanAtkBonusPct,
+  CLAN_DONATIONS, CLAN_DONATE_MIN_HOURS, MSK_OFFSET_H,
 } = require('../../../shared/definitions');
 
 class ClanError extends Error {
@@ -306,16 +307,15 @@ async function transferLeadership(db, leaderId, clanId, newLeaderId) {
 }
 
 // ── xp ──────────────────────────────────────────────────────────────────────
-// One point per monster killed, to the clan of whoever landed the killing
-// blow. That is the rate the retired build used (_clanXpAdd(myClanId, 1) in
-// server/handlers/world.js) and it is kept exactly, because CLAN_LEVELS is
-// scaled to it: 800 000 kills to level 10 is the curve the table was written
-// against, and paying every party member as well would quietly divide it by
-// the size of a party.
+// Убийства опыта клану больше НЕ дают — решение владельца: прогресс клана
+// растёт только от пожертвований участников (donate ниже, CLAN_DONATIONS в
+// shared/definitions.js). Вызовы addXp на пути убийства остались, ставка —
+// ноль, и addXp на нуле ничего не пишет: ни лишнего UPDATE строки клана на
+// каждое убийство, ни объявлений.
 //
 // Named rather than inlined so the detector asserts against the rate instead
-// of against a literal 1 that nobody would notice changing.
-const CLAN_XP_PER_KILL = 1;
+// of against a literal that nobody would notice changing.
+const CLAN_XP_PER_KILL = 0;
 
 // A plain atomic increment. The old version accumulated xp in a process-local
 // Map and flushed it every 20 seconds (_clanXpPending), which meant a crash or
@@ -560,6 +560,113 @@ async function unlockStorage(db, playerId, clanId, cost) {
   return { newGold: paid.balance, cost, goldLeft: paid.balance };
 }
 
+// ── пожертвования ───────────────────────────────────────────────────────────
+// Единственный источник опыта клана. Лимит — perDay каждого вида в московские
+// сутки, по игроку (не по клану). Жертвовать можно через
+// CLAN_DONATE_MIN_HOURS после вступления. Плата и опыт — одна транзакция:
+// не хватило осколков или Liberty — не записано ничего.
+async function donationsReady() { return hasColumn('clan_donations', 'kind'); }
+
+function _mskDay(at = Date.now()) {
+  return new Date(at + MSK_OFFSET_H * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+async function _hoursIn(db, clanId, playerId) {
+  const { rows } = await query(db,
+    'SELECT joined_at FROM clan_members WHERE clan_id = $1 AND player_id = $2', [clanId, playerId]);
+  if (!rows.length) return null;
+  if (!rows[0].joined_at) return Infinity;
+  return (Date.now() - new Date(rows[0].joined_at).getTime()) / 3600000;
+}
+
+// Что видит окно: сколько каждого вида уже сделано сегодня и можно ли вообще.
+async function donationState(db, playerId) {
+  if (!await donationsReady()) return { ready: false };
+  const m = await clanOf(db, playerId);
+  const day = _mskDay();
+  const { rows } = await query(db, `
+    SELECT kind, count(*)::int n FROM clan_donations
+     WHERE player_id = $1 AND day = $2 GROUP BY kind`, [playerId, day]);
+  const used = { normal: 0, big: 0 };
+  for (const r of rows) used[r.kind] = r.n;
+  const hours = m ? await _hoursIn(db, m.clanId, playerId) : null;
+  const waitH = hours == null || hours === Infinity ? 0 : Math.max(0, CLAN_DONATE_MIN_HOURS - hours);
+  return { ready: true, used, minHours: CLAN_DONATE_MIN_HOURS, waitHours: Math.ceil(waitH), day };
+}
+
+async function donate(db, playerId, kind) {
+  if (!await donationsReady()) err('donations_off', 'Пожертвования ещё не включены на сервере');
+  if (typeof kind !== 'string' || !Object.hasOwn(CLAN_DONATIONS, kind)) err('bad_kind', 'Неизвестный вид пожертвования');
+  const def = CLAN_DONATIONS[kind];
+  // Сперва игрок — тот же порядок блокировок, что у accept и убийства:
+  // два нажатия подряд встают в очередь, и лимит на сутки не обходится.
+  await items.lockPlayer(db, playerId);
+  const m = await clanOf(db, playerId);
+  if (!m) err('no_clan', 'Вы не состоите в клане');
+  const hours = await _hoursIn(db, m.clanId, playerId);
+  if (hours == null) err('no_clan', 'Вы не состоите в клане');
+  if (hours < CLAN_DONATE_MIN_HOURS) {
+    err('too_new', `Жертвовать можно через ${CLAN_DONATE_MIN_HOURS} ч после вступления в клан (осталось ${Math.ceil(CLAN_DONATE_MIN_HOURS - hours)} ч)`);
+  }
+  const day = _mskDay();
+  const { rows: cnt } = await query(db,
+    'SELECT count(*)::int n FROM clan_donations WHERE player_id = $1 AND day = $2 AND kind = $3',
+    [playerId, day, kind]);
+  if (cnt[0].n >= def.perDay) err('limit', `Сегодня это пожертвование уже сделано ${def.perDay} раза — приходите завтра`);
+
+  const { rows: ins } = await query(db, `
+    INSERT INTO clan_donations (clan_id, player_id, kind, day, xp)
+    VALUES ($1, $2, $3, $4, $5) RETURNING id`, [m.clanId, playerId, kind, day, def.xp]);
+  const donationId = Number(ins[0].id);
+
+  if (kind === 'normal') {
+    // Все двадцать видов разом: не хватает хотя бы одного — отказ целиком,
+    // и отказ называет, какого.
+    const { rows: have } = await query(db, `
+      SELECT item_id, COALESCE(sum(qty), 0)::int n FROM player_items
+       WHERE player_id = $1 AND container = 'inventory' AND item_id = ANY($2::text[])
+       GROUP BY item_id`, [playerId, [...SHARD_IDS]]);
+    const n = new Map(have.map(r => [r.item_id, r.n]));
+    const short = UNIQUE_SHARDS.find(sh => (n.get(sh.id) || 0) < def.shards);
+    if (short) err('no_shards', `Нужно по ${def.shards} осколков каждого вида — не хватает: ${short.name} (${n.get(short.id) || 0})`);
+    for (const id of SHARD_IDS) {
+      if (!await items.removeQty(db, playerId, id, def.shards,
+          { reason: 'clan_donation', refType: 'clan', refId: String(m.clanId) })) {
+        err('no_shards', `Не хватает осколков: ${id}`);
+      }
+    }
+  } else {
+    const paid = await money.spend(db, playerId, 'nexum', def.liberty, {
+      reason: 'clan_donation', refType: 'clan', refId: String(m.clanId),
+      idemKey: `clan_donation:${donationId}`,
+    });
+    if (!paid) err('no_nexum', `Нужно ${def.liberty} Liberty`);
+  }
+
+  const before = await query(db, 'SELECT level FROM clans WHERE id = $1', [m.clanId]);
+  const res = await addXp(db, m.clanId, def.xp);
+  if (!res) err('no_clan', 'Клан не найден');
+  return {
+    kind, xp: def.xp, clanId: m.clanId, clanXp: res.xp, level: res.level,
+    leveledUp: before.rows.length ? res.level > Number(before.rows[0].level) : false,
+  };
+}
+
+// Пороги уровней поменялись (CLAN_LEVELS) — сохранённый clans.level у кого-то
+// теперь не тот, что даёт его опыт. Вызывается на старте сервера; трогает
+// только расходящиеся строки и возвращает, у каких кланов уровень сдвинулся.
+async function syncLevels(db = null) {
+  const { rows } = await query(db, 'SELECT id, xp, level FROM clans');
+  const moved = [];
+  for (const r of rows) {
+    const lvl = levelFor(Number(r.xp));
+    if (lvl === Number(r.level)) continue;
+    await query(db, 'UPDATE clans SET level = $2 WHERE id = $1', [r.id, lvl]);
+    moved.push(Number(r.id));
+  }
+  return moved;
+}
+
 // ── казна: Liberty клана ────────────────────────────────────────────────────
 // Приходит с Войны гильдий (server/game/guildwar.js → treasuryCredit), уходит
 // только раздачей лидера (giveNexum). Колонки до миграции 041 нет — тогда
@@ -665,7 +772,9 @@ async function dataView(db, clanId, playerId) {
   for (const r of appTg) tgOf.set(Number(r.player_id), r.telegram_id);
 
   const myRole = (view.members.find(m => m.playerId === playerId) || {}).role || null;
+  const donations = await donationState(db, playerId);
   return {
+    donations,
     _id: view.id, id: view.id,
     name: view.name, icon: view.icon, description: view.description,
     level: view.level, xp: view.xp,
@@ -743,17 +852,31 @@ async function storageView(db, clanId, playerId) {
 // A former member who deposited and later left still shows up: the shards
 // they put in did not leave with them, so the credit does not either.
 async function activityView(db, clanId) {
+  // Очки за пожертвования (главное теперь) и осколки, положенные в хранилище
+  // раньше, — одним списком по игроку. До миграции 042 очков нет.
+  const donOk = await donationsReady();
   const { rows } = await query(db, `
-    SELECT ct.player_id, ct.qty, ct.updated_at, p.username, p.telegram_id,
+    WITH pts AS (
+      ${donOk ? `SELECT player_id, sum(xp)::bigint AS points, max(created_at) AS at
+                   FROM clan_donations WHERE clan_id = $1 GROUP BY player_id`
+              : `SELECT NULL::bigint AS player_id, 0::bigint AS points, NULL::timestamptz AS at WHERE false`}
+    ), shards AS (
+      SELECT player_id, qty, updated_at FROM clan_contributions WHERE clan_id = $1 AND qty > 0
+    ), who AS (
+      SELECT player_id FROM pts UNION SELECT player_id FROM shards
+    )
+    SELECT w.player_id, COALESCE(pt.points, 0) AS points, COALESCE(sh.qty, 0) AS qty,
+           COALESCE(pt.at, sh.updated_at) AS updated_at, p.username, p.telegram_id,
            (cm.player_id IS NOT NULL) AS in_clan
-      FROM clan_contributions ct
-      JOIN players p ON p.id = ct.player_id
-      LEFT JOIN clan_members cm ON cm.clan_id = ct.clan_id AND cm.player_id = ct.player_id
-     WHERE ct.clan_id = $1 AND ct.qty > 0
-     ORDER BY ct.qty DESC, ct.updated_at ASC`, [clanId]);
+      FROM who w
+      JOIN players p ON p.id = w.player_id
+      LEFT JOIN pts pt ON pt.player_id = w.player_id
+      LEFT JOIN shards sh ON sh.player_id = w.player_id
+      LEFT JOIN clan_members cm ON cm.clan_id = $1 AND cm.player_id = w.player_id
+     ORDER BY points DESC, qty DESC, updated_at ASC`, [clanId]);
   return rows.map(r => ({
     playerId: Number(r.player_id), telegramId: r.telegram_id, username: r.username,
-    qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
+    points: Number(r.points), qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
   }));
 }
 
@@ -887,6 +1010,7 @@ module.exports = {
   transferLeadership,
   addXp, deposit, depositAll, allocate, claim, cancelAllocation, unlockStorage,
   nexumReady, treasuryCredit, giveNexum,
+  donationsReady, donationState, donate, syncLevels,
   fullView, clanOf, badgeOf, search, levelFor, ClanError,
   CLAN_XP_PER_KILL,
 };
