@@ -4203,10 +4203,11 @@ const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop c
 // the client's recompute() applies — see clanAtkBonusPct below and its
 // callers in server/game/Room.js's computeStats.
 // Пятнадцать уровней. Опыт клана больше не идёт за убийства — только за
-// пожертвования участников (CLAN_DONATIONS ниже), поэтому кривая под них:
-// один активный участник приносит до 390 очков в сутки (3 × 30 + 3 × 100).
-// Пороги уровней 2–10 не выше прежних, так что ни один клан, набравший опыт
-// убийствами, при переходе уровень не теряет.
+// пожертвования участников (CLAN_DONATIONS ниже): один активный участник
+// приносит до 390 очков в сутки (3 × 30 + 3 × 100).
+// Пороги уровней 1–10 — ровно прежние, по просьбе владельца: каждый клан,
+// набравший опыт убийствами, остаётся на своём уровне. Новые 11–15 — выше
+// прежнего потолка в 800 000.
 const CLAN_LEVELS = [
   { lvl:1,  xpReq:0,      bonus:{ gold:0,  xp:0,  atk:0  }, label:'Новообразованный' },
   { lvl:2,  xpReq:500,    bonus:{ gold:5,  xp:0,  atk:0  }, label:'Слаженный'        },
@@ -4214,15 +4215,15 @@ const CLAN_LEVELS = [
   { lvl:4,  xpReq:4000,   bonus:{ gold:10, xp:5,  atk:0  }, label:'Опытный'          },
   { lvl:5,  xpReq:10000,  bonus:{ gold:10, xp:5,  atk:5  }, label:'Именитый'         },
   { lvl:6,  xpReq:25000,  bonus:{ gold:10, xp:10, atk:5  }, label:'Прославленный'    },
-  { lvl:7,  xpReq:50000,  bonus:{ gold:15, xp:10, atk:5  }, label:'Легендарный'      },
-  { lvl:8,  xpReq:80000,  bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
-  { lvl:9,  xpReq:120000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
-  { lvl:10, xpReq:170000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
-  { lvl:11, xpReq:240000, bonus:{ gold:25, xp:20, atk:15 }, label:'Титанический'     },
-  { lvl:12, xpReq:330000, bonus:{ gold:25, xp:25, atk:15 }, label:'Мифический'       },
-  { lvl:13, xpReq:450000, bonus:{ gold:25, xp:25, atk:20 }, label:'Небесный'         },
-  { lvl:14, xpReq:600000, bonus:{ gold:30, xp:25, atk:20 }, label:'Вечный'           },
-  { lvl:15, xpReq:800000, bonus:{ gold:30, xp:30, atk:25 }, label:'Божественный'     },
+  { lvl:7,  xpReq:60000,  bonus:{ gold:15, xp:10, atk:5  }, label:'Легендарный'      },
+  { lvl:8,  xpReq:150000, bonus:{ gold:15, xp:10, atk:10 }, label:'Великий'          },
+  { lvl:9,  xpReq:350000, bonus:{ gold:15, xp:15, atk:10 }, label:'Непобедимый'      },
+  { lvl:10, xpReq:800000, bonus:{ gold:20, xp:20, atk:15 }, label:'Бессмертный'      },
+  { lvl:11, xpReq:1100000, bonus:{ gold:25, xp:20, atk:15 }, label:'Титанический'     },
+  { lvl:12, xpReq:1500000, bonus:{ gold:25, xp:25, atk:15 }, label:'Мифический'       },
+  { lvl:13, xpReq:2000000, bonus:{ gold:25, xp:25, atk:20 }, label:'Небесный'         },
+  { lvl:14, xpReq:2600000, bonus:{ gold:30, xp:25, atk:20 }, label:'Вечный'           },
+  { lvl:15, xpReq:3300000, bonus:{ gold:30, xp:30, atk:25 }, label:'Божественный'     },
 ];
 
 // ── Пожертвования в клан ─────────────────────────────────────────────────────
