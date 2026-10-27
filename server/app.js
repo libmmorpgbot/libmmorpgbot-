@@ -459,6 +459,7 @@ const HEAVY = new Set([
   'clanDisband', 'clanTransferLeader', 'clanSetDescription', 'clanSearch', 'clanRequest',
   'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
   'clanStorageUnlock', 'clanStorageSync', 'clanActivitySync', 'clanTreasuryGive', 'clanDonate',
+  'guildBossSync', 'guildBossSummon', 'guildBossEnter', 'guildBossLeave',
   'chat', 'chatHistory', 'clanChat', 'clanChatHistory', 'privMsg', 'privMsgHistory',
   'requestPlayerProfile', 'getPvpHistory', 'getReferrals', 'savePrefs',
   'selectChar', 'enterLocation', 'respawn',
@@ -519,6 +520,7 @@ for (const [channel, events] of Object.entries({
   craftBoxError: ['craftBox'],
   craftMatUpgradeError: ['craftMatUpgrade'],
   petCraftError: ['craftPet'],
+  guildBossError: ['guildBossSync', 'guildBossSummon', 'guildBossEnter', 'guildBossLeave'],
   runeCraftError: ['craftRune'],
   runeError: ['runeSocket', 'runeUnsocket', 'runeReroll', 'runeRerollAll'],
   craftBuffPotionError: ['craftBuffPotion'],
@@ -1627,6 +1629,12 @@ async function boot() {
     },
   });
   if (modesRuntime._gwRestore) await modesRuntime._gwRestore();
+  // Гильдийский босс живёт только в памяти процесса: вызов, застигнутый
+  // перезапуском, потерян — Liberty возвращается лидеру (repos/guildboss.js).
+  try {
+    const refunded = await require('./db/repos/guildboss').refundActive();
+    if (refunded.length) console.log(`guild boss: возвращено вызовов после перезапуска — ${refunded.length}`);
+  } catch (err) { console.error('[boot] guild boss refund:', err.message); }
 
   // ── the four towers ──────────────────────────────────────────────────────
   // One per corner room of the Guild War floor (Room.spawnGuildWarTowers).

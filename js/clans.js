@@ -731,7 +731,11 @@ function _clanDoSearch() {
 }
 
 // ── Clan home screen ──────────────────────────────────────
-function _setClanHomeTab(n) { _clanHomeTab = n; updateClanUI(); }
+function _setClanHomeTab(n) {
+  _clanHomeTab = n;
+  if (n === 5 && typeof netGuildBossSync === 'function') netGuildBossSync();
+  updateClanUI();
+}
 
 function _clanDescStartEdit() {
   _clanDescDraft = (clanData && clanData.description) || '';
@@ -779,6 +783,7 @@ function _renderClanHome(el) {
     typeof t === 'function' ? t('clanTabPerks') : 'Навыки',
     typeof t === 'function' ? t('clanTabStorage') : 'Хранилище',
     typeof t === 'function' ? t('clanTabActivity') : 'Активность',
+    'Босс',
   ];
   const tabHtml = tabs.map((t, i) =>
     `<div class="clan-tab${_clanHomeTab === i ? ' active' : ''}" onclick="_setClanHomeTab(${i})">${t}</div>`
@@ -896,6 +901,8 @@ function _renderClanHome(el) {
       <div class="clan-perks">${perksHtml}</div>`;
   } else if (_clanHomeTab === 3) {
     bodyHtml = _clanStorageHTML();
+  } else if (_clanHomeTab === 5) {
+    bodyHtml = _clanBossHTML();
   } else if (_clanHomeTab === 4) {
     bodyHtml = _clanActivityHTML();
   }
@@ -912,6 +919,136 @@ function _renderClanHome(el) {
       <div class="clan-tabs">${tabHtml}</div>
       ${bodyHtml}
     </div>`;
+}
+
+// ── Гильдийский босс ──────────────────────────────────────
+// Состояние — с сервера (guildBossState, handlers2/modes.js). Лидер клана
+// 11+ уровня вызывает любого босса Логова от 35-го, усиленного
+// (guildBossScaling); участники входят в общий зал. Пока вкладка открыта и
+// босс стоит, состояние подтягивается раз в 3 секунды — полоса здоровья живая.
+let _gbView = null;
+let _gbInside = false;   // этот игрок сейчас в зале босса (guildBossEntered/Out)
+let _gbTick = null;
+function onGuildBossState(st) {
+  _gbView = st || null;
+  if (_clanHomeTab === 5 && typeof updateClanUI === 'function') updateClanUI();
+}
+function _gbFmtLeft(ms) {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+function _gbDropHTML(level) {
+  const icon = id => {
+    const d = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS.find(m => m.id === id) : null;
+    return d && typeof _itemIcon === 'function' ? _itemIcon(d, 18) : '';
+  };
+  const rows = [
+    [icon('bless_stone'), 'Безопасные камни заточки', '1–10'],
+    [icon('shard_gold'), 'Осколки (случайные виды)', '1–300'],
+    [icon('dungeon_scroll_lev'), 'Классовые свитки (случайные)', '3'],
+    [icon((CRAFT_MATS.find(m => m.skillKey) || {}).id), 'Книги навыков (случайные)', '1–3'],
+    [icon('ore_rare'), 'Синяя руда', '1–100'],
+    [icon('ore_uncommon'), 'Зелёная руда', '1–200'],
+  ];
+  return `<div class="gb-drop">${rows.map(([ic, n, q]) =>
+    `<div class="gb-drop-row">${ic}<span>${n}</span><b>${q}</b></div>`).join('')}
+    <div class="gb-drop-note">Количество случайное; чем выше уровень босса, тем ближе к максимуму. Дроп получает каждый, кто жив в зале в момент убийства.</div></div>`;
+}
+function _clanBossHTML() {
+  const v = _gbView;
+  clearInterval(_gbTick); _gbTick = null;
+  if (!v) { if (typeof netGuildBossSync === 'function') netGuildBossSync(); return `<div class="clan-empty">${t('clanStorageLoading')}</div>`; }
+  if (!v.ready) return `<div class="clan-empty">Гильдийские боссы скоро появятся</div>`;
+  if (!v.inClan) return '';
+  const skew = (v.now || Date.now()) - Date.now();
+  let html = '';
+  if (v.active) {
+    const a = v.active;
+    const pct = a.maxHp ? Math.max(0, Math.min(100, a.hp / a.maxHp * 100)) : 0;
+    const left = _gbFmtLeft(a.expiresAt - (Date.now() + skew));
+    const row = bossLairBoss(a.level) || {};
+    html += `<div class="gb-active" style="--bc:${row.color || '#e5484d'}">
+      <div class="lair-ico">${typeof _lairBossIcon === 'function' ? _lairBossIcon(row.eid, 64) : ''}<span class="lair-badge">${a.level}</span></div>
+      <div class="gb-active-body">
+        <div class="gb-active-name">${_esc(row.key ? t(row.key) : (a.name || ''))}</div>
+        <div class="gb-hp"><i style="width:${pct.toFixed(1)}%"></i><span>${_num(a.hp)} / ${_num(a.maxHp)}</span></div>
+        <div class="gb-active-meta">⏳ осталось ${left} · в зале: ${a.inside}</div>
+      </div>
+    </div>
+    ${_gbInside
+      ? `<button class="clan-btn clan-btn-leave" onclick="netGuildBossLeave()">Выйти из зала</button>`
+      : v.deadThisFight
+        ? `<div class="clan-storage-gate">Вы пали в этом бою — войти снова можно в следующий вызов.</div>`
+        : `<button class="clan-btn gb-enter" onclick="netGuildBossEnter()">⚔ Войти к боссу</button>`}`;
+    _gbTick = setInterval(() => {
+      if (_clanHomeTab !== 5 || !document.querySelector('.gb-active')) { clearInterval(_gbTick); _gbTick = null; return; }
+      if (typeof netGuildBossSync === 'function') netGuildBossSync();
+    }, 3000);
+  }
+  html += `<div class="clan-section-hdr">Гильдийские боссы</div>
+    <div class="gb-note">Боссы Логова с 35 уровня — здоровье ×20, атака и защита ×3.
+      Вызывает лидер клана ${v.minClanLevel}+ уровня за ${_num(v.cost)} Liberty,
+      ${v.perWeek} раза в неделю (на этой неделе: ${v.usedThisWeek}/${v.perWeek}).
+      Босс стоит ${Math.round(v.lifetimeMs / 60000)} минут. Кто умер — вылетает.</div>`;
+  if (v.clanLevel < v.minClanLevel) {
+    html += `<div class="clan-storage-gate">Нужен ${v.minClanLevel} уровень клана (сейчас ${v.clanLevel}).</div>`;
+  }
+  const canSummon = v.isLeader && !v.active && v.clanLevel >= v.minClanLevel && v.usedThisWeek < v.perWeek;
+  html += `<div class="lair-list">${(v.levels || []).map(bl => {
+    const row = bossLairBoss(bl) || {};
+    const st = monsterStatsAtLevel(bl, 'boss');
+    const k = guildBossScaling(bl);
+    const btn = v.isLeader
+      ? `<button class="lair-go" ${canSummon ? '' : 'disabled'} onclick="_gbSummonAsk(${bl})">Вызвать</button>`
+      : '';
+    return `<div class="lair-boss" style="--bc:${row.color || '#e5484d'}">
+      <div class="lair-ico">${typeof _lairBossIcon === 'function' ? _lairBossIcon(row.eid, 56) : ''}<span class="lair-badge">${bl}</span></div>
+      <div class="lair-info">
+        <div class="lair-name">${_esc(row.key ? t(row.key) : (row.name || ''))}<span class="lair-lvl">ур. ${bl}</span></div>
+        <div class="lair-stats">
+          <span>❤ <b>${typeof _lairFmt === 'function' ? _lairFmt(st.hp * k.hpMult) : Math.round(st.hp * k.hpMult)}</b></span>
+          <span>⚔ <b>${typeof _lairFmt === 'function' ? _lairFmt(st.atk * k.atkMult) : Math.round(st.atk * k.atkMult)}</b></span>
+          <span>🛡 <b>${typeof _lairFmt === 'function' ? _lairFmt(st.def * k.defMult) : Math.round(st.def * k.defMult)}</b></span>
+        </div>
+      </div>
+      <div class="lair-act">${btn}</div>
+    </div>`;
+  }).join('')}</div>
+  <div class="clan-section-hdr">Дроп с босса</div>
+  ${_gbDropHTML()}`;
+  return html;
+}
+function _gbSummonAsk(level) {
+  const row = bossLairBoss(level) || {};
+  const name = row.key ? t(row.key) : (row.name || '');
+  const cost = (_gbView && _gbView.cost) || 500;
+  _showConfirmModal(`Вызвать «${name}» (${level} ур.) за ${cost} Liberty? Босс будет стоять час.`,
+    () => netGuildBossSummon(level), 'Вызвать');
+}
+// Итог: дроп, который выдал сервер. Осколки — одной строкой суммой.
+function showGuildBossResult(level, reward) {
+  document.getElementById('gb-win-ov')?.remove();
+  const r = reward || {};
+  const all = (r.items || []);
+  const shards = all.filter(it => it.id && it.id.startsWith('shard_')).reduce((n, it) => n + (it.qty || 0), 0);
+  const rest = all.filter(it => !(it.id && it.id.startsWith('shard_')));
+  const row = (img, name, qty) => `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}<span>${name}</span><span class="db-reward-qty">×${qty}</span></div>`;
+  const def = id => (typeof CRAFT_MATS !== 'undefined' && CRAFT_MATS.find(m => m.id === id)) || {};
+  const rows = rest.map(it => row(def(it.id).img || it.img, def(it.id).name || it.name || it.id, it.qty || 1));
+  if (shards) rows.splice(1, 0, row('/images/uniq/shard/gold.png', 'Осколки', shards));
+  const b = bossLairBoss(level) || {};
+  const ov = document.createElement('div');
+  ov.id = 'gb-win-ov'; ov.className = 'ach-win-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `<div class="db-win-panel ach-win" onclick="event.stopPropagation()">
+    <div class="ach-win-rays"></div>
+    <div class="db-win-title">Босс повержен!</div>
+    <div class="db-win-sub">${_esc(b.key ? t(b.key) : (b.name || ''))} · ${level} ур.</div>
+    ${reward ? `<div class="gb-win-list">${rows.join('')}</div>` : `<div class="db-win-sub">Вас не было в зале живым в момент убийства — дропа нет.</div>`}
+    ${(r.missed || []).length ? `<div class="db-win-sub" style="color:#f07886">Часть не поместилась в инвентарь.</div>` : ''}
+    <button class="db-win-btn" onclick="document.getElementById('gb-win-ov')?.remove()">Отлично</button>
+  </div>`;
+  document.body.appendChild(ov);
 }
 
 // ── Пожертвования ─────────────────────────────────────────

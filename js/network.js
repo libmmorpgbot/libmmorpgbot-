@@ -2285,6 +2285,38 @@ function netConnect(onReady) {
   socket.on('translateChatResult', ({ reqId, text, error, reason }) => _onChatTranslateResult(reqId, text, error, reason));
 
   // ── Clan listeners ────────────────────────────────────────
+  // ── гильдийский босс ────────────────────────────────────────────────────
+  socket.on('guildBossState', st => { if (typeof onGuildBossState === 'function') onGuildBossState(st); });
+  socket.on('guildBossError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+  });
+  socket.on('guildBossSummoned', ({ level, name, by } = {}) => {
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(`Клан вызвал босса: ${name} (${level} ур.)!`, '#e5484d');
+    if (typeof _marketToast === 'function') _marketToast(`${by || 'Лидер'} вызвал гильдийского босса — вкладка «Босс» в клане`, 'ok');
+    netGuildBossSync();
+  });
+  socket.on('guildBossEntered', ({ x, y, hp, level, name } = {}) => {
+    if (!player) return;
+    if (hp) player.hp = hp;
+    if (typeof _teleportTo === 'function') _teleportTo(x, y, 'Гильдийский босс');
+    else { player.x = x; player.y = y; }
+    if (typeof setTab === 'function') setTab(0);
+    if (typeof _gbInside !== 'undefined') _gbInside = true;
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(`${name || 'Босс'} · ${level} ур.`, '#e5484d');
+    if (typeof Sound !== 'undefined' && Sound.bossSpawn) Sound.bossSpawn();
+  });
+  socket.on('guildBossKilled', ({ level, reward } = {}) => {
+    if (typeof _gbInside !== 'undefined') _gbInside = false;
+    if (typeof showGuildBossResult === 'function') showGuildBossResult(level, reward);
+    netGuildBossSync();
+  });
+  socket.on('guildBossOut', ({ reason, x, y } = {}) => {
+    if (player && Number.isFinite(x) && Number.isFinite(y) && typeof _teleportTo === 'function') _teleportTo(x, y);
+    if (typeof _gbInside !== 'undefined') _gbInside = false;
+    const msg = reason === 'dead' ? 'Вы пали в бою с гильдийским боссом' : reason === 'expired' ? 'Время вызова вышло — босс ушёл' : 'Вы вышли из зала босса';
+    if (typeof _marketToast === 'function') _marketToast(msg, reason === 'dead' ? 'err' : 'ok');
+    netGuildBossSync();
+  });
   socket.on('clanData', data => {
     if (typeof onClanData === 'function') onClanData(data);
   });
@@ -3062,6 +3094,10 @@ function netClanStorageSync() {
 function netClanStorageGive(telegramId, id, qty) {
   if (socket?.connected) socket.emit('clanStorageGive', { telegramId, id, qty });
 }
+function netGuildBossSync()   { if (socket?.connected) socket.emit('guildBossSync'); }
+function netGuildBossSummon(level) { if (socket?.connected) socket.emit('guildBossSummon', { level }); }
+function netGuildBossEnter()  { if (socket?.connected) socket.emit('guildBossEnter'); }
+function netGuildBossLeave()  { if (socket?.connected) socket.emit('guildBossLeave'); }
 function netClanDonate(kind) {
   if (socket?.connected) socket.emit('clanDonate', { kind });
 }

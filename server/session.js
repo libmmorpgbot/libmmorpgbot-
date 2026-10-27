@@ -76,6 +76,8 @@ const WRITE_ACTIONS = new Set([
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim',
   'clanStorageCancel', 'clanStorageUnlock', 'clanTreasuryGive', 'clanDonate',
+  // Вызов гильдийского босса — 500 Liberty лидера.
+  'guildBossSummon',
   'registerCodexSetItem', 'registerCodexGem', 'selectChar', 'respawn',
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
   // player-log row at all.

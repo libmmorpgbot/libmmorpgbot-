@@ -1053,6 +1053,76 @@ function bossLairScaling(level) {
   };
 }
 
+// ── Гильдийские боссы ────────────────────────────────────────────────────────
+// Боссы Логова с 35-го уровня, только много сильнее: здоровье ×20, атака и
+// защита ×3 поверх того, что у того же босса в Логове (bossLairScaling).
+// Вызывает лидер клана не ниже GUILD_BOSS_MIN_CLAN_LEVEL, любого на выбор,
+// GUILD_BOSS_SUMMONS_PER_WEEK раза в неделю (московская, с понедельника) за
+// GUILD_BOSS_SUMMON_COST Liberty со своего баланса. Пока босс жив (не дольше
+// GUILD_BOSS_LIFETIME_MS), участники клана входят к нему из вкладки «Босс»;
+// умерший вылетает и в этот вызов больше не входит. Дроп получает каждый,
+// кто стоит в зале живым в момент убийства (guildBossRollReward).
+const GUILD_BOSS_LEVELS = BOSS_LAIR_LEVELS.filter(l => l >= 35);
+const GUILD_BOSS_SUMMON_COST = 500;
+const GUILD_BOSS_SUMMONS_PER_WEEK = 2;
+const GUILD_BOSS_MIN_CLAN_LEVEL = 11;
+const GUILD_BOSS_HP_MULT = 20;
+const GUILD_BOSS_ATK_MULT = 3;
+const GUILD_BOSS_DEF_MULT = 3;
+const GUILD_BOSS_LIFETIME_MS = 60 * 60 * 1000;
+
+// Дроп: каждая строка — случайное количество в [min, max]. Чем выше уровень
+// босса, тем ближе бросок к максимуму: равномерное r ∈ [0,1) возводится в
+// степень 1 / (1 + 2·t), где t — место босса в лестнице (0 у первого, 1 у
+// последнего). У первого бросок честно равномерный, у последнего среднее
+// смещено к верхней трети — но всё равно в тех же пределах.
+//   kind 'stone'  — безопасные камни заточки
+//   kind 'shards' — осколки уникального оружия, общим числом, виды случайные
+//   kind 'scroll' — классовые свитки (dungeon_scroll_*), класс каждого случаен
+//   kind 'book'   — книги навыков, каждая случайная
+//   kind 'ore'    — руда своего вида
+const GUILD_BOSS_DROPS = [
+  { kind: 'stone',  id: 'bless_stone',  min: 1, max: 10  },
+  { kind: 'shards',                     min: 1, max: 300 },
+  { kind: 'scroll',                     min: 3, max: 3   },
+  { kind: 'book',                       min: 1, max: 3   },
+  { kind: 'ore',    id: 'ore_rare',     min: 1, max: 100 },   // синяя
+  { kind: 'ore',    id: 'ore_uncommon', min: 1, max: 200 },   // зелёная
+];
+
+function guildBossScaling(level) {
+  const k = bossLairScaling(level);
+  return {
+    ...k,
+    hpMult: k.hpMult * GUILD_BOSS_HP_MULT,
+    atkMult: k.atkMult * GUILD_BOSS_ATK_MULT,
+    defMult: (k.defMult || 1) * GUILD_BOSS_DEF_MULT,
+  };
+}
+
+function _gbQty(min, max, t, rand) {
+  const r = Math.pow(rand(), 1 / (1 + 2 * t));
+  return Math.min(max, min + Math.floor(r * (max - min + 1)));
+}
+
+// Список { id, qty } для одного игрока. rand — источник случайности (сервер
+// передаёт крипто-генератор, проверки — свой).
+function guildBossRollReward(level, rand = Math.random) {
+  const i = GUILD_BOSS_LEVELS.indexOf(level);
+  const t = GUILD_BOSS_LEVELS.length > 1 ? Math.max(0, i) / (GUILD_BOSS_LEVELS.length - 1) : 1;
+  const bag = new Map();
+  const put = (id, n) => { if (id && n > 0) bag.set(id, (bag.get(id) || 0) + n); };
+  const pick = list => list[Math.min(list.length - 1, Math.floor(rand() * list.length))];
+  for (const d of GUILD_BOSS_DROPS) {
+    const n = _gbQty(d.min, d.max, t, rand);
+    if (d.kind === 'stone' || d.kind === 'ore') put(d.id, n);
+    else if (d.kind === 'shards') for (let k = 0; k < n; k++) put(pick(UNIQUE_SHARDS).id, 1);
+    else if (d.kind === 'scroll') for (let k = 0; k < n; k++) put('dungeon_scroll_' + pick(Object.keys(CHAR_DEF)), 1);
+    else if (d.kind === 'book') for (let k = 0; k < n; k++) { const b = pickRandomSkillBook(rand); if (b) put(b.id, 1); }
+  }
+  return [...bag].map(([id, qty]) => ({ id, qty }));
+}
+
 // ── Items ─────────────────────────────────────────────────────────────────────
 // Canonical item catalog — single source of truth for both client rendering
 // and server-side validation (e.g. the Market only ever stores a listing's
@@ -4792,6 +4862,9 @@ if (typeof module !== 'undefined') module.exports = {
   ARM_NAMES, ARM_ROOM_PAIRS, ARM_ROOM_COUNTS, ARM_OFFSETS, MAX_MONSTER_LEVEL, roomsInArm,
   armIndexForLevel, armLocalLevel, ARM_LEVEL_REQ, FEAR_MAX_WAVE, FEAR_FLOOR_ID, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
   BOSS_LAIR_LEVELS, BOSS_LAIR_MIN_LEVEL, BOSS_LAIR_DAILY_KILLS, BOSS_LAIR_STONES, BOSS_LAIR_NORM_MAX_LEVEL, BOSS_LAIR_SHARD_ID, bossLairStoneId,
+  GUILD_BOSS_LEVELS, GUILD_BOSS_SUMMON_COST, GUILD_BOSS_SUMMONS_PER_WEEK, GUILD_BOSS_MIN_CLAN_LEVEL,
+  GUILD_BOSS_HP_MULT, GUILD_BOSS_ATK_MULT, GUILD_BOSS_DEF_MULT, GUILD_BOSS_LIFETIME_MS, GUILD_BOSS_DROPS,
+  guildBossScaling, guildBossRollReward,
   bossLairReward, bossLairScaling, BOSS_LAIR_BOSSES, bossLairBoss, bossLairUnlocked, BOSS_LAIR_HP_MULT, BOSS_LAIR_ATK_MULT, BOSS_LAIR_NERF_FROM_LEVEL, BOSS_LAIR_NERF_DIV,
   QUEST_DEF,
   SEASON_END_AT, seasonActive, MAIL_BONUS_END_AT, mailBonusOn,

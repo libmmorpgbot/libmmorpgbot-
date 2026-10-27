@@ -57,6 +57,7 @@ async function _pidOf(telegramId) {
 const createArena3 = require('./game/arena3');
 const createRace10 = require('./game/race10');
 const createFear = require('./game/fear');
+const createGuildBoss = require('./game/guildboss');
 const createCoop = require('./game/coop');
 const createFarm2 = require('./game/farm2');
 const createGuildWar = require('./game/guildwar');
@@ -482,6 +483,14 @@ function init(io) {
     },
   }));
   Object.assign(modes, createFear(shared));
+  // Гильдийские боссы: приватный зал на клан (server/game/guildboss.js).
+  Object.assign(modes, createGuildBoss({
+    ...shared,
+    finishSummon: (id, status, by) => require('./db/repos/guildboss').finish(null, id, status, by),
+    grantReward: (pid, summonId, level) => require('./db/repos/guildboss').grantReward(pid, summonId, level),
+    pushItemsTo: async (sid) => { const ss = sessionOf(sid); if (ss) await ss.pushItems(); },
+    playerIdOf,
+  }));
   Object.assign(modes, createCoop(shared));
   Object.assign(modes, createTournament(shared));
   // Named and kept, rather than written inline into the factory's deps. It has
@@ -551,7 +560,10 @@ function init(io) {
     const coopHandled = (opts && opts.fearGrace)
       ? modes._coopEjectOnDisconnect(socketId)
       : modes._coopEliminate(socketId);
-    if (killerSocketId && !a3Handled && !r10Handled && !trHandled && !fearHandled && !coopHandled) {
+    // Гильдийский босс: смерть — домой и обратно в этот вызов нельзя.
+    // Отключение ничего не решает — зал стоит, вернуться можно из вкладки.
+    const gbHandled = !(opts && opts.fearGrace) && modes._gbEliminate(socketId);
+    if (killerSocketId && !a3Handled && !r10Handled && !trHandled && !fearHandled && !coopHandled && !gbHandled) {
       const victim = room && room.players.get(socketId);
       const killer = room && room.players.get(killerSocketId);
       recordPvpHistory(socketId, { kind: 'death', mode: 'open_pvp', opponent: killer && killer.username });
@@ -810,7 +822,10 @@ function init(io) {
 
     // Fear and co-op kills still pay through the ordinary reward path — these
     // only advance the run, so neither gates the rest of the handler.
-    if (result.arm === 'fear') modes._fearTrackKill(socketId, result);
+    if (result.guildBoss) {
+      modes._gbTrackKill(socketId, result)
+        .catch(err => ops.alertError('modes.guildBoss', 'Ошибка награды гильдийского босса', err));
+    } else if (result.arm === 'fear') modes._fearTrackKill(socketId, result);
     else if (result.arm === 'coop') {
       if (result.isBoss) {
         modes._coopBossTrackKill(socketId, result)

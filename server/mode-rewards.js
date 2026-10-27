@@ -317,4 +317,4 @@ function _report(mode, err, playerId) {
   return null;
 }
 
-module.exports = { attach, ARENA3_NEXUM, COOP_BOSS_NEXUM, COOP_BOSS_ITEM };
+module.exports = { attach, grantItems, ARENA3_NEXUM, COOP_BOSS_NEXUM, COOP_BOSS_ITEM };

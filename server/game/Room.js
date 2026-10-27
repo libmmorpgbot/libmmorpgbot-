@@ -8,7 +8,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         monsterColorAtLevel, xpAtLevel, goldAtLevel, armIndexForLevel, ARM_OFFSETS, roomsInArm,
         GUILD_WAR_TOWER_HP, PASSIVE_MAX_LEVEL, PASSIVE_COMMON_DEF, ITEM_DEF,
         skillDamageMult, skillDefIgnoreOf, FOREIGN_SKILL_KEY, SKILL_SPEED_MAX_PCT, COOP_STAGE_LEVELS, COOP_BOSS_LEVEL,
-        bossLairScaling, bossLairBoss,
+        bossLairScaling, bossLairBoss, guildBossScaling,
         SAFE_ZONE_REGEN_PER_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
@@ -1204,7 +1204,7 @@ class Room {
   // and this IS a Fear hall. `bossLair` is what tells the kill path apart:
   // no loot-table roll and no floor-wide bossStatus (handlers2/world.js,
   // server/modes.js); its fixed reward is paid by server/game/fear.js.
-  fearSpawnBoss(lane, lvl) {
+  fearSpawnBoss(lane, lvl, opts = {}) {
     this._fearPurgeDead(lane);
     const room = this._dungeon.fear.lanes[lane];
     if (!room) return null;
@@ -1212,7 +1212,9 @@ class Room {
     const d = row && _FEAR_ENEMY_BY_EID.get(row.base);
     if (!d) return null;
     const stats = monsterStatsAtLevel(lvl, 'boss');
-    const k = bossLairScaling(lvl);
+    // Гильдийский босс — тот же босс Логова в усиленном виде
+    // (guildBossScaling: здоровье ×20, атака и защита ×3).
+    const k = opts.guildBoss ? guildBossScaling(lvl) : bossLairScaling(lvl);
     // Across the hall from the entry, so the fight opens with it walking in.
     let ex = room.entryX, ey = room.entryY - FEAR_SPAWN_RING_MAX;
     if (this._isWall(ex, ey)) ey = room.entryY - FEAR_SPAWN_RING_MIN;
@@ -1220,6 +1222,7 @@ class Room {
     const e = {
       id: `lair_${lane}_${this._fearSeq = (this._fearSeq || 0) + 1}`,
       ...d, eid: row.eid, eType: 'boss', isBoss: true, arm: 'fear', lane, rlvl: lvl, bossLair: true,
+      guildBoss: opts.guildBoss || null,
       name: row.name, color: row.color, size: row.size,
       maxHp: hp, hp,
       atk: Math.floor(stats.atk * k.atkMult), def: Math.floor(stats.def * (k.defMult || 1)),
@@ -1235,6 +1238,37 @@ class Room {
     this._enemyMap.set(e.id, e);
     this._fearAlive.set(lane, 1);
     return e;
+  }
+
+  // ── Гильдийский босс ─────────────────────────────────────────────────────
+  // Тот же зал Логова, но на весь клан: каждый вошедший встаёт в дорожку 0
+  // БЕЗ владения ею (_fearOwner не трогается) — владелец у зала один только в
+  // одиночном Логове. Видят друг друга и босса все, у кого _fearLane = 0
+  // (_raceVisible/_playerLaneKey). p._guildBoss — id клана: по нему
+  // removePlayer не держит зал за отключившимся, а сервер находит, кому
+  // платить дроп (server/game/guildboss.js).
+  guildBossJoin(socketId, clanId) {
+    const p = this.players.get(socketId);
+    const spot = this._dungeon.fear.lanes[0];
+    if (!p || !spot) return null;
+    const a = Math.random() * Math.PI * 2, r = 20 + Math.random() * 40;
+    let x = spot.entryX + Math.cos(a) * r, y = spot.entryY + Math.sin(a) * r * 0.5;
+    if (this._isWall(x, y)) { x = spot.entryX; y = spot.entryY; }
+    p.x = x; p.y = y;
+    p.hp = p.maxHp;
+    p.cp = this._maxCpOf(p);
+    p._fearLane = 0;
+    p._raceLane = null;
+    p._guildBoss = clanId;
+    p._profileRev++;
+    return { x: p.x, y: p.y };
+  }
+
+  // Живые участники клана в зале — кому платить дроп.
+  guildBossParticipants(clanId) {
+    const out = [];
+    this.players.forEach((p, sid) => { if (p._guildBoss === clanId && p.hp > 0) out.push(sid); });
+    return out;
   }
 
   // Spawns TRIAL_MOB_COUNT harmless monsters at TRIAL_MOB_LEVEL, scattered in
@@ -3765,7 +3799,7 @@ class Room {
     // within the window gets the exact hall and wave back, and only a
     // window that elapses with no reconnect turns into a real release.
     const p = this.players.get(socketId);
-    if (p && p._fearLane != null) this._fearGraceStart(p);
+    if (p && p._fearLane != null && !p._guildBoss) this._fearGraceStart(p);
     if (p && p.telegramId && Number.isFinite(p.cp) && p.hp > 0 && p.cp < this._maxCpOf(p)) {
       const now = Date.now();
       if (_cpCarry.size > 5000) for (const [k, v] of _cpCarry) if (now - v.hitAt >= CP_CARRY_TTL_MS) _cpCarry.delete(k);
@@ -5385,7 +5419,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, guildBoss: enemy.guildBoss || null, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -5492,7 +5526,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, guildBoss: enemy.guildBoss || null, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

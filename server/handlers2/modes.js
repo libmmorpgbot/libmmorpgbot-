@@ -774,6 +774,96 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       }
     });
 
+    // ── Гильдийские боссы ────────────────────────────────────────────────────
+    // Лидер клана 11+ уровня вызывает (guildBossSummon), участники входят
+    // (guildBossEnter) в общий зал — server/game/guildboss.js. Вкладка «Босс»
+    // в окне клана читает guildBossState.
+    const gbRepo = require('../db/repos/guildboss');
+    const clansRepo = require('../db/repos/clans');
+    const { GUILD_BOSS_LEVELS, GUILD_BOSS_SUMMON_COST, GUILD_BOSS_SUMMONS_PER_WEEK,
+      GUILD_BOSS_MIN_CLAN_LEVEL, GUILD_BOSS_LIFETIME_MS } = require('../../shared/definitions');
+    const _gbFail = (msg, code) => { throw Object.assign(new Error(code || msg), { userMessage: msg, code }); };
+    const _gbView = async () => {
+      if (!s.authed || !await gbRepo.ready()) return { ready: false };
+      const m = await clansRepo.clanOf(null, s.playerId);
+      if (!m) return { ready: true, inClan: false };
+      const { rows } = await require('../db').query(null, 'SELECT xp FROM clans WHERE id = $1', [m.clanId]);
+      const clanLevel = rows.length ? clansRepo.levelFor(Number(rows[0].xp)) : 1;
+      return {
+        ready: true, inClan: true, isLeader: m.role === 'leader', clanLevel,
+        minClanLevel: GUILD_BOSS_MIN_CLAN_LEVEL, levels: GUILD_BOSS_LEVELS,
+        cost: GUILD_BOSS_SUMMON_COST, perWeek: GUILD_BOSS_SUMMONS_PER_WEEK,
+        lifetimeMs: GUILD_BOSS_LIFETIME_MS,
+        usedThisWeek: await gbRepo.usedThisWeek(null, m.clanId),
+        active: modes._gbPublic(m.clanId),
+        deadThisFight: !!(modes._gbState(m.clanId) && modes._gbState(m.clanId).dead.has(s.playerId)),
+        now: Date.now(),
+      };
+    };
+    safeOn('guildBossSync', async () => {
+      s.socket.emit('guildBossState', await _gbView());
+    });
+    safeOn('guildBossSummon', async ({ level } = {}) => {
+      const res = await s.act('guildBossSummon', 'guildBossError', async (t, pid) => {
+        const r = await gbRepo.summon(t, pid, level);
+        await s.pushBalances(t);
+        return r;
+      }, r => r && { level: r.level, summonId: r.id });
+      if (!res) return;
+      if (!modes._gbStart({ summonId: res.id, clanId: res.clanId, level: res.level, at: res.at })) {
+        await gbRepo.refundOne(res.id).catch(() => {});
+        await s.pushBalances().catch(() => {});
+        s.socket.emit('guildBossError', { msg: 'Не удалось вызвать босса — Liberty возвращена' });
+        return;
+      }
+      // Клану в сети — сразу: босс стоит час, и узнать о нём из вкладки,
+      // которую никто не открыл, значит не узнать.
+      const view = await clansRepo.fullView(null, res.clanId).catch(() => null);
+      const name = (require('../../shared/definitions').bossLairBoss(res.level) || {}).name || '';
+      for (const mm of (view && view.members) || []) {
+        const sock = deps.socketForPlayerId && deps.socketForPlayerId(mm.playerId);
+        if (sock) sock.emit('guildBossSummoned', { level: res.level, name, by: s.username || '' });
+      }
+      s.socket.emit('guildBossState', await _gbView());
+    });
+    const _gbEntering = new Set();
+    safeOn('guildBossEnter', async () => {
+      const no = msg => s.socket.emit('guildBossError', { msg });
+      if (!s.authed || !s.room || _gbEntering.has(s.socket.id)) return;
+      const cp = s.room.players.get(s.socket.id);
+      if (!cp) return no('Выберите персонажа');
+      if (_fear.has(s.socket.id) || _fearStarting.has(s.socket.id)) return no('Сначала завершите текущее событие');
+      if (_a3.queue.has(s.socket.id) || (_a3.live && _a3.teams.has(s.socket.id))) return no('Вы сейчас на арене 3х3');
+      if (_race10.queue.has(s.socket.id) || (_race10.live && _race10.alive.has(s.socket.id))) return no('Вы сейчас в Кровавой Башне');
+      if (_coop.has(s.socket.id) || _farm2.has(s.socket.id)) return no('Сначала завершите текущее событие');
+      _gbEntering.add(s.socket.id);
+      try {
+        const m = await clansRepo.clanOf(null, s.playerId);
+        if (!m) return no('Вы не состоите в клане');
+        const why = modes._gbCanEnter(m.clanId, s.playerId);
+        if (why) return no(why);
+        const g = modes._gbState(m.clanId);
+        if (g.room.players.has(s.socket.id)) return no('Вы уже в зале');
+        if (!_doEnterLocation('fear', { force: true, room: g.room, pos: g.room.fearLaneEntry(0) })) {
+          return no('Не удалось войти — попробуйте ещё раз');
+        }
+        const spot = g.room.guildBossJoin(s.socket.id, m.clanId);
+        if (!spot) { _doEnterLocation('hub', { force: true }); return no('Не удалось войти — попробуйте ещё раз'); }
+        plog.log(s.playerId, 'guildBossEnter', { level: g.level, summonId: g.summonId });
+        s.socket.emit('guildBossEntered', { x: spot.x, y: spot.y, hp: cp.maxHp, level: g.level,
+          name: (require('../../shared/definitions').bossLairBoss(g.level) || {}).name || '' });
+      } finally {
+        _gbEntering.delete(s.socket.id);
+      }
+    });
+    // Выйти из зала самому (кнопка в HUD) — домой; вернуться можно, пока босс жив.
+    safeOn('guildBossLeave', () => {
+      const g = modes._gbRoomOf(s.socket.id);
+      if (!g) return;
+      const spot = _returnToHub(s.socket.id);
+      s.socket.emit('guildBossOut', { reason: 'left', level: g.level, x: spot?.x, y: spot?.y });
+    });
+
     // Sent once the player closes the fear result modal — same reasoning as
     // race10Return/arena3Return: server-side position was already reset when
     // the run ended (_fearFinish), this just makes the client catch up
