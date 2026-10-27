@@ -3059,15 +3059,6 @@ function netClanRequest() {
 function netClanStorageSync() {
   if (socket?.connected && clanData) socket.emit('clanStorageSync');
 }
-function netClanStorageDeposit(id, qty) {
-  if (socket?.connected) socket.emit('clanStorageDeposit', { id, qty });
-}
-// No payload — the server deposits every shard kind currently in the bag in
-// one go (clans.depositAll, server/db/repos/clans.js) instead of one
-// clanStorageDeposit round trip per kind.
-function netClanStorageDepositAll() {
-  if (socket?.connected) socket.emit('clanStorageDepositAll');
-}
 function netClanStorageGive(telegramId, id, qty) {
   if (socket?.connected) socket.emit('clanStorageGive', { telegramId, id, qty });
 }

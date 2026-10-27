@@ -1044,26 +1044,6 @@ function _clanStorageHTML() {
     ? `<button class="clan-btn" onclick="netClanStorageClaim()">${t('clanStorageClaimBtn')}</button>`
     : '';
 
-  // Deposit — only the shards actually in the player's bag are offered, so
-  // there is no way to pick something they don't have.
-  const held = (player && player.inventory || [])
-    .filter(i => i && typeof UNIQUE_SHARDS !== 'undefined' && UNIQUE_SHARDS.some(u => u.id === i.id));
-  const depositRows = !s.canUse ? '' : (held.length
-    ? held.map(i => `
-        <div class="clan-storage-row">
-          ${i.img ? `<img class="clan-storage-img" src="${_esc(i.img)}" alt="">` : ''}
-          <span class="clan-storage-name">${_esc(i.name)}</span>
-          <span class="clan-storage-qty">${i.qty || 1}</span>
-          <button class="clan-btn-sm" onclick="_clanStorageDepositPrompt('${_esc(i.id)}','${_esc(i.name)}',${i.qty || 1})">${t('clanStorageDepositBtn')}</button>
-        </div>`).join('')
-    : `<div class="clan-empty">${t('clanStorageNoShards')}</div>`);
-  // Only worth its own row once there's more than one kind to gather up —
-  // with a single kind the per-row button above already does the same
-  // thing in the same one tap.
-  const depositAllBtn = (s.canUse && held.length > 1)
-    ? `<button class="clan-btn-sm" style="margin-top:6px" onclick="netClanStorageDepositAll()">${t('clanStorageDepositAllBtn')}</button>`
-    : '';
-
   return `
     ${treasury}
     ${gate}
@@ -1072,11 +1052,7 @@ function _clanStorageHTML() {
     <div class="clan-section-hdr">${s.isLeader ? t('clanStorageAllocHdrLeader') : t('clanStorageAllocHdr')}</div>
     <div class="clan-storage-list">${allocRows}</div>
     ${claimBtn}
-    ${s.depositsClosed
-      ? `<div class="clan-storage-gate">Осколки больше нельзя класть в хранилище. То, что уже лежит, лидер раздаёт как раньше.</div>`
-      : (s.canUse ? `<div class="clan-section-hdr">${t('clanStorageDepositHdr')}</div>
-    <div class="clan-storage-list">${depositRows}</div>
-    ${depositAllBtn}` : '')}`;
+    <div class="clan-storage-gate">Осколки в хранилище класть нельзя. То, что уже лежит, лидер раздаёт как раньше.</div>`;
 }
 
 // ── Казна клана (Liberty) ─────────────────────────────────────────────────
@@ -1197,15 +1173,6 @@ function _clanStorageUnlockConfirm() {
   if (!s || s.unlocked) return;
   if (!confirm(tVars('clanStorageUnlockAsk', { n: _num(s.unlockCost || 0) }))) return;
   netClanStorageUnlock();
-}
-
-function _clanStorageDepositPrompt(id, name, max) {
-  const raw = prompt(tVars('clanStorageDepositAsk', { name, max }), String(max));
-  if (raw == null) return;
-  const n = Math.floor(Number(raw));
-  if (!Number.isFinite(n) || n <= 0) return;
-  if (n > max) { _marketToast(tVars('clanStorageTooMany', { max }), 'err'); return; }
-  netClanStorageDeposit(id, n);
 }
 
 function _clanStorageGivePrompt(id, name, max) {
