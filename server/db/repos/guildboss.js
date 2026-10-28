@@ -84,22 +84,28 @@ async function finish(db, summonId, status, killedBy = null) {
   return rowCount > 0;
 }
 
-// Дроп одному игроку, своей транзакцией: сбой у одного не лишает других.
-// Строка guild_boss_rewards — «уже выдано»: повтор отказывает тихо.
-async function grantReward(playerId, summonId, level) {
+// Босс убит: итог вызова и дроп в хранилище клана — одной транзакцией.
+// «Убит» ставится только из 'active', так что второй удар по трупу (или
+// повтор после сбоя) ничего не положит дважды: UPDATE не найдёт строку.
+// Дроп — один бросок на клан; раздаёт лидер (clans.allocate), как осколки.
+async function settleKill(summonId, clanId, level, killedBy = null) {
   return tx(async (t) => {
     const roll = guildBossRollReward(level, () => crypto.randomInt(2 ** 30) / 2 ** 30);
     const { rowCount } = await query(t, `
-      INSERT INTO guild_boss_rewards (summon_id, player_id, items) VALUES ($1, $2, $3::jsonb)
-      ON CONFLICT DO NOTHING`, [summonId, playerId, JSON.stringify(roll)]);
+      UPDATE guild_boss_summons
+         SET status = 'killed', killed_by = $2, ended_at = now(), drop_items = $3::jsonb
+       WHERE id = $1 AND status = 'active'`, [summonId, killedBy, JSON.stringify(roll)]);
     if (!rowCount) return null;
-    const list = roll.map(it => {
+    for (const it of roll) {
+      await query(t, `
+        INSERT INTO clan_storage (clan_id, item_id, qty) VALUES ($1, $2, $3)
+        ON CONFLICT (clan_id, item_id) DO UPDATE SET qty = clan_storage.qty + EXCLUDED.qty`,
+        [clanId, it.id, it.qty]);
+    }
+    return roll.map(it => {
       const def = CRAFT_MATS.find(m => m.id === it.id);
       return { ...it, name: def ? def.name : it.id, img: def ? def.img : null };
     });
-    const { grantItems } = require('../../mode-rewards');
-    const g = await grantItems(t, playerId, list);
-    return { items: g.given, missed: g.missed };
   });
 }
 
@@ -139,5 +145,5 @@ async function refundActive() {
 }
 
 module.exports = {
-  ready, usedThisWeek, activeOf, summon, finish, grantReward, refundActive, refundOne, GuildBossError,
+  ready, usedThisWeek, activeOf, summon, finish, settleKill, refundActive, refundOne, GuildBossError,
 };

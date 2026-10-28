@@ -6,8 +6,8 @@
 //
 // Зал один на клан и на вызов. Участники встают в одну дорожку без владельца
 // (Room.guildBossJoin), так что видят друг друга и бьют одного босса. Умерший
-// вылетает домой и в этот вызов больше не входит. Дроп — каждому, кто стоит в
-// зале живым в момент убийства, своим броском (repos/guildboss.grantReward).
+// вылетает домой и в этот вызов больше не входит. Дроп — один бросок на клан,
+// целиком в хранилище клана; раздаёт лидер (repos/guildboss.settleKill).
 //
 // Перезапуск сервера зал теряет; вызов, застигнутый активным, возвращается
 // лидеру при старте (repos/guildboss.refundActive) — см. server/workers.js.
@@ -21,7 +21,7 @@ const { GUILD_BOSS_LIFETIME_MS, bossLairBoss } = require('../../shared/definitio
 const GB_LINGER_MS = 4000;
 
 module.exports = function createGuildBoss(deps) {
-  const { io, _returnToHub, safeTimeout, finishSummon, grantReward, pushItemsTo, playerIdOf } = deps;
+  const { io, _returnToHub, safeTimeout, finishSummon, settleKill, notifyClan, playerIdOf } = deps;
 
   // clanId -> { summonId, clanId, level, room, startedAt, expiresAt, timer,
   //             done, dead: Set<playerId> }
@@ -85,9 +85,10 @@ module.exports = function createGuildBoss(deps) {
     return true;
   }
 
-  // Убийство: зафиксировать итог, раздать дроп живым в зале, через паузу —
-  // всех домой. Повторный удар по трупу в тот же тик сюда не пройдёт: done
-  // ставится до первого await.
+  // Убийство: итог и дроп в хранилище клана — одной транзакцией
+  // (settleKill), потом весь клан в сети видит окно с дропом и свежее
+  // хранилище, а через паузу все из зала — домой. Повторный удар по трупу в
+  // тот же тик сюда не пройдёт: done ставится до первого await.
   async function _gbTrackKill(socketId, result) {
     const clanId = result.guildBoss;
     const g = _gb.get(clanId);
@@ -95,19 +96,12 @@ module.exports = function createGuildBoss(deps) {
     g.done = true;
     clearTimeout(g.timer);
     const killerPid = playerIdOf(socketId);
-    const winners = g.room.guildBossParticipants(clanId);
-    if (!winners.includes(socketId) && g.room.players.has(socketId)) winners.push(socketId);
-    try { await finishSummon(g.summonId, 'killed', killerPid || null); }
-    catch (err) { console.error('[guildBoss] finish:', err.message); }
-    for (const sid of winners) {
-      const pid = playerIdOf(sid);
-      if (!pid) continue;
-      let reward = null;
-      try { reward = await grantReward(pid, g.summonId, g.level); }
-      catch (err) { console.error('[guildBoss] reward:', err.message); }
-      if (reward) await pushItemsTo(sid).catch(() => {});
-      io.to(sid).emit('guildBossKilled', { level: g.level, reward });
-    }
+    let drop = null;
+    try { drop = await settleKill(g.summonId, clanId, g.level, killerPid || null); }
+    catch (err) { console.error('[guildBoss] settle:', err.message); }
+    const payload = { level: g.level, drop, toStorage: true };
+    for (const sid of g.room.players.keys()) io.to(sid).emit('guildBossKilled', payload);
+    await notifyClan(clanId, payload, [...g.room.players.keys()]).catch(() => {});
     safeTimeout('guildBossLinger', () => _gbClose(clanId, 'killed'), GB_LINGER_MS);
   }
 

@@ -487,8 +487,28 @@ function init(io) {
   Object.assign(modes, createGuildBoss({
     ...shared,
     finishSummon: (id, status, by) => require('./db/repos/guildboss').finish(null, id, status, by),
-    grantReward: (pid, summonId, level) => require('./db/repos/guildboss').grantReward(pid, summonId, level),
-    pushItemsTo: async (sid) => { const ss = sessionOf(sid); if (ss) await ss.pushItems(); },
+    settleKill: (id, clanId, level, by) => require('./db/repos/guildboss').settleKill(id, clanId, level, by),
+    // Весь клан в сети: окно «босс повержен» (кроме тех, кто уже получил его
+    // в зале) и свежий вид хранилища — дроп лежит там.
+    notifyClan: async (clanId, payload, skipSockets = []) => {
+      const clans = require('./db/repos/clans');
+      const view = await clans.fullView(null, clanId);
+      if (!view) return;
+      const skip = new Set(skipSockets);
+      const ids = new Set((view.members || []).map(m => m.playerId));
+      const sockOf = new Map();
+      if (_io) for (const sk of _io.sockets.sockets.values()) {
+        const ss = sk.data && sk.data.session;
+        if (ss && ss.authed && ids.has(ss.playerId)) sockOf.set(ss.playerId, sk);
+      }
+      for (const m of view.members || []) {
+        const sock = sockOf.get(m.playerId);
+        if (!sock) continue;
+        if (!skip.has(sock.id)) sock.emit('guildBossKilled', payload);
+        const sv = await clans.storageView(null, clanId, m.playerId).catch(() => null);
+        if (sv) sock.emit('clanStorage', sv);
+      }
+    },
     playerIdOf,
   }));
   Object.assign(modes, createCoop(shared));

@@ -2305,9 +2305,9 @@ function netConnect(onReady) {
     if (typeof showEventBossBanner === 'function') showEventBossBanner(`${name || 'Босс'} · ${level} ур.`, '#e5484d');
     if (typeof Sound !== 'undefined' && Sound.bossSpawn) Sound.bossSpawn();
   });
-  socket.on('guildBossKilled', ({ level, reward } = {}) => {
+  socket.on('guildBossKilled', ({ level, drop } = {}) => {
     if (typeof _gbInside !== 'undefined') _gbInside = false;
-    if (typeof showGuildBossResult === 'function') showGuildBossResult(level, reward);
+    if (typeof showGuildBossResult === 'function') showGuildBossResult(level, drop);
     netGuildBossSync();
   });
   socket.on('guildBossOut', ({ reason, x, y } = {}) => {

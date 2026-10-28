@@ -24,7 +24,7 @@ const money = require('./money');
 const {
   CLAN_MAX_MEMBERS, CLAN_CREATE_COST, CLAN_DESC_MAX_CHARS, CLAN_LEVELS,
   CLAN_STORAGE_MIN_DAYS, CLAN_STORAGE_UNLOCK_GOLD, UNIQUE_SHARDS, clanAtkBonusPct,
-  CLAN_DONATIONS, CLAN_DONATE_MIN_HOURS, MSK_OFFSET_H,
+  CLAN_DONATIONS, CLAN_DONATE_MIN_HOURS, MSK_OFFSET_H, CRAFT_MATS,
 } = require('../../../shared/definitions');
 
 class ClanError extends Error {
@@ -807,8 +807,10 @@ async function storageView(db, clanId, playerId) {
   const daysOf = new Map(tg.map(r => [Number(r.player_id),
     r.joined_at ? (Date.now() - new Date(r.joined_at).getTime()) / 86400000 : Infinity]));
 
+  // Не только осколки: дроп гильдийского босса (камни, свитки, книги, руда)
+  // лежит в том же хранилище — имя и картинка из общего каталога материалов.
   const named = id => {
-    const d = _shard(id);
+    const d = _shard(id) || CRAFT_MATS.find(x => x.id === id);
     return { name: d ? d.name : id, img: d ? d.img : null };
   };
 

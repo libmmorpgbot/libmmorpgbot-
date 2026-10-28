@@ -952,7 +952,7 @@ function _gbDropHTML(level) {
   ];
   return `<div class="gb-drop">${rows.map(([ic, n, q]) =>
     `<div class="gb-drop-row">${ic}<span>${n}</span><b>${q}</b></div>`).join('')}
-    <div class="gb-drop-note">Количество случайное; чем выше уровень босса, тем ближе к максимуму. Дроп получает каждый, кто жив в зале в момент убийства.</div></div>`;
+    <div class="gb-drop-note">Количество случайное; чем выше уровень босса, тем ближе к максимуму. Весь дроп уходит в хранилище клана — раздаёт лидер.</div></div>`;
 }
 function _clanBossHTML() {
   const v = _gbView;
@@ -989,7 +989,7 @@ function _clanBossHTML() {
     <div class="gb-note">Боссы Логова с 35 уровня — здоровье ×20, атака и защита ×3.
       Вызывает лидер клана ${v.minClanLevel}+ уровня за ${_num(v.cost)} Liberty,
       ${v.perWeek} раза в неделю (на этой неделе: ${v.usedThisWeek}/${v.perWeek}).
-      Босс стоит ${Math.round(v.lifetimeMs / 60000)} минут. Кто умер — вылетает.</div>`;
+      Босс стоит ${Math.round(v.lifetimeMs / 60000)} минут. Кто умер — вылетает. Дроп — в хранилище клана.</div>`;
   if (v.clanLevel < v.minClanLevel) {
     html += `<div class="clan-storage-gate">Нужен ${v.minClanLevel} уровень клана (сейчас ${v.clanLevel}).</div>`;
   }
@@ -1025,11 +1025,11 @@ function _gbSummonAsk(level) {
   _showConfirmModal(`Вызвать «${name}» (${level} ур.) за ${cost} Liberty? Босс будет стоять час.`,
     () => netGuildBossSummon(level), 'Вызвать');
 }
-// Итог: дроп, который выдал сервер. Осколки — одной строкой суммой.
-function showGuildBossResult(level, reward) {
+// Итог: что упало в хранилище клана (сервер прислал после записи).
+// Осколки — одной строкой суммой.
+function showGuildBossResult(level, drop) {
   document.getElementById('gb-win-ov')?.remove();
-  const r = reward || {};
-  const all = (r.items || []);
+  const all = Array.isArray(drop) ? drop : [];
   const shards = all.filter(it => it.id && it.id.startsWith('shard_')).reduce((n, it) => n + (it.qty || 0), 0);
   const rest = all.filter(it => !(it.id && it.id.startsWith('shard_')));
   const row = (img, name, qty) => `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}<span>${name}</span><span class="db-reward-qty">×${qty}</span></div>`;
@@ -1044,8 +1044,9 @@ function showGuildBossResult(level, reward) {
     <div class="ach-win-rays"></div>
     <div class="db-win-title">Босс повержен!</div>
     <div class="db-win-sub">${_esc(b.key ? t(b.key) : (b.name || ''))} · ${level} ур.</div>
-    ${reward ? `<div class="gb-win-list">${rows.join('')}</div>` : `<div class="db-win-sub">Вас не было в зале живым в момент убийства — дропа нет.</div>`}
-    ${(r.missed || []).length ? `<div class="db-win-sub" style="color:#f07886">Часть не поместилась в инвентарь.</div>` : ''}
+    ${all.length
+      ? `<div class="db-win-sub">Дроп отправлен в хранилище клана — раздаёт лидер.</div><div class="gb-win-list">${rows.join('')}</div>`
+      : `<div class="db-win-sub">Не удалось записать дроп — сообщите администрации.</div>`}
     <button class="db-win-btn" onclick="document.getElementById('gb-win-ov')?.remove()">Отлично</button>
   </div>`;
   document.body.appendChild(ov);
