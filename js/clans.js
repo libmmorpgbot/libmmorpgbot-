@@ -612,13 +612,23 @@ function updateClanUI() {
 
 // ── No clan screen ────────────────────────────────────────
 function _renderNoClan(el) {
+  const perk = (icon, col, title, text) => `<div class="clx-perk">${_clxIco(icon, 18, col)}<div><b>${title}</b><span>${text}</span></div></div>`;
   el.innerHTML = `
-    <div class="clan-empty">
-      <div class="clan-empty-icon">${clanIconSVG(1, 64)}</div>
-      <div class="clan-empty-title">${typeof t === 'function' ? t('clanNoClanTitle') : 'У вас нет клана'}</div>
-      <div class="clan-empty-sub">${typeof t === 'function' ? t('clanNoClanSub') : 'Создайте свой клан или найдите существующий'}</div>
-      <button class="clan-btn clan-btn-create" onclick="_clanGoCreate()">${typeof t === 'function' ? t('clanCreateBtn') : '+ Создать клан'}</button>
-      <button class="clan-btn clan-btn-search" onclick="_clanGoSearch()">${typeof t === 'function' ? t('clanFindBtn') : 'Найти клан'}</button>
+    <div class="clx">
+      <div class="clx-hero clx-hero-empty">
+        <div class="clx-emblem">${clanIconSVG(1, 46)}</div>
+        <div class="clx-hero-main">
+          <div class="clx-name">${typeof t === 'function' ? t('clanNoClanTitle') : 'У вас нет клана'}</div>
+          <div class="clx-sub">${typeof t === 'function' ? t('clanNoClanSub') : 'Создайте свой клан или найдите существующий'}</div>
+        </div>
+      </div>
+      <div class="clx-perks">
+        ${perk('star', '#f0c75e', 'Бонусы', 'до +30% золота и опыта, +25% атаки, скорости атаки и силы крита')}
+        ${perk('castle', '#8fd0ff', 'Война гильдий', 'вышки приносят клану до 300 Liberty в день')}
+        ${perk('skullFace', '#ff7a6a', 'Гильдийские боссы', 'бьёте всем кланом, дроп — в хранилище')}
+      </div>
+      <button class="clx-btn wide" onclick="_clanGoCreate()">${typeof t === 'function' ? t('clanCreateBtn') : '+ Создать клан'}</button>
+      <button class="clx-btn wide ghost" onclick="_clanGoSearch()">${typeof t === 'function' ? t('clanFindBtn') : 'Найти клан'}</button>
     </div>`;
 }
 
@@ -733,6 +743,7 @@ function _clanDoSearch() {
 // ── Clan home screen ──────────────────────────────────────
 function _setClanHomeTab(n) {
   _clanHomeTab = n;
+  _clxOpenMember = null;
   if (n === 5 && typeof netGuildBossSync === 'function') netGuildBossSync();
   updateClanUI();
 }
@@ -758,167 +769,189 @@ function _clanDescSave() {
   updateClanUI();
 }
 
+// ── Clan home screen (оформление «clx») ───────────────────────────────────
+// Шапка — эмблема с уровнем, название, прогресс до следующего уровня и
+// действующие бонусы одной строкой. Ниже — вкладки-иконки и тело вкладки.
+// Номера вкладок прежние (0 клан … 5 босс): по ним onClanStorage/
+// onClanActivity/onGuildBossState решают, перерисовывать ли.
+const _CLX_TABS = [
+  { icon: 'castle',  key: 'clxTabHome',    ru: 'Клан' },
+  { icon: 'party',   key: 'clxTabMembers', ru: 'Состав' },
+  { icon: 'star',    key: 'clxTabPerks',   ru: 'Бонусы' },
+  { icon: 'storage', key: 'clxTabStorage', ru: 'Склад' },
+  { icon: 'trophy',  key: 'clxTabDonors',  ru: 'Вклад' },
+  { icon: 'skullFace', key: 'clxTabBoss',  ru: 'Босс' },
+];
+const _CLX_BONUS = [
+  { k: 'gold', icon: 'coin',      key: 'clanPerkGold', ru: 'Золото',        col: '#f0c75e' },
+  { k: 'xp',   icon: 'star',      key: 'clanPerkXp',   ru: 'Опыт',          col: '#8fd0ff' },
+  { k: 'atk',  icon: 'sword',     key: 'clanPerkAtk',  ru: 'Атака',         col: '#ff7a6a' },
+  { k: 'aspd', icon: 'wind',      key: 'clanPerkAspd', ru: 'Скорость атаки', col: '#7ee0b0' },
+  { k: 'crit', icon: 'burst',     key: 'clanPerkCrit', ru: 'Сила крита',    col: '#d59cff' },
+];
+let _clxOpenMember = null;   // telegramId участника, у которого раскрыты действия лидера
+
+function _clxT(key, ru) { return (key && typeof t === 'function') ? t(key) : ru; }
+function _clxIco(name, size, col) { return typeof iconHTML === 'function' ? iconHTML(name, size, col || 'currentColor') : ''; }
+
+function _clxBonusChips(b, opts = {}) {
+  const chips = _CLX_BONUS.filter(x => (b[x.k] || 0) > 0).map(x =>
+    `<span class="clx-chip" style="--cc:${x.col}" title="${_clxT(x.key, x.ru)}">${_clxIco(x.icon, 12, x.col)}+${b[x.k]}%${opts.labels ? ` <em>${_clxT(x.key, x.ru).toLowerCase()}</em>` : ''}</span>`);
+  return chips.length ? chips.join('') : `<span class="clx-chip clx-chip-none">${_clxT('clanNoBonusYet', 'бонусов пока нет')}</span>`;
+}
+
+function _clxDaysIn(joinedAt) {
+  if (!joinedAt) return '';
+  const d = Math.floor((Date.now() - new Date(joinedAt).getTime()) / 86400000);
+  return d < 1 ? 'сегодня' : `${d} дн.`;
+}
+
 function _renderClanHome(el) {
   const c = clanData;
-  const lvlDef = CLAN_LEVELS[(c.level || 1) - 1];
+  const lvlDef = CLAN_LEVELS[(c.level || 1) - 1] || CLAN_LEVELS[0];
   const nextDef = CLAN_LEVELS[c.level] || null;
-  const xpPct = nextDef ? Math.min(100, Math.round((c.xp - lvlDef.xpReq) / (nextDef.xpReq - lvlDef.xpReq) * 100)) : 100;
-  const bonus = getClanBonus();
+  const xpPct = nextDef ? Math.max(0, Math.min(100, (c.xp - lvlDef.xpReq) / (nextDef.xpReq - lvlDef.xpReq) * 100)) : 100;
   const isLeader = c.myRole === 'leader';
-  const myBM = typeof calcBM === 'function' && player ? calcBM(player) : 0;
 
-  const bonusLines = [];
-  if (bonus.gold > 0) bonusLines.push(`+${bonus.gold}% ${typeof t === 'function' ? t('clanPerkGold').toLowerCase() : 'золото'}`);
-  if (bonus.xp   > 0) bonusLines.push(`+${bonus.xp}% ${typeof t === 'function' ? t('clanPerkXp').toLowerCase() : 'опыт'}`);
-  if (bonus.atk  > 0) bonusLines.push(`+${bonus.atk}% ${typeof t === 'function' ? t('clanPerkAtk').toLowerCase() : 'атака'}`);
-  if (bonus.aspd > 0) bonusLines.push(`+${bonus.aspd}% ${t('clanPerkAspd').toLowerCase()}`);
-  if (bonus.crit > 0) bonusLines.push(`+${bonus.crit}% ${t('clanPerkCrit').toLowerCase()}`);
-  const bonusHtml = bonusLines.length
-    ? bonusLines.map(l => `<span class="clan-bonus-tag">${l}</span>`).join('')
-    : `<span class="clan-bonus-tag clan-bonus-none">${typeof t === 'function' ? t('clanNoBonusYet') : 'бонусов пока нет'}</span>`;
+  const tabs = _CLX_TABS.map((tb, i) =>
+    `<button class="clx-tab${_clanHomeTab === i ? ' on' : ''}" onclick="_setClanHomeTab(${i})">${_clxIco(tb.icon, 17)}<span>${_clxT(tb.key, tb.ru)}</span></button>`).join('');
 
-  const tabs = [
-    typeof t === 'function' ? t('clanTabHome') : 'Клан',
-    typeof t === 'function' ? t('clanTabMembers') : 'Участники',
-    typeof t === 'function' ? t('clanTabPerks') : 'Навыки',
-    typeof t === 'function' ? t('clanTabStorage') : 'Хранилище',
-    typeof t === 'function' ? t('clanTabActivity') : 'Активность',
-    'Босс',
-  ];
-  const tabHtml = tabs.map((t, i) =>
-    `<div class="clan-tab${_clanHomeTab === i ? ' active' : ''}" onclick="_setClanHomeTab(${i})">${t}</div>`
-  ).join('');
-
-  let bodyHtml = '';
-  if (_clanHomeTab === 0) {
-    // ── Клан tab: description + XP bar + leave/disband ────────────
-    const descMax = typeof CLAN_DESC_MAX_CHARS !== 'undefined' ? CLAN_DESC_MAX_CHARS : 200;
-    let descHtml;
-    if (_clanDescEditing) {
-      descHtml = `
-        <div class="clan-desc-edit">
-          <textarea class="clan-input clan-desc-input" id="clan-desc-inp" maxlength="${descMax}"
-                    placeholder="${typeof t === 'function' ? t('clanDescPlaceholder') : 'Расскажите о клане...'}">${_esc(_clanDescDraft)}</textarea>
-          <div class="clan-desc-actions">
-            <button class="clan-btn-sm" onclick="_clanDescSave()">${typeof t === 'function' ? t('clanSaveBtn') : 'Сохранить'}</button>
-            <button class="clan-btn-sm clan-btn-danger" onclick="_clanDescCancelEdit()">${typeof t === 'function' ? t('clanCancelBtn') : 'Отмена'}</button>
-          </div>
-        </div>`;
-    } else {
-      descHtml = `
-        <div class="clan-desc${c.description ? '' : ' clan-desc-empty'}">
-          <span class="clan-desc-text">${c.description ? _esc(c.description) : (typeof t === 'function' ? t('clanDescEmpty') : 'Описание клана пока не добавлено')}</span>
-          ${isLeader ? `<button class="clan-desc-edit-btn" onclick="_clanDescStartEdit()" title="${typeof t === 'function' ? t('clanDescEditTitle') : 'Изменить описание'}">✎</button>` : ''}
-        </div>`;
-    }
-    bodyHtml = `
-      ${descHtml}
-      <div class="clan-xp-block">
-        <div class="clan-xp-label">
-          ${typeof t === 'function' ? t('clanPointsLbl') : 'Очки клана'}: ${c.xp.toLocaleString()}
-          ${nextDef ? `· ${typeof tVars === 'function' ? tVars('clanUntilLevel', { lvl: c.level + 1 }) : 'до ур.' + (c.level+1)}: ${(nextDef.xpReq - c.xp).toLocaleString()}` : `· ${typeof t === 'function' ? t('clanMaxLevel') : 'Макс. уровень'}`}
-        </div>
-        <div class="clan-xp-bar-bg"><div class="clan-xp-bar-fill" style="width:${xpPct}%"></div></div>
-      </div>
-      <div class="clan-bonus-row" style="margin-bottom:14px">${bonusHtml}</div>
-      ${_clanDonateHTML(c)}
-      ${myBM ? `<div class="clan-my-bm">${typeof t === 'function' ? t('clanYourBmLbl') : 'Ваша БМ'}: <span>${myBM.toLocaleString()}</span></div>` : ''}
-      <div style="margin-top:16px">
-        ${isLeader
-          ? `<button class="clan-btn clan-btn-danger" onclick="_clanConfirmDisband()">${typeof t === 'function' ? t('clanDisbandBtn') : 'Расформировать'}</button>`
-          : `<button class="clan-btn clan-btn-leave" onclick="_clanConfirmLeave()">${typeof t === 'function' ? t('clanLeaveBtn') : 'Покинуть клан'}</button>`}
-      </div>`;
-  } else if (_clanHomeTab === 1) {
-    // ── Участники tab ──────────────────────────────────────
-    const membersHtml = (c.members || [])
-      .slice().sort((a, b) => (b.bm || 0) - (a.bm || 0))
-      .map(m => {
-        const roleIcon = m.role === 'leader' ? '👑' : '⚔️';
-        const transferBtn = isLeader && m.role !== 'leader'
-          ? `<button class="clan-btn-sm" onclick="_clanTransferConfirm('${m.telegramId}')">${typeof t === 'function' ? t('clanTransferBtn') : 'Сделать лидером'}</button>`
-          : '';
-        const kickBtn = isLeader && m.role !== 'leader'
-          ? `<button class="clan-btn-sm clan-btn-danger" onclick="_clanKickConfirm('${m.telegramId}')">${typeof t === 'function' ? t('clanKickBtn') : 'Исключить'}</button>`
-          : '';
-        return `<div class="clan-member">
-          <span class="clan-member-role">${roleIcon}</span>
-          <span class="clan-member-name">${_esc(m.username)}</span>
-          ${classBadgeHTML(m.charClass, 18)}
-          ${m.bm ? `<span class="clan-member-bm">БМ ${m.bm.toLocaleString()}</span>` : ''}
-          ${transferBtn}
-          ${kickBtn}
-        </div>`;
-      }).join('');
-
-    let appsHtml = '';
-    if (isLeader && c.applications && c.applications.length > 0) {
-      appsHtml = `<div class="clan-section-hdr" style="margin-top:14px">${typeof tVars === 'function' ? tVars('clanApplicationsFmt', { n: c.applications.length }) : 'Заявки (' + c.applications.length + ')'}</div>` +
-        c.applications.map(a => `
-          <div class="clan-member">
-            <span class="clan-member-name">⌛ ${_esc(a.username)}</span>
-            <button class="clan-btn-sm" onclick="netClanApprove('${a.telegramId}')">${typeof t === 'function' ? t('clanApproveBtn') : 'Принять'}</button>
-            <button class="clan-btn-sm clan-btn-danger" onclick="netClanDecline('${a.telegramId}')">${typeof t === 'function' ? t('clanDeclineBtn') : 'Отказать'}</button>
-          </div>`).join('');
-    }
-    bodyHtml = `
-      <div class="clan-section-hdr">${typeof tVars === 'function' ? tVars('clanMembersByBmFmt', { n: _clanMemberCount(c) }) : 'Участники (' + _clanMemberCount(c) + ') · по БМ'}</div>
-      ${membersHtml}
-      ${appsHtml}`;
-  } else if (_clanHomeTab === 2) {
-    // ── Навыки tab: perk tree by level ────────────────────
-    // Дерево бонусов строится из самой таблицы CLAN_LEVELS: на каждом уровне —
-    // то, что выросло по сравнению с предыдущим. Раньше здесь был список,
-    // написанный руками, и он разошёлся бы с таблицей при первом же новом
-    // уровне.
-    const PERK_META = {
-      gold: { icon: '💰', key: 'clanPerkGold', ru: 'Золото' },
-      xp:   { icon: '⚡', key: 'clanPerkXp',   ru: 'Опыт' },
-      atk:  { icon: '⚔️', key: 'clanPerkAtk',  ru: 'Атака' },
-      aspd: { icon: '💨', key: 'clanPerkAspd', ru: 'Скорость атаки' },
-      crit: { icon: '💥', key: 'clanPerkCrit', ru: 'Сила крита' },
-    };
-    const perks = [];
-    CLAN_LEVELS.forEach((def, i) => {
-      const prev = i ? CLAN_LEVELS[i - 1].bonus : {};
-      for (const k of ['gold', 'xp', 'atk', 'aspd', 'crit']) {
-        if ((def.bonus[k] || 0) > (prev[k] || 0)) perks.push({ lvl: def.lvl, k, v: def.bonus[k] });
-      }
-    });
-    const perksHtml = perks.map(pk => {
-      const meta = PERK_META[pk.k];
-      const unlocked = c.level >= pk.lvl;
-      const label = typeof t === 'function' ? t(meta.key) : meta.ru;
-      return `<div class="${unlocked ? 'clan-perk unlocked' : 'clan-perk locked'}">
-        <div class="clan-perk-icon">${meta.icon}</div>
-        <div class="clan-perk-body">
-          <div class="clan-perk-name">${label} <span class="clan-perk-lvl">Ур.${pk.lvl}</span></div>
-          <div class="clan-perk-desc">+${pk.v}% ${label.toLowerCase()}</div>
-        </div>
-      </div>`;
-    }).join('');
-    bodyHtml = `
-      <div class="clan-section-hdr">${typeof t === 'function' ? t('clanPerksHdr') : 'Бонусы клана по уровням'}</div>
-      <div class="clan-perks">${perksHtml}</div>`;
-  } else if (_clanHomeTab === 3) {
-    bodyHtml = _clanStorageHTML();
-  } else if (_clanHomeTab === 5) {
-    bodyHtml = _clanBossHTML();
-  } else if (_clanHomeTab === 4) {
-    bodyHtml = _clanActivityHTML();
-  }
+  let body = '';
+  if (_clanHomeTab === 0) body = _clxHomeTab(c, isLeader);
+  else if (_clanHomeTab === 1) body = _clxMembersTab(c, isLeader);
+  else if (_clanHomeTab === 2) body = _clxPerksTab(c);
+  else if (_clanHomeTab === 3) body = _clanStorageHTML();
+  else if (_clanHomeTab === 4) body = _clanActivityHTML();
+  else if (_clanHomeTab === 5) body = _clanBossHTML();
 
   el.innerHTML = `
-    <div class="clan-home">
-      <div class="clan-hdr">
-        <div class="clan-hdr-icon">${clanIconSVG(c.icon, 48)}</div>
-        <div class="clan-hdr-info">
-          <div class="clan-hdr-name">${_esc(c.name)}</div>
-          <div class="clan-hdr-level">${lvlDef.label} · Ур. ${c.level}/${CLAN_LEVELS.length}</div>
+    <div class="clx">
+      <div class="clx-hero">
+        <div class="clx-emblem">${clanIconSVG(c.icon, 46)}<span class="clx-lvl">${c.level}</span></div>
+        <div class="clx-hero-main">
+          <div class="clx-name">${_esc(c.name)}</div>
+          <div class="clx-sub">${_esc(lvlDef.label)} · ${_clxIco('party', 12)} ${_clanMemberCount(c)}${isLeader ? ` · ${_clxIco('crown', 12, '#f0c75e')} лидер` : ''}</div>
+          <div class="clx-xp"><i style="width:${xpPct.toFixed(1)}%"></i></div>
+          <div class="clx-xp-txt">
+            <span>${_num(c.xp)} очков</span>
+            <span>${nextDef ? `до ${c.level + 1} ур. — ${_num(nextDef.xpReq - c.xp)}` : _clxT('clanMaxLevel', 'Макс. уровень')}</span>
+          </div>
         </div>
       </div>
-      <div class="clan-tabs">${tabHtml}</div>
-      ${bodyHtml}
+      <div class="clx-chips">${_clxBonusChips(getClanBonus())}</div>
+      <div class="clx-tabs">${tabs}</div>
+      <div class="clx-body">${body}</div>
     </div>`;
+}
+
+// ── Обзор ─────────────────────────────────────────────────
+function _clxHomeTab(c, isLeader) {
+  const descMax = typeof CLAN_DESC_MAX_CHARS !== 'undefined' ? CLAN_DESC_MAX_CHARS : 200;
+  const desc = _clanDescEditing
+    ? `<div class="clx-card">
+        <textarea class="clan-input clan-desc-input" id="clan-desc-inp" maxlength="${descMax}"
+          placeholder="${_clxT('clanDescPlaceholder', 'Расскажите о клане...')}">${_esc(_clanDescDraft)}</textarea>
+        <div class="clx-row-end">
+          <button class="clx-btn ghost" onclick="_clanDescCancelEdit()">${_clxT('clanCancelBtn', 'Отмена')}</button>
+          <button class="clx-btn" onclick="_clanDescSave()">${_clxT('clanSaveBtn', 'Сохранить')}</button>
+        </div>
+      </div>`
+    : `<div class="clx-desc${c.description ? '' : ' empty'}">
+        <span>${c.description ? _esc(c.description) : _clxT('clanDescEmpty', 'Описание клана пока не добавлено')}</span>
+        ${isLeader ? `<button class="clx-icon-btn" onclick="_clanDescStartEdit()" title="${_clxT('clanDescEditTitle', 'Изменить описание')}">✎</button>` : ''}
+      </div>`;
+
+  const members = c.members || [];
+  const power = members.reduce((n, m) => n + (m.bm || 0), 0);
+  const myBM = typeof calcBM === 'function' && player ? calcBM(player) : 0;
+  const sides = (typeof _gwState !== 'undefined' && _gwState && _gwState.sides) || {};
+  const held = ['right', 'left'].filter(k => sides[k] && sides[k].clanName === c.name);
+  const towers = held.length === 2 ? ['Все четыре', '+300 Liberty в день']
+    : held[0] === 'right' ? ['Правые', '+200 Liberty в день'] : held[0] === 'left' ? ['Левые', '+100 Liberty в день'] : ['Нет', 'Война — ср и сб, 22:00'];
+  const stat = (icon, col, label, value, note) =>
+    `<div class="clx-stat"><div class="clx-stat-k">${_clxIco(icon, 13, col)} ${label}</div><div class="clx-stat-v">${value}</div>${note ? `<div class="clx-stat-n">${note}</div>` : ''}</div>`;
+
+  return `
+    ${desc}
+    <div class="clx-stats">
+      ${stat('party', '#8fd0ff', 'Участники', _clanMemberCount(c))}
+      ${stat('swords', '#ff7a6a', 'Сила клана', _num(power), 'сумма БМ')}
+      ${stat('shield', '#7ee0b0', _clxT('clanYourBmLbl', 'Ваша БМ'), _num(myBM))}
+      ${stat('castle', '#f0c75e', 'Вышки', towers[0], towers[1])}
+    </div>
+    ${_clanDonateHTML(c)}
+    <div class="clx-foot">
+      ${isLeader
+        ? `<button class="clx-link danger" onclick="_clanConfirmDisband()">${_clxT('clanDisbandBtn', 'Расформировать клан')}</button>`
+        : `<button class="clx-link" onclick="_clanConfirmLeave()">${_clxT('clanLeaveBtn', 'Покинуть клан')}</button>`}
+    </div>`;
+}
+
+// ── Состав ────────────────────────────────────────────────
+function _clxToggleMember(tg) { _clxOpenMember = _clxOpenMember === tg ? null : tg; updateClanUI(); }
+
+function _clxMembersTab(c, isLeader) {
+  const apps = isLeader && (c.applications || []).length
+    ? `<div class="clx-hdr">${_clxT(null, 'Заявки')} <b>${c.applications.length}</b></div>
+       <div class="clx-list">${c.applications.map(a => `
+        <div class="clx-member">
+          <div class="clx-member-main">
+            <span class="clx-member-name">${_esc(a.username)}</span>
+            <span class="clx-member-meta">БМ ${_num(a.bm)}</span>
+          </div>
+          <button class="clx-btn sm" onclick="netClanApprove('${a.telegramId}')">${_clxT('clanApproveBtn', 'Принять')}</button>
+          <button class="clx-btn sm ghost" onclick="netClanDecline('${a.telegramId}')">✕</button>
+        </div>`).join('')}</div>`
+    : '';
+  const myTg = typeof _myTelegramId === 'function' ? _myTelegramId() : null;
+  const rows = (c.members || []).slice().sort((a, b) => (b.role === 'leader') - (a.role === 'leader') || (b.bm || 0) - (a.bm || 0))
+    .map(m => {
+      const me = String(m.telegramId) === String(myTg);
+      const canAct = isLeader && m.role !== 'leader';
+      const open = canAct && _clxOpenMember === m.telegramId;
+      return `
+        <div class="clx-member${me ? ' me' : ''}${canAct ? ' tap' : ''}" ${canAct ? `onclick="_clxToggleMember('${m.telegramId}')"` : ''}>
+          <span class="clx-member-cls">${typeof classBadgeHTML === 'function' ? classBadgeHTML(m.charClass, 22) : ''}</span>
+          <div class="clx-member-main">
+            <span class="clx-member-name">${_esc(m.username)}${m.role === 'leader' ? ` ${_clxIco('crown', 13, '#f0c75e')}` : ''}${me ? ' <em>вы</em>' : ''}</span>
+            <span class="clx-member-meta">в клане ${_clxDaysIn(m.joinedAt)}</span>
+          </div>
+          <span class="clx-member-bm">${_num(m.bm)}<small>БМ</small></span>
+          ${canAct ? `<span class="clx-member-more">${open ? '▴' : '⋯'}</span>` : ''}
+        </div>
+        ${open ? `<div class="clx-member-acts">
+          <button class="clx-btn sm" onclick="event.stopPropagation();_clanTransferConfirm('${m.telegramId}')">${_clxIco('crown', 13)} ${_clxT('clanTransferBtn', 'Сделать лидером')}</button>
+          <button class="clx-btn sm danger" onclick="event.stopPropagation();_clanKickConfirm('${m.telegramId}')">${_clxT('clanKickBtn', 'Исключить')}</button>
+        </div>` : ''}`;
+    }).join('');
+  return `${apps}
+    <div class="clx-hdr">${_clxT(null, 'Участники')} <b>${_clanMemberCount(c)}</b>${isLeader ? '<span class="clx-hdr-note">нажмите на участника для действий</span>' : ''}</div>
+    <div class="clx-list">${rows}</div>`;
+}
+
+// ── Бонусы: все уровни одной таблицей ─────────────────────
+let _clxShowPassed = false;
+function _clxTogglePassed() { _clxShowPassed = !_clxShowPassed; updateClanUI(); }
+function _clxPerksTab(c) {
+  // Сверху — текущий уровень и следующие; пройденные свёрнуты под кнопку:
+  // пятнадцать строк подряд читать никто не будет.
+  const passed = CLAN_LEVELS.filter(d => d.lvl < c.level).length;
+  const shown = CLAN_LEVELS.filter(d => _clxShowPassed || d.lvl >= c.level);
+  const rows = shown.map(d => {
+    const st = c.level > d.lvl ? 'done' : c.level === d.lvl ? 'cur' : 'next';
+    return `<div class="clx-lv ${st}">
+      <span class="clx-lv-n">${d.lvl}</span>
+      <div class="clx-lv-main">
+        <div class="clx-lv-name">${_esc(d.label)}<span>${d.lvl === 1 ? 'старт' : _num(d.xpReq)}</span></div>
+        <div class="clx-lv-chips">${_clxBonusChips(d.bonus)}</div>
+      </div>
+      ${st === 'done' ? `<span class="clx-lv-ok">${_clxIco('checkCircle', 16, '#7ee0b0')}</span>` : st === 'cur' ? '<span class="clx-lv-now">сейчас</span>' : ''}
+    </div>`;
+  }).join('');
+  return `<div class="clx-hdr">${_clxT('clanPerksHdr', 'Бонусы клана по уровням')}<span class="clx-hdr-note">накопительные, действуют на всех участников</span></div>
+    <div class="clx-legend">${_CLX_BONUS.map(x => `<span>${_clxIco(x.icon, 12, x.col)} ${_clxT(x.key, x.ru)}</span>`).join('')}</div>
+    ${passed ? `<button class="clx-link" onclick="_clxTogglePassed()">${_clxShowPassed ? 'Скрыть пройденные уровни' : `Показать пройденные уровни (${passed})`}</button>` : ''}
+    <div class="clx-levels">${rows}</div>`;
 }
 
 // ── Гильдийский босс ──────────────────────────────────────
@@ -957,8 +990,8 @@ function _gbDropHTML(level) {
 function _clanBossHTML() {
   const v = _gbView;
   clearInterval(_gbTick); _gbTick = null;
-  if (!v) { if (typeof netGuildBossSync === 'function') netGuildBossSync(); return `<div class="clan-empty">${t('clanStorageLoading')}</div>`; }
-  if (!v.ready) return `<div class="clan-empty">Гильдийские боссы скоро появятся</div>`;
+  if (!v) { if (typeof netGuildBossSync === 'function') netGuildBossSync(); return `<div class="clx-empty">${t('clanStorageLoading')}</div>`; }
+  if (!v.ready) return `<div class="clx-empty">Гильдийские боссы скоро появятся</div>`;
   if (!v.inClan) return '';
   const skew = (v.now || Date.now()) - Date.now();
   let html = '';
@@ -978,20 +1011,25 @@ function _clanBossHTML() {
     ${_gbInside
       ? `<button class="clan-btn clan-btn-leave" onclick="netGuildBossLeave()">Выйти из зала</button>`
       : v.deadThisFight
-        ? `<div class="clan-storage-gate">Вы пали в этом бою — войти снова можно в следующий вызов.</div>`
+        ? `<div class="clx-note warn">Вы пали в этом бою — войти снова можно в следующий вызов.</div>`
         : `<button class="clan-btn gb-enter" onclick="netGuildBossEnter()">⚔ Войти к боссу</button>`}`;
     _gbTick = setInterval(() => {
       if (_clanHomeTab !== 5 || !document.querySelector('.gb-active')) { clearInterval(_gbTick); _gbTick = null; return; }
       if (typeof netGuildBossSync === 'function') netGuildBossSync();
     }, 3000);
   }
-  html += `<div class="clan-section-hdr">Гильдийские боссы</div>
-    <div class="gb-note">Боссы Логова с 35 уровня — здоровье ×20, атака и защита ×3.
-      Вызывает лидер клана ${v.minClanLevel}+ уровня за ${_num(v.cost)} Liberty,
-      ${v.perWeek} раза в неделю (на этой неделе: ${v.usedThisWeek}/${v.perWeek}).
-      Босс стоит ${Math.round(v.lifetimeMs / 60000)} минут. Кто умер — вылетает. Дроп — в хранилище клана.</div>`;
+  const fact = (k, val) => `<div class="clx-fact"><span>${k}</span><b>${val}</b></div>`;
+  html += `<div class="clx-hdr">Гильдийские боссы<span class="clx-hdr-note">боссы Логова от 35 ур. — вызывает лидер, бьёт весь клан; кто умер — вылетает</span></div>
+    <div class="clx-facts">
+      ${fact('Вызов', `${_num(v.cost)} Liberty`)}
+      ${fact('На неделе', `${v.usedThisWeek} / ${v.perWeek}`)}
+      ${fact('Стоит', `${Math.round(v.lifetimeMs / 60000)} мин`)}
+      ${fact('Здоровье', '×20')}
+      ${fact('Атака, защита', '×3')}
+      ${fact('Нужен', `${v.minClanLevel} ур. клана`)}
+    </div>`;
   if (v.clanLevel < v.minClanLevel) {
-    html += `<div class="clan-storage-gate">Нужен ${v.minClanLevel} уровень клана (сейчас ${v.clanLevel}).</div>`;
+    html += `<div class="clx-note warn">Нужен ${v.minClanLevel} уровень клана (сейчас ${v.clanLevel}).</div>`;
   }
   const canSummon = v.isLeader && !v.active && v.clanLevel >= v.minClanLevel && v.usedThisWeek < v.perWeek;
   html += `<div class="lair-list">${(v.levels || []).map(bl => {
@@ -1014,7 +1052,7 @@ function _clanBossHTML() {
       <div class="lair-act">${btn}</div>
     </div>`;
   }).join('')}</div>
-  <div class="clan-section-hdr">Дроп с босса</div>
+  <div class="clx-hdr">Дроп с босса</div>
   ${_gbDropHTML()}`;
   return html;
 }
@@ -1064,11 +1102,11 @@ function _clanShardMin() {
 function _clanDonateHTML(c) {
   const d = c.donations;
   if (typeof CLAN_DONATIONS === 'undefined') return '';
-  const hdr = `<div class="clan-section-hdr">${t('clanDonateHdr')}</div>`;
-  if (!d || !d.ready) return `${hdr}<div class="clan-empty">${t('clanDonateSoon')}</div>`;
   const total = CLAN_DONATION_KINDS.reduce((n, k) => n + CLAN_DONATIONS[k].perDay, 0);
+  const hdr = `<div class="clx-hdr">${t('clanDonateHdr')}<span class="clx-hdr-note">${tVars('clanDonateNote', { n: total })}</span></div>`;
+  if (!d || !d.ready) return `${hdr}<div class="clx-empty">${t('clanDonateSoon')}</div>`;
   const wait = d.waitHours > 0
-    ? `<div class="clan-storage-gate">${tVars('clanDonateWaitFmt', { h: d.minHours, left: d.waitHours })}</div>` : '';
+    ? `<div class="clx-note warn">${_clxIco('hourglass', 14)} ${tVars('clanDonateWaitFmt', { h: d.minHours, left: d.waitHours })}</div>` : '';
   const shardMin = _clanShardMin();
   const nexum = Number(window._nexumBalance) || 0;
   const card = (kind) => {
@@ -1078,23 +1116,16 @@ function _clanDonateHTML(c) {
     const enough = kind === 'normal' ? shardMin >= def.shards : nexum >= def.liberty;
     const ok = left > 0 && !(d.waitHours > 0) && enough;
     const cost = kind === 'normal'
-      ? `<img src="/images/uniq/shard/gold.png" alt="">${tVars('clanDonateShardsFmt', { n: def.shards })}`
+      ? `<img src="/images/uniq/shard/gold.png" alt="">${def.shards} × 20 видов`
       : `<img src="/images/nexum-coin_v2.png" alt="">${def.liberty} Liberty`;
-    return `<div class="clan-don clan-don-${kind}${ok ? '' : ' off'}">
-      <div class="clan-don-top">
-        <b>${t(kind === 'normal' ? 'clanDonateNormal' : 'clanDonateBig')}</b>
-        <span class="clan-don-left">${tVars('clanDonateLeftFmt', { u: used, m: def.perDay })}</span>
-      </div>
-      <div class="clan-don-cost">${cost}</div>
-      <div class="clan-don-pts">${tVars('clanDonatePtsFmt', { n: def.xp })}</div>
-      <div class="clan-don-dots">${Array.from({ length: def.perDay }, (_, i) => `<i class="${i < used ? 'on' : ''}"></i>`).join('')}</div>
-      <button class="clan-btn-sm" ${ok ? '' : 'disabled'} onclick="_clanDonate('${kind}')">${t('clanDonateBtn')}</button>
-    </div>`;
+    return `<button class="clx-don ${kind}" ${ok ? '' : 'disabled'} onclick="_clanDonate('${kind}')">
+      <span class="clx-don-top"><b>${t(kind === 'normal' ? 'clanDonateNormal' : 'clanDonateBig')}</b><span class="clx-don-pts">+${def.xp}</span></span>
+      <span class="clx-don-cost">${cost}</span>
+      <span class="clx-don-dots">${Array.from({ length: def.perDay }, (_, i) => `<i class="${i < used ? 'on' : ''}"></i>`).join('')}
+        <em>${left > 0 ? (enough ? 'пожертвовать' : 'не хватает') : 'на сегодня всё'}</em></span>
+    </button>`;
   };
-  return `${hdr}
-    <div class="clan-don-note">${tVars('clanDonateNote', { n: total })}</div>
-    ${wait}
-    <div class="clan-don-row">${CLAN_DONATION_KINDS.map(card).join('')}</div>`;
+  return `${hdr}${wait}<div class="clx-don-row">${CLAN_DONATION_KINDS.map(card).join('')}</div>`;
 }
 let _clanDonating = false;
 function _clanDonate(kind) {
@@ -1117,80 +1148,58 @@ function _clanStorageHTML() {
   const s = _clanStorage;
   if (!s) {
     if (typeof netClanStorageSync === 'function') netClanStorageSync();
-    return `<div class="clan-empty">${typeof t === 'function' ? t('clanStorageLoading') : 'Загрузка...'}</div>`;
+    return `<div class="clx-empty">${_clxT('clanStorageLoading', 'Загрузка...')}</div>`;
   }
-
   // Казна Liberty — сверху и всегда, даже у закрытого хранилища: сюда
   // приходит награда Войны гильдий, и клан должен её видеть.
   const treasury = _clanTreasuryHTML(s);
 
-  // Not bought yet — that is the whole tab until it is. The leader gets the
-  // button (with what it costs and what they hold); everyone else is told who
-  // can open it, so nobody is left guessing why the tab is empty.
   if (!s.unlocked) {
     const cost = s.unlockCost || 0;
     const gold = (player && player.gold) || 0;
     const afford = gold >= cost;
     return `${treasury}
-      <div class="clan-storage-gate">${tVars('clanStorageLockedFmt', { n: _num(cost) })}</div>
-      ${s.isLeader
-        ? `<div class="clan-storage-row">
-             <span class="clan-storage-name">${t('clanStorageYourGold')}</span>
-             <span class="clan-storage-qty" style="color:${afford ? '#8fbf7a' : '#eb4e61'}">${_num(gold)}</span>
-           </div>
-           <button class="clan-btn${afford ? '' : ' clan-btn-disabled'}"
-                   onclick="${afford ? '_clanStorageUnlockConfirm()' : ''}">
-             ${tVars('clanStorageUnlockBtn', { n: _num(cost) })}
-           </button>`
-        : `<div class="clan-empty">${t('clanStorageLockedMember')}</div>`}`;
+      <div class="clx-hdr">Хранилище клана</div>
+      <div class="clx-card clx-locked">
+        ${_clxIco('lock', 22, '#8ea4b8')}
+        <div>${tVars('clanStorageLockedFmt', { n: _num(cost) })}</div>
+        ${s.isLeader
+          ? `<button class="clx-btn${afford ? '' : ' off'}" ${afford ? '' : 'disabled'} onclick="_clanStorageUnlockConfirm()">${tVars('clanStorageUnlockBtn', { n: _num(cost) })}</button>
+             <small>${t('clanStorageYourGold')}: <b style="color:${afford ? '#8fbf7a' : '#eb4e61'}">${_num(gold)}</b></small>`
+          : `<small>${t('clanStorageLockedMember')}</small>`}
+      </div>`;
   }
 
-  const gate = s.canUse ? '' : `
-    <div class="clan-storage-gate">
-      ${tVars('clanStorageGateFmt', { d: s.minDays, cur: s.daysIn == null ? 0 : s.daysIn })}
-    </div>`;
+  const gate = s.canUse ? '' : `<div class="clx-note warn">${_clxIco('hourglass', 14)} ${tVars('clanStorageGateFmt', { d: s.minDays, cur: s.daysIn == null ? 0 : s.daysIn })}</div>`;
+  const canGive = s.isLeader && s.canUse;
+  const tiles = (s.storage || []).length
+    ? `<div class="clx-items">${s.storage.map(e => `
+        <button class="clx-item${canGive ? '' : ' ro'}" ${canGive ? `onclick="_clanStorageGivePrompt('${_esc(e.id)}','${_esc(e.name)}',${e.qty})"` : ''} title="${_esc(e.name)}">
+          ${e.img ? `<img src="${_esc(e.img)}" alt="">` : _clxIco('chest', 22)}
+          <b>${_num(e.qty)}</b>
+          <span>${_esc(e.name)}</span>
+        </button>`).join('')}</div>
+       ${canGive ? '<div class="clx-hint">Нажмите на предмет, чтобы выдать участнику</div>' : ''}`
+    : `<div class="clx-empty">${t('clanStorageEmpty')}</div>`;
 
-  // What the clan is holding.
-  const poolRows = (s.storage || []).length
-    ? s.storage.map(e => `
-        <div class="clan-storage-row">
-          ${e.img ? `<img class="clan-storage-img" src="${_esc(e.img)}" alt="">` : ''}
-          <span class="clan-storage-name">${_esc(e.name)}</span>
-          <span class="clan-storage-qty">${e.qty}</span>
-          ${s.isLeader && s.canUse
-            ? `<button class="clan-btn-sm" onclick="_clanStorageGivePrompt('${_esc(e.id)}','${_esc(e.name)}',${e.qty})">${t('clanStorageGiveBtn')}</button>`
-            : ''}
-        </div>`).join('')
-    : `<div class="clan-empty">${t('clanStorageEmpty')}</div>`;
-
-  // What is waiting to be collected. A member sees only their own, so for them
-  // this doubles as the collect button.
   const mine = (s.allocations || []).filter(a => !s.isLeader || a.telegramId === _myTelegramId());
-  const allocRows = (s.allocations || []).length
-    ? s.allocations.map(a => `
-        <div class="clan-storage-row">
-          ${a.img ? `<img class="clan-storage-img" src="${_esc(a.img)}" alt="">` : ''}
-          <span class="clan-storage-name">${_esc(a.name)}${s.isLeader ? ` <span class="clan-storage-who">→ ${_esc(a.username || '')}</span>` : ''}</span>
-          <span class="clan-storage-qty">${a.qty}</span>
-          ${s.isLeader
-            ? `<button class="clan-btn-sm clan-btn-danger" onclick="_clanStorageCancel('${_esc(a.telegramId)}','${_esc(a.id)}')">${t('clanStorageCancelBtn')}</button>`
-            : ''}
-        </div>`).join('')
-    : `<div class="clan-empty">${t('clanStorageNoAlloc')}</div>`;
+  const allocs = (s.allocations || []).length
+    ? `<div class="clx-list">${s.allocations.map(a => `
+        <div class="clx-alloc">
+          ${a.img ? `<img src="${_esc(a.img)}" alt="">` : ''}
+          <span class="clx-alloc-name">${_esc(a.name)}${s.isLeader ? `<small>→ ${_esc(a.username || '')}</small>` : ''}</span>
+          <b>×${_num(a.qty)}</b>
+          ${s.isLeader ? `<button class="clx-icon-btn" title="${t('clanStorageCancelBtn')}" onclick="_clanStorageCancel('${_esc(a.telegramId)}','${_esc(a.id)}')">✕</button>` : ''}
+        </div>`).join('')}</div>`
+    : `<div class="clx-empty">${t('clanStorageNoAlloc')}</div>`;
+  const claim = (mine.length && s.canUse)
+    ? `<button class="clx-btn wide" onclick="netClanStorageClaim()">${t('clanStorageClaimBtn')}</button>` : '';
 
-  const claimBtn = (mine.length && s.canUse)
-    ? `<button class="clan-btn" onclick="netClanStorageClaim()">${t('clanStorageClaimBtn')}</button>`
-    : '';
-
-  return `
-    ${treasury}
-    ${gate}
-    <div class="clan-section-hdr">${t('clanStorageHdr')}</div>
-    <div class="clan-storage-list">${poolRows}</div>
-    <div class="clan-section-hdr">${s.isLeader ? t('clanStorageAllocHdrLeader') : t('clanStorageAllocHdr')}</div>
-    <div class="clan-storage-list">${allocRows}</div>
-    ${claimBtn}
-    <div class="clan-storage-gate">Осколки в хранилище класть нельзя. То, что уже лежит, лидер раздаёт как раньше.</div>`;
+  return `${treasury}${gate}
+    <div class="clx-hdr">Хранилище клана<span class="clx-hdr-note">дроп боссов и осколки — раздаёт лидер</span></div>
+    ${tiles}
+    <div class="clx-hdr">${s.isLeader ? t('clanStorageAllocHdrLeader') : t('clanStorageAllocHdr')}</div>
+    ${allocs}${claim}`;
 }
 
 // ── Казна клана (Liberty) ─────────────────────────────────────────────────
@@ -1204,27 +1213,24 @@ function _clanTreasuryHTML(s) {
   const tr = s && s.treasury;
   if (!tr) return '';
   const n = tr.nexum || 0;
-  const log = (tr.log || []).slice(0, 8).map(l => {
+  const log = (tr.log || []).slice(0, 5).map(l => {
     const plus = l.delta > 0;
-    const what = plus ? (_CLAN_NX_REASON[l.reason] || l.reason) : `Выдано: ${_esc(l.username || '—')}`;
+    const what = plus ? (_CLAN_NX_REASON[l.reason] || l.reason) : `выдано · ${_esc(l.username || '—')}`;
     const when = l.at ? new Date(l.at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '';
-    return `<div class="clan-storage-row clan-tr-row">
-      <span class="clan-storage-name">${what}<span class="clan-storage-who"> ${when}</span></span>
-      <span class="clan-storage-qty" style="color:${plus ? '#8fe08a' : '#e8a35a'}">${plus ? '+' : '−'}${_num(Math.abs(l.delta))}</span>
-    </div>`;
+    return `<div class="clx-tr-row"><span>${what}</span><small>${when}</small><b class="${plus ? 'in' : 'out'}">${plus ? '+' : '−'}${_num(Math.abs(l.delta))}</b></div>`;
   }).join('');
-  const canGive = s.isLeader && n > 0;
   return `
-    <div class="clan-section-hdr">Казна клана</div>
-    <div class="clan-treasury">
-      <img class="clan-treasury-coin" src="/images/nexum-coin_v2.png" alt="">
-      <div class="clan-treasury-body">
-        <div class="clan-treasury-sum">${_num(n)} <small>Liberty</small></div>
-        <div class="clan-treasury-note">Награда Войны гильдий: правые вышки — 200, левые — 100 в сутки. Раздаёт лидер.</div>
+    <div class="clx-treasury">
+      <div class="clx-treasury-top">
+        <img src="/images/nexum-coin_v2.png" alt="">
+        <div class="clx-treasury-main">
+          <div class="clx-treasury-k">Казна клана</div>
+          <div class="clx-treasury-v">${_num(n)} <small>Liberty</small></div>
+        </div>
+        ${s.isLeader && n > 0 ? `<button class="clx-btn" onclick="_clanTreasuryGivePrompt()">Выдать</button>` : ''}
       </div>
-      ${canGive ? `<button class="clan-btn-sm" onclick="_clanTreasuryGivePrompt()">Выдать</button>` : ''}
-    </div>
-    ${log ? `<div class="clan-storage-list">${log}</div>` : ''}`;
+      ${log ? `<div class="clx-tr-log">${log}</div>` : '<div class="clx-tr-empty">Сюда приходит Liberty с Войны гильдий</div>'}
+    </div>`;
 }
 
 function _clanTreasuryGivePrompt() {
@@ -1255,26 +1261,22 @@ function _clanActivityHTML() {
   const rows = _clanActivity;
   if (rows === null) {
     if (typeof netClanActivitySync === 'function') netClanActivitySync();
-    return `<div class="clan-empty">${typeof t === 'function' ? t('clanStorageLoading') : 'Загрузка...'}</div>`;
+    return `<div class="clx-empty">${_clxT('clanStorageLoading', 'Загрузка...')}</div>`;
   }
-  if (!rows.length) {
-    return `
-      <div class="clan-section-hdr">${typeof t === 'function' ? t('clanActivityHdr') : 'Кто сколько внёс Осколков'}</div>
-      <div class="clan-empty">${typeof t === 'function' ? t('clanActivityEmpty') : 'Пока никто ничего не положил в хранилище'}</div>`;
-  }
+  const hdr = `<div class="clx-hdr">${_clxT('clanActivityHdr', 'Вклад участников')}<span class="clx-hdr-note">очки за пожертвования</span></div>`;
+  if (!rows.length) return `${hdr}<div class="clx-empty">${_clxT('clanActivityEmpty', 'Пока никто ничего не пожертвовал')}</div>`;
   const myTg = _myTelegramId();
-  const rowsHtml = rows.map((r, i) => `
-    <div class="clan-member${r.telegramId === myTg ? ' clan-member-me' : ''}">
-      <span class="clan-member-role">${i + 1}.</span>
-      <span class="clan-member-name">${_esc(r.username)}${r.inClan ? '' : ` <span class="clan-storage-who">(${typeof t === 'function' ? t('clanActivityLeftClan') : 'покинул клан'})</span>`}</span>
-      <span class="clan-member-bm">${[
-        r.points ? tVars('clanActivityPtsFmt', { n: _num(r.points) }) : '',
-        r.qty ? tVars('clanActivityQtyFmt', { n: _num(r.qty) }) : '',
-      ].filter(Boolean).join(' · ')}</span>
-    </div>`).join('');
-  return `
-    <div class="clan-section-hdr">${typeof t === 'function' ? t('clanActivityHdr') : 'Кто сколько внёс Осколков'}</div>
-    ${rowsHtml}`;
+  const top = Math.max(1, ...rows.map(r => r.points || 0));
+  const medal = ['#f0c75e', '#c8d3de', '#d08a5a'];
+  return `${hdr}<div class="clx-list">${rows.map((r, i) => `
+    <div class="clx-rank${String(r.telegramId) === String(myTg) ? ' me' : ''}">
+      <span class="clx-rank-n" ${i < 3 ? `style="--mc:${medal[i]}"` : ''}>${i + 1}</span>
+      <div class="clx-rank-main">
+        <span class="clx-rank-name">${_esc(r.username)}${r.inClan ? '' : ` <small>(${_clxT('clanActivityLeftClan', 'покинул клан')})</small>`}</span>
+        <span class="clx-rank-bar"><i style="width:${Math.round((r.points || 0) / top * 100)}%"></i></span>
+      </div>
+      <span class="clx-rank-v">${_num(r.points || 0)}${r.qty ? `<small>${_num(r.qty)} оск.</small>` : ''}</span>
+    </div>`).join('')}</div>`;
 }
 
 // Server pushed new activity state — redraw only when that tab is showing.
