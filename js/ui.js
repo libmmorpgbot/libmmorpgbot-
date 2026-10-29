@@ -8109,7 +8109,7 @@ function _positionUpdatesBtn() {
 // Новый патч — поднять UPDATES_VERSION: у всех, кто его ещё не открывал,
 // загорится точка на кнопке. Хранится у игрока в браузере — это удобство, а
 // не данные, и без хранилища точка просто горит, пока панель не открыта.
-const UPDATES_VERSION = '2026-10-25';
+const UPDATES_VERSION = '2026-10-29';
 const _UPD_SEEN_KEY = 'liberty_updates_seen';
 function _updatesSeen() {
   try { return localStorage.getItem(_UPD_SEEN_KEY) === UPDATES_VERSION; } catch { return false; }
@@ -13693,8 +13693,8 @@ function _gramMsg(text, type) { _gramSay(text, type); }
 // text — consistent with the rest of the UI, which never uses emoji as an
 // icon, and the badge/eyebrow/display-font title read as a considered
 // moment rather than a plain text popup.
-const WHATS_NEW_VERSION = 'ach1';
-const WHATS_NEW_ICON = 'crown';
+const WHATS_NEW_VERSION = 'tr16';
+const WHATS_NEW_ICON = 'trophy';
 function openWhatsNewModal() {
   const existing = document.getElementById('whatsnew-ov');
   if (existing) existing.remove();
@@ -13708,16 +13708,16 @@ function openWhatsNewModal() {
         <button class="whatsnew-close" onclick="closeWhatsNewModal()">✕</button>
         <div class="whatsnew-badge">${iconHTML(WHATS_NEW_ICON, 28, '#ffcf5c')}</div>
         <div class="whatsnew-eyebrow">${t('whatsNewTitle')}</div>
-        <div class="whatsnew-title">${t('whatsNewAchTitle')}</div>
-        <div class="whatsnew-medals">
-          <img src="/images/rune/armor/chp.png" alt=""><img src="/images/rune/armor/uhp.png" alt="">
-          <img src="/images/rune/armor/rhp.png" alt=""><img src="/images/rune/armor/ehp.png" alt="">
-          <img src="/images/rune/armor/lhp.png" alt="">
+        <div class="whatsnew-title">${t('whatsNewTrTitle')}</div>
+        <div class="whatsnew-chips">
+          <span><b>16</b>${t('whatsNewTrChipSize')}</span>
+          <span><b>+1</b>${t('whatsNewTrChipWin')}</span>
+          <span><b>+10</b>${t('whatsNewTrChipClan')}</span>
         </div>
       </div>
       <div class="whatsnew-body">
-        <div class="whatsnew-desc">${t('whatsNewAchDesc')}</div>
-        <button class="whatsnew-cta" onclick="closeWhatsNewModal(); if (typeof openAchPanel === 'function') openAchPanel()">${t('whatsNewAchOpen')}</button>
+        <div class="whatsnew-desc">${t('whatsNewTrDesc')}</div>
+        <button class="whatsnew-cta" onclick="closeWhatsNewModal(); if (typeof openTournamentPanel === 'function') openTournamentPanel()">${t('whatsNewTrOpen')}</button>
         <button class="whatsnew-cta ghost" onclick="closeWhatsNewModal()">${t('whatsNewCloseBtn')}</button>
       </div>
     </div>`;
