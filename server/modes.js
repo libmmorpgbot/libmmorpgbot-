@@ -39,7 +39,7 @@ const {
   FARM2_DAILY_MINUTES, WORLD_BOSS_DAYS_MSK, WORLD_BOSS_HOURS_MSK,
   EVENT_NOTIFY_BEFORE_MS, nextEventStartAt,
   FEAR_MAX_WAVE, COOP_STAGE_LEVELS, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE,
-  BOSS_LAIR_DAILY_KILLS,
+  BOSS_LAIR_DAILY_KILLS, TOURNAMENT_SIZE, MSK_OFFSET_H,
 } = require('../shared/definitions');
 
 // telegram-id → player_id, с памятью на процесс. Пара «id в базе — id в
@@ -233,8 +233,8 @@ const _EVENT_TEXT = {
     now:  () => '🏰 <b>Война гильдий открыта!</b>\n\nЗахватывай вышки вместе с кланом — нужно удержать все 4 пять минут подряд. Локация открыта до 22:15 по Москве.',
   },
   tournament: {
-    soon: (m) => `🏆 <b>Турнир</b>\n\nРегистрация откроется через ${m} мин. — в 23:00 по Москве.\nНужно ровно 32 участника — набралось, и сетка стартует сразу же.`,
-    now:  () => '🏆 <b>Турнир открыт!</b>\n\nЗаписывайся в игре — как наберётся 32 человека, сетка стартует. Проигрыш не выбивает сразу: один шанс отыграться в нижней сетке остаётся.',
+    soon: (m, at) => `🏆 <b>Турнир</b>\n\nРегистрация откроется через ${m} мин. — в ${_mskHHMM(at)} по Москве.\nНужно ровно ${TOURNAMENT_SIZE} участников — набралось, и сетка стартует сразу же.`,
+    now:  () => `🏆 <b>Турнир открыт!</b>\n\nЗаписывайся в игре — как наберётся ${TOURNAMENT_SIZE} человек, сетка стартует. Проигрыш не выбивает сразу: один шанс отыграться в нижней сетке остаётся.`,
   },
 };
 
@@ -288,12 +288,17 @@ async function tgBroadcastAll(text) {
   return rows.length;
 }
 
+// 'ЧЧ:ММ' по Москве — у турнира два старта в день, и в тексте нужен тот, что
+// наступает.
+function _mskHHMM(at) {
+  return new Date(at + MSK_OFFSET_H * 3600000).toISOString().slice(11, 16);
+}
 function notifyEventSoon(kind, at) {
   const mins = Math.max(1, Math.round((at - Date.now()) / 60000));
   if (_announced.has(`${kind}:soon:${at}`)) return;
   announceOnce(`${kind}:soon:${at}`, `${EVENT_NAME[kind] || kind} — через ${mins} мин.`);
   const t = _EVENT_TEXT[kind];
-  if (t) tgBroadcastAll(t.soon(mins)).catch(err => console.error('notifyEventSoon:' + kind, err));
+  if (t) tgBroadcastAll(t.soon(mins, at)).catch(err => console.error('notifyEventSoon:' + kind, err));
 }
 function notifyEventStarted(kind, at) {
   if (_announced.has(`${kind}:now:${at}`)) return;

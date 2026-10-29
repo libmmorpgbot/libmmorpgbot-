@@ -435,7 +435,7 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     safeOn('tournamentRegister', () => {
       if (!s.authed) return;
       if (_tr.matches.has(s.socket.id)) return; // already mid-bracket
-      if (_tr.phase !== 'reg') return s.socket.emit('tournamentError', { msg: 'Регистрация на турнир открыта в 23:00 по Москве' });
+      if (_tr.phase !== 'reg') return s.socket.emit('tournamentError', { msg: 'Регистрация на турнир открыта по четвергам и воскресеньям в 12:00 и 23:00 по Москве' });
       // Exact cap, not "at least" like arena3/race10 — the whole bracket below
       // is a fixed shape built for exactly 32, not a variable N.
       // Своя же запись с прошлого соединения (вкладка, перезагрузка) — не

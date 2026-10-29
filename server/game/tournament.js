@@ -237,7 +237,7 @@ module.exports = function createTournament(deps) {
   // server/handlers2/modes.js) — never waits out the rest of the window.
   function _trTryStart() {
     if (_tr.phase !== 'reg' || _tr.reg.size < TOURNAMENT_SIZE) return;
-    // Someone mid-reload when the 32nd slot fills still counts: their place
+    // Someone mid-reload when the 16th slot fills still counts: their place
     // is held (_trHoldOnDisconnect), and round 1 seats them the same way any
     // later round does — the opponent goes in, their side waits for them.
     const ready = [..._tr.reg.keys()].filter(sid => _trPresent(sid) || _trIsHeld(sid));
