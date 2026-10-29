@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// ── турнир на 32: сетка сходится ─────────────────────────────────────────────
+// ── турнир на 16: сетка сходится ─────────────────────────────────────────────
 //
 //   node dev/tournament-check.js
 //
@@ -39,8 +39,8 @@ function fn(name) {
 }
 const total = Number((src.match(/const TOURNAMENT_TOTAL_ROUNDS = (\d+);/) || [])[1]);
 
-ok(TOURNAMENT_SIZE === 32, 'в турнире 32 участника', `TOURNAMENT_SIZE = ${TOURNAMENT_SIZE}`);
-ok(total === 10, 'сетка на 32 — это 10 раундов', `TOURNAMENT_TOTAL_ROUNDS = ${total}`);
+ok(TOURNAMENT_SIZE === 16, 'в турнире 16 участников', `TOURNAMENT_SIZE = ${TOURNAMENT_SIZE}`);
+ok(total === 8, 'сетка на 16 — это 8 раундов', `TOURNAMENT_TOTAL_ROUNDS = ${total}`);
 
 const names = ['_shuffle', '_pairAll', '_trBuildRoundGroups', '_winnersLosersOf', '_trApplyRoundResults'];
 const bodies = names.map(fn);

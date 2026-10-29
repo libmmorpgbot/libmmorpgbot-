@@ -5041,8 +5041,8 @@ function _initTournamentHandlers(s) {
 
   // Champions leaderboard — see netGetTournamentRating and the "Рейтинг" tab
   // of the standalone Турнир panel (js/ui.js).
-  s.on('tournamentRatingData', ({ rows }) => {
-    if (typeof onTournamentRatingData === 'function') onTournamentRatingData(rows);
+  s.on('tournamentRatingData', (data) => {
+    if (typeof onTournamentRatingData === 'function') onTournamentRatingData(data);
   });
   s.on('tournamentRatingError', ({ msg }) => {
     if (typeof onTournamentRatingError === 'function') onTournamentRatingError(msg);

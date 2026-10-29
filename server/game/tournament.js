@@ -1,28 +1,31 @@
 'use strict';
-// Турнир (Tournament) — 32-player double elimination, moved out as a factory
+// Турнир (Tournament) — 16-player double elimination, moved out as a factory
 // (createTournament(deps)) the same shape as arena3/death-battle/race10.
 //
 // ── the bracket, in one paragraph ────────────────────────────────────────────
-// Registration opens every day at TOURNAMENT_HOURS_MSK and fills to exactly
-// TOURNAMENT_SIZE (32) — no more, no fewer, because the whole bracket below is
-// a FIXED schedule hand-built for exactly that number, not a general N-player
-// algorithm. Losing your first match doesn't eliminate you: you drop to the
-// lower bracket for one more shot, and lose there for good. The upper bracket
-// champion (0 losses) meets the lower bracket champion (1 loss) once, in the
-// Grand Final, winner takes all — no bracket reset, by owner's decision (see
-// the chat this was speced in).
+// Registration fills to exactly TOURNAMENT_SIZE (16) — no more, no fewer,
+// because the whole bracket below is a FIXED schedule hand-built for exactly
+// that number, not a general N-player algorithm. Losing your first match
+// doesn't eliminate you: you drop to the lower bracket for one more shot, and
+// lose there for good. The upper bracket champion (0 losses) meets the lower
+// bracket champion (1 loss) once, in the Grand Final, winner takes all — no
+// bracket reset, by owner's decision.
 //
 // A double elimination bracket for a power-of-two field is a well-known fixed
-// shape (every tournament site generates the same one): the lower bracket
-// alternates between "PURE" rounds, which just thin its own survivors down to
-// match the size of the next batch of upper-bracket droppers, and "MIXED"
-// rounds, which fight the two groups together. For 32 players that shape is
-// exactly 10 global rounds — some of them running an upper AND a lower match
-// group side by side on the one ring, most of them lower-only once the upper
-// bracket's own champion is already decided (round 5) — and _trBuildRoundGroups
-// below is that fixed shape written out explicitly, round by round, rather
-// than derived from a generic N-player formula this codebase has no other use
-// for. See the design chat for the round-by-round table this was drawn from.
+// shape: the lower bracket alternates between "PURE" rounds, which thin its
+// own survivors, and "MIXED" rounds, which fight them against the next batch
+// of upper-bracket droppers. For 16 players that is exactly 8 global rounds:
+//
+//   1  UB1 16→8                         (8 losers → lower bracket)
+//   2  UB2 8→4      · LB1 8→4 pure      (UB2's 4 losers wait for round 3)
+//   3  UB3 4→2      · LB2 4+4→4 mixed   (UB3's 2 losers wait for round 5)
+//   4  UB final 2→1 · LB3 4→2 pure      (UB final loser waits for round 7)
+//   5  LB4 2+2→2 mixed
+//   6  LB5 2→1 pure (lbSemi)
+//   7  LB final: LB5 survivor vs UB final loser
+//   8  Grand Final: UB champion vs LB champion
+//
+// _trBuildRoundGroups/_trApplyRoundResults below are that table written out.
 const {
   TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, TOURNAMENT_WINDOW_MS, TOURNAMENT_SIZE, TOURNAMENT_MIN_LEVEL,
   TOURNAMENT_FIGHT_MS, TOURNAMENT_COUNTDOWN_MS, TOURNAMENT_ROUND_GAP_MS,
@@ -31,10 +34,10 @@ const {
 const { FLOOR_IDS } = require('../game/floors');
 const Room = require('../game/Room');
 
-// How many global rounds the fixed 32-player bracket takes, start to Grand
-// Final — see _trBuildRoundGroups. Not a general formula, just this shape's
-// own length, kept as a name rather than a bare 10 wherever it's compared.
-const TOURNAMENT_TOTAL_ROUNDS = 10;
+// How many global rounds the fixed 16-player bracket takes, start to Grand
+// Final — see the table in the file header. Not a general formula, just this
+// shape's own length, kept as a name rather than a bare 8 wherever it's compared.
+const TOURNAMENT_TOTAL_ROUNDS = 8;
 
 // Liberty (Nexum) paid per round win — not a single per-match constant like
 // arena3's ARENA3_REWARD, because a 10-round bracket pays out at every round,
@@ -62,6 +65,10 @@ module.exports = function createTournament(deps) {
   const {
     io, _findPlayerAnyFloor, _recordPvpHistory, _returnToHub, _socketTid,
     notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
+    // Рейтинг турнира (server/db/repos/tournament.js) — по telegram id, а не
+    // по сокету: очко за победу не должно теряться, если победитель
+    // перезагружался, пока решался его бой.
+    _trScore,
   } = deps;
 
   // Every match gets its own Room, created here and never registered in
@@ -101,7 +108,10 @@ module.exports = function createTournament(deps) {
     // holders a specific later round needs (see _trBuildRoundGroups/
     // _trApplyRoundResults for which round reads which).
     ubPool: [], lbPool: [],
-    dropFromUB3: [], dropFromUB4: [],
+    dropFromUB3: [],
+    // Номер этого турнира — ключ идемпотентности очков рейтинга
+    // (repos/tournament.js): одна и та же победа не засчитается дважды.
+    runId: 0,
     ubChampion: null, ubFinalLoser: null, lbSemiSurvivor: null, lbChampion: null,
 
     // ── who a socket id belongs to ─────────────────────────────────────────
@@ -215,7 +225,7 @@ module.exports = function createTournament(deps) {
     _tr.phase = 'idle';
     [..._tr.reg.keys()].forEach(sid => {
       io.to(sid).emit('tournamentRegistered', { registered: false });
-      io.to(sid).emit('tournamentError', { msg: 'Регистрация на турнир закрылась — не набралось 32 человека' });
+      io.to(sid).emit('tournamentError', { msg: `Регистрация на турнир закрылась — не набралось ${TOURNAMENT_SIZE} человек` });
     });
     _tr.reg.clear();
     _trClearIdentity();
@@ -223,7 +233,7 @@ module.exports = function createTournament(deps) {
     _trBroadcast();
   }
 
-  // Fires the moment the 32nd person registers (see tournamentRegister,
+  // Fires the moment the 16th person registers (see tournamentRegister,
   // server/handlers2/modes.js) — never waits out the rest of the window.
   function _trTryStart() {
     if (_tr.phase !== 'reg' || _tr.reg.size < TOURNAMENT_SIZE) return;
@@ -248,10 +258,13 @@ module.exports = function createTournament(deps) {
     _tr.ubPool = [..._tr.names.keys()];
     _tr.out.clear();
     _tr.tids.forEach((_, sid) => { if (!_tr.names.has(sid)) _tr.tids.delete(sid); });
-    _tr.lbPool = []; _tr.dropFromUB3 = []; _tr.dropFromUB4 = [];
+    _tr.lbPool = []; _tr.dropFromUB3 = [];
     _tr.ubChampion = null; _tr.ubFinalLoser = null; _tr.lbSemiSurvivor = null; _tr.lbChampion = null;
     _tr.bracketHistory = []; // last tournament's bracket stays visible right up until this moment
     _tr.reg.clear();
+    // Все шестнадцать — в рейтинг сразу, с нулём очков, если их там ещё нет.
+    _tr.runId = Date.now();
+    _trScoreSafe([..._tr.names.keys()], { played: 1 }, 'join');
     _trStartRound(1);
   }
 
@@ -271,34 +284,28 @@ module.exports = function createTournament(deps) {
     return pairs;
   }
 
-  // The fixed 32-player double-elimination shape, one entry per global round.
-  // Each group is tagged so _trApplyRoundResults knows which pool a group's
-  // winners/losers feed back into — see the file header for where this comes
-  // from and why it isn't computed generically.
+  // The fixed 16-player double-elimination shape, one entry per global round
+  // (the table in the file header). Each group is tagged so
+  // _trApplyRoundResults knows which pool its winners/losers feed back into.
   function _trBuildRoundGroups(idx) {
     switch (idx) {
       case 1: return [{ tag: 'ub', pairs: _pairAll(_tr.ubPool) }];
       case 2: return [
         { tag: 'ub', pairs: _pairAll(_tr.ubPool) },
-        { tag: 'lb', pairs: _pairAll(_tr.lbPool) }, // lbPool holds round 1's upper losers here (see case 1 apply)
+        { tag: 'lb', pairs: _pairAll(_tr.lbPool) },   // LB1: round 1's upper losers, pure
       ];
       case 3: return [
         { tag: 'ub', pairs: _pairAll(_tr.ubPool) },
-        { tag: 'lb', pairs: _pairAll(_tr.lbPool) },
+        { tag: 'lb', pairs: _pairAll(_tr.lbPool) },   // LB2: LB1 survivors + UB2 losers, mixed
       ];
       case 4: return [
-        { tag: 'ub', pairs: _pairAll(_tr.ubPool) },
-        { tag: 'lb', pairs: _pairAll(_tr.lbPool) }, // pure reduce — dropFromUB3 held for round 5
-      ];
-      case 5: return [
         { tag: 'ubFinal', pairs: _pairAll(_tr.ubPool) },
-        { tag: 'lb', pairs: _pairAll(_tr.lbPool) }, // mixed with dropFromUB3 (see apply for round 4)
+        { tag: 'lb', pairs: _pairAll(_tr.lbPool) },   // LB3: pure — UB3's losers held for round 5
       ];
-      case 6: return [{ tag: 'lb', pairs: _pairAll(_tr.lbPool) }];  // pure reduce — dropFromUB4 merged in by round 6's own apply, ready for round 7
-      case 7: return [{ tag: 'lb', pairs: _pairAll(_tr.lbPool) }]; // mixed round (lbPool already carries dropFromUB4 — see round 6's apply)
-      case 8: return [{ tag: 'lbSemi', pairs: _pairAll(_tr.lbPool) }]; // pure reduce to 1
-      case 9: return [{ tag: 'lbFinal', pairs: _tr.lbSemiSurvivor && _tr.ubFinalLoser ? [[_tr.lbSemiSurvivor, _tr.ubFinalLoser]] : [] }];
-      case 10: return [{ tag: 'grandFinal', pairs: _tr.ubChampion && _tr.lbChampion ? [[_tr.ubChampion, _tr.lbChampion]] : [] }];
+      case 5: return [{ tag: 'lb', pairs: _pairAll(_tr.lbPool) }];      // LB4: mixed with UB3's losers
+      case 6: return [{ tag: 'lbSemi', pairs: _pairAll(_tr.lbPool) }];  // LB5: pure reduce to 1
+      case 7: return [{ tag: 'lbFinal', pairs: _tr.lbSemiSurvivor && _tr.ubFinalLoser ? [[_tr.lbSemiSurvivor, _tr.ubFinalLoser]] : [] }];
+      case 8: return [{ tag: 'grandFinal', pairs: _tr.ubChampion && _tr.lbChampion ? [[_tr.ubChampion, _tr.lbChampion]] : [] }];
       default: return [];
     }
   }
@@ -328,71 +335,53 @@ module.exports = function createTournament(deps) {
     switch (idx) {
       case 1: {
         const ub = _winnersLosersOf('ub');
-        _tr.ubPool = ub.winners; _tr.lbPool = ub.losers; // straight into LB1, nobody survives there yet to merge with
+        _tr.ubPool = ub.winners; _tr.lbPool = ub.losers;   // straight into LB1
         break;
       }
       case 2: {
         const ub = _winnersLosersOf('ub'), lb = _winnersLosersOf('lb');
         _tr.ubPool = ub.winners;
-        _tr.lbPool = [...lb.winners, ...ub.losers]; // LB1 survivors + UB2's own losers, merged for LB2 (round 3)
+        _tr.lbPool = [...lb.winners, ...ub.losers];        // LB2 (round 3) mixes LB1 survivors with UB2's losers
         _trEliminateList(lb.losers);
         break;
       }
       case 3: {
         const ub = _winnersLosersOf('ub'), lb = _winnersLosersOf('lb');
         _tr.ubPool = ub.winners;
-        _tr.dropFromUB3 = ub.losers;    // held — LB3 (round 4) is a PURE round, doesn't take them yet
+        _tr.dropFromUB3 = ub.losers;                       // held — LB3 (round 4) is pure
         _tr.lbPool = lb.winners;
         _trEliminateList(lb.losers);
         break;
       }
       case 4: {
-        const ub = _winnersLosersOf('ub'), lb = _winnersLosersOf('lb');
-        _tr.ubPool = ub.winners;
-        _tr.dropFromUB4 = ub.losers;    // held — LB6 (round 7) is what mixes these in
-        _tr.lbPool = [...lb.winners, ..._tr.dropFromUB3]; // LB4 (round 5) mixes LB3's survivors with UB3's held drop
+        const ubf = _winnersLosersOf('ubFinal');           // exactly one match
+        _tr.ubChampion = ubf.winners[0] || null;
+        _tr.ubFinalLoser = ubf.losers[0] || null;          // held for the LB final, round 7
+        const lb = _winnersLosersOf('lb');
+        _tr.lbPool = [...lb.winners, ..._tr.dropFromUB3];  // LB4 (round 5) mixes them in
         _tr.dropFromUB3 = [];
         _trEliminateList(lb.losers);
         break;
       }
       case 5: {
-        const ubf = _winnersLosersOf('ubFinal'); // exactly one match
-        _tr.ubChampion = ubf.winners[0] || null;
-        _tr.ubFinalLoser = ubf.losers[0] || null; // held for the Lower Bracket final, round 9
         const lb = _winnersLosersOf('lb');
-        _tr.lbPool = lb.winners;
+        _tr.lbPool = lb.winners;                           // LB5 (round 6) is a pure reduce to 1
         _trEliminateList(lb.losers);
         break;
       }
       case 6: {
-        const lb = _winnersLosersOf('lb');
-        // Merged here, BEFORE round 7 builds its pairs from lbPool — round 7
-        // (LB6) is the mixed round, round 6 (LB5) was the pure one that got
-        // survivors down to a count worth merging.
-        _tr.lbPool = [...lb.winners, ..._tr.dropFromUB4];
-        _tr.dropFromUB4 = [];
-        _trEliminateList(lb.losers);
+        const s6 = _winnersLosersOf('lbSemi');
+        _tr.lbSemiSurvivor = s6.winners[0] || null;
+        _trEliminateList(s6.losers);
         break;
       }
       case 7: {
-        const lb = _winnersLosersOf('lb');
-        _tr.lbPool = lb.winners; // round 8 (LB7) is a pure reduce to 1
-        _trEliminateList(lb.losers);
+        const f7 = _winnersLosersOf('lbFinal');
+        _tr.lbChampion = f7.winners[0] || null;
+        _trEliminateList(f7.losers);
         break;
       }
       case 8: {
-        const s8 = _winnersLosersOf('lbSemi');
-        _tr.lbSemiSurvivor = s8.winners[0] || null;
-        _trEliminateList(s8.losers);
-        break;
-      }
-      case 9: {
-        const f9 = _winnersLosersOf('lbFinal');
-        _tr.lbChampion = f9.winners[0] || null;
-        _trEliminateList(f9.losers);
-        break;
-      }
-      case 10: {
         const gf = _winnersLosersOf('grandFinal');
         if (gf.winners[0]) _trFinishTournament(gf.winners[0], gf.losers[0]);
         break;
@@ -411,8 +400,10 @@ module.exports = function createTournament(deps) {
       const rTid = _tidOf(runnerUpSid);
       if (rTid) _recordPvpHistory(rTid, 'lose', 'tournament', null);
     }
+    // +5 очков рейтинга чемпиону — сверх очка за сам финал.
+    _trScoreSafe([championSid], { titles: 1 }, 'title');
     _tr.phase = 'idle';
-    _tr.ubPool = []; _tr.lbPool = []; _tr.dropFromUB3 = []; _tr.dropFromUB4 = [];
+    _tr.ubPool = []; _tr.lbPool = []; _tr.dropFromUB3 = [];
     _tr.ubChampion = null; _tr.ubFinalLoser = null; _tr.lbSemiSurvivor = null; _tr.lbChampion = null;
     _tr.roundIndex = 0;
     // Holds end with the tournament — nothing is left to come back to. The
@@ -600,8 +591,24 @@ module.exports = function createTournament(deps) {
   // different rounds never collide on mode-rewards.js's idempotency key —
   // the account id is already part of that key, so nothing player-specific
   // needs to be in `ref` itself.
+  // Очки рейтинга — по аккаунту (telegram id), а не по сокету, и с ключом
+  // «турнир + раунд + что»: повтор не засчитает победу дважды. Сбой записи
+  // турнир не останавливает — это таблица очков, а не ход боя.
+  function _trScoreSafe(sids, delta, what) {
+    if (typeof _trScore !== 'function') return;
+    for (const sid of sids) {
+      const tid = _tidOf(sid);
+      if (!tid) continue;
+      const ref = what === 'join' ? 'join' : what === 'title' ? 'title' : `r${_tr.roundIndex}`;
+      Promise.resolve(_trScore(tid, _tr.runId, ref, delta))
+        .catch(err => console.error('[tournament] score:', err.message));
+    }
+  }
+
   function _trPayRoundReward(winnerSid, loserSid) {
     const tag = _tr.matchTag.get(winnerSid);
+    // Рейтинг: любая победа в матче — +1 (и в бою, и по неявке соперника).
+    _trScoreSafe([winnerSid], { wins: 1 }, 'win');
     // Season 3: +2 points per opponent beaten. Every round here — grand
     // final included — is one 1v1 match, so "per opponent" is just "every
     // round win", one flat rate, no branching needed.
@@ -809,7 +816,6 @@ module.exports = function createTournament(deps) {
     _tr.ubPool = _tr.ubPool.map(swap);
     _tr.lbPool = _tr.lbPool.map(swap);
     _tr.dropFromUB3 = _tr.dropFromUB3.map(swap);
-    _tr.dropFromUB4 = _tr.dropFromUB4.map(swap);
     _tr.ubChampion = swap(_tr.ubChampion);
     _tr.ubFinalLoser = swap(_tr.ubFinalLoser);
     _tr.lbSemiSurvivor = swap(_tr.lbSemiSurvivor);

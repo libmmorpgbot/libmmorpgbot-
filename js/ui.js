@@ -8973,12 +8973,12 @@ function _arena3Model() {
   };
 }
 
-// ── Турнир (32-player double elimination) ────────────────────────────────────
+// ── Турнир (16-player double elimination) ────────────────────────────────────
 // _trState is pushed by js/network.js's tournamentState handler; _trAlive
 // covers the gap between rounds (see server/game/tournament.js's file header)
 // where this player is neither actively fighting nor free to register again.
 function _tournamentModel() {
-  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: 32, live: false, minLevel: 15, round: 0, totalRounds: 10, gapEndAt: 0 };
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: TOURNAMENT_SIZE, live: false, minLevel: TOURNAMENT_MIN_LEVEL, round: 0, totalRounds: 8, gapEndAt: 0 };
   const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
   const alive = typeof _trAlive !== 'undefined' && _trAlive;
   const open = st.phase === 'reg';
@@ -9024,9 +9024,9 @@ function _tournamentModel() {
     facts: [
       [t('evtFactLevel'), `${st.minLevel}+`],
       [t('evtFactWhen'), t('eventSchedTournament')],
-      [t('evtFactPlayers'), String(st.needed || 32)],
+      [t('evtFactPlayers'), String(st.needed || TOURNAMENT_SIZE)],
     ],
-    rules: [t('trRule1'), t('trRule2'), t('trRule3'), t('trRule4'), t('trRule5'), t('trRule6'), t('trRule7'), t('trRule8')],
+    rules: [t('trRule1'), t('trRule2'), t('trRule3'), t('trRule4'), t('trRule5'), t('trRule6'), t('trRule7'), t('trRule8'), t('trRule9')],
   };
 }
 
@@ -9072,15 +9072,15 @@ function switchTournamentTab(tab) {
   _tourTab = tab;
   ['reg', 'bracket', 'rating'].forEach(id => document.getElementById('ttab-' + id)?.classList.toggle('active', id === tab));
   _renderTournamentPanelBody();
-  if (tab === 'rating' && _tourRatingData === null && typeof netGetTournamentRating === 'function') netGetTournamentRating();
+  if (tab === 'rating' && typeof netGetTournamentRating === 'function') netGetTournamentRating();
 }
 
 function _renderTournamentPanelBody() {
   const el = document.getElementById('tournament-panel-body');
   if (!el) return;
-  el.innerHTML = _tourTab === 'bracket' ? _tournamentBracketBodyHTML()
-               : _tourTab === 'rating'  ? _tournamentRatingBodyHTML()
-               : _tournamentBodyHTML(); // same registration card as the compact "События" tab
+  el.innerHTML = _tourTab === 'bracket' ? _trxBracketHTML()
+               : _tourTab === 'rating'  ? _trxRatingHTML()
+               : _trxRegHTML();
 }
 
 // Which colour tag a match's tag reads as — 'ub'/'ubFinal' are the upper
@@ -9096,53 +9096,159 @@ function _tourTagClass(tag) {
   return tag === 'grandFinal' ? 'gf' : (tag === 'ub' || tag === 'ubFinal') ? 'ub' : 'lb';
 }
 
-// Real columns, real players — built from _trState.bracket, which the
-// server only ever fills in for rounds that have actually been dealt (see
-// _trStartRound, server/game/tournament.js). A round nobody has reached yet
-// has no genuine pairing to show, so it simply isn't drawn — no placeholder
-// "TBD" boxes guessing at a bracket that double-elimination hasn't decided.
-function _tournamentBracketBodyHTML() {
-  const st = (typeof _trState !== 'undefined' && _trState) || {};
-  const bracket = Array.isArray(st.bracket) ? st.bracket : [];
-  if (!bracket.length) {
-    return `<div class="rating-empty">Сетка появится, когда турнир начнётся — нужно 32 участника</div>`;
-  }
-  const liveRound = st.phase === 'live' ? st.round : 0;
-  const cols = bracket.map(r => {
-    const matches = (r.matches || []).map(m => {
-      const decided = !!m.winnerId;
-      const aWon = decided && m.winnerId === m.a.id;
-      const bWon = decided && m.winnerId === m.b.id;
-      return `
-        <div class="tour-match">
-          <span class="tour-tag tour-tag-${_tourTagClass(m.tag)}">${_TOUR_TAG_LABEL[m.tag] || m.tag}</span>
-          <div class="tour-side${aWon ? ' win' : (decided ? ' lose' : '')}">${_escHtml(m.a.name)}</div>
-          <div class="tour-vs">vs</div>
-          <div class="tour-side${bWon ? ' win' : (decided ? ' lose' : '')}">${_escHtml(m.b.name)}</div>
-        </div>`;
-    }).join('');
-    return `<div class="tour-col${r.round === liveRound ? ' live' : ''}"><div class="tour-col-hd">Раунд ${r.round}</div>${matches}</div>`;
-  }).join('');
-  return `<div class="tour-cols">${cols}</div>`;
-}
+// ── Турнир: оформление окна («trx») ─────────────────────────────────────────
+// Три вкладки панели: «Турнир» — статус, места, призы и формат; «Сетка» —
+// этапы и бои по раундам, свои бои подсвечены; «Рейтинг» — пьедестал, своё
+// место и общий список (+1 за любую победу, +5 за победу в турнире).
+const _TRX_ROUND_NAME = {
+  1: '1/8 финала', 2: 'Раунд 2', 3: 'Раунд 3', 4: 'Финал верха',
+  5: 'Нижняя сетка', 6: 'Полуфинал низа', 7: 'Финал низа', 8: 'Гранд-финал',
+};
+const _TRX_TROPHY = `<svg viewBox="0 0 64 64" width="56" height="56" aria-hidden="true">
+  <defs><linearGradient id="trxg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset=".55" stop-color="#f0b84a"/><stop offset="1" stop-color="#b47a1c"/></linearGradient></defs>
+  <path d="M20 8h24v14c0 7-5 13-12 13S20 29 20 22z" fill="url(#trxg)"/>
+  <path d="M20 12h-7c0 8 4 13 9 14M44 12h7c0 8-4 13-9 14" fill="none" stroke="#f0b84a" stroke-width="3" stroke-linecap="round"/>
+  <path d="M29 35h6v8h-6z" fill="#d49a32"/><path d="M22 43h20l2 8H20z" fill="url(#trxg)"/><rect x="18" y="51" width="28" height="5" rx="2" fill="#b47a1c"/>
+  <path d="M32 13l2 4.2 4.6.6-3.3 3.2.8 4.6L32 23.4l-4.1 2.2.8-4.6-3.3-3.2 4.6-.6z" fill="#fff6d6" opacity=".9"/></svg>`;
 
-function _tournamentRatingBodyHTML() {
-  if (_tourRatingData === null) return `<div class="rating-loading">${t('questLoading')}</div>`;
-  if (!_tourRatingData.length) return `<div class="rating-empty">Чемпионов пока нет — станьте первым</div>`;
-  return _tourRatingData.map((r, i) => `
-    <div class="rating-row">
-      <div class="rating-rank${i < 3 ? ' rating-rank-' + (i + 1) : ''}">${i + 1}</div>
-      <div class="rating-avatar">🏆</div>
-      <div class="rating-name">${_escHtml(r.username)}</div>
-      <div class="rating-bm">
-        <div class="rating-bm-val">${r.wins}</div>
-        <div class="rating-bm-lbl">побед</div>
+function _trxState() {
+  return (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: TOURNAMENT_SIZE, live: false, minLevel: TOURNAMENT_MIN_LEVEL, round: 0, totalRounds: 8, bracket: [] };
+}
+function _trxMe() { return (typeof netUsername !== 'undefined' && netUsername) || (player && player.username) || ''; }
+
+function _trxRegHTML() {
+  const st = _trxState();
+  const m = _tournamentModel();
+  const need = st.needed || TOURNAMENT_SIZE;
+  const q = Math.min(need, st.queued || 0);
+  const live = st.phase === 'live';
+  const slots = Array.from({ length: need }, (_, i) => `<i class="${live || i < q ? 'on' : ''}"></i>`).join('');
+  const status = live
+    ? `<b>Идёт ${_TRX_ROUND_NAME[st.round] ? _TRX_ROUND_NAME[st.round].toLowerCase() : 'раунд ' + st.round}</b><span>раунд ${st.round} из ${st.totalRounds}</span>`
+    : st.phase === 'reg'
+      ? `<b>${q} / ${need}</b><span>стартует, как только наберётся ${need}</span>`
+      : `<b>${m.stat && m.stat.value ? m.stat.value : '—'}</b><span>до открытия регистрации${m.stat && m.stat.note ? ' · ' + m.stat.note : ''}</span>`;
+  const prize = (icon, title, val, sub) => `<div class="trx-prize"><span class="trx-prize-ic">${icon}</span><div><b>${title}</b><small>${sub}</small></div><em>${val}</em></div>`;
+  const coin = '<img src="/images/nexum-coin_v2.png" alt="">';
+  return `
+    <div class="trx">
+      <div class="trx-hero">
+        <div class="trx-hero-glow"></div>
+        <div class="trx-trophy">${_TRX_TROPHY}</div>
+        <div class="trx-hero-title">Турнир</div>
+        <div class="trx-hero-sub">${need} игроков · двойное выбывание · ${t('eventSchedTournament')}</div>
+        <div class="trx-pill-row">${_evtPillHTML(m.pill)}</div>
+        <div class="trx-status">${status}</div>
+        <div class="trx-slots">${slots}</div>
+        ${m.stat && m.stat.note && st.phase === 'reg' ? `<div class="trx-note">${m.stat.note}</div>` : ''}
+        <div class="trx-action">${m.action || ''}</div>
       </div>
-    </div>`).join('');
+
+      <div class="trx-hdr">Награды</div>
+      <div class="trx-prizes">
+        ${prize('👑', 'Чемпион', `${coin}+100`, '+5 очков рейтинга')}
+        ${prize('🥈', 'Финалист', `${coin}+50`, 'за гранд-финал')}
+        ${prize('⚔', 'Победа в верхней сетке', `${coin}+10`, 'за каждый раунд')}
+        ${prize('🛡', 'Победа в нижней сетке', `${coin}+5`, 'за каждый раунд')}
+      </div>
+      <div class="trx-note center">Каждая победа — <b>+1 очко</b> рейтинга и <b>+${TOURNAMENT_CLAN_XP_PER_WIN} опыта</b> вашему клану, победа в турнире — <b>+5</b> очков. В рейтинг попадает каждый участник.</div>
+
+      <div class="trx-hdr">Формат</div>
+      <div class="trx-format">
+        <div class="trx-fmt ub"><b>Верхняя сетка</b><span>${need} → 1 · без поражений</span></div>
+        <div class="trx-fmt-arrow">↓ проигрыш</div>
+        <div class="trx-fmt lb"><b>Нижняя сетка</b><span>второй шанс · проигрыш — выбывание</span></div>
+        <div class="trx-fmt gf"><b>Гранд-финал</b><span>победитель верха против победителя низа</span></div>
+      </div>
+      <div class="trx-facts">
+        <div><span>Уровень</span><b>${st.minLevel || TOURNAMENT_MIN_LEVEL}+</b></div>
+        <div><span>Бой</span><b>1 минута</b></div>
+        <div><span>Ничья</span><b>по урону</b></div>
+        <div><span>Раундов</span><b>${st.totalRounds || 8}</b></div>
+      </div>
+    </div>`;
 }
 
-function onTournamentRatingData(rows) {
-  _tourRatingData = rows || [];
+function _trxBracketHTML() {
+  const st = _trxState();
+  const bracket = Array.isArray(st.bracket) ? st.bracket : [];
+  const total = st.totalRounds || 8;
+  const cur = st.phase === 'live' ? st.round : (bracket.length ? total + 1 : 0);
+  const steps = Array.from({ length: total }, (_, i) => {
+    const r = i + 1;
+    const cls = r < cur ? 'done' : r === cur ? 'cur' : '';
+    return `<div class="trx-step ${cls}"><i>${r < cur ? '✓' : r}</i><span>${_TRX_ROUND_NAME[r] || 'Раунд ' + r}</span></div>`;
+  }).join('');
+  if (!bracket.length) {
+    return `<div class="trx"><div class="trx-steps">${steps}</div>
+      <div class="trx-empty">${_TRX_TROPHY}<b>Сетка появится со стартом турнира</b><span>нужно ${st.needed || TOURNAMENT_SIZE} участников</span></div></div>`;
+  }
+  const me = _trxMe();
+  const last = bracket[bracket.length - 1];
+  const gf = last && last.matches && last.matches.find(x => x.tag === 'grandFinal' && x.winnerId);
+  const champ = gf ? (gf.winnerId === gf.a.id ? gf.a.name : gf.b.name) : null;
+  const card = mt => {
+    const decided = !!mt.winnerId;
+    const row = (side) => {
+      const won = decided && mt.winnerId === side.id, lost = decided && !won;
+      return `<div class="trx-side${won ? ' win' : ''}${lost ? ' lose' : ''}${side.name === me ? ' me' : ''}"><span>${_escHtml(side.name)}</span>${won ? '<em>✓</em>' : ''}</div>`;
+    };
+    const mine = mt.a.name === me || mt.b.name === me;
+    return `<div class="trx-match ${_tourTagClass(mt.tag)}${mine ? ' mine' : ''}${decided ? '' : ' open'}">${row(mt.a)}${row(mt.b)}</div>`;
+  };
+  const cols = bracket.map(r => {
+    const groups = [['ub', 'Верхняя'], ['lb', 'Нижняя'], ['gf', 'Финал']].map(([k, label]) => {
+      const ms = (r.matches || []).filter(mt => _tourTagClass(mt.tag) === k);
+      return ms.length ? `<div class="trx-grp ${k}">${label}</div>${ms.map(card).join('')}` : '';
+    }).join('');
+    return `<div class="trx-col${r.round === cur ? ' live' : ''}">
+      <div class="trx-col-hd"><b>${_TRX_ROUND_NAME[r.round] || 'Раунд ' + r.round}</b><span>раунд ${r.round}</span></div>${groups}</div>`;
+  }).join('');
+  return `<div class="trx">
+    ${champ ? `<div class="trx-champ">${_TRX_TROPHY}<div><span>Чемпион турнира</span><b>${_escHtml(champ)}</b></div></div>` : ''}
+    <div class="trx-steps">${steps}</div>
+    <div class="tour-cols trx-cols">${cols}</div>
+    <div class="trx-legend"><span class="ub">верхняя сетка</span><span class="lb">нижняя сетка</span><span class="me">ваши бои</span></div>
+  </div>`;
+}
+
+function _trxRatingHTML() {
+  const d = _tourRatingData;
+  if (d === null) return `<div class="rating-loading">${t('questLoading')}</div>`;
+  const rows = (d && d.rows) || [];
+  const me = d && d.me;
+  const rule = `<div class="trx-note center">+1 очко за любую победу в бою · +5 за победу в турнире</div>`;
+  if (!rows.length) return `<div class="trx">${rule}<div class="trx-empty">${_TRX_TROPHY}<b>Рейтинг пока пуст</b><span>сыграйте в турнире — и вы в нём</span></div></div>`;
+  const meName = _trxMe();
+  const podium = rows.slice(0, 3);
+  const order = [1, 0, 2].filter(i => podium[i]);
+  const pod = order.map(i => {
+    const r = podium[i];
+    return `<div class="trx-pod p${i + 1}">
+      <div class="trx-pod-cls">${typeof classBadgeHTML === 'function' ? classBadgeHTML(r.charClass, 30) : ''}</div>
+      <div class="trx-pod-name">${_escHtml(r.username)}</div>
+      <div class="trx-pod-pts">${r.points}<small>очк.</small></div>
+      <div class="trx-pod-base"><span>${i + 1}</span></div>
+    </div>`;
+  }).join('');
+  const meCard = me ? `<div class="trx-mecard">
+      <div class="trx-mecard-rank">#${me.rank}</div>
+      <div class="trx-mecard-main"><b>Ваше место</b><span>${me.wins} побед · ${me.titles} ${me.titles === 1 ? 'титул' : 'титулов'} · ${me.played} турн.</span></div>
+      <div class="trx-mecard-pts">${me.points}<small>очков</small></div>
+    </div>` : `<div class="trx-note center">Вас пока нет в рейтинге — зарегистрируйтесь на турнир</div>`;
+  const list = rows.map((r, i) => `
+    <div class="trx-row${r.username === meName ? ' me' : ''}">
+      <span class="trx-row-n${i < 3 ? ' top' + (i + 1) : ''}">${i + 1}</span>
+      <span class="trx-row-cls">${typeof classBadgeHTML === 'function' ? classBadgeHTML(r.charClass, 20) : ''}</span>
+      <div class="trx-row-main"><b>${_escHtml(r.username)}</b><span>${r.titles ? `🏆×${r.titles} · ` : ''}${r.wins} побед · ${r.played} турн.</span></div>
+      <span class="trx-row-pts">${r.points}</span>
+    </div>`).join('');
+  return `<div class="trx">${meCard}<div class="trx-podium">${pod}</div>${rule}<div class="trx-list">${list}</div></div>`;
+}
+
+function onTournamentRatingData(data) {
+  // { rows, me } от сервера (repos/tournament.js); старый ответ — голый массив.
+  _tourRatingData = Array.isArray(data) ? { rows: data, me: null } : (data || { rows: [], me: null });
   if (_tournamentPanelOpen() && _tourTab === 'rating') _renderTournamentPanelBody();
 }
 

@@ -14,6 +14,7 @@
 // отваливается уже после входа нового; уход из ямы телепортом.
 
 const path = require('path');
+const { TOURNAMENT_SIZE } = require('../shared/definitions');
 
 let pass = 0, fail = 0;
 function ok(cond, name, extra) {
@@ -164,8 +165,8 @@ connect('s30b', 1030); modes._trRegister('s30b', 'P30', 1030);
 disconnect('s5');
 connect('s31', 1031); modes._trRegister('s31', 'P31', 1031);
 modes._trTryStart();
-ok(_tr.phase === 'live', 'турнир стартует, даже если один из 32 в этот момент перезагружается');
-ok(_tr.names.size === 32, 'в сетке 32', `names ${_tr.names.size}`);
+ok(_tr.phase === 'live', 'турнир стартует, даже если один из 16 в этот момент перезагружается');
+ok(_tr.names.size === TOURNAMENT_SIZE, `в сетке ${TOURNAMENT_SIZE}`, `names ${_tr.names.size}`);
 
 // ── 2. раздача, когда одна сторона ещё не вернулась ─────────────────────────
 ok(_tr.matches.has('s5'), 'перезагружающийся на раздаче не получает техпоражение, его матч ждёт');

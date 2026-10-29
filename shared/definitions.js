@@ -3491,18 +3491,26 @@ const GUILD_WAR_SIDE_KEYS = ['right', 'left'];
 // перезапуск сервера в полночь не теряет день.
 const GUILD_WAR_INCOME_INTERVAL_MS = 60 * 60 * 1000;
 
-// ── Tournament ("Турнир", 32-player double elimination) ─────────────────────
+// ── Tournament ("Турнир", 16-player double elimination) ─────────────────────
 // Registration opens Thursday and Sunday at 23:00 Moscow time and stays open
-// until either 32 people have signed up (the bracket starts immediately,
+// until either 16 people have signed up (the bracket starts immediately,
 // without waiting for the rest of the window) or TOURNAMENT_WINDOW_MS runs
 // out with too few — same reg-window shape as arena3/race10 above, just a
-// longer window because 32 sign-ups is a much higher bar than 6.
+// longer window because 16 sign-ups is a much higher bar than 6.
 // `days` are Moscow weekdays, 0 = воскресенье .. 6 = суббота (see
 // nextEventStartAt's own comment) — 0 = Sunday, 4 = Thursday.
 const TOURNAMENT_DAYS_MSK  = [0, 4];
 const TOURNAMENT_HOURS_MSK = [23];
 const TOURNAMENT_WINDOW_MS = 3 * 60 * 60 * 1000;
-const TOURNAMENT_SIZE = 32;
+const TOURNAMENT_SIZE = 16;
+// Рейтинг турнира (server/db/repos/tournament.js): в него попадает каждый
+// участник сетки; любая победа в матче (и бой, и неявка соперника) — очко,
+// победа во всём турнире — ещё пять сверху.
+const TOURNAMENT_POINTS_PER_WIN = 1;
+const TOURNAMENT_POINTS_PER_TITLE = 5;
+// Каждая победа в турнирном бою даёт столько очков опыта клану победителя
+// (repos/tournament.js, в той же транзакции, что и очко рейтинга).
+const TOURNAMENT_CLAN_XP_PER_WIN = 10;
 const TOURNAMENT_MIN_LEVEL = 15;
 
 // One fight lasts a minute. If both sides are still standing when it runs
@@ -4973,6 +4981,7 @@ if (typeof module !== 'undefined') module.exports = {
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, TOURNAMENT_WINDOW_MS, TOURNAMENT_SIZE, TOURNAMENT_MIN_LEVEL,
+  TOURNAMENT_POINTS_PER_WIN, TOURNAMENT_POINTS_PER_TITLE, TOURNAMENT_CLAN_XP_PER_WIN,
   TOURNAMENT_FIGHT_MS, TOURNAMENT_COUNTDOWN_MS, TOURNAMENT_ROUND_GAP_MS,
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
   GUILD_WAR_TOWER_HP, GUILD_WAR_TOWER_COUNT, GUILD_WAR_HOLD_MS, GUILD_WAR_INCOME_INTERVAL_MS,

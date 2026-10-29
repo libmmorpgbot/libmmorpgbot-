@@ -659,22 +659,11 @@ module.exports = function registerProgression(s, safeOn) {
     });
   }));
 
-  // Турнир's own leaderboard — champions ranked by how many times they've won
-  // one, not by BM/level like the main rating panel. Reuses pvp_history
-  // rather than a new table: server/game/tournament.js's _trFinishTournament
-  // already writes a 'win'/'tournament' row for the champion (and 'lose' for
-  // everyone else), so this is the same table getRating leaves untouched,
-  // just grouped and counted the other way.
-  safeOn('getTournamentRating', () => s.act('getTournamentRating', 'tournamentRatingError', async (t) => {
-    const { query } = require('../db');
-    const { rows } = await query(t, `
-      SELECT p.username, count(*)::int AS wins
-        FROM pvp_history h
-        JOIN players p ON p.id = h.player_id AND ${players.realPlayerSql('p')}
-       WHERE h.mode = 'tournament' AND h.kind = 'win'
-       GROUP BY p.username
-       ORDER BY wins DESC, p.username
-       LIMIT 50`);
-    s.socket.emit('tournamentRatingData', { rows });
+  // Рейтинг турнира — каждый, кто играл в сетке: +1 за любую победу в матче,
+  // +5 за победу в турнире (repos/tournament.js). Вместе с таблицей — место
+  // самого игрока, даже если он ниже первой сотни.
+  safeOn('getTournamentRating', () => s.act('getTournamentRating', 'tournamentRatingError', async (t, pid) => {
+    const res = await require('../db/repos/tournament').top(t, pid);
+    s.socket.emit('tournamentRatingData', res);
   }));
 };

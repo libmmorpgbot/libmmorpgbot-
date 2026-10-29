@@ -512,7 +512,10 @@ function init(io) {
     playerIdOf,
   }));
   Object.assign(modes, createCoop(shared));
-  Object.assign(modes, createTournament(shared));
+  Object.assign(modes, createTournament({
+    ...shared,
+    _trScore: (tid, runId, ref, delta) => require('./db/repos/tournament').score(tid, runId, ref, delta),
+  }));
   // Named and kept, rather than written inline into the factory's deps. It has
   // TWO callers — farm2.js settles the last partial minute with it, and the
   // per-minute ticker in handlers2/coop.js charges the whole ones — and the
