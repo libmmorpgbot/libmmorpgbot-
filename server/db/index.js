@@ -365,33 +365,23 @@ async function close() {
 // каждый удар. Секунда задержки после миграции никому не видна; час работы с
 // мёртвыми рунами виден всем.
 const _cols = new Map();          // table.column -> true (только положительные)
-const _miss = new Map();          // table.column -> когда в последний раз услышали «нет»
-const _asking = new Map();        // table.column -> запрос, который уже летит
+const _miss = new Map();          // table.column -> когда спрашивали в последний раз
 const _MISS_TTL_MS = 1000;
 
-// Кто спросил, пока первый запрос ещё в пути, ждёт ЕГО ответа, а не получает
-// «нет». Раньше отметка «спрашивали» ставилась до запроса, и все, кто приходил
-// в ту же секунду, слышали «колонки нет»: при старте турнира шестнадцать
-// начислений рейтинга разом — пятнадцать молча пропадали
-// (repos/tournament.js).
 async function hasColumn(table, column) {
   const key = `${table}.${column}`;
   if (_cols.get(key)) return true;
-  if (_asking.has(key)) return _asking.get(key);
   const last = _miss.get(key) || 0;
   if (Date.now() - last < _MISS_TTL_MS) return false;
-  const ask = (async () => {
-    const { rows } = await query(null, `
-      SELECT 1 FROM information_schema.columns
-       WHERE table_name = $1 AND column_name = $2`, [table, column]);
-    const has = rows.length > 0;
-    if (has) { _cols.set(key, true); _miss.delete(key); } else _miss.set(key, Date.now());
-    return has;
-  })().finally(() => _asking.delete(key));
-  _asking.set(key, ask);
-  return ask;
+  _miss.set(key, Date.now());
+  const { rows } = await query(null, `
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = $1 AND column_name = $2`, [table, column]);
+  const has = rows.length > 0;
+  if (has) { _cols.set(key, true); _miss.delete(key); }
+  return has;
 }
-function _forgetSchemaCache() { _cols.clear(); _miss.clear(); _asking.clear(); }
+function _forgetSchemaCache() { _cols.clear(); _miss.clear(); }
 
 module.exports = {
   pool, query, queryWithTimeout, tx, txRetry, stats, close, POOL_MAX, hasColumn,
