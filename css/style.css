@@ -5344,7 +5344,9 @@ canvas { display:block; width:100%; height:100%; }
 .clx-rank-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.06); overflow: hidden; display: flex; }
 .clx-rank-bar i { display: block; height: 100%; background: linear-gradient(90deg, #4f9a76, #7ee0b0); }
 .clx-rank-bar i.tour { background: linear-gradient(90deg, #c8962e, #f0c75e); }
+.clx-rank-bar i.boss { background: linear-gradient(90deg, #8a4fc4, #d08cff); }
 .clx-rank-tour { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 10.5px; font-weight: 700; color: #f0c75e; }
+.clx-rank-tour.boss { color: #d08cff; }
 .clx-rank-v { flex: none; text-align: right; font-size: 13px; font-weight: 900; color: #7ee0b0; display: flex; flex-direction: column; line-height: 1.1; }
 .clx-rank-v small { font-size: 9.5px; font-weight: 600; color: var(--muted); }
 .clx .lair-list { margin: 0; }

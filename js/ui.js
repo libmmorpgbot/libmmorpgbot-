@@ -9151,7 +9151,7 @@ function _trxRegHTML() {
         ${prize('⚔', 'Победа в верхней сетке', `${coin}+10`, 'за каждый раунд')}
         ${prize('🛡', 'Победа в нижней сетке', `${coin}+5`, 'за каждый раунд')}
       </div>
-      <div class="trx-note center">Каждая победа — <b>+1 очко</b> рейтинга и <b>+${TOURNAMENT_CLAN_XP_PER_WIN} опыта</b> вашему клану, победа в турнире — <b>+5</b> очков. В рейтинг попадает каждый участник.</div>
+      <div class="trx-note center">Каждая победа — <b>+1 очко</b> рейтинга и <b>+${TOURNAMENT_CLAN_XP_PER_WIN} очков</b> вашему клану (гранд-финал — <b>+${TOURNAMENT_CLAN_XP_FINAL}</b>), победа в турнире — <b>+5</b> очков. В рейтинг попадает каждый участник.</div>
 
       <div class="trx-hdr">Формат</div>
       <div class="trx-format">
@@ -13712,7 +13712,7 @@ function openWhatsNewModal() {
         <div class="whatsnew-chips">
           <span><b>16</b>${t('whatsNewTrChipSize')}</span>
           <span><b>+1</b>${t('whatsNewTrChipWin')}</span>
-          <span><b>+10</b>${t('whatsNewTrChipClan')}</span>
+          <span><b>+${TOURNAMENT_CLAN_XP_PER_WIN}</b>${t('whatsNewTrChipClan')}</span>
         </div>
       </div>
       <div class="whatsnew-body">

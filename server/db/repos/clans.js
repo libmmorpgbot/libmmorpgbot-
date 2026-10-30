@@ -333,6 +333,30 @@ async function addXp(db, clanId, amount) {
   return { xp, level: lvl };
 }
 
+// Опыт клану не за пожертвование: победы в турнире, Владыка Мира. Кто его
+// принёс — в clan_bonus_xp (вкладка «Вклад», миграция 047), по источнику.
+// Возвращает { xp, level, leveledUp } или null (нет клана / суммы).
+async function addBonusXp(db, clanId, playerId, source, amount) {
+  const { rows: lv } = await query(db, 'SELECT level FROM clans WHERE id = $1', [clanId]);
+  const res = await addXp(db, clanId, amount);
+  if (!res) return null;
+  if (playerId && await hasColumn('clan_bonus_xp', 'xp')) {
+    await query(db, `
+      INSERT INTO clan_bonus_xp (clan_id, player_id, source, xp, n) VALUES ($1, $2, $3, $4, 1)
+      ON CONFLICT (clan_id, player_id, source) DO UPDATE SET
+        xp = clan_bonus_xp.xp + EXCLUDED.xp, n = clan_bonus_xp.n + 1, updated_at = now()`,
+      [clanId, playerId, source, Math.floor(amount)]);
+  }
+  return { ...res, leveledUp: lv.length ? res.level > Number(lv[0].level) : false };
+}
+
+// Новый уровень клана — новый % атаки в БМ каждого участника. Вне транзакции,
+// после коммита.
+async function refreshMembersBm(clanId) {
+  const { rows } = await query(null, 'SELECT player_id FROM clan_members WHERE clan_id = $1', [clanId]);
+  for (const r of rows) await require('./stats').refreshBm(null, r.player_id).catch(() => {});
+}
+
 // ── storage ─────────────────────────────────────────────────────────────────
 // Only shards go in — the same rule the old handler enforced with a message.
 // Deposit is an upsert on (clan_id, item_id), so "find the entry or push a new
@@ -855,26 +879,32 @@ async function storageView(db, clanId, playerId) {
 // they put in did not leave with them, so the credit does not either.
 async function activityView(db, clanId) {
   // Очки за пожертвования (главное теперь), опыт, принесённый победами в
-  // турнире, и осколки, положенные в хранилище раньше, — одним списком по
+  // турнире и Владыкой Мира, и осколки, положенные в хранилище раньше, — одним списком по
   // игроку. До миграции 042 очков нет, до 047 — турнирного вклада.
   const donOk = await donationsReady();
-  const tourOk = await hasColumn('clan_tournament_xp', 'xp');
+  const tourOk = await hasColumn('clan_bonus_xp', 'xp');
   const { rows } = await query(db, `
     WITH pts AS (
       ${donOk ? `SELECT player_id, sum(xp)::bigint AS points, max(created_at) AS at
                    FROM clan_donations WHERE clan_id = $1 GROUP BY player_id`
               : `SELECT NULL::bigint AS player_id, 0::bigint AS points, NULL::timestamptz AS at WHERE false`}
     ), tour AS (
-      ${tourOk ? `SELECT player_id, xp AS tour, wins AS tour_wins, updated_at AS at
-                    FROM clan_tournament_xp WHERE clan_id = $1 AND xp > 0`
-               : `SELECT NULL::bigint AS player_id, 0::bigint AS tour, 0 AS tour_wins, NULL::timestamptz AS at WHERE false`}
+      ${tourOk ? `SELECT player_id,
+                         sum(xp) FILTER (WHERE source = 'tournament')::bigint AS tour,
+                         sum(n)  FILTER (WHERE source = 'tournament')::int    AS tour_wins,
+                         sum(xp) FILTER (WHERE source = 'world_boss')::bigint AS boss,
+                         sum(n)  FILTER (WHERE source = 'world_boss')::int    AS boss_kills,
+                         max(updated_at) AS at
+                    FROM clan_bonus_xp WHERE clan_id = $1 AND xp > 0 GROUP BY player_id`
+               : `SELECT NULL::bigint AS player_id, 0::bigint AS tour, 0 AS tour_wins, 0::bigint AS boss, 0 AS boss_kills, NULL::timestamptz AS at WHERE false`}
     ), shards AS (
       SELECT player_id, qty, updated_at FROM clan_contributions WHERE clan_id = $1 AND qty > 0
     ), who AS (
       SELECT player_id FROM pts UNION SELECT player_id FROM tour UNION SELECT player_id FROM shards
     )
     SELECT w.player_id, COALESCE(pt.points, 0) AS points, COALESCE(tr.tour, 0) AS tour,
-           COALESCE(tr.tour_wins, 0) AS tour_wins, COALESCE(sh.qty, 0) AS qty,
+           COALESCE(tr.tour_wins, 0) AS tour_wins, COALESCE(tr.boss, 0) AS boss,
+           COALESCE(tr.boss_kills, 0) AS boss_kills, COALESCE(sh.qty, 0) AS qty,
            COALESCE(pt.at, tr.at, sh.updated_at) AS updated_at, p.username, p.telegram_id,
            (cm.player_id IS NOT NULL) AS in_clan
       FROM who w
@@ -883,10 +913,11 @@ async function activityView(db, clanId) {
       LEFT JOIN tour tr ON tr.player_id = w.player_id
       LEFT JOIN shards sh ON sh.player_id = w.player_id
       LEFT JOIN clan_members cm ON cm.clan_id = $1 AND cm.player_id = w.player_id
-     ORDER BY COALESCE(pt.points, 0) + COALESCE(tr.tour, 0) DESC, qty DESC, updated_at ASC`, [clanId]);
+     ORDER BY COALESCE(pt.points, 0) + COALESCE(tr.tour, 0) + COALESCE(tr.boss, 0) DESC, qty DESC, updated_at ASC`, [clanId]);
   return rows.map(r => ({
     playerId: Number(r.player_id), telegramId: r.telegram_id, username: r.username,
     points: Number(r.points), tour: Number(r.tour), tourWins: Number(r.tour_wins),
+    boss: Number(r.boss), bossKills: Number(r.boss_kills),
     qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
   }));
 }
@@ -1019,7 +1050,7 @@ module.exports = {
   claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
   transferLeadership,
-  addXp, deposit, depositAll, allocate, claim, cancelAllocation, unlockStorage,
+  addXp, addBonusXp, refreshMembersBm, deposit, depositAll, allocate, claim, cancelAllocation, unlockStorage,
   nexumReady, treasuryCredit, giveNexum,
   donationsReady, donationState, donate, syncLevels,
   fullView, clanOf, badgeOf, search, levelFor, ClanError,

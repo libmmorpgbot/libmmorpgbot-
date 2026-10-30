@@ -11,13 +11,13 @@
 // начисления ничего не меняет.
 
 const { query, tx, hasColumn } = require('../index');
-const { TOURNAMENT_POINTS_PER_WIN, TOURNAMENT_POINTS_PER_TITLE, TOURNAMENT_CLAN_XP_PER_WIN } = require('../../../shared/definitions');
+const { TOURNAMENT_POINTS_PER_WIN, TOURNAMENT_POINTS_PER_TITLE, TOURNAMENT_CLAN_XP_PER_WIN, TOURNAMENT_CLAN_XP_FINAL } = require('../../../shared/definitions');
 
 async function ready() { return hasColumn('tournament_rating', 'points'); }
 
-// delta: { played?, wins?, titles? } — по единице каждого.
+// delta: { played?, wins?, titles?, final? } — по единице каждого.
 // Победа в бою ещё и двигает клан победителя: +TOURNAMENT_CLAN_XP_PER_WIN
-// опыта, в этой же транзакции — повтор того же начисления (строка журнала
+// опыта (победа в гранд-финале, final, — TOURNAMENT_CLAN_XP_FINAL), в этой же транзакции — повтор того же начисления (строка журнала
 // уже есть) не даст клану второй раз.
 async function score(telegramId, runId, ref, delta = {}) {
   if (!await ready()) return null;
@@ -44,28 +44,14 @@ async function score(telegramId, runId, ref, delta = {}) {
     if (wins) {
       const clans = require('./clans');
       const m = await clans.clanOf(t, pid);
-      if (m) {
-        const { rows: lv } = await query(t, 'SELECT level FROM clans WHERE id = $1', [m.clanId]);
-        const xp = await clans.addXp(t, m.clanId, TOURNAMENT_CLAN_XP_PER_WIN * wins);
-        // Чей это вклад — для вкладки «Вклад» в окне клана (миграция 047).
-        if (xp && await hasColumn('clan_tournament_xp', 'xp')) {
-          await query(t, `
-            INSERT INTO clan_tournament_xp (clan_id, player_id, xp, wins) VALUES ($1, $2, $3, $4)
-            ON CONFLICT (clan_id, player_id) DO UPDATE SET
-              xp = clan_tournament_xp.xp + EXCLUDED.xp,
-              wins = clan_tournament_xp.wins + EXCLUDED.wins,
-              updated_at = now()`, [m.clanId, pid, TOURNAMENT_CLAN_XP_PER_WIN * wins, wins]);
-        }
-        if (xp) clan = { clanId: m.clanId, ...xp, leveledUp: lv.length ? xp.level > Number(lv[0].level) : false };
-      }
+      const amount = delta.final ? TOURNAMENT_CLAN_XP_FINAL : TOURNAMENT_CLAN_XP_PER_WIN;
+      const xp = m ? await clans.addBonusXp(t, m.clanId, pid, 'tournament', amount) : null;
+      if (xp) clan = { clanId: m.clanId, ...xp };
     }
     return { playerId: pid, points: Number(rows[0].points), clan };
   });
   // Новый уровень клана — новый % атаки в БМ каждого участника.
-  if (res && res.clan && res.clan.leveledUp) {
-    const { rows } = await query(null, 'SELECT player_id FROM clan_members WHERE clan_id = $1', [res.clan.clanId]);
-    for (const r of rows) await require('./stats').refreshBm(null, r.player_id).catch(() => {});
-  }
+  if (res && res.clan && res.clan.leveledUp) await require('./clans').refreshMembersBm(res.clan.clanId);
   return res;
 }
 

@@ -1988,6 +1988,9 @@ const WORLD_BOSS_HP_MULT = 3;
 // Множитель к шансам таблицы зоны для убийства Владыки — плюс обычные
 // боссовые сундуки и камни (rollLoot, server/handlers2/world.js).
 const WORLD_BOSS_DROP_MULT = 50;
+// Очки опыта клану того, кто нанёс Владыке последний удар
+// (server/handlers2/world.js, onKill).
+const WORLD_BOSS_CLAN_XP = 30;
 // Размер этажа в тайлах.
 const WORLD_W = 150;
 const WORLD_H = 110;
@@ -3486,6 +3489,9 @@ const GUILD_WAR_SIDES = {
   left:  { towers: [0, 2], liberty: 100 },
 };
 const GUILD_WAR_SIDE_KEYS = ['right', 'left'];
+// И опыт клану за каждую сторону — в ту же суточную выплату (repos/guildwar.js
+// payDaily): клан с обеими сторонами получает вдвое.
+const GUILD_WAR_SIDE_CLAN_XP = 100;
 // Как часто проверять, не пора ли платить. Выплата идемпотентна (paid_day в
 // guild_war_state), так что частая проверка ничего не платит дважды, а
 // перезапуск сервера в полночь не теряет день.
@@ -3509,8 +3515,10 @@ const TOURNAMENT_SIZE = 16;
 const TOURNAMENT_POINTS_PER_WIN = 1;
 const TOURNAMENT_POINTS_PER_TITLE = 5;
 // Каждая победа в турнирном бою даёт столько очков опыта клану победителя
-// (repos/tournament.js, в той же транзакции, что и очко рейтинга).
-const TOURNAMENT_CLAN_XP_PER_WIN = 10;
+// (repos/tournament.js, в той же транзакции, что и очко рейтинга), победа в
+// гранд-финале — TOURNAMENT_CLAN_XP_FINAL вместо этого.
+const TOURNAMENT_CLAN_XP_PER_WIN = 30;
+const TOURNAMENT_CLAN_XP_FINAL = 300;
 const TOURNAMENT_MIN_LEVEL = 15;
 
 // One fight lasts a minute. If both sides are still standing when it runs
@@ -4981,7 +4989,8 @@ if (typeof module !== 'undefined') module.exports = {
   RACE10_DAYS_MSK, RACE10_HOURS_MSK,
   ARENA3_DAYS_MSK, ARENA3_HOURS_MSK, ARENA3_WINDOW_MS,
   TOURNAMENT_DAYS_MSK, TOURNAMENT_HOURS_MSK, TOURNAMENT_WINDOW_MS, TOURNAMENT_SIZE, TOURNAMENT_MIN_LEVEL,
-  TOURNAMENT_POINTS_PER_WIN, TOURNAMENT_POINTS_PER_TITLE, TOURNAMENT_CLAN_XP_PER_WIN,
+  TOURNAMENT_POINTS_PER_WIN, TOURNAMENT_POINTS_PER_TITLE, TOURNAMENT_CLAN_XP_PER_WIN, TOURNAMENT_CLAN_XP_FINAL,
+  WORLD_BOSS_CLAN_XP, GUILD_WAR_SIDE_CLAN_XP,
   TOURNAMENT_FIGHT_MS, TOURNAMENT_COUNTDOWN_MS, TOURNAMENT_ROUND_GAP_MS,
   GUILD_WAR_DAYS_MSK, GUILD_WAR_HOURS_MSK, GUILD_WAR_WINDOW_MS,
   GUILD_WAR_TOWER_HP, GUILD_WAR_TOWER_COUNT, GUILD_WAR_HOLD_MS, GUILD_WAR_INCOME_INTERVAL_MS,

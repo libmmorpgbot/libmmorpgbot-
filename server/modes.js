@@ -464,6 +464,7 @@ function init(io) {
     loadSides: () => require('./db/repos/guildwar').loadSides(),
     saveSide: (key, clanId, at) => require('./db/repos/guildwar').saveSide(null, key, clanId, at),
     payDaily: () => require('./db/repos/guildwar').payDaily(),
+    refreshClanBm: (clanId) => require('./db/repos/clans').refreshMembersBm(clanId),
     clanForStorage: async (clanId) => {
       const clans = require('./db/repos/clans');
       const view = await clans.fullView(null, clanId);

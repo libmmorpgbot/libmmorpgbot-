@@ -39,7 +39,7 @@ const { query } = require('../db');
 const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
-  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_SPOTS,
+  FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_BOSS_CLAN_XP, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_SPOTS,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -822,6 +822,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
       await ach.bumpIn(t, s, 'kills', 1);
       if (result.isBoss) await ach.bumpIn(t, s, 'boss', 1);
       if (result.elite) await ach.bumpIn(t, s, 'elite', 1);
+      // Владыка Мира — клану того, кто его добил, той же транзакцией, что и
+      // награда: сорвалась награда — не засчитан и клан.
+      let clanBoss = null;
+      if (result.isBoss && result.openWorld && WORLD_BOSS_CLAN_XP > 0) {
+        const m = await clans.clanOf(t, pid);
+        const xp = m ? await clans.addBonusXp(t, m.clanId, pid, 'world_boss', WORLD_BOSS_CLAN_XP) : null;
+        if (xp) clanBoss = { clanId: m.clanId, ...xp };
+      }
       let refBonus = null;
       // The stats.refreshBm that used to be here has moved into
       // players.grantXp. It was the only refresh in the build, and it sat on
@@ -837,7 +845,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
         refBonus = await progression.payReferralOnLevel(t, pid, reward.xp.lvl || 0);
         ach.onLevel(s, reward.xp.lvl, reward.xp.levelsGained);
       }
-      return { reward, drops, refBonus, paidGold, paidXp };
+      return { reward, drops, refBonus, paidGold, paidXp, clanBoss };
     });
     if (!done) {
       // ── награда не прошла, но моб МЁРТВ ─────────────────────────────────
@@ -861,7 +869,11 @@ module.exports = function registerWorld(s, safeOn, deps) {
       return;
     }
 
-    const { reward, drops, refBonus } = done;
+    const { reward, drops, refBonus, clanBoss } = done;
+    if (clanBoss) {
+      s.socket.emit('clanStorageOk', { msg: `Владыка повержен — +${WORLD_BOSS_CLAN_XP} очков вашему клану` });
+      if (clanBoss.leveledUp) clans.refreshMembersBm(clanBoss.clanId).catch(() => {});
+    }
     // The referrer is a different session and may be offline entirely. The
     // room emit reaches every device they have open and is dropped when there
     // are none — the points themselves are already committed either way.

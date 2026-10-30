@@ -608,7 +608,8 @@ module.exports = function createTournament(deps) {
   function _trPayRoundReward(winnerSid, loserSid) {
     const tag = _tr.matchTag.get(winnerSid);
     // Рейтинг: любая победа в матче — +1 (и в бою, и по неявке соперника).
-    _trScoreSafe([winnerSid], { wins: 1 }, 'win');
+    // Победа в гранд-финале даёт клану больше (TOURNAMENT_CLAN_XP_FINAL).
+    _trScoreSafe([winnerSid], { wins: 1, final: tag === 'grandFinal' }, 'win');
     // Season 3: +2 points per opponent beaten. Every round here — grand
     // final included — is one 1v1 match, so "per opponent" is just "every
     // round win", one flat rate, no branching needed.

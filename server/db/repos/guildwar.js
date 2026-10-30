@@ -7,12 +7,12 @@
 // перезапуск в полночь или два процесса разом за один день дважды не платят.
 //
 // Деньги идут в казну клана (clans.treasuryCredit), а не игрокам: раздаёт их
-// лидер. До миграции 041 колонки paid_day нет — тогда ни выплат, ни сторон
+// лидер. Вместе с ними — GUILD_WAR_SIDE_CLAN_XP опыта клану за сторону. До миграции 041 колонки paid_day нет — тогда ни выплат, ни сторон
 // (ready() → false), и война просто идёт без наград.
 
 const { query, tx, hasColumn } = require('../index');
 const clans = require('./clans');
-const { GUILD_WAR_SIDES, GUILD_WAR_SIDE_KEYS, MSK_OFFSET_H } = require('../../../shared/definitions');
+const { GUILD_WAR_SIDES, GUILD_WAR_SIDE_KEYS, GUILD_WAR_SIDE_CLAN_XP, MSK_OFFSET_H } = require('../../../shared/definitions');
 
 async function ready() {
   return (await hasColumn('guild_war_state', 'paid_day')) && clans.nexumReady();
@@ -73,7 +73,10 @@ async function payDaily(day = mskDayKey()) {
       const clanId = Number(rows[0].owner_clan_id);
       const amount = GUILD_WAR_SIDES[key].liberty;
       const left = await clans.treasuryCredit(t, clanId, amount, 'guild_war_' + key, day);
-      if (left != null) paid.push({ key, clanId, amount, treasury: left });
+      // И опыт клану за сторону — под той же отметкой paid_day, так что
+      // дважды за сутки его тоже не будет.
+      const xp = GUILD_WAR_SIDE_CLAN_XP > 0 ? await clans.addXp(t, clanId, GUILD_WAR_SIDE_CLAN_XP) : null;
+      if (left != null) paid.push({ key, clanId, amount, treasury: left, clanXp: xp ? GUILD_WAR_SIDE_CLAN_XP : 0 });
     }
     return paid;
   });

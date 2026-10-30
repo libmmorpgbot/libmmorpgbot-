@@ -17,7 +17,7 @@ const { FLOOR_IDS } = require('../game/floors');
 module.exports = function createGuildWar(deps) {
   const {
     io, playerFloorMap, _socketForTelegramId, notifyEventSoon, broadcastLeadMs, notifyEventStarted, safeTimeout,
-    loadSides, saveSide, payDaily, clanForStorage, clanStorageViewFor,
+    loadSides, saveSide, payDaily, clanForStorage, clanStorageViewFor, refreshClanBm,
   } = deps;
 
   // ── Война гильдий (Guild War) ────────────────────────────────────────────────
@@ -282,15 +282,17 @@ module.exports = function createGuildWar(deps) {
     if (!paid.length) return paid;
     const byClan = new Map();
     for (const p of paid) {
-      const cur = byClan.get(p.clanId) || { amount: 0, keys: [] };
-      cur.amount += p.amount; cur.keys.push(p.key);
+      const cur = byClan.get(p.clanId) || { amount: 0, xp: 0, keys: [] };
+      cur.amount += p.amount; cur.xp += p.clanXp || 0; cur.keys.push(p.key);
       byClan.set(p.clanId, cur);
     }
-    for (const [clanId, { amount, keys }] of byClan) {
+    for (const [clanId, { amount, xp, keys }] of byClan) {
+      // Опыт мог поднять уровень клана — БМ участников с новым % атаки.
+      if (xp && refreshClanBm) refreshClanBm(clanId).catch(() => {});
       const clan = await clanForStorage(clanId).catch(() => null);
       if (!clan) continue;
       const what = keys.length > 1 ? 'все вышки' : (keys[0] === 'right' ? 'правые вышки' : 'левые вышки');
-      await _gwStoragePushToClan(clan, `Война гильдий: +${amount} Liberty в казну клана за ${what}`);
+      await _gwStoragePushToClan(clan, `Война гильдий: +${amount} Liberty в казну клана${xp ? ` и +${xp} очков клану` : ''} за ${what}`);
     }
     // Владельцы могли смениться (клан распущен — строка обнулилась сама),
     // так что состояние перечитывается из базы, а не правится по месту.
