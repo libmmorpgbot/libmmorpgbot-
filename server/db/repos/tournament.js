@@ -15,17 +15,30 @@ const { TOURNAMENT_POINTS_PER_WIN, TOURNAMENT_POINTS_PER_TITLE, TOURNAMENT_CLAN_
 
 async function ready() { return hasColumn('tournament_rating', 'points'); }
 
+// Начисление, которое не легло, — в журнал и операторам, а не в тишину.
+// Первый турнир на 16 прошёл с пустым рейтингом и без опыта кланам, и ни
+// одной строки об этом нигде не было: score() молча возвращал null.
+function _skipped(why, detail) {
+  console.error(`[tournament] рейтинг не начислен: ${why} — ${detail}`);
+  require('../../tg-ops').alert('tournament.rating', 'Рейтинг турнира не начислен', `${why} — ${detail}`).catch(() => {});
+}
+
 // delta: { played?, wins?, titles? } — по единице каждого.
 // Победа в бою ещё и двигает клан победителя: +TOURNAMENT_CLAN_XP_PER_WIN
 // опыта, в этой же транзакции — повтор того же начисления (строка журнала
 // уже есть) не даст клану второй раз.
 async function score(telegramId, runId, ref, delta = {}) {
-  if (!await ready()) return null;
+  try { return await _score(telegramId, runId, ref, delta); }
+  catch (err) { _skipped('ошибка базы', `tid ${telegramId}, ${ref}: ${err.message}`); throw err; }
+}
+
+async function _score(telegramId, runId, ref, delta) {
+  if (!await ready()) { _skipped('нет таблицы tournament_rating (миграция 046?)', `tid ${telegramId}, ${ref}`); return null; }
   const wins = delta.wins ? 1 : 0, titles = delta.titles ? 1 : 0, played = delta.played ? 1 : 0;
   const points = wins * TOURNAMENT_POINTS_PER_WIN + titles * TOURNAMENT_POINTS_PER_TITLE;
   const res = await tx(async (t) => {
     const { rows: p } = await query(t, 'SELECT id FROM players WHERE telegram_id = $1', [String(telegramId)]);
-    if (!p.length) return null;
+    if (!p.length) { _skipped('игрок не найден по telegram id', `tid ${telegramId}, ${ref}`); return null; }
     const pid = Number(p[0].id);
     const { rowCount } = await query(t, `
       INSERT INTO tournament_score_log (run_id, player_id, ref, points) VALUES ($1, $2, $3, $4)
