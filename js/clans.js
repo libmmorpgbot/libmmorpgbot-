@@ -1263,20 +1263,31 @@ function _clanActivityHTML() {
     if (typeof netClanActivitySync === 'function') netClanActivitySync();
     return `<div class="clx-empty">${_clxT('clanStorageLoading', 'Загрузка...')}</div>`;
   }
-  const hdr = `<div class="clx-hdr">${_clxT('clanActivityHdr', 'Вклад участников')}<span class="clx-hdr-note">очки за пожертвования</span></div>`;
+  const hdr = `<div class="clx-hdr">${_clxT('clanActivityHdr', 'Вклад участников')}<span class="clx-hdr-note">опыт клану: пожертвования и турнир</span></div>`;
   if (!rows.length) return `${hdr}<div class="clx-empty">${_clxT('clanActivityEmpty', 'Пока никто ничего не пожертвовал')}</div>`;
   const myTg = _myTelegramId();
-  const top = Math.max(1, ...rows.map(r => r.points || 0));
+  // Всего принёс клану — пожертвования плюс победы в турнире; турнирная
+  // доля — отдельной строкой и золотым куском полосы.
+  const total = r => (r.points || 0) + (r.tour || 0);
+  const top = Math.max(1, ...rows.map(total));
   const medal = ['#f0c75e', '#c8d3de', '#d08a5a'];
   return `${hdr}<div class="clx-list">${rows.map((r, i) => `
     <div class="clx-rank${String(r.telegramId) === String(myTg) ? ' me' : ''}">
       <span class="clx-rank-n" ${i < 3 ? `style="--mc:${medal[i]}"` : ''}>${i + 1}</span>
       <div class="clx-rank-main">
         <span class="clx-rank-name">${_esc(r.username)}${r.inClan ? '' : ` <small>(${_clxT('clanActivityLeftClan', 'покинул клан')})</small>`}</span>
-        <span class="clx-rank-bar"><i style="width:${Math.round((r.points || 0) / top * 100)}%"></i></span>
+        <span class="clx-rank-bar"><i style="width:${Math.round((r.points || 0) / top * 100)}%"></i><i class="tour" style="width:${Math.round((r.tour || 0) / top * 100)}%"></i></span>
+        ${r.tour ? `<span class="clx-rank-tour">${iconHTML('trophy', 11, '#f0c75e')} с турнира +${_num(r.tour)} · ${_num(r.tourWins || 0)} ${_clxWinsWord(r.tourWins || 0)}</span>` : ''}
       </div>
-      <span class="clx-rank-v">${_num(r.points || 0)}${r.qty ? `<small>${_num(r.qty)} оск.</small>` : ''}</span>
+      <span class="clx-rank-v">${_num(total(r))}${r.qty ? `<small>${_num(r.qty)} оск.</small>` : ''}</span>
     </div>`).join('')}</div>`;
+}
+
+function _clxWinsWord(n) {
+  const a = n % 10, b = n % 100;
+  if (a === 1 && b !== 11) return 'победа';
+  if (a >= 2 && a <= 4 && (b < 12 || b > 14)) return 'победы';
+  return 'побед';
 }
 
 // Server pushed new activity state — redraw only when that tab is showing.

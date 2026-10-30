@@ -854,31 +854,40 @@ async function storageView(db, clanId, playerId) {
 // A former member who deposited and later left still shows up: the shards
 // they put in did not leave with them, so the credit does not either.
 async function activityView(db, clanId) {
-  // Очки за пожертвования (главное теперь) и осколки, положенные в хранилище
-  // раньше, — одним списком по игроку. До миграции 042 очков нет.
+  // Очки за пожертвования (главное теперь), опыт, принесённый победами в
+  // турнире, и осколки, положенные в хранилище раньше, — одним списком по
+  // игроку. До миграции 042 очков нет, до 047 — турнирного вклада.
   const donOk = await donationsReady();
+  const tourOk = await hasColumn('clan_tournament_xp', 'xp');
   const { rows } = await query(db, `
     WITH pts AS (
       ${donOk ? `SELECT player_id, sum(xp)::bigint AS points, max(created_at) AS at
                    FROM clan_donations WHERE clan_id = $1 GROUP BY player_id`
               : `SELECT NULL::bigint AS player_id, 0::bigint AS points, NULL::timestamptz AS at WHERE false`}
+    ), tour AS (
+      ${tourOk ? `SELECT player_id, xp AS tour, wins AS tour_wins, updated_at AS at
+                    FROM clan_tournament_xp WHERE clan_id = $1 AND xp > 0`
+               : `SELECT NULL::bigint AS player_id, 0::bigint AS tour, 0 AS tour_wins, NULL::timestamptz AS at WHERE false`}
     ), shards AS (
       SELECT player_id, qty, updated_at FROM clan_contributions WHERE clan_id = $1 AND qty > 0
     ), who AS (
-      SELECT player_id FROM pts UNION SELECT player_id FROM shards
+      SELECT player_id FROM pts UNION SELECT player_id FROM tour UNION SELECT player_id FROM shards
     )
-    SELECT w.player_id, COALESCE(pt.points, 0) AS points, COALESCE(sh.qty, 0) AS qty,
-           COALESCE(pt.at, sh.updated_at) AS updated_at, p.username, p.telegram_id,
+    SELECT w.player_id, COALESCE(pt.points, 0) AS points, COALESCE(tr.tour, 0) AS tour,
+           COALESCE(tr.tour_wins, 0) AS tour_wins, COALESCE(sh.qty, 0) AS qty,
+           COALESCE(pt.at, tr.at, sh.updated_at) AS updated_at, p.username, p.telegram_id,
            (cm.player_id IS NOT NULL) AS in_clan
       FROM who w
       JOIN players p ON p.id = w.player_id
       LEFT JOIN pts pt ON pt.player_id = w.player_id
+      LEFT JOIN tour tr ON tr.player_id = w.player_id
       LEFT JOIN shards sh ON sh.player_id = w.player_id
       LEFT JOIN clan_members cm ON cm.clan_id = $1 AND cm.player_id = w.player_id
-     ORDER BY points DESC, qty DESC, updated_at ASC`, [clanId]);
+     ORDER BY COALESCE(pt.points, 0) + COALESCE(tr.tour, 0) DESC, qty DESC, updated_at ASC`, [clanId]);
   return rows.map(r => ({
     playerId: Number(r.player_id), telegramId: r.telegram_id, username: r.username,
-    points: Number(r.points), qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
+    points: Number(r.points), tour: Number(r.tour), tourWins: Number(r.tour_wins),
+    qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
   }));
 }
 

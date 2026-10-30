@@ -47,6 +47,15 @@ async function score(telegramId, runId, ref, delta = {}) {
       if (m) {
         const { rows: lv } = await query(t, 'SELECT level FROM clans WHERE id = $1', [m.clanId]);
         const xp = await clans.addXp(t, m.clanId, TOURNAMENT_CLAN_XP_PER_WIN * wins);
+        // Чей это вклад — для вкладки «Вклад» в окне клана (миграция 047).
+        if (xp && await hasColumn('clan_tournament_xp', 'xp')) {
+          await query(t, `
+            INSERT INTO clan_tournament_xp (clan_id, player_id, xp, wins) VALUES ($1, $2, $3, $4)
+            ON CONFLICT (clan_id, player_id) DO UPDATE SET
+              xp = clan_tournament_xp.xp + EXCLUDED.xp,
+              wins = clan_tournament_xp.wins + EXCLUDED.wins,
+              updated_at = now()`, [m.clanId, pid, TOURNAMENT_CLAN_XP_PER_WIN * wins, wins]);
+        }
         if (xp) clan = { clanId: m.clanId, ...xp, leveledUp: lv.length ? xp.level > Number(lv[0].level) : false };
       }
     }
