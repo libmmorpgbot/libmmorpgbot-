@@ -219,11 +219,17 @@ module.exports = function createCoop(deps) {
     const partnerId = run.partnerId;
     const participants = [socketId, partnerId].filter(sid => sid && _coop.has(sid));
     if (!participants.length) return;
-    const winnerId = participants[Math.floor(Math.random() * participants.length)];
-    const winnerSocket = io.sockets.sockets.get(winnerId);
-    const reward = winnerSocket?.data?._grantCoopBossReward
-      ? await winnerSocket.data._grantCoopBossReward()
-      : null;
+    const drawn = participants[Math.floor(Math.random() * participants.length)];
+    // Выпавшему — первым; не вышло выдать (соединение пропало, база
+    // отказала) — напарнику. Награда за пройденное подземелье не должна
+    // пропадать у обоих из-за сбоя у одного.
+    let winnerId = drawn, winnerSocket = io.sockets.sockets.get(drawn), reward = null;
+    for (const sid of [drawn, ...participants.filter(x => x !== drawn)]) {
+      const sock = io.sockets.sockets.get(sid);
+      if (!sock?.data?._grantCoopBossReward) continue;
+      reward = await sock.data._grantCoopBossReward();
+      if (reward) { winnerId = sid; winnerSocket = sock; break; }
+    }
     // Что именно легло — а не только кому. Клиент показывает это в итоговом
     // окне: «не дали награду» чаще всего значило «досталась напарнику» или
     // «камень не влез в полную сумку», и ни того, ни другого игрок не видел.

@@ -22,9 +22,11 @@
 // Two rules hold for all four:
 //
 //   ONE KEY PER CALL   and deliberately so. The ledger's idem_key exists to
-//                make a RETRIED transaction safe; none of these is retried —
-//                each is called once from its mode's finish path, and `tx`
-//                here does not retry. A key derived from the day instead would
+//                make a RETRIED transaction safe; each of these is called
+//                once from its mode's finish path, and payTx re-runs it only
+//                after PostgreSQL rolled the attempt back (deadlock /
+//                serialization), so no key from it survived. A key derived
+//                from the day instead would
 //                be worse than useless: the 3v3 arena allows three runs a day
 //                and co-op two, so the second and third win would find their
 //                own key already in the ledger and pay nothing at all. Same
@@ -36,7 +38,7 @@
 //                reported back rather than silently dropped, which is what the
 //                mode's own "delivered" flag is for.
 
-const { tx } = require('./db');
+const { tx, txRetry } = require('./db');
 const money = require('./db/repos/money');
 const items = require('./db/repos/items');
 const progression = require('./db/repos/progression');
@@ -80,6 +82,22 @@ async function credit(t, pid, currency, amount, ref) {
   return money.credit(t, pid, currency, amount, {
     reason: 'mode_reward', refType: 'mode', refId: String(ref),
     idemKey: `mode:${pid}:${ref}:${bucket}`,
+  });
+}
+
+// Каждая выплата здесь — строка игрока ПЕРВОЙ, потом деньги, потом вещи:
+// тот же порядок, что у награды за убийство (consumables.grantKillReward) и
+// что требует items.js. Награда за сотрудничество брала наоборот — сначала
+// баланс Liberty, потом игрока, — и когда добивший босса получал её в ту же
+// секунду, что и обычную награду за убийство (с Liberty в дропе), две
+// транзакции ждали друг друга. PostgreSQL снимал одну, и это бывала именно
+// награда: «Подземелье пройдено! Не удалось выдать награду». txRetry — на
+// случай, если столкновение всё же случится с чем-то третьим: откат полный,
+// повтор безопасен.
+function payTx(playerId, fn) {
+  return txRetry(async (t) => {
+    await items.lockPlayer(t, playerId);
+    return fn(t);
   });
 }
 
@@ -209,7 +227,7 @@ function attach(socket, s) {
     const id = pid();
     if (!id) return 0;
     try {
-      await tx(async (t) => {
+      await payTx(id, async (t) => {
         await credit(t, id, 'nexum', ARENA3_NEXUM, 'arena3');
         await s.pushBalances(t);
         _recordPayout(id, 'arena3', { currency: 'nexum', amount: ARENA3_NEXUM });
@@ -225,7 +243,7 @@ function attach(socket, s) {
     if (!id) return null;
     const ref = `race10:${won ? 'win' : 'part'}`;
     try {
-      return await tx(async (t) => {
+      return await payTx(id, async (t) => {
         const nexum = race10Liberty(won);
         const bal = await credit(t, id, 'nexum', nexum, ref);
         const g = await grantItems(t, id, race10Rewards(won));
@@ -252,7 +270,7 @@ function attach(socket, s) {
     const id = pid();
     if (!id || !(amount > 0)) return 0;
     try {
-      await tx(async (t) => {
+      await payTx(id, async (t) => {
         await credit(t, id, 'nexum', amount, ref);
         await s.pushBalances(t);
         _recordPayout(id, ref, { currency: 'nexum', amount });
@@ -267,7 +285,7 @@ function attach(socket, s) {
     const id = pid();
     if (!id) return null;
     try {
-      return await tx(async (t) => {
+      return await payTx(id, async (t) => {
         const bal = await credit(t, id, 'nexum', COOP_BOSS_NEXUM, 'coop');
         const g = await grantItems(t, id, [{ id: COOP_BOSS_ITEM, qty: 1 }]);
         const { given, missed } = g;
@@ -293,7 +311,7 @@ function attachBossLair(socket, s, pid) {
     const id = pid();
     if (!id) return null;
     try {
-      return await tx(async (t) => {
+      return await payTx(id, async (t) => {
         const took = await progression.takeAttempt(t, id, 'bosslair', BOSS_LAIR_DAILY_KILLS);
         if (!took) return { counted: false, items: [], missed: [] };
         const list = bossLairReward(level).map(it => {
