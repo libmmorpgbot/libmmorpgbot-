@@ -31,7 +31,7 @@ const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
-  seasonActive, mailBonusOn, seasonShopPoints, rollRuneStats,
+  seasonActive, shopPackOn, mailBonusOn, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
   _VIP_BP, pkgPrice, _GRAM_SHOP_PKGS, _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _WING_ID, _STONE_DEFS,
@@ -171,6 +171,7 @@ async function _grantAll(db, playerId, list) {
 async function buyPackage(db, playerId, pkgId, petId) {
   const pkg = _GRAM_SHOP_PKGS.find(p => p.id === pkgId);
   if (!pkg) err('bad_pkg', 'Пакет не найден');
+  if (!shopPackOn(pkg)) err('pack_ended', 'Этот пак продавался до конца сезона');
 
   await items.lockPlayer(db, playerId);
   const prog = await players.progressOf(db, playerId);

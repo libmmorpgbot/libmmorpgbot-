@@ -615,6 +615,17 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // Date.UTC(2026, 9, 1, 15) — 1 Oct 2026, 18:00 MSK.
 const SEASON_END_AT = Date.UTC(2026, 10, 1, 15, 0, 0); // 1 Nov 2026, 18:00 MSK (UTC+3)
 function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_END_AT; }
+
+// ── Паки в магазине GRAM — до конца сезона ─────────────────────────────────
+// Паки, вернувшиеся в магазин (pkg1-pkg600, Допы, наборы Усиления — у них в
+// описании untilSeasonEnd), продаются, пока идёт сезон, и уходят вместе с
+// ним. Одна функция на сервер и клиент: сервер по ней отказывает в покупке
+// (buyPackage, server/db/repos/shop.js), клиент — прячет карточки и вкладки и
+// показывает отсчёт (окно при входе, строка в магазине).
+const SHOP_PACKS_END_AT = SEASON_END_AT;
+function shopPackOn(pkg, now = Date.now()) {
+  return !pkg || !pkg.untilSeasonEnd || !SHOP_PACKS_END_AT || now < SHOP_PACKS_END_AT;
+}
 // Письмо-подарок (claimMailBonus) было акцией 3-го сезона и закрыто вместе с
 // ним — к сезону 4 не относится.
 const MAIL_BONUS_END_AT = Date.UTC(2026, 9, 1, 15, 0, 0);
@@ -4883,7 +4894,7 @@ if (typeof module !== 'undefined') module.exports = {
   guildBossScaling, guildBossRollReward,
   bossLairReward, bossLairScaling, BOSS_LAIR_BOSSES, bossLairBoss, bossLairUnlocked, BOSS_LAIR_HP_MULT, BOSS_LAIR_ATK_MULT, BOSS_LAIR_NERF_FROM_LEVEL, BOSS_LAIR_NERF_DIV,
   QUEST_DEF,
-  SEASON_END_AT, seasonActive, MAIL_BONUS_END_AT, mailBonusOn,
+  SEASON_END_AT, seasonActive, SHOP_PACKS_END_AT, shopPackOn, MAIL_BONUS_END_AT, mailBonusOn,
   SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BOOK_BURN_POINTS, DISASSEMBLE_LIBERTY,

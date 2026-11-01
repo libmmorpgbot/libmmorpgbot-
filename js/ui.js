@@ -11463,19 +11463,10 @@ function packPriceHtml(gram, color) {
 // владельца — те же id и состав, что до их снятия, так что старые чеки снова
 // подписываются именем пака. Зеркало server/shop.js _GRAM_SHOP_PKGS: там
 // проверка и выдача, здесь только карточка. Порядок на вкладке — по цене
-// (_renderGramShopPanel), сезонный билет — первым.
+// (_renderGramShopPanel). Сезонного билета в продаже нет (снят по просьбе
+// владельца, как и на сервере); его карточка рисовалась веткой
+// pkg.seasonTicket в _shopExtraRewardRows — она осталась на случай возврата.
 const _GRAM_SHOP_PKGS_UI = [
-  // Сезонный билет — no items, a status flag (gramShopBuy's own seasonTicket
-  // branch): x2 xp, +60% bonus-loot re-roll chance, x2 Liberty drop chance,
-  // for as long as the current season is running. Own reward-row rendering
-  // in _shopExtraRewardRows (pkg.seasonTicket branch) since none of the
-  // usual reward kinds (armor/weapon/potions/...) apply.
-  // gram reads the shared constant rather than repeating the number: this
-  // array only exists to draw the card, and a price change to
-  // SEASON_TICKET_GRAM_PRICE (shared/definitions.js) — what the server
-  // actually charges — used to need a second, easy-to-forget edit here to
-  // keep the card from quoting a stale price.
-  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
   // 4 активные книги (по классу) + зелёное (uncommon) оружие — mirror of
   // server/shop.js's books_weapon_pkg. skillBooks/weapon are already fully
   // rendered generically by _gramShopPkgHtml/_shopExtraRewardRows below.
@@ -11483,21 +11474,21 @@ const _GRAM_SHOP_PKGS_UI = [
   // Все зелья бафов по 1 штуке + 50 000 золота — mirror of server/shop.js's
   // potions_gold_pkg.
   { id:'potions_gold_pkg', gram:1, get label() { return t('gramPkgLabel_potions_gold'); }, color:'#f1c40f', potions:1, gold:50000 },
-  { id:'pkg1',   gram:1,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
-  { id:'pkg5',   gram:5,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
-  { id:'pkg10',  gram:20,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
-  { id:'pkg50',  gram:100, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
-  { id:'pkg100', gram:180, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
-  { id:'pkg600', gram:600, get label() { return t('gramPkgLabel_pkg600'); }, potions:200, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#c084fc',
+  { id:'pkg1',   gram:1, untilSeasonEnd:true,   get label() { return t('gramPkgLabel_pkg1'); },   gold:10000,  potions:2,  armor:null,       weapon:null,       bonusSP:0,  color:'#a3957c', skillBooks:null },
+  { id:'pkg5',   gram:5, untilSeasonEnd:true,   get label() { return t('gramPkgLabel_pkg5'); },   gold:5000,   potions:10, armor:'Uncommon', weapon:'Uncommon', bonusSP:0,  color:'#89ba5f', skillBooks:{ random:1 } },
+  { id:'pkg10',  gram:20, untilSeasonEnd:true,  get label() { return t('gramPkgLabel_pkg10'); },  gold:7000,   potions:20, armor:'Uncommon', weapon:'Uncommon', bonusSP:1,  color:'#eab65d', skillBooks:{ random:5 }, enhance:5, nexum:500 },
+  { id:'pkg50',  gram:100, untilSeasonEnd:true, get label() { return t('gramPkgLabel_pkg50'); },  gold:50000,  potions:50, armor:'Rare',     weapon:'Rare',     bonusSP:5,  color:'#e5a546', skillBooks:{ each:4 },  boxes:{ box_rare:5 },  enhance:3, nexum:4000 },
+  { id:'pkg100', gram:180, untilSeasonEnd:true, get label() { return t('gramPkgLabel_pkg100'); }, gold:100000, potions:100,armor:'Rare',     weapon:'Rare',     bonusSP:10, color:'#eb4e61', skillBooks:{ each:12 }, boxes:{ box_rare:15 }, enhance:8, nexum:10000 },
+  { id:'pkg600', gram:600, untilSeasonEnd:true, get label() { return t('gramPkgLabel_pkg600'); }, potions:200, armor:'Epic', weapon:'Epic', bonusSP:20, color:'#c084fc',
     skillBooks:{ each:30 }, boxes:{ box_rare:30, box_uncommon:30 },
     stones:{ bless_stone:30, norm_stone:100, rece:100, recl:50 },
     enhance:8, nexum:20000 },
   // Усиление tab — pure material packs.
-  { id:'rmat1', gram:25, get label() { return t('empowerMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'empower',
+  { id:'rmat1', gram:25, untilSeasonEnd:true, get label() { return t('empowerMatPkgLabel_rmat1'); }, color:'#e5aa52', shopTab:'empower',
     boxes:{ box_uncommon:10, box_rare:5  }, stones:{ rece:100, recl:30,  norm_stone:20  } },
-  { id:'rmat2', gram:40, get label() { return t('empowerMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'empower',
+  { id:'rmat2', gram:40, untilSeasonEnd:true, get label() { return t('empowerMatPkgLabel_rmat2'); }, color:'#e5aa52', shopTab:'empower',
     boxes:{ box_uncommon:20, box_rare:10 }, stones:{ rece:200, recl:60,  norm_stone:40  } },
-  { id:'rmat3', gram:80, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
+  { id:'rmat3', gram:80, untilSeasonEnd:true, get label() { return t('empowerMatPkgLabel_rmat3'); }, color:'#e5aa52', shopTab:'empower',
     boxes:{ box_uncommon:50, box_rare:25 }, stones:{ rece:500, recl:150, norm_stone:100 } },
   // Мешок Либерти — mirror of server/shop.js's liberty_bag_pkg; that copy is
   // what actually validates and grants, this one only draws the card. Now
@@ -11521,6 +11512,104 @@ function _stoneOrMatLabel(id) {
   return (CRAFT_MATS.find(m => m.id === id) || {}).name || id;
 }
 
+// ── Паки до конца сезона: отсчёт и окно при входе ─────────────────────────
+// Вернувшиеся паки (untilSeasonEnd) продаются до SHOP_PACKS_END_AT — конца
+// сезона (shopPackOn, shared/definitions.js; сервер отказывает по той же
+// функции). Отсчёт — в строке магазина и в окне при каждом входе в игру.
+function _shopPacksOn() { return shopPackOn({ untilSeasonEnd: true }); }
+function _shopPacksLeftSec() { return Math.max(0, Math.floor((SHOP_PACKS_END_AT - Date.now()) / 1000)); }
+// «2д 07:14:09» — с секундами: тикает на глазах, пока открыт магазин или окно.
+function _shopPacksLeftText() {
+  const s = _shopPacksLeftSec();
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const p2 = n => String(n).padStart(2, '0');
+  return (d > 0 ? `${d}д ` : '') + `${p2(h)}:${p2(m)}:${p2(sec)}`;
+}
+function _shopPacksBannerHtml() {
+  if (!_shopPacksOn() || !SHOP_PACKS_END_AT) return '';
+  return `<div class="shop-packs-banner">
+    ${iconHTML('clock', 14, '#ffcf56')}
+    <span>${t('shopPacksLeftLbl')}</span>
+    <b class="shop-packs-timer">${_shopPacksLeftText()}</b>
+  </div>`;
+}
+// Один таймер на все видимые отсчёты (.shop-packs-timer). Гаснет сам, когда
+// на экране не осталось ни одного; по концу сезона закрывает окно и
+// перерисовывает магазин — паков в нём больше нет.
+let _shopPacksTick = null;
+function _startShopPacksTimer() {
+  if (_shopPacksTick || !SHOP_PACKS_END_AT) return;
+  _shopPacksTick = setInterval(() => {
+    const els = document.querySelectorAll('.shop-packs-timer');
+    if (!els.length) { clearInterval(_shopPacksTick); _shopPacksTick = null; return; }
+    const txt = _shopPacksLeftText();
+    els.forEach(el => { el.textContent = txt; });
+    _fillShopPacksSegs();
+    if (!_shopPacksOn()) {
+      clearInterval(_shopPacksTick); _shopPacksTick = null;
+      document.getElementById('shop-packs-ov')?.remove();
+      const panel = document.getElementById('gram-shop-panel');
+      if (panel && panel.style.display !== 'none') _renderGramShopPanel();
+    }
+  }, 1000);
+}
+function _fillShopPacksSegs() {
+  const segs = document.querySelectorAll('#shop-packs-ov .shop-sale-seg b');
+  if (!segs.length) return;
+  const s = _shopPacksLeftSec();
+  const vals = [Math.floor(s / 86400), Math.floor((s % 86400) / 3600), Math.floor((s % 3600) / 60), s % 60];
+  segs.forEach((el, i) => { el.textContent = String(vals[i]).padStart(2, '0'); });
+}
+function _closeShopPacksModal() {
+  const ov = document.getElementById('shop-packs-ov');
+  if (!ov) return;
+  ov.classList.add('closing');
+  setTimeout(() => ov.remove(), 180);
+}
+// На КАЖДОМ входе в игру, пока паки в продаже (_finishOnlineStart,
+// js/network.js). Если поверх уже открыто окно «Обновление», ждёт, пока его
+// закроют, — два окна разом друг друга перекрывают.
+function showShopPacksModal() {
+  if (!_shopPacksOn() || !SHOP_PACKS_END_AT) return;
+  if (document.getElementById('whatsnew-ov')) { setTimeout(showShopPacksModal, 1000); return; }
+  document.getElementById('shop-packs-ov')?.remove();
+  // Витрина — картинки из самих паков: легендарные крылья (Админский),
+  // эпический питомец (Допы), редкая шкатулка (Усиление) и Liberty.
+  const img = id => (ITEM_DEF.find(d => d.id === id) || {}).img;
+  const pet = (ITEM_DEF.find(d => d.slot === 'pet' && d.rarity === 'epic') || {}).img;
+  const shelf = [img('wing_l'), pet, '/images/material/boxr.png', '/images/nexum-coin_v2.png']
+    .filter(Boolean).map((src, i) => `<div class="shop-sale-item" style="animation-delay:${0.15 + i * 0.08}s"><img src="${src}" alt=""></div>`).join('');
+  const segs = ['д', 'ч', 'м', 'с'].map(u => `<div class="shop-sale-seg"><b>00</b><span>${u}</span></div>`).join('');
+  const ov = document.createElement('div');
+  ov.className = 'shop-sale-overlay';
+  ov.id = 'shop-packs-ov';
+  ov.onclick = _closeShopPacksModal;
+  ov.innerHTML = `
+    <div class="shop-sale-card" onclick="event.stopPropagation()">
+      <div class="shop-sale-glow"></div>
+      <button class="shop-sale-close" onclick="_closeShopPacksModal()" aria-label="✕">✕</button>
+      <div class="shop-sale-ribbon">${t('shopPacksModalRibbon')}</div>
+      <div class="shop-sale-big shop-packs-big">${t('shopPacksModalTitle')}</div>
+      <div class="shop-sale-shelf">${shelf}</div>
+      <div class="shop-sale-text">${t('shopPacksModalText')}</div>
+      <div class="shop-sale-left">${t('shopPacksLeftLbl')}</div>
+      <div class="shop-sale-segs">${segs}</div>
+      <button class="shop-sale-go" onclick="_closeShopPacksModal();openGramShopPanel()">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        ${t('navShopBtn')}
+      </button>
+    </div>`;
+  document.body.appendChild(ov);
+  _fillShopPacksSegs();
+  // Общий таймер гаснет, когда на экране нет ни одного .shop-packs-timer, —
+  // скрытый элемент держит его живым, пока открыто окно.
+  const keep = document.createElement('span');
+  keep.className = 'shop-packs-timer'; keep.hidden = true;
+  ov.appendChild(keep);
+  _startShopPacksTimer();
+}
+
 function showGramShopBtn() {
   const btn = document.getElementById('gram-shop-btn');
   if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionGramShopBtn(); }
@@ -11532,12 +11621,12 @@ function showGramShopBtn() {
 //  what actually validates and grants them — this copy only draws the
 //  cards). Снова в продаже вместе с вкладкой «Допы» по просьбе владельца.
 const _SPECIAL_PET_PKGS_UI = [
-  { id:'extrapkg1', gram:30,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
-  { id:'extrapkg2', gram:65,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
-  { id:'extrapkg3', gram:220, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
-  { id:'extrapkg4', gram:370, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
-  { id:'extrapkg5', gram:550, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
-  { id:'extrapkg6', gram:700, get label() { return t('shopTierAdmin'); },     wings:'legendary', enhance:10, color:'#c084fc' },
+  { id:'extrapkg1', gram:30, untilSeasonEnd:true,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
+  { id:'extrapkg2', gram:65, untilSeasonEnd:true,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
+  { id:'extrapkg3', gram:220, untilSeasonEnd:true, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
+  { id:'extrapkg4', gram:370, untilSeasonEnd:true, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
+  { id:'extrapkg5', gram:550, untilSeasonEnd:true, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
+  { id:'extrapkg6', gram:700, untilSeasonEnd:true, get label() { return t('shopTierAdmin'); },     wings:'legendary', enhance:10, color:'#c084fc' },
 ];
 
 // Shared reward-icon row bits (armor set icons, weapon prefix map, the gold
@@ -11807,18 +11896,30 @@ function _renderGramShopPanel() {
   const balBar = `<div style="background:rgba(230,148,25,0.08);border:1px solid rgba(230,148,25,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#e6af5e;text-align:center">
       ${tVars('gramShopBalanceFmt', { bal: `<b>${bal.toFixed(7)}</b>` })}
     </div>`;
+  // Паки до конца сезона (shopPackOn): кончился сезон — нет ни карточек, ни
+  // вкладок «Допы» и «Усиление», и магазин возвращается на «Паки».
+  const packsOn = _shopPacksOn();
+  ['pets', 'empower'].forEach(id => {
+    const b = document.getElementById('shtab-' + id);
+    if (b) b.style.display = packsOn ? '' : 'none';
+  });
+  if (!packsOn && _shopTab !== 'packs') {
+    _shopTab = 'packs';
+    document.querySelectorAll('#gram-shop-panel .rating-tab').forEach(b => b.classList.toggle('active', b.id === 'shtab-packs'));
+  }
   let body;
   if (_shopTab === 'empower') {
-    body = _GRAM_SHOP_PKGS_UI.filter(pkg => pkg.shopTab === 'empower').map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
+    body = _GRAM_SHOP_PKGS_UI.filter(pkg => pkg.shopTab === 'empower' && shopPackOn(pkg)).map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   } else if (_shopTab === 'pets') {
-    body = _SPECIAL_PET_PKGS_UI.map(pkg => _specialPetPkgHtml(pkg, bal)).join('');
+    body = _SPECIAL_PET_PKGS_UI.filter(pkg => shopPackOn(pkg)).map(pkg => _specialPetPkgHtml(pkg, bal)).join('');
   } else {
     // По цене, сезонный билет — первым.
-    body = _GRAM_SHOP_PKGS_UI.filter(pkg => !pkg.shopTab)
+    body = _GRAM_SHOP_PKGS_UI.filter(pkg => !pkg.shopTab && shopPackOn(pkg))
       .sort((a, b) => (b.seasonTicket ? 1 : 0) - (a.seasonTicket ? 1 : 0) || a.gram - b.gram)
       .map(pkg => _gramShopPkgHtml(pkg, bal)).join('');
   }
-  el.innerHTML = balBar + body;
+  el.innerHTML = balBar + _shopPacksBannerHtml() + body;
+  _startShopPacksTimer();
 }
 
 function _gramShopPkgHtml(pkg, bal) {

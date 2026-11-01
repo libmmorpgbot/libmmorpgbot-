@@ -4263,6 +4263,9 @@ function _finishOnlineStart() {
   if (typeof showEventsBtn === 'function') showEventsBtn();
   if (typeof showSeasonBtn === 'function') showSeasonBtn();
   if (typeof showCodexBtn === 'function') showCodexBtn();
+  // Паки до конца сезона — окно на каждом входе в игру (showShopPacksModal,
+  // js/ui.js). С задержкой: пусть сначала встанет HUD и мир под окном.
+  if (typeof showShopPacksModal === 'function') setTimeout(showShopPacksModal, 800);
   // Достижения: кнопка и — сразу — счётчики, чтобы точка «есть что забрать»
   // горела, не дожидаясь, пока окно откроют.
   if (typeof showAchBtn === 'function') showAchBtn();
