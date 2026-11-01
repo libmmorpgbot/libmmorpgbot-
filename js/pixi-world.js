@@ -22,6 +22,9 @@ let _playerCt = null;
 let _plAura = null;
 let _dmgNumCt = null;
 let _petCt = null; // holds every player's pet follower (see _updatePets)
+// Помощник игрока (js/helpers.js): эффекты на полу — под игроком, сам он и
+// частицы — над ним. См. _updateHelperLayer.
+let _helperGroundCt = null, _helperCt = null;
 let _decalCt = null;   // ground decals: teleport pads, level gates (below everything)
 let _wallCt  = null;   // zone barriers (above everything — they are walls, not floor)
 
@@ -724,6 +727,8 @@ function pixiInit(canvasEl) {
   _projCt   = new PIXI.Container();
   _playerCt = new PIXI.Container();
   _petCt    = new PIXI.Container();
+  _helperGroundCt = new PIXI.Container();
+  _helperCt = new PIXI.Container();
   _decalCt  = new PIXI.Container();
   _wallCt   = new PIXI.Container();
   _dmgNumCt = new PIXI.Container();
@@ -734,7 +739,7 @@ function pixiInit(canvasEl) {
     _voidSpr, _tileCt, _decalCt, _lightsCt, _aoeGfx, _fxGroundCt,
     _npcCt, _dropCt, _partCt,
     _enemyCt, _otherPCt, _projGfx, _projCt,
-    _petCt, _playerCt, _fxSmokeCt, _fxTopCt, _wallCt, _dmgNumCt
+    _helperGroundCt, _petCt, _playerCt, _helperCt, _fxSmokeCt, _fxTopCt, _wallCt, _dmgNumCt
   );
   _worldCt.scale.set(ZOOM); // constant — set once, never changed in the render loop
   _pixiApp.stage.addChild(_worldCt);
@@ -2824,6 +2829,67 @@ function _updatePets(dt) {
   });
 }
 
+// ── помощник ──────────────────────────────────────────────
+// Летит у плеча хозяина, чуть позади по ходу движения, и покачивается.
+// Сам кадр рисует helperDrawFrame (js/helpers.js) на маленький холст, а холст
+// уходит в PIXI текстурой — так один рисовальщик служит и окну, и миру.
+// Перерисовка — не чаще 30 раз в секунду: глаз разницы не видит, а загрузка
+// текстуры в видеокарту — самое дорогое в этом слое.
+const _HELPER_CV_PX = 160;          // сторона холста, пикселей
+const _HELPER_DISPLAY = 78;         // сторона спрайта в мире (рисунок занимает середину)
+let _helperObj = null;
+
+function _helperObjFor() {
+  if (_helperObj && _helperObj.ct === _helperCt) return _helperObj;
+  if (!_helperCt || !_helperGroundCt) return null;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = _HELPER_CV_PX;
+  const tex = PIXI.Texture.from(cv);
+  const spr = new PIXI.Sprite(tex);
+  spr.anchor.set(0.5);
+  const top = new PIXI.Graphics();
+  top.blendMode = PIXI.BLEND_MODES.ADD;
+  const ground = new PIXI.Graphics();
+  ground.blendMode = PIXI.BLEND_MODES.ADD;
+  _helperCt.addChild(top, spr);
+  _helperGroundCt.addChild(ground);
+  _helperObj = { ct: _helperCt, cv, ctx: cv.getContext('2d'), tex, spr, top, ground, st: null, drawAcc: 1, id: null };
+  return _helperObj;
+}
+
+function _updateHelperLayer(dt, ts) {
+  const def = (typeof helperActiveDef === 'function') ? helperActiveDef() : null;
+  const on = def && player && (state === 'playing' || state === 'dead') && player.x != null && !isNaN(player.x);
+  if (!on) {
+    if (_helperObj) { _helperObj.spr.visible = false; _helperObj.top.clear(); _helperObj.ground.clear(); _helperObj.st = null; }
+    return;
+  }
+  const obj = _helperObjFor();
+  if (!obj) return;
+  if (obj.id !== def.id) { obj.id = def.id; obj.drawAcc = 1; if (typeof helperFxReset === 'function') helperFxReset(); }
+
+  const [fx, fy] = _dirVecFromFacing(player.facing);
+  const side = fx < -0.3 ? 1 : -1;  // с той стороны, куда игрок НЕ смотрит
+  const tx = player.x - fx * 14 + side * 26;
+  const ty = player.y - fy * 8 - 62;
+  if (!obj.st || Math.hypot(tx - obj.st.x, ty - obj.st.y) > _PET_SNAP_DIST) obj.st = { x: tx, y: ty };
+  const k = Math.min(1, dt * 4.5);
+  obj.st.x += (tx - obj.st.x) * k;
+  obj.st.y += (ty - obj.st.y) * k;
+
+  obj.drawAcc += dt;
+  if (obj.drawAcc >= 1 / 30) {
+    obj.drawAcc = 0;
+    helperDrawFrame(obj.ctx, def, ts / 1000, _HELPER_CV_PX);
+    obj.tex.baseTexture.update();
+  }
+  obj.spr.visible = true;
+  obj.spr.width = obj.spr.height = _HELPER_DISPLAY;
+  obj.spr.x = obj.st.x;
+  obj.spr.y = obj.st.y;
+  helperFxTick(obj.ground, obj.top, def, player, obj.st.x, obj.st.y, dt, ts);
+}
+
 // ── main render entry ─────────────────────────────────────
 
 // Every layer, run so that one of them failing costs only itself.
@@ -2922,6 +2988,7 @@ function pixiWorldRender(dt, ts, camX, camY, theme) {
   _layer('projs', () => _updateProjs());
   _layer('pets', () => _updatePets(dt));
   _layer('player', () => _updatePlayer(dt, ts));
+  _layer('helper', () => _updateHelperLayer(dt, ts));
   _layer('fx', () => _updateFx());
   _layer('dark', () => _updateAbyssDark(camX, camY));
   _layer('dmg', () => _updateDmgNums());
