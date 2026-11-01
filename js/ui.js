@@ -9075,12 +9075,23 @@ function switchTournamentTab(tab) {
   if (tab === 'rating' && typeof netGetTournamentRating === 'function') netGetTournamentRating();
 }
 
+// Период вращения лучей — тот же, что у .trx-hero-glow в css/style.css.
+const _TRX_GLOW_SPIN_MS = 30000;
 function _renderTournamentPanelBody() {
   const el = document.getElementById('tournament-panel-body');
   if (!el) return;
-  el.innerHTML = _tourTab === 'bracket' ? _trxBracketHTML()
-               : _tourTab === 'rating'  ? _trxRatingHTML()
-               : _trxRegHTML();
+  // Вкладка «Регистрация» перерисовывается раз в секунду (setInterval ниже).
+  // Раньше каждый тик заново вставлял весь HTML, и лучи за кубком
+  // (.trx-hero-glow) начинали вращение с нуля — круг дёргался раз в секунду.
+  // Теперь DOM трогается, только когда текст правда поменялся, а у
+  // пересозданных лучей фаза берётся от часов: поворот продолжается с того
+  // же угла, где был.
+  _evtSetHTML(el, _tourTab === 'bracket' ? _trxBracketHTML()
+                : _tourTab === 'rating'  ? _trxRatingHTML()
+                : _trxRegHTML());
+  const glow = el.querySelector('.trx-hero-glow');
+  // Только у только что вставленных: уже крутящимся сдвиг задержки дал бы рывок.
+  if (glow && !glow.style.animationDelay) glow.style.animationDelay = `-${(Date.now() % _TRX_GLOW_SPIN_MS) / 1000}s`;
 }
 
 // Which colour tag a match's tag reads as — 'ub'/'ubFinal' are the upper

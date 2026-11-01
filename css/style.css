@@ -5387,10 +5387,16 @@ canvas { display:block; width:100%; height:100%; }
 .trx-hero { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; text-align: center;
   padding: 18px 16px 16px; border-radius: 18px; border: 1px solid rgba(240,184,74,.3);
   background: radial-gradient(90% 70% at 50% 0%, rgba(240,184,74,.22), transparent 70%), linear-gradient(180deg, #1b1a16, #0f1219); }
-.trx-hero-glow { position: absolute; left: 50%; top: -60px; width: 260px; height: 260px; margin-left: -130px; pointer-events: none;
+/* Центр лучей — центр кубка: 18px отступа сверху + половина его 56px = 46px,
+   минус половина 260px круга. Было -60px, и лучи вращались вокруг точки на
+   24px ниже кубка. will-change выносит круг в свой слой: маска и конический
+   градиент рисуются один раз, дальше видеокарта только поворачивает его. */
+.trx-hero-glow { position: absolute; left: 50%; top: -84px; width: 260px; height: 260px; margin-left: -130px; pointer-events: none;
   background: repeating-conic-gradient(from 0deg, rgba(255,214,120,.10) 0 8deg, transparent 8deg 24deg);
   -webkit-mask: radial-gradient(circle, #000 25%, transparent 70%); mask: radial-gradient(circle, #000 25%, transparent 70%);
+  will-change: transform; backface-visibility: hidden;
   animation: enh-spin 30s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .trx-hero-glow { animation: none; } }
 .trx-trophy { position: relative; filter: drop-shadow(0 6px 18px rgba(240,184,74,.45)); }
 .trx-hero-title { position: relative; margin-top: 4px; font-size: 24px; font-weight: 900; letter-spacing: 1px; color: #ffe2a0; text-shadow: 0 2px 14px rgba(240,184,74,.35); }
 .trx-hero-sub { position: relative; font-size: 11.5px; color: #b6a888; margin-top: 2px; }
