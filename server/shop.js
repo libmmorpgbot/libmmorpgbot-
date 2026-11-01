@@ -3,7 +3,7 @@
 //
 // Pure data and pure functions over the shared catalog: no models, no
 // sockets, no session state — same shape as server/inventory.js.
-const { CRAFT_MATS, BOX_DEF, ITEM_DEF, UNIQUE_WEAPONS } = require('../shared/definitions');
+const { CRAFT_MATS, BOX_DEF, ITEM_DEF, UNIQUE_WEAPONS, SEASON_TICKET_GRAM_PRICE } = require('../shared/definitions');
 
 // ── VIP item data (server-side subset of js/definitions.js) ──────────────────
 const _VIP_WEAPONS = {
@@ -82,13 +82,11 @@ function pkgPrice(pkg) {
 // untilSeasonEnd — только до конца сезона (shopPackOn, shared/definitions.js).
 // Три пака, что продавались без них, остаются.
 //
-// Сезонный билет снят с продажи по просьбе владельца: купить его нельзя
-// (пакета 'season_ticket' здесь нет — buyPackage отвечает «Пакет не
-// найден»), а купленные работают, как работали, — это флаг в player_vip, а
-// не позиция магазина. Ветка seasonTicket в buyPackage оставлена: вернуть
-// билет в продажу — одна строка
-//   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },
+// Сезонный билет 5-го сезона — не предметы, а флаг в player_vip
+// (grantSeasonTicket): x2 опыт, +60% к дропу, x2 к шансу Liberty и вход в
+// сезонные комнаты Фарм-зон, пока идёт сезон. Цена — общая константа.
 const _GRAM_SHOP_PKGS = [
+  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },
   { id:'pkg1',   gram:1, untilSeasonEnd:true,   gold:10000,  potions:2,   armor:null,       weapon:null,       bonusSP:0,  skillBooks:null },
   { id:'pkg5',   gram:5, untilSeasonEnd:true,   gold:5000,   potions:10,  armor:'uncommon', weapon:'uncommon', bonusSP:0,  skillBooks:{ random:1 } },
   { id:'pkg10',  gram:20, untilSeasonEnd:true,  gold:7000,   potions:20,  armor:'uncommon', weapon:'uncommon', bonusSP:1,  skillBooks:{ random:5 }, enhance:5, nexum:500 },

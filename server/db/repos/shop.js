@@ -31,7 +31,7 @@ const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
-  seasonActive, shopPackOn, mailBonusOn, seasonShopPoints, rollRuneStats,
+  seasonActive, seasonTicketPeriodOn, shopPackOn, mailBonusOn, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
   _VIP_BP, pkgPrice, _GRAM_SHOP_PKGS, _SHOP_CLASS_WEAPONS, _SHOP_ARMOR_SETS, _WING_ID, _STONE_DEFS,
@@ -182,6 +182,7 @@ async function buyPackage(db, playerId, pkgId, petId) {
   // loaded at login and hoped to be current.
   const vip = await progression.vipOf(db, playerId);
   if (pkg.seasonTicket && vip.seasonTicket) err('have_ticket', 'Сезонный билет уже куплен');
+  if (pkg.seasonTicket && !seasonTicketPeriodOn()) err('ticket_ended', 'Сезон закончился — билет больше не продаётся');
 
   let chosenPet = null;
   if (pkg.petChoice) {

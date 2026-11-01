@@ -4310,10 +4310,13 @@ const GRAM_PER_LEVEL = 0.0000001;
 // season = SEASON_TICKET_SEASON): билет прошлого сезона здесь не действует.
 // Действует весь сезон: SEASON_TICKET_END_AT = 0 — дата конца не назначена.
 // Когда назначат — поставить её сюда, и билет погаснет в этот момент.
-const SEASON_TICKET_SEASON = 4;
-const SEASON_TICKET_END_AT = SEASON4_END_AT;  // билет — до конца 4 сезона
+// Сезон 5: билет снова в продаже — 15 GRAM, до конца 5-го сезона. Билет
+// 4-го сезона здесь уже не действует (season_ticket_season = 4 ≠ 5), его
+// владельцы покупают новый.
+const SEASON_TICKET_SEASON = 5;
+const SEASON_TICKET_END_AT = SEASON_END_AT;   // билет — до конца 5 сезона
 function seasonTicketPeriodOn(now = Date.now()) { return !SEASON_TICKET_END_AT || now < SEASON_TICKET_END_AT; }
-const SEASON_TICKET_GRAM_PRICE = 5;
+const SEASON_TICKET_GRAM_PRICE = 15;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
 const SEASON_TICKET_DROP_PCT = 60;     // +60 to the bonus loot re-roll chance
 const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop chance — x2

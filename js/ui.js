@@ -11480,10 +11480,12 @@ function packPriceHtml(gram, color) {
 // владельца — те же id и состав, что до их снятия, так что старые чеки снова
 // подписываются именем пака. Зеркало server/shop.js _GRAM_SHOP_PKGS: там
 // проверка и выдача, здесь только карточка. Порядок на вкладке — по цене
-// (_renderGramShopPanel). Сезонного билета в продаже нет (снят по просьбе
-// владельца, как и на сервере); его карточка рисовалась веткой
-// pkg.seasonTicket в _shopExtraRewardRows — она осталась на случай возврата.
+// (_renderGramShopPanel), сезонный билет — первым.
 const _GRAM_SHOP_PKGS_UI = [
+  // Сезонный билет 5-го сезона — не предметы, а флаг (x2 опыт, +60% дроп,
+  // x2 Liberty, сезонные комнаты). Бонусы — строками на карточке
+  // (_shopExtraRewardRows), цена — та же константа, что берёт сервер.
+  { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
   // 4 активные книги (по классу) + зелёное (uncommon) оружие — mirror of
   // server/shop.js's books_weapon_pkg. skillBooks/weapon are already fully
   // rendered generically by _gramShopPkgHtml/_shopExtraRewardRows below.
@@ -11685,13 +11687,13 @@ function _shopExtraRewardRows(pkg, ri) {
   // gold-accent tier, reused instead of the dedicated 'gold' class).
   if (pkg.bonusSP) rows += ri(_shopSpUri, `+${pkg.bonusSP} ${t('bonusSpSuffixShort')}`, 'gold');
   if (pkg.nexum) rows += ri('/images/nexum-coin_v2.png', `+${pkg.nexum} Liberty`, 'gold');
-  // Сезонный билет — a status effect, not a granted item: just its own name
-  // and icon here, tap it for the full breakdown (_openSeasonTicketInfo).
+  // Сезонный билет — не предмет, а набор бонусов: каждый своей строкой
+  // прямо на карточке, тап по любой — то же подробно (_openSeasonTicketInfo).
   if (pkg.seasonTicket) {
-    rows += `<div class="vip-ri vip-ri-gold" style="cursor:pointer" onclick="event.stopPropagation();_openSeasonTicketInfo()">
-      <img class="vip-ri-img" src="/images/season_ticket.png?v=2">
-      <span class="vip-ri-label">${t('seasonTicketShopLbl')}</span>
-    </div>`;
+    rows += _seasonTicketBonusList().map(b => `<div class="vip-ri vip-ri-gold" style="cursor:pointer" onclick="event.stopPropagation();_openSeasonTicketInfo()">
+      <span class="vip-ri-img" style="display:inline-flex;align-items:center;justify-content:center;font-size:18px">${b.icon}</span>
+      <span class="vip-ri-label">${b.text}</span>
+    </div>`).join('');
   }
   return rows;
 }
@@ -11701,6 +11703,17 @@ function _shopExtraRewardRows(pkg, ri) {
 // the shared SEASON_TICKET_* constants (shared/definitions.js), never
 // duplicated here; the duration line reuses the same seasonEndsIn/seasonEnded
 // text and countdown the Сезон panel's own info tab shows (_seasonInfoHTML).
+// Что даёт сезонный билет — один список на карточку магазина и на окно
+// подробностей. Числа — из тех же констант, что читает сервер.
+function _seasonTicketBonusList() {
+  return [
+    { icon: '⭐', text: tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT }) },
+    { icon: '🎁', text: tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT }) },
+    { icon: '💰', text: tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT }) },
+    { icon: '🎟', text: t('seasonTicketRoomsRow') },
+  ];
+}
+
 function _openSeasonTicketInfo() {
   // _seasonState only ever gets refreshed by a seasonSync round trip (see
   // openSeasonPanel) — nothing pushes it at login. A player who opens this
@@ -11731,9 +11744,7 @@ function _renderSeasonTicketInfo() {
         <button onclick="document.getElementById('season-ticket-info-ov').remove()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;cursor:pointer">✕</button>
       </div>
       <div style="background:rgba(209,204,197,.04);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.9;color:#c5bfb7">
-        <div>${tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT })}</div>
-        <div>${tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT })}</div>
-        <div>${tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT })}</div>
+        ${_seasonTicketBonusList().map(b => `<div>${b.icon} ${b.text}</div>`).join('')}
       </div>
       <div style="font-size:13px;color:#7ee0c0;text-align:center;font-weight:700">${durationLine}</div>
     </div>`;

@@ -510,7 +510,8 @@ const I18N_UI = {
     tr: 'Sıralamada yalnızca {n}+ puana sahip oyuncular gösterilir',
     pt: 'A classificação só mostra jogadores com {n}+ pontos',
   },
-  seasonTicketShopLbl: { ru: 'Билет 4 сезона', en: 'Season 4 ticket', uk: 'Квиток 4 сезону', es: 'Pase de la temporada 4', tr: '4. sezon bileti', pt: 'Passe da temporada 4' },
+  seasonTicketShopLbl: { ru: 'Билет 5 сезона', en: 'Season 5 ticket', uk: 'Квиток 5 сезону', es: 'Pase de la temporada 5', tr: '5. sezon bileti', pt: 'Passe da temporada 5' },
+  seasonTicketRoomsRow: { ru: 'Вход в сезонные комнаты Фарм-зон', en: 'Access to the Farm Zones\' season rooms', uk: 'Вхід до сезонних кімнат Ферм-зон', es: 'Acceso a las salas de temporada de las Zonas de Farmeo', tr: 'Farm Bölgelerinin sezon odalarına giriş', pt: 'Acesso às salas de temporada das Zonas de Farm' },
   seasonTicketWholeSeason: { ru: 'Действует весь {n} сезон', en: 'Valid for all of Season {n}', uk: 'Діє весь {n} сезон', es: 'Válido toda la temporada {n}', tr: '{n}. sezon boyunca geçerli', pt: 'Válido durante toda a temporada {n}' },
   seasonTicketXpRowFmt: {
     ru: 'x2 к опыту', en: 'x2 experience', uk: 'x2 до досвіду',
