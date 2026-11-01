@@ -647,13 +647,18 @@ function _arenaDraw(c, tex, ar, X0, Y0, X1, Y1, own, torchList) {
 
     // 5. Центр: медальон из камня с золотым ободом, насечки по кругу и
     // скрещённые мечи.
-    if (near < 4.2 * T) {
+    // Внешнее кольцо — в долю радиуса арены, чтобы на большом ринге не
+    // терялось точкой посреди песка.
+    const rEmb = Math.max(3.6, ar.r * 0.3) * T;
+    if (near < rEmb + 0.6 * T) {
       const gold = 'rgba(206,160,78,';
       c.strokeStyle = gold + '0.45)'; c.lineWidth = 4;
-      c.beginPath(); c.arc(cx, cy, 3.6 * T, 0, TAU); c.stroke();
+      c.beginPath(); c.arc(cx, cy, rEmb, 0, TAU); c.stroke();
+      c.beginPath(); c.arc(cx, cy, rEmb * 0.55, 0, TAU); c.stroke();
       c.lineWidth = 3;
-      for (let i = 0; i < 24; i++) {
-        const a = i / 24 * TAU, r0 = 3.6 * T, r1 = r0 + (i % 3 === 0 ? 18 : 9);
+      const nt = Math.round(rEmb / T * 6.7);
+      for (let i = 0; i < nt; i++) {
+        const a = i / nt * TAU, r0 = rEmb, r1 = r0 + (i % 3 === 0 ? 18 : 9);
         c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke();
       }
       c.fillStyle = tex.floor2 || tex.floor;
@@ -714,10 +719,12 @@ function _arenaDraw(c, tex, ar, X0, Y0, X1, Y1, own, torchList) {
       c.fillStyle = '#3a2a1a'; c.fillRect(x1 - 2, -hw - 3, 6, hw * 2 + 6);
       c.restore();
     });
-    // Жаровни между знамёнами; огонь над ними живой (torchList).
+    // Жаровни между знамёнами; огонь над ними живой (torchList). Число —
+    // по длине барьера: 8 на малом ринге, 16 на большом.
     const rb = (rIn + rPar) / 2;
-    for (let i = 0; i < 8; i++) {
-      const a = i * TAU / 8 + TAU / 16;
+    const nBr = ar.r >= 18 ? 16 : 8;
+    for (let i = 0; i < nBr; i++) {
+      const a = i * TAU / nBr + TAU / (nBr * 2);
       const bx = cx + Math.cos(a) * rb, by = cy + Math.sin(a) * rb;
       if (bx < X0 - 60 || bx > X1 + 60 || by < Y0 - 60 || by > Y1 + 60) continue;
       const g = c.createRadialGradient(bx, by, 0, bx, by, 60);
