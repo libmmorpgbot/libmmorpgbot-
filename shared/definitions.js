@@ -617,11 +617,11 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // Сезон 5 начался 1 Nov 2026 сразу после конца 4-го. Очки не переносятся:
 // player_season хранит строку на (игрок, сезон), и новый номер
 // (SEASON_NUMBER) просто начинает с пустых строк, а таблица 4-го сезона
-// остаётся как была — по ней раздаются его награды. Дата конца 5-го сезона
-// не назначена (0) — когда назначат, поставить её в SEASON_END_AT.
+// остаётся как была — по ней раздаются его награды. 5-й сезон кончается
+// 1 декабря 2026 в 18:00 по Москве — в тот же час, что и 4-й.
 const SEASON_NUMBER = 5;
 const SEASON4_END_AT = Date.UTC(2026, 10, 1, 15, 0, 0); // 1 Nov 2026, 18:00 MSK (UTC+3)
-const SEASON_END_AT = 0;
+const SEASON_END_AT = Date.UTC(2026, 11, 1, 15, 0, 0);  // 1 Dec 2026, 18:00 MSK (UTC+3)
 function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_END_AT; }
 
 // ── Паки в магазине GRAM — до конца сезона ─────────────────────────────────
@@ -630,8 +630,8 @@ function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_
 // ним. Одна функция на сервер и клиент: сервер по ней отказывает в покупке
 // (buyPackage, server/db/repos/shop.js), клиент — прячет карточки и вкладки и
 // показывает отсчёт (окно при входе, строка в магазине).
-// Привязано к концу 4-го сезона, а не к SEASON_END_AT: у 5-го даты конца
-// нет (0), и shopPackOn вернул бы ушедшие паки в магазин.
+// Привязано к концу 4-го сезона, а не к SEASON_END_AT: паки ушли вместе с
+// 4-м сезоном и в 5-м не продаются.
 const SHOP_PACKS_END_AT = SEASON4_END_AT;
 function shopPackOn(pkg, now = Date.now()) {
   return !pkg || !pkg.untilSeasonEnd || !SHOP_PACKS_END_AT || now < SHOP_PACKS_END_AT;
