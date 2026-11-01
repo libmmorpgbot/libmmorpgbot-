@@ -86,7 +86,12 @@ const A3_LANE_HW = 1;                       // half-width: 3 tiles for the corri
 // «кидает в 3 на одной арене», «кидает в разные комнаты соперников». A
 // private Room per match has no shared players/AOI/enemy state to leak
 // through in the first place, so there is nothing left to separate.
-const TR_PIT_SIZE = 10; // pit size (tiles) — same footprint as a Fear room
+// Арена турнира — круглый ринг-колизей диаметром TR_ARENA_D клеток (был
+// квадрат 10×10 — тесно, бой начинался почти вплотную). Бойцы встают на
+// TR_ARENA_SPAWN клеток левее и правее центра, лицом друг к другу.
+const TR_ARENA_D = 25;
+const TR_ARENA_R = (TR_ARENA_D - 1) / 2;   // 12 — радиус в клетках
+const TR_ARENA_SPAWN = 8;
 
 // ── Кровавая Башня (race10) ─────────────────────────────────────────────────
 // Одна локация: центральный зал и 50 комнат вокруг него, соединённых в
@@ -1585,26 +1590,37 @@ function generatePvpArena() {
 // doesn't start the two of them already in contact (same reasoning
 // generatePvpArena's team spawns follow).
 function generateTournamentPit() {
-  const w = TR_PIT_SIZE + MARGIN * 2, h = TR_PIT_SIZE + MARGIN * 2;
+  const w = TR_ARENA_D + MARGIN * 2, h = TR_ARENA_D + MARGIN * 2;
   const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
-  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
-  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
-  function paintRect(x0, y0, x1, y1) {
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
-  }
-
   const x0 = MARGIN, y0 = MARGIN;
-  paintRect(x0, y0, x0 + TR_PIT_SIZE - 1, y0 + TR_PIT_SIZE - 1);
-  const cy = y0 + Math.floor(TR_PIT_SIZE / 2);
+  const cx = x0 + TR_ARENA_R, cy = y0 + TR_ARENA_R;
+  // Круг: клетка — пол, если её центр не дальше радиуса (+0.35, чтобы край
+  // выходил ровным, без одиночных зубцов на осях).
+  const rr = (TR_ARENA_R + 0.35) * (TR_ARENA_R + 0.35);
+  for (let gy = y0; gy < y0 + TR_ARENA_D; gy++) {
+    for (let gx = x0; gx < x0 + TR_ARENA_D; gx++) {
+      const dx = gx - cx, dy = gy - cy;
+      if (dx * dx + dy * dy <= rr) grid[gy][gx] = FLOOR;
+    }
+  }
+  const px = t => t * TILE + TILE / 2;
   const pit = {
-    a: { x: (x0 + 2) * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
-    b: { x: (x0 + TR_PIT_SIZE - 3) * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
+    a: { x: px(cx - TR_ARENA_SPAWN), y: px(cy) },
+    b: { x: px(cx + TR_ARENA_SPAWN), y: px(cy) },
   };
 
   return {
     grid, rooms: [], w, h,
     spawn: pit.a,
     tournament: { pit },
+    // Для клиента: по этим полям он рисует пол колизея — песок, каменное
+    // кольцо, трибуны и жаровни (_tournamentArena, js/themes.js). Всё в
+    // клетках; spawns — где встают бойцы, там на песке их знаки.
+    tournamentArena: {
+      bounds: { x0, y0, x1: x0 + TR_ARENA_D, y1: y0 + TR_ARENA_D },
+      cx, cy, r: TR_ARENA_R,
+      spawns: [{ x: cx - TR_ARENA_SPAWN, y: cy }, { x: cx + TR_ARENA_SPAWN, y: cy }],
+    },
     enemies: [],
   };
 }

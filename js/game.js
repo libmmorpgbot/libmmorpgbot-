@@ -2901,6 +2901,7 @@ function _drawGrassTuft(c, x, y, tx, ty, color) {
 function _floorTexOfFloor() {
   if (!dungeon || typeof _floorImgTex !== 'function') return null;
   if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
+  if (dungeon.tournamentArena) return _floorImgTex('arena');
   if (typeof _abyssFloor === 'function' && _abyssFloor()) return _floorImgTex('abyss');
   if (dungeon.armEntries) return _floorImgTex('temple');
   const arm = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
@@ -3190,7 +3191,7 @@ function _buildChunk(cx, cy) {
   const pty1 = Math.min(dungeon.h - 1, pty0 + _CHUNK_T - 1);
   const armKey = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
   const floorProp = (lava && lava.abyss) ? _ABYSS_PROPS : ((armKey && _ARM_PROPS[armKey]) || th.drawFloorProp);
-  if (floorProp && !city && !zone) {
+  if (floorProp && !city && !zone && !(lava && lava.arena)) {
     for (let ty = pty0; ty <= pty1; ty++) {
       for (let tx = ptx0; tx <= ptx1; tx++) {
         if (dungeon.grid[ty][tx] !== FLOOR) continue;
@@ -3212,6 +3213,11 @@ function _buildChunk(cx, cy) {
   if (city) cityDrawStructures(c, city, cX0, cY0, cX1, cY1, { x0, y0, x1: x0 + _CHUNK_PX, y1: y0 + _CHUNK_PX }, torchList);
   else if (zone) zonesDrawDecor(c, zone, tx0, ty0, tx1, ty1, ptx0, pty0, ptx1, pty1, torchList);
   else if (lava && lava.abyss) _abyssTorches(c, ptx0, pty0, ptx1, pty1, isFloor, torchList);
+  // Арена турнира — колизей поверх всего чанка (_arenaDraw, js/themes.js).
+  else if (lava && lava.arena && dungeon.tournamentArena) {
+    _arenaDraw(c, lava, dungeon.tournamentArena, x0 - _CHUNK_G, y0 - _CHUNK_G, x0 + _CHUNK_PX + _CHUNK_G, y0 + _CHUNK_PX + _CHUNK_G,
+      { x0, y0, x1: x0 + _CHUNK_PX, y1: y0 + _CHUNK_PX }, torchList);
+  }
   else for (let ty = pty0; ty <= pty1; ty++) {
     for (let tx = ptx0; tx <= ptx1; tx++) {
       if (dungeon.grid[ty][tx] !== WALL || !isFloor(tx, ty + 1)) continue;

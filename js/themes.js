@@ -293,6 +293,12 @@ const _FLOOR_IMG = {
   // запечены с AO и светом из карты нормалей, холодный тон (см. LICENSE.txt).
   abyss:  { src: '/images/floor/abyss_floor.jpg', px: 380, src2: '/images/floor/abyss_floor2.jpg', px2: 300,
             wall: '/images/floor/abyss_wall.jpg', wallPx: 240, wallBase: '#15171c', abyss: true },
+  // Арена турнира — колизей: утоптанный песок, кольцо брусчатки у барьера,
+  // трибуны из песчаника. ambientCG CC0: Ground054 / PavingStones131 /
+  // Bricks083, запечены с AO, тёплый тон (см. LICENSE.txt). Рисует её
+  // _arenaDraw ниже — по кругу, а не по клеткам.
+  arena:  { src: '/images/floor/arena_sand.jpg', px: 360, src2: '/images/floor/arena_stone.jpg', px2: 200,
+            wall: '/images/floor/arena_wall.jpg', wallPx: 260, wallBase: '#3a2e22', arena: true },
 };
 const _floorImgCache = {};
 function _floorImgTex(key) {
@@ -319,7 +325,7 @@ function _floorImgTex(key) {
     // relief — стены коридоров рисуются с высотой: видимая грань над
     // полом и толща, темнеющая вглубь (_buildChunk, js/game.js).
     ent.tex = { floor, wall, wallBase: def.wallBase, relief: !!def.wall,
-      floor2: f2 ? pattern(f2, def.px2 || def.px) : null, abyss: !!def.abyss };
+      floor2: f2 ? pattern(f2, def.px2 || def.px) : null, abyss: !!def.abyss, arena: !!def.arena };
     if (typeof buildTileCanvas === 'function' && typeof dungeon !== 'undefined' && dungeon) buildTileCanvas();
   }).catch(() => {});
   return null;
@@ -503,3 +509,228 @@ function _abyssTorches(c, ptx0, pty0, ptx1, pty1, isFloor, list) {
 }
 const _ABYSS_PROPS = _floorProps(130, [{ key: 'bone_skull' }, { key: 'bone_ribcage' }, { key: 'bone_long' }, { key: 'bone_small' },
   { key: 'bone_skull' }, { key: 'pillar' }, { key: 'spikes_row' }, { key: 'chest_banded' }]);
+
+
+// ── Арена турнира: колизей ───────────────────────────────────────────────────
+// Ринг круглый (generateTournamentPit, server/game/dungeon.js), поэтому пол
+// рисуется не по клеткам, а дугами вокруг центра — поверх всего, что чанк
+// успел нарисовать, на весь его холст: песок, кольцо брусчатки, барьер,
+// ступени трибун со зрителями, ворота за спинами бойцов, знамёна, жаровни
+// (огонь в них живой — точки уходят в torchList, как факелы на стенах), в
+// центре — медальон со скрещёнными мечами, на местах бойцов — их круги.
+// Всё детерминировано: соседние чанки рисуют стыки одинаково.
+const _ARENA_CLOTH = ['#6b2a22', '#2c3e6b', '#4a5a2a', '#6b5a2a', '#3d2a4a', '#55524c', '#7a3a1a', '#2a4a4a'];
+const _ARENA_SKIN = ['#c8a07a', '#a87a55', '#e0bc96', '#7a5236'];
+const _ARENA_SIDE = ['#c0392b', '#2f6fd6'];          // боец a (слева) / b (справа)
+function _arenaDraw(c, tex, ar, X0, Y0, X1, Y1, own, torchList) {
+  const T = TILE, TAU = Math.PI * 2;
+  const cx = (ar.cx + 0.5) * T, cy = (ar.cy + 0.5) * T;
+  const rIn = (ar.r + 0.5) * T;        // край песка — внутренняя грань барьера
+  const rRing = rIn - 1.6 * T;         // начало кольца брусчатки
+  const rPar = rIn + 0.9 * T;          // внешняя кромка барьера
+  const TIER = 0.85 * T;               // ширина ступени трибун
+  const near = Math.hypot(Math.max(X0 - cx, 0, cx - X1), Math.max(Y0 - cy, 0, cy - Y1));
+  const far = Math.max(Math.hypot(X0 - cx, Y0 - cy), Math.hypot(X1 - cx, Y0 - cy), Math.hypot(X0 - cx, Y1 - cy), Math.hypot(X1 - cx, Y1 - cy));
+  const ring = (r0, r1, fill) => {
+    if (r1 < near || r0 > far) return;
+    c.beginPath(); c.arc(cx, cy, r1, 0, TAU);
+    if (r0 > 0) { c.moveTo(cx + r0, cy); c.arc(cx, cy, r0, 0, TAU, true); }
+    c.fillStyle = fill; c.fill();
+  };
+  const radGrad = (r0, r1, stops) => {
+    const g = c.createRadialGradient(cx, cy, Math.max(0, r0), cx, cy, r1);
+    stops.forEach(([o, col]) => g.addColorStop(o, col));
+    return g;
+  };
+  c.save();
+  c.beginPath(); c.rect(X0, Y0, X1 - X0, Y1 - Y0); c.clip();
+
+  // 1. Трибуны — всё, что за барьером. Ступени: тень подступенка и светлая
+  // кромка сиденья; к верхним рядам темнее.
+  if (far > rIn) {
+    c.fillStyle = tex.wall; c.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+    for (let k = 0, r = rPar; r < far + TIER; k++, r += TIER) {
+      if (r + TIER < near) continue;
+      ring(r, r + 8, 'rgba(0,0,0,0.5)');
+      ring(r + 8, r + 10, 'rgba(255,225,180,0.12)');
+      // Проходы между секторами — каждые 45°, сдвинутые от ворот.
+      if (k > 0) for (let s = 0; s < 8; s++) {
+        const a = s * TAU / 8 + TAU / 16;
+        c.save(); c.translate(cx, cy); c.rotate(a);
+        c.fillStyle = 'rgba(0,0,0,0.28)'; c.fillRect(r, -9, TIER, 18);
+        c.fillStyle = 'rgba(255,225,180,0.08)'; c.fillRect(r, -9, TIER, 2);
+        c.restore();
+      }
+      // Зрители. Ряд 0 — проход вдоль барьера, там пусто.
+      if (k === 0) continue;
+      const rk = r + TIER * 0.55;
+      if (rk < near - 12 || rk > far + 12) continue;
+      const n = Math.floor(TAU * rk / 15);
+      for (let i = 0; i < n; i++) {
+        const h = _tileHash(k, i, 77);
+        if (h < 0.24) continue;                          // пустое место
+        const a = (i + 0.3 * _tileHash(k, i, 79)) / n * TAU;
+        if (Math.abs(((a * 8 / TAU) % 1) - 0.5) < 0.06) continue; // проход
+        const px = cx + Math.cos(a) * rk, py = cy + Math.sin(a) * rk;
+        if (px < X0 - 10 || px > X1 + 10 || py < Y0 - 10 || py > Y1 + 10) continue;
+        c.fillStyle = _ARENA_CLOTH[Math.floor(_tileHash(k, i, 78) * _ARENA_CLOTH.length)];
+        c.beginPath(); c.ellipse(px, py, 6.5, 4.5, a + Math.PI / 2, 0, TAU); c.fill();
+        c.fillStyle = _ARENA_SKIN[Math.floor(_tileHash(k, i, 80) * _ARENA_SKIN.length)];
+        c.beginPath(); c.arc(px - Math.cos(a) * 1.5, py - Math.sin(a) * 1.5, 3.3, 0, TAU); c.fill();
+        if (h > 0.965) {                                 // флажок болельщика
+          const side = Math.cos(a) < 0 ? 0 : 1;
+          const fx = px - Math.cos(a) * 4, fy = py - Math.sin(a) * 4;
+          c.strokeStyle = '#3a2a1a'; c.lineWidth = 2;
+          c.beginPath(); c.moveTo(fx, fy); c.lineTo(fx, fy - 13); c.stroke();
+          c.fillStyle = _ARENA_SIDE[side]; c.fillRect(fx, fy - 13, 8, 6);
+        }
+      }
+    }
+    ring(rPar, Math.max(far, rPar + 1), radGrad(rPar, rPar + 11 * TIER, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.6)']]));
+
+    // 2. Барьер: каменный парапет с кромкой и стыками блоков.
+    ring(rIn, rPar, 'rgba(255,232,196,0.10)');
+    ring(rPar - 4, rPar, 'rgba(255,240,210,0.22)');
+    ring(rPar, rPar + 5, 'rgba(0,0,0,0.45)');
+    ring(rIn, rIn + 12, radGrad(rIn, rIn + 12, [[0, 'rgba(0,0,0,0.55)'], [1, 'rgba(0,0,0,0)']]));
+    if (rPar > near && rIn < far) {
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      const nb = Math.round(TAU * rPar / 46);
+      for (let i = 0; i < nb; i++) {
+        c.save(); c.translate(cx, cy); c.rotate(i / nb * TAU);
+        c.fillRect(rIn, -1, rPar - rIn, 2);
+        c.restore();
+      }
+    }
+  }
+
+  // 3. Песок — с выгоревшим светлым центром и следами грабель по кругу.
+  if (near < rIn) {
+    c.save();
+    c.beginPath(); c.arc(cx, cy, rIn, 0, TAU); c.clip();
+    c.fillStyle = tex.floor; c.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+    ring(0, rIn, radGrad(0, rIn, [[0, 'rgba(255,224,170,0.16)'], [0.6, 'rgba(255,224,170,0.04)'], [1, 'rgba(0,0,0,0.1)']]));
+    c.strokeStyle = 'rgba(60,40,20,0.10)'; c.lineWidth = 3;
+    for (let r = 4.6 * T; r < rRing - 10; r += 22 + _tileHash(Math.round(r), 3, 81) * 18) {
+      if (r < near - 4 || r > far + 4) continue;
+      c.beginPath(); c.arc(cx, cy, r, 0, TAU); c.stroke();
+    }
+    // Пятна крови и рытвины — по клеткам, как на остальных этажах.
+    const tx0 = Math.floor(X0 / T) - 1, tx1 = Math.floor(X1 / T) + 1;
+    const ty0 = Math.floor(Y0 / T) - 1, ty1 = Math.floor(Y1 / T) + 1;
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      const x = tx * T, y = ty * T;
+      if (Math.hypot(x + T / 2 - cx, y + T / 2 - cy) > rRing - T * 0.6) continue;
+      if (_tileHash(tx, ty, 82) < 0.07) {
+        const sx = x + T * (0.2 + _tileHash(tx, ty, 83) * 0.6), sy = y + T * (0.2 + _tileHash(tx, ty, 84) * 0.6);
+        const nd = 2 + Math.floor(_tileHash(tx, ty, 85) * 3);
+        for (let i = 0; i < nd; i++) {
+          const a = _tileHash(tx, ty, 86 + i) * TAU, d = _tileHash(tx, ty, 90 + i) * 9;
+          _drawStain(c, sx + Math.cos(a) * d, sy + Math.sin(a) * d * 0.7, 4 + _tileHash(tx, ty, 94 + i) * 7, 'rgba(110,14,10,0.45)');
+        }
+      } else if (_tileHash(tx, ty, 87) < 0.08) {
+        _drawStain(c, x + T * (0.3 + _tileHash(tx, ty, 88) * 0.4), y + T * (0.3 + _tileHash(tx, ty, 89) * 0.4), 9 + _tileHash(tx, ty, 98) * 6, 'rgba(50,32,16,0.28)');
+      }
+    }
+
+    // 4. Кольцо брусчатки у барьера: бордюр со светлой кромкой и тень,
+    // которую барьер бросает на камень.
+    if (far > rRing) {
+      c.save();
+      c.beginPath(); c.arc(cx, cy, rIn, 0, TAU); c.moveTo(cx + rRing, cy); c.arc(cx, cy, rRing, 0, TAU, true); c.clip();
+      c.fillStyle = tex.floor2 || tex.floor; c.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+      c.restore();
+      ring(rRing - 6, rRing, 'rgba(0,0,0,0.4)');
+      ring(rRing, rRing + 4, 'rgba(255,236,200,0.22)');
+      ring(rIn - 22, rIn, radGrad(rIn - 22, rIn, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.5)']]));
+    }
+
+    // 5. Центр: медальон из камня с золотым ободом, насечки по кругу и
+    // скрещённые мечи.
+    if (near < 4.2 * T) {
+      const gold = 'rgba(206,160,78,';
+      c.strokeStyle = gold + '0.45)'; c.lineWidth = 4;
+      c.beginPath(); c.arc(cx, cy, 3.6 * T, 0, TAU); c.stroke();
+      c.lineWidth = 3;
+      for (let i = 0; i < 24; i++) {
+        const a = i / 24 * TAU, r0 = 3.6 * T, r1 = r0 + (i % 3 === 0 ? 18 : 9);
+        c.beginPath(); c.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); c.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); c.stroke();
+      }
+      c.fillStyle = tex.floor2 || tex.floor;
+      c.beginPath(); c.arc(cx, cy, 1.7 * T, 0, TAU); c.fill();
+      ring(0, 1.7 * T, radGrad(0, 1.7 * T, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.35)']]));
+      c.strokeStyle = gold + '0.9)'; c.lineWidth = 6;
+      c.beginPath(); c.arc(cx, cy, 1.7 * T, 0, TAU); c.stroke();
+      c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 2;
+      c.beginPath(); c.arc(cx, cy, 1.7 * T + 4, 0, TAU); c.stroke();
+      [-1, 1].forEach(sg => {
+        c.save(); c.translate(cx, cy); c.rotate(sg * Math.PI / 4);
+        c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(-4 + 3, -44 + 3, 8, 64);
+        c.fillStyle = '#c9ccd2'; c.beginPath(); c.moveTo(-4, 18); c.lineTo(-4, -38); c.lineTo(0, -46); c.lineTo(4, -38); c.lineTo(4, 18); c.closePath(); c.fill();
+        c.fillStyle = '#8f949c'; c.fillRect(-1, -36, 2, 52);
+        c.fillStyle = '#b8913a'; c.fillRect(-13, 18, 26, 5);
+        c.fillStyle = '#4a2e1a'; c.fillRect(-3, 23, 6, 13);
+        c.fillStyle = '#b8913a'; c.beginPath(); c.arc(0, 38, 4, 0, TAU); c.fill();
+        c.restore();
+      });
+    }
+
+    // 6. Места бойцов — круги в цветах сторон.
+    (ar.spawns || []).forEach((sp, i) => {
+      const sx = (sp.x + 0.5) * T, sy = (sp.y + 0.5) * T, col = _ARENA_SIDE[i % 2];
+      if (sx + T < X0 || sx - T > X1 || sy + T < Y0 || sy - T > Y1) return;
+      c.fillStyle = col + '30'; c.beginPath(); c.arc(sx, sy, 0.9 * T, 0, TAU); c.fill();
+      c.strokeStyle = col + 'cc'; c.lineWidth = 4; c.beginPath(); c.arc(sx, sy, 0.9 * T, 0, TAU); c.stroke();
+      c.lineWidth = 2; c.setLineDash([6, 6]); c.beginPath(); c.arc(sx, sy, 0.6 * T, 0, TAU); c.stroke(); c.setLineDash([]);
+    });
+    c.restore();
+  }
+
+  // 7. Ворота за спинами бойцов, знамёна и жаровни на барьере.
+  if (far > rIn - T && near < rPar + 2 * T) {
+    [Math.PI, 0].forEach((a, side) => {
+      c.save(); c.translate(cx, cy); c.rotate(a);
+      const gw = 2.4 * T, gx0 = rIn - 3, gx1 = rPar + 1.4 * T;
+      c.fillStyle = '#120c08'; c.fillRect(gx0, -gw / 2, gx1 - gx0, gw);
+      c.strokeStyle = '#4c4034'; c.lineWidth = 3;
+      for (let y = -gw / 2 + 8; y < gw / 2; y += 10) { c.beginPath(); c.moveTo(gx0, y); c.lineTo(gx1, y); c.stroke(); }
+      for (let x = gx0 + 6; x < gx1; x += 14) { c.beginPath(); c.moveTo(x, -gw / 2); c.lineTo(x, gw / 2); c.stroke(); }
+      c.fillStyle = '#6e5e4c';
+      c.fillRect(gx0 - 6, -gw / 2 - 10, gx1 - gx0 + 6, 10); c.fillRect(gx0 - 6, gw / 2, gx1 - gx0 + 6, 10);
+      c.fillStyle = 'rgba(255,236,200,0.25)'; c.fillRect(gx0 - 6, -gw / 2 - 10, gx1 - gx0 + 6, 2);
+      c.fillStyle = _ARENA_SIDE[side]; c.fillRect(gx0 - 10, -10, 10, 20);  // герб стороны над воротами
+      c.restore();
+    });
+    // Знамёна свисают с барьера на кольцо: по краям ворот — цвета сторон,
+    // на севере и юге — золотые.
+    [[Math.PI * 0.75, 0], [Math.PI * 1.25, 0], [Math.PI * 0.25, 1], [Math.PI * 1.75, 1], [Math.PI * 0.5, 2], [Math.PI * 1.5, 2]].forEach(([a, k]) => {
+      const col = k < 2 ? (k === 0 ? '#8e1b1b' : '#1b3f8e') : '#8a6418';
+      c.save(); c.translate(cx, cy); c.rotate(a);
+      const x1 = rIn + 6, x0 = rIn - 1.1 * T, hw = 13;
+      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.moveTo(x1, -hw + 4); c.lineTo(x0 + 18, -hw + 4); c.lineTo(x0 - 2, 4); c.lineTo(x0 + 18, hw + 4); c.lineTo(x1, hw + 4); c.fill();
+      c.fillStyle = col; c.beginPath(); c.moveTo(x1, -hw); c.lineTo(x0 + 14, -hw); c.lineTo(x0, 0); c.lineTo(x0 + 14, hw); c.lineTo(x1, hw); c.closePath(); c.fill();
+      c.strokeStyle = '#d4a94a'; c.lineWidth = 2; c.stroke();
+      c.fillStyle = '#d4a94a'; c.beginPath(); c.arc(x0 + 22, 0, 4, 0, TAU); c.fill();
+      c.fillStyle = '#3a2a1a'; c.fillRect(x1 - 2, -hw - 3, 6, hw * 2 + 6);
+      c.restore();
+    });
+    // Жаровни между знамёнами; огонь над ними живой (torchList).
+    const rb = (rIn + rPar) / 2;
+    for (let i = 0; i < 8; i++) {
+      const a = i * TAU / 8 + TAU / 16;
+      const bx = cx + Math.cos(a) * rb, by = cy + Math.sin(a) * rb;
+      if (bx < X0 - 60 || bx > X1 + 60 || by < Y0 - 60 || by > Y1 + 60) continue;
+      const g = c.createRadialGradient(bx, by, 0, bx, by, 60);
+      g.addColorStop(0, 'rgba(255,150,60,0.28)'); g.addColorStop(1, 'rgba(255,150,60,0)');
+      c.fillStyle = g; c.beginPath(); c.arc(bx, by, 60, 0, TAU); c.fill();
+      c.fillStyle = 'rgba(0,0,0,0.4)'; c.beginPath(); c.arc(bx + 3, by + 4, 12, 0, TAU); c.fill();
+      c.fillStyle = '#2a2420'; c.beginPath(); c.arc(bx, by, 12, 0, TAU); c.fill();
+      c.strokeStyle = '#6a5848'; c.lineWidth = 3; c.stroke();
+      const cg = c.createRadialGradient(bx, by, 0, bx, by, 9);
+      cg.addColorStop(0, '#ffd27a'); cg.addColorStop(0.5, '#e8641e'); cg.addColorStop(1, '#5a1a08');
+      c.fillStyle = cg; c.beginPath(); c.arc(bx, by, 8, 0, TAU); c.fill();
+      if (own && torchList && bx >= own.x0 && bx < own.x1 && by >= own.y0 && by < own.y1) torchList.push({ x: bx, y: by - 4 });
+    }
+  }
+  c.restore();
+}
