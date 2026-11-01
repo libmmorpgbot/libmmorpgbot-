@@ -25,7 +25,7 @@ const {
   VIP_CUMULATIVE, QUEST_DEF, questComplete, seasonActive, armIndexForLevel,
   SEASON_REF_POINTS, SEASON_REF_LEVEL, SEASON_END_AT, SEASON_RATING_MIN_POINTS,
   SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS,
-  SEASON_PRIZES, PAST_SEASON, seasonPrizeGram, SEASON_ENHANCE_POINTS, SEASON_ADV_BOOK_POINTS,
+  SEASON_PRIZES, PAST_SEASON, seasonPrizeGram, SEASON_NUMBER, SEASON_PRIZE_AUTO, SEASON_TOURNAMENT_FINAL_POINTS, SEASON_ENHANCE_POINTS, SEASON_ADV_BOOK_POINTS,
   SEASON_BOOK_BURN_POINTS, SEASON_EMPOWER_POINTS, DISASSEMBLE_LIBERTY,
   SEASON_SHOP_POINTS_PER_GRAM, SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM,
   SEASON_TOURNAMENT_WIN_POINTS, SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS,
@@ -42,7 +42,8 @@ const err = (code, msg) => { throw new ProgressionError(code, msg); };
 // The season a date belongs to. Kept as an explicit number rather than derived
 // from "is the current season active", so a claim written a second before the
 // deadline is still attributed to the season it was earned in.
-const CURRENT_SEASON = 4;
+// Сезон 5 — номер в shared/definitions.js (SEASON_NUMBER), один на сервер и клиент.
+const CURRENT_SEASON = SEASON_NUMBER;
 
 // ── special quests ──────────────────────────────────────────────────────────
 // One row per (player, quest). The PRIMARY KEY is the once-only rule: the
@@ -614,7 +615,12 @@ async function seasonOf(db, playerId, season = CURRENT_SEASON) {
 // (server/workers.js): seasonActive() gates it shut while the season runs,
 // and once nothing is left with prize_paid_at IS NULL it does nothing.
 async function distributeSeasonPrizes(db, season = CURRENT_SEASON) {
-  if (seasonActive()) return { paid: 0, reason: 'active' };
+  // Закрытый сезон (номер меньше текущего) уже не идёт, что бы ни говорил
+  // seasonActive() — тот смотрит на дату конца ТЕКУЩЕГО сезона.
+  if (season >= CURRENT_SEASON && seasonActive()) return { paid: 0, reason: 'active' };
+  // Сезон из SEASON_PRIZE_AUTO платит USDT-таблицу в GRAM по курсу сезона
+  // (seasonPrizeGram), остальные — только явный `gram` у места, как сезон 2.
+  const auto = SEASON_PRIZE_AUTO.includes(season);
   const { rows } = await query(db, `
     WITH ranked AS (
       SELECT player_id, prize_paid_at,
@@ -625,24 +631,33 @@ async function distributeSeasonPrizes(db, season = CURRENT_SEASON) {
     SELECT player_id, place FROM ranked
      WHERE place <= $3 AND prize_paid_at IS NULL
      ORDER BY place`, [season, SEASON_RATING_MIN_POINTS, SEASON_PRIZES.length]);
-  if (!rows.length) return { paid: 0 };
+  if (!rows.length) return { paid: 0, gram: 0 };
 
-  let paid = 0;
+  let paid = 0, total = 0;
   for (const r of rows) {
     const prize = SEASON_PRIZES[Number(r.place) - 1];
-    if (!prize || !prize.gram) continue;
-    await tx(async (t) => {
-      await money.credit(t, r.player_id, 'gram', prize.gram, {
+    const gram = prize ? (prize.gram || (auto ? seasonPrizeGram(prize.usd, season) : 0)) : 0;
+    if (!(gram > 0)) continue;
+    const done = await tx(async (t) => {
+      // Та же строка, что берёт кнопка «Забрать» (claimSeasonPrize), — под
+      // FOR UPDATE: нажатие и раздача не заплатят дважды. idemKey общий с
+      // кнопкой — вторая, независимая защита.
+      const lock = await query(t, `
+        SELECT prize_paid_at FROM player_season
+         WHERE player_id = $1 AND season = $2 FOR UPDATE`, [r.player_id, season]);
+      if (!lock.rows.length || lock.rows[0].prize_paid_at) return false;
+      await money.credit(t, r.player_id, 'gram', gram, {
         reason: 'season_prize', refType: 'season', refId: String(season),
         idemKey: `season_prize:${season}:${r.player_id}`,
       });
       await query(t, `
         UPDATE player_season SET prize_gram = $3, prize_paid_at = now()
-         WHERE player_id = $1 AND season = $2`, [r.player_id, season, prize.gram]);
+         WHERE player_id = $1 AND season = $2`, [r.player_id, season, gram]);
+      return true;
     });
-    paid++;
+    if (done) { paid++; total += gram; }
   }
-  return { paid };
+  return { paid, gram: Math.round(total * 100) / 100 };
 }
 
 // Победители прошлого сезона — список под карточкой «Сезон 4». Топ-20 по
@@ -662,7 +677,7 @@ async function seasonWinners(db, season = PAST_SEASON, playerId = null) {
     return {
       place, username: r.username, points: Number(r.points),
       prizeUsd: cash ? cash.usd : null,
-      prizeGram: cash ? seasonPrizeGram(cash.usd) : null,
+      prizeGram: cash ? seasonPrizeGram(cash.usd, season) : null,
       claimed: !!r.prize_paid_at,
       mine: playerId != null && String(r.player_id) === String(playerId),
     };
@@ -691,7 +706,7 @@ async function claimSeasonPrize(db, playerId, season = PAST_SEASON) {
   const prize = r ? SEASON_PRIZES[Number(r.place) - 1] : null;
   if (!prize) err('not_winner', 'Вы не в списке победителей');
   if (r.prize_paid_at) err('already_claimed', 'Награда уже получена');
-  const gram = seasonPrizeGram(prize.usd);
+  const gram = seasonPrizeGram(prize.usd, season);
   await money.credit(db, playerId, 'gram', gram, {
     reason: 'season_prize', refType: 'season', refId: String(season),
     idemKey: `season_prize:${season}:${playerId}`,
@@ -829,6 +844,7 @@ async function seasonState(db, playerId) {
     marketBuyPointsPerGram: SEASON_MARKET_BUY_POINTS_PER_GRAM,
     marketSellPointsPerGram: SEASON_MARKET_SELL_POINTS_PER_GRAM,
     tournamentWinPoints: SEASON_TOURNAMENT_WIN_POINTS,
+    tournamentFinalPoints: SEASON_TOURNAMENT_FINAL_POINTS,
     // Repeatable kill-then-claim quests. Progress lives in player_season.
     // quests (jsonb) — bumped on every qualifying kill (server/handlers2/
     // world.js), converted into season points only by the claim button

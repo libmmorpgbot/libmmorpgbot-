@@ -7745,7 +7745,7 @@ function _seasonInfoHTML() {
         <div class="season-card-sub">${t('season2Desc')}</div>
         ${_s4EndsHTML()}
       </div>
-      <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonPastWinnersHdr', { n: (w && w.season) || 3 })}</span></div>
+      <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonPastWinnersHdr', { n: (w && w.season) || PAST_SEASON })}</span></div>
       ${rows || `<div class="s4-empty">${fallback}</div>`}
     </div>`;
 }
@@ -7757,13 +7757,13 @@ function _s4PrizesHTML() {
   if (!prizes.length) return '';
   const groups = _seasonPrizeGroups(prizes);
   const medal = p => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : '🏅';
-  return `<div class="s4-sec-hdr"><span>🎁 ${tVars('seasonPrizesHdrFmt', { n: 4 })}</span></div>
+  return `<div class="s4-sec-hdr"><span>🎁 ${tVars('seasonPrizesHdrFmt', { n: SEASON_NUMBER })}</span></div>
     ${groups.map(g => `<div class="s4-row${g.from <= 3 ? ' top' : ''}">
       <span class="s4-place">${medal(g.from)}</span>
       <span class="s4-name">${g.from === g.to ? tVars('seasonPlaceFmt', { n: g.from }) : tVars('seasonPlaceRangeFmt', { a: g.from, b: g.to })}</span>
       <span class="s4-gram">${g.usd} USDT</span>
     </div>`).join('')}
-    <div class="s4-empty" style="padding:8px 0 0">${t('seasonPrizesNote')}</div>`;
+    <div class="s4-empty" style="padding:8px 0 0">${tVars('seasonPrizesNote', { r: String(typeof seasonGramRate === 'function' ? seasonGramRate(SEASON_NUMBER) : 1.3).replace('.', ',') })}</div>`;
 }
 
 // Сколько осталось до конца сезона (SEASON_END_AT, shared/definitions.js).
@@ -7776,7 +7776,7 @@ function _s4EndsHTML() {
 
 function _seasonClaimPrize(btn) {
   if (btn) btn.disabled = true;
-  if (typeof netSeasonClaimPrize === 'function') netSeasonClaimPrize((_seasonWinners && _seasonWinners.season) || 3);
+  if (typeof netSeasonClaimPrize === 'function') netSeasonClaimPrize((_seasonWinners && _seasonWinners.season) || PAST_SEASON);
 }
 
 // ── "Итоги сезона" — the screen the button above opens once the season is
@@ -7928,6 +7928,10 @@ function _seasonTasksHTML() {
         <div class="s4-ico">🛒</div>
         <div class="s4-task-body"><span class="s4-task-name">${tVars('seasonMarketBuyFmt', { n: st.marketBuyPointsPerGram || 10 })}</span></div>
       </div>
+      ${st.tournamentWinPoints > 0 ? `<div class="s4-task perm">
+        <div class="s4-ico">🏆</div>
+        <div class="s4-task-body"><span class="s4-task-name">${tVars('seasonTournamentWinFmt', { n: st.tournamentWinPoints, f: st.tournamentFinalPoints || st.tournamentWinPoints })}</span></div>
+      </div>` : ''}
       ${sec('☀️', 'seasonTasksDailyHdr', tasks.daily || [], false)}
       ${sec('📅', 'seasonTasksWeeklyHdr', tasks.weekly || [], true)}
     </div>`;
@@ -8026,7 +8030,7 @@ function _seasonRatingHTML() {
   const rest = list.slice(3).map(x => row(x)).join('');
   const meOutside = r.me && r.me.place > 0 && !list.some(isMe);
   return `<div class="s4-wrap">
-    <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonRatingHdrFmt', { n: 4 })}</span></div>
+    <div class="s4-sec-hdr"><span>🏆 ${tVars('seasonRatingHdrFmt', { n: SEASON_NUMBER })}</span></div>
     ${podium || `<div class="s4-empty">${t('seasonNoPlayers')}</div>`}
     ${rest}
     ${meOutside ? `<div class="s4-me-sep">···</div>${row(r.me)}` : ''}
@@ -9163,6 +9167,7 @@ function _trxRegHTML() {
         ${prize('🛡', 'Победа в нижней сетке', `${coin}+5`, 'за каждый раунд')}
       </div>
       <div class="trx-note center">Каждая победа — <b>+1 очко</b> рейтинга и <b>+${TOURNAMENT_CLAN_XP_PER_WIN} очков</b> вашему клану (гранд-финал — <b>+${TOURNAMENT_CLAN_XP_FINAL}</b>), победа в турнире — <b>+5</b> очков. В рейтинг попадает каждый участник.</div>
+      ${SEASON_TOURNAMENT_WIN_POINTS > 0 ? `<div class="trx-note center">Очки сезона: <b>+${SEASON_TOURNAMENT_WIN_POINTS}</b> за каждый выигранный бой, <b>+${SEASON_TOURNAMENT_FINAL_POINTS}</b> за победу в гранд-финале.</div>` : ''}
 
       <div class="trx-hdr">Формат</div>
       <div class="trx-format">

@@ -20,6 +20,7 @@ const items = require('./db/repos/items');
 const progression = require('./db/repos/progression');
 const { query, stats: poolStats } = require('./db');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('./shop');
+const { SEASON_PRIZE_AUTO } = require('../shared/definitions');
 
 const DEPOSIT_EVERY_MS = Number(process.env.DEPOSIT_SCAN_MS || 15000);
 const RECONCILE_EVERY_MS = Number(process.env.RECONCILE_MS || 6 * 3600 * 1000);
@@ -328,14 +329,20 @@ async function reconcileItems() {
 // shut by seasonActive() while the season runs, and a no-op once every
 // top-10 row already has a prize_paid_at.
 async function paySeasonPrizes() {
-  try {
-    const res = await progression.distributeSeasonPrizes(null);
-    if (res && res.paid) {
-      await ops.send('alerts', `🏆 Сезон ${progression.CURRENT_SEASON}: начислены призы ${res.paid} игрокам (места 1-10).`);
+  // Текущий сезон (платит сам, когда кончится, если у мест есть `gram`) и
+  // закрытые сезоны из SEASON_PRIZE_AUTO — 4-й раздаётся всем победителям
+  // на первом же тике после выкатки.
+  const seasons = [...new Set([progression.CURRENT_SEASON, ...SEASON_PRIZE_AUTO])];
+  for (const season of seasons) {
+    try {
+      const res = await progression.distributeSeasonPrizes(null, season);
+      if (res && res.paid) {
+        await ops.send('alerts', `🏆 Сезон ${season}: начислены призы ${res.paid} игрокам, всего ${res.gram} GRAM.`);
+      }
+    } catch (err) {
+      console.error('[workers] season prizes:', err);
+      await ops.alertError('season.prizes', `Ошибка начисления призов сезона ${season}`, err);
     }
-  } catch (err) {
-    console.error('[workers] season prizes:', err);
-    await ops.alertError('season.prizes', 'Ошибка начисления призов сезона', err);
   }
 }
 

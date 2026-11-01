@@ -47,7 +47,7 @@ const ops = require('./tg-ops');
 const {
   race10Rewards, race10Liberty,
   bossLairReward, BOSS_LAIR_DAILY_KILLS, CRAFT_MATS,
-  SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS, SEASON_TOURNAMENT_WIN_POINTS,
+  SEASON_EVENT_POINTS, SEASON_EVENT_WIN_POINTS, SEASON_TOURNAMENT_WIN_POINTS, SEASON_TOURNAMENT_FINAL_POINTS,
 } = require('../shared/definitions');
 
 // The co-op boss. Not in shared/definitions because nothing else refers to it
@@ -220,6 +220,8 @@ function attach(socket, s) {
   // Tournament round wins — every round is one opponent beaten, grand final
   // included, so a single flat rate covers every call site in tournament.js.
   socket.data._seasonAwardTournamentWin = _awardSeason(SEASON_TOURNAMENT_WIN_POINTS, 'win');
+  // Сезон 5: победа в гранд-финале — своя сумма (100), вместо обычной за бой.
+  socket.data._seasonAwardTournamentFinal = _awardSeason(SEASON_TOURNAMENT_FINAL_POINTS, 'final');
 
   // 3v3 arena: Liberty only. Returns the amount, which is what the mode puts
   // in its own end-of-match packet.

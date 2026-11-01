@@ -610,10 +610,9 @@ module.exports = function createTournament(deps) {
     // Рейтинг: любая победа в матче — +1 (и в бою, и по неявке соперника).
     // Победа в гранд-финале даёт клану больше (TOURNAMENT_CLAN_XP_FINAL).
     _trScoreSafe([winnerSid], { wins: 1, final: tag === 'grandFinal' }, 'win');
-    // Season 3: +2 points per opponent beaten. Every round here — grand
-    // final included — is one 1v1 match, so "per opponent" is just "every
-    // round win", one flat rate, no branching needed.
-    _trAwardSeasonWin(winnerSid);
+    // Очки сезона: +50 за каждый выигранный бой (и по неявке соперника), а
+    // победа в гранд-финале — 100 вместо 50 (SEASON_TOURNAMENT_*_POINTS).
+    _trAwardSeasonWin(winnerSid, tag === 'grandFinal');
     if (tag === 'grandFinal') {
       _trGrant(winnerSid, TOURNAMENT_FINAL_WIN_NEXUM, 'tournament:final:win');
       _trGrant(loserSid, TOURNAMENT_FINAL_LOSE_NEXUM, 'tournament:final:lose');
@@ -630,10 +629,11 @@ module.exports = function createTournament(deps) {
     _trQueuePay(sid, { amount, ref });
   }
 
-  function _trAwardSeasonWin(sid) {
+  function _trAwardSeasonWin(sid, final = false) {
     const sock = io.sockets.sockets.get(sid);
-    if (sock?.data?._seasonAwardTournamentWin) { sock.data._seasonAwardTournamentWin('tournament')?.catch?.(() => {}); return; }
-    _trQueuePay(sid, { season: true });
+    const award = final ? sock?.data?._seasonAwardTournamentFinal : sock?.data?._seasonAwardTournamentWin;
+    if (award) { award('tournament')?.catch?.(() => {}); return; }
+    _trQueuePay(sid, { season: true, final });
   }
 
   // A round decided while this player's connection was down (a forfeit they
@@ -654,7 +654,10 @@ module.exports = function createTournament(deps) {
     if (!sock) return;
     _tr.pendingPay.delete(tid);
     items.forEach(it => {
-      if (it.season) sock.data?._seasonAwardTournamentWin?.('tournament')?.catch?.(() => {});
+      if (it.season) {
+        const award = it.final ? sock.data?._seasonAwardTournamentFinal : sock.data?._seasonAwardTournamentWin;
+        award?.('tournament')?.catch?.(() => {});
+      }
       else sock.data?._trGrantReward?.(it.amount, it.ref)?.catch?.(() => {});
     });
   }

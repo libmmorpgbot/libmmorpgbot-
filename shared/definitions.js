@@ -613,7 +613,15 @@ const ARM_LEVEL_REQ = { left: 0, top: 20, bottom: 40, right: 60 };
 // поставить её сюда: seasonActive() погаснет в этот момент, и
 // distributeSeasonPrizes сработает сам. 3-й сезон кончился
 // Date.UTC(2026, 9, 1, 15) — 1 Oct 2026, 18:00 MSK.
-const SEASON_END_AT = Date.UTC(2026, 10, 1, 15, 0, 0); // 1 Nov 2026, 18:00 MSK (UTC+3)
+//
+// Сезон 5 начался 1 Nov 2026 сразу после конца 4-го. Очки не переносятся:
+// player_season хранит строку на (игрок, сезон), и новый номер
+// (SEASON_NUMBER) просто начинает с пустых строк, а таблица 4-го сезона
+// остаётся как была — по ней раздаются его награды. Дата конца 5-го сезона
+// не назначена (0) — когда назначат, поставить её в SEASON_END_AT.
+const SEASON_NUMBER = 5;
+const SEASON4_END_AT = Date.UTC(2026, 10, 1, 15, 0, 0); // 1 Nov 2026, 18:00 MSK (UTC+3)
+const SEASON_END_AT = 0;
 function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_END_AT; }
 
 // ── Паки в магазине GRAM — до конца сезона ─────────────────────────────────
@@ -622,7 +630,9 @@ function seasonActive(now = Date.now()) { return !SEASON_END_AT || now < SEASON_
 // ним. Одна функция на сервер и клиент: сервер по ней отказывает в покупке
 // (buyPackage, server/db/repos/shop.js), клиент — прячет карточки и вкладки и
 // показывает отсчёт (окно при входе, строка в магазине).
-const SHOP_PACKS_END_AT = SEASON_END_AT;
+// Привязано к концу 4-го сезона, а не к SEASON_END_AT: у 5-го даты конца
+// нет (0), и shopPackOn вернул бы ушедшие паки в магазин.
+const SHOP_PACKS_END_AT = SEASON4_END_AT;
 function shopPackOn(pkg, now = Date.now()) {
   return !pkg || !pkg.untilSeasonEnd || !SHOP_PACKS_END_AT || now < SHOP_PACKS_END_AT;
 }
@@ -709,7 +719,10 @@ function seasonMarketPoints(price, perGram) {
 // only, awarded from server/game/tournament.js's _trPayRoundReward through
 // the same socket.data._seasonAward* closure factory mode-rewards.js already
 // built for death-battle's entry/win points.
-const SEASON_TOURNAMENT_WIN_POINTS = 0; // Сезон 4: задание снято
+// Сезон 5: +50 за каждый выигранный бой, а победа в гранд-финале (она же
+// победа в турнире) — 100 вместо 50.
+const SEASON_TOURNAMENT_WIN_POINTS = 50;
+const SEASON_TOURNAMENT_FINAL_POINTS = 100;
 
 // ── Фарм-зоны ─────────────────────────────────────────────────────────────
 // Repeatable: kill the target count in a zone, then press the claim button
@@ -854,17 +867,28 @@ const SEASON_PRIZES = [
 // сами, кнопкой в панели «Сезон» (claimSeasonPrize, progression.js), уже в
 // GRAM по курсу 1 GRAM = 1.56 USDT. `gram` в SEASON_PRIZES намеренно не
 // добавлен: тогда distributeSeasonPrizes начислял бы их фоном, без кнопки.
-const PAST_SEASON = 3;
+const PAST_SEASON = SEASON_NUMBER - 1;
 // Сезон 4 платит так же: те же места и суммы (SEASON_PRIZES), в GRAM по
 // курсу, кнопкой «Забрать» после конца сезона. Показывается последний
 // завершённый сезон; забрать можно за любой завершённый из PRIZE_SEASONS.
-const PRIZE_SEASONS = [3, 4];
-function prizeSeasonShown(now = Date.now()) { return seasonActive(now) ? 3 : 4; }
+const PRIZE_SEASONS = [3, 4, 5];
+function prizeSeasonShown(now = Date.now()) { return seasonActive(now) ? PAST_SEASON : SEASON_NUMBER; }
 function prizeSeasonClaimable(season, now = Date.now()) {
-  return PRIZE_SEASONS.includes(season) && (season < 4 || !seasonActive(now));
+  return PRIZE_SEASONS.includes(season) && (season < SEASON_NUMBER || !seasonActive(now));
 }
-const GRAM_USDT_RATE = 1.56;
-function seasonPrizeGram(usd) { return Math.round((Number(usd) || 0) / GRAM_USDT_RATE * 100) / 100; }
+// Курс GRAM к USDT — свой у каждого сезона: 3-й платили по 1.56, 4-й и
+// дальше — по 1.3 (решение владельца). Курс сезона, которого нет в таблице,
+// — GRAM_USDT_RATE.
+const GRAM_USDT_RATE = 1.3;
+const SEASON_GRAM_USDT_RATE = { 3: 1.56, 4: 1.3 };
+function seasonGramRate(season) { return SEASON_GRAM_USDT_RATE[season] || GRAM_USDT_RATE; }
+function seasonPrizeGram(usd, season = SEASON_NUMBER) {
+  return Math.round((Number(usd) || 0) / seasonGramRate(season) * 100) / 100;
+}
+// Сезоны, награды которых начисляются сами, без кнопки «Забрать»
+// (distributeSeasonPrizes, server/workers.js). 4-й — раздаётся всем
+// победителям сразу; кто успел нажать кнопку, второй раз не получит.
+const SEASON_PRIZE_AUTO = [4];
 
 // ── Quests ──────────────────────────────────────────────────────────────────
 // Shared so the server can grant quest rewards itself rather than trusting
@@ -4287,7 +4311,7 @@ const GRAM_PER_LEVEL = 0.0000001;
 // Действует весь сезон: SEASON_TICKET_END_AT = 0 — дата конца не назначена.
 // Когда назначат — поставить её сюда, и билет погаснет в этот момент.
 const SEASON_TICKET_SEASON = 4;
-const SEASON_TICKET_END_AT = SEASON_END_AT;   // билет — до конца 4 сезона
+const SEASON_TICKET_END_AT = SEASON4_END_AT;  // билет — до конца 4 сезона
 function seasonTicketPeriodOn(now = Date.now()) { return !SEASON_TICKET_END_AT || now < SEASON_TICKET_END_AT; }
 const SEASON_TICKET_GRAM_PRICE = 5;
 const SEASON_TICKET_XP_PCT = 100;      // x2 experience
@@ -4894,7 +4918,7 @@ if (typeof module !== 'undefined') module.exports = {
   guildBossScaling, guildBossRollReward,
   bossLairReward, bossLairScaling, BOSS_LAIR_BOSSES, bossLairBoss, bossLairUnlocked, BOSS_LAIR_HP_MULT, BOSS_LAIR_ATK_MULT, BOSS_LAIR_NERF_FROM_LEVEL, BOSS_LAIR_NERF_DIV,
   QUEST_DEF,
-  SEASON_END_AT, seasonActive, SHOP_PACKS_END_AT, shopPackOn, MAIL_BONUS_END_AT, mailBonusOn,
+  SEASON_NUMBER, SEASON4_END_AT, SEASON_END_AT, seasonActive, SHOP_PACKS_END_AT, shopPackOn, MAIL_BONUS_END_AT, mailBonusOn,
   SEASON_ENHANCE_POINTS,
   SEASON_ADV_BOOK_POINTS,
   SEASON_BOOK_BURN_POINTS, DISASSEMBLE_LIBERTY,
@@ -4903,12 +4927,12 @@ if (typeof module !== 'undefined') module.exports = {
   SEASON_EMPOWER_POINTS,
   SEASON_SHOP_POINTS_PER_GRAM, seasonShopPoints,
   SEASON_MARKET_BUY_POINTS_PER_GRAM, SEASON_MARKET_SELL_POINTS_PER_GRAM, seasonMarketPoints,
-  SEASON_TOURNAMENT_WIN_POINTS,
+  SEASON_TOURNAMENT_WIN_POINTS, SEASON_TOURNAMENT_FINAL_POINTS,
   SEASON_FARM_KILL_TARGET, SEASON_FARM_KILL_POINTS, SEASON_FARM2_KILL_TARGET, SEASON_FARM2_KILL_POINTS,
   SEASON_FARM_HIGH_KILL_TARGET, SEASON_FARM_HIGH_KILL_POINTS,
   ELITE_MOB_HP, ELITE_MOB_SIZE_MULT, ELITE_MOB_DROP_MULT, ELITE_MOB_GRAM, ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX, ELITE_MOB_RESPAWN_MIN_MS, ELITE_MOB_RESPAWN_MAX_MS,
   ELITE_EVENT_START_AT, ELITE_EVENT_END_AT, eliteEventOn,
-  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, seasonPrizeGram, PRIZE_SEASONS, prizeSeasonShown, prizeSeasonClaimable,
+  SEASON_RATING_MIN_POINTS, SEASON_PRIZES, PAST_SEASON, GRAM_USDT_RATE, SEASON_GRAM_USDT_RATE, seasonGramRate, SEASON_PRIZE_AUTO, seasonPrizeGram, PRIZE_SEASONS, prizeSeasonShown, prizeSeasonClaimable,
   MONSTER_HP1, MONSTER_ATK1, MONSTER_ARCHETYPE,
   BOSS_HP_MULT, BOSS_ATK_MULT,
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
