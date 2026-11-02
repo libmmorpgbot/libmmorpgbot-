@@ -597,6 +597,10 @@ function init(io) {
       const killer = room && room.players.get(killerSocketId);
       recordPvpHistory(socketId, { kind: 'death', mode: 'open_pvp', opponent: killer && killer.username });
       recordPvpHistory(killerSocketId, { kind: 'kill', mode: 'open_pvp', opponent: victim && victim.username });
+      // Карма: убийство в обычной локации (не событие — его забрал бы режим
+      // выше) даёт убийце карму, а с кармической жертвы может выпасть вещь
+      // (server/karma.js). Вне KARMA_FLOOR_KEYS — война гильдий, арены — ничего.
+      require('./karma').onPvpKillSoon(sessionOf(socketId), sessionOf(killerSocketId), room && room.floor);
     }
   };
   modes._returnToHub = returnToHub;

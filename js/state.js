@@ -205,6 +205,9 @@ let petSkillNextAt = 0;
 let targetId = null;
 let targetIsPlayer = false;
 let pvpMode = false;
+// Карма за ПК в локациях (server/karma.js): > 0 — ПК не выключить,
+// телепорты закрыты. Приходит событием karmaSync.
+let playerKarma = 0;
 // True only when the attack button was actually pressed on the current
 // target — tapping/cycling a target to look at it must not by itself make
 // the character run at it.

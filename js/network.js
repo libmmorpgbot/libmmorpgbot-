@@ -5212,6 +5212,23 @@ function _initGuildWarHandlers(s) {
     pvpMode = !!mode;
     if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
   });
+  // Карма (server/karma.js): число над кнопкой ПК и запрет её выключить.
+  s.on('karmaSync', ({ karma } = {}) => {
+    const was = playerKarma;
+    playerKarma = Math.max(0, Number(karma) || 0);
+    if (playerKarma > 0) pvpMode = true;
+    if (was > 0 && playerKarma === 0 && player && typeof dmgNum === 'function' && state === 'playing') {
+      dmgNum(player.x, player.y - 50, 'Карма смыта — ПК можно выключить', '#7ee0c0');
+    }
+    if (was === 0 && playerKarma > 0 && typeof _marketToast === 'function') {
+      _marketToast(`Карма ${playerKarma}: ПК не выключить, телепорты и выход из локации закрыты, пока она не смоется (−1 за каждого монстра)`, 'err');
+    }
+  });
+  // Выпавший с кармического игрока предмет — обоим.
+  s.on('pkDrop', ({ lost, name, by, from } = {}) => {
+    if (typeof _marketToast !== 'function') return;
+    _marketToast(lost ? `С вас выпало: ${name}${by ? ' — забрал ' + by : ''}` : `Вы забрали ${name}${from ? ' у ' + from : ''}`, lost ? 'err' : 'ok');
+  });
 }
 
 function netFearEnter()  { if (socket?.connected) socket.emit('fearEnter'); }

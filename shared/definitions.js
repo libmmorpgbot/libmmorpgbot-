@@ -4904,6 +4904,28 @@ function achievementById(id) {
   return (typeof id === 'string' && ACH_BY_ID.get(id)) || null;
 }
 
+// ── Карма (ПК в локациях) ────────────────────────────────────────────────────
+// Убийство другого игрока в обычной локации (KARMA_FLOOR_KEYS) даёт убийце
+// KARMA_PER_PK кармы; каждый убитый монстр смывает KARMA_PER_MOB. Пока карма
+// больше нуля, ПК-режим не выключается, телепорты и переходы между
+// локациями закрыты. Смерть обнуляет карму. Если убили игрока с кармой, с
+// него может выпасть предмет убийце — шанс karmaDropChance(карма).
+// В событиях (турнир, арены, Башня, война гильдий, босс, Страх, сотрудничество)
+// карма не копится.
+const KARMA_PER_PK = 1000;
+const KARMA_PER_MOB = 1;
+const KARMA_FLOOR_KEYS = [
+  'left', 'top', 'bottom', 'right',
+  'farmZone', 'farmZone2', 'farmHigh', 'farmSeason', 'farmHighSeason',
+  'dungeon', 'dungeonLev', 'dungeonDeathknight', 'dungeonRanger', 'dungeonMage',
+  'dungeonWarlock', 'dungeonRunefighter', 'dungeonAssassin', 'openWorld',
+];
+// 1000 кармы — 10%, каждые следующие 1000 — ещё +10%, не больше 80%.
+function karmaDropChance(karma) {
+  const k = Math.max(0, Number(karma) || 0);
+  return k > 0 ? Math.min(0.8, k / 10000) : 0;
+}
+
 // ── Помощники ───────────────────────────────────────────────────────────────
 // Летающие спутники: висят у плеча и дают постоянную прибавку к
 // характеристикам. С миграции 049 — ПРЕДМЕТЫ: строка player_items со
@@ -5202,6 +5224,7 @@ if (typeof module !== 'undefined') module.exports = {
   AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
   ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
   HELPERS, HELPER_RARITIES, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP, HELPER_DUP_XP,
-  HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN, helperById, helperXpToNext, helperFeedCost,
+  HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN,
+  KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, helperById, helperXpToNext, helperFeedCost,
   helperBonusAt, helperAddXp, helperFeedPlan,
 };

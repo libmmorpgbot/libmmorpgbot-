@@ -4941,6 +4941,15 @@ function drawPvpButton() {
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.fillStyle = pvpColor;
   ctx.fillText(pvpLabel, pb.x + pb.w / 2 - hud(5), pb.y + pb.h / 2);
+  // Карма — над кнопкой: пока она есть, ПК не выключить.
+  if (typeof playerKarma !== 'undefined' && playerKarma > 0) {
+    ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    const kt = `☠ Карма ${playerKarma}`;
+    ctx.strokeText(kt, pb.x + pb.w / 2, pb.y - hud(3));
+    ctx.fillStyle = '#ff6a7a';
+    ctx.fillText(kt, pb.x + pb.w / 2, pb.y - hud(3));
+  }
 
   ctx.restore();
 }

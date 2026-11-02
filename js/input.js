@@ -642,6 +642,11 @@ function _checkPvpBtnTouch(cx, cy) {
       if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, 'Нельзя в начальной локации', '#f88');
       return true;
     }
+    // Карма держит ПК включённым, пока не смоется (server/karma.js).
+    if (pvpMode && playerKarma > 0) {
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, `Карма ${playerKarma} — ПК не выключить`, '#f88');
+      return true;
+    }
     pvpMode = !pvpMode;
     if (typeof netSetPvpMode === 'function') netSetPvpMode(pvpMode);
     if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }

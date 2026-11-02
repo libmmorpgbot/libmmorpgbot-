@@ -1111,6 +1111,9 @@ class Session {
     const world = require('./world');
     const target = world.floorIdOf(floorId);
     if (!Number.isFinite(target)) return null;
+    // Карма держит в локации: в событие с ней не перенести (турнир и прочие
+    // считают это неявкой). В город — можно.
+    if (this.karma > 0 && target !== 1) return null;
 
     // Fear, co-op and the elite farm zone are INSTANCED: each run gets its own
     // Room that is not in floorRooms, and its players do not join the

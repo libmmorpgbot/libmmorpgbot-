@@ -28,6 +28,7 @@ const stats = require('../db/repos/stats');
 const consumables = require('../db/repos/consumables');
 const progression = require('../db/repos/progression');
 const seasonTasks = require('../season-tasks');
+const karma = require('../karma');
 const ach = require('../achievements');
 const clans = require('../db/repos/clans');
 const plog = require('../db/repos/playerlog');
@@ -379,6 +380,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
         liveHp != null ? Math.min(liveHp, state.stats.maxHp) : state.stats.hp);
     }
     s.socket.emit('gameStart', { ...state, ...s.worldPayload(floor) });
+    // Карма — после gameStart: клиент сбрасывает ПК на входе, а карма его
+    // включает обратно и не даёт выключить (server/karma.js).
+    await karma.onEnter(t, s);
     // The pets already out on this floor, and then ours to everyone else.
     // Both directions matter: joining a floor should not blank the pets that
     // were there, and arriving with one should not require the owner to
@@ -818,6 +822,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // Сезон 4, еженедельные: убийства на 1 этаже (левый коридор), на 2
       // этаже (верхний) и в фарм зоне. Фарм-задания 3-го сезона сняты.
       await _seasonKillTask(t, s, result);
+      // Карма смывается убитыми монстрами — тому, кто добил.
+      await karma.onMobKill(t, s);
       // Достижения — только тому, кто добил, как и элитный рейтинг выше.
       await ach.bumpIn(t, s, 'kills', 1);
       if (result.isBoss) await ach.bumpIn(t, s, 'boss', 1);
@@ -1244,6 +1250,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // when the stored FLOOR matches, so a death on any other floor already
     // arrives at the hub's own spawn.
     if (s.room) s.room.setPlayerHp(s.socket.id, hp);
+    // Смерть обнуляет карму — до входа в город, чтобы он не включил ПК снова.
+    await karma.resetOnDeath(t, s);
     const floor = await sendGameStart(t, 1);
     // Клиенту — до какой миллисекунды штраф, чтобы экран показывал остаток, а
     // не строку, которая всегда висит одинаково.
@@ -1262,6 +1270,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
   safeOn('enterLocation', ({ target } = {}) => s.act('enterLocation', 'locationError', async (t, pid) => {
     const want = floorIdOf(target);
     if (!Number.isFinite(want)) fail('Такой локации нет', 'bad_target');
+    if (s.karma > 0 && want !== s.floor) fail(`На вас карма (${s.karma}) — из локации не выйти, пока она не смоется. Убивайте монстров: каждый −1.`, 'karma');
     const prog = await players.progressOf(t, pid);
     if (resolveFloor(want, prog, floorCtxOf(s)) !== want) {
       // 'level' was the only reason this could ever give, and now it is not:
@@ -1450,6 +1459,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
   // being used to peek at a gate and then refunded by cancelling.
   safeOn('useTeleportStone', () => s.act('useTeleportStone', 'itemError', async (t, pid) => {
     if (s.floor === 1) fail('Вы уже в зале', 'in_hub');
+    if (s.karma > 0) fail(`На вас карма (${s.karma}) — телепорт не работает, пока она не смоется`, 'karma');
     if (teleportTimer) fail('Уже произносится телепорт', 'casting');
     // A dead player must respawn, not recall. forceFloor carries the record's
     // hp across, so a stone cast from the death screen spent itself and landed

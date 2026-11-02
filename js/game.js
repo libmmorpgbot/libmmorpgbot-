@@ -690,7 +690,7 @@ function update(dt, realDt) {
     // На Войне гильдий ПК — правило этажа (сервер включает его каждый тик),
     // выключать его здесь значило бы мигать туда-обратно; удары и так
     // отклоняются, пока кто-то из двоих стоит в безопасной зоне.
-    if (pvpMode && !dungeon.guildWar) {
+    if (pvpMode && !dungeon.guildWar && !(playerKarma > 0)) {
       pvpMode = false;
       if (typeof netSetPvpMode === 'function') netSetPvpMode(false);
       if (targetIsPlayer) { targetId = null; targetIsPlayer = false; }
@@ -3278,7 +3278,6 @@ function playerDie() {
   if (state === 'dead') return;
   state = 'dead';
   const modal = document.getElementById('death-modal');
-  if (!modal) return;
   // Stored as remaining seconds in player.buffs (like every other timed buff/
   // debuff) instead of a standalone client-only timestamp — that variable
   // reset to 0 on every page refresh/reconnect since it was never part of
@@ -3301,9 +3300,10 @@ function playerDie() {
       `<span class="death-stat">${_dLoc}</span>` +
       `<span class="death-stat">${Math.floor(player.gold)} <span class="death-lbl">${typeof t === 'function' ? t('deathGoldLbl') : 'золота'}</span> · ${player.kills} <span class="death-lbl">${typeof t === 'function' ? t('deathKillsLbl') : 'убийств'}</span></span>`;
   }
-  const penaltyEl = document.getElementById('death-penalty');
-  if (penaltyEl) penaltyEl.style.display = 'block';
-  modal.style.display = 'flex';
+  // Окна смерти больше нет: сразу возрождение в городе (сервер переносит
+  // в зал — обработчик respawn, server/handlers2/world.js).
+  if (modal) modal.style.display = 'none';
+  respawnPlayer();
 }
 
 function respawnPlayer() {
