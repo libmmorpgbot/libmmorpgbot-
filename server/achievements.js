@@ -19,11 +19,6 @@ const items = require('./db/repos/items');
 const money = require('./db/repos/money');
 const runes = require('./db/repos/runes');
 const { ACH_METRICS, ACHIEVEMENTS, achievementById } = require('../shared/definitions');
-const battlepass = require('./battlepass');
-
-// Боевой пропуск считает те же события: ковка руны любой редкости и неудачная
-// — одна его метрика «выковать руну».
-const _BP_METRIC = { runeCommon: 'runeCraft', runeUncommon: 'runeCraft', runeRare: 'runeCraft', runeEpic: 'runeCraft', runeLegendary: 'runeCraft', runeFail: 'runeCraft' };
 
 class AchError extends Error {
   constructor(code, msg) { super(msg); this.code = code; this.userMessage = msg; }
@@ -69,9 +64,6 @@ async function bumpIn(t, s, metric, amount = 1) {
   const def = Object.hasOwn(ACH_METRICS, metric) ? ACH_METRICS[metric] : null;
   const n = Math.floor(Number(amount) || 0);
   if (!def || def.kind === 'lvl' || !(n > 0)) return null;
-  // Пропуск — до проверки «достижение уже закрыто до конца»: его счётчики
-  // свои и копятся каждый сезон заново.
-  if (def.kind === 'sum') await battlepass.bumpIn(t, s, _BP_METRIC[metric] || metric, n);
   if (!s || !s.playerId || _maxed(s, metric)) return null;
   if (!await _ready()) return null;
   // «Было» — для уведомления о только что открытом. У суммы это просто

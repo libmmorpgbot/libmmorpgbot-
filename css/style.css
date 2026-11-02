@@ -4304,7 +4304,7 @@ canvas { display:block; width:100%; height:100%; }
    column is laid out top-down from _positionHudMenuBtn (js/ui.js), which
    chains each button off the one above it in steps of that height. */
 #hud-menu-btn, #rating-btn, #vip-btn, #market-btn,
-#gram-shop-btn, #events-btn, #season-btn, #codex-btn, #ach-btn, #bp-btn {
+#gram-shop-btn, #events-btn, #season-btn, #codex-btn, #ach-btn, #helpers-btn {
   border-radius: 9px;
   background: linear-gradient(180deg, rgba(23,43,70,.93), rgba(10,20,33,.95));
   border-top: 1px solid rgba(108,182,240,.34);
@@ -4314,7 +4314,7 @@ canvas { display:block; width:100%; height:100%; }
   letter-spacing: .3px;
 }
 #hud-menu-btn:active, #rating-btn:active, #vip-btn:active, #market-btn:active,
-#gram-shop-btn:active, #events-btn:active, #season-btn:active, #codex-btn:active, #ach-btn:active, #bp-btn:active {
+#gram-shop-btn:active, #events-btn:active, #season-btn:active, #codex-btn:active, #ach-btn:active, #helpers-btn:active {
   background: linear-gradient(180deg, rgba(40,76,118,.95), rgba(16,32,52,.96));
 }
 /* Ползунок прозрачности джойстика (Профиль → Звук). Дорожка тёмная, а
@@ -5758,65 +5758,3 @@ canvas { display:block; width:100%; height:100%; }
 .hlp-craft-pic { padding: 0; margin: 0; border: none; background: none; cursor: pointer; touch-action: manipulation; border-radius: 8px; line-height: 0; }
 .hlp-craft-pic:active { transform: scale(.92); }
 .hlp-prev-ov { z-index: 2000; }
-
-/* ══ Боевой пропуск (js/battlepass.js) ══════════════════════════════════════ */
-#bp-btn {
-  position: absolute; display: none; align-items: center; justify-content: center; gap: 4px;
-  height: 28px; border-left: 3px solid #f2c040; color: #ffd27a;
-  font-size: 10.5px; font-weight: 700; cursor: pointer; z-index: 50;
-}
-#bp-btn .upd-dot {
-  display: none; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%;
-  background: #ff4d4d; box-shadow: 0 0 0 2px rgba(8,13,20,.9);
-}
-#bp-btn.has-ready .upd-dot { display: block; }
-#bp-panel { position: absolute; inset: 0; z-index: 120; background: rgba(8,13,20,.97); display: flex; flex-direction: column; overflow: hidden; }
-#bp-panel, #bp-panel * { touch-action: pan-y; pointer-events: auto; }
-.bp-wrap { display: flex; flex-direction: column; gap: 10px; padding-bottom: 24px; }
-.bp-hero {
-  position: relative; text-align: center; padding: 16px 14px 14px; border-radius: 16px;
-  background: radial-gradient(90% 80% at 50% 0%, rgba(242,192,64,.18), transparent 70%), linear-gradient(180deg, #1c1a14, #0f121a);
-  border: 1px solid rgba(242,192,64,.32);
-}
-.bp-hero.premium { border-color: rgba(255,214,110,.7); box-shadow: 0 0 26px -10px rgba(255,200,80,.7); }
-.bp-hero-rule { font-size: 10px; letter-spacing: 2px; color: #c9a86a; font-weight: 800; }
-.bp-hero-title { font-size: 22px; font-weight: 900; color: #ffe2a0; margin: 2px 0 6px; text-shadow: 0 2px 12px rgba(240,184,74,.35); }
-.bp-hero-prog { font-size: 12px; color: #b6a888; }
-.bp-hero-prog b { color: #fff; font-size: 15px; }
-.bp-hero-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); margin: 6px 0 4px; overflow: hidden; }
-.bp-hero-bar i { display: block; height: 100%; background: linear-gradient(90deg, #d79a2c, #ffd77a); box-shadow: 0 0 8px rgba(240,184,74,.6); }
-.bp-hero-ends { font-size: 11px; color: #7ee0c0; margin-top: 4px; }
-.bp-buy, .bp-claim-all {
-  width: 100%; margin-top: 12px; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: 800; cursor: pointer;
-  border: 1px solid #ffd36a; color: #2a1a00; background: linear-gradient(180deg, #ffe08a, #e8a92e);
-  box-shadow: 0 4px 18px -6px rgba(255,190,60,.8); touch-action: manipulation;
-}
-.bp-buy.confirm { background: linear-gradient(180deg, #ff9a6a, #e0502e); border-color: #ffb08a; color: #fff; }
-.bp-claim-all { background: linear-gradient(180deg, #6ee0a8, #2e9a68); border-color: #9af0c8; color: #062a18; }
-.bp-buy:disabled, .bp-claim-all:disabled { opacity: .5; }
-.bp-buy-note { font-size: 11px; color: #8492a2; margin-top: 6px; line-height: 1.4; }
-.bp-owned { margin-top: 10px; font-size: 12.5px; font-weight: 800; color: #ffd27a; }
-.bp-task { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.035); border: 1px solid rgba(160,190,220,.10); }
-.bp-task.done { border-color: rgba(126,224,192,.3); }
-.bp-task-head { display: flex; gap: 10px; align-items: center; }
-.bp-task-n {
-  flex: none; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-weight: 900; font-size: 13px; color: #ffd27a; background: rgba(242,192,64,.12); border: 1px solid rgba(242,192,64,.35);
-}
-.bp-task.done .bp-task-n { color: #062a18; background: #7ee0c0; border-color: #7ee0c0; }
-.bp-task-body { flex: 1; min-width: 0; }
-.bp-task-name { font-size: 12.5px; font-weight: 700; color: #dfe6ec; margin-bottom: 5px; }
-.bp-task-prog { font-size: 10.5px; color: #8492a2; margin-top: 3px; }
-.bp-tracks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
-.bp-track { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 7px; border-radius: 10px; background: rgba(0,0,0,.25); border: 1px solid rgba(160,190,220,.12); min-width: 0; }
-.bp-track.prem { background: linear-gradient(180deg, rgba(242,192,64,.10), rgba(0,0,0,.25)); border-color: rgba(242,192,64,.3); }
-.bp-track.ready { box-shadow: 0 0 12px -4px rgba(126,224,192,.8); border-color: rgba(126,224,192,.6); }
-.bp-track.got { opacity: .55; }
-.bp-track-lbl { font-size: 9.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #8492a2; }
-.bp-track.prem .bp-track-lbl { color: #ffd27a; }
-.bp-track-rw { display: flex; flex-direction: column; gap: 3px; }
-.bp-track-rw .ach-rw { font-size: 10.5px; }
-.bp-claim { margin-top: 2px; padding: 6px; border-radius: 8px; border: 1px solid #9af0c8; background: linear-gradient(180deg, #6ee0a8, #2e9a68); color: #062a18; font-weight: 800; font-size: 11.5px; cursor: pointer; }
-.bp-claim:disabled { opacity: .5; }
-.bp-got { position: absolute; top: 5px; right: 7px; color: #7ee0c0; font-weight: 900; }
-.bp-lock { position: absolute; top: 4px; right: 6px; font-size: 11px; opacity: .8; }
