@@ -5754,3 +5754,7 @@ canvas { display:block; width:100%; height:100%; }
 .hlp-imod-close { position: absolute; top: 8px; right: 8px; z-index: 2; }
 /* Живой холст — в свой слой: перерисовка кадра не тянет за собой карточку. */
 .hlp-hero-stage canvas, .hlp-win-stage canvas { will-change: contents; transform: translateZ(0); }
+/* Иконки помощников в кузнице — кнопки: тап открывает карточку (helperPreview). */
+.hlp-craft-pic { padding: 0; margin: 0; border: none; background: none; cursor: pointer; touch-action: manipulation; border-radius: 8px; line-height: 0; }
+.hlp-craft-pic:active { transform: scale(.92); }
+.hlp-prev-ov { z-index: 2000; }

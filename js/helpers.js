@@ -1053,7 +1053,7 @@ function helperCraftTabHTML() {
     const ok = minShard >= cost && !_hlpBusy;
     const pool = HELPERS.filter(h => h.rarity === r);
     return `<div class="hlp-craft r-${r}" style="--rc:${_hlpRarCol(r)}">
-      <div class="hlp-craft-pics">${pool.map(h => _hlpIconImg(h.id, 34)).join('')}</div>
+      <div class="hlp-craft-pics">${pool.map(h => `<button class="hlp-craft-pic" title="${h.name}" onclick="helperPreview('${h.id}')">${_hlpIconImg(h.id, 34)}</button>`).join('')}</div>
       <div class="hlp-craft-txt">
         <div class="hlp-craft-name">${_HLP_RARITY_RU[r]} <small>${pool.length} ${pool.length >= 5 ? "видов" : "вида"}</small></div>
         <div class="hlp-craft-cost">по ${_hlpNum(cost)} каждого осколка</div>
@@ -1064,7 +1064,8 @@ function helperCraftTabHTML() {
   return `<div class="hlp-wrap">
     <div class="hlp-sec-hdr">🔮 Помощники — случайный выбранной редкости</div>
     <div class="hlp-shards">Осколков: всего <b>${_hlpNum(_hlpShardTotal())}</b>, меньше всего одного вида — <b>${_hlpNum(minShard)}</b>.
-      Помощник появится в сумке: нажмите на него, чтобы надеть или прокачать.</div>
+      Помощник появится в сумке: нажмите на него, чтобы надеть или прокачать.
+      Нажмите на любого помощника ниже, чтобы посмотреть, что он даёт.</div>
     ${rows}</div>`;
 }
 function helperCraft(rarity) {
@@ -1072,6 +1073,36 @@ function helperCraft(rarity) {
   _hlpBusy = true;
   if (typeof _setCraftsmanTab === 'function' && document.getElementById('npc-body')) _setCraftsmanTab('helpers');
   if (typeof netHelperCraft === 'function') netHelperCraft(rarity);
+}
+
+// Карточка помощника из кузницы: кто он, что даёт на 1-м уровне и на
+// максимальном. Не трогает ни сумку, ни сервер — только показывает.
+function helperPreview(id) {
+  const def = helperById(id);
+  if (!def) return;
+  document.getElementById('hlp-prev-ov')?.remove();
+  const col = _hlpRarCol(def.rarity);
+  const b1 = helperBonusAt(def.id, 1) || {}, bMax = helperBonusAt(def.id, HELPER_MAX_LEVEL) || {};
+  const rows = Object.keys(def.stats).map(k => `
+    <div class="hlp-stat"><span>${_HLP_STAT_RU[k] || k}</span>
+      <b>${_hlpFmtStat(k, b1[k])}</b><i>→ ${_hlpFmtStat(k, bMax[k])}</i></div>`).join('');
+  const ov = document.createElement('div');
+  ov.id = 'hlp-prev-ov';
+  ov.className = 'ach-win-ov hlp-prev-ov';
+  ov.onclick = () => ov.remove();
+  ov.innerHTML = `
+    <div class="db-win-panel hlp-win r-${def.rarity}" onclick="event.stopPropagation()" style="--rc:${col}">
+      <div class="hlp-win-stage">${_hlpCv(def.id, 150)}</div>
+      <div class="hlp-win-rar">${_HLP_RARITY_RU[def.rarity]}</div>
+      <div class="hlp-win-name">${def.name}</div>
+      <div class="db-win-sub">Характеристики на 1-м уровне → на ${HELPER_MAX_LEVEL}-м</div>
+      <div class="hlp-stats hlp-win-stats">${rows}</div>
+      <div class="db-win-sub" style="font-size:11px;opacity:.8">Каждый уровень: +${Math.round(HELPER_LEVEL_GROWTH * 100)}% к характеристикам 1-го уровня.
+        Создание — по ${_hlpNum(HELPER_CRAFT_COST[def.rarity])} каждого осколка, выпадает случайный помощник этой редкости.</div>
+      <button class="db-win-btn" onclick="document.getElementById('hlp-prev-ov')?.remove()">Закрыть</button>
+    </div>`;
+  document.body.appendChild(ov);
+  _hlpStartAnim();
 }
 
 // Окно «Новый помощник!» — большой, с лучами за спиной.
