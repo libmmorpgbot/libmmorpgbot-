@@ -4904,6 +4904,81 @@ function achievementById(id) {
   return (typeof id === 'string' && ACH_BY_ID.get(id)) || null;
 }
 
+// ── Боевой пропуск (сезон 5) ─────────────────────────────────────────────────
+// 30 заданий на весь сезон: счётчики копятся до SEASON_END_AT и не
+// сбрасываются по дням. У каждого задания две награды — бесплатная (всем) и
+// премиальная (купившим пропуск за BATTLE_PASS_PRICE GRAM). Пропуск можно
+// купить в любой момент сезона: премиальные награды за уже выполненные
+// задания тоже забираются. Счётчики растут от тех же событий, что двигают
+// достижения и сезонные задания (server/battlepass.js, BP_METRICS ниже).
+//
+// Награда: { t: 'item', id, qty } | { t: 'gold'|'nexum', n } |
+//          { t: 'rune', kind, rarity } | { t: 'helper', rarity } (случайный
+//          помощник этой редкости, 1-го уровня).
+const BATTLE_PASS_SEASON = 5;
+const BATTLE_PASS_PRICE = 7;
+// Что считает пропуск, и как это назвать игроку. {n} — цель.
+const BP_METRICS = {
+  kills:        'Убить {n} монстров',
+  killDung:     'Убить {n} монстров в Подземелье',
+  killFarm:     'Убить {n} монстров в Фарм-зоне',
+  killFarm2:    'Убить {n} монстров в Элитной фарм-зоне',
+  killFarmHigh: 'Убить {n} монстров в Фарм-зоне 2',
+  elite:        'Убить элитного монстра ({n})',
+  bossHit:      'Сразиться с мировым боссом {n} раз',
+  tower:        'Пройти Кровавую Башню {n} раз',
+  chat:         'Написать {n} сообщений в общий чат',
+  enhOk:        'Успешно заточить предмет {n} раз',
+  gearCraft:    'Выковать снаряжение {n} раз',
+  potionCraft:  'Сварить зелье {n} раз',
+  petCraft:     'Создать питомца {n} раз',
+  boxOpen:      'Открыть {n} сундуков',
+  mktBuy:       'Купить на рынке {n} раз',
+  mktSell:      'Продать на рынке {n} раз',
+  runeCraft:    'Выковать руну {n} раз',
+  runeSocket:   'Вставить руну в предмет {n} раз',
+  helperFeed:   'Покормить помощника {n} раз',
+  helperCraft:  'Создать помощника {n} раз',
+};
+const _bpI = (id, qty = 1) => ({ t: 'item', id, qty });
+const BATTLE_PASS_TASKS = [
+  { n: 1,  metric: 'kills',        target: 500,   free: [{ t: 'gold', n: 20000 }],  prem: [_bpI('bless_stone', 2)] },
+  { n: 2,  metric: 'chat',         target: 10,    free: [_bpI('box_uncommon')],      prem: [_bpI('box_rare')] },
+  { n: 3,  metric: 'killDung',     target: 2000,  free: [_bpI('norm_stone', 3)],     prem: [_bpI('bless_stone', 2)] },
+  { n: 4,  metric: 'enhOk',        target: 5,     free: [_bpI('norm_stone', 5)],     prem: [{ t: 'nexum', n: 300 }] },
+  { n: 5,  metric: 'boxOpen',      target: 5,     free: [{ t: 'gold', n: 30000 }],  prem: [_bpI('box_rare', 2)] },
+  { n: 6,  metric: 'kills',        target: 3000,  free: [_bpI('box_uncommon', 2)],   prem: [_bpI('bless_stone', 3)] },
+  { n: 7,  metric: 'potionCraft',  target: 5,     free: [_bpI('bp_atk', 2)],         prem: [_bpI('bp_hp', 2), _bpI('bp_exp', 2), _bpI('bp_gold', 2), _bpI('bp_atk', 2)] },
+  { n: 8,  metric: 'killFarm',     target: 5000,  free: [_bpI('ore_rare', 100)],     prem: [{ t: 'nexum', n: 500 }] },
+  { n: 9,  metric: 'mktBuy',       target: 3,     free: [_bpI('key_uncommon', 2)],   prem: [_bpI('key_rare', 2)] },
+  { n: 10, metric: 'elite',        target: 1,     free: [_bpI('box_rare')],          prem: [_bpI('liberty_bag')] },
+  { n: 11, metric: 'gearCraft',    target: 3,     free: [_bpI('norm_stone', 10)],    prem: [_bpI('bless_stone', 3)] },
+  { n: 12, metric: 'tower',        target: 3,     free: [{ t: 'gold', n: 50000 }],  prem: [_bpI('box_rare', 3)] },
+  { n: 13, metric: 'runeCraft',    target: 5,     free: [_bpI('ore_uncommon', 200)], prem: [{ t: 'rune', kind: 'armor', rarity: 'rare' }] },
+  { n: 14, metric: 'killDung',     target: 10000, free: [_bpI('box_uncommon', 3)],   prem: [{ t: 'nexum', n: 800 }] },
+  { n: 15, metric: 'helperFeed',   target: 10,    free: [_bpI('star_shard', 5)],     prem: [{ t: 'helper', rarity: 'rare' }] },
+  { n: 16, metric: 'kills',        target: 10000, free: [_bpI('bless_stone', 2)],    prem: [_bpI('box_rare', 3)] },
+  { n: 17, metric: 'enhOk',        target: 20,    free: [_bpI('norm_stone', 15)],    prem: [_bpI('bless_stone', 5)] },
+  { n: 18, metric: 'bossHit',      target: 3,     free: [_bpI('box_rare')],          prem: [_bpI('box_rare', 4)] },
+  { n: 19, metric: 'mktSell',      target: 3,     free: [{ t: 'gold', n: 80000 }],  prem: [{ t: 'nexum', n: 1000 }] },
+  { n: 20, metric: 'killFarmHigh', target: 10000, free: [_bpI('ore_rare', 200)],     prem: [{ t: 'rune', kind: 'weapon', rarity: 'epic' }] },
+  { n: 21, metric: 'runeSocket',   target: 3,     free: [_bpI('box_uncommon', 3)],   prem: [_bpI('liberty_bag')] },
+  { n: 22, metric: 'petCraft',     target: 1,     free: [_bpI('key_rare')],          prem: [_bpI('bless_stone', 5)] },
+  { n: 23, metric: 'kills',        target: 25000, free: [_bpI('box_rare', 2)],       prem: [_bpI('box_rare', 5)] },
+  { n: 24, metric: 'boxOpen',      target: 30,    free: [_bpI('bless_stone', 3)],    prem: [{ t: 'nexum', n: 1500 }] },
+  { n: 25, metric: 'chat',         target: 100,   free: [{ t: 'gold', n: 150000 }], prem: [_bpI('liberty_bag')] },
+  { n: 26, metric: 'killFarm2',    target: 20000, free: [_bpI('ore_epic', 100)],     prem: [{ t: 'rune', kind: 'armor', rarity: 'epic' }] },
+  { n: 27, metric: 'enhOk',        target: 50,    free: [_bpI('bless_stone', 5)],    prem: [_bpI('bless_stone', 8)] },
+  { n: 28, metric: 'tower',        target: 10,    free: [_bpI('box_rare', 3)],       prem: [_bpI('liberty_bag', 2)] },
+  { n: 29, metric: 'kills',        target: 60000, free: [_bpI('liberty_bag')],       prem: [{ t: 'nexum', n: 3000 }] },
+  { n: 30, metric: 'helperCraft',  target: 3,     free: [_bpI('box_rare', 5)],       prem: [{ t: 'helper', rarity: 'epic' }] },
+];
+const BP_TASK_BY_N = new Map(BATTLE_PASS_TASKS.map(x => [x.n, x]));
+function bpTaskByN(n) { return BP_TASK_BY_N.get(Math.floor(Number(n))) || null; }
+// Метрики, которые вообще кто-то ждёт: события вне этого набора пропуск не
+// пишет — лишний запрос на каждое убийство ни к чему.
+const BP_USED_METRICS = new Set(BATTLE_PASS_TASKS.map(x => x.metric));
+
 // ── Помощники ───────────────────────────────────────────────────────────────
 // Летающие спутники: висят у плеча и дают постоянную прибавку к
 // характеристикам. С миграции 049 — ПРЕДМЕТЫ: строка player_items со
@@ -5202,6 +5277,7 @@ if (typeof module !== 'undefined') module.exports = {
   AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
   ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
   HELPERS, HELPER_RARITIES, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP, HELPER_DUP_XP,
-  HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN, helperById, helperXpToNext, helperFeedCost,
+  HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN,
+  BATTLE_PASS_SEASON, BATTLE_PASS_PRICE, BP_METRICS, BATTLE_PASS_TASKS, bpTaskByN, BP_USED_METRICS, helperById, helperXpToNext, helperFeedCost,
   helperBonusAt, helperAddXp, helperFeedPlan,
 };

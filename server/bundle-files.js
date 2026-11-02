@@ -32,6 +32,7 @@ module.exports = [
   'js/quests.js',
   'js/clans.js',
   'js/helpers.js',
+  'js/battlepass.js',
   'js/pixi-world.js',
   'js/game.js',
   'js/npc.js',

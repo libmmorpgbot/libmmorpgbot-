@@ -380,6 +380,36 @@ module.exports = function registerProgression(s, safeOn) {
     return res;
   }, r => r && { id: r.id, granted: r.granted.length }));
 
+  // ── боевой пропуск ───────────────────────────────────────────────────────
+  // Окно читает всё разом (bpState) после каждого действия: счётчики,
+  // куплен ли премиум, что уже забрано. Задания и награды — из
+  // BATTLE_PASS_TASKS (shared/definitions.js), проверка — заново на сервере.
+  const bp = require('../battlepass');
+  safeOn('bpSync', () => s.act('bpSync', 'bpError', async (t, pid) => {
+    s.socket.emit('bpState', await bp.stateOf(t, pid));
+  }));
+  safeOn('bpBuy', () => s.act('bpBuy', 'bpError', async (t, pid) => {
+    const res = await bp.buy(t, pid);
+    await s.pushBalances(t);
+    s.socket.emit('bpBought', res);
+    s.socket.emit('bpState', await bp.stateOf(t, pid));
+    return res;
+  }));
+  safeOn('bpClaim', ({ n, track } = {}) => s.act('bpClaim', 'bpError', async (t, pid) => {
+    const res = await bp.claim(t, pid, n, track);
+    await s.pushItems(t); await s.pushBalances(t);
+    s.socket.emit('bpClaimed', { claimed: [res] });
+    s.socket.emit('bpState', await bp.stateOf(t, pid));
+    return res;
+  }, r => r && { n: r.n, track: r.track, granted: r.granted.length }));
+  safeOn('bpClaimAll', () => s.act('bpClaimAll', 'bpError', async (t, pid) => {
+    const res = await bp.claimAll(t, pid);
+    await s.pushItems(t); await s.pushBalances(t);
+    s.socket.emit('bpClaimed', res);
+    s.socket.emit('bpState', await bp.stateOf(t, pid));
+    return res;
+  }, r => r && { claimed: r.claimed.length, stopped: r.stopped || null }));
+
   // ── season ───────────────────────────────────────────────────────────────
   // Burning destroys gear for points — no gold back, no materials. The old
   // handler could not make the destruction and the award one write, so it

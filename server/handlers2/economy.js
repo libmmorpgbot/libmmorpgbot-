@@ -137,6 +137,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   safeOn('helperCraft', ({ rarity } = {}) => s.act('helperCraft', 'helperError', async (t, pid) => {
     if (typeof rarity !== 'string' || !rarity) fail('Не выбрана редкость помощника', 'bad_rarity');
     const res = await helpers.craft(t, pid, rarity);
+    await require('../battlepass').bumpIn(t, s, 'helperCraft', 1);
     await s.pushItems(t); await s.pushStats(t);
     s.socket.emit('helperCrafted', res);
     return res;
@@ -146,6 +147,7 @@ module.exports = function registerEconomy(s, safeOn, deps) {
     const n = Math.floor(Number(times) || 1);
     if (!(n >= 1)) fail('Неверное число кормлений', 'bad_times');
     const res = await helpers.feed(t, pid, rowId, n);
+    await require('../battlepass').bumpIn(t, s, 'helperFeed', res.feeds);
     await s.pushItems(t); await s.pushStats(t);
     s.socket.emit('helperFed', res);
     return res;

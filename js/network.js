@@ -2838,6 +2838,15 @@ function netConnect(onReady) {
   // season panel can be told "no" about.
   // ── достижения ──────────────────────────────────────────────────────────
   socket.on('achState', (st) => { if (typeof onAchState === 'function') onAchState(st); });
+  // ── боевой пропуск ──────────────────────────────────────────────────────
+  socket.on('bpState', (st) => { if (typeof onBpState === 'function') onBpState(st); });
+  socket.on('bpBought', (r) => { if (typeof onBpBought === 'function') onBpBought(r); });
+  socket.on('bpClaimed', (r) => { if (typeof onBpClaimed === 'function') onBpClaimed(r); });
+  socket.on('bpTaskDone', (r) => { if (typeof onBpTaskDone === 'function') onBpTaskDone(r); });
+  socket.on('bpError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+    if (typeof onBpError === 'function') onBpError();
+  });
   // ── помощники ───────────────────────────────────────────────────────────
   socket.on('helperCrafted', (res) => { if (typeof showHelperCrafted === 'function') showHelperCrafted(res); });
   socket.on('helperFed', (res) => { if (typeof onHelperFed === 'function') onHelperFed(res); });
@@ -4277,6 +4286,9 @@ function _finishOnlineStart() {
   // горела, не дожидаясь, пока окно откроют.
   if (typeof showAchBtn === 'function') showAchBtn();
   netAchSync();
+  // Боевой пропуск: кнопка и сразу состояние — точка «есть что забрать».
+  if (typeof showBpBtn === 'function') showBpBtn();
+  netBpSync();
   // Итог оффлайн-фарма пришёл сразу после authOk, когда показывать его было
   // некуда, — показывается здесь, как только игрок в мире.
   if (typeof offlineFarmShowPending === 'function') offlineFarmShowPending();
@@ -5625,6 +5637,10 @@ function netClaimQuest(idx) {
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
 function netAchSync()       { if (socket?.connected) socket.emit('achSync'); }
 function netAchClaim(id)    { if (socket?.connected) socket.emit('achClaim', { id }); }
+function netBpSync()       { if (socket?.connected) socket.emit('bpSync'); }
+function netBpBuy()        { if (socket?.connected) socket.emit('bpBuy'); }
+function netBpClaim(n, track) { if (socket?.connected) socket.emit('bpClaim', { n, track }); }
+function netBpClaimAll()   { if (socket?.connected) socket.emit('bpClaimAll'); }
 function netHelperCraft(rarity) { if (socket?.connected) socket.emit('helperCraft', { rarity }); }
 function netHelperFeed(rowId, times) { if (socket?.connected) socket.emit('helperFeed', { rowId, times }); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
