@@ -1650,6 +1650,13 @@ function _drawOtherPlayerNamesOnUI() {
       const lineY = sy - 16;
       ctx.drawImage(_getOtherClanIconCv(p.clanIcon || 1), lineX, lineY - iconDisp / 2, iconDisp, iconDisp);
       _drawClanTagBitmap(p._clanTagBitmap, lineX + iconDisp + gap, lineY);
+      // Война кланов: над врагом — красные скрещённые мечи.
+      if (clanWarEnemies.size && clanWarEnemies.has(cname.toLowerCase()) && typeof drawIconCtx === 'function') {
+        ctx.save();
+        ctx.shadowColor = 'rgba(255,40,40,0.9)'; ctx.shadowBlur = 6;
+        drawIconCtx(ctx, 'swords', sx, lineY - 15, 16, '#ff3b3b');
+        ctx.restore();
+      }
     }
 
     _drawNameBitmap(p._nameBitmap, sx, sy);

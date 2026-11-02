@@ -745,6 +745,7 @@ function _setClanHomeTab(n) {
   _clanHomeTab = n;
   _clxOpenMember = null;
   if (n === 5 && typeof netGuildBossSync === 'function') netGuildBossSync();
+  if (n === 6 && typeof netClanWarSync === 'function') netClanWarSync();
   updateClanUI();
 }
 
@@ -781,6 +782,7 @@ const _CLX_TABS = [
   { icon: 'storage', key: 'clxTabStorage', ru: 'Склад' },
   { icon: 'trophy',  key: 'clxTabDonors',  ru: 'Вклад' },
   { icon: 'skullFace', key: 'clxTabBoss',  ru: 'Босс' },
+  { icon: 'swords',  key: 'clxTabWars',    ru: 'Войны' },
 ];
 const _CLX_BONUS = [
   { k: 'gold', icon: 'coin',      key: 'clanPerkGold', ru: 'Золото',        col: '#f0c75e' },
@@ -823,6 +825,7 @@ function _renderClanHome(el) {
   else if (_clanHomeTab === 3) body = _clanStorageHTML();
   else if (_clanHomeTab === 4) body = _clanActivityHTML();
   else if (_clanHomeTab === 5) body = _clanBossHTML();
+  else if (_clanHomeTab === 6) body = _clanWarsHTML(c, isLeader);
 
   el.innerHTML = `
     <div class="clx">
@@ -1546,4 +1549,65 @@ function onClanSearchResults(results) {
   el.innerHTML = results.length
     ? results.map(_clanResultRowHTML).join('')
     : `<div class="clan-nores">${typeof t === 'function' ? t('clanNotFound') : 'Кланы не найдены'}</div>`;
+}
+
+
+// ── Войны кланов ──────────────────────────────────────────
+// Клан CLAN_WAR_MIN_LEVEL+ уровня объявляет войну по названию; лидер второго
+// клана принимает или отклоняет. Пока война идёт, убийства врагов не дают
+// кармы, а над ними — красные мечи. Всё решает сервер
+// (server/db/repos/clanwars.js), окно только показывает и просит.
+function onClanWarState() {
+  if (typeof clanData !== 'undefined' && clanData && _clanHomeTab === 6 && typeof updateClanUI === 'function') {
+    const inp = document.getElementById('clan-war-inp');
+    const keep = inp ? inp.value : '';
+    updateClanUI();
+    const again = document.getElementById('clan-war-inp');
+    if (again && keep) again.value = keep;
+  }
+}
+function _clanWarDeclare() {
+  const v = (document.getElementById('clan-war-inp') || {}).value || '';
+  if (!v.trim()) { if (typeof _marketToast === 'function') _marketToast('Введите название клана', 'err'); return; }
+  if (typeof netClanWarDeclare === 'function') netClanWarDeclare(v.trim());
+}
+function _clanWarsHTML(c, isLeader) {
+  const minLvl = typeof CLAN_WAR_MIN_LEVEL !== 'undefined' ? CLAN_WAR_MIN_LEVEL : 10;
+  const st = (typeof clanWarData !== 'undefined' && clanWarData) || { wars: [] };
+  if (st.ready === false && !(st.wars || []).length) {
+    return `<div class="clx-card"><div class="clx-hint">Войны кланов скоро появятся</div></div>`;
+  }
+  const wars = st.wars || [];
+  const active = wars.filter(w => w.status === 'active');
+  const incoming = wars.filter(w => w.status === 'pending' && !w.outgoing);
+  const outgoing = wars.filter(w => w.status === 'pending' && w.outgoing);
+  const swords = _clxIco('swords', 14, '#ff5a5a');
+  const row = (w, acts) => `<div class="clx-war-row">
+      <span class="clx-war-name">${swords} ${_esc(w.enemyName)}</span>
+      <span class="clx-war-acts">${isLeader ? acts : ''}</span>
+    </div>`;
+  const declare = isLeader
+    ? ((c.level || 1) >= minLvl
+      ? `<div class="clx-card">
+          <div class="clx-war-h">Объявить войну</div>
+          <div class="clx-war-form">
+            <input id="clan-war-inp" class="clan-input" maxlength="10" placeholder="Название клана">
+            <button class="clx-btn danger" onclick="_clanWarDeclare()">${swords} Объявить</button>
+          </div>
+          <div class="clx-hint" style="margin-top:6px;text-align:left">Война начнётся, когда лидер того клана примет вызов.</div>
+        </div>`
+      : `<div class="clx-card"><div class="clx-hint">Объявить войну можно с ${minLvl} уровня клана (сейчас ${c.level || 1})</div></div>`)
+    : '';
+  return `
+    <div class="clx-card clx-war-about">
+      ${swords} <b>Война кланов</b> — пока она идёт, убийство игрока вражеского клана не даёт кармы, а над врагами горят красные мечи.
+    </div>
+    ${incoming.length ? `<div class="clx-card"><div class="clx-war-h">Вам бросили вызов</div>
+      ${incoming.map(w => row(w, `<button class="clx-btn sm" onclick="netClanWarAccept(${w.id})">Принять</button><button class="clx-btn sm ghost" onclick="netClanWarDecline(${w.id})">Отказать</button>`)).join('')}</div>` : ''}
+    <div class="clx-card"><div class="clx-war-h">Идут войны${active.length ? ` (${active.length})` : ''}</div>
+      ${active.length ? active.map(w => row(w, `<button class="clx-btn sm ghost" onclick="netClanWarEnd(${w.id})">Закончить</button>`)).join('')
+        : '<div class="clx-hint" style="text-align:left">Войн нет</div>'}</div>
+    ${outgoing.length ? `<div class="clx-card"><div class="clx-war-h">Ждут ответа</div>
+      ${outgoing.map(w => row(w, `<button class="clx-btn sm ghost" onclick="netClanWarDecline(${w.id})">Отозвать</button>`)).join('')}</div>` : ''}
+    ${declare}`;
 }

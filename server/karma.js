@@ -108,6 +108,10 @@ async function _dropItem(t, victimId, killerId) {
 async function onPvpKill(t, vs, ks, floorId) {
   if (!vs || !ks || !vs.playerId || !ks.playerId || vs.playerId === ks.playerId) return null;
   if (!isKarmaFloor(floorId) || !await ready()) return null;
+  // Война кланов: враги бьют друг друга без кармы — ни начисления, ни
+  // выпадения вещей (server/db/repos/clanwars.js).
+  const ca = vs.clan && vs.clan.clanId, cb = ks.clan && ks.clan.clanId;
+  if (ca && cb && await require('./db/repos/clanwars').atWar(t, ca, cb)) return { war: true };
   const victimKarma = await load(t, vs.playerId);
   vs.karma = victimKarma;
   let drop = null;

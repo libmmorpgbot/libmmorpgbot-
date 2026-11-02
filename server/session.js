@@ -92,6 +92,8 @@ const WRITE_ACTIONS = new Set([
   'achClaim',
   // Помощники: крафт и кормление съедают осколки — «куда делись осколки».
   'helperCraft', 'helperFeed',
+  // Войны кланов: кто кому объявил, принял, закончил.
+  'clanWarDeclare', 'clanWarAccept', 'clanWarDecline', 'clanWarEnd',
 ]);
 
 // ── чего здесь БОЛЬШЕ НЕТ, и почему ─────────────────────────────────────────

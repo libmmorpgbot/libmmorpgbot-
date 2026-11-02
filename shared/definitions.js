@@ -4904,6 +4904,11 @@ function achievementById(id) {
   return (typeof id === 'string' && ACH_BY_ID.get(id)) || null;
 }
 
+// ── Войны кланов ────────────────────────────────────────────────────────────
+// Объявить войну может лидер клана этого уровня и выше (server/db/repos/
+// clanwars.js). Пока война идёт, убийства врагов не дают кармы.
+const CLAN_WAR_MIN_LEVEL = 10;
+
 // ── Карма (ПК в локациях) ────────────────────────────────────────────────────
 // Убийство другого игрока в обычной локации (KARMA_FLOOR_KEYS) даёт убийце
 // KARMA_PER_PK кармы; каждый убитый монстр смывает KARMA_PER_MOB. Пока карма
@@ -5225,6 +5230,7 @@ if (typeof module !== 'undefined') module.exports = {
   ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
   HELPERS, HELPER_RARITIES, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP, HELPER_DUP_XP,
   HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN,
-  KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, helperById, helperXpToNext, helperFeedCost,
+  KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance,
+  CLAN_WAR_MIN_LEVEL, helperById, helperXpToNext, helperFeedCost,
   helperBonusAt, helperAddXp, helperFeedPlan,
 };

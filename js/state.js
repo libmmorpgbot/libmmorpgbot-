@@ -208,6 +208,10 @@ let pvpMode = false;
 // Карма за ПК в локациях (server/karma.js): > 0 — ПК не выключить,
 // телепорты закрыты. Приходит событием karmaSync.
 let playerKarma = 0;
+// Войны кланов (server/db/repos/clanwars.js): список для окна клана и имена
+// кланов-врагов (в нижнем регистре) — над их игроками красные мечи.
+let clanWarData = { ready: false, wars: [], enemies: [], myClanId: null };
+let clanWarEnemies = new Set();
 // True only when the attack button was actually pressed on the current
 // target — tapping/cycling a target to look at it must not by itself make
 // the character run at it.

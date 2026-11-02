@@ -2319,6 +2319,19 @@ function netConnect(onReady) {
   });
   socket.on('clanData', data => {
     if (typeof onClanData === 'function') onClanData(data);
+    // Вступил, вышел, сменился клан — списки войн тоже другие.
+    netClanWarSync();
+  });
+  // ── войны кланов ──────────────────────────────────────────
+  socket.on('clanWarState', (st) => {
+    clanWarData = st || { ready: false, wars: [], enemies: [] };
+    clanWarEnemies = new Set((clanWarData.enemies || []).map(n => String(n).toLowerCase()));
+    if (typeof onClanWarState === 'function') onClanWarState();
+  });
+  socket.on('clanWarNotice', ({ text } = {}) => { if (typeof _marketToast === 'function' && text) _marketToast(text, 'ok'); });
+  socket.on('clanWarError', ({ msg } = {}) => {
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
+    if (typeof onClanWarState === 'function') onClanWarState();
   });
   socket.on('clanError', ({ msg }) => {
     if (typeof onClanError === 'function') onClanError(msg);
@@ -4277,6 +4290,7 @@ function _finishOnlineStart() {
   // горела, не дожидаясь, пока окно откроют.
   if (typeof showAchBtn === 'function') showAchBtn();
   netAchSync();
+  netClanWarSync();
   // Итог оффлайн-фарма пришёл сразу после authOk, когда показывать его было
   // некуда, — показывается здесь, как только игрок в мире.
   if (typeof offlineFarmShowPending === 'function') offlineFarmShowPending();
@@ -5642,6 +5656,11 @@ function netClaimQuest(idx) {
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
 function netAchSync()       { if (socket?.connected) socket.emit('achSync'); }
 function netAchClaim(id)    { if (socket?.connected) socket.emit('achClaim', { id }); }
+function netClanWarSync()        { if (socket?.connected) socket.emit('clanWarSync'); }
+function netClanWarDeclare(name)  { if (socket?.connected) socket.emit('clanWarDeclare', { name }); }
+function netClanWarAccept(warId)  { if (socket?.connected) socket.emit('clanWarAccept', { warId }); }
+function netClanWarDecline(warId) { if (socket?.connected) socket.emit('clanWarDecline', { warId }); }
+function netClanWarEnd(warId)     { if (socket?.connected) socket.emit('clanWarEnd', { warId }); }
 function netHelperCraft(rarity) { if (socket?.connected) socket.emit('helperCraft', { rarity }); }
 function netHelperFeed(rowId, times) { if (socket?.connected) socket.emit('helperFeed', { rowId, times }); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }

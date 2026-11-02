@@ -5758,3 +5758,14 @@ canvas { display:block; width:100%; height:100%; }
 .hlp-craft-pic { padding: 0; margin: 0; border: none; background: none; cursor: pointer; touch-action: manipulation; border-radius: 8px; line-height: 0; }
 .hlp-craft-pic:active { transform: scale(.92); }
 .hlp-prev-ov { z-index: 2000; }
+
+/* ── Войны кланов (js/clans.js, _clanWarsHTML) ───────────────────────────── */
+.clx-tabs { grid-template-columns: repeat(7, 1fr); }
+.clx-war-about { font-size: 11.5px; color: #c9d4de; line-height: 1.45; border-color: rgba(255,90,90,.3); background: linear-gradient(180deg, rgba(255,60,60,.08), rgba(255,255,255,.02)); }
+.clx-war-h { font-size: 12px; font-weight: 800; color: #ff9a9a; margin-bottom: 8px; }
+.clx-war-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); }
+.clx-war-row:first-of-type { border-top: 0; }
+.clx-war-name { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; color: #fff; }
+.clx-war-acts { display: inline-flex; gap: 6px; }
+.clx-war-form { display: flex; gap: 8px; }
+.clx-war-form .clan-input { flex: 1; min-width: 0; }

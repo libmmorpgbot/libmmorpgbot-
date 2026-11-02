@@ -523,6 +523,7 @@ for (const [channel, events] of Object.entries({
   petCraftError: ['craftPet'],
   guildBossError: ['guildBossSync', 'guildBossSummon', 'guildBossEnter', 'guildBossLeave'],
   helperError: ['helperCraft', 'helperFeed'],
+  clanWarError: ['clanWarSync', 'clanWarDeclare', 'clanWarAccept', 'clanWarDecline', 'clanWarEnd'],
   runeCraftError: ['craftRune'],
   runeError: ['runeSocket', 'runeUnsocket', 'runeReroll', 'runeRerollAll'],
   craftBuffPotionError: ['craftBuffPotion'],

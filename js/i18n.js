@@ -877,6 +877,7 @@ const I18N_UI = {
   clxTabStorage: { ru: 'Склад', en: 'Storage', uk: 'Сховище', es: 'Almacén', tr: 'Depo', pt: 'Armazém' },
   clxTabDonors: { ru: 'Вклад', en: 'Donors', uk: 'Внесок', es: 'Aportes', tr: 'Katkı', pt: 'Doações' },
   clxTabBoss: { ru: 'Босс', en: 'Boss', uk: 'Бос', es: 'Jefe', tr: 'Boss', pt: 'Chefe' },
+  clxTabWars: { ru: 'Войны', en: 'Wars', uk: 'Війни', es: 'Guerras', tr: 'Savaşlar', pt: 'Guerras' },
   clanDonateHdr: { ru: 'Пожертвования клану', en: 'Donate to the clan', uk: 'Пожертви клану', es: 'Donar al clan', tr: 'Klana bağış', pt: 'Doar ao clã' },
   clanDonateNote: { ru: 'Только так растёт уровень клана. До {n} раз в сутки (МСК).', en: 'The only way the clan levels up. Up to {n} times a day (MSK).', uk: 'Лише так росте рівень клану. До {n} разів на добу (МСК).', es: 'La única forma de subir el nivel del clan. Hasta {n} veces al día (MSK).', tr: 'Klan seviyesi yalnızca böyle artar. Günde en fazla {n} kez (MSK).', pt: 'É a única forma de o clã subir de nível. Até {n} vezes por dia (MSK).' },
   clanDonateNormal: { ru: 'Обычное', en: 'Regular', uk: 'Звичайне', es: 'Normal', tr: 'Normal', pt: 'Normal' },

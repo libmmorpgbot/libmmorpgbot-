@@ -91,6 +91,42 @@ module.exports = function registerSocial(s, safeOn, deps) {
     return membership;
   }
 
+  // ── войны кланов ─────────────────────────────────────────────────────────
+  // Каждый, кого война касается, получает свой список (clanWarState): окно
+  // «Войны» и мечи над врагами. После любого изменения — всем онлайн-
+  // участникам обоих кланов.
+  const clanwars = require('../db/repos/clanwars');
+  async function _pushWarsTo(t, sess) {
+    const clanId = sess.clan && sess.clan.clanId;
+    sess.socket.emit('clanWarState', { ...(await clanwars.listFor(t, clanId)), myClanId: clanId || null });
+  }
+  async function _pushWarsToClans(t, clanIds) {
+    const set = new Set(clanIds.map(Number));
+    for (const sock of io.sockets.sockets.values()) {
+      const ss = sock.data && sock.data.session;
+      if (ss && ss.authed && ss.clan && set.has(Number(ss.clan.clanId))) await _pushWarsTo(t, ss);
+    }
+  }
+  safeOn('clanWarSync', () => s.act('clanWarSync', 'clanWarError', async (t) => { await _pushWarsTo(t, s); }));
+  safeOn('clanWarDeclare', ({ name } = {}) => s.act('clanWarDeclare', 'clanWarError', async (t, pid) => {
+    const w = await clanwars.declare(t, pid, typeof name === 'string' ? name.slice(0, 20) : '');
+    await _pushWarsToClans(t, [w.from, w.to]);
+    s.socket.emit('clanWarNotice', { text: `Вызов на войну отправлен клану «${w.toName}»` });
+    return w;
+  }));
+  for (const [ev, fn, text] of [
+    ['clanWarAccept', 'accept', 'Война началась!'],
+    ['clanWarDecline', 'decline', 'Вызов закрыт'],
+    ['clanWarEnd', 'end', 'Война окончена'],
+  ]) {
+    safeOn(ev, ({ warId } = {}) => s.act(ev, 'clanWarError', async (t, pid) => {
+      const w = await clanwars[fn](t, pid, warId);
+      await _pushWarsToClans(t, [w.from, w.to]);
+      s.socket.emit('clanWarNotice', { text });
+      return w;
+    }));
+  }
+
   // ── membership ───────────────────────────────────────────────────────────
   safeOn('clanCreate', ({ name, icon } = {}) => s.act('clanCreate', 'clanError', async (t, pid) => {
     await clans.create(t, pid, _sanitizeName(name), icon);
