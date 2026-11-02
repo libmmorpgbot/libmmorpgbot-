@@ -329,6 +329,11 @@ function _hlpShine(ctx, x, y, r) {
 }
 
 function _hlpBody(ctx, def, t, tier) {
+  const L0 = def.look;
+  if (L0.body === 'drake') return _hlpDrake(ctx, def, t, tier);
+  if (L0.body === 'succubus') return _hlpHumanoid(ctx, def, t, tier, 'succubus');
+  if (L0.body === 'sprite') return _hlpHumanoid(ctx, def, t, tier, 'fairy');
+  if (L0.body === 'imp') return _hlpImp(ctx, def, t, tier);
   const L = def.look, seed = def.id.length;
   const r = 13 + tier * 1.2;
   switch (L.body) {
@@ -599,6 +604,514 @@ function _hlpBody(ctx, def, t, tier) {
   }
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+//  СУЩЕСТВА: дракон, суккуба, фея, бесёнок
+// ═════════════════════════════════════════════════════════════════════════════
+// Крупные фигуры во весь кадр, с обводкой — читаются и на значке 24 px.
+// Крылья рисуются здесь же (L.wings у них 'none'), потому что дальнее крыло
+// должно лечь ЗА тело, а ближнее — перед ним.
+
+// Смешать два цвета (#rrggbb) — 0 = a, 1 = b.
+function _hlpMix(a, b, k) {
+  const x = _hlpHex(a), y = _hlpHex(b);
+  const ch = (v, sh) => (v >> sh) & 255;
+  const m = sh => Math.round(ch(x, sh) + (ch(y, sh) - ch(x, sh)) * k);
+  return '#' + [m(16), m(8), m(0)].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+const _HLP_INK = 'rgba(20,10,30,0.55)';   // обводка
+
+// Перепончатое крыло: начало — плечо, тянется вправо (зеркалят scale(-1,1)).
+// flap −1..1 — взмах. cMem — перепонка, cBone — «пальцы».
+function _hlpBatWing(ctx, span, h, cMem, cBone, flap, alpha = 1) {
+  ctx.save();
+  ctx.rotate(-0.3 - flap * 0.5);
+  const el = [span * 0.42, -h * 0.82];
+  const tips = [[span, -h * 0.95], [span * 0.95, -h * 0.05], [span * 0.68, h * 0.42], [span * 0.36, h * 0.5]];
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(el[0], el[1]); ctx.lineTo(tips[0][0], tips[0][1]);
+  for (let i = 1; i < tips.length; i++) {
+    const a = tips[i - 1], b = tips[i];
+    ctx.quadraticCurveTo((a[0] + b[0]) / 2 * 0.62 + el[0] * 0.38, (a[1] + b[1]) / 2 * 0.62 + el[1] * 0.38, b[0], b[1]);
+  }
+  ctx.quadraticCurveTo(span * 0.12, h * 0.42, 0, h * 0.12);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, -h, span * 0.8, h * 0.5);
+  g.addColorStop(0, _hlpRgba(_hlpMix(cMem, '#ffffff', 0.15), 0.92 * alpha)); g.addColorStop(1, _hlpRgba(cMem, 0.78 * alpha));
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = _hlpRgba(cBone, 0.7 * alpha); ctx.lineWidth = 0.9; ctx.stroke();
+  ctx.strokeStyle = _hlpRgba(cBone, alpha); ctx.lineCap = 'round';
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(el[0], el[1]); ctx.stroke();
+  ctx.lineWidth = 0.9;
+  for (const tp of tips) { ctx.beginPath(); ctx.moveTo(el[0], el[1]); ctx.lineTo(tp[0], tp[1]); ctx.stroke(); }
+  ctx.fillStyle = _hlpRgba('#f4eadf', alpha);
+  ctx.beginPath(); ctx.moveTo(el[0] - 1, el[1]); ctx.lineTo(el[0] + 1, el[1] - 4); ctx.lineTo(el[0] + 2, el[1] + 0.5); ctx.fill();
+  ctx.restore();
+}
+
+// Крылья феи: две пары прозрачных, с прожилками и светлой каймой.
+function _hlpFairyWings(ctx, L, t, big = 1) {
+  const flap = Math.sin(t * 14);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of [-1, 1]) {
+    ctx.save(); ctx.scale(s, 1); ctx.translate(2, -2);
+    ctx.rotate(-0.1 - flap * 0.18);
+    for (const [len, wid, rot] of [[30 * big, 15 * big, -0.75], [22 * big, 10 * big, 0.55]]) {
+      ctx.save(); ctx.rotate(rot);
+      const g = ctx.createLinearGradient(0, 0, len, 0);
+      g.addColorStop(0, _hlpRgba(L.glow, 0.7)); g.addColorStop(0.55, _hlpRgba(L.wing || L.c1, 0.45)); g.addColorStop(1, _hlpRgba(L.glow, 0.15));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.bezierCurveTo(len * 0.2, -wid, len * 0.95, -wid * 1.05, len, -wid * 0.1);
+      ctx.bezierCurveTo(len * 0.95, wid * 0.55, len * 0.35, wid * 0.6, 0, 0); ctx.fill();
+      ctx.strokeStyle = _hlpRgba('#ffffff', 0.6); ctx.lineWidth = 0.8; ctx.stroke();
+      ctx.strokeStyle = _hlpRgba('#ffffff', 0.35); ctx.lineWidth = 0.6;
+      for (const k of [0.35, 0.6, 0.85]) {
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(len * k * 0.6, -wid * 0.45, len * k, -wid * (0.75 - k * 0.5)); ctx.stroke();
+      }
+      ctx.fillStyle = _hlpRgba('#ffffff', 0.6);
+      ctx.beginPath(); ctx.arc(len * 0.62, -wid * 0.35, 1.6 * big, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// Глаза существ в аниме-манере: высокий овал радужки с бликами и чёрточка
+// ресниц сверху. Моргают раз в несколько секунд.
+function _hlpAlmondEyes(ctx, x, y, gap, w, h, iris, t, seed, opts = {}) {
+  const ph = (t + seed) % 4.1;
+  const open = ph < 0.14 ? Math.abs(ph - 0.07) / 0.07 : 1;
+  for (const s of [-1, 1]) {
+    const ex = x + s * gap;
+    ctx.save(); ctx.translate(ex, y);
+    if (open < 0.35) {
+      ctx.strokeStyle = '#2a1424'; ctx.lineWidth = 0.9; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(-w * 0.7, 0); ctx.quadraticCurveTo(0, h * 0.5, w * 0.7, 0); ctx.stroke();
+      ctx.restore(); continue;
+    }
+    const rw = w * 0.62, rh = h * 1.05;
+    const ig = ctx.createLinearGradient(0, -rh, 0, rh);
+    ig.addColorStop(0, _hlpMix(iris, '#000000', 0.45)); ig.addColorStop(0.55, iris); ig.addColorStop(1, _hlpMix(iris, '#ffffff', opts.glowIris ? 0.7 : 0.45));
+    ctx.fillStyle = ig;
+    ctx.beginPath(); ctx.ellipse(0, 0, rw, rh, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = opts.slit ? '#120408' : _hlpMix(iris, '#000000', 0.7);
+    ctx.beginPath(); opts.slit ? ctx.ellipse(0, 0, rw * 0.22, rh * 0.75, 0, 0, Math.PI * 2) : ctx.ellipse(0, -rh * 0.1, rw * 0.42, rh * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(-rw * 0.35, -rh * 0.45, rw * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(rw * 0.35, rh * 0.45, rw * 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#2a1424'; ctx.lineWidth = 0.9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-rw * 1.25, -rh * 0.55); ctx.quadraticCurveTo(0, -rh * 1.45, rw * 1.3, -rh * 0.7); ctx.stroke();
+    if (opts.lashes) {
+      ctx.lineWidth = 0.7;
+      ctx.beginPath(); ctx.moveTo(s * rw * 1.2, -rh * 0.65); ctx.lineTo(s * rw * 1.75, -rh * 1.1); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+// ── летающий дракон (вид в три четверти, мордой вправо) ─────────────────────
+function _hlpDrake(ctx, def, t, tier) {
+  const L = def.look, seed = def.id.length;
+  const k = 0.8 + tier * 0.045;
+  ctx.save(); ctx.translate(-4, 3); ctx.scale(k, k);
+  const flap = Math.sin(t * 5.5);
+  const body = L.c2, belly = L.c1, dark = _hlpMix(L.c2, '#000000', 0.45), horn = L.horn || '#f1e3c4';
+  const memb = L.memb || _hlpMix(L.c2, L.glow, 0.35);
+  const bone = _hlpMix(L.c2, '#000000', 0.2);
+  // крылья — оба за телом, растут из спины: дальнее темнее и выше
+  ctx.save(); ctx.translate(4, -6); ctx.scale(-1, 1); ctx.rotate(0.75);
+  _hlpBatWing(ctx, 34, 26, _hlpMix(memb, '#000000', 0.35), bone, flap, 0.95);
+  ctx.restore();
+  ctx.save(); ctx.translate(-3, -4); ctx.scale(-1, 1); ctx.rotate(0.3);
+  _hlpBatWing(ctx, 40, 30, memb, bone, Math.sin(t * 5.5 + 0.25), 1);
+  ctx.restore();
+  // хвост
+  const tw = Math.sin(t * 2.2) * 4;
+  ctx.strokeStyle = dark; ctx.lineCap = 'round'; ctx.lineWidth = 9.5;
+  const tail = () => { ctx.beginPath(); ctx.moveTo(-6, 10); ctx.bezierCurveTo(-18, 22, -30, 20 + tw, -33, 8 + tw); };
+  tail(); ctx.stroke();
+  ctx.strokeStyle = body; ctx.lineWidth = 7.5; tail(); ctx.stroke();
+  ctx.save(); ctx.translate(-33, 8 + tw); ctx.rotate(-1.3 + tw * 0.03);
+  ctx.fillStyle = L.tip || dark;
+  ctx.beginPath(); ctx.moveTo(0, -2); ctx.lineTo(-6, -10); ctx.lineTo(4, -7); ctx.lineTo(8, -14); ctx.lineTo(5, 0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.restore();
+  // задняя лапа
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.ellipse(-7, 13, 5, 7, 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = horn;
+  for (const cx of [-10, -7.5, -5]) { ctx.beginPath(); ctx.moveTo(cx, 18); ctx.lineTo(cx - 1, 21.5); ctx.lineTo(cx + 1, 18.5); ctx.fill(); }
+  // тело
+  const bg = ctx.createRadialGradient(-2, -2, 2, 0, 4, 18);
+  bg.addColorStop(0, _hlpMix(body, '#ffffff', 0.25)); bg.addColorStop(1, body);
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(0, 5, 14, 11, -0.35, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 1.1; ctx.stroke();
+  // брюхо пластинами
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(4, 8, 8, 8.5, -0.5, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = belly; ctx.fillRect(-6, -4, 22, 24);
+  ctx.strokeStyle = _hlpMix(belly, '#000000', 0.25); ctx.lineWidth = 0.8;
+  for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(-6, i * 3.4 - 1); ctx.lineTo(16, i * 3.4 - 6); ctx.stroke(); }
+  ctx.restore();
+  // шея
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.moveTo(4, -4); ctx.quadraticCurveTo(8, -14, 15, -18); ctx.lineTo(20, -12); ctx.quadraticCurveTo(14, -6, 12, 2); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = belly;
+  ctx.beginPath(); ctx.moveTo(12, 1); ctx.quadraticCurveTo(14, -7, 19, -12); ctx.lineTo(20, -11); ctx.quadraticCurveTo(16, -5, 13.5, 3); ctx.closePath(); ctx.fill();
+  // шипы по хребту
+  ctx.fillStyle = L.spike || horn;
+  const ridge = [[13, -19, -0.6], [8, -13, -0.9], [3, -7, -1.2], [-4, -4, -1.6], [-11, 0, -2.0], [-19, 12, -2.5], [-26, 17 + tw * 0.6, -2.9]];
+  for (const [x, y, a] of ridge) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+    ctx.beginPath(); ctx.moveTo(-2.2, 0); ctx.lineTo(0, -4.5); ctx.lineTo(2.2, 0); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // передняя лапа
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(9, 13, 3.6, 6, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.9; ctx.stroke();
+  ctx.fillStyle = horn;
+  for (const cx of [8, 10.5, 13]) { ctx.beginPath(); ctx.moveTo(cx, 18); ctx.lineTo(cx + 0.6, 21.5); ctx.lineTo(cx + 1.6, 18); ctx.fill(); }
+  // голова
+  ctx.save(); ctx.translate(19, -19); ctx.rotate(0.08 + Math.sin(t * 1.7) * 0.05);
+  // рога
+  ctx.fillStyle = horn;
+  for (const [ox, len, a] of [[-5, 14, -2.45], [-1, 11, -2.2]]) {
+    ctx.save(); ctx.translate(ox, -4); ctx.rotate(a);
+    ctx.beginPath(); ctx.moveTo(0, -2.2); ctx.quadraticCurveTo(len * 0.6, -3, len, 1.5); ctx.quadraticCurveTo(len * 0.55, 0.5, 0, 2.2); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.restore();
+  }
+  const hg = ctx.createRadialGradient(-2, -3, 1, 2, 0, 13);
+  hg.addColorStop(0, _hlpMix(body, '#ffffff', 0.3)); hg.addColorStop(1, body);
+  ctx.fillStyle = hg;
+  ctx.beginPath();
+  ctx.moveTo(-8, -1); ctx.quadraticCurveTo(-7, -9, 1, -8.5); ctx.quadraticCurveTo(7, -8, 14, -4);
+  ctx.quadraticCurveTo(16, -2, 15, 1); ctx.lineTo(8, 4); ctx.quadraticCurveTo(-2, 8, -8, -1); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 1.1; ctx.stroke();
+  // челюсть
+  const jaw = (L.breath && tier >= 3) ? Math.max(0, Math.sin(t * 1.3)) * 2.5 : 0;
+  ctx.fillStyle = _hlpMix(body, belly, 0.5);
+  ctx.beginPath(); ctx.moveTo(-3, 3); ctx.quadraticCurveTo(5, 5 + jaw, 13, 2 + jaw); ctx.lineTo(8, 4); ctx.quadraticCurveTo(2, 6, -3, 3); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.moveTo(-1, 3.5); ctx.quadraticCurveTo(6, 3.5 + jaw * 0.5, 14, 1 + jaw); ctx.stroke();
+  // ноздря, бровь, гребень
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(12.5, -3.2, 1.1, 0.7, 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = L.spike || horn;
+  ctx.beginPath(); ctx.moveTo(-8, 1); ctx.lineTo(-12, 3); ctx.lineTo(-8, -2); ctx.fill();
+  // глаз
+  ctx.save(); ctx.translate(1.5, -3.5);
+  const ph = (t + seed) % 4.3, open = ph < 0.14 ? Math.abs(ph - 0.07) / 0.07 : 1;
+  ctx.scale(1, Math.max(0.15, open));
+  ctx.fillStyle = L.eye || '#ffd23a';
+  ctx.beginPath(); ctx.ellipse(0, 0, 3.4, 2.4, 0.15, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1a0606'; ctx.beginPath(); ctx.ellipse(0.4, 0, 0.75, 2.1, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-1.1, -0.9, 0.8, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = dark; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(-2.5, -6.5); ctx.quadraticCurveTo(1.5, -8.2, 5, -6.2); ctx.stroke();
+  // корона
+  if (L.crown) _hlpCrown(ctx, L, t, -2, -9, 0.8);
+  // дыхание огнём (эпик+)
+  if (jaw > 0.6) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const fl = jaw / 2.5;
+    for (let i = 0; i < 4; i++) {
+      const x = 16 + i * 5 * fl, y = 2 + jaw + Math.sin(t * 20 + i) * 1.2, r = (2.2 + i * 1.4) * fl;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, '#fffbe0'); g.addColorStop(0.4, L.glow); g.addColorStop(1, _hlpRgba(L.glow, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+  // молнии у грозового
+  if (L.bolts) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const on = (t * 1.6) % 1 < 0.18;
+    if (on) {
+      ctx.strokeStyle = _hlpRgba('#e8eaff', 0.95); ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-22, -26); ctx.lineTo(-17, -18); ctx.lineTo(-21, -16); ctx.lineTo(-14, -6); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// Корона в любом месте (дракон, суккуба).
+function _hlpCrown(ctx, L, t, x, y, k = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  const g = ctx.createLinearGradient(0, -9, 0, 0);
+  g.addColorStop(0, '#fff6c2'); g.addColorStop(1, '#d9a021');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(-8, -7); ctx.lineTo(-4, -4); ctx.lineTo(0, -10);
+  ctx.lineTo(4, -4); ctx.lineTo(8, -7); ctx.lineTo(7, 0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(90,50,0,0.6)'; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.fillStyle = L.gem || L.c2;
+  ctx.beginPath(); ctx.arc(0, -3, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = _hlpRgba('#ffffff', 0.5 + 0.5 * Math.sin(t * 5));
+  _hlpStar(ctx, 0, -10, 2.2, t, 4, 0.3); ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+
+// ── человекоподобные: суккуба и фея ─────────────────────────────────────────
+// Общая фигура «в три головы»: ноги, платье, руки, голова, волосы. Различаются
+// крыльями, рогами, хвостом и тем, что в руке.
+function _hlpHumanoid(ctx, def, t, tier, kind) {
+  const L = def.look, seed = def.id.length;
+  const k = 0.86 + tier * 0.05;
+  ctx.save(); ctx.scale(k, k); ctx.translate(0, -2);
+  const skin = L.skin || '#ffe1cf', skinD = _hlpMix(skin, '#7a3a3a', 0.25);
+  const hair = L.hair || L.c2, hairD = _hlpMix(hair, '#000000', 0.18);
+  const dress = L.dress || L.c2, dressL = _hlpMix(dress, '#ffffff', 0.3), dressD = _hlpMix(dress, '#000000', 0.35);
+  const sway = Math.sin(t * 2.3 + seed) * 1.6;
+  const succ = kind === 'succubus';
+
+  // крылья (за всем)
+  if (succ) {
+    const flap = Math.sin(t * 3.2 + seed);
+    for (const s of [-1, 1]) {
+      ctx.save(); ctx.scale(s, 1); ctx.translate(5, -6); ctx.rotate(0.15);
+      _hlpBatWing(ctx, 30, 24, L.wing || _hlpMix(dress, '#000000', 0.15), L.wingBone || _hlpMix(L.wing || dress, '#000000', 0.3), flap * 0.8, 0.97);
+      ctx.restore();
+    }
+  } else if (L.angel) {
+    ctx.save(); ctx.scale(1.02, 1.02); ctx.translate(0, -6);
+    _hlpWings(ctx, { ...L, wings: 'angel' }, t, tier);
+    ctx.restore();
+  } else {
+    _hlpFairyWings(ctx, L, t + seed, 1 + tier * 0.06);
+  }
+  // волосы сзади
+  const hairBack = () => {
+    const len = succ ? 10 : 0;
+    ctx.beginPath(); ctx.moveTo(-8, -20);
+    ctx.quadraticCurveTo(-12 + sway * 0.4, -8, -9 + sway, -2 + len);
+    ctx.quadraticCurveTo(0, 1 + len, 9 + sway, -2 + len);
+    ctx.quadraticCurveTo(12 + sway * 0.4, -8, 8, -20); ctx.closePath();
+  };
+  ctx.fillStyle = hairD; hairBack(); ctx.fill();
+  // хвост суккубы
+  if (succ) {
+    const tw = Math.sin(t * 2.6 + seed) * 5;
+    ctx.strokeStyle = L.tail || hairD; ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(2, 14); ctx.bezierCurveTo(14, 22, 24, 18 + tw, 22 + tw * 0.3, 6 + tw); ctx.stroke();
+    ctx.save(); ctx.translate(22 + tw * 0.3, 6 + tw); ctx.rotate(-0.4);
+    ctx.fillStyle = L.tail || hairD;
+    ctx.beginPath(); ctx.moveTo(0, 1);
+    ctx.bezierCurveTo(-5, -2, -3, -7, 0, -4); ctx.bezierCurveTo(3, -7, 5, -2, 0, 1); ctx.fill();
+    ctx.restore();
+  }
+  // ноги
+  for (const s of [-1, 1]) {
+    const dx = s * 3.2, dy = Math.sin(t * 2 + s) * 0.8;
+    ctx.strokeStyle = skinD; ctx.lineWidth = 3.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(dx, 14); ctx.lineTo(dx + s * 1.2, 27 + dy); ctx.stroke();
+    ctx.strokeStyle = skin; ctx.lineWidth = 2.8;
+    ctx.beginPath(); ctx.moveTo(dx, 14); ctx.lineTo(dx + s * 1.2, 27 + dy); ctx.stroke();
+    ctx.fillStyle = succ ? (L.boots || '#2a1030') : dressD;
+    ctx.beginPath(); ctx.ellipse(dx + s * 1.6, 28 + dy, 2.4, 1.6, s * 0.3, 0, Math.PI * 2); ctx.fill();
+    if (succ) { ctx.fillRect(dx + s * 1.2 - 1.6, 22 + dy, 3.2, 6); }
+  }
+  // платье
+  const dg = ctx.createLinearGradient(0, -8, 0, 20);
+  dg.addColorStop(0, dressL); dg.addColorStop(1, dress);
+  ctx.fillStyle = dg;
+  ctx.beginPath();
+  ctx.moveTo(-5.5, -8); ctx.quadraticCurveTo(-4, 2, -3.6, 4);
+  if (succ) {
+    ctx.lineTo(-9 + sway * 0.3, 15); ctx.quadraticCurveTo(0, 18, 9 + sway * 0.3, 15);
+  } else {
+    // лепестки
+    const n = 5;
+    ctx.lineTo(-11 + sway * 0.4, 16);
+    for (let i = 0; i < n; i++) {
+      const x0 = -11 + (22 / n) * i + sway * 0.4, x1 = x0 + 22 / n;
+      ctx.quadraticCurveTo((x0 + x1) / 2, 21 + (i % 2) * 2, x1, 16);
+    }
+  }
+  ctx.lineTo(3.6, 4); ctx.quadraticCurveTo(4, 2, 5.5, -8); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.9; ctx.stroke();
+  // пояс / корсет
+  ctx.fillStyle = succ ? (L.trim || '#1a0a22') : _hlpMix(dress, L.glow, 0.5);
+  ctx.beginPath(); ctx.moveTo(-4.2, 0); ctx.lineTo(4.2, 0); ctx.lineTo(3.8, 4); ctx.lineTo(-3.8, 4); ctx.closePath(); ctx.fill();
+  if (succ) {
+    ctx.strokeStyle = _hlpRgba(L.glow, 0.9); ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(-2, 0.6); ctx.lineTo(2, 3.4); ctx.moveTo(2, 0.6); ctx.lineTo(-2, 3.4); ctx.stroke();
+  }
+  // руки
+  ctx.strokeStyle = skin; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-5.5, -6.5); ctx.quadraticCurveTo(-9, -1, -6 + sway * 0.2, 3); ctx.stroke(); // на бедре
+  const hx = 11, hy = -9 + Math.sin(t * 2.6) * 1.5;
+  ctx.beginPath(); ctx.moveTo(5.5, -6.5); ctx.quadraticCurveTo(9, -6, hx, hy); ctx.stroke();
+  // в руке: фея — палочка со звездой, суккуба — сгусток пламени
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  if (succ) {
+    const r = 3.4 + Math.sin(t * 6) * 0.6;
+    const g = ctx.createRadialGradient(hx + 1, hy - 3, 0, hx + 1, hy - 3, r * 2.2);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, L.glow); g.addColorStop(1, _hlpRgba(L.glow, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx + 1, hy - 3, r * 2.2, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.restore(); ctx.save();
+    ctx.strokeStyle = L.wand || '#f6e3a0'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(hx, hy + 1); ctx.lineTo(hx + 4, hy - 8); ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = _hlpRgba(L.glow, 0.95);
+    _hlpStar(ctx, hx + 4.3, hy - 9.5, 3.6 + Math.sin(t * 8) * 0.8, t * 2, 5, 0.42); ctx.fill();
+  }
+  ctx.restore();
+  // голова
+  const headY = -16;
+  ctx.fillStyle = skin;
+  ctx.beginPath(); ctx.ellipse(0, headY, 7.8, 8.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.9; ctx.stroke();
+  // уши (у феи — острые)
+  if (!succ) {
+    ctx.fillStyle = skin;
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 7, headY - 1); ctx.lineTo(s * 12, headY - 5); ctx.lineTo(s * 7.2, headY + 2.5); ctx.fill(); }
+  }
+  // лицо
+  _hlpAlmondEyes(ctx, 0, headY + 0.6, 3.2, 2.4, 1.9, L.eye || '#6a4ad8', t, seed, { lashes: true, glowIris: succ });
+  ctx.fillStyle = 'rgba(255,110,140,0.35)';
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * 4.6, headY + 3.6, 1.7, 0.9, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.strokeStyle = succ ? '#9a1a40' : '#b04a5a'; ctx.lineWidth = 0.9;
+  ctx.beginPath(); ctx.arc(0.3, headY + 4.4, 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  // чёлка и пряди
+  const hg = ctx.createLinearGradient(0, headY - 10, 0, headY + 2);
+  hg.addColorStop(0, _hlpMix(hair, '#ffffff', 0.25)); hg.addColorStop(1, hair);
+  ctx.fillStyle = hg;
+  ctx.beginPath();
+  ctx.moveTo(-8.6, headY + 3);
+  ctx.quadraticCurveTo(-10, headY - 10, 0, headY - 9.8);
+  ctx.quadraticCurveTo(10, headY - 10, 8.6, headY + 3);
+  ctx.quadraticCurveTo(7, headY - 3, 4, headY - 3.6);
+  ctx.quadraticCurveTo(2.5, headY - 1.5, 0.5, headY - 3.8);
+  ctx.quadraticCurveTo(-2, headY - 1.2, -4, headY - 3.6);
+  ctx.quadraticCurveTo(-7, headY - 3, -8.6, headY + 3); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.8; ctx.stroke();
+  // пряди по бокам
+  ctx.fillStyle = hair;
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(s * 8.4, headY);
+    ctx.quadraticCurveTo(s * (10 + sway * 0.2), headY + 8, s * 7 + sway * 0.3, headY + 13);
+    ctx.quadraticCurveTo(s * 7.5, headY + 6, s * 6.6, headY + 1); ctx.fill();
+  }
+  ctx.fillStyle = _hlpRgba('#ffffff', 0.35);
+  ctx.beginPath(); ctx.ellipse(-3.5, headY - 7, 3, 1, -0.3, 0, Math.PI * 2); ctx.fill();
+  // рога суккубы
+  if (succ) {
+    const hc = L.hornC || '#2a1426';
+    for (const s of [-1, 1]) {
+      ctx.save(); ctx.scale(s, 1);
+      const g = ctx.createLinearGradient(4, headY - 8, 10, headY - 20);
+      g.addColorStop(0, hc); g.addColorStop(1, _hlpMix(hc, L.glow, 0.6));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(3.5, headY - 7.5);
+      ctx.bezierCurveTo(5, headY - 15, 11, headY - 15, 11.5, headY - 21);
+      ctx.bezierCurveTo(9.5, headY - 15, 8, headY - 10, 7.2, headY - 6.4); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 0.7; ctx.stroke();
+      ctx.restore();
+    }
+  } else if (L.flower) {
+    ctx.fillStyle = L.flower;
+    for (let i = 0; i < 5; i++) {
+      const a = i / 5 * Math.PI * 2;
+      ctx.beginPath(); ctx.arc(-6 + Math.cos(a) * 1.8, headY - 7 + Math.sin(a) * 1.8, 1.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = '#ffe680'; ctx.beginPath(); ctx.arc(-6, headY - 7, 1, 0, Math.PI * 2); ctx.fill();
+  }
+  if (L.crown) _hlpCrown(ctx, L, t, 0, headY - 8.5, 0.75);
+  else if (L.tiara) {
+    ctx.fillStyle = '#fff2b8';
+    ctx.beginPath(); ctx.moveTo(-5, headY - 8); ctx.lineTo(-2, headY - 12); ctx.lineTo(0, headY - 9.5); ctx.lineTo(2, headY - 12); ctx.lineTo(5, headY - 8); ctx.quadraticCurveTo(0, headY - 9.5, -5, headY - 8); ctx.fill();
+    ctx.fillStyle = L.gem || L.glow; ctx.beginPath(); ctx.arc(0, headY - 10.2, 1.1, 0, Math.PI * 2); ctx.fill();
+  }
+  if (L.halo) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = _hlpRgba('#fff3a0', 0.95); ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.ellipse(0, headY - 13 + Math.sin(t * 2) * 1, 8, 2.4, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ── бесёнок ─────────────────────────────────────────────────────────────────
+function _hlpImp(ctx, def, t, tier) {
+  const L = def.look, seed = def.id.length;
+  const k = 0.95 + tier * 0.05;
+  ctx.save(); ctx.scale(k, k);
+  const body = L.c2, belly = L.c1, dark = _hlpMix(L.c2, '#000000', 0.45);
+  const flap = Math.sin(t * 7 + seed);
+  for (const s of [-1, 1]) {
+    ctx.save(); ctx.scale(s, 1); ctx.translate(7, -2);
+    _hlpBatWing(ctx, 22, 17, _hlpMix(body, '#000000', 0.2), _hlpMix(body, '#000000', 0.35), flap, 0.95);
+    ctx.restore();
+  }
+  // хвост
+  const tw = Math.sin(t * 3 + seed) * 4;
+  ctx.strokeStyle = dark; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-4, 12); ctx.bezierCurveTo(-14, 18, -20, 10 + tw, -18, 2 + tw); ctx.stroke();
+  ctx.fillStyle = dark;
+  ctx.save(); ctx.translate(-18, 2 + tw); ctx.rotate(-0.5);
+  ctx.beginPath(); ctx.moveTo(0, 2); ctx.lineTo(-3.5, -1); ctx.lineTo(0, -6); ctx.lineTo(3.5, -1); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // ножки
+  ctx.fillStyle = dark;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * 5, 16 + Math.sin(t * 4 + s) * 0.8, 3.2, 4, 0, 0, Math.PI * 2); ctx.fill(); }
+  // тело-груша
+  const g = ctx.createRadialGradient(-3, -4, 2, 0, 2, 18);
+  g.addColorStop(0, _hlpMix(body, '#ffffff', 0.35)); g.addColorStop(1, body);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 3, 12, 13, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = _HLP_INK; ctx.lineWidth = 1.1; ctx.stroke();
+  ctx.fillStyle = belly;
+  ctx.beginPath(); ctx.ellipse(0, 8, 7, 6.5, 0, 0, Math.PI * 2); ctx.fill();
+  // трезубец
+  const fy = Math.sin(t * 2.5) * 1.5;
+  ctx.strokeStyle = '#3a2a2a'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(14, 16 + fy); ctx.lineTo(19, -14 + fy); ctx.stroke();
+  ctx.strokeStyle = L.fork || '#ffd36a'; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(15.5, -13 + fy); ctx.quadraticCurveTo(19, -10 + fy, 22.5, -14 + fy);
+  ctx.moveTo(15.5, -13 + fy); ctx.lineTo(14.5, -18 + fy);
+  ctx.moveTo(19.2, -12 + fy); ctx.lineTo(19.4, -19 + fy);
+  ctx.moveTo(22.5, -14 + fy); ctx.lineTo(23.5, -18.5 + fy); ctx.stroke();
+  ctx.strokeStyle = body; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(9, 2); ctx.lineTo(15.5, 3 + fy); ctx.stroke();
+  // уши и рожки
+  ctx.fillStyle = body;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 9, -5); ctx.lineTo(s * 17, -10); ctx.lineTo(s * 10, -1); ctx.fill(); }
+  ctx.fillStyle = L.horn || '#f2e6cc';
+  for (const s of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(s * 3, -9); ctx.quadraticCurveTo(s * 5, -16, s * 8, -17); ctx.quadraticCurveTo(s * 6, -13, s * 6.5, -8); ctx.fill();
+  }
+  // пламя на голове у огненного
+  if (L.flameHair) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = -1; i <= 1; i++) {
+      const h = 9 + Math.sin(t * 9 + i * 2) * 2.5;
+      const fg = ctx.createLinearGradient(0, -9, 0, -9 - h);
+      fg.addColorStop(0, L.glow); fg.addColorStop(1, _hlpRgba('#fff2a0', 0));
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.moveTo(i * 3 - 2.5, -8); ctx.quadraticCurveTo(i * 3, -9 - h, i * 3 + 2.5, -8); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // лицо
+  _hlpAlmondEyes(ctx, 0, -2, 4, 2.6, 2, L.eye || '#ffe24a', t, seed, { glowIris: true, slit: true });
+  ctx.fillStyle = '#3a0a10';
+  ctx.beginPath(); ctx.moveTo(-5, 3); ctx.quadraticCurveTo(0, 8.5, 5, 3); ctx.quadraticCurveTo(0, 5, -5, 3); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 3.2, 3.6); ctx.lineTo(s * 2.4, 5.6); ctx.lineTo(s * 1.6, 3.9); ctx.fill(); }
+  ctx.restore();
+}
+
 // Нимб и корона — над головой.
 function _hlpHeadwear(ctx, L, t, tier, headY) {
   if (L.halo) {
@@ -624,6 +1137,8 @@ function _hlpHeadwear(ctx, L, t, tier, headY) {
   }
 }
 
+// Новые существа рисуют корону и нимб сами — голова у них не в центре.
+const _HLP_OWN_HEADWEAR = new Set(['drake', 'succubus', 'sprite', 'imp']);
 const _HLP_HEAD_Y = { fairy: -16, bird: -18, dragon: -22, fox: -20, seed: -20 };
 
 // opts.dim — силуэт ещё не открытого (тёмный и без эффектов).
@@ -651,7 +1166,7 @@ function helperDrawFrame(ctx, def, t, size, opts = {}) {
   _hlpOrbit(ctx, L, t, tier, false);
   _hlpWings(ctx, L, t, tier);
   _hlpBody(ctx, def, t, tier);
-  _hlpHeadwear(ctx, L, t, tier, _HLP_HEAD_Y[L.body] || -16 - tier);
+  if (!_HLP_OWN_HEADWEAR.has(L.body)) _hlpHeadwear(ctx, L, t, tier, _HLP_HEAD_Y[L.body] || -16 - tier);
   _hlpOrbit(ctx, L, t, tier, true);
   _hlpTwinkles(ctx, L, t, tier);
   ctx.restore();
