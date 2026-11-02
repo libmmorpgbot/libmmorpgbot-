@@ -11482,7 +11482,7 @@ function packPriceHtml(gram, color) {
 // проверка и выдача, здесь только карточка. Порядок на вкладке — по цене
 // (_renderGramShopPanel), сезонный билет — первым.
 const _GRAM_SHOP_PKGS_UI = [
-  // Сезонный билет 5-го сезона — не предметы, а флаг (x2 опыт, +60% дроп,
+  // Сезонный билет 5-го сезона — не предметы, а флаг (x3 опыт, +60% дроп,
   // x2 Liberty, сезонные комнаты). Бонусы — строками на карточке
   // (_shopExtraRewardRows), цена — та же константа, что берёт сервер.
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, get label() { return t('seasonTicketShopLbl'); }, color:'#ffcf56', seasonTicket:true },
@@ -11707,7 +11707,7 @@ function _shopExtraRewardRows(pkg, ri) {
 // подробностей. Числа — из тех же констант, что читает сервер.
 function _seasonTicketBonusList() {
   return [
-    { icon: '⭐', text: tVars('seasonTicketXpRowFmt', { n: SEASON_TICKET_XP_PCT }) },
+    { icon: '⭐', text: tVars('seasonTicketXpRowFmt', { m: 1 + SEASON_TICKET_XP_PCT / 100 }) },
     { icon: '🎁', text: tVars('seasonTicketDropRowFmt', { n: SEASON_TICKET_DROP_PCT }) },
     { icon: '💰', text: tVars('seasonTicketLibertyRowFmt', { n: SEASON_TICKET_LIBERTY_PCT }) },
     { icon: '🎟', text: t('seasonTicketRoomsRow') },

@@ -676,7 +676,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
     // ── VIP and the season ticket, on the numbers they were written for ─────
     // VIP_BONUSES has three columns — xp, gold, drop — and only `drop` was ever
-    // read. SEASON_TICKET_XP_PCT (x2 experience, the headline of the card) and
+    // read. SEASON_TICKET_XP_PCT (x3 experience, the headline of the card) and
     // SEASON_TICKET_LIBERTY_PCT were not read anywhere at all. So VIP 10 paid
     // exactly what VIP 0 paid, and a bought season card doubled nothing:
     // "Вип бонусы, бонусы от сезонной карты не работают."

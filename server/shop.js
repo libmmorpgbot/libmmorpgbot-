@@ -83,7 +83,7 @@ function pkgPrice(pkg) {
 // Три пака, что продавались без них, остаются.
 //
 // Сезонный билет 5-го сезона — не предметы, а флаг в player_vip
-// (grantSeasonTicket): x2 опыт, +60% к дропу, x2 к шансу Liberty и вход в
+// (grantSeasonTicket): x3 опыт, +60% к дропу, x2 к шансу Liberty и вход в
 // сезонные комнаты Фарм-зон, пока идёт сезон. Цена — общая константа.
 const _GRAM_SHOP_PKGS = [
   { id:'season_ticket', gram: SEASON_TICKET_GRAM_PRICE, seasonTicket:true },

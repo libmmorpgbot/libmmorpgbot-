@@ -514,8 +514,8 @@ const I18N_UI = {
   seasonTicketRoomsRow: { ru: 'Вход в сезонные комнаты Фарм-зон', en: 'Access to the Farm Zones\' season rooms', uk: 'Вхід до сезонних кімнат Ферм-зон', es: 'Acceso a las salas de temporada de las Zonas de Farmeo', tr: 'Farm Bölgelerinin sezon odalarına giriş', pt: 'Acesso às salas de temporada das Zonas de Farm' },
   seasonTicketWholeSeason: { ru: 'Действует весь {n} сезон', en: 'Valid for all of Season {n}', uk: 'Діє весь {n} сезон', es: 'Válido toda la temporada {n}', tr: '{n}. sezon boyunca geçerli', pt: 'Válido durante toda a temporada {n}' },
   seasonTicketXpRowFmt: {
-    ru: 'x2 к опыту', en: 'x2 experience', uk: 'x2 до досвіду',
-    es: 'x2 de experiencia', tr: 'Deneyimde x2', pt: 'x2 de experiência',
+    ru: 'x{m} к опыту', en: 'x{m} experience', uk: 'x{m} до досвіду',
+    es: 'x{m} de experiencia', tr: 'Deneyimde x{m}', pt: 'x{m} de experiência',
   },
   seasonTicketDropRowFmt: {
     ru: '+{n}% к выпадению предметов', en: '+{n}% item drop chance', uk: '+{n}% до випадіння предметів',

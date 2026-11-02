@@ -80,7 +80,7 @@ async function main() {
   console.log('  ── що обіцяно ──');
   ok(VIP_BONUSES[10] && VIP_BONUSES[10].xp > 0 && VIP_BONUSES[10].gold > 0,
     `VIP 10 обіцяє +${VIP_BONUSES[10].xp}% досвіду і +${VIP_BONUSES[10].gold}% золота`);
-  eq(SEASON_TICKET_XP_PCT, 100, 'сезонна картка обіцяє x2 досвіду');
+  eq(SEASON_TICKET_XP_PCT, 200, 'сезонна картка обіцяє x3 досвіду');
   ok(SEASON_TICKET_DROP_PCT > 0 && SEASON_TICKET_LIBERTY_PCT > 0,
     `і +${SEASON_TICKET_DROP_PCT} до лута та +${SEASON_TICKET_LIBERTY_PCT}% до шансу Liberty`);
   ok(FARM_LIBERTY_CHANCE > 0 && FARM2_LIBERTY_CHANCE > 0 && COOP_LIBERTY_CHANCE > 0,
