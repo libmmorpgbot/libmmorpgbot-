@@ -625,6 +625,18 @@
     .tr-rounds li > span:last-child { grid-column: 2; margin-top: -6px; }
     .tr-clan { flex-direction: column; text-align: center; gap: 6px; }
   }
+
+  /* Сезон 5: широкие картинки (галерея помощников, арена) */
+  .wide-shot { margin: 0 auto; max-width: 720px; }
+  .wide-shot img { display: block; width: 100%; border-radius: 16px; border: 1px solid var(--hairline-strong); box-shadow: 0 18px 40px -20px rgba(0,0,0,.9); }
+  .wide-shot .phone-cap { margin-top: 8px; }
+  .s5-karma { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .s5-karma .card { padding: 14px; }
+  .s5-karma em { display: block; font-style: normal; font-size: 26px; font-weight: 900; color: var(--red); }
+  .s5-karma em.p { color: var(--arcane-bright); }
+  .s5-karma em.g { color: var(--green); }
+  .s5-karma b { display: block; color: var(--gold-bright); margin: 2px 0 4px; }
+  .s5-karma span { font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -651,7 +663,7 @@
   <canvas id="fx"></canvas>
   <div class="hero-inner">
     <div class="orbit ach-orbit tr-orbit">
-      <div class="orbit-core"><svg viewBox="0 0 24 24" stroke="#ffcf5c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></div>
+      <div class="orbit-core"><svg viewBox="0 0 24 24" stroke="#ffcf5c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg></div>
       <div class="orbit-ring">
         <img src="/images/classicon/assassin.png" alt="" style="--a:0deg">
         <img src="/images/classicon/deathknight.png" alt="" style="--a:51deg">
@@ -662,26 +674,26 @@
         <img src="/images/classicon/warlock.png" alt="" style="--a:309deg">
       </div>
     </div>
-    <div class="eyebrow"><span class="dot"></span>Патч · 29 октября 2026</div>
-    <h1 class="title">Турнир</h1>
-    <p class="lede"><b>16 игроков</b>, двойное выбывание, <b>два турнира</b> по четвергам и воскресеньям — в 12:00 и 23:00 МСК. Теперь в рейтинг попадает
-      <b>каждый участник</b>: любая победа в бою — <b>+1 очко</b>, победа в турнире — <b>+5</b>. А каждая победа
-      приносит <b>+30 очков</b> вашему клану, а гранд-финал — <b>+300</b>.</p>
+    <div class="eyebrow"><span class="dot"></span>Патч · 2 ноября 2026</div>
+    <h1 class="title">Сезон 5</h1>
+    <p class="lede">Новый сезон до <b>1 декабря</b>, <b>19 помощников</b> — драконы, феи, суккубы и бесята, <b>карма</b> за убийства
+      игроков и <b>войны кланов</b>. А ещё новая арена турнира и сезонный билет с <b>x3 к опыту</b>.</p>
     <div class="hero-chips">
-      <span><svg class="ico" viewBox="0 0 24 24" stroke="#ffcf5c" width="1.15em" height="1.15em" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg> 16 игроков</span>
-      <span><img src="/images/nexum-coin_v2.png" alt="">До +100 Liberty</span>
-      <span><img src="/images/material/shard.png" alt="">+1 очко за победу</span>
-      <span><img src="/images/classicon/lev.png" alt="">+30 очков клану</span>
+      <span><img src="/images/season_ticket.png?v=2" alt="">Билет — 15 GRAM</span>
+      <span><img src="/images/material/shard.png" alt="">19 помощников</span>
+      <span><svg viewBox="0 0 24 24" stroke="#ff6a6a" width="1.15em" height="1.15em" class="ico" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg> Войны кланов</span>
+      <span><img src="/images/nexum-coin_v2.png" alt="">Награды 4 сезона</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#p-1029">Что нового ↓</a>
-      <a class="btn" href="#p-1025">Достижения</a>
+      <a class="btn primary" href="#p-1102">Что нового ↓</a>
+      <a class="btn" href="#s5-helpers">Помощники</a>
     </div>
   </div>
 </header>
 
 <nav class="patch-nav" aria-label="Патчи">
-  <a href="#p-1029" class="on"><i class="pn-dot new"></i><b>29 окт</b><span>Турнир</span></a>
+  <a href="#p-1102" class="on"><i class="pn-dot new"></i><b>2 ноя</b><span>Сезон 5</span></a>
+  <a href="#p-1029"><i class="pn-dot"></i><b>29 окт</b><span>Турнир</span></a>
   <a href="#p-1025"><i class="pn-dot"></i><b>25 окт</b><span>Достижения</span></a>
   <a href="#p-1017"><i class="pn-dot"></i><b>17 окт</b><span>Мир</span></a>
   <a href="#p-1016"><i class="pn-dot"></i><b>16 окт</b><span>Самоцветы</span></a>
@@ -690,10 +702,124 @@
 </nav>
 
 <main>
+  <!-- ══ Патч · 2 ноября 2026 · Сезон 5 ════════════════════════════════ -->
+  <article class="patch" id="p-1102">
+    <header class="patch-head reveal">
+      <span class="patch-date new">2 ноября 2026</span>
+      <h2>Сезон 5</h2>
+      <p class="dek">Очки сезона обнулены — все начинают с нуля. Победители 4 сезона получили награды, в игре появились
+        помощники, карма и войны кланов.</p>
+    </header>
+
+    <section class="sec reveal" id="s5-main">
+      <div class="tiles stagger">
+        <div class="card tile"><img src="/images/season_ticket.png?v=2" alt=""><b>Сезон 5</b><span>До 1 декабря, 18:00 МСК</span></div>
+        <div class="card tile"><img src="/images/material/shard.png" alt=""><b>19 помощников</b><span>Летают рядом и дают характеристики</span></div>
+        <div class="card tile"><img src="/images/classicon/deathknight.png" alt=""><b>Карма</b><span>Цена за убийство игрока</span></div>
+        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>Войны кланов</b><span>С 10 уровня клана</span></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="s5-season">
+      <div class="sec-eyebrow">Сезон</div>
+      <h2>Новый сезон — новая гонка</h2>
+      <div class="card fixes">
+        <div class="fix"><span class="tag new">Новое</span><span><b>Сезон 5</b> идёт до 1 декабря, 18:00 по Москве. Очки у всех обнулены.</span></div>
+        <div class="fix"><span class="tag fixd">Награды</span><span>Победителям <b>4 сезона</b> награды начислены автоматически — в GRAM по курсу <b>1 GRAM = 1,3 USDT</b>.</span></div>
+        <div class="fix"><span class="tag new">Задание</span><span><b>Турнир:</b> +50 очков сезона за каждый выигранный бой, <b>+100</b> за победу в гранд-финале.</span></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="s5-ticket">
+      <div class="sec-eyebrow">Магазин</div>
+      <h2>Билет 5 сезона — 15 GRAM</h2>
+      <p class="dek">Действует до конца сезона. Бонусы видно прямо на карточке в магазине.</p>
+      <div class="tiles stagger">
+        <div class="card tile"><b>x3 к опыту</b><span>Со всех монстров</span></div>
+        <div class="card tile"><b>+60% к дропу</b><span>Предметы падают чаще</span></div>
+        <div class="card tile"><b>x2 LIBERTY</b><span>Шанс выпадения</span></div>
+        <div class="card tile"><b>Сезонные комнаты</b><span>Фарм-зона и Фарм-зона 2</span></div>
+      </div>
+      <div class="shots stagger" style="grid-template-columns:repeat(1,1fr)">
+        <div><div class="phone"><img src="/images/patches/s5-ticket.jpg" alt="Билет 5 сезона в магазине" loading="lazy"></div><div class="phone-cap"><b>Магазин</b>бонусы билета</div></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="s5-helpers">
+      <div class="sec-eyebrow">Помощники</div>
+      <h2>Драконы, феи, суккубы и бесята</h2>
+      <p class="dek">19 летающих спутников пяти редкостей. Помощник — это <b>предмет</b>: лежит в сумке и надевается в новый слот
+        «Помощник». Чем выше редкость — тем сильнее и красивее: у эпических и легендарных драконы дышат огнём, вокруг — лучи и руны.</p>
+      <div class="wide-shot reveal"><img src="/images/patches/s5-helpers.jpg" alt="Все помощники" loading="lazy"></div>
+      <div class="card fixes" style="margin-top:16px">
+        <div class="fix"><span class="tag new">Создание</span><span>У <b>Кузнеца</b>, вкладка «Помощники»: случайный помощник выбранной редкости — по <b>1 000 / 3 000 / 5 000 / 10 000 / 30 000</b> осколков каждого вида. Нажмите на помощника у кузнеца — увидите, что он даёт на 1-м и на 30-м уровне.</span></div>
+        <div class="fix"><span class="tag new">Прокачка</span><span>Нажмите на помощника в сумке и кормите его осколками — до <b>30 уровня</b>. Прирост характеристик за уровень <b>удвоен</b>.</span></div>
+        <div class="fix"><span class="tag new">Рынок</span><span>Помощников можно продавать — уровень переходит к покупателю. Минимальная цена: <b>1 / 3 / 10 / 30 / 60 GRAM</b> по редкости.</span></div>
+        <div class="fix"><span class="tag fixd">Важно</span><span>Прежние помощники уже в сумке с сохранённым уровнем, а тот, что летал рядом, надет.</span></div>
+      </div>
+      <div class="shots stagger" style="grid-template-columns:repeat(3,1fr);margin-top:18px">
+        <div><div class="phone"><img src="/images/patches/s5-forge.jpg" alt="Кузница: помощники" loading="lazy"></div><div class="phone-cap"><b>Кузница</b>создание по редкости</div></div>
+        <div><div class="phone"><img src="/images/patches/s5-helper.jpg" alt="Окно помощника" loading="lazy"></div><div class="phone-cap"><b>Помощник</b>кормить и надеть</div></div>
+        <div><div class="phone"><img src="/images/patches/s5-preview.jpg" alt="Характеристики помощника" loading="lazy"></div><div class="phone-cap"><b>Карточка</b>что даёт на 1 и 30 ур.</div></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="s5-karma">
+      <div class="sec-eyebrow">ПК</div>
+      <h2>Карма</h2>
+      <p class="dek">Убить игрока можно — но за это придётся заплатить. Карма копится только в обычных локациях: в турнире,
+        аренах, Башне, войне гильдий и на боссе её нет.</p>
+      <div class="s5-karma stagger">
+        <div class="card"><em>+1000</em><b>За убийство</b><span>Игрока, у которого не включён ПК</span></div>
+        <div class="card"><em class="g">−1</em><b>За монстра</b><span>Каждый убитый монстр смывает карму</span></div>
+        <div class="card"><em class="g">0</em><b>Смерть</b><span>Обнуляет карму полностью</span></div>
+        <div class="card"><em class="p">2:00</em><b>ПК держится</b><span>Включили — выключить можно через 2 минуты</span></div>
+      </div>
+      <div class="card fixes" style="margin-top:14px">
+        <div class="fix"><span class="tag chg">С кармой</span><span>Ник <b style="color:#ff4545">красный</b>, ПК не выключить, телепорт и выход из локации закрыты, монстры не дают <b>опыта и дропа</b> (только золото).</span></div>
+        <div class="fix"><span class="tag new">ПК</span><span>У кого включён ПК — <b style="color:#c58bff">фиолетовый ник</b>. За убийство игрока в ПК карма не начисляется.</span></div>
+        <div class="fix"><span class="tag fixd">Важно</span><span>Перезаход и переход в другую локацию ПК не снимают. Выйти из игры посреди боя не выйдет — персонаж ещё 15 секунд остаётся в мире.</span></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="s5-clanwar">
+      <div class="sec-eyebrow">Кланы</div>
+      <h2>Войны кланов</h2>
+      <p class="dek">Клан <b>10+ уровня</b> может объявить войну другому клану. Война начинается, когда лидер второго клана примет вызов.</p>
+      <div class="s5-karma stagger">
+        <div class="card"><em>⚔</em><b>Без ПК</b><span>Врагов по войне можно бить и без ПК</span></div>
+        <div class="card"><em class="g">0</em><b>Без кармы</b><span>Убийство врага карму не даёт</span></div>
+        <div class="card"><em class="p">+2</em><b>Очки клану</b><span>За каждого убитого врага</span></div>
+      </div>
+      <div class="shots stagger" style="grid-template-columns:repeat(1,1fr);margin-top:18px">
+        <div><div class="phone"><img src="/images/patches/s5-clanwar.jpg" alt="Вкладка «Войны»" loading="lazy"></div><div class="phone-cap"><b>Клан → Войны</b>вызовы и идущие войны</div></div>
+      </div>
+      <p class="dek" style="margin-top:14px">Над врагами горят <b style="color:#ff3b3b">красные мечи</b>, а очки за войну видны во вкладке «Вклад».</p>
+    </section>
+
+    <section class="sec reveal" id="s5-arena">
+      <div class="sec-eyebrow">Турнир</div>
+      <h2>Новая арена</h2>
+      <p class="dek">Колизей с трибунами и зрителями, жаровнями и знамёнами. Бойцы выходят на бой из ворот.</p>
+      <div class="wide-shot reveal"><img src="/images/patches/s5-arena.jpg" alt="Арена турнира" loading="lazy"></div>
+    </section>
+
+    <section class="sec reveal" id="fixes-1102">
+      <div class="sec-eyebrow">Ещё</div>
+      <h2>Изменения</h2>
+      <div class="card fixes">
+        <div class="fix"><span class="tag chg">Изменено</span><span>Окна смерти больше нет — после смерти вы сразу появляетесь в городе.</span></div>
+        <div class="fix"><span class="tag chg">Изменено</span><span>Новый экран загрузки.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>В окне турнира кубок стоит по центру лучей, анимация стала плавной.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Окно помощника больше не тормозит.</span></div>
+      </div>
+    </section>
+  </article>
+
   <!-- ══ Патч · 29 октября 2026 · Турнир ══════════════════════════════ -->
   <article class="patch" id="p-1029">
     <header class="patch-head reveal">
-      <span class="patch-date new">29 октября 2026</span>
+      <span class="patch-date">29 октября 2026</span>
       <h2>Турнир</h2>
       <p class="dek">Сетка стала короче и плотнее — 16 мест вместо 32, восемь раундов. Рейтинг теперь для всех,
         а победы работают и на ваш клан. Окно турнира — в новом оформлении.</p>
