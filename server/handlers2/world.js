@@ -774,9 +774,17 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // commit — and if anything downstream rolled the transaction back, the
     // number on screen was one the database never held. A player watching gold
     // appear and then revert on the next push is describing exactly that.
+    // Карма (server/karma.js): пока она висит, монстры не дают ни опыта, ни
+    // дропа — только золото. Убийство, смывшее последнюю единицу, тоже без
+    // награды: карма была на момент удара.
+    const karmaBlock = s.karma > 0;
+    const paidNexum = karmaBlock ? 0 : myNexum;
+    const paidGram = karmaBlock ? 0 : myGram;
     const done = await s.act('killReward', 'itemError', async (t, pid) => {
       const prog = await players.progressOf(t, pid);
-      const drops = rollLoot(result);
+      const drops = karmaBlock
+        ? { items: [], boxUncommon: 0, boxRare: 0, normStone: 0, blessStone: 0 }
+        : rollLoot(result);
 
       // ── the two buff potions that did nothing ──────────────────────────────
       // Six buff potions exist; three were written into player_progress.buffs
@@ -795,10 +803,10 @@ module.exports = function registerWorld(s, safeOn, deps) {
       // replacing it — a player who both holds the buff and drinks bp_exp
       // gets NEWBIE_BUFF.xpMult × 2, same as 'atk' stacking with it in
       // stats.js above.
-      const paidXp = (buffOn('exp') ? myXp * 2 : myXp) * (buffOn(NEWBIE_BUFF.type) ? NEWBIE_BUFF.xpMult : 1);
+      const paidXp = karmaBlock ? 0 : (buffOn('exp') ? myXp * 2 : myXp) * (buffOn(NEWBIE_BUFF.type) ? NEWBIE_BUFF.xpMult : 1);
 
       const reward = await consumables.grantKillReward(t, pid, {
-        gold: paidGold, xp: paidXp, nexum: myNexum, gram: myGram,
+        gold: paidGold, xp: paidXp, nexum: paidNexum, gram: paidGram,
         drops: drops.items, idemKey: idem, clanId: myClanId,
       });
       // The quest chain. `result.enemyName` — the field the rewrite passed here
@@ -916,15 +924,15 @@ module.exports = function registerWorld(s, safeOn, deps) {
       items: reward.items.filter(i => !i.dropped),
       boxUncommon: drops.boxUncommon, boxRare: drops.boxRare,
       normStone: drops.normStone, blessStone: drops.blessStone,
-      nexum: myNexum, gram: myGram,
+      nexum: paidNexum, gram: paidGram,
     });
 
     // Элитный монстр: весь сервер узнаёт, кто забрал его GRAM. После
     // транзакции — объявляется только то, что действительно начислено.
-    if (result.elite && myGram > 0) {
+    if (result.elite && paidGram > 0) {
       io.emit('chatMsg', {
         username: 'СОБЫТИЕ',
-        text: `Игрок ${s.username || '?'} получил ${myGram} GRAM с элитного монстра`,
+        text: `Игрок ${s.username || '?'} получил ${paidGram} GRAM с элитного монстра`,
         time: new Date().toISOString(),
       });
     }
@@ -963,7 +971,8 @@ module.exports = function registerWorld(s, safeOn, deps) {
         const mClan = clanBonusOf(mate.clan && mate.clan.level);
         const mXpPct = (mVip.xp || 0) + (mTicket ? (SEASON_TICKET_XP_PCT || 0) : 0) + mClan.xp;
         const mGold = Math.round(baseGold * (1 + ((mVip.gold || 0) + mClan.gold) / 100)) * (mBuff('gold') ? 2 : 1);
-        const mXp = Math.round(baseXp * (1 + mXpPct / 100)) * (mBuff('exp') ? 2 : 1)
+        // С кармой — без опыта, как и у того, кто добил.
+        const mXp = mate.karma > 0 ? 0 : Math.round(baseXp * (1 + mXpPct / 100)) * (mBuff('exp') ? 2 : 1)
           * (mBuff(NEWBIE_BUFF.type) ? NEWBIE_BUFF.xpMult : 1);
         const r = await consumables.grantKillReward(t, pid, {
           gold: mGold, xp: mXp, drops: [], idemKey: `kill:${pid}:${result.enemyUid}:${result.at || 0}`,

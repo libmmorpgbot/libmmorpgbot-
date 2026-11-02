@@ -4,17 +4,15 @@
 //   * хранение: player_progress.karma (миграция 050) + копия на сессии
 //     (s.karma) и на записи игрока в комнате (p.karma) — по ней комната не
 //     даёт выключить ПК (Room.setPlayerPvpMode);
-//   * onPvpKill — убийство игрока в обычной локации: убийце +KARMA_PER_PK,
-//     с кармической жертвы — шанс выпадения предмета убийце;
+//   * onPvpKill — убийство игрока в обычной локации: убийце +KARMA_PER_PK;
 //   * onMobKill — убитый монстр смывает KARMA_PER_MOB;
 //   * resetOnDeath — смерть обнуляет карму (зовёт обработчик respawn);
 //   * apply — после входа на этаж: карма на запись комнаты, ПК включён,
 //     клиенту — karmaSync.
 
 const { query, tx, hasColumn } = require('./db');
-const items = require('./db/repos/items');
 const { FLOOR_IDS } = require('./game/floors');
-const { KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, ITEM_DEF, CLAN_WAR_KILL_XP, PVP_OFF_COOLDOWN_MS, PVP_LINGER_MS } = require('../shared/definitions');
+const { KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, CLAN_WAR_KILL_XP, PVP_OFF_COOLDOWN_MS, PVP_LINGER_MS } = require('../shared/definitions');
 
 const KARMA_FLOORS = new Set(KARMA_FLOOR_KEYS.map(k => FLOOR_IDS[k]).filter(v => v != null));
 
@@ -143,42 +141,6 @@ async function resetOnDeath(t, s) {
   await _set(t, s, 0);
 }
 
-// Случайный предмет жертвы — из экипировки или сумки, не стакающийся (стопки
-// камней и материалов не выпадают), не руна в гнезде. Уходит убийце в сумку
-// вместе с рунами в нём. Нет места у убийцы — ничего не выпадает.
-async function _dropItem(t, victimId, killerId) {
-  const [a, b] = victimId < killerId ? [victimId, killerId] : [killerId, victimId];
-  await items.lockPlayer(t, a); await items.lockPlayer(t, b);
-  const socketCol = await hasColumn('player_items', 'socket_of');
-  const { rows } = await query(t, `
-    SELECT i.id, i.item_id, i.container
-      FROM player_items i JOIN item_catalog c ON c.item_id = i.item_id
-     WHERE i.player_id = $1 AND i.container IN ('inventory', 'equipment') AND NOT c.stackable
-       ${socketCol ? 'AND i.socket_of IS NULL' : ''}
-     ORDER BY random() LIMIT 1`, [victimId]);
-  if (!rows.length) return null;
-  const it = rows[0];
-  if (await items.usedSlots(t, killerId) >= items.SERVER_INV_MAX) return null;
-  const rowId = Number(it.id);
-  await query(t, `
-    UPDATE player_items SET player_id = $2, container = 'inventory', slot = NULL
-     WHERE id = $1 AND player_id = $3`, [rowId, killerId, victimId]);
-  await items.ledger(t, victimId, it.item_id, -1, { rowId, reason: 'pk_drop', refType: 'pk', refId: String(killerId) });
-  await items.ledger(t, killerId, it.item_id, 1, { rowId, reason: 'pk_drop', refType: 'pk', refId: String(victimId) });
-  // Руны в гнёздах этого предмета — вместе с ним.
-  if (socketCol) {
-    const { rows: rs } = await query(t, `
-      UPDATE player_items SET player_id = $2 WHERE socket_of = $1 AND player_id = $3
-      RETURNING id, item_id`, [rowId, killerId, victimId]);
-    for (const r of rs) {
-      await items.ledger(t, victimId, r.item_id, -1, { rowId: Number(r.id), reason: 'pk_drop', refType: 'pk', refId: String(killerId) });
-      await items.ledger(t, killerId, r.item_id, 1, { rowId: Number(r.id), reason: 'pk_drop', refType: 'pk', refId: String(victimId) });
-    }
-  }
-  const def = ITEM_DEF.find(d => d.id === it.item_id);
-  return { itemId: it.item_id, name: (def && def.name) || it.item_id, rowId, equipped: it.container === 'equipment' };
-}
-
 // Убийство игрока игроком. Зовётся из открытой ветки modes._pvpEliminate —
 // ни один режим смерть не забрал. vs/ks — сессии жертвы и убийцы.
 async function onPvpKill(t, vs, ks, floorId, { victimPvp = false } = {}) {
@@ -207,14 +169,12 @@ async function onPvpKill(t, vs, ks, floorId, { victimPvp = false } = {}) {
   }
   const victimKarma = await load(t, vs.playerId);
   vs.karma = victimKarma;
-  let drop = null;
-  if (victimKarma > 0 && Math.random() < karmaDropChance(victimKarma)) {
-    drop = await _dropItem(t, vs.playerId, ks.playerId);
-  }
+  // Вещи с ПК-шников не выпадают (снято по просьбе владельца) — наказание
+  // кармой: ни опыта, ни дропа с монстров, пока она не смыта.
+  const drop = null;
   // Смерть жертвы обнуляет её карму сразу, не дожидаясь возрождения.
   if (victimKarma > 0) await _set(t, vs, 0);
-  // Оба были в ПК — убийце кармы нет (вещь с кармической жертвы выше всё
-  // равно могла выпасть).
+  // Оба были в ПК — убийце кармы нет.
   if (victimPvp) return { drop, victimKarma, killerKarma: await load(t, ks.playerId), bothPvp: true };
   const killerKarma = await load(t, ks.playerId);
   ks.karma = killerKarma;
