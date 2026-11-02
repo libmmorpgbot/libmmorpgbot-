@@ -2465,7 +2465,7 @@ function netConnect(onReady) {
       // Same blank-template merge restoreFromSave uses — every slot key has to
       // exist (equipItem/recompute index into them by name), and only the
       // filled ones come from the payload.
-      const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null };
+      const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null, helper:null };
       const rebuilt = {};
       Object.keys(equipment).forEach(sl => { if (equipment[sl]) rebuilt[sl] = _rebuildFromCatalog(equipment[sl]); });
       player.equipment = { ...blank, ...rebuilt };
@@ -2839,7 +2839,6 @@ function netConnect(onReady) {
   // ── достижения ──────────────────────────────────────────────────────────
   socket.on('achState', (st) => { if (typeof onAchState === 'function') onAchState(st); });
   // ── помощники ───────────────────────────────────────────────────────────
-  socket.on('helpersState', (st) => { if (typeof onHelpersState === 'function') onHelpersState(st); });
   socket.on('helperCrafted', (res) => { if (typeof showHelperCrafted === 'function') showHelperCrafted(res); });
   socket.on('helperFed', (res) => { if (typeof onHelperFed === 'function') onHelperFed(res); });
   socket.on('helperError', ({ msg } = {}) => {
@@ -4278,10 +4277,6 @@ function _finishOnlineStart() {
   // горела, не дожидаясь, пока окно откроют.
   if (typeof showAchBtn === 'function') showAchBtn();
   netAchSync();
-  // Помощники: кнопка и сразу состояние — активный помощник должен лететь
-  // рядом и считаться в характеристики, не дожидаясь, пока откроют окно.
-  if (typeof showHelpersBtn === 'function') showHelpersBtn();
-  netHelpersSync();
   // Итог оффлайн-фарма пришёл сразу после authOk, когда показывать его было
   // некуда, — показывается здесь, как только игрок в мире.
   if (typeof offlineFarmShowPending === 'function') offlineFarmShowPending();
@@ -5630,10 +5625,8 @@ function netClaimQuest(idx) {
 function netSeasonSync()    { if (socket?.connected) socket.emit('seasonSync'); }
 function netAchSync()       { if (socket?.connected) socket.emit('achSync'); }
 function netAchClaim(id)    { if (socket?.connected) socket.emit('achClaim', { id }); }
-function netHelpersSync()   { if (socket?.connected) socket.emit('helpersSync'); }
 function netHelperCraft(rarity) { if (socket?.connected) socket.emit('helperCraft', { rarity }); }
-function netHelperFeed(id, times) { if (socket?.connected) socket.emit('helperFeed', { id, times }); }
-function netHelperSetActive(id) { if (socket?.connected) socket.emit('helperSetActive', { id }); }
+function netHelperFeed(rowId, times) { if (socket?.connected) socket.emit('helperFeed', { rowId, times }); }
 function netSeasonRating()  { if (socket?.connected) socket.emit('seasonRating'); }
 function netSeasonWinners() { if (socket?.connected) socket.emit('seasonWinners'); }
 function netSeasonClaimPrize(season) { if (socket?.connected) socket.emit('seasonClaimPrize', { season }); }

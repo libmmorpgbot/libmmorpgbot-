@@ -740,13 +740,15 @@ async function claimSeasonPrize(db, playerId, season = PAST_SEASON) {
 // and materials are worth nothing.
 async function disassembleValueOf(db, playerId, rowId) {
   const { rows } = await query(db, `
-    SELECT pi.id, pi.item_id, c.rarity, c.stackable
+    SELECT pi.id, pi.item_id, c.rarity, c.stackable, c.slot
       FROM player_items pi JOIN item_catalog c ON c.item_id = pi.item_id
      WHERE pi.id = $1 AND pi.player_id = $2 AND pi.container = 'inventory'`,
     [rowId, playerId]);
   if (!rows.length) return null;
   const r = rows[0];
-  if (r.stackable) return null;
+  // Помощник не разбирается: он стоит тысячи осколков, а разбор дал бы
+  // за него пару Liberty — продать его можно на рынке.
+  if (r.stackable || r.slot === 'helper') return null;
   const range = DISASSEMBLE_LIBERTY[r.rarity];
   if (!range) return null;
   return { itemId: r.item_id, rarity: r.rarity, range };

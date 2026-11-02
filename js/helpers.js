@@ -13,44 +13,18 @@
 // мягкое кольцо под ногами и редкие искры, у легендарного — столп света,
 // руны по кругу и луч от помощника к игроку на каждом «касте».
 
-// ── состояние с сервера ─────────────────────────────────────────────────────
-let _hlpState = { ready: false, list: [], active: null };
-let _hlpSel = null;        // какой помощник открыт в окне
+// ── надетый помощник ────────────────────────────────────────────────────────
+// Помощник — предмет в слоте 'helper' (миграция 049): кто летает рядом, решает
+// экипировка, а уровень едет в самой строке (hlLevel). Мир (pixi-world.js)
+// спрашивает отсюда, кого рисовать у плеча.
 let _hlpBusy = false;      // ждём ответ сервера — кнопки выключены
-let _hlpRaf = 0;           // цикл анимации карточек, пока окно открыто
+let _hlpRaf = 0;           // цикл анимации, пока на экране есть живой холст
+let _hlpModal = null;      // { rowId } — помощник, чьё окно сейчас открыто
 
 function _hlpTier(def) { return Math.max(0, HELPER_RARITIES.indexOf(def && def.rarity)); }
-function _hlpOwned(id) { return _hlpState.list.find(h => h.id === id) || null; }
-function helperActiveDef() { return _hlpState.ready && _hlpState.active ? helperById(_hlpState.active) : null; }
-
-// Кого считать в характеристики: recompute() (js/player.js) спрашивает
-// отсюда, а не держит копию на player — объект игрока пересоздаётся при
-// смене персонажа, а состояние помощников живёт своё.
-function helperActiveForStats() {
-  const act = _hlpState.ready && _hlpState.active && _hlpOwned(_hlpState.active);
-  return act ? { id: act.id, level: act.level } : null;
-}
-// Пересчитать характеристики после того, как пришло новое состояние. Сами
-// числа считает recompute() — тем же helperBonusAt, что и сервер.
-function _hlpApplyToPlayer() {
-  if (player && typeof recompute === 'function') recompute();
-  if (player && typeof updateInvUI === 'function') updateInvUI();
-}
-
-function onHelpersState(st) {
-  _hlpState = {
-    ready: !!(st && st.ready),
-    list: (st && Array.isArray(st.list) ? st.list : []).filter(h => helperById(h.id)),
-    active: (st && st.active) || null,
-  };
-  _hlpBusy = false;
-  if (!_hlpSel || !_hlpOwned(_hlpSel)) _hlpSel = _hlpState.active || (_hlpState.list[0] && _hlpState.list[0].id) || null;
-  _hlpApplyToPlayer();
-  if (_hlpPanelOpen()) _renderHelpersPanel();
-}
-function onHelperError() {
-  _hlpBusy = false;
-  if (_hlpPanelOpen()) _renderHelpersPanel();
+function helperActiveDef() {
+  const it = typeof player !== 'undefined' && player && player.equipment && player.equipment.helper;
+  return it ? helperById(it.id) : null;
 }
 
 // ── осколки в сумке ─────────────────────────────────────────────────────────
@@ -878,10 +852,9 @@ function helperFxTick(gGround, gTop, def, owner, hx, hy, dt, ts) {
 function helperFxReset() { _hlpParts.length = 0; _hlpBeam = 0; _hlpBurst = 0; _hlpCastT = 1.5; }
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  ОКНО «ПОМОЩНИКИ»
+//  ОКНО ПОМОЩНИКА И КРАФТ В КУЗНИЦЕ
 // ═════════════════════════════════════════════════════════════════════════════
 const _HLP_RARITY_RU = { common: 'Обычный', uncommon: 'Необычный', rare: 'Редкий', epic: 'Эпический', legendary: 'Легендарный' };
-const _HLP_RARITY_RU_GEN = { common: 'обычного', uncommon: 'необычного', rare: 'редкого', epic: 'эпического', legendary: 'легендарного' };
 const _HLP_STAT_RU = {
   atk: 'Атака', def: 'Защита', hp: 'Здоровье', critChance: 'Шанс крита', critPower: 'Сила крита',
   atkSpeed: 'Скорость атаки', hpPct: 'Здоровье %', atkPct: 'Атака %', speedPct: 'Скорость бега',
@@ -895,44 +868,57 @@ function _hlpFmtStat(k, v) {
 }
 function _hlpNum(n) { return Number(n || 0).toLocaleString('ru-RU'); }
 
-function _hlpPanelOpen() { return document.getElementById('helpers-panel')?.style.display === 'flex'; }
-
-function openHelpersPanel() {
-  const panel = document.getElementById('helpers-panel');
-  if (!panel) return;
-  panel.style.display = 'flex';
-  _renderHelpersPanel();
-  if (typeof netHelpersSync === 'function') netHelpersSync();
-  _hlpStartAnim();
+// ── значок для сумки, слота и рынка ─────────────────────────────────────────
+// Один неподвижный кадр, растрированный в dataURL один раз на вид. Раньше окно
+// перерисовывало каждый кадр все ~40 холстов (герой, коллекция, крафт) — от
+// этого и дёргалось. Теперь живым остаётся только один большой помощник в
+// открытом окне, а все маленькие — картинки.
+const _hlpIconCache = new Map();
+function helperIconUrl(id) {
+  if (_hlpIconCache.has(id)) return _hlpIconCache.get(id);
+  const def = helperById(id);
+  if (!def || typeof document === 'undefined') return null;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 96;
+  const ctx = cv.getContext('2d');
+  if (!ctx) return null;
+  helperDrawFrame(ctx, def, 0.8, 96);
+  let url;
+  try { url = cv.toDataURL('image/png'); } catch { url = null; }
+  _hlpIconCache.set(id, url);
+  return url;
 }
-function closeHelpersPanel() {
-  const panel = document.getElementById('helpers-panel');
-  if (panel) panel.style.display = 'none';
-  _hlpStopAnim();
+function _hlpIconImg(id, px, dim) {
+  const url = helperIconUrl(id);
+  return url ? `<img src="${url}" width="${px}" height="${px}" alt=""${dim ? ' style="opacity:.35;filter:grayscale(1)"' : ''}>` : '';
 }
 
-// Холсты в окне помечены data-hid; один цикл перерисовывает все видимые.
+// ── живой холст ─────────────────────────────────────────────────────────────
+// Только в окне помощника и в окне «Новый помощник!» — по одному холсту.
+// Кадр — не чаще 30 раз в секунду: на телефоне 60 полных перерисовок с
+// градиентами и свечением и давали рывки, а глаз разницы не видит.
+function _hlpCv(id, px) {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  return `<canvas data-hid="${id}" width="${Math.round(px * dpr)}" height="${Math.round(px * dpr)}" style="width:${px}px;height:${px}px"></canvas>`;
+}
 function _hlpStartAnim() {
   if (_hlpRaf) return;
+  let last = 0;
   const loop = (ts) => {
-    if (!_hlpPanelOpen() && !document.getElementById('hlp-win-ov')) { _hlpRaf = 0; return; }
-    const t = ts / 1000;
-    document.querySelectorAll('canvas[data-hid]').forEach(cv => {
-      const def = helperById(cv.dataset.hid);
-      const ctx = cv.getContext('2d');
-      if (def && ctx) helperDrawFrame(ctx, def, t, cv.width, { dim: cv.dataset.dim === '1' });
-    });
+    const list = document.querySelectorAll('canvas[data-hid]');
+    if (!list.length) { _hlpRaf = 0; return; }
+    if (ts - last >= 33) {
+      last = ts;
+      const t = ts / 1000;
+      list.forEach(cv => {
+        const def = helperById(cv.dataset.hid);
+        const ctx = cv.getContext('2d');
+        if (def && ctx) helperDrawFrame(ctx, def, t, cv.width);
+      });
+    }
     _hlpRaf = requestAnimationFrame(loop);
   };
   _hlpRaf = requestAnimationFrame(loop);
-}
-function _hlpStopAnim() {
-  if (_hlpRaf && !document.getElementById('hlp-win-ov')) { cancelAnimationFrame(_hlpRaf); _hlpRaf = 0; }
-}
-
-function _hlpCv(id, px, dim) {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  return `<canvas data-hid="${id}"${dim ? ' data-dim="1"' : ''} width="${Math.round(px * dpr)}" height="${Math.round(px * dpr)}" style="width:${px}px;height:${px}px"></canvas>`;
 }
 
 function _hlpStatsHTML(def, level) {
@@ -943,124 +929,160 @@ function _hlpStatsHTML(def, level) {
       <b>${_hlpFmtStat(k, cur[k])}</b>${nxt ? `<i>→ ${_hlpFmtStat(k, nxt[k])}</i>` : ''}</div>`).join('');
 }
 
-function _hlpHeroHTML() {
-  const def = helperById(_hlpSel);
-  const own = def && _hlpOwned(def.id);
-  if (!def || !own) {
-    return `<div class="hlp-hero hlp-hero-empty">
-      <div class="hlp-hero-empty-txt">У вас пока нет помощников.<br>Создайте первого из осколков — ниже.</div>
-    </div>`;
-  }
-  const col = _hlpRarCol(def.rarity);
-  const maxed = own.level >= HELPER_MAX_LEVEL;
-  const need = helperXpToNext(own.level);
-  const pct = maxed ? 100 : Math.floor((own.xp / Math.max(1, need)) * 100);
-  const total = _hlpShardTotal();
-  const isActive = _hlpState.active === def.id;
-  const feedBtn = n => {
-    const plan = helperFeedPlan(own.level, own.xp, n);
-    const ok = plan.feeds > 0 && total >= plan.cost && !_hlpBusy;
-    return `<button class="hlp-feed-btn" ${ok ? '' : 'disabled'} onclick="helperFeed('${def.id}', ${n})">
-      <span>💎 Кормить${n > 1 ? ' ×' + plan.feeds : ''}</span><small>${_hlpNum(plan.cost)} осколков</small></button>`;
-  };
-  return `
-    <div class="hlp-hero r-${def.rarity}" style="--rc:${col}">
-      <div class="hlp-hero-stage">${_hlpCv(def.id, 150)}</div>
-      <div class="hlp-hero-info">
-        <div class="hlp-hero-rar">${_HLP_RARITY_RU[def.rarity]}</div>
-        <div class="hlp-hero-name">${def.name}</div>
-        <div class="hlp-hero-lvl">Уровень <b>${own.level}</b> / ${HELPER_MAX_LEVEL}</div>
-        <div class="hlp-xp"><div class="hlp-xp-fill" style="width:${pct}%"></div>
-          <span>${maxed ? 'МАКС.' : `${own.xp} / ${need} опыта`}</span></div>
-      </div>
-      <div class="hlp-stats hlp-hero-stats">${_hlpStatsHTML(def, own.level)}</div>
-      <div class="hlp-hero-actions">
-        ${maxed ? '<div class="hlp-maxed">★ Максимальный уровень</div>' : `${feedBtn(1)}${feedBtn(5)}${feedBtn(10)}`}
-        <button class="hlp-summon-btn${isActive ? ' on' : ''}" ${_hlpBusy ? 'disabled' : ''}
-          onclick="helperSetActive(${isActive ? 'null' : `'${def.id}'`})">${isActive ? '✓ Летает рядом — убрать' : '✨ Призвать'}</button>
-      </div>
-      <div class="hlp-hero-note">Одно кормление: +${HELPER_FEED_XP} опыта · ${_hlpNum(helperFeedCost(own.level))} осколков любых видов (берутся с самых больших стопок). Чем выше уровень — тем дороже порция.</div>
-    </div>`;
+// ── окно помощника (тап по нему в сумке или в слоте) ────────────────────────
+// Где он лежит — по номеру строки: после кормления сумка приходит заново, и
+// индексы в ней могут сдвинуться, а строка та же.
+function _hlpFindRow(rowId) {
+  if (!player) return null;
+  const eq = player.equipment && player.equipment.helper;
+  if (eq && eq.rowId === rowId) return { it: eq, where: 'eq' };
+  const idx = (player.inventory || []).findIndex(x => x && x.rowId === rowId);
+  return idx >= 0 ? { it: player.inventory[idx], where: 'inv', idx } : null;
 }
 
-function _hlpCraftHTML() {
+function openHelperItemModal(where, key) {
+  if (!player) return;
+  const it = where === 'eq' ? (player.equipment || {})[key] : (player.inventory || [])[key];
+  if (!it || it.slot !== 'helper') return;
+  _hlpModal = { rowId: it.rowId };
+  _hlpBusy = false;
+  _renderHelperItemModal();
+}
+
+function _renderHelperItemModal() {
+  if (!_hlpModal) return;
+  const found = _hlpFindRow(_hlpModal.rowId);
+  const def = found && helperById(found.it.id);
+  if (!def) { _hlpModal = null; if (typeof closeInvItemModal === 'function') closeInvItemModal(); return; }
+  const it = found.it;
+  const level = it.hlLevel || 1, xp = it.hlXp || 0;
+  const col = _hlpRarCol(def.rarity);
+  const maxed = level >= HELPER_MAX_LEVEL;
+  const need = helperXpToNext(level);
+  const pct = maxed ? 100 : Math.floor((xp / Math.max(1, need)) * 100);
+  const total = typeof _hlpShardTotal === 'function' ? _hlpShardTotal() : 0;
+  const equipped = found.where === 'eq';
+  const feedBtn = n => {
+    const plan = helperFeedPlan(level, xp, n);
+    const ok = plan.feeds > 0 && total >= plan.cost && !_hlpBusy;
+    return `<button class="hlp-feed-btn" ${ok ? '' : 'disabled'} onclick="helperFeedRow(${it.rowId}, ${n})">
+      <span>💎 Кормить${n > 1 ? ' ×' + plan.feeds : ''}</span><small>${_hlpNum(plan.cost)} осколков</small></button>`;
+  };
+  const equipBtn = equipped
+    ? `<button class="hlp-summon-btn on" ${_hlpBusy ? 'disabled' : ''} onclick="_hlpUnequip()">✓ Надет — снять</button>`
+    : `<button class="hlp-summon-btn" ${_hlpBusy ? 'disabled' : ''} onclick="_hlpEquip(${it.rowId})">✨ Надеть</button>`;
+
+  // Холст живёт, пока окно открыто: перерисовка окна (после кормления)
+  // переиспользует тот же элемент, а не создаёт новый, — иначе кадр мигал бы.
+  let ov = document.getElementById('inv-item-modal-ov');
+  const sameRow = ov && ov.dataset.hlpRow === String(it.rowId);
+  if (!sameRow) {
+    if (typeof closeInvItemModal === 'function') closeInvItemModal();
+    _hlpModal = { rowId: it.rowId };
+    ov = document.createElement('div');
+    ov.id = 'inv-item-modal-ov';
+    ov.className = 'imod-overlay';
+    ov.dataset.hlpRow = String(it.rowId);
+    ov.onclick = () => { _hlpModal = null; if (typeof closeInvItemModal === 'function') closeInvItemModal(); };
+    ov.innerHTML = `<div class="imod-box hlp-imod" onclick="event.stopPropagation()">
+      <div class="hlp-hero r-${def.rarity}" style="--rc:${col}">
+        <button class="npc-close hlp-imod-close" onclick="_hlpModal=null;closeInvItemModal()">✕</button>
+        <div class="hlp-hero-stage">${_hlpCv(def.id, 150)}</div>
+        <div class="hlp-hero-info" id="hlp-imod-info"></div>
+        <div class="hlp-stats hlp-hero-stats" id="hlp-imod-stats"></div>
+        <div class="hlp-hero-actions" id="hlp-imod-actions"></div>
+        <div class="hlp-hero-note" id="hlp-imod-note"></div>
+      </div>
+    </div>`;
+    (document.getElementById('app') || document.body).appendChild(ov);
+  }
+  ov.querySelector('#hlp-imod-info').innerHTML = `
+    <div class="hlp-hero-rar">${_HLP_RARITY_RU[def.rarity]}${equipped ? ' · надет' : ''}</div>
+    <div class="hlp-hero-name">${def.name}</div>
+    <div class="hlp-hero-lvl">Уровень <b>${level}</b> / ${HELPER_MAX_LEVEL}</div>
+    <div class="hlp-xp"><div class="hlp-xp-fill" style="width:${pct}%"></div>
+      <span>${maxed ? 'МАКС.' : `${xp} / ${need} опыта`}</span></div>`;
+  ov.querySelector('#hlp-imod-stats').innerHTML = _hlpStatsHTML(def, level);
+  ov.querySelector('#hlp-imod-actions').innerHTML =
+    (maxed ? '<div class="hlp-maxed">★ Максимальный уровень</div>' : `${feedBtn(1)}${feedBtn(5)}${feedBtn(10)}`) + equipBtn;
+  ov.querySelector('#hlp-imod-note').innerHTML = maxed ? 'Помощника можно продать на рынке — уровень переходит вместе с ним.'
+    : `Одно кормление: +${HELPER_FEED_XP} опыта · ${_hlpNum(helperFeedCost(level))} осколков любых видов (берутся с самых больших стопок; у вас ${_hlpNum(total)}). Чем выше уровень — тем дороже порция. Продать помощника можно на рынке — уровень переходит вместе с ним.`;
+  _hlpStartAnim();
+}
+
+function helperFeedRow(rowId, n) {
+  if (_hlpBusy) return;
+  _hlpBusy = true; _renderHelperItemModal();
+  if (typeof netHelperFeed === 'function') netHelperFeed(rowId, n);
+}
+function _hlpEquip(rowId) {
+  const f = _hlpFindRow(rowId);
+  _hlpModal = null;
+  if (typeof closeInvItemModal === 'function') closeInvItemModal();
+  if (f && f.where === 'inv' && typeof equipItem === 'function') equipItem(f.idx);
+}
+function _hlpUnequip() {
+  _hlpModal = null;
+  if (typeof closeInvItemModal === 'function') closeInvItemModal();
+  if (typeof unequipItem === 'function') unequipItem('helper');
+}
+
+function onHelperFed(res) {
+  _hlpBusy = false;
+  if (res && typeof _marketToast === 'function') {
+    const def = helperById(res.id);
+    const lvl = res.to > res.from ? ` · уровень ${res.from} → ${res.to}!` : '';
+    _marketToast(`${def ? def.name : 'Помощник'}: +${res.xpGained} опыта${lvl}`, 'ok');
+  }
+  if (_hlpModal) _renderHelperItemModal();
+}
+function onHelperError() {
+  _hlpBusy = false;
+  if (_hlpModal) _renderHelperItemModal();
+  if (typeof _craftsmanTab !== 'undefined' && _craftsmanTab === 'helpers' && typeof _setCraftsmanTab === 'function'
+    && document.getElementById('npc-body')) _setCraftsmanTab('helpers');
+}
+
+// ── кузница: вкладка «Помощники» ────────────────────────────────────────────
+// Пять рецептов — по редкости. Каждый вид осколков по цене редкости, выпадает
+// случайный помощник этой редкости новым предметом в сумку.
+function helperCraftTabHTML() {
   const minShard = _hlpShardMin();
   const rows = HELPER_RARITIES.map(r => {
     const cost = HELPER_CRAFT_COST[r];
     const ok = minShard >= cost && !_hlpBusy;
     const pool = HELPERS.filter(h => h.rarity === r);
-    const got = pool.filter(h => _hlpOwned(h.id)).length;
     return `<div class="hlp-craft r-${r}" style="--rc:${_hlpRarCol(r)}">
-      <div class="hlp-craft-pics">${pool.map(h => _hlpCv(h.id, 34, !_hlpOwned(h.id))).join('')}</div>
+      <div class="hlp-craft-pics">${pool.map(h => _hlpIconImg(h.id, 34)).join('')}</div>
       <div class="hlp-craft-txt">
-        <div class="hlp-craft-name">${_HLP_RARITY_RU[r]} <small>${got}/${pool.length}</small></div>
+        <div class="hlp-craft-name">${_HLP_RARITY_RU[r]} <small>${pool.length} ${pool.length >= 5 ? "видов" : "вида"}</small></div>
         <div class="hlp-craft-cost">по ${_hlpNum(cost)} каждого осколка</div>
       </div>
       <button class="hlp-craft-btn" ${ok ? '' : 'disabled'} onclick="helperCraft('${r}')">Создать</button>
     </div>`;
   }).join('');
-  return `<div class="hlp-sec-hdr">🔮 Создание — случайный помощник выбранной редкости</div>
+  return `<div class="hlp-wrap">
+    <div class="hlp-sec-hdr">🔮 Помощники — случайный выбранной редкости</div>
     <div class="hlp-shards">Осколков: всего <b>${_hlpNum(_hlpShardTotal())}</b>, меньше всего одного вида — <b>${_hlpNum(minShard)}</b>.
-      Повтор уже открытого помощника превращается в +${HELPER_DUP_XP} опыта ему.</div>
-    ${rows}`;
-}
-
-function _hlpCollectionHTML() {
-  return `<div class="hlp-sec-hdr">📖 Коллекция</div>` + HELPER_RARITIES.map(r => {
-    const list = HELPERS.filter(h => h.rarity === r);
-    return `<div class="hlp-grid">${list.map(h => {
-      const own = _hlpOwned(h.id);
-      const act = _hlpState.active === h.id, sel = _hlpSel === h.id;
-      return `<div class="hlp-cell r-${r}${own ? '' : ' locked'}${sel ? ' sel' : ''}" style="--rc:${_hlpRarCol(r)}"
-        ${own ? `onclick="helperSelect('${h.id}')"` : ''}>
-        ${_hlpCv(h.id, 64, !own)}
-        <div class="hlp-cell-name">${own ? h.name : '???'}</div>
-        <div class="hlp-cell-lvl">${own ? `ур. ${own.level}` : _HLP_RARITY_RU[r]}</div>
-        ${act ? '<i class="hlp-cell-act">✓</i>' : ''}
-      </div>`;
-    }).join('')}</div>`;
-  }).join('');
-}
-
-function _renderHelpersPanel() {
-  const body = document.getElementById('helpers-panel-body');
-  if (!body) return;
-  if (!_hlpState.ready) {
-    body.innerHTML = '<div class="s4-wrap"><div class="s4-empty">Помощники скоро появятся</div></div>';
-    return;
-  }
-  body.innerHTML = `<div class="s4-wrap hlp-wrap">${_hlpHeroHTML()}${_hlpCraftHTML()}${_hlpCollectionHTML()}</div>`;
-}
-
-function helperSelect(id) {
-  if (!_hlpOwned(id)) return;
-  _hlpSel = id;
-  _renderHelpersPanel();
+      Помощник появится в сумке: нажмите на него, чтобы надеть или прокачать.</div>
+    ${rows}</div>`;
 }
 function helperCraft(rarity) {
   if (_hlpBusy) return;
-  _hlpBusy = true; _renderHelpersPanel();
+  _hlpBusy = true;
+  if (typeof _setCraftsmanTab === 'function' && document.getElementById('npc-body')) _setCraftsmanTab('helpers');
   if (typeof netHelperCraft === 'function') netHelperCraft(rarity);
-}
-function helperFeed(id, n) {
-  if (_hlpBusy) return;
-  _hlpBusy = true; _renderHelpersPanel();
-  if (typeof netHelperFeed === 'function') netHelperFeed(id, n);
-}
-function helperSetActive(id) {
-  if (_hlpBusy) return;
-  _hlpBusy = true; _renderHelpersPanel();
-  if (typeof netHelperSetActive === 'function') netHelperSetActive(id);
 }
 
 // Окно «Новый помощник!» — большой, с лучами за спиной.
 function showHelperCrafted(res) {
+  _hlpBusy = false;
+  if (typeof _craftsmanTab !== 'undefined' && _craftsmanTab === 'helpers' && typeof _setCraftsmanTab === 'function'
+    && document.getElementById('npc-body')) _setCraftsmanTab('helpers');
   const def = res && helperById(res.id);
   if (!def) return;
-  _hlpSel = def.id;
   document.getElementById('hlp-win-ov')?.remove();
   const col = _hlpRarCol(def.rarity);
-  const dup = res.outcome === 'duplicate';
   const ov = document.createElement('div');
   ov.id = 'hlp-win-ov';
   ov.className = 'ach-win-ov';
@@ -1069,37 +1091,13 @@ function showHelperCrafted(res) {
     <div class="db-win-panel hlp-win r-${def.rarity}" onclick="event.stopPropagation()" style="--rc:${col}">
       <div class="ach-win-rays"></div>
       <div class="hlp-win-stage">${_hlpCv(def.id, 180)}</div>
-      <div class="db-win-title">${dup ? 'Повтор!' : 'Новый помощник!'}</div>
+      <div class="db-win-title">Новый помощник!</div>
       <div class="hlp-win-rar">${_HLP_RARITY_RU[def.rarity]}</div>
       <div class="hlp-win-name">${def.name}</div>
-      <div class="db-win-sub">${dup ? `+${HELPER_DUP_XP} опыта · уровень ${res.to}` : 'Уже в вашей коллекции'}</div>
-      <div class="hlp-stats hlp-win-stats">${_hlpStatsHTML(def, res.to || 1)}</div>
+      <div class="db-win-sub">Лежит в сумке — нажмите на него, чтобы надеть</div>
+      <div class="hlp-stats hlp-win-stats">${_hlpStatsHTML(def, 1)}</div>
       <button class="db-win-btn" onclick="document.getElementById('hlp-win-ov')?.remove()">Отлично</button>
     </div>`;
   document.body.appendChild(ov);
   _hlpStartAnim();
-}
-
-function onHelperFed(res) {
-  if (!res || typeof _marketToast !== 'function') return;
-  const def = helperById(res.id);
-  const lvl = res.to > res.from ? ` · уровень ${res.from} → ${res.to}!` : '';
-  _marketToast(`${def ? def.name : 'Помощник'}: +${res.xpGained} опыта${lvl}`, 'ok');
-}
-
-// Кнопка — в колонке меню, под «Достижениями».
-function _positionHelpersBtn() {
-  const above = document.getElementById('ach-btn');
-  const btn = document.getElementById('helpers-btn');
-  if (!btn || !above) return;
-  const aTop = parseFloat(above.style.top) || 0;
-  btn.style.top       = (aTop + 28 + 4) + 'px';
-  btn.style.left      = above.style.left;
-  btn.style.width     = above.style.width;
-  btn.style.right     = 'auto';
-  btn.style.transform = 'none';
-}
-function showHelpersBtn() {
-  const btn = document.getElementById('helpers-btn');
-  if (btn) { btn.dataset.shown = '1'; btn.style.display = _hudSubBtnDisplay(); _positionHelpersBtn(); }
 }

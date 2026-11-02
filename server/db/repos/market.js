@@ -299,7 +299,7 @@ async function _splitOffForListing(db, playerId, it, want) {
 // One listing, in the shape every other read answers with.
 async function byId(db, listingId) {
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}${await runeCol()}
+    SELECT ${await listingCols()}${await runeCol()}${await helperCol()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       LEFT JOIN player_items i ON i.id = l.item_id
@@ -534,6 +534,10 @@ const listingCols = async () =>
 // колонку уронил бы весь рынок.
 const runeCol = async () =>
   (await hasColumn('player_items', 'rune')) ? ', i.rune' : ', NULL::jsonb AS rune';
+// Уровень и опыт помощника (миграция 049) — едут в лоте так же, как
+// содержимое руны: два помощника одного вида на рынке различаются только ими.
+const helperCol = async () =>
+  (await hasColumn('player_items', 'hl_level')) ? ', i.hl_level, i.hl_xp' : ', NULL::smallint AS hl_level, NULL::int AS hl_xp';
 const historyCols = async () =>
   (await hasColumn('market_listings', 'snap_item_id')) ? COLS_HIST : COLS_PLAIN;
 const catalogJoin = async () =>
@@ -559,6 +563,7 @@ function _lot(r) {
       // Только у рун и только когда есть что показывать: лишний null в каждом
       // лоте — это лишний байт на каждой строке самого частого запроса игры.
       ...(r.rune ? { rune: r.rune } : {}),
+      ...(r.hl_level != null ? { hlLevel: Number(r.hl_level), hlXp: Number(r.hl_xp) || 0 } : {}),
     },
   };
 }
@@ -596,7 +601,7 @@ async function browse(db, { limit = MARKET_BROWSE_MAX, offset = 0, slot = null }
   const n = Math.floor(Number(limit));
   const take = Number.isSafeInteger(n) && n > 0 ? Math.min(n, MARKET_BROWSE_MAX) : MARKET_BROWSE_MAX;
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}${await runeCol()}
+    SELECT ${await listingCols()}${await runeCol()}${await helperCol()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       JOIN player_items i ON i.id = l.item_id
@@ -609,7 +614,7 @@ async function browse(db, { limit = MARKET_BROWSE_MAX, offset = 0, slot = null }
 
 async function mine(db, playerId) {
   const { rows } = await query(db, `
-    SELECT ${await listingCols()}${await runeCol()}
+    SELECT ${await listingCols()}${await runeCol()}${await helperCol()}
       FROM market_listings l
       JOIN players      s ON s.id = l.seller_id
       JOIN player_items i ON i.id = l.item_id
@@ -642,7 +647,7 @@ async function mine(db, playerId) {
 async function history(db, playerId, limit = 30) {
   const me = Number(playerId);
   const { rows } = await query(db, `
-    SELECT ${await historyCols()}${await runeCol()}, l.buyer_id, l.closed_at,
+    SELECT ${await historyCols()}${await runeCol()}${await helperCol()}, l.buyer_id, l.closed_at,
            b.username AS buyer_username
       FROM market_listings l
       JOIN players       s ON s.id = l.seller_id

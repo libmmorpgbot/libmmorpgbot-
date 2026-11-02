@@ -5745,3 +5745,12 @@ canvas { display:block; width:100%; height:100%; }
   .hlp-hero-stage { width: 120px; height: 120px; }
   .hlp-hero-stage canvas { width: 120px !important; height: 120px !important; }
 }
+
+/* ── Окно помощника-предмета (js/helpers.js, openHelperItemModal) ──────────
+   Та же карточка, что была в окне «Помощники», внутри обычного окна
+   предмета. Кнопка закрытия — поверх карточки, в её углу. */
+.imod-box.hlp-imod { padding: 0; background: none; border: none; box-shadow: none; max-width: 420px; }
+.hlp-imod .hlp-hero { margin: 0; }
+.hlp-imod-close { position: absolute; top: 8px; right: 8px; z-index: 2; }
+/* Живой холст — в свой слой: перерисовка кадра не тянет за собой карточку. */
+.hlp-hero-stage canvas, .hlp-win-stage canvas { will-change: contents; transform: translateZ(0); }

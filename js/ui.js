@@ -52,6 +52,12 @@ function _itemIcon(it, size) {
       <div style="position:absolute;left:50%;top:46%;transform:translate(-50%,-50%)">${glyph}</div>
     </div>`;
   }
+  // Помощник рисуется кодом (js/helpers.js), картинки у него нет — значок
+  // один раз растрируется в dataURL и дальше берётся из кеша.
+  if (it && it.slot === 'helper' && typeof helperIconUrl === 'function') {
+    const url = helperIconUrl(it.id);
+    if (url) return `<img src="${url}" width="${size}" height="${size}" style="border-radius:3px">`;
+  }
   if (it && it.img) {
     // `smooth` — рисованный арт (руда), которому пиксельное уменьшение только
     // рвёт края; у всего остального в игре пиксель-арт, и ему pixelated нужен.
@@ -86,6 +92,7 @@ function updateInvUI() {
       style="${pos};--rc:${rc}">
       ${_itemIcon(it, 32)}
       ${it.enhance ? `<span class="eq-rslot-enh">+${it.enhance}</span>` : ''}
+      ${it.slot === 'helper' ? `<span class="eq-rslot-enh">${it.hlLevel || 1}</span>` : ''}
     </div>`;
   }).join('');
   _startInvPortraitAnim();
@@ -128,7 +135,8 @@ function updateInvUI() {
     if (!entry) return `<div class="inv-cell"></div>`;
     const { it, idx, count } = entry;
     const rc = RARITY_COLOR[it.rarity] || '#aea599';
-    const enh = it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>` : '';
+    const enh = it.enhance ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#e69419;font-weight:bold">+${it.enhance}</span>`
+      : it.slot === 'helper' ? `<span style="position:absolute;top:1px;right:2px;font-size:7px;color:#9fdcff;font-weight:bold">ур.${it.hlLevel || 1}</span>` : '';
     const cntBadge = count ? `<span style="position:absolute;bottom:1px;right:2px;font-size:7px;color:#cfc0ad;font-weight:bold">×${count}</span>` : '';
     const clickable = idx !== undefined;
     return `<div class="inv-cell filled" onclick="${clickable ? `openInvItemModal(${idx})` : ''}"
@@ -3567,7 +3575,7 @@ const _TELEPORT_BTN_ID = 'teleport-btn';
 // to need a fold-away menu (hud-menu-btn) rather than sitting on screen the
 // whole time; see toggleHudMenu below. Same dataset.shown gating, plus they
 // only ever show while the menu is expanded.
-const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn', 'ach-btn', 'helpers-btn'];
+const _HUD_MENU_BTN_IDS = ['vip-btn', 'market-btn', 'gram-shop-btn', 'rating-btn', 'events-btn', 'season-btn', 'codex-btn', 'ach-btn'];
 let _hudMenuExpanded = false;
 // hud-menu-btn's own visibility is tab-only (like chat); the seven behind it
 // need tab AND expanded — this is that second check, shared by every
@@ -6021,7 +6029,7 @@ function _itemStatRows(it, eb) {
   return rows;
 }
 
-const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', wings:'Крылья', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
+const _SLOT_NAMES   = { weapon:'Оружие', helmet:'Шлем', body:'Броня', gloves:'Перчатки', boots:'Боты', ring:'Кольцо', belt:'Пояс', pet:'Питомец', cloak:'Плащ', artifact:'Артефакт', wings:'Крылья', helper:'Помощник', use:'Расходник', material:'Материал', recipe:'Рецепт', buff_potion:'Зелье усиления', box:'Бокс' };
 
 // ─────────────────────────────────────────────────────────
 //  РУНЫ — карточка руны, гнёзда предмета, выбор руны
@@ -6439,6 +6447,8 @@ function openInvItemModal(idx) {
   }
 
   if (it.slot === 'box') { closeInvItemModal(); openBoxModal(idx); return; }
+  // Помощник — своё окно: уровень, опыт, кормление, надеть (js/helpers.js).
+  if (it.slot === 'helper' && typeof openHelperItemModal === 'function') { openHelperItemModal('inv', idx); return; }
 
   if (it.skillKey || it.advSkillKey || it.passiveId) { openBookInfoModal(it.id); return; }
   if (_isStackable(it) || it.slot === 'use') return;
@@ -6588,7 +6598,8 @@ function updateDisassembleUI() {
   if (!body) return;
   const ranges = (typeof DISASSEMBLE_LIBERTY !== 'undefined') ? DISASSEMBLE_LIBERTY : {};
   const rows = (player.inventory || []).map((it, idx) => ({ it, idx }))
-    .filter(({ it }) => it && !(typeof _isStackable === 'function' && _isStackable(it)) && ranges[it.rarity])
+    // Помощника не разобрать (сервер откажет): продаётся на рынке.
+    .filter(({ it }) => it && it.slot !== 'helper' && !(typeof _isStackable === 'function' && _isStackable(it)) && ranges[it.rarity])
     .map(({ it, idx }) => {
       const range = ranges[it.rarity];
       const rc = RARITY_COLOR[it.rarity] || '#aea599';
@@ -6897,6 +6908,7 @@ function openEqItemModal(slot) {
   if (!player) return;
   const it = player.equipment[slot];
   if (!it) return;
+  if (it.slot === 'helper' && typeof openHelperItemModal === 'function') { openHelperItemModal('eq', slot); return; }
 
   const rc   = RARITY_COLOR[it.rarity] || '#aea599';
   const enh  = it.enhance || 0;
@@ -8194,7 +8206,6 @@ function _positionHudColumn() {
   _positionSeasonBtn();
   _positionCodexBtn();
   _positionAchBtn();
-  if (typeof _positionHelpersBtn === 'function') _positionHelpersBtn();
 }
 
 function showTournamentHudBtn() {
@@ -8570,6 +8581,8 @@ function _marketMinPriceForRaw(it, qty) {
   // Руна — своя цена по редкости, flat (руны не стакаются). Без этой строки
   // все пять проваливались в MARKET_MIN_PRICE ниже: руна не в
   // ENHANCEABLE_SLOTS, ни один rarity-чек для снаряжения её не ловит.
+  // Помощник — свой порог по редкости, общая таблица с сервером.
+  if (it.slot === 'helper') return ((typeof HELPER_MARKET_MIN !== 'undefined' && HELPER_MARKET_MIN[it.rarity]) || MARKET_MIN_PRICE) * n;
   if (it.slot === 'rune') {
     const runeFloor = { common: 1, uncommon: 5, rare: 20, epic: 50, legendary: 100 };
     return runeFloor[it.rarity] || MARKET_MIN_PRICE;

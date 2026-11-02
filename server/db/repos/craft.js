@@ -679,6 +679,10 @@ async function sellItem(db, playerId, rowId, qty = 1) {
   await items.assertDestroyable(db, rowId);
 
   const def = ITEM_DEF.find(d => d.id === it.item_id);
+  // Помощник торговцу не продаётся: у каждой строки свой уровень, а
+  // removeQty ниже списывает по (id, заточка) — то есть мог бы забрать не
+  // того помощника, на которого нажали. Его продают на рынке.
+  if (def && def.slot === 'helper') err('no_sell', 'Помощника можно продать только на рынке');
   // ITEM_DEF entries carry no `price` field at all (that's only ever set on
   // the potion list in CRAFT_MATS) — so every sale fell through to the "no
   // price" branch and paid out a flat 1 gold, whatever the item. Common gear

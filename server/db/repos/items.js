@@ -98,6 +98,9 @@ function _row(r) {
   // 029). Едет как есть, читается через runeBonusTotals/runeIconOf
   // (shared/definitions.js) и на сервере, и на клиенте.
   if (r.rune) out.rune = r.rune;
+  // Помощник (миграция 049): уровень и опыт ЭТОЙ строки. У прочих предметов
+  // колонки NULL и в пакет не попадают.
+  if (r.hl_level != null) { out.hlLevel = Number(r.hl_level); out.hlXp = Number(r.hl_xp) || 0; }
   return out;
 }
 
@@ -106,7 +109,7 @@ function _row(r) {
 // to answer one question is three chances for them to disagree.
 async function inventoryOf(db, playerId) {
   const { rows } = await query(db, `
-    SELECT id, container, slot, item_id, enhance, qty${await _runeCols(db)}
+    SELECT id, container, slot, item_id, enhance, qty${await _runeCols(db)}${await _helperCols(db)}
       FROM player_items
      WHERE player_id = $1
      ORDER BY sort_seq`, [playerId]);
@@ -209,9 +212,9 @@ async function hasRoomFor(db, playerId, itemId) {
 // ЭТУ функцию, а не своим INSERT, по той же причине, что и всё остальное:
 // это единственная вставка предмета в игре, и значит единственное место,
 // которое может записать в журнал, откуда предмет взялся.
-async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, sourceRef = null, rune = null } = {}) {
+async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, sourceRef = null, rune = null, helper = null } = {}) {
   const { rows: cat } = await query(db,
-    'SELECT stackable, enhanceable FROM item_catalog WHERE item_id = $1 AND active', [itemId]);
+    'SELECT stackable, enhanceable, slot FROM item_catalog WHERE item_id = $1 AND active', [itemId]);
   if (!cat.length) throw new Error(`items: unknown or retired item id ${itemId}`);
   const enh = cat[0].enhanceable ? Math.max(0, Math.min(15, Math.floor(enhance) || 0)) : 0;
 
@@ -265,6 +268,13 @@ async function add(db, playerId, itemId, { enhance = 0, qty = 1, source = null, 
   if (await _hasSocketCols(db)) {
     cols.push('rune');
     vals.push(rune ? JSON.stringify(rune) : null);
+  }
+  // Помощник рождается с уровнем (по умолчанию 1-й, без опыта) — без
+  // hl_level строка помощника не считалась бы помощником нигде.
+  if (cat[0].slot === 'helper' && await _hasHelperCols(db)) {
+    cols.push('hl_level', 'hl_xp');
+    vals.push(Math.max(1, Math.min(30, Math.floor((helper && helper.level) || 1))),
+      Math.max(0, Math.floor((helper && helper.xp) || 0)));
   }
   const { rows: ins } = await query(db,
     `INSERT INTO player_items (${cols.join(', ')})
@@ -709,6 +719,13 @@ async function _noSocket(db, a = '') {
 }
 
 async function _hasSocketCols() { return hasColumn('player_items', 'socket_of'); }
+
+// Уровень и опыт помощника (миграция 049) — тем же приёмом, что руны: до
+// миграции колонок нет, и фрагмент пустой.
+async function _hasHelperCols() { return hasColumn('player_items', 'hl_level'); }
+async function _helperCols(db, a = '') {
+  return await _hasHelperCols(db) ? `, ${a}hl_level, ${a}hl_xp` : '';
+}
 
 async function assertNoRunes(db, rowId) {
   if (!await _hasSocketCols(db)) return;
@@ -1185,6 +1202,6 @@ module.exports = {
   add, removeQty, removeRow, moveTo, moveQty,
   assertDestroyable, marketRefBlocksDelete,
   detachForListing, attachFromListing,
-  ledger, reconcile, historyOfRow,
+  ledger, reconcile, historyOfRow, _hasHelperCols, _helperCols,
   SERVER_INV_MAX,
 };

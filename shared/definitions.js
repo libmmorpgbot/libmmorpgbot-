@@ -4906,16 +4906,18 @@ function achievementById(id) {
 
 // ── Помощники ───────────────────────────────────────────────────────────────
 // Летающие спутники: висят у плеча и дают постоянную прибавку к
-// характеристикам. Не предметы — у каждого свой УРОВЕНЬ и опыт, а в сумке
-// и на рынке им делать нечего, поэтому живут они в своей таблице
-// (player_helpers, миграция 048) и считаются в характеристики отдельным
-// слагаемым (helperBonusAt ниже — и в compute() на сервере, и в recompute()
-// на клиенте).
+// характеристикам. С миграции 049 — ПРЕДМЕТЫ: строка player_items со
+// слотом 'helper' (HELPER_ITEMS ниже дописывает их в ITEM_DEF), лежат в
+// сумке, надеваются в свой слот и продаются на рынке. Уровень и опыт —
+// колонки этой строки (hl_level, hl_xp), поэтому едут вместе с предметом,
+// в том числе к покупателю. Считаются в характеристики отдельным слагаемым
+// от надетого (helperBonusAt ниже — и в compute() на сервере, и в
+// recompute() на клиенте).
 //
 // Крафт — как у уникального оружия: каждый из двадцати видов осколков
 // (UNIQUE_SHARDS) по цене редкости, и выпадает СЛУЧАЙНЫЙ помощник этой
-// редкости. Повтор уже открытого не пропадает: он уходит опытом в того же
-// помощника (HELPER_DUP_XP).
+// редкости. Каждый крафт — новый предмет, в том числе повтор (лишнего можно
+// продать).
 //
 // Кормление — осколки любого вида, сколько стоит одна порция на текущем
 // уровне (helperFeedCost). Берутся с самых больших стопок, чтобы не съесть
@@ -4924,7 +4926,7 @@ function achievementById(id) {
 //
 // Числа в `stats` — на первом уровне. Каждый следующий уровень прибавляет
 // HELPER_LEVEL_GROWTH от них (helperBonusAt), то есть на 30-м помощник даёт
-// в 1 + 29 × 0.08 = 3.32 раза больше. Поля те же, что у предметов
+// в 1 + 29 × 0.16 = 5.64 раза больше (было 0.08 — рост удвоен). Поля те же, что у предметов
 // (atk/def/hp — плоско; critChance/atkSpeed/hpPct/atkPct/critPower/
 // speedPct/xpPct/dropPct — как у снаряжения), чтобы и сервер, и панель
 // складывали их ровно туда же, куда складывают снаряжение.
@@ -4936,7 +4938,7 @@ const HELPER_CRAFT_COST = { common: 1000, uncommon: 3000, rare: 5000, epic: 1000
 const HELPER_MAX_LEVEL = 30;
 const HELPER_FEED_XP = 20;          // опыта за одно кормление
 const HELPER_DUP_XP = 100;          // повтор при крафте — опытом в того же
-const HELPER_LEVEL_GROWTH = 0.08;   // +8% от характеристик 1-го уровня за уровень
+const HELPER_LEVEL_GROWTH = 0.16;   // +16% от характеристик 1-го уровня за уровень
 const HELPER_FEED_MAX_BATCH = 50;   // кормлений за одно нажатие «Кормить ×N»
 
 const HELPERS = [
@@ -4986,6 +4988,21 @@ const HELPERS = [
 ];
 
 const _HELPER_BY_ID = new Map(HELPERS.map(h => [h.id, h]));
+
+// Помощники — предметы каталога: слот 'helper', не выпадают нигде (noDrop),
+// только из кузницы. Всё, что перебирает ITEM_DEF, фильтрует по слоту, а
+// слота 'helper' нет ни в одном списке добычи — noDrop стоит на всякий
+// случай. Характеристик на записи каталога нет: они зависят от уровня
+// строки и считаются helperBonusAt, а не сложением полей предмета.
+const HELPER_ITEMS = HELPERS.map(h => ({
+  id: h.id, name: h.name, rarity: h.rarity, slot: 'helper', helper: true, noDrop: true, icon: 'pet',
+}));
+ITEM_DEF.push(...HELPER_ITEMS);
+
+// Минимальная цена помощника на рынке, GRAM за штуку, по редкости. Одна
+// таблица на сервер (_marketMinPrice, server/inventory.js) и подсказку на
+// клиенте.
+const HELPER_MARKET_MIN = { common: 1, uncommon: 3, rare: 10, epic: 30, legendary: 60 };
 // Map, а не объект: id приходит из базы и из пакета, и 'constructor' у
 // обычного объекта был бы «помощником» (см. petSkillOf выше).
 function helperById(id) { return (typeof id === 'string' && _HELPER_BY_ID.get(id)) || null; }
@@ -5185,6 +5202,6 @@ if (typeof module !== 'undefined') module.exports = {
   AUTO_RADIUS_MIN, AUTO_RADIUS_MAX, AUTO_RADIUS_DEFAULT,
   ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
   HELPERS, HELPER_RARITIES, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP, HELPER_DUP_XP,
-  HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, helperById, helperXpToNext, helperFeedCost,
+  HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN, helperById, helperXpToNext, helperFeedCost,
   helperBonusAt, helperAddXp, helperFeedPlan,
 };

@@ -1497,6 +1497,7 @@ Object.assign(I18N_UI, {
   // характеристик, цвета) живут в shared/definitions.js — там же, где
   // числа, по которым сервер считает бой.
   craftTabRunes: { ru: 'Руны', en: 'Runes', uk: 'Руни', es: 'Runas', tr: 'Rünler', pt: 'Runas' },
+  craftTabHelpers: { ru: 'Помощники', en: 'Helpers', uk: 'Помічники', es: 'Ayudantes', tr: 'Yardımcılar', pt: 'Ajudantes' },
   teleportStoneMerchantHdr: { ru: 'Камни телепортации', en: 'Teleport stones', uk: 'Камені телепортації', es: 'Piedras de teletransporte', tr: 'Işınlanma taşları', pt: 'Pedras de teleporte' },
   teleportStoneMerchantSub: { ru: 'Телепорт в центральный зал (каст 7 сек)', en: 'Teleports to the central hall (7s cast)', uk: 'Телепорт у центральний зал (каст 7 сек)', es: 'Teletransporta al salón central (canalización de 7s)', tr: 'Merkez salona ışınlanma (7sn kanal)', pt: 'Teleporta para o salão central (canalização de 7s)' },
   // Подтверждение покупки. Liberty — валюта, за которую платят реальными

@@ -1,23 +1,25 @@
 'use strict';
-// ── Помощники: крафт, кормление, кто летает рядом ───────────────────────────
+// ── Помощники: крафт и кормление ────────────────────────────────────────────
 // Что за помощники и что они дают — shared/definitions.js (HELPERS,
-// helperBonusAt). Здесь — только то, что двигает строки player_helpers и
-// осколки в сумке, и всегда в транзакции вызывающего: осколки списываются
-// вместе с результатом или не списываются вовсе.
+// helperBonusAt). С миграции 049 помощник — предмет player_items со слотом
+// 'helper': надевается обычным equipItem, продаётся обычным рынком, а
+// уровень и опыт — колонки самой строки (hl_level, hl_xp). Здесь — только
+// то, что их рождает (крафт в кузнице) и растит (кормление осколками), и
+// всегда в транзакции вызывающего: осколки списываются вместе с результатом
+// или не списываются вовсе.
 //
 // Порядок как у ковки (repos/craft.js): сперва игрок (items.lockPlayer —
 // первый запрос транзакции), потом проверки, потом плата, потом выдача.
 //
-// Таблицы до миграции 048 нет — код выкладывается раньше неё. Тогда окно
-// честно говорит «скоро», а характеристики считаются без помощника
-// (repos/stats.js спрашивает ту же колонку).
+// До миграции 049 колонок нет — код выкладывается раньше неё. Тогда крафт и
+// кормление честно отказывают, а характеристики считаются без помощника.
 
 const crypto = require('crypto');
-const { query, hasColumn } = require('../index');
+const { query } = require('../index');
 const items = require('./items');
 const {
-  HELPERS, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP, HELPER_DUP_XP,
-  UNIQUE_SHARDS, helperById, helperAddXp, helperFeedPlan,
+  HELPERS, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP,
+  UNIQUE_SHARDS, helperById, helperFeedPlan,
 } = require('../../../shared/definitions');
 
 class HelperError extends Error {
@@ -27,10 +29,8 @@ const err = (code, msg) => { throw new HelperError(code, msg); };
 
 const SHARD_IDS = UNIQUE_SHARDS.map(s => s.id);
 
-async function ready() { return hasColumn('player_helpers', 'helper_id'); }
+async function ready() { return items._hasHelperCols(); }
 
-// Сколько каждого вида осколков лежит в сумке — одним запросом на все
-// двадцать, а не двадцатью.
 async function shardCounts(db, playerId) {
   const { rows } = await query(db, `
     SELECT item_id, COALESCE(sum(qty), 0)::int AS n
@@ -43,21 +43,9 @@ async function shardCounts(db, playerId) {
   return out;
 }
 
-async function stateOf(db, playerId) {
-  if (!await ready()) return { ready: false, list: [], active: null };
-  const { rows } = await query(db, `
-    SELECT helper_id, level, xp, active FROM player_helpers
-     WHERE player_id = $1 ORDER BY created_at, helper_id`, [playerId]);
-  // Id, которого больше нет в каталоге, не показывается и ничего не даёт —
-  // ровно как снятый с продажи предмет в compute().
-  const list = rows.filter(r => helperById(r.helper_id))
-    .map(r => ({ id: r.helper_id, level: Number(r.level), xp: Number(r.xp) }));
-  const act = rows.find(r => r.active && helperById(r.helper_id));
-  return { ready: true, list, active: act ? act.helper_id : null };
-}
-
 // Крафт: каждый вид осколков по цене редкости — и случайный помощник этой
-// редкости. Уже открытый выпал снова — его опыт растёт на HELPER_DUP_XP.
+// редкости, новым предметом в сумку 1-го уровня. Повтор — тоже новый
+// предмет: лишнего можно продать.
 async function craft(db, playerId, rarity) {
   if (!await ready()) err('off', 'Помощники ещё не включены на сервере');
   if (typeof rarity !== 'string' || !Object.hasOwn(HELPER_CRAFT_COST, rarity)) err('bad_rarity', 'Неизвестная редкость');
@@ -68,7 +56,12 @@ async function craft(db, playerId, rarity) {
   const short = UNIQUE_SHARDS.find(s => have[s.id] < cost);
   if (short) err('no_shards', `Нужно по ${cost.toLocaleString('ru-RU')} осколков каждого вида — не хватает: ${short.name} (${have[short.id]})`);
 
-  const ref = `helper_craft:${rarity}`;
+  const pool = HELPERS.filter(h => h.rarity === rarity);
+  const pick = pool[crypto.randomInt(pool.length)];
+  // Место проверяется ДО списания: полная сумка не должна съесть двадцать
+  // тысяч осколков и не выдать ничего.
+  if (!await items.hasRoomFor(db, playerId, pick.id)) err('inv_full', 'Инвентарь полон — освободите место');
+
   for (const id of SHARD_IDS) {
     if (!await items.removeQty(db, playerId, id, cost, { reason: 'helper_craft', refType: 'helper', refId: rarity })) {
       // Недостижимо после проверки в той же транзакции — бросок, а не
@@ -77,31 +70,10 @@ async function craft(db, playerId, rarity) {
     }
   }
 
-  const pool = HELPERS.filter(h => h.rarity === rarity);
-  const pick = pool[crypto.randomInt(pool.length)];
-
-  const { rows: had } = await query(db,
-    'SELECT level, xp FROM player_helpers WHERE player_id = $1 AND helper_id = $2 FOR UPDATE',
-    [playerId, pick.id]);
-  if (had.length) {
-    const was = { level: Number(had[0].level), xp: Number(had[0].xp) };
-    const now = helperAddXp(was.level, was.xp, HELPER_DUP_XP);
-    await query(db, `
-      UPDATE player_helpers SET level = $3, xp = $4, updated_at = now()
-       WHERE player_id = $1 AND helper_id = $2`, [playerId, pick.id, now.level, now.xp]);
-    if (now.level !== was.level) await _refreshIfActive(db, playerId, pick.id);
-    return { outcome: 'duplicate', id: pick.id, rarity, from: was.level, to: now.level, ref };
-  }
-  // Первый помощник сразу летает рядом — иначе новичок открыл бы окно,
-  // увидел его в списке и не понял, почему у плеча пусто.
-  const { rows: anyActive } = await query(db,
-    'SELECT 1 FROM player_helpers WHERE player_id = $1 AND active LIMIT 1', [playerId]);
-  const active = !anyActive.length;
-  await query(db, `
-    INSERT INTO player_helpers (player_id, helper_id, level, xp, active)
-    VALUES ($1, $2, 1, 0, $3)`, [playerId, pick.id, active]);
-  if (active) await require('./stats').refreshBm(db, playerId);
-  return { outcome: 'new', id: pick.id, rarity, from: 1, to: 1, ref };
+  const rowId = await items.add(db, playerId, pick.id,
+    { source: 'helper_craft', sourceRef: rarity, helper: { level: 1, xp: 0 } });
+  if (!rowId) err('inv_full', 'Инвентарь полон — освободите место');
+  return { outcome: 'new', id: pick.id, rowId, rarity, from: 1, to: 1, ref: `helper_craft:${rarity}` };
 }
 
 // Порции осколков с самых больших стопок: по одному осколку за шаг, всякий
@@ -134,17 +106,22 @@ function _planTake(have, total) {
   return take;
 }
 
-async function feed(db, playerId, helperId, times = 1) {
+// Кормление ОДНОЙ строки — той, на которую нажали (в сумке или надетой).
+async function feed(db, playerId, rowId, times = 1) {
   if (!await ready()) err('off', 'Помощники ещё не включены на сервере');
-  const def = helperById(helperId);
-  if (!def) err('bad_helper', 'Такого помощника нет');
+  const rid = Math.floor(Number(rowId));
+  if (!Number.isSafeInteger(rid) || rid <= 0) err('bad_helper', 'Не выбран помощник');
   await items.lockPlayer(db, playerId);
 
-  const { rows } = await query(db,
-    'SELECT level, xp FROM player_helpers WHERE player_id = $1 AND helper_id = $2 FOR UPDATE',
-    [playerId, def.id]);
+  const { rows } = await query(db, `
+    SELECT id, item_id, container, hl_level, hl_xp FROM player_items
+     WHERE id = $1 AND player_id = $2 AND container IN ('inventory', 'equipment')
+       AND hl_level IS NOT NULL
+     FOR UPDATE`, [rid, playerId]);
   if (!rows.length) err('not_owned', 'Этого помощника у вас нет');
-  const was = { level: Number(rows[0].level), xp: Number(rows[0].xp) };
+  const def = helperById(rows[0].item_id);
+  if (!def) err('bad_helper', 'Такого помощника нет');
+  const was = { level: Number(rows[0].hl_level), xp: Number(rows[0].hl_xp) || 0 };
   if (was.level >= HELPER_MAX_LEVEL) err('maxed', 'Помощник уже максимального уровня');
 
   const plan = helperFeedPlan(was.level, was.xp, times);
@@ -163,45 +140,15 @@ async function feed(db, playerId, helperId, times = 1) {
     }
   }
 
-  await query(db, `
-    UPDATE player_helpers SET level = $3, xp = $4, updated_at = now()
-     WHERE player_id = $1 AND helper_id = $2`, [playerId, def.id, plan.level, plan.xp]);
-  if (plan.level !== was.level) await _refreshIfActive(db, playerId, def.id);
+  await query(db, 'UPDATE player_items SET hl_level = $2, hl_xp = $3 WHERE id = $1',
+    [rid, plan.level, plan.xp]);
+  const equipped = rows[0].container === 'equipment';
+  // Надетый вырос — меняется и боевая мощь в рейтинге.
+  if (equipped && plan.level !== was.level) await require('./stats').refreshBm(db, playerId);
   return {
-    id: def.id, feeds: plan.feeds, cost: plan.cost, xpGained: plan.feeds * HELPER_FEED_XP,
-    from: was.level, to: plan.level, xp: plan.xp,
+    id: def.id, rowId: rid, feeds: plan.feeds, cost: plan.cost, xpGained: plan.feeds * HELPER_FEED_XP,
+    from: was.level, to: plan.level, xp: plan.xp, equipped,
   };
 }
 
-// helperId = null — убрать помощника (никто не летает).
-async function setActive(db, playerId, helperId) {
-  if (!await ready()) err('off', 'Помощники ещё не включены на сервере');
-  await items.lockPlayer(db, playerId);
-  if (helperId != null) {
-    const def = helperById(helperId);
-    if (!def) err('bad_helper', 'Такого помощника нет');
-    const { rows } = await query(db,
-      'SELECT 1 FROM player_helpers WHERE player_id = $1 AND helper_id = $2', [playerId, def.id]);
-    if (!rows.length) err('not_owned', 'Этого помощника у вас нет');
-  }
-  // Сперва снять всех, потом поставить одного: частичный уникальный индекс
-  // проверяется на каждой строке, и обратный порядок упёрся бы в него.
-  await query(db, `
-    UPDATE player_helpers SET active = false, updated_at = now()
-     WHERE player_id = $1 AND active`, [playerId]);
-  if (helperId != null) {
-    await query(db, `
-      UPDATE player_helpers SET active = true, updated_at = now()
-       WHERE player_id = $1 AND helper_id = $2`, [playerId, helperId]);
-  }
-  await require('./stats').refreshBm(db, playerId);
-  return { active: helperId || null };
-}
-
-async function _refreshIfActive(db, playerId, helperId) {
-  const { rows } = await query(db,
-    'SELECT active FROM player_helpers WHERE player_id = $1 AND helper_id = $2', [playerId, helperId]);
-  if (rows.length && rows[0].active) await require('./stats').refreshBm(db, playerId);
-}
-
-module.exports = { ready, stateOf, shardCounts, craft, feed, setActive, HelperError, _planTake };
+module.exports = { ready, shardCounts, craft, feed, HelperError, _planTake };

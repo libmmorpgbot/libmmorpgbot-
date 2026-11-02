@@ -8,6 +8,7 @@
 // that can be exercised directly is worth more than their line count suggests.
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, isStackableItem, ENHANCE_MAX, ENHANCEABLE_SLOTS,
+  HELPER_MARKET_MIN,
 } = require('../shared/definitions');
 const { _catalogBase, SERVER_INV_MAX } = require('./anticheat');
 
@@ -126,6 +127,9 @@ function _marketMinPriceRaw(item) {
   // MARKET_MIN_PRICE — легендарная руна продавалась бы за те же 0.1 GRAM,
   // что и мусорный ключ.
   if (item.slot === 'rune') return MARKET_MIN_PRICE_RUNE[item.rarity] || MARKET_MIN_PRICE;
+  // Помощник — свой порог по редкости (HELPER_MARKET_MIN), за штуку: они не
+  // стакаются, так что qty здесь всегда 1.
+  if (item.slot === 'helper') return (HELPER_MARKET_MIN[item.rarity] || MARKET_MIN_PRICE) * qty;
   if (item.slot === 'box') {
     if (item.id === 'liberty_bag') return MARKET_MIN_PRICE_LIBERTY_BAG * qty;
     return (item.id === 'box_rare' ? MARKET_MIN_PRICE_BOX_RARE : MARKET_MIN_PRICE_BOX_UNCOMMON) * qty;

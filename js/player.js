@@ -94,7 +94,7 @@ function makePlayer(type) {
     facing: 'front', atkAnimTimer: 0, castDuration: 0, animFrame: 0, animTimer: 0,
     pendingAttack: null, attackFired: false,
     equipment: {
-      weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null,
+      weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null, helper:null,
     },
     inventory: [],
     storage: [],
@@ -343,8 +343,9 @@ function recompute() {
   });
   // Помощник — то же слагаемое и на том же месте, что в compute() на
   // сервере (server/db/repos/stats.js): плоские к плоским, проценты к
-  // процентам. Кто летает и какого он уровня — с сервера (js/helpers.js).
-  const _ha = typeof helperActiveForStats === 'function' ? helperActiveForStats() : null;
+  // процентам. Помощник — предмет в слоте 'helper'; его уровень едет в строке.
+  const _heq = player.equipment && player.equipment.helper;
+  const _ha = _heq ? { id: _heq.id, level: _heq.hlLevel || 1 } : null;
   const _hb = _ha ? helperBonusAt(_ha.id, _ha.level) : null;
   if (_hb) {
     a += _hb.atk || 0; d += _hb.def || 0; h += _hb.hp || 0;
@@ -1630,6 +1631,14 @@ function _rebuildFromCatalog(it) {
   // приезжала бы с сервера полной и становилась пустой оболочкой на экране.
   if (it.rune) item.rune = it.rune;
   if (it.runes) item.runes = it.runes;
+  // Помощник (миграция 049): уровень и опыт ЭТОЙ строки. Уровень — сразу в
+  // имени, чтобы он был виден везде, где видно имя: в сумке, в выборе для
+  // рынка, в подсказках.
+  if (base.slot === 'helper') {
+    item.hlLevel = Math.max(1, Number(it.hlLevel) || 1);
+    item.hlXp = Math.max(0, Number(it.hlXp) || 0);
+    item.name = `${base.name} · ур. ${item.hlLevel}`;
+  }
   return item;
 }
 
@@ -1725,7 +1734,7 @@ function restoreFromSave(data) {
   if (rawEq.armor && !rawEq.body) rawEq.body = rawEq.armor;
   delete rawEq.armor;
 
-  const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null };
+  const blank = { weapon:null, helmet:null, body:null, gloves:null, boots:null, ring:null, belt:null, pet:null, cloak:null, artifact:null, helper:null };
   // strip removed slots from old saves
   const { offhand:_, legs:__, pendant:___, ...cleanEq } = rawEq;
   const rebuiltEq = {};
@@ -1758,6 +1767,12 @@ function restoreFromSave(data) {
 }
 
 function statStr(it) {
+  // Помощник: характеристики зависят от уровня строки, на записи каталога
+  // их нет — берутся из helperBonusAt, как в recompute() и на сервере.
+  if (it && it.slot === 'helper' && typeof helperBonusAt === 'function') {
+    const hb = helperBonusAt(it.id, it.hlLevel || 1);
+    return hb ? statStr({ ...hb }) : '';
+  }
   const p = [];
   if (it.atk)       p.push('ATK+' + it.atk);
   if (it.def)       p.push('DEF+' + it.def);

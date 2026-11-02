@@ -159,21 +159,22 @@ const LOAD_SQL_NO_RUNES = LOAD_SQL.replace(
 const _UPG_NEW_COLS = 'pr.upg_cp, pr.upg_xp, pr.upg_drop,';
 const _UPG_NEW_ZERO = '0 AS upg_cp, 0 AS upg_xp, 0 AS upg_drop,';
 // ── помощник ────────────────────────────────────────────────────────────────
-// Тот, что сейчас летает рядом (player_helpers.active, миграция 048), — id и
-// уровень; что он даёт, решает helperBonusAt (shared/definitions.js). Тем же
-// приёмом, что руны выше: до миграции таблицы нет, и запрос, который её
+// Надетый в слот 'helper' предмет (миграция 049) — id и уровень строки; что
+// он даёт, решает helperBonusAt (shared/definitions.js). Тем же приёмом, что
+// руны выше: до миграции колонки hl_level нет, и запрос, который её
 // спрашивает, ронял бы загрузку характеристик каждому входящему.
 const _HELPER_FRAGMENT = `
     (
-      SELECT json_build_object('id', h.helper_id, 'level', h.level)
-        FROM player_helpers h
-       WHERE h.player_id = pr.player_id AND h.active
+      SELECT json_build_object('id', h.item_id, 'level', h.hl_level)
+        FROM player_items h
+       WHERE h.player_id = pr.player_id AND h.container = 'equipment'
+         AND h.slot = 'helper' AND h.hl_level IS NOT NULL
        LIMIT 1
     ) AS helper,`;
 async function load(db, playerId) {
   const runesOk = await hasColumn('player_items', 'socket_of');
   const upgOk = await hasColumn('player_progress', 'upg_cp');
-  const helpersOk = await hasColumn('player_helpers', 'helper_id');
+  const helpersOk = await hasColumn('player_items', 'hl_level');
   let sql = runesOk ? LOAD_SQL_WITH_RUNES : LOAD_SQL_NO_RUNES;
   if (!upgOk) sql = sql.replace(_UPG_NEW_COLS, _UPG_NEW_ZERO);
   if (helpersOk) sql = sql.replace('    COALESCE((\n      SELECT c.level FROM clan_members', _HELPER_FRAGMENT + '\n    COALESCE((\n      SELECT c.level FROM clan_members');

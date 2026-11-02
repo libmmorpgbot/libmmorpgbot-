@@ -194,7 +194,7 @@ function buyTeleportStone(qty) {
 }
 
 // ── Craftsman ───────────────────────────────────────────
-let _craftsmanTab = 'items'; // 'items' | 'mats' | 'consumables' | 'runes'
+let _craftsmanTab = 'items'; // 'items' | 'mats' | 'consumables' | 'runes' | 'helpers'
 
 function _matIcon(mat, size) {
   if (!mat) return '?';
@@ -240,6 +240,7 @@ function _craftsmanBody() {
     ${tab('mats', '📜', 'craftTabMats', 'Материалы')}
     ${tab('consumables', '🧪', 'craftTabConsumables', 'Расходники')}
     ${tab('runes', '🔮', 'craftTabRunes', 'Руны')}
+    ${tab('helpers', '🧚', 'craftTabHelpers', 'Помощники')}
   </div>`;
 
   let html = `<div class="shop-gold craft-wallet">
@@ -250,6 +251,7 @@ function _craftsmanBody() {
   html += _craftsmanTab === 'items' ? _craftsmanItemsTab()
     : _craftsmanTab === 'consumables' ? _craftsmanConsumablesTab()
     : _craftsmanTab === 'runes' ? _craftsmanRunesTab()
+    : _craftsmanTab === 'helpers' ? (typeof helperCraftTabHTML === 'function' ? helperCraftTabHTML() : '')
     : _craftsmanMatsTab();
   return html;
 }
