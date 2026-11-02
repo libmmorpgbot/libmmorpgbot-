@@ -16,6 +16,24 @@ const err = (code, msg) => { throw new ClanWarError(code, msg); };
 
 async function ready() { return hasColumn('clan_wars', 'status'); }
 
+// ── идущие войны в памяти ───────────────────────────────────────────────────
+// Каждый удар по игроку спрашивает «враги ли они по войне» — в базу на это
+// не ходят. Набор пар загружается при старте (loadCache, server/app.js) и
+// правится здесь же, когда война начинается или кончается.
+const _pairs = new Set();
+const _key = (a, b) => (Number(a) < Number(b) ? `${a}:${b}` : `${b}:${a}`);
+async function loadCache(db = null) {
+  if (!await ready()) return 0;
+  const { rows } = await query(db, `SELECT from_clan, to_clan FROM clan_wars WHERE status = 'active'`);
+  _pairs.clear();
+  for (const r of rows) _pairs.add(_key(Number(r.from_clan), Number(r.to_clan)));
+  return _pairs.size;
+}
+function atWarCached(clanA, clanB) {
+  if (!clanA || !clanB || Number(clanA) === Number(clanB)) return false;
+  return _pairs.has(_key(Number(clanA), Number(clanB)));
+}
+
 // Клан и роль игрока — или отказ, если он не лидер.
 async function _leaderClan(db, playerId) {
   const { rows } = await query(db, `
@@ -65,6 +83,7 @@ async function accept(db, playerId, warId) {
   if (w.to !== me.id) err('not_yours', 'Этот вызов не вашему клану');
   if (w.status !== 'pending') err('closed', 'Вызов уже закрыт');
   await query(db, `UPDATE clan_wars SET status = 'active', accepted_at = now() WHERE id = $1`, [w.id]);
+  _pairs.add(_key(w.from, w.to));
   return { ...w, status: 'active' };
 }
 
@@ -89,6 +108,7 @@ async function end(db, playerId, warId) {
   if (w.from !== me.id && w.to !== me.id) err('not_yours', 'Это не война вашего клана');
   if (w.status !== 'active') err('closed', 'Война уже не идёт');
   await query(db, `UPDATE clan_wars SET status = 'ended', ended_at = now() WHERE id = $1`, [w.id]);
+  _pairs.delete(_key(w.from, w.to));
   return { ...w, status: 'ended' };
 }
 
@@ -125,4 +145,4 @@ async function atWar(db, clanA, clanB) {
   return rows.length > 0;
 }
 
-module.exports = { ready, declare, accept, decline, end, listFor, atWar, ClanWarError };
+module.exports = { ready, declare, accept, decline, end, listFor, atWar, loadCache, atWarCached, ClanWarError };

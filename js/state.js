@@ -214,6 +214,11 @@ let pvpOffAt = 0;
 // кланов-врагов (в нижнем регистре) — над их игроками красные мечи.
 let clanWarData = { ready: false, wars: [], enemies: [], myClanId: null };
 let clanWarEnemies = new Set();
+// Игрок из клана, с которым идёт война: его можно бить и без ПК.
+function isWarEnemy(op) {
+  return !!(op && op.clanName && clanWarEnemies.size && clanWarEnemies.has(String(op.clanName).toLowerCase()));
+}
+function isWarEnemyId(id) { return typeof otherPlayers !== 'undefined' && isWarEnemy(otherPlayers.get(id)); }
 // True only when the attack button was actually pressed on the current
 // target — tapping/cycling a target to look at it must not by itself make
 // the character run at it.

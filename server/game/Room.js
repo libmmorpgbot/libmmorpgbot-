@@ -3540,11 +3540,16 @@ class Room {
     this.io.to(p.socketId).emit('cpSync', { cp, maxCp: max });
   }
 
+  // Враги по войне кланов бьют друг друга и без ПК (server/db/repos/clanwars.js).
+  _warFoes(a, b) {
+    return !!(a && b && a.clanId && b.clanId && require('../db/repos/clanwars').atWarCached(a.clanId, b.clanId));
+  }
+
   pvpAttack(attackerSocketId, targetSocketId) {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
-    if (!attacker.pvpMode) return null;
+    if (!attacker.pvpMode && !this._warFoes(attacker, target)) return null;
     // setPlayerPvpMode already refuses to turn PK on here — this is belt and
     // suspenders against pvpMode having been true before the player ever
     // walked into the first location's no-PK zone.
@@ -3753,7 +3758,7 @@ class Room {
     const attacker = this.players.get(attackerSocketId);
     const target = this.players.get(targetSocketId);
     if (!attacker || !target) return null;
-    if (!attacker.pvpMode) return null;
+    if (!attacker.pvpMode && !this._warFoes(attacker, target)) return null;
     // Same belt-and-suspenders as pvpAttack: PK can never actually be on here,
     // but refuse the damage outright too.
     if (this.floor === FLOOR_IDS.left) return null;

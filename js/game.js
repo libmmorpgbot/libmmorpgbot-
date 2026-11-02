@@ -812,7 +812,7 @@ function update(dt, realDt) {
         // input.js clear-sites that do reset it, all on an actual kill).
         targetId = null; targetIsPlayer = false;
       }
-    } else if (targetId && targetIsPlayer && pvpMode) {
+    } else if (targetId && targetIsPlayer && (pvpMode || isWarEnemyId(targetId))) {
       const op = otherPlayers.get(targetId);
       // A locked target can only have become an ally here via a stale lock
       // carried across a zone change (e.g. targeted in the open world, then
@@ -854,8 +854,10 @@ function update(dt, realDt) {
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = e; closestIsPlayer = false; }
       });
-      if (pvpMode) {
+      if (pvpMode || clanWarEnemies.size) {
         otherPlayers.forEach((op, id) => {
+          // Без ПК — только враги по войне кланов.
+          if (!pvpMode && !isWarEnemy(op)) return;
           // Unlike the locked-target branch above and the manual target-pick
           // UI (js/input.js), this proximity scan had no ally exclusion at
           // all — AUTO mode could lock onto and swing at your own 3v3
@@ -992,10 +994,11 @@ function update(dt, realDt) {
           }
           continue;
         }
-        if (pvpMode) {
+        if (pvpMode || clanWarEnemies.size) {
           let _hitOpId = null;
           for (const [_opId, op] of otherPlayers) {
             if ((op.hp || 0) <= 0 || op.x == null) continue;
+            if (!pvpMode && !isWarEnemy(op)) continue;
             const r = 18 + ps, ex = p.x - op.x, ey = p.y - op.y;
             if (ex * ex + ey * ey < r * r) { _hitOpId = _opId; break; }
           }

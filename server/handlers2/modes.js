@@ -319,10 +319,12 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
       if (_pvpFrozen(s.socket.id) || _pvpFrozen(targetId)) return;
       if (_isPvpImmune(s.socket.id, targetId)) return;
       const attacker = s.room.players.get(s.socket.id);
-      if (!attacker || !attacker.pvpMode) return;
+      if (!attacker) return;
+      const target = s.room.players.get(targetId);
+      // Без ПК — только врага по войне кланов.
+      if (!attacker.pvpMode && !s.room._warFoes(attacker, target)) return;
       if (attacker.hp <= 0) return;
       if (s.room.isPlayerInSafeZone(s.socket.id)) return;
-      const target = s.room.players.get(targetId);
       if (!target || target.hp <= 0) return;
       if (s.room.isPlayerInSafeZone(targetId)) return;
       // Refused before the cooldown is stamped, so a client spraying junk

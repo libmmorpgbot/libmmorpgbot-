@@ -781,7 +781,7 @@ function nearestEnemyDir() {
   // js/game.js: without this check a stale lock (target walked behind a
   // wall or far off) kept getting aimed at instead of falling through to
   // the nearest actually-visible enemy below.
-  if (pvpMode && targetIsPlayer && targetId) {
+  if ((pvpMode || isWarEnemyId(targetId)) && targetIsPlayer && targetId) {
     const op = otherPlayers.get(targetId);
     if (op && (op.hp || 0) > 0 && op.x != null && hasLOS(player.x, player.y, op.x, op.y)) {
       const len = Math.max(1, dist(op.x, op.y, player.x, player.y));
@@ -800,9 +800,10 @@ function nearestEnemyDir() {
     const d = dist(e.x, e.y, player.x, player.y);
     if (d < closestD) { closestD = d; closest = e; }
   });
-  if (pvpMode) {
+  if (pvpMode || clanWarEnemies.size) {
     otherPlayers.forEach((op) => {
       if ((op.hp || 0) <= 0 || op.x == null) return;
+      if (!pvpMode && !isWarEnemy(op)) return;
       if (!hasLOS(player.x, player.y, op.x, op.y)) return;
       const d = dist(op.x, op.y, player.x, player.y);
       if (d < closestD) { closestD = d; closest = op; }
@@ -851,14 +852,16 @@ function _dashTo(tx, ty) {
 
 // PvP: return targeted/nearest other player as {id, op}, or null
 function _pvpPlayerTarget() {
-  if (!pvpMode) return null;
+  // Без ПК — только враги по войне кланов.
+  if (!pvpMode && !clanWarEnemies.size) return null;
   if (targetIsPlayer && targetId) {
     const op = otherPlayers.get(targetId);
-    if (op && (op.hp || 0) > 0 && op.x != null) return { id: targetId, op };
+    if (op && (op.hp || 0) > 0 && op.x != null && (pvpMode || isWarEnemy(op))) return { id: targetId, op };
   }
   let best = null, bestId = null, bestD2 = Infinity;
   otherPlayers.forEach((op, id) => {
     if ((op.hp || 0) <= 0 || op.x == null) return;
+    if (!pvpMode && !isWarEnemy(op)) return;
     const dx = op.x - player.x, dy = op.y - player.y;
     const d2 = dx * dx + dy * dy;
     if (d2 < bestD2) { bestD2 = d2; best = op; bestId = id; }
@@ -868,18 +871,20 @@ function _pvpPlayerTarget() {
 
 // PvP: skill damage AOE hitting all nearby other players
 function _pvpSkillAOE(r, mult, key) {
-  if (!pvpMode) return;
+  if (!pvpMode && !clanWarEnemies.size) return;
   otherPlayers.forEach((op, id) => {
     if ((op.hp || 0) <= 0 || op.x == null) return;
+    if (!pvpMode && !isWarEnemy(op)) return;
     if (dist(op.x, op.y, player.x, player.y) < r) netPvpSkillAttack(id, mult, key);
   });
 }
 
 // PvP: slow all nearby other players
 function _pvpSkillSlow(r, duration) {
-  if (!pvpMode) return;
+  if (!pvpMode && !clanWarEnemies.size) return;
   otherPlayers.forEach((op, id) => {
     if ((op.hp || 0) <= 0 || op.x == null) return;
+    if (!pvpMode && !isWarEnemy(op)) return;
     if (dist(op.x, op.y, player.x, player.y) < r) {
       op.slowTimer = duration;
       netPvpSkillCC(id, 'slow', duration);
@@ -917,7 +922,7 @@ function useSkill(idx) {
   // below) — arm an approach instead, same idea as the existing basic-
   // attack chase (js/game.js's `_chaseArmed`/`player._chasing`). The
   // movement loop there re-runs this exact useSkill(idx) once close enough.
-  if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(player.type, sk.key, _advActive(sk.key))) {
+  if (!_pvpPlayerTarget() && _isRangedSingleTargetSkill(player.type, sk.key, _advActive(sk.key))) {
     const _rangeTgt = _lockedEnemy() || nearestEnemy();
     if (_rangeTgt) {
       const _castRange = (player.charDef.atkRange || 60) + SKILL_RANGE_SLACK + (_rangeTgt.size || 0);
@@ -969,7 +974,7 @@ function useForeignSkill() {
   // The fifth slot never has an advanced variant — `false` rather than
   // _advActive(sk.key), which would read the player's OWN real slot's adv
   // flags for the same bare letter.
-  if (!(pvpMode && _pvpPlayerTarget()) && _isRangedSingleTargetSkill(fs.cls, sk.key, false)) {
+  if (!_pvpPlayerTarget() && _isRangedSingleTargetSkill(fs.cls, sk.key, false)) {
     const _rangeTgt = _lockedEnemy() || nearestEnemy();
     if (_rangeTgt) {
       const _castRange = (player.charDef.atkRange || 60) + SKILL_RANGE_SLACK + (_rangeTgt.size || 0);

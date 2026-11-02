@@ -1594,6 +1594,8 @@ async function boot() {
   //    a retired id is discovered now, in the log, rather than by a foreign-key
   //    error during a player's craft.
   const synced = await db.tx(t => items.syncCatalog(t));
+  // Идущие войны кланов — в память: удар по врагу без ПК проверяется по ней.
+  try { await require('./db/repos/clanwars').loadCache(); } catch (e) { console.error('clan wars cache:', e.message); }
   console.log(`catalog: ${synced.synced} items (${synced.retired} retired)`);
 
   // 2b. The world. Generated from a fixed seed, so this is deterministic and

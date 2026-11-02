@@ -1601,7 +1601,7 @@ function _clanWarsHTML(c, isLeader) {
     : '';
   return `
     <div class="clx-card clx-war-about">
-      ${swords} <b>Война кланов</b> — пока она идёт, убийство игрока вражеского клана не даёт кармы, а приносит клану +${typeof CLAN_WAR_KILL_XP !== 'undefined' ? CLAN_WAR_KILL_XP : 2} очка. Над врагами горят красные мечи.
+      ${swords} <b>Война кланов</b> — пока она идёт, врагов можно бить и без ПК, убийство не даёт кармы, а приносит клану +${typeof CLAN_WAR_KILL_XP !== 'undefined' ? CLAN_WAR_KILL_XP : 2} очка. Над врагами горят красные мечи.
     </div>
     ${incoming.length ? `<div class="clx-card"><div class="clx-war-h">Вам бросили вызов</div>
       ${incoming.map(w => row(w, `<button class="clx-btn sm" onclick="netClanWarAccept(${w.id})">Принять</button><button class="clx-btn sm ghost" onclick="netClanWarDecline(${w.id})">Отказать</button>`)).join('')}</div>` : ''}
