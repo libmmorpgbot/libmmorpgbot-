@@ -4949,6 +4949,15 @@ function drawPvpButton() {
     ctx.strokeText(kt, pb.x + pb.w / 2, pb.y - hud(3));
     ctx.fillStyle = '#ff6a7a';
     ctx.fillText(kt, pb.x + pb.w / 2, pb.y - hud(3));
+  } else if (pvpMode && typeof pvpOffAt !== 'undefined' && Date.now() < pvpOffAt) {
+    // Сколько ещё ПК не выключить.
+    const sec = Math.ceil((pvpOffAt - Date.now()) / 1000);
+    const ct = `⏳ ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(ct, pb.x + pb.w / 2, pb.y - hud(3));
+    ctx.fillStyle = '#f2b37a';
+    ctx.fillText(ct, pb.x + pb.w / 2, pb.y - hud(3));
   }
 
   ctx.restore();

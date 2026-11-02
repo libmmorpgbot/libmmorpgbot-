@@ -600,7 +600,9 @@ function init(io) {
       // Карма: убийство в обычной локации (не событие — его забрал бы режим
       // выше) даёт убийце карму, а с кармической жертвы может выпасть вещь
       // (server/karma.js). Вне KARMA_FLOOR_KEYS — война гильдий, арены — ничего.
-      require('./karma').onPvpKillSoon(sessionOf(socketId), sessionOf(killerSocketId), room && room.floor);
+      // Жертва тоже была в ПК — честная драка двух ПК, убийце кармы нет.
+      require('./karma').onPvpKillSoon(sessionOf(socketId), sessionOf(killerSocketId), room && room.floor,
+        { victimPvp: !!(victim && victim.pvpMode) });
     }
   };
   modes._returnToHub = returnToHub;

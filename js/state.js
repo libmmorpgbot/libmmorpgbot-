@@ -208,6 +208,8 @@ let pvpMode = false;
 // Карма за ПК в локациях (server/karma.js): > 0 — ПК не выключить,
 // телепорты закрыты. Приходит событием karmaSync.
 let playerKarma = 0;
+// Когда ПК снова можно выключить (мс). Включил — PVP_OFF_COOLDOWN_MS держится.
+let pvpOffAt = 0;
 // Войны кланов (server/db/repos/clanwars.js): список для окна клана и имена
 // кланов-врагов (в нижнем регистре) — над их игроками красные мечи.
 let clanWarData = { ready: false, wars: [], enemies: [], myClanId: null };

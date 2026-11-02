@@ -5222,8 +5222,9 @@ function _initGuildWarHandlers(s) {
   // for this zone. Mirror it here so combat actually works the moment
   // everyone lands, instead of only for whoever happened to already have
   // pvpMode on from a manual toggle before walking in.
-  s.on('pvpModeSync', ({ pvpMode: mode }) => {
+  s.on('pvpModeSync', ({ pvpMode: mode, offAt }) => {
     pvpMode = !!mode;
+    if (offAt) pvpOffAt = Number(offAt) || 0;
     if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }
   });
   // Карма (server/karma.js): число над кнопкой ПК и запрет её выключить.

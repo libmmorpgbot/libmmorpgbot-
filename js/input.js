@@ -647,6 +647,13 @@ function _checkPvpBtnTouch(cx, cy) {
       if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, `Карма ${playerKarma} — ПК не выключить`, '#f88');
       return true;
     }
+    // Включённый ПК держится 2 минуты (сервер проверяет то же, Room.setPlayerPvpMode).
+    if (pvpMode && Date.now() < pvpOffAt) {
+      const sec = Math.ceil((pvpOffAt - Date.now()) / 1000);
+      if (typeof dmgNum === 'function') dmgNum(player.x, player.y - 40, `Мир через ${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`, '#f88');
+      return true;
+    }
+    if (!pvpMode) pvpOffAt = Date.now() + (typeof PVP_OFF_COOLDOWN_MS !== 'undefined' ? PVP_OFF_COOLDOWN_MS : 120000);
     pvpMode = !pvpMode;
     if (typeof netSetPvpMode === 'function') netSetPvpMode(pvpMode);
     if (!pvpMode && targetIsPlayer) { targetId = null; targetIsPlayer = false; }

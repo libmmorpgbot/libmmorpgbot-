@@ -4920,6 +4920,8 @@ const CLAN_WAR_KILL_XP = 2;
 // В событиях (турнир, арены, Башня, война гильдий, босс, Страх, сотрудничество)
 // карма не копится.
 const KARMA_PER_PK = 1000;
+// Включил ПК — выключить можно не раньше чем через столько (Room.setPlayerPvpMode).
+const PVP_OFF_COOLDOWN_MS = 2 * 60 * 1000;
 const KARMA_PER_MOB = 1;
 const KARMA_FLOOR_KEYS = [
   'left', 'top', 'bottom', 'right',
@@ -5232,7 +5234,7 @@ if (typeof module !== 'undefined') module.exports = {
   ACH_METRICS, ACH_CATEGORIES, ACHIEVEMENTS, achievementById,
   HELPERS, HELPER_RARITIES, HELPER_CRAFT_COST, HELPER_MAX_LEVEL, HELPER_FEED_XP, HELPER_DUP_XP,
   HELPER_LEVEL_GROWTH, HELPER_FEED_MAX_BATCH, HELPER_ITEMS, HELPER_MARKET_MIN,
-  KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance,
+  KARMA_PER_PK, PVP_OFF_COOLDOWN_MS, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance,
   CLAN_WAR_MIN_LEVEL, CLAN_WAR_KILL_XP, helperById, helperXpToNext, helperFeedCost,
   helperBonusAt, helperAddXp, helperFeedPlan,
 };

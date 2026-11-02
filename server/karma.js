@@ -105,7 +105,7 @@ async function _dropItem(t, victimId, killerId) {
 
 // Убийство игрока игроком. Зовётся из открытой ветки modes._pvpEliminate —
 // ни один режим смерть не забрал. vs/ks — сессии жертвы и убийцы.
-async function onPvpKill(t, vs, ks, floorId) {
+async function onPvpKill(t, vs, ks, floorId, { victimPvp = false } = {}) {
   if (!vs || !ks || !vs.playerId || !ks.playerId || vs.playerId === ks.playerId) return null;
   if (!isKarmaFloor(floorId) || !await ready()) return null;
   // Война кланов: враги бьют друг друга без кармы — ни начисления, ни
@@ -137,6 +137,9 @@ async function onPvpKill(t, vs, ks, floorId) {
   }
   // Смерть жертвы обнуляет её карму сразу, не дожидаясь возрождения.
   if (victimKarma > 0) await _set(t, vs, 0);
+  // Оба были в ПК — убийце кармы нет (вещь с кармической жертвы выше всё
+  // равно могла выпасть).
+  if (victimPvp) return { drop, victimKarma, killerKarma: await load(t, ks.playerId), bothPvp: true };
   const killerKarma = await load(t, ks.playerId);
   ks.karma = killerKarma;
   await _set(t, ks, killerKarma + KARMA_PER_PK);
@@ -145,10 +148,10 @@ async function onPvpKill(t, vs, ks, floorId) {
 
 // То же, но своей транзакцией и с рассылкой — для modes._pvpEliminate, у
 // которого транзакции нет.
-function onPvpKillSoon(vs, ks, floorId) {
+function onPvpKillSoon(vs, ks, floorId, opts = {}) {
   if (!vs || !ks) return;
   tx(async (t) => {
-    const res = await onPvpKill(t, vs, ks, floorId);
+    const res = await onPvpKill(t, vs, ks, floorId, opts);
     if (res && res.drop) {
       if (typeof vs.pushItems === 'function') { await vs.pushItems(t); await vs.pushStats(t); }
       if (typeof ks.pushItems === 'function') await ks.pushItems(t);

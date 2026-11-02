@@ -13,7 +13,8 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         petSkillOf, PET_SKILL_PERIOD_MS, PET_SKILL_DUR_MS, UPGRADE_STEP,
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
         DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC, ELITE_MOB_HP, ELITE_MOB_SIZE_MULT,
-        ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX } = require('../../shared/definitions');
+        ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX, PVP_OFF_COOLDOWN_MS,
+} = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
 // ── Movement guard ──────────────────────────────────────────────────────────
@@ -3466,6 +3467,13 @@ class Room {
     if (!mode && p._guildWarZone) return;
     // Карма (server/karma.js): пока она не смыта, ПК не выключается.
     if (!mode && p.karma > 0) return;
+    // Включённый ПК держится PVP_OFF_COOLDOWN_MS: «включил, ударил, сразу
+    // выключил» не проходит. Клиенту — его правда, чтобы кнопка не врала.
+    if (!mode && p.pvpMode && p._pvpOnAt && Date.now() - p._pvpOnAt < PVP_OFF_COOLDOWN_MS) {
+      this.io.to(socketId).emit('pvpModeSync', { pvpMode: true, offAt: p._pvpOnAt + PVP_OFF_COOLDOWN_MS });
+      return;
+    }
+    if (mode && !p.pvpMode) p._pvpOnAt = Date.now();
     // Первая локация (левый рукав, уровни 1-20) — стартовая зона: новичков
     // нельзя пускать под удар, пока они качаются с нуля, так что ПК там
     // включить нельзя вовсе (выключить, если он всё же был включён, можно).

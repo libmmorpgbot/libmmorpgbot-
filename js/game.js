@@ -690,7 +690,7 @@ function update(dt, realDt) {
     // На Войне гильдий ПК — правило этажа (сервер включает его каждый тик),
     // выключать его здесь значило бы мигать туда-обратно; удары и так
     // отклоняются, пока кто-то из двоих стоит в безопасной зоне.
-    if (pvpMode && !dungeon.guildWar && !(playerKarma > 0)) {
+    if (pvpMode && !dungeon.guildWar && !(playerKarma > 0) && Date.now() >= pvpOffAt) {
       pvpMode = false;
       if (typeof netSetPvpMode === 'function') netSetPvpMode(false);
       if (targetIsPlayer) { targetId = null; targetIsPlayer = false; }
