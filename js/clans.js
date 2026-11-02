@@ -1271,7 +1271,7 @@ function _clanActivityHTML() {
   const myTg = _myTelegramId();
   // Всего принёс клану — пожертвования, победы в турнире и добитые Владыки;
   // турнир и Владыка — отдельными строками и своими кусками полосы.
-  const total = r => (r.points || 0) + (r.tour || 0) + (r.boss || 0);
+  const total = r => (r.points || 0) + (r.tour || 0) + (r.boss || 0) + (r.war || 0);
   const top = Math.max(1, ...rows.map(total));
   const medal = ['#f0c75e', '#c8d3de', '#d08a5a'];
   return `${hdr}<div class="clx-list">${rows.map((r, i) => `
@@ -1282,6 +1282,7 @@ function _clanActivityHTML() {
         <span class="clx-rank-bar"><i style="width:${Math.round((r.points || 0) / top * 100)}%"></i><i class="tour" style="width:${Math.round((r.tour || 0) / top * 100)}%"></i><i class="boss" style="width:${Math.round((r.boss || 0) / top * 100)}%"></i></span>
         ${r.tour ? `<span class="clx-rank-tour">${iconHTML('trophy', 11, '#f0c75e')} с турнира +${_num(r.tour)} · ${_num(r.tourWins || 0)} ${_clxWinsWord(r.tourWins || 0)}</span>` : ''}
         ${r.boss ? `<span class="clx-rank-tour boss">${iconHTML('skull', 11, '#d08cff')} Владыка Мира +${_num(r.boss)} · добит ×${_num(r.bossKills || 0)}</span>` : ''}
+        ${r.war ? `<span class="clx-rank-tour war">${iconHTML('swords', 11, '#ff6a6a')} Война кланов +${_num(r.war)} · врагов ×${_num(r.warKills || 0)}</span>` : ''}
       </div>
       <span class="clx-rank-v">${_num(total(r))}${r.qty ? `<small>${_num(r.qty)} оск.</small>` : ''}</span>
     </div>`).join('')}</div>`;
@@ -1600,7 +1601,7 @@ function _clanWarsHTML(c, isLeader) {
     : '';
   return `
     <div class="clx-card clx-war-about">
-      ${swords} <b>Война кланов</b> — пока она идёт, убийство игрока вражеского клана не даёт кармы, а над врагами горят красные мечи.
+      ${swords} <b>Война кланов</b> — пока она идёт, убийство игрока вражеского клана не даёт кармы, а приносит клану +${typeof CLAN_WAR_KILL_XP !== 'undefined' ? CLAN_WAR_KILL_XP : 2} очка. Над врагами горят красные мечи.
     </div>
     ${incoming.length ? `<div class="clx-card"><div class="clx-war-h">Вам бросили вызов</div>
       ${incoming.map(w => row(w, `<button class="clx-btn sm" onclick="netClanWarAccept(${w.id})">Принять</button><button class="clx-btn sm ghost" onclick="netClanWarDecline(${w.id})">Отказать</button>`)).join('')}</div>` : ''}

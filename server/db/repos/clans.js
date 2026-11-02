@@ -894,9 +894,11 @@ async function activityView(db, clanId) {
                          sum(n)  FILTER (WHERE source = 'tournament')::int    AS tour_wins,
                          sum(xp) FILTER (WHERE source = 'world_boss')::bigint AS boss,
                          sum(n)  FILTER (WHERE source = 'world_boss')::int    AS boss_kills,
+                         sum(xp) FILTER (WHERE source = 'clan_war')::bigint   AS war,
+                         sum(n)  FILTER (WHERE source = 'clan_war')::int      AS war_kills,
                          max(updated_at) AS at
                     FROM clan_bonus_xp WHERE clan_id = $1 AND xp > 0 GROUP BY player_id`
-               : `SELECT NULL::bigint AS player_id, 0::bigint AS tour, 0 AS tour_wins, 0::bigint AS boss, 0 AS boss_kills, NULL::timestamptz AS at WHERE false`}
+               : `SELECT NULL::bigint AS player_id, 0::bigint AS tour, 0 AS tour_wins, 0::bigint AS boss, 0 AS boss_kills, 0::bigint AS war, 0 AS war_kills, NULL::timestamptz AS at WHERE false`}
     ), shards AS (
       SELECT player_id, qty, updated_at FROM clan_contributions WHERE clan_id = $1 AND qty > 0
     ), who AS (
@@ -904,7 +906,8 @@ async function activityView(db, clanId) {
     )
     SELECT w.player_id, COALESCE(pt.points, 0) AS points, COALESCE(tr.tour, 0) AS tour,
            COALESCE(tr.tour_wins, 0) AS tour_wins, COALESCE(tr.boss, 0) AS boss,
-           COALESCE(tr.boss_kills, 0) AS boss_kills, COALESCE(sh.qty, 0) AS qty,
+           COALESCE(tr.boss_kills, 0) AS boss_kills, COALESCE(tr.war, 0) AS war,
+           COALESCE(tr.war_kills, 0) AS war_kills, COALESCE(sh.qty, 0) AS qty,
            COALESCE(pt.at, tr.at, sh.updated_at) AS updated_at, p.username, p.telegram_id,
            (cm.player_id IS NOT NULL) AS in_clan
       FROM who w
@@ -913,11 +916,12 @@ async function activityView(db, clanId) {
       LEFT JOIN tour tr ON tr.player_id = w.player_id
       LEFT JOIN shards sh ON sh.player_id = w.player_id
       LEFT JOIN clan_members cm ON cm.clan_id = $1 AND cm.player_id = w.player_id
-     ORDER BY COALESCE(pt.points, 0) + COALESCE(tr.tour, 0) + COALESCE(tr.boss, 0) DESC, qty DESC, updated_at ASC`, [clanId]);
+     ORDER BY COALESCE(pt.points, 0) + COALESCE(tr.tour, 0) + COALESCE(tr.boss, 0) + COALESCE(tr.war, 0) DESC, qty DESC, updated_at ASC`, [clanId]);
   return rows.map(r => ({
     playerId: Number(r.player_id), telegramId: r.telegram_id, username: r.username,
     points: Number(r.points), tour: Number(r.tour), tourWins: Number(r.tour_wins),
     boss: Number(r.boss), bossKills: Number(r.boss_kills),
+    war: Number(r.war), warKills: Number(r.war_kills),
     qty: Number(r.qty), updatedAt: r.updated_at, inClan: r.in_clan,
   }));
 }

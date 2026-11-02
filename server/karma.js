@@ -14,7 +14,7 @@
 const { query, tx, hasColumn } = require('./db');
 const items = require('./db/repos/items');
 const { FLOOR_IDS } = require('./game/floors');
-const { KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, ITEM_DEF } = require('../shared/definitions');
+const { KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, ITEM_DEF, CLAN_WAR_KILL_XP } = require('../shared/definitions');
 
 const KARMA_FLOORS = new Set(KARMA_FLOOR_KEYS.map(k => FLOOR_IDS[k]).filter(v => v != null));
 
@@ -111,7 +111,24 @@ async function onPvpKill(t, vs, ks, floorId) {
   // Война кланов: враги бьют друг друга без кармы — ни начисления, ни
   // выпадения вещей (server/db/repos/clanwars.js).
   const ca = vs.clan && vs.clan.clanId, cb = ks.clan && ks.clan.clanId;
-  if (ca && cb && await require('./db/repos/clanwars').atWar(t, ca, cb)) return { war: true };
+  if (ca && cb && await require('./db/repos/clanwars').atWar(t, ca, cb)) {
+    // Зато клану убийцы — очки клана (CLAN_WAR_KILL_XP), видны во «Вкладе».
+    // Точка сохранения: до миграции 052 источник 'clan_war' запрещён, и
+    // отказ не должен утянуть за собой остальную транзакцию.
+    const clans = require('./db/repos/clans');
+    let xp = null;
+    await query(t, 'SAVEPOINT clan_war_xp');
+    try {
+      xp = await clans.addBonusXp(t, cb, ks.playerId, 'clan_war', CLAN_WAR_KILL_XP);
+      await query(t, 'RELEASE SAVEPOINT clan_war_xp');
+    } catch (e) {
+      await query(t, 'ROLLBACK TO SAVEPOINT clan_war_xp');
+      console.error('[karma] clan war xp:', e.message);
+    }
+    if (xp && xp.leveledUp) setImmediate(() => clans.refreshMembersBm(cb).catch(() => {}));
+    if (xp && ks.socket) ks.socket.emit('clanWarNotice', { text: `Враг повержен — клану +${CLAN_WAR_KILL_XP} очка` });
+    return { war: true, clanXp: xp ? CLAN_WAR_KILL_XP : 0 };
+  }
   const victimKarma = await load(t, vs.playerId);
   vs.karma = victimKarma;
   let drop = null;
