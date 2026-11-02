@@ -951,6 +951,10 @@ module.exports = function registerPvpModes(s, safeOn, deps) {
     });
 
     safeOn('setPvpMode', ({ pvpMode } = {}) => {
-      if (s.room) s.room.setPlayerPvpMode(s.socket.id, pvpMode);
+      if (!s.room) return;
+      s.room.setPlayerPvpMode(s.socket.id, pvpMode);
+      // Запомнить: перезаход, смена локации и телепорт не должны снимать ПК
+      // и двухминутный запрет его выключать (server/karma.js).
+      require('../karma').notePvp(s);
     });
 };

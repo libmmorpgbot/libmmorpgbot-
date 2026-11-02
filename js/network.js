@@ -1514,6 +1514,7 @@ function netConnect(onReady) {
           if (p.clanIcon !== undefined && op.clanIcon !== p.clanIcon) { op.clanIcon = p.clanIcon; op._clanTagCanvas = null; }
           if (p.maxHp    !== undefined) op.maxHp    = p.maxHp;
           if (p.pvpMode  !== undefined) op.pvpMode  = p.pvpMode || false;
+          if (p.pvpMode  !== undefined) op.pk = !!p.pk;
           op.hp = p.hp; op.facing = p.facing;
           // Authoritative — straight from the sender's own input state (see
           // netSendMove). No hold/debounce needed: unlike a value re-derived

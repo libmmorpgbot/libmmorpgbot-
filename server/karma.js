@@ -14,7 +14,7 @@
 const { query, tx, hasColumn } = require('./db');
 const items = require('./db/repos/items');
 const { FLOOR_IDS } = require('./game/floors');
-const { KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, ITEM_DEF, CLAN_WAR_KILL_XP } = require('../shared/definitions');
+const { KARMA_PER_PK, KARMA_PER_MOB, KARMA_FLOOR_KEYS, karmaDropChance, ITEM_DEF, CLAN_WAR_KILL_XP, PVP_OFF_COOLDOWN_MS, PVP_LINGER_MS } = require('../shared/definitions');
 
 const KARMA_FLOORS = new Set(KARMA_FLOOR_KEYS.map(k => FLOOR_IDS[k]).filter(v => v != null));
 
@@ -34,6 +34,8 @@ function apply(s) {
   const k = Math.max(0, Number(s.karma) || 0);
   const p = s.room && s.room.players && s.room.players.get(s.socket.id);
   if (p) {
+    // Красный ник у других — меняется вместе с наличием кармы.
+    if ((p.karma > 0) !== (k > 0)) p._profileRev = (p._profileRev || 0) + 1;
     p.karma = k;
     if (k > 0 && !p.pvpMode) { p.pvpMode = true; p._profileRev = (p._profileRev || 0) + 1; }
   }
@@ -49,11 +51,79 @@ async function _set(t, s, value) {
   return v;
 }
 
-// После входа на этаж (sendGameStart) — карма из базы на сессию и комнату.
+// ── ПК, включённый игроком, переживает вход на новый этаж ───────────────────
+// Каждый вход (перезаход, смена локации, телепорт, возврат из события)
+// создаёт новую запись в комнате с выключенным ПК. Состояние держится на
+// сессии (s.pvpOn, s.pvpOffAt) и в базе (миграция 053) и возвращается сюда.
+// Только в обычных локациях и в городе: события ставят ПК сами, а в первой
+// локации ПК запрещён вовсе.
+async function _pvpReady() { return hasColumn('player_progress', 'pvp_on'); }
+function restorePvp(s) {
+  if (!s || !s.socket || !s.room) return;
+  const p = s.room.players && s.room.players.get(s.socket.id);
+  if (!p) return;
+  if (s.karma > 0) { apply(s); return; }
+  if (!s.pvpOn) return;
+  const f = Number(s.room.floor);
+  if (f !== FLOOR_IDS.hub && !isKarmaFloor(f)) return;
+  if (f === FLOOR_IDS.left) return;
+  const offAt = Number(s.pvpOffAt) || 0;
+  if (!p.pvpMode) { p.pvpMode = true; p._profileRev = (p._profileRev || 0) + 1; }
+  p._pvpOnAt = offAt - PVP_OFF_COOLDOWN_MS;
+  s.socket.emit('pvpModeSync', { pvpMode: true, offAt });
+}
+// Игрок переключил ПК (обработчик setPvpMode): запомнить, что вышло.
+function notePvp(s) {
+  const p = s && s.room && s.room.players && s.room.players.get(s.socket.id);
+  if (!p) return;
+  const on = !!p.pvpMode;
+  const offAt = on ? (Number(p._pvpOnAt) || 0) + PVP_OFF_COOLDOWN_MS : 0;
+  if (on === !!s.pvpOn && offAt === (Number(s.pvpOffAt) || 0)) return;
+  s.pvpOn = on; s.pvpOffAt = offAt;
+  tx(async (t) => {
+    if (!await _pvpReady()) return;
+    await query(t, 'UPDATE player_progress SET pvp_on = $2, pvp_off_at = $3 WHERE player_id = $1', [s.playerId, on, offAt]);
+  }).catch(err => console.error('[karma] pvp state:', err.message));
+}
+
+// ── нельзя сбежать, закрыв игру ─────────────────────────────────────────────
+// Отключившийся в бою с игроками (удар за последние PVP_LINGER_MS) или с
+// кармой не исчезает сразу: тело стоит ещё PVP_LINGER_MS, его можно убить —
+// и тогда работает всё как обычно (карма убийце, выпадение вещи, обнуление
+// кармы), а в базе игрок переносится в город. Сессия на это время хранится
+// здесь: сокета уже нет, а убийству нужна её запись.
+const _linger = new Map();   // socketId -> session
+function shouldLinger(s, rec) {
+  if (!s || !rec || !(rec.hp > 0)) return false;
+  if (s.karma > 0) return true;
+  return Date.now() - (Number(rec._pvpAt) || 0) < PVP_LINGER_MS;
+}
+function holdLinger(socketId, s, room) {
+  _linger.set(socketId, s);
+  const rec = room.players.get(socketId);
+  if (rec) rec._lingering = true;
+  const t = setTimeout(() => {
+    _linger.delete(socketId);
+    if (room.players.get(socketId) === rec) {
+      try { room.removePlayer(socketId); } catch (e) { console.error('[karma] linger remove:', e.message); }
+      if (room.io) room.io.to(`floor_${room.floor}`).emit('playerLeft', { id: socketId });
+    }
+  }, PVP_LINGER_MS);
+  if (t.unref) t.unref();
+}
+function lingerSession(socketId) { return _linger.get(socketId) || null; }
+
+// После входа на этаж (sendGameStart) — карма и ПК из базы на сессию и комнату.
 async function onEnter(t, s) {
-  if (!s || !s.playerId || !await ready()) return;
-  s.karma = await load(t, s.playerId);
-  apply(s);
+  if (!s || !s.playerId) return;
+  if (await ready()) s.karma = await load(t, s.playerId);
+  if (await _pvpReady()) {
+    const { rows } = await query(t, 'SELECT pvp_on, pvp_off_at FROM player_progress WHERE player_id = $1', [s.playerId]);
+    if (rows.length) { s.pvpOn = !!rows[0].pvp_on; s.pvpOffAt = Number(rows[0].pvp_off_at) || 0; }
+  }
+  if (s.karma > 0) apply(s);
+  else if (await ready()) s.socket && s.socket.emit('karmaSync', { karma: 0 });
+  restorePvp(s);
 }
 
 async function onMobKill(t, s) {
@@ -62,7 +132,13 @@ async function onMobKill(t, s) {
 }
 
 async function resetOnDeath(t, s) {
-  if (!s || !s.playerId || !await ready()) return;
+  if (!s || !s.playerId) return;
+  // Смерть снимает и ПК: в город — мирным.
+  if (s.pvpOn && await _pvpReady()) {
+    s.pvpOn = false; s.pvpOffAt = 0;
+    await query(t, 'UPDATE player_progress SET pvp_on = false, pvp_off_at = 0 WHERE player_id = $1', [s.playerId]);
+  }
+  if (!await ready()) return;
   if (!(s.karma > 0)) { s.karma = 0; return; }
   await _set(t, s, 0);
 }
@@ -152,6 +228,14 @@ function onPvpKillSoon(vs, ks, floorId, opts = {}) {
   if (!vs || !ks) return;
   tx(async (t) => {
     const res = await onPvpKill(t, vs, ks, floorId, opts);
+    // Убит, уже отключившись: в базе — в город, без ПК, как после возрождения.
+    if (vs.socket && _linger.get(vs.socket.id) === vs) {
+      const hub = require('./world').roomOf(FLOOR_IDS.hub);
+      const sp = hub && hub.spawnPointFor();
+      if (sp) await require('./db/repos/players').savePosition(t, vs.playerId, FLOOR_IDS.hub, sp.x, sp.y);
+      if (await _pvpReady()) await query(t, 'UPDATE player_progress SET pvp_on = false, pvp_off_at = 0 WHERE player_id = $1', [vs.playerId]);
+      if (!(res && res.victimKarma > 0) && await ready()) await query(t, 'UPDATE player_progress SET karma = 0 WHERE player_id = $1', [vs.playerId]);
+    }
     if (res && res.drop) {
       if (typeof vs.pushItems === 'function') { await vs.pushItems(t); await vs.pushStats(t); }
       if (typeof ks.pushItems === 'function') await ks.pushItems(t);
@@ -163,4 +247,4 @@ function onPvpKillSoon(vs, ks, floorId, opts = {}) {
   }).catch(err => console.error('[karma] pvp kill:', err.message));
 }
 
-module.exports = { ready, isKarmaFloor, load, apply, onEnter, onMobKill, resetOnDeath, onPvpKill, onPvpKillSoon, KARMA_FLOORS };
+module.exports = { ready, isKarmaFloor, load, apply, onEnter, onMobKill, resetOnDeath, onPvpKill, onPvpKillSoon, restorePvp, notePvp, shouldLinger, holdLinger, lingerSession, KARMA_FLOORS };

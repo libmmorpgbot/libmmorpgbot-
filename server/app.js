@@ -1550,7 +1550,12 @@ io.on('connection', (socket) => {
     catch (err) { console.error('[disconnect:party]', err); }
 
     // Told BEFORE removed, so the id is still meaningful to whoever hears it.
-    if (s.room) socket.to(`floor_${s.floor}`).emit('playerLeft', { id: socket.id });
+    // Отключился посреди боя с игроками или с кармой — тело ещё постоит
+    // (server/karma.js, PVP_LINGER_MS): закрыть игру, чтобы не умереть,
+    // нельзя. Тогда и «ушёл» соседям — только когда тело уберут.
+    const karma = require('./karma');
+    const linger = !!(s.room && karma.shouldLinger(s, s.room.players.get(socket.id)));
+    if (s.room && !linger) socket.to(`floor_${s.floor}`).emit('playerLeft', { id: socket.id });
 
     // ── close() FIRST, and the room reference kept ──────────────────────────
     // close() flushes the player's position and HP, and it reads them out of
@@ -1573,7 +1578,9 @@ io.on('connection', (socket) => {
     const room = s.room;
     try { await _trackTeardown(s.close(reason)); } catch (e) { console.error('[disconnect]', e); }
 
-    if (room) {
+    if (room && linger) {
+      karma.holdLinger(socket.id, s, room);
+    } else if (room) {
       try { room.removePlayer(socket.id); }
       catch (err) { console.error('[disconnect:room]', err); }
     }

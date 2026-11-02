@@ -2739,7 +2739,7 @@ class Room {
           nearPlayers.push({
             id: op.socketId, seq: op._seq, username: op.username, type: op.type,
             x: op.x, y: op.y, facing: op.facing, hp: op.hp, maxHp: op.maxHp,
-            pvpMode: op.pvpMode || false, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
+            pvpMode: op.pvpMode || false, pk: op.karma > 0, atkSeq: op.lastAtkSeq || 0, moving: !!op.moving,
             clanName: op.clanName || null, clanIcon: op.clanIcon || null,
             // For the client's own target/assist filtering — see the pIsRacer
             // exception above. null for anyone not currently racing; _raceLane
@@ -3516,6 +3516,9 @@ class Room {
     const toCp = Math.min(cp, dmg);
     target.cp = cp - toCp;
     target._cpHitAt = Date.now();
+    // Последний бой с игроком — по нему отключившийся «остаётся в мире»
+    // (server/karma.js, PVP_LINGER_MS): закрыть игру посреди драки не спасает.
+    target._pvpAt = target._cpHitAt;
     if (dmg > toCp) target.hp = Math.max(0, target.hp - (dmg - toCp));
   }
 
@@ -3568,6 +3571,7 @@ class Room {
     // (pvpDamageTaken), which a modified client could always report as 0 to
     // become unkillable in PvP while still dealing full damage to others.
     this._pvpHurt(target, dmg);
+    attacker._pvpAt = Date.now();
     this._vampGain(attacker, dmg);
     // Обычный удар Танка и Рыцаря Смерти замедляет и игрока: +10% на 10 с.
     // Двигается игрок сам, поэтому сервер присылает ему итоговый процент.
@@ -3791,6 +3795,7 @@ class Room {
     attacker.lastAtkSeq = (attacker.lastAtkSeq || 0) + 1;
     (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
     this._pvpHurt(target, dmg);
+    attacker._pvpAt = Date.now();
     // «Разряд»: −20% защиты и игроку (Room._defOf), продлевается попаданием.
     const _defDownP = skillDefDownOf(_slotCls, _slotKey, _advActivePvp);
     if (_defDownP) {

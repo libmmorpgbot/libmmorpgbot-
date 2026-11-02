@@ -601,7 +601,8 @@ function init(io) {
       // выше) даёт убийце карму, а с кармической жертвы может выпасть вещь
       // (server/karma.js). Вне KARMA_FLOOR_KEYS — война гильдий, арены — ничего.
       // Жертва тоже была в ПК — честная драка двух ПК, убийце кармы нет.
-      require('./karma').onPvpKillSoon(sessionOf(socketId), sessionOf(killerSocketId), room && room.floor,
+      const karma = require('./karma');
+      karma.onPvpKillSoon(sessionOf(socketId) || karma.lingerSession(socketId), sessionOf(killerSocketId), room && room.floor,
         { victimPvp: !!(victim && victim.pvpMode) });
     }
   };

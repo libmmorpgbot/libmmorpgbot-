@@ -1553,7 +1553,8 @@ function _drawPlayerNameOnUI() {
   const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
   const displayName = (netUsername || player.charDef.name).slice(0, 16);
 
-  const nameColor = pvpMode ? '#f28a96' : '#edc174';
+  // Ник: красный — есть карма (ПК-шник), фиолетовый — включён ПК.
+  const nameColor = playerKarma > 0 ? '#ff4545' : pvpMode ? '#c58bff' : '#edc174';
   const namePx = Math.ceil(DPR);
   const nameKey = displayName + '|' + nameColor + '|' + namePx;
   if (nameKey !== _prevNameKey) { _nameBitmap = _buildNameBitmap(displayName, nameColor, 10, namePx); _prevNameKey = nameKey; }
@@ -1636,7 +1637,7 @@ function _drawOtherPlayerNamesOnUI() {
     const sx = (p.x - _lastCamX) * ZOOM;
     const sy = (nameY - _lastCamY) * ZOOM + HEADER_H;
     const uname = (p.username || '?').slice(0, 16);
-    const unameColor = _a3NameColor(_pid) || (p.pvpMode ? '#f28a96' : '#d1ccc5');
+    const unameColor = _a3NameColor(_pid) || (p.pk ? '#ff4545' : p.pvpMode ? '#c58bff' : '#d1ccc5');
     const unamePx = Math.ceil(DPR);
     const unameKey = uname + '|' + unameColor + '|' + unamePx;
     if (unameKey !== p._nameKey) { p._nameBitmap = _buildNameBitmap(uname, unameColor, 10, unamePx); p._nameKey = unameKey; }
