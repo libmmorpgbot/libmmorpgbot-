@@ -776,7 +776,9 @@ function _checkAttackBtnTouch(cx, cy) {
     if (!_chaseArmed && !autoAttackMode && (player.atkAnimTimer || 0) <= 0) {
       player.atkTimer = -1;
     }
-    _chaseArmed = true;
+    // В АВТО атака и так идёт сама; _chaseArmed там лишь мешал (см.
+    // _autoLeashOn, js/game.js).
+    if (!autoAttackMode) _chaseArmed = true;
     return true;
   }
   return false;
@@ -818,6 +820,7 @@ function _autoPressEnd(touchId) {
   autoAttackMode = !autoAttackMode;
   // Включил АВТО — точка круга там, где стоишь сейчас (js/game.js, _autoLeashR).
   if (typeof _autoAnchor !== 'undefined') _autoAnchor = null;
+  _chaseArmed = false;
 }
 
 function _autoPressCancel(touchId) {

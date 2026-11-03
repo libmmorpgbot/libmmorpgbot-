@@ -408,8 +408,19 @@ let _autoSkillTimer = 0;
 // Радиус игрок выбирает сам ползунком (долгое нажатие на АВТО, js/ui.js),
 // в клетках AUTO_RADIUS_MIN..AUTO_RADIUS_MAX (shared/definitions.js).
 // Джойстик переносит точку: куда отошёл сам — там и стоишь.
-// Только в Мире: в коридорах автоприцел и так ограничен комнатой, а в
-// Кровавой Башне авто обязано идти по лабиринту.
+// Работает во всех фарм-локациях: Мир, Фарм-зоны (обе, с сезонными
+// крыльями), Подземелья классов и коридоры-«рукава» хаба. Раньше круг был
+// только в Мире, и в остальных местах АВТО по-прежнему бегало за ближайшим
+// монстром через всю карту (в рукаве вне комнаты ограничения нет вовсе).
+// Не работает в режимах, где авто обязано идти само: Кровавая Башня
+// (лабиринт), Страх/Кооп (волны по линии), Война гильдий, арены, турнир.
+function _autoLeashZone() {
+  const d = dungeon;
+  if (!d) return false;
+  if (d.race10 || d.guildWar || d.coop || d.tournamentArena) return false;
+  return !!(d.openWorld || d.farmZone || d.farmZone2 || d.farmHigh || d.dungeonZone
+    || (d.corridorGates && d.corridorGates.length));
+}
 function _autoLeashR() {
   const n = Number(player && player.autoRadius);
   const tiles = Number.isFinite(n)
@@ -421,7 +432,10 @@ function _autoLeashR() {
 let _autoRadiusPreview = false;
 let _autoAnchor = null;
 function _autoLeashOn() {
-  return autoAttackMode && !_chaseArmed && !!player && !!dungeon && !!dungeon.openWorld;
+  // _chaseArmed (кнопка атаки) круг больше не выключает: в АВТО нажатие
+  // атаки ничего не добавляет, а снималось оно только убийством именно той
+  // цели — и после одного случайного нажатия АВТО надолго бегало без круга.
+  return autoAttackMode && !!player && _autoLeashZone();
 }
 function _autoAnchorPt() {
   const a = _autoAnchor;
@@ -432,12 +446,18 @@ function _autoAnchorPt() {
   }
   return _autoAnchor;
 }
-function _inAutoLeash(x, y) {
+// size — радиус тела цели: крупный монстр, чьё тело уже в круге, а центр
+// чуть за чертой, тоже считается внутри (как и дальность удара — до края).
+function _inAutoLeash(x, y, size) {
   const a = _autoAnchorPt();
   const dx = x - a.x, dy = y - a.y;
-  const r = _autoLeashR();
+  const r = _autoLeashR() + (size || 0);
   return dx * dx + dy * dy <= r * r;
 }
+// Идёт автокаст (_autoCastSkills → useSkill): nearestEnemy/_lockedEnemy
+// (js/player.js) тогда берут цель только внутри круга — иначе навык с
+// подходом (_skillChase) уводил персонажа к монстру на соседнем споте.
+let _autoCasting = false;
 
 function _autoCastSkills(dt) {
   if (_autoSkillTimer > 0) _autoSkillTimer -= dt;
@@ -466,7 +486,10 @@ function _autoCastSkills(dt) {
   const tgt = (targetId && !targetIsPlayer)
     ? serverEnemiesMap.get(targetId)
     : null;
-  const foe = (tgt && (tgt.hp || 0) > 0) ? tgt : nearestEnemy();
+  const _lsh = _autoLeashOn();
+  const foe = (tgt && (tgt.hp || 0) > 0 && (!_lsh || _inAutoLeash(tgt.x, tgt.y, tgt.size)))
+    ? tgt
+    : (() => { _autoCasting = true; try { return nearestEnemy(); } finally { _autoCasting = false; } })();
   if (!foe) return;
   // Roughly the chase radius — close enough that the fight is actually on.
   if (dist(foe.x, foe.y, player.x, player.y) > 420) return;
@@ -487,7 +510,9 @@ function _autoCastSkills(dt) {
     if (offSlots[sk.key]) continue;                        // switched off by the player
     if (_skillLvl(sk.key) <= 0) continue;                  // not learned
     if ((player.skillCooldowns[sk.key] || 0) > 0) continue;
-    useSkill(i);
+    _autoCasting = true;
+    try { useSkill(i); } finally { _autoCasting = false; }
+    if (player._skillChase) player._skillChase.auto = true;
     _autoSkillTimer = AUTO_SKILL_GAP;
     return;                                                // one per gap
   }
@@ -548,7 +573,8 @@ function update(dt, realDt) {
         // whatever happened to be nearest instead of what was targeted.
         const sc = player._skillChase;
         const _scEnt = serverEnemiesMap.get(sc.targetId);
-        if (!_scEnt || (_scEnt.hp || 0) <= 0 || !hasLOS(player.x, player.y, _scEnt.x, _scEnt.y)) {
+        if (!_scEnt || (_scEnt.hp || 0) <= 0 || !hasLOS(player.x, player.y, _scEnt.x, _scEnt.y)
+            || (sc.auto && _autoLeashOn() && !_inAutoLeash(_scEnt.x, _scEnt.y, _scEnt.size))) {
           // Died, or line of sight broke mid-approach (walked behind a
           // wall) — nothing legitimate left to run toward.
           player._skillChase = null;
@@ -584,7 +610,15 @@ function update(dt, realDt) {
         // (tap/cycle) does NOT arm this — only an actual attack-button press
         // does, via _chaseArmed.
         const _chEnt = targetIsPlayer ? otherPlayers.get(targetId) : serverEnemiesMap.get(targetId);
-        if (_chEnt && (_chEnt.hp || 0) > 0) {
+        // Цель вышла из круга АВТО (монстр отбежал, или её выбрали тапом
+        // за чертой) — не бежать за ней: блок атаки ниже сам её снимет и
+        // возьмёт ближайшую внутри круга, а до тех пор стоим.
+        const _chOut = !targetIsPlayer && _chEnt && autoAttackMode && _autoLeashOn()
+          && !_inAutoLeash(_chEnt.x, _chEnt.y, _chEnt.size);
+        if (_chOut) {
+          targetId = null; targetIsPlayer = false;
+          player._chasing = false;
+        } else if (_chEnt && (_chEnt.hp || 0) > 0) {
           const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;
           const _clen = Math.hypot(_cdx, _cdy);
           const _chR = targetIsPlayer ? 0 : ((_chEnt.size) || 0);
@@ -613,8 +647,8 @@ function update(dt, realDt) {
         if (_rlen > TILE * 0.75) {
           const nvx = (_rdx / _rlen) * player.speed * _spdMult * dt;
           const nvy = (_rdy / _rlen) * player.speed * _spdMult * dt;
-          if (canMoveX(player, nvx, 12)) player.x += nvx;
-          if (canMoveY(player, nvy, 12)) player.y += nvy;
+          if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y) && !_isRaceBarrierBlocked(player.x + nvx, player.y) && !_isCoopBarrierBlocked(player.x + nvx, player.y)) player.x += nvx;
+          if (canMoveY(player, nvy, 12) && !_isGateBlocked(player.x, player.y + nvy) && !_isRaceBarrierBlocked(player.x, player.y + nvy) && !_isCoopBarrierBlocked(player.x, player.y + nvy)) player.y += nvy;
           player.facing = facing8FromDelta(_rdx / _rlen, _rdy / _rlen, player.facing);
           player._chasing = true;
         } else {
@@ -802,7 +836,7 @@ function update(dt, realDt) {
     // that fallback scan find a real target instead.
     if (targetId && !targetIsPlayer) {
       const t = serverEnemiesMap.get(targetId);
-      if (t && (t.hp || 0) > 0 && hasLOS(player.x, player.y, t.x, t.y) && (!_autoLeashOn() || _inAutoLeash(t.x, t.y))) {
+      if (t && (t.hp || 0) > 0 && hasLOS(player.x, player.y, t.x, t.y) && (!_autoLeashOn() || _inAutoLeash(t.x, t.y, t.size))) {
         closest = t; closestD = dist(t.x, t.y, player.x, player.y);
       } else {
         // Not reset here on purpose: like the room-boundary release just
@@ -843,7 +877,7 @@ function update(dt, realDt) {
         // _gwTowerUnselectable, js/input.js).
         if ((e.hp || 0) <= 0 || _gwTowerUnselectable(e)) return;
         // АВТО в Мире — только внутри своего круга (см. _autoLeashR).
-        if (_leash && !_inAutoLeash(e.x, e.y)) return;
+        if (_leash && !_inAutoLeash(e.x, e.y, e.size)) return;
         // When player is inside a room, only target enemies in that same room
         if (_pRoom) {
           const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);

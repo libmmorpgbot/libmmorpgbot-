@@ -748,7 +748,13 @@ function _lockedEnemy() {
   if (!targetId || targetIsPlayer) return null;
   const t = serverEnemies.find(e => e.id === targetId && (e.hp || 0) > 0);
   if (!t || !hasLOS(player.x, player.y, t.x, t.y)) return null;
+  if (_autoCastLeashed() && !_inAutoLeash(t.x, t.y, t.size)) return null;
   return t;
+}
+// Автокаст в круге АВТО (_autoCasting, js/game.js) — цели только внутри.
+function _autoCastLeashed() {
+  return typeof _autoCasting !== 'undefined' && _autoCasting
+    && typeof _autoLeashOn === 'function' && _autoLeashOn();
 }
 
 // Must match SKILL_RANGE_SLACK, server/game/Room.js — the server checks
@@ -816,8 +822,10 @@ function nearestEnemyDir() {
 
 function nearestEnemy() {
   let closest = null, closestD2 = Infinity;
+  const _leash = _autoCastLeashed();
   serverEnemies.forEach(e => {
     if ((e.hp || 0) <= 0) return;
+    if (_leash && !_inAutoLeash(e.x, e.y, e.size)) return;
     if (!hasLOS(player.x, player.y, e.x, e.y)) return;
     const dx = e.x - player.x, dy = e.y - player.y;
     const d2 = dx * dx + dy * dy;
