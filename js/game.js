@@ -454,6 +454,35 @@ function _inAutoLeash(x, y, size) {
   const r = _autoLeashR() + (size || 0);
   return dx * dx + dy * dy <= r * r;
 }
+// Ближайший живой монстр внутри круга АВТО (те же отсевы, что у поиска
+// цели в блоке атаки, update()). Видимые — в первую очередь.
+// Нужен, чтобы новая цель бралась СРАЗУ после убийства, а не через целый
+// интервал атаки (atkTimer), пока персонаж успевал развернуться и бежать к
+// центру круга, хотя рядом стояли другие монстры.
+function _autoPickInLeash() {
+  const pRoom = _getRoomAt(player.x, player.y);
+  let best = null, bestD2 = Infinity, bestLos = false;
+  serverEnemies.forEach(e => {
+    if ((e.hp || 0) <= 0 || _gwTowerUnselectable(e)) return;
+    if (!_inAutoLeash(e.x, e.y, e.size)) return;
+    if (pRoom) {
+      const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);
+      if (etx < pRoom.x || etx >= pRoom.x + pRoom.size ||
+          ety < pRoom.y || ety >= pRoom.y + pRoom.size) return;
+    }
+    const los = hasLOS(player.x, player.y, e.x, e.y);
+    if (bestLos && !los) return;
+    const dx = e.x - player.x, dy = e.y - player.y, d2 = dx * dx + dy * dy;
+    if ((los && !bestLos) || d2 < bestD2) { best = e; bestD2 = d2; bestLos = los; }
+  });
+  return best;
+}
+// Сколько секунд АВТО уже некого бить — в центр круга идём не сразу, а
+// после короткой паузы (_AUTO_RETURN_DELAY): монстры респавнятся и
+// подходят сами, и дёргаться к точке между каждым убийством незачем.
+let _autoIdleT = 0;
+const _AUTO_RETURN_DELAY = 1.5;
+
 // Идёт автокаст (_autoCastSkills → useSkill): nearestEnemy/_lockedEnemy
 // (js/player.js) тогда берут цель только внутри круга — иначе навык с
 // подходом (_skillChase) уводил персонажа к монстру на соседнем споте.
@@ -540,6 +569,16 @@ function update(dt, realDt) {
     if (player.atkAnimTimer <= 0 && (player.stunTimer || 0) <= 0 && !_dbFrozen() &&
         !(typeof _teleportCasting === 'function' && _teleportCasting())) {
       const inp = inputDir();
+      // АВТО в круге без цели — сразу взять ближайшую внутри круга.
+      if (inp.len <= 0 && !player._skillChase && autoAttackMode && _autoLeashOn()) {
+        if (!targetId) {
+          const _ne = _autoPickInLeash();
+          if (_ne) { targetId = _ne.id; targetIsPlayer = false; }
+        }
+        if (targetId) _autoIdleT = 0;
+      } else {
+        _autoIdleT = 0;
+      }
       let _spdMult = (player.slowTimer || 0) > 0 ? 0.35 : 1;
       if ((player.atkSlowTimer || 0) > 0) _spdMult = Math.min(_spdMult, 1 - (player.atkSlowPct || 0));
       if (inp.len > 0) {
@@ -618,6 +657,8 @@ function update(dt, realDt) {
         if (_chOut) {
           targetId = null; targetIsPlayer = false;
           player._chasing = false;
+          const _ne = _autoPickInLeash();
+          if (_ne) { targetId = _ne.id; targetIsPlayer = false; }
         } else if (_chEnt && (_chEnt.hp || 0) > 0) {
           const _cdx = _chEnt.x - player.x, _cdy = _chEnt.y - player.y;
           const _clen = Math.hypot(_cdx, _cdy);
@@ -642,9 +683,10 @@ function update(dt, realDt) {
       } else if (_autoLeashOn()) {
         // АВТО в Мире и бить некого — назад в свою точку, а не стоять там,
         // куда занесла погоня за последней целью.
+        _autoIdleT += dt;
         const a = _autoAnchorPt();
         const _rdx = a.x - player.x, _rdy = a.y - player.y, _rlen = Math.hypot(_rdx, _rdy);
-        if (_rlen > TILE * 0.75) {
+        if (_autoIdleT >= _AUTO_RETURN_DELAY && _rlen > TILE * 0.75) {
           const nvx = (_rdx / _rlen) * player.speed * _spdMult * dt;
           const nvy = (_rdy / _rlen) * player.speed * _spdMult * dt;
           if (canMoveX(player, nvx, 12) && !_isGateBlocked(player.x + nvx, player.y) && !_isRaceBarrierBlocked(player.x + nvx, player.y) && !_isCoopBarrierBlocked(player.x + nvx, player.y)) player.x += nvx;
