@@ -9009,12 +9009,12 @@ function _arena3Model() {
   };
 }
 
-// ── Турнир (16-player double elimination) ────────────────────────────────────
+// ── Турнир (32-player double elimination) ────────────────────────────────────
 // _trState is pushed by js/network.js's tournamentState handler; _trAlive
 // covers the gap between rounds (see server/game/tournament.js's file header)
 // where this player is neither actively fighting nor free to register again.
 function _tournamentModel() {
-  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: TOURNAMENT_SIZE, live: false, minLevel: TOURNAMENT_MIN_LEVEL, round: 0, totalRounds: 8, gapEndAt: 0 };
+  const st = (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: TOURNAMENT_SIZE, live: false, minLevel: TOURNAMENT_MIN_LEVEL, round: 0, totalRounds: 10, gapEndAt: 0 };
   const inMatch = typeof _trInMatch !== 'undefined' && _trInMatch;
   const alive = typeof _trAlive !== 'undefined' && _trAlive;
   const open = st.phase === 'reg';
@@ -9148,8 +9148,9 @@ function _tourTagClass(tag) {
 // этапы и бои по раундам, свои бои подсвечены; «Рейтинг» — пьедестал, своё
 // место и общий список (+1 за любую победу, +5 за победу в турнире).
 const _TRX_ROUND_NAME = {
-  1: '1/8 финала', 2: 'Раунд 2', 3: 'Раунд 3', 4: 'Финал верха',
-  5: 'Нижняя сетка', 6: 'Полуфинал низа', 7: 'Финал низа', 8: 'Гранд-финал',
+  1: '1/16 финала', 2: '1/8 финала', 3: 'Четвертьфинал', 4: 'Полуфинал верха',
+  5: 'Финал верха', 6: 'Нижняя сетка', 7: 'Нижняя сетка', 8: 'Полуфинал низа',
+  9: 'Финал низа', 10: 'Гранд-финал',
 };
 const _TRX_TROPHY = `<svg viewBox="0 0 64 64" width="56" height="56" aria-hidden="true">
   <defs><linearGradient id="trxg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe9a8"/><stop offset=".55" stop-color="#f0b84a"/><stop offset="1" stop-color="#b47a1c"/></linearGradient></defs>
@@ -9159,7 +9160,7 @@ const _TRX_TROPHY = `<svg viewBox="0 0 64 64" width="56" height="56" aria-hidden
   <path d="M32 13l2 4.2 4.6.6-3.3 3.2.8 4.6L32 23.4l-4.1 2.2.8-4.6-3.3-3.2 4.6-.6z" fill="#fff6d6" opacity=".9"/></svg>`;
 
 function _trxState() {
-  return (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: TOURNAMENT_SIZE, live: false, minLevel: TOURNAMENT_MIN_LEVEL, round: 0, totalRounds: 8, bracket: [] };
+  return (typeof _trState !== 'undefined' && _trState) || { phase: 'idle', nextAt: 0, queued: 0, needed: TOURNAMENT_SIZE, live: false, minLevel: TOURNAMENT_MIN_LEVEL, round: 0, totalRounds: 10, bracket: [] };
 }
 function _trxMe() { return (typeof netUsername !== 'undefined' && netUsername) || (player && player.username) || ''; }
 
@@ -9183,7 +9184,7 @@ function _trxRegHTML() {
         <div class="trx-hero-glow"></div>
         <div class="trx-trophy">${_TRX_TROPHY}</div>
         <div class="trx-hero-title">Турнир</div>
-        <div class="trx-hero-sub">${need} игроков · двойное выбывание · ${t('eventSchedTournament')}</div>
+        <div class="trx-hero-sub">игроков: ${need} · двойное выбывание · ${t('eventSchedTournament')}</div>
         <div class="trx-pill-row">${_evtPillHTML(m.pill)}</div>
         <div class="trx-status">${status}</div>
         <div class="trx-slots">${slots}</div>
@@ -9212,7 +9213,7 @@ function _trxRegHTML() {
         <div><span>Уровень</span><b>${st.minLevel || TOURNAMENT_MIN_LEVEL}+</b></div>
         <div><span>Бой</span><b>1 минута</b></div>
         <div><span>Ничья</span><b>по урону</b></div>
-        <div><span>Раундов</span><b>${st.totalRounds || 8}</b></div>
+        <div><span>Раундов</span><b>${st.totalRounds || 10}</b></div>
       </div>
     </div>`;
 }
@@ -9220,7 +9221,7 @@ function _trxRegHTML() {
 function _trxBracketHTML() {
   const st = _trxState();
   const bracket = Array.isArray(st.bracket) ? st.bracket : [];
-  const total = st.totalRounds || 8;
+  const total = st.totalRounds || 10;
   const cur = st.phase === 'live' ? st.round : (bracket.length ? total + 1 : 0);
   const steps = Array.from({ length: total }, (_, i) => {
     const r = i + 1;
@@ -9229,7 +9230,7 @@ function _trxBracketHTML() {
   }).join('');
   if (!bracket.length) {
     return `<div class="trx"><div class="trx-steps">${steps}</div>
-      <div class="trx-empty">${_TRX_TROPHY}<b>Сетка появится со стартом турнира</b><span>нужно ${st.needed || TOURNAMENT_SIZE} участников</span></div></div>`;
+      <div class="trx-empty">${_TRX_TROPHY}<b>Сетка появится со стартом турнира</b><span>участников нужно: ${st.needed || TOURNAMENT_SIZE}</span></div></div>`;
   }
   const me = _trxMe();
   const last = bracket[bracket.length - 1];
@@ -13875,7 +13876,7 @@ function _gramMsg(text, type) { _gramSay(text, type); }
 // text — consistent with the rest of the UI, which never uses emoji as an
 // icon, and the badge/eyebrow/display-font title read as a considered
 // moment rather than a plain text popup.
-const WHATS_NEW_VERSION = 'tr16';
+const WHATS_NEW_VERSION = 'tr32';
 const WHATS_NEW_ICON = 'trophy';
 function openWhatsNewModal() {
   const existing = document.getElementById('whatsnew-ov');
@@ -13892,7 +13893,7 @@ function openWhatsNewModal() {
         <div class="whatsnew-eyebrow">${t('whatsNewTitle')}</div>
         <div class="whatsnew-title">${t('whatsNewTrTitle')}</div>
         <div class="whatsnew-chips">
-          <span><b>16</b>${t('whatsNewTrChipSize')}</span>
+          <span><b>${TOURNAMENT_SIZE}</b>${t('whatsNewTrChipSize')}</span>
           <span><b>+1</b>${t('whatsNewTrChipWin')}</span>
           <span><b>+${TOURNAMENT_CLAN_XP_PER_WIN}</b>${t('whatsNewTrChipClan')}</span>
         </div>
