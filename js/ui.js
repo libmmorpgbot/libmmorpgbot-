@@ -10354,7 +10354,7 @@ function switchMarketTab(tab) {
   if (btn) btn.classList.add('active');
   _renderMarketBody();
   if (tab === 'lots') netMarketBrowse();
-  else if (tab === 'mine') netMarketMyListings();
+  else if (tab === 'mine') { netMarketMyListings(); if (typeof netMarketShareLeft === 'function') netMarketShareLeft(); }
   else if (tab === 'history') netMarketHistory();
   else if (tab === 'volume') netMarketVolume();
 }
@@ -10497,12 +10497,19 @@ function _marketRowHtml(l, mode) {
       ? `<button class="market-buy-btn disabled" disabled>${t('marketOwnLotBtn')}</button>`
       : `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">${t('buyBtn')}</button>`)
     : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">${t('cancelListingBtn')}</button>`;
+  // «Показать в чате» — только у своих лотов. VIP 5+ и 3 раза в сутки; сервер
+  // проверяет оба условия сам (marketShare, server/handlers2/economy.js),
+  // здесь — только подпись со счётчиком и подсказка без лишнего запроса.
+  const shareBtn = mode === 'mine'
+    ? `<button class="market-share-btn${_marketShareLeft === 0 ? ' disabled' : ''}" onclick="marketShareListing('${l.id}')">` +
+      `${t('marketShareBtn')}${_marketShareLeft != null ? ` (${_marketShareLeft}/${_marketShareMax})` : ''}</button>`
+    : '';
   return `<div class="market-row">
     <div class="market-row-icon">${_itemIcon(it, 28)}</div>
     <div class="market-row-info">
       <div class="market-row-name" style="color:${rc}">${it.name || '?'}${it.enhance ? ' +' + it.enhance : ''}${qtySuffix}</div>
       <div class="market-row-sub">${sub}</div>
-      <div class="market-row-actions">${action}${compareBtn}</div>
+      <div class="market-row-actions">${action}${shareBtn}${compareBtn}</div>
     </div>
     <div class="market-row-price">${l.price.toFixed(2)}<br><span style="font-size:9px;color:#a3957c;font-weight:600">GRAM</span></div>
   </div>`;
@@ -11124,6 +11131,41 @@ function marketCancelListing(listingId) {
   netMarketCancel(listingId);
 }
 
+// ── «Показать в чате» ───────────────────────────────────────────────────────
+// Сколько показов осталось сегодня — приходит с сервера (marketShareLeftData)
+// при открытии вкладки «Мои лоты» и после каждого показа. null — ещё не знаем.
+let _marketShareLeft = null;
+let _marketShareMax = 3;
+let _marketShareVip = 5;
+let _marketShareBusy = false;
+function marketShareListing(listingId) {
+  if (_marketShareBusy) return;
+  // Предпроверка только для подсказки — настоящая проверка на сервере.
+  if ((window._vipData?.level || 0) < _marketShareVip) {
+    _marketToast(tVars('marketShareVipToast', { vip: _marketShareVip }), 'err');
+    return;
+  }
+  if (_marketShareLeft === 0) {
+    _marketToast(t('marketShareLimitToast'), 'err');
+    return;
+  }
+  _marketShareBusy = true;
+  setTimeout(() => { _marketShareBusy = false; }, 4000);
+  netMarketShare(listingId);
+}
+function onMarketShared(listingId, left) {
+  _marketShareBusy = false;
+  _marketShareLeft = left;
+  _marketToast(tVars('marketShareDoneToast', { left, max: _marketShareMax }), 'ok');
+  if (_marketTab === 'mine') _renderMarketBody();
+}
+function onMarketShareLeft(left, max, vip) {
+  _marketShareLeft = left;
+  if (max) _marketShareMax = max;
+  if (vip) _marketShareVip = vip;
+  if (_marketTab === 'mine') _renderMarketBody();
+}
+
 // ── Sell flow ───────────────────────────────────────────────
 function openMarketSellPicker() {
   if (!player) return;
@@ -11463,6 +11505,7 @@ function onMarketSold(data) {
   if (_marketTab === 'mine' && panel && panel.style.display !== 'none') netMarketMyListings();
 }
 function onMarketError(msg) {
+  _marketShareBusy = false;
   _marketToast(msg || t('genericErrorLbl'), 'err');
 }
 // Nothing is restored locally any more, in either case. The item never left

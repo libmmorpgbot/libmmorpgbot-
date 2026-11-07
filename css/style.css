@@ -2813,6 +2813,19 @@ canvas { display:block; width:100%; height:100%; }
 }
 .market-cancel-btn:active { background: rgba(227,84,101,.25); }
 .market-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.market-share-btn {
+  margin-top: 4px;
+  padding: 5px 12px;
+  background: rgba(84,169,235,.12);
+  border: 1px solid rgba(84,169,235,.38);
+  border-radius: 7px;
+  color: #6cb8f0;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.market-share-btn:active { background: rgba(84,169,235,.25); }
+.market-share-btn.disabled { opacity: .45; }
 .market-compare-btn {
   margin-top: 4px;
   padding: 5px 12px;

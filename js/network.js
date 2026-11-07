@@ -4599,6 +4599,12 @@ function netMarketVolume() {
 function netMarketList(item, price) {
   if (socket?.connected) socket.emit('marketList', { item, price });
 }
+function netMarketShare(listingId) {
+  if (socket?.connected) socket.emit('marketShare', { listingId });
+}
+function netMarketShareLeft() {
+  if (socket?.connected) socket.emit('marketShareLeft');
+}
 function netMarketCancel(listingId) {
   if (socket?.connected) socket.emit('marketCancel', { listingId });
 }
@@ -6149,6 +6155,12 @@ function _initMarketHandlers(s) {
   });
   s.on('marketListed', ({ listing }) => {
     if (typeof onMarketListed === 'function') onMarketListed(listing);
+  });
+  s.on('marketShared', ({ listingId, left }) => {
+    if (typeof onMarketShared === 'function') onMarketShared(listingId, left);
+  });
+  s.on('marketShareLeftData', ({ left, max, vip }) => {
+    if (typeof onMarketShareLeft === 'function') onMarketShareLeft(left, max, vip);
   });
   s.on('marketCancelled', ({ listingId, item, delivered }) => {
     if (typeof onMarketCancelled === 'function') onMarketCancelled(listingId, item, delivered);

@@ -26,6 +26,8 @@ const { query } = require('../db');
 const crypto = require('crypto');
 const consumables = require('../db/repos/consumables');
 const cards = require('../ops-cards');
+const share = require('../market-share');
+const tgGame = require('../tg-game');
 const {
   GRAM_MIN_WITHDRAW, ITEM_DEF, CRAFT_MATS, MERCHANT_SHOP, SEASON_ENHANCE_POINTS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
@@ -594,6 +596,34 @@ module.exports = function registerEconomy(s, safeOn, deps) {
 
   safeOn('marketMyListings', () => s.act('marketMyListings', 'marketError', async (t, pid) => {
     s.socket.emit('marketMyListingsData', { listings: await market.mine(t, pid) });
+  }));
+
+  // ── «Показать в чате» ────────────────────────────────────────────────────
+  // Свой активный лот → карточка в общий Telegram-чат (server/market-share.js).
+  // VIP 5+, 3 раза в сутки. Попытка списывается в этой транзакции и
+  // откатывается вместе с ней, если отправка не удалась.
+  safeOn('marketShare', ({ listingId } = {}) => s.act('marketShare', 'marketError', async (t, pid) => {
+    const id = rowId(listingId);
+    if (!id) fail('Лот не найден — список обновлён', 'bad_listing');
+    const vip = await progression.vipOf(t, pid);
+    if ((vip.level || 0) < share.MARKET_SHARE_VIP) {
+      fail(`Показ в чате доступен с VIP ${share.MARKET_SHARE_VIP}`, 'vip_required');
+    }
+    const lot = await market.byId(t, id);
+    if (!lot || lot.sellerId !== Number(pid) || lot.status !== 'active') {
+      fail('Лот не найден — список обновлён', 'bad_listing');
+    }
+    const att = await progression.takeAttempt(t, pid, share.MARKET_SHARE_MODE, share.MARKET_SHARE_PER_DAY);
+    if (!att) fail(`Сегодня лоты уже показаны ${share.MARKET_SHARE_PER_DAY} раза — приходите завтра`, 'share_limit');
+    const sent = await tgGame.send(share.chatId(), share.buildCard(lot), { buttons: share.buttons() });
+    if (!sent.ok) fail('Не удалось отправить в чат — попробуйте позже', 'share_failed');
+    s.socket.emit('marketShared', { listingId: id, left: att.left });
+    return { listingId: id, left: att.left, item: lot.item };
+  }, r => r && { лот: r.listingId, предмет: _itemName(r.item), осталось: r.left }));
+
+  safeOn('marketShareLeft', () => s.act('marketShareLeft', 'marketError', async (t, pid) => {
+    const left = await progression.attemptsLeft(t, pid, share.MARKET_SHARE_MODE, share.MARKET_SHARE_PER_DAY);
+    s.socket.emit('marketShareLeftData', { left, max: share.MARKET_SHARE_PER_DAY, vip: share.MARKET_SHARE_VIP });
   }));
 
   safeOn('marketHistory', () => s.act('marketHistory', 'marketError', async (t, pid) => {
