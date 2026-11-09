@@ -4973,28 +4973,7 @@ function drawPvpButton() {
 // ─────────────────────────────────────────────────────────
 function drawComboButton() {
   if (!player || !player.type) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
-  const cb = getComboBtnPos();
-  const F = 'system-ui, -apple-system, Arial';
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 520);
-
-  ctx.save();
-  ctx.fillStyle = _uiBtnGrads.pfg1;
-  roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
-  ctx.strokeStyle = `rgba(232,193,90,${(0.45 + 0.3 * pulse).toFixed(3)})`;
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
-
-  const lbl = t('comboBtnLbl');
-  const icoSz = hud(12), gap = hud(3);
-  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  const maxTw = cb.w - hud(8) - icoSz - gap;
-  const tw = Math.min(ctx.measureText(lbl).width, maxTw);
-  const x0 = cb.x + (cb.w - (icoSz + gap + tw)) / 2;
-  drawIconCtx(ctx, 'pet', x0 + icoSz / 2, cb.y + cb.h / 2, icoSz, '#f0d27a');
-  ctx.fillStyle = '#f6e3a8';
-  ctx.fillText(lbl, x0 + icoSz + gap, cb.y + cb.h / 2, maxTw);
-  ctx.restore();
+  _drawEventHudBtn(getComboBtnPos(), 'pet', t('comboBtnLbl'), Math.PI);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -13955,46 +13934,39 @@ function drawFriendButton() {
   if (typeof _friendBtnVisible === 'function' && !_friendBtnVisible()) return;
   const fb = getFriendBtnPos();
   if (!fb.h) return;
+  _drawEventHudBtn(fb, 'heart', t('friendBtnLbl'), 0);
+}
+
+// «Дружба» и «Комбо» — одна плашка: изумрудная, с бегущим бликом, того же
+// размера, что вся левая колонка. phase сдвигает блик, чтобы две соседние
+// кнопки не мигали в такт.
+function _drawEventHudBtn(r, icon, lbl, phase) {
   const F = 'system-ui, -apple-system, Arial';
   const tnow = Date.now();
-  const pulse = 0.5 + 0.5 * Math.sin(tnow / 420);
-
+  const pulse = 0.5 + 0.5 * Math.sin(tnow / 420 + phase);
   ctx.save();
-  // Изумрудная плашка с бегущим бликом — «подарок за друзей».
-  const sweep = (Math.sin(tnow / 1200 + 1) + 1) / 2;
-  const grad = ctx.createLinearGradient(fb.x, fb.y, fb.x + fb.w, fb.y + fb.h);
+  const sweep = (Math.sin(tnow / 1200 + 1 + phase) + 1) / 2;
+  const grad = ctx.createLinearGradient(r.x, r.y, r.x + r.w, r.y + r.h);
   grad.addColorStop(0, '#0d2a22');
   grad.addColorStop(Math.max(0, sweep - 0.3), '#14382c');
   grad.addColorStop(sweep, '#2f9e6f');
   grad.addColorStop(Math.min(1, sweep + 0.3), '#14382c');
   grad.addColorStop(1, '#0b2019');
   ctx.fillStyle = grad;
-  roundRect(ctx, fb.x, fb.y, fb.w, fb.h, 9); ctx.fill();
+  roundRect(ctx, r.x, r.y, r.w, r.h, 9); ctx.fill();
   ctx.strokeStyle = `rgba(110,230,170,${(0.5 + 0.3 * pulse).toFixed(3)})`;
   ctx.lineWidth = 1.5;
-  roundRect(ctx, fb.x, fb.y, fb.w, fb.h, 9); ctx.stroke();
-  ctx.strokeStyle = `rgba(80,220,150,${(0.08 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-  roundRect(ctx, fb.x - 2, fb.y - 2, fb.w + 4, fb.h + 4, 11); ctx.stroke();
+  roundRect(ctx, r.x, r.y, r.w, r.h, 9); ctx.stroke();
 
-  const y1 = fb.y + hud(12);
-  const lbl = t('friendBtnLbl');
   const icoSz = hud(11), gap = hud(3);
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   let tw = ctx.measureText(lbl).width;
-  const maxTw = fb.w - hud(8) - icoSz - gap;
+  const maxTw = r.w - hud(8) - icoSz - gap;
   if (tw > maxTw) { ctx.font = `bold ${hudF(10)}px ${F}`; tw = Math.min(ctx.measureText(lbl).width, maxTw); }
-  const x0 = fb.x + (fb.w - (icoSz + gap + tw)) / 2;
-  drawIconCtx(ctx, 'heart', x0 + icoSz / 2, y1, icoSz, '#7cf0b4');
+  const x0 = r.x + (r.w - (icoSz + gap + tw)) / 2;
+  drawIconCtx(ctx, icon, x0 + icoSz / 2, r.y + r.h / 2, icoSz, '#7cf0b4');
   ctx.fillStyle = '#c8ffe2';
-  ctx.fillText(lbl, x0 + icoSz + gap, y1, maxTw);
-
-  const y2 = fb.y + fb.h - hud(11);
-  ctx.font = `bold ${hudF(10)}px ui-monospace, Menlo, Consolas, ${F}`;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  roundRect(ctx, fb.x + hud(5), y2 - hud(7), fb.w - hud(10), hud(14), 6); ctx.fill();
-  ctx.fillStyle = '#d6ffe9';
-  ctx.fillText(_friendFmtLeft(FRIEND_EVENT_END_AT - _friendNow()), fb.x + fb.w / 2, y2 + 0.5, fb.w - hud(12));
+  ctx.fillText(lbl, x0 + icoSz + gap, r.y + r.h / 2, maxTw);
   ctx.restore();
 }
 

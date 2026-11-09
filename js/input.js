@@ -113,7 +113,7 @@ function getPvpBtnPos() {
   return { x: 8, y: HEADER_H + 6, w: hud(80), h: hud(26) };
 }
 
-// Под Мир/ПК — «Дружба» (две строки: название и таймер до конца события),
+// Под Мир/ПК — «Дружба» (таймер до конца события — в её окне),
 // под ней — «Комбо дня». Раньше на этих местах стояли «Проф» и «Класс»; они
 // переехали кнопками во вкладку «Навыки» (index.html, inv-tab-content-2).
 // Пока событие «Дружба» не идёт (friendEventOn), её слот схлопнут до нулевой
@@ -124,7 +124,7 @@ function _friendBtnVisible() {
 function getFriendBtnPos() {
   const pvp = getPvpBtnPos();
   if (!_friendBtnVisible()) return { x: pvp.x, y: pvp.y + pvp.h, w: pvp.w, h: 0 };
-  return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h + hud(14) };
+  return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
 }
 function getComboBtnPos() {
   const fb = getFriendBtnPos();
