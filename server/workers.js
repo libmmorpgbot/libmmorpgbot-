@@ -21,7 +21,8 @@ const items = require('./db/repos/items');
 const progression = require('./db/repos/progression');
 const { query, stats: poolStats } = require('./db');
 const { _GRAM_WITHDRAW_FEE_PCT } = require('./shop');
-const { SEASON_PRIZE_AUTO } = require('../shared/definitions');
+const { SEASON_PRIZE_AUTO, itemCatalogBase } = require('../shared/definitions');
+const friendship = require('./db/repos/friendship');
 
 const DEPOSIT_EVERY_MS = Number(process.env.DEPOSIT_SCAN_MS || 15000);
 const RECONCILE_EVERY_MS = Number(process.env.RECONCILE_MS || 6 * 3600 * 1000);
@@ -394,6 +395,41 @@ async function maintain() {
   }
 }
 
+// ── комбо дня — админам в бот ───────────────────────────────────────────────
+// Комбинация меняется вместе с датой базы (CURRENT_DATE, server/db/repos/
+// friendship.js). Раз в COMBO_ANNOUNCE_EVERY_MS сравниваем дату с отметкой в
+// kv: условный upsert срабатывает ровно один раз на сутки — ни перезапуск, ни
+// второй процесс не пришлют то же комбо повторно. Сообщение — в личку
+// каждому админу (TG_ADMIN_IDS) от операторского бота; если админов нет или
+// никому не дошло — в топик алертов.
+const COMBO_ANNOUNCE_EVERY_MS = 5 * 60 * 1000;
+const COMBO_KV_KEY = 'daily_combo_announced';
+
+async function announceCombo() {
+  if (!ops.isLive()) return;
+  try {
+    const day = (await query(null, 'SELECT CURRENT_DATE::text AS d')).rows[0].d;
+    const { rows } = await query(null, `
+      INSERT INTO kv (key, value) VALUES ($1, $2)
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+       WHERE kv.value IS DISTINCT FROM EXCLUDED.value
+      RETURNING key`, [COMBO_KV_KEY, day]);
+    if (!rows.length) return;
+
+    const combo = friendship.comboFor(day);
+    const name = id => { const d = itemCatalogBase(id); return d ? d.name : id; };
+    const html = `🐾 <b>Комбо дня — ${ops.esc(day)}</b>\n\n`
+      + combo.map((id, i) => `${i + 1}. <b>${ops.esc(name(id))}</b>`).join('\n');
+    let sent = 0;
+    for (const id of ops.adminIds()) {
+      if (await ops.dm(id, html)) sent++;
+    }
+    if (!sent) await ops.send('alerts', html);
+  } catch (err) {
+    console.error('[workers] combo announce:', err.message);
+  }
+}
+
 // ── lifecycle ───────────────────────────────────────────────────────────────
 
 function start(opts = {}) {
@@ -420,6 +456,8 @@ function start(opts = {}) {
 
   const live = ops.isLive();
   if (live) {
+    announceCombo();
+    timers.push(setInterval(() => announceCombo(), COMBO_ANNOUNCE_EVERY_MS));
     timers.push(setInterval(() => scanDeposits(opts), DEPOSIT_EVERY_MS));
     pollOps(opts);
   } else {
