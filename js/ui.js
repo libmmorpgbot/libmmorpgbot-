@@ -14133,6 +14133,8 @@ function _friendHtml() {
   const link = window._refLink || '';
   const count = d ? d.count : 0;
   const claimed = new Set((d && d.claimed) || []);
+  const pending = new Set((d && d.pending) || []);
+  const rejected = new Set((d && d.rejected) || []);
   const head = `
     <div style="font-size:16px;font-weight:800;color:#7cf0b4;margin-bottom:4px">${t('friendTitle')}</div>
     <div style="font-size:12px;color:#8fb3a2;line-height:1.5;margin-bottom:8px">${tVars('friendDesc', { lvl: FRIEND_EVENT_LEVEL })}</div>
@@ -14150,9 +14152,15 @@ function _friendHtml() {
     </div>`;
   const tiers = FRIEND_EVENT_TIERS.map(tier => {
     const got = claimed.has(tier.count);
-    const ready = !got && count >= tier.count;
+    const wait = pending.has(tier.count);
+    const denied = rejected.has(tier.count);
+    const ready = !got && !wait && !denied && count >= tier.count;
     const btn = got
       ? `<span style="color:#7cf0b4;font-weight:700;font-size:12px">✓ ${t('friendClaimedLbl')}</span>`
+      : wait
+      ? `<span style="color:#e8c15a;font-weight:700;font-size:12px">⏳ ${t('friendPendingLbl')}</span>`
+      : denied
+      ? `<span style="color:#f17e8b;font-weight:700;font-size:12px">✕ ${t('friendRejectedLbl')}</span>`
       : ready
         ? `<button onclick="_friendClaim(${tier.count})" style="padding:7px 14px;border:none;border-radius:9px;background:linear-gradient(135deg,#1f6b4c,#2f9e6f);color:#e6fff2;font-weight:800;font-size:12px;cursor:pointer">${t('friendClaimBtn')}</button>`
         : `<span style="color:#7f9a8d;font-size:12px;font-weight:700">${Math.min(count, tier.count)}/${tier.count}</span>`;
@@ -14162,7 +14170,7 @@ function _friendHtml() {
         ${btn}
       </div>
       <div class="vip-items-row">${_friendTierRows(tier)}</div>
-      ${tier.pet && !got ? _friendPetPicker(tier, ready) : ''}
+      ${tier.pet && !got && !wait && !denied ? _friendPetPicker(tier, ready) : ''}
     </div>`;
   }).join('');
   return head + tiers + `<div style="font-size:11px;color:#6f8a7d;margin:4px 2px 2px;line-height:1.45">${tVars('friendRulesNote', { lvl: FRIEND_EVENT_LEVEL })}</div>`;
@@ -14265,18 +14273,28 @@ function onFriendEventData(data) {
   _friendRender();
 }
 
-function onFriendEventClaimed(data) {
+function onFriendEventRequested(data) {
   _friendBusy = false;
   if (data.status) _friendData = { ...(_friendData || {}), ...data.status };
-  if (Number.isFinite(data.status && data.status.now)) _friendClockSkew = data.status.now - Date.now();
   _friendRender();
-  if (typeof updateInvUI === 'function') updateInvUI();
-  const parts = [];
-  if (data.nexum) parts.push(`+${data.nexum} Liberty`);
-  if (data.gram) parts.push(`+${data.gram} GRAM`);
-  if (data.items && data.items.length) parts.push(t('friendItemsLbl'));
-  if (typeof _marketToast === 'function') _marketToast(`${t('friendClaimDoneToast')} ${parts.join(' · ')}`, 'ok');
-  if (typeof Sound !== 'undefined') Sound.loot?.();
+  if (typeof _marketToast === 'function') _marketToast(t('friendRequestSentToast'), 'ok');
+}
+
+// Админ решил заявку — приходит, даже если окно закрыто.
+function onFriendEventDecided(data) {
+  if (data.approved) {
+    if (typeof updateInvUI === 'function') updateInvUI();
+    const parts = [];
+    if (data.nexum) parts.push(`+${data.nexum} Liberty`);
+    if (data.gram) parts.push(`+${data.gram} GRAM`);
+    if (typeof _marketToast === 'function') {
+      _marketToast(`${tVars('friendApprovedToast', { n: data.count })} ${parts.join(' · ')}`, 'ok');
+    }
+    if (typeof Sound !== 'undefined') Sound.loot?.();
+  } else if (typeof _marketToast === 'function') {
+    _marketToast(tVars('friendRejectedToast', { n: data.count }), 'err');
+  }
+  if (document.getElementById('friend-ov') && typeof netFriendEventSync === 'function') netFriendEventSync();
 }
 
 function onDailyComboResult(data) {

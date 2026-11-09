@@ -17,6 +17,7 @@ const items = require('../db/repos/items');
 const runes = require('../db/repos/runes');
 const shopRepo = require('../db/repos/shop');
 const friendship = require('../db/repos/friendship');
+const friendCards = require('../friend-cards');
 const consumables = require('../db/repos/consumables');
 const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, EMPOWER_LEVEL, EMPOWER_BONUS_SP,
@@ -530,17 +531,15 @@ module.exports = function registerProgression(s, safeOn) {
     });
   }));
 
+  // «Забрать» — это заявка: награду выдаёт админ кнопкой в карточке
+  // (server/friend-cards.js), как заявку на вывод.
   safeOn('friendEventClaim', ({ count, petId } = {}) => s.act('friendEventClaim', 'friendEventError', async (t, pid) => {
-    const res = await friendship.claimFriendTier(t, pid, Number(count), typeof petId === 'string' ? petId : null);
-    await s.pushItems(t); await s.pushBalances(t); await s.pushStats(t);
-    s.socket.emit('friendEventClaimed', {
-      count: res.count, nexum: res.nexum, gram: res.gram,
-      items: res.granted.map(g => g.itemId),
-      status: await friendship.friendStatus(t, pid),
-    });
-    return res;
-  }, r => r && { тир: r.count, друзей: r.friends, предметы: (r.granted || []).map(g => g.itemId),
-    liberty: r.nexum, gram: r.gram }));
+    const req = await friendship.requestFriendTier(t, pid, Number(count), typeof petId === 'string' ? petId : null);
+    s.socket.emit('friendEventRequested', { count: req.count, status: await friendship.friendStatus(t, pid) });
+    // После ответа: карточка уходит админам, когда транзакция уже записана.
+    setImmediate(() => { friendCards.postRequest(req).catch(() => {}); });
+    return req;
+  }, r => r && { тир: r.count, друзей: r.friends, предметы: r.items, liberty: r.nexum, gram: r.gram }));
 
   safeOn('dailyComboGuess', ({ picks } = {}) => s.act('dailyComboGuess', 'friendEventError', async (t, pid) => {
     const res = await friendship.comboGuess(t, pid, picks);

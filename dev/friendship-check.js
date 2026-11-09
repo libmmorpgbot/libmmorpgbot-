@@ -36,6 +36,12 @@ const invOf = async (pid) => {
   return Object.fromEntries(rows.map(r => [r.item_id, r.q]));
 };
 const nexumOf = async (pid) => Number((await money.balancesOf(null, pid)).nexum || 0);
+// Игрок подаёт заявку, админ жмёт «Выдать» — то, что раньше было одним claim.
+const grant = async (pid, count, petId) => {
+  const r = await tryTx(t => fr.requestFriendTier(t, pid, count, petId));
+  if (!r.ok) return r;
+  return tryTx(t => fr.approveFriendTier(t, pid, count, petId));
+};
 const tryTx = async (fn) => {
   try { return { ok: true, res: await tx(fn) }; } catch (e) { return { ok: false, code: e.code, msg: e.message }; }
 };
@@ -69,7 +75,7 @@ async function friend(refTg, n, { lvl = D.FRIEND_EVENT_LEVEL, banned = false, ol
   // Старая запись первой «Дружбы» (tier = 1) не должна мешать новому тиру 1.
   await query(null, 'INSERT INTO player_friendship_claims (player_id, tier) VALUES ($1, 1)', [me]);
 
-  const t1 = await tryTx(t => fr.claimFriendTier(t, me, 1));
+  const t1 = await grant(me, 1);
   eq(t1.code, 'not_enough', 'без друзей тир 1 не выдаётся');
 
   for (let i = 0; i < 4; i++) await friend(refTg, i);
@@ -78,44 +84,62 @@ async function friend(refTg, n, { lvl = D.FRIEND_EVENT_LEVEL, banned = false, ol
 
   console.log('  ── тиры ──');
   const n0 = await nexumOf(me);
-  const a = await tryTx(t => fr.claimFriendTier(t, me, 1));
+  const a = await grant(me, 1);
   ok(a.ok, 'тир 1 выдан', a.msg);
   eq(await nexumOf(me) - n0, 100, '+100 Liberty');
-  const a2 = await tryTx(t => fr.claimFriendTier(t, me, 1));
+  const a2 = await grant(me, 1);
   eq(a2.code, 'already', 'второй раз тир 1 не выдаётся');
   eq(await nexumOf(me) - n0, 100, 'и баланс не изменился');
 
-  eq((await tryTx(t => fr.claimFriendTier(t, me, 5))).code, 'not_enough', 'тир 5 при 4 друзьях — отказ');
-  eq((await tryTx(t => fr.claimFriendTier(t, me, 7))).code, 'bad_tier', 'несуществующий тир — отказ');
+  eq((await grant(me, 5)).code, 'not_enough', 'тир 5 при 4 друзьях — отказ');
+  eq((await grant(me, 7)).code, 'bad_tier', 'несуществующий тир — отказ');
 
   for (let i = 4; i < 10; i++) await friend(refTg, i);
-  ok((await tryTx(t => fr.claimFriendTier(t, me, 5))).ok, 'тир 5 выдан');
-  const b = await tryTx(t => fr.claimFriendTier(t, me, 10));
+  ok((await grant(me, 5)).ok, 'тир 5 выдан');
+  const b = await grant(me, 10);
   ok(b.ok, 'тир 10 выдан', b.msg);
   eq((await invOf(me)).wing_u, 1, 'зелёные крылья в инвентаре');
   eq(await nexumOf(me) - n0, 2100, 'всего +2100 Liberty за тиры 1, 5, 10');
   const st = await fr.friendStatus(null, me);
   eq(JSON.stringify(st.claimed.sort((x, y) => x - y)), '[1,5,10]', 'статус: забраны 1, 5, 10');
 
-  console.log('  ── старшие тиры ──');
   await query(null, "UPDATE player_progress SET char_class = 'mage' WHERE player_id = $1", [me]);
   for (let i = 10; i < 300; i++) await friend(refTg, i);
-  ok((await tryTx(t => fr.claimFriendTier(t, me, 30))).ok, 'тир 30 выдан');
-  eq((await tryTx(t => fr.claimFriendTier(t, me, 50, 'pet_groot'))).code, 'bad_pet',
-    'тир 50: эпический питомец вместо синего — отказ');
-  eq((await tryTx(t => fr.claimFriendTier(t, me, 50))).code, 'bad_pet', 'тир 50 без выбора — отказ');
-  ok((await tryTx(t => fr.claimFriendTier(t, me, 50, 'pet_yeti'))).ok, 'тир 50 с выбранным питомцем');
+  console.log('  ── заявка и решение админа ──');
+  const nr = await nexumOf(me);
+  const rq = await tryTx(t => fr.requestFriendTier(t, me, 30));
+  ok(rq.ok && rq.res.items.includes('wing_r'), 'заявка на тир 30 подана, в ней синие крылья', rq.msg);
+  eq(await nexumOf(me) - nr, 0, 'заявка сама ничего не выдаёт');
+  eq((await invOf(me)).wing_r, undefined, 'крыльев до решения админа нет');
+  eq((await tryTx(t => fr.requestFriendTier(t, me, 30))).code, 'pending', 'вторая заявка на тот же тир — отказ');
+  eq(JSON.stringify((await fr.friendStatus(null, me)).pending), '[30]', 'статус: тир 30 на рассмотрении');
+  const ap = await tryTx(t => fr.approveFriendTier(t, me, 30));
+  ok(ap.ok && ap.res, 'админ выдал', ap.msg);
+  eq(await nexumOf(me) - nr, 2000, '+2000 Liberty после «Выдать»');
+  const ap2 = await tryTx(t => fr.approveFriendTier(t, me, 30));
+  ok(ap2.ok && ap2.res === null, 'второе нажатие «Выдать» ничего не делает');
+  eq(await nexumOf(me) - nr, 2000, 'и Liberty не начислено дважды');
+  ok((await tryTx(t => fr.requestFriendTier(t, me, 50, 'pet_yeti'))).ok, 'заявка на тир 50');
+  const rj = await tryTx(t => fr.rejectFriendTier(t, me, 50));
+  ok(rj.ok && rj.res, 'админ отклонил');
+  ok((await tryTx(t => fr.approveFriendTier(t, me, 50, 'pet_yeti'))).res === null, '«Выдать» после отказа не срабатывает');
+  eq((await tryTx(t => fr.requestFriendTier(t, me, 50, 'pet_yeti'))).code, 'rejected', 'повторная заявка после отказа — отказ');
+  eq((await invOf(me)).pet_yeti, undefined, 'питомца из отклонённой заявки нет');
+
+  console.log('  ── старшие тиры ──');
+  eq((await grant(me, 100, 'pet_yeti')).code, 'bad_pet', 'тир 100: синий питомец вместо фиолетового — отказ');
+  eq((await grant(me, 100)).code, 'bad_pet', 'тир 100 без выбора — отказ');
   const g0 = Number((await money.balancesOf(null, me)).gram || 0);
-  ok((await tryTx(t => fr.claimFriendTier(t, me, 100, 'pet_nerb'))).ok, 'тир 100 выдан');
+  ok((await grant(me, 100, 'pet_nerb')).ok, 'тир 100 выдан');
   eq(Number((await money.balancesOf(null, me)).gram || 0) - g0, 10, '+10 GRAM');
   const g1 = Number((await money.balancesOf(null, me)).gram || 0);
-  const top = await tryTx(t => fr.claimFriendTier(t, me, 300, 'pet_vilord'));
+  const top = await grant(me, 300, 'pet_vilord');
   ok(top.ok, 'тир 300 выдан', top.msg);
   eq(Number((await money.balancesOf(null, me)).gram || 0) - g1, 30, 'тир 300: +30 GRAM');
   const invT = await invOf(me);
-  eq(invT.wing_r, 2, 'синие крылья ×2 (тиры 30 и 50)');
+  eq(invT.wing_r, 1, 'синие крылья ×1 (тир 30; тир 50 отклонён)');
   ok(invT.wing_e === 1 && invT.wing_l === 1, 'фиолетовые и легендарные крылья');
-  ok(invT.pet_yeti === 1 && invT.pet_nerb === 1 && invT.pet_vilord === 1, 'выбранные питомцы');
+  ok(invT.pet_nerb === 1 && invT.pet_vilord === 1, 'выбранные питомцы');
   ok(invT.artifact_r_mage === 1 && invT.cloak_r_mage === 1, 'редкие артефакт и плащ на класс мага',
     JSON.stringify(invT));
 

@@ -6150,8 +6150,11 @@ function _initPetCraftHandlers(s) {
   s.on('friendEventData', (data) => {
     if (typeof onFriendEventData === 'function') onFriendEventData(data || {});
   });
-  s.on('friendEventClaimed', (data) => {
-    if (typeof onFriendEventClaimed === 'function') onFriendEventClaimed(data || {});
+  s.on('friendEventRequested', (data) => {
+    if (typeof onFriendEventRequested === 'function') onFriendEventRequested(data || {});
+  });
+  s.on('friendEventDecided', (data) => {
+    if (typeof onFriendEventDecided === 'function') onFriendEventDecided(data || {});
   });
   s.on('dailyComboResult', (data) => {
     if (typeof onDailyComboResult === 'function') onDailyComboResult(data || {});

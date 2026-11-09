@@ -1724,6 +1724,20 @@ async function boot() {
     // The same push for a transfer an operator placed by hand. The player has
     // no way to tell the two apart and no reason to: money arrived.
     notifyCredit: async (c) => notifyCredited(c),
+    // Админ решил заявку «Дружбы». Если игрок в сети — свежие инвентарь и
+    // балансы через его же сессию и событие для окна; если нет — увидит всё
+    // при следующем входе, в базе уже правда.
+    notifyFriendReward: async (playerId, d) => {
+      for (const sk of io.sockets.sockets.values()) {
+        if (!sk.data || Number(sk.data.playerId) !== Number(playerId)) continue;
+        const sess = sk.data.session;
+        if (d.approved && sess && sess.authed) {
+          await sess.pushItems().catch(() => {});
+          await sess.pushBalances().catch(() => {});
+        }
+        sk.emit('friendEventDecided', d);
+      }
+    },
   });
   console.log(`workers: deposit scan every ${w.deposits}ms`);
 

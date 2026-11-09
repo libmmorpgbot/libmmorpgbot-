@@ -49,44 +49,45 @@ async function friendCounts(db, playerId) {
   return { done: rows[0] ? rows[0].done : 0, invited: rows[0] ? rows[0].invited : 0 };
 }
 
-async function claimedTiers(db, playerId) {
+// Состояние тира — номер строки в player_friendship_claims:
+//   BASE + N        награда выдана
+//   BASE + 1000 + N заявка ждёт решения админа
+//   BASE + 2000 + N заявка отклонена админом (повторно не подаётся)
+const OFF_PENDING = 1000;
+const OFF_REJECTED = 2000;
+
+async function tierStates(db, playerId) {
   const { rows } = await query(db, `
     SELECT tier FROM player_friendship_claims
      WHERE player_id = $1 AND tier > $2 AND tier < $3`,
-  [playerId, FRIEND_EVENT_TIER_BASE, FRIEND_EVENT_TIER_BASE + 1000]);
-  return rows.map(r => Number(r.tier) - FRIEND_EVENT_TIER_BASE);
+  [playerId, FRIEND_EVENT_TIER_BASE, FRIEND_EVENT_TIER_BASE + 3000]);
+  const out = { claimed: [], pending: [], rejected: [] };
+  for (const r of rows) {
+    const v = Number(r.tier) - FRIEND_EVENT_TIER_BASE;
+    if (v >= OFF_REJECTED) out.rejected.push(v - OFF_REJECTED);
+    else if (v >= OFF_PENDING) out.pending.push(v - OFF_PENDING);
+    else out.claimed.push(v);
+  }
+  return out;
 }
 
 async function friendStatus(db, playerId) {
   const c = await friendCounts(db, playerId);
   return {
     count: c.done, invited: c.invited,
-    claimed: await claimedTiers(db, playerId),
+    ...await tierStates(db, playerId),
     startAt: FRIEND_EVENT_START_AT, endAt: FRIEND_EVENT_END_AT,
     level: FRIEND_EVENT_LEVEL, now: Date.now(),
   };
 }
 
-// ── забрать тир ─────────────────────────────────────────────────────────────
-// Флаг (строка в player_friendship_claims) пишется ДО выдачи — тем же
-// порядком, что письмо и набор новичка: задвоенная награда хуже потерянной,
-// а потерянной она не будет — транзакция откатит строку вместе с выдачей.
-async function claimFriendTier(db, playerId, count, petId) {
-  if (!friendEventOn()) err('event_over', 'Событие «Дружба» не идёт');
-  const tier = friendEventTier(count);
-  if (!tier) err('bad_tier', 'Награда не найдена');
-
-  await items.lockPlayer(db, playerId);
-  const c = await friendCounts(db, playerId);
-  if (c.done < tier.count) {
-    err('not_enough', `Нужно ${tier.count} друзей с ${FRIEND_EVENT_LEVEL} уровнем — сейчас ${c.done}`);
-  }
-
+// Что именно выдаётся по тиру этому игроку — список предметов. Класс
+// читается в момент вызова: заявка показывает админу то же, что потом ляжет.
+async function _tierItems(db, playerId, tier, petId) {
   const list = [];
   for (const id of tier.items || []) list.push({ itemId: id, qty: 1, enhance: 0 });
   if (tier.pet) {
-    const pool = friendEventPets(tier.pet);
-    if (!pool.includes(petId)) err('bad_pet', 'Выберите питомца');
+    if (!friendEventPets(tier.pet).includes(petId)) err('bad_pet', 'Выберите питомца');
     list.push({ itemId: petId, qty: 1, enhance: 0 });
   }
   if (tier.classGear) {
@@ -98,14 +99,68 @@ async function claimFriendTier(db, playerId, count, petId) {
       if (def) list.push({ itemId: def.id, qty: 1, enhance: 0 });
     }
   }
+  return list;
+}
 
-  if (list.length) {
-    const room = await shop._roomForAll(db, playerId, list);
-    if (!room.fits) {
-      const { SERVER_INV_MAX } = require('../../anticheat');
-      err('no_room', `Нужно ${room.need} свободных мест в инвентаре (занято ${room.used}/${SERVER_INV_MAX})`);
-    }
+async function _checkRoom(db, playerId, list) {
+  if (!list.length) return;
+  const room = await shop._roomForAll(db, playerId, list);
+  if (!room.fits) {
+    const { SERVER_INV_MAX } = require('../../anticheat');
+    err('no_room', `Нужно ${room.need} свободных мест в инвентаре (занято ${room.used}/${SERVER_INV_MAX})`);
   }
+}
+
+// ── заявка ──────────────────────────────────────────────────────────────────
+// «Забрать» ничего не выдаёт: создаёт заявку, и админ получает карточку с
+// кнопками (server/friend-cards.js) — как заявку на вывод. Всё, что можно
+// проверить сейчас, проверяется сейчас: событие идёт, друзей хватает, питомец
+// из нужного списка, в инвентаре есть место.
+async function requestFriendTier(db, playerId, count, petId) {
+  if (!friendEventOn()) err('event_over', 'Событие «Дружба» не идёт');
+  const tier = friendEventTier(count);
+  if (!tier) err('bad_tier', 'Награда не найдена');
+
+  await items.lockPlayer(db, playerId);
+  const st = await tierStates(db, playerId);
+  if (st.claimed.includes(tier.count)) err('already', 'Эта награда уже получена');
+  if (st.pending.includes(tier.count)) err('pending', 'Заявка уже отправлена — ждите решения администрации');
+  if (st.rejected.includes(tier.count)) err('rejected', 'Заявка на эту награду отклонена администрацией');
+
+  const c = await friendCounts(db, playerId);
+  if (c.done < tier.count) {
+    err('not_enough', `Нужно ${tier.count} друзей с ${FRIEND_EVENT_LEVEL} уровнем — сейчас ${c.done}`);
+  }
+  const list = await _tierItems(db, playerId, tier, petId);
+  await _checkRoom(db, playerId, list);
+
+  await query(db, `
+    INSERT INTO player_friendship_claims (player_id, tier) VALUES ($1, $2)
+    ON CONFLICT DO NOTHING`, [playerId, FRIEND_EVENT_TIER_BASE + OFF_PENDING + tier.count]);
+  const { rows } = await query(db, 'SELECT username, telegram_id FROM players WHERE id = $1', [playerId]);
+  return {
+    playerId: Number(playerId), count: tier.count, petId: tier.pet ? petId : null,
+    items: list.map(x => x.itemId), nexum: tier.nexum || 0, gram: tier.gram || 0,
+    friends: c.done, invited: c.invited,
+    username: rows[0] && rows[0].username, telegramId: rows[0] && rows[0].telegram_id,
+  };
+}
+
+// ── решение админа: выдать ──────────────────────────────────────────────────
+// Заявка снимается условным DELETE: второе нажатие (или второй админ) ничего
+// не находит и получает null — выдачи дважды не будет. Флаг «выдано» пишется
+// ДО выдачи, и любой throw (например, у игрока кончилось место) откатывает
+// всё, включая снятие заявки: она остаётся ждать.
+async function approveFriendTier(db, playerId, count, petId) {
+  const tier = friendEventTier(count);
+  if (!tier) err('bad_tier', 'Награда не найдена');
+  await items.lockPlayer(db, playerId);
+  const del = await query(db, 'DELETE FROM player_friendship_claims WHERE player_id = $1 AND tier = $2',
+    [playerId, FRIEND_EVENT_TIER_BASE + OFF_PENDING + tier.count]);
+  if (!del.rowCount) return null;
+
+  const list = await _tierItems(db, playerId, tier, petId);
+  await _checkRoom(db, playerId, list);
 
   const { rowCount } = await query(db, `
     INSERT INTO player_friendship_claims (player_id, tier) VALUES ($1, $2)
@@ -128,10 +183,18 @@ async function claimFriendTier(db, playerId, count, petId) {
     await money.credit(db, playerId, 'gram', tier.gram,
       { reason: 'friendship', refType: 'friendship', refId: String(tier.count), idemKey: `${idem}:gram` });
   }
-  return {
-    count: tier.count, granted, nexum: tier.nexum || 0, gram: tier.gram || 0,
-    friends: c.done,
-  };
+  return { playerId: Number(playerId), count: tier.count, granted, nexum: tier.nexum || 0, gram: tier.gram || 0 };
+}
+
+// ── решение админа: отклонить ───────────────────────────────────────────────
+async function rejectFriendTier(db, playerId, count) {
+  const tier = friendEventTier(count);
+  if (!tier) return null;
+  const { rowCount } = await query(db, `
+    UPDATE player_friendship_claims SET tier = $3, claimed_at = now()
+     WHERE player_id = $1 AND tier = $2`,
+  [playerId, FRIEND_EVENT_TIER_BASE + OFF_PENDING + tier.count, FRIEND_EVENT_TIER_BASE + OFF_REJECTED + tier.count]);
+  return rowCount ? { playerId: Number(playerId), count: tier.count } : null;
 }
 
 // ── Комбо дня ───────────────────────────────────────────────────────────────
@@ -210,6 +273,6 @@ async function comboGuess(db, playerId, picks) {
 }
 
 module.exports = {
-  friendCounts, friendStatus, claimFriendTier, comboFor, comboStatus, comboGuess, FriendError,
+  friendCounts, friendStatus, tierStates, requestFriendTier, approveFriendTier, rejectFriendTier, comboFor, comboStatus, comboGuess, FriendError,
   FRIEND_EVENT_TIERS,
 };

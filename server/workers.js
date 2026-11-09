@@ -14,6 +14,7 @@
 const ops = require('./tg-ops');
 const tgAdmin = require('./tg-admin');
 const cards = require('./ops-cards');
+const friendCards = require('./friend-cards');
 const gram = require('./db/repos/gram');
 const money = require('./db/repos/money');
 const items = require('./db/repos/items');
@@ -216,7 +217,7 @@ async function pollOps(opts = {}) {
   loop();
 }
 
-async function _onCallback(cq, { notifyPlayer, notifyCredit } = {}) {
+async function _onCallback(cq, { notifyPlayer, notifyCredit, notifyFriendReward } = {}) {
   // The admin panel first: its buttons all start `a:` and belong to nobody
   // else. A withdrawal card's do not, so the two cannot be confused.
   if (await tgAdmin.handleCallback(cq)) return;
@@ -224,6 +225,9 @@ async function _onCallback(cq, { notifyPlayer, notifyCredit } = {}) {
   // Placing a stranded transfer — `u:` — and it returns null when the press
   // was not one of its own, exactly like the withdrawal handler below.
   if (await cards.handleUnmatchedCallback(cq, { notifyCredit }) !== null) return;
+
+  // Заявки на награды «Дружбы» — `fr:` (server/friend-cards.js).
+  if (await friendCards.handleCallback(cq, { notify: notifyFriendReward }) !== null) return;
 
   const handled = await cards.handleWithdrawCallback(cq, {
     feePct: _GRAM_WITHDRAW_FEE_PCT,
