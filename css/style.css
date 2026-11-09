@@ -5796,3 +5796,13 @@ canvas { display:block; width:100%; height:100%; }
   cursor: pointer;
 }
 .friend-tab.active { background: rgba(110,230,170,.16); border-color: #6ee6aa; color: #c8ffe2; }
+
+/* Хранилище — разделы (_storageSectionBar, js/npc.js) */
+.storage-sections { display: flex; gap: 5px; margin: 6px 0 4px; }
+.storage-sec {
+  flex: 1; padding: 6px 2px; border-radius: 8px;
+  border: 1px solid rgba(193,204,213,.14); background: rgba(255,255,255,.03);
+  color: #a3957c; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.storage-sec.active { border-color: rgba(238,194,118,.6); background: rgba(238,194,118,.12); color: #eec276; }
+.storage-sec-n { font-weight: 600; opacity: .7; font-size: 10px; }

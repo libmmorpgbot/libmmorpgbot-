@@ -1537,6 +1537,43 @@ function _storageBody() {
   return tabs + (_storageTab === 'inv' ? _storageInvTab() : _storageStoTab());
 }
 
+// ── разделы ─────────────────────────────────────────────────────────────
+// Фильтр показа, как и сортировка ниже: ячейка несёт индекс предмета в
+// настоящем списке, поэтому нажатие попадает туда же при любом разделе.
+// Экипировка — всё, что надевается (включая руны и помощников); расходники —
+// то, что используется и исчезает (банки, баф-зелья, боксы); остальное —
+// материалы, книги, рецепты — в «Разном». Выбор общий для обеих вкладок и
+// запоминается на устройстве.
+const _STORAGE_SECTIONS = ['all', 'equip', 'misc', 'cons'];
+const _STORAGE_EQUIP_SLOTS = new Set(['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt',
+  'cloak', 'artifact', 'pet', 'wings', 'rune', 'helper']);
+const _STORAGE_CONS_SLOTS = new Set(['use', 'buff_potion', 'box']);
+let _storageSection = (() => {
+  try { const v = localStorage.getItem('liberty.storageSection'); return _STORAGE_SECTIONS.includes(v) ? v : 'all'; }
+  catch (e) { return 'all'; }
+})();
+
+function _storageSectionOf(it) {
+  if (_STORAGE_EQUIP_SLOTS.has(it.slot)) return 'equip';
+  if (_STORAGE_CONS_SLOTS.has(it.slot)) return 'cons';
+  return 'misc';
+}
+
+function _setStorageSection(v) {
+  if (!_STORAGE_SECTIONS.includes(v)) return;
+  _storageSection = v;
+  try { localStorage.setItem('liberty.storageSection', v); } catch (e) { /* приватный режим */ }
+  document.getElementById('npc-body').innerHTML = _buildNpcBody('storage');
+}
+
+function _storageSectionBar(list) {
+  const n = { all: list.length, equip: 0, misc: 0, cons: 0 };
+  for (const it of list) n[_storageSectionOf(it)]++;
+  return `<div class="storage-sections">${_STORAGE_SECTIONS.map(k =>
+    `<button class="storage-sec${_storageSection === k ? ' active' : ''}" onclick="_setStorageSection('${k}')">` +
+    `${t('storageSec_' + k)} <span class="storage-sec-n">${n[k]}</span></button>`).join('')}</div>`;
+}
+
 // ── сортировка ──────────────────────────────────────────────────────────
 // Только порядок ПОКАЗА: сервер хранит свой (как положили), а ячейка несёт
 // индекс предмета в настоящем списке, так что нажатие попадает в тот
@@ -1565,7 +1602,8 @@ function _storageTypeRank(it) {
 
 // [{ it, idx }] in display order; idx stays the position in the real list.
 function _storageSorted(list) {
-  const out = list.map((it, idx) => ({ it, idx }));
+  const out = list.map((it, idx) => ({ it, idx }))
+    .filter(e => _storageSection === 'all' || _storageSectionOf(e.it) === _storageSection);
   const rar  = e => (_STORAGE_RARITY_RANK[e.it.rarity] != null ? _STORAGE_RARITY_RANK[e.it.rarity] : 9);
   const name = e => String(e.it.name || '');
   const byName = (a, b) => name(a).localeCompare(name(b)) || (b.it.enhance || 0) - (a.it.enhance || 0) || a.idx - b.idx;
@@ -1602,17 +1640,21 @@ function _storageItemCell(it, idx, onclickFn) {
 
 function _storageInvTab() {
   if (!player.inventory.length) return '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageInvEmpty') : 'Инвентарь пуст') + '</div>';
-  let html = _storageSortBar() + '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToStore') : 'Нажмите на предмет, чтобы положить в хранилище') + '</div><div class="craft-items-grid">';
-  _storageSorted(player.inventory).forEach(({ it, idx }) => { html += _storageItemCell(it, idx, '_doMoveToStorage'); });
+  const shown = _storageSorted(player.inventory);
+  let html = _storageSectionBar(player.inventory) + _storageSortBar() + '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToStore') : 'Нажмите на предмет, чтобы положить в хранилище') + '</div><div class="craft-items-grid">';
+  shown.forEach(({ it, idx }) => { html += _storageItemCell(it, idx, '_doMoveToStorage'); });
   html += '</div>';
+  if (!shown.length) html += '<div class="craft-mats-info">' + t('storageSecEmpty') + '</div>';
   return html;
 }
 
 function _storageStoTab() {
   if (!player.storage.length) return '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageEmpty') : 'Хранилище пусто') + '</div>';
-  let html = _storageSortBar() + '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToTake') : 'Нажмите на предмет, чтобы забрать') + '</div><div class="craft-items-grid">';
-  _storageSorted(player.storage).forEach(({ it, idx }) => { html += _storageItemCell(it, idx, '_doMoveToInventory'); });
+  const shown = _storageSorted(player.storage);
+  let html = _storageSectionBar(player.storage) + _storageSortBar() + '<div class="craft-mats-info">' + (typeof t === 'function' ? t('storageTapToTake') : 'Нажмите на предмет, чтобы забрать') + '</div><div class="craft-items-grid">';
+  shown.forEach(({ it, idx }) => { html += _storageItemCell(it, idx, '_doMoveToInventory'); });
   html += '</div>';
+  if (!shown.length) html += '<div class="craft-mats-info">' + t('storageSecEmpty') + '</div>';
   return html;
 }
 
