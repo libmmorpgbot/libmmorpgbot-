@@ -107,29 +107,28 @@ function getTargetBtnPos() {
 }
 
 // Ширина и высота — через hud(): это единственное место, откуда считает себя
-// вся левая колонка (Проф, Класс, Письмо, Бонус и список пати под ними), так
+// вся левая колонка (Дружба, Комбо, Письмо, Бонус и список пати под ними), так
 // что уменьшается она отсюда одна.
 function getPvpBtnPos() {
   return { x: 8, y: HEADER_H + 6, w: hud(80), h: hud(26) };
 }
 
-// Directly below the Мир/ПК toggle, same column — opens the "Профессия"
-// panel (second-profession skills). See _checkProfessionBtnTouch/input.js
-// and drawProfessionButton/openProfessionPanel, js/ui.js.
-function getProfessionBtnPos() {
-  const pvp = getPvpBtnPos();
-  return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h };
+// Под Мир/ПК — «Дружба» (две строки: название и таймер до конца события),
+// под ней — «Комбо дня». Раньше на этих местах стояли «Проф» и «Класс»; они
+// переехали кнопками во вкладку «Навыки» (index.html, inv-tab-content-2).
+// Пока событие «Дружба» не идёт (friendEventOn), её слот схлопнут до нулевой
+// высоты, и «Комбо» поднимается под Мир/ПК.
+function _friendBtnVisible() {
+  return typeof friendEventOn === 'function' && friendEventOn(Date.now());
 }
-
-// Прямо под Профессией, та же колонка — окно смены класса.
-//
-// Владелец: «треба було як кнопку ПРОФ зробити і під неї добавити». Первый
-// заход положил её ВНУТРЬ панели профессии, внизу, — то есть за два нажатия и
-// там, где её никто не искал. Кнопка на экране и кнопка в панели — разные
-// вещи, и просили первую.
-function getClassChangeBtnPos() {
-  const prof = getProfessionBtnPos();
-  return { x: prof.x, y: prof.y + prof.h + 6, w: prof.w, h: prof.h };
+function getFriendBtnPos() {
+  const pvp = getPvpBtnPos();
+  if (!_friendBtnVisible()) return { x: pvp.x, y: pvp.y + pvp.h, w: pvp.w, h: 0 };
+  return { x: pvp.x, y: pvp.y + pvp.h + 6, w: pvp.w, h: pvp.h + hud(14) };
+}
+function getComboBtnPos() {
+  const fb = getFriendBtnPos();
+  return { x: fb.x, y: fb.y + fb.h + 6, w: fb.w, h: getPvpBtnPos().h };
 }
 
 // Прямо под «Класс», та же колонка — «Письмо»: одна из двух наград
@@ -154,10 +153,10 @@ function getOfflineFarmBtnPos() {
   return { x: pRight - hud(78) - hud(5) - w, y: py + hud(5), w, h };
 }
 
-// Под «Класс» — место, где раньше стоял «Оффлайн».
+// Под «Комбо».
 function getMailBonusBtnPos() {
-  const cc = getClassChangeBtnPos();
-  return { x: cc.x, y: cc.y + cc.h + 6, w: cc.w, h: cc.h };
+  const cb = getComboBtnPos();
+  return { x: cb.x, y: cb.y + cb.h + 6, w: cb.w, h: cb.h };
 }
 
 // Directly below Письмо, same column — opens the free "Набор новичка"
@@ -169,23 +168,11 @@ function getStarterBonusBtnPos() {
   return { x: mb.x, y: mb.y + mb.h + 6, w: mb.w, h: mb.h };
 }
 
-// «Дружба» — под «Бонусом», на прежнем месте. Две строки: название и таймер
-// до конца события. Пока событие не идёт (friendEventOn), слот схлопнут до
-// нулевой высоты, и колонка ниже не прыгает на пустом месте.
-function _friendBtnVisible() {
-  return typeof friendEventOn === 'function' && friendEventOn(Date.now());
-}
-function getFriendBtnPos() {
-  const bb = getStarterBonusBtnPos();
-  if (!_friendBtnVisible()) return { x: bb.x, y: bb.y + bb.h, w: bb.w, h: 0 };
-  return { x: bb.x, y: bb.y + bb.h + 6, w: bb.w, h: bb.h + hud(14) };
-}
-
-// Бывший слот «Элитный» под «Дружбой». Кнопку убрали с экрана, слот
+// Бывший слот «Элитный» под «Бонусом». Кнопку убрали с экрана, слот
 // схлопнут до нулевой высоты: от него строятся список пати и панель Guild War.
 function getEliteBtnPos() {
-  const fb = getFriendBtnPos();
-  return { x: fb.x, y: fb.y + fb.h, w: fb.w, h: 0 };
+  const bb = getStarterBonusBtnPos();
+  return { x: bb.x, y: bb.y + bb.h, w: bb.w, h: 0 };
 }
 
 function getPartyLeaveBtnPos() {
@@ -674,19 +661,10 @@ function _checkPvpBtnTouch(cx, cy) {
   return false;
 }
 
-function _checkProfessionBtnTouch(cx, cy) {
-  const pb = getProfessionBtnPos();
-  if (cx >= pb.x && cx <= pb.x + pb.w && cy >= pb.y && cy <= pb.y + pb.h) {
-    if (typeof openProfessionPanel === 'function') openProfessionPanel();
-    return true;
-  }
-  return false;
-}
-
-function _checkClassChangeBtnTouch(cx, cy) {
-  const cb = getClassChangeBtnPos();
+function _checkComboBtnTouch(cx, cy) {
+  const cb = getComboBtnPos();
   if (cx >= cb.x && cx <= cb.x + cb.w && cy >= cb.y && cy <= cb.y + cb.h) {
-    if (typeof openClassChangeModal === 'function') openClassChangeModal();
+    if (typeof openFriendPanel === 'function') openFriendPanel('combo');
     return true;
   }
   return false;
@@ -897,12 +875,11 @@ function onTS(e) {
     if (_checkPartyInviteTouch(p.x, p.y)) continue;
     if (_checkPartyLeaveBtnTouch(p.x, p.y)) continue;
     if (_checkPvpBtnTouch(p.x, p.y)) continue;
-    if (_checkProfessionBtnTouch(p.x, p.y)) continue;
-    if (_checkClassChangeBtnTouch(p.x, p.y)) continue;
+    if (_checkFriendBtnTouch(p.x, p.y)) continue;
+    if (_checkComboBtnTouch(p.x, p.y)) continue;
     if (_checkOfflineFarmBtnTouch(p.x, p.y)) continue;
     if (_checkMailBonusBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
-    if (_checkFriendBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
     if (_checkAutoBtnTouch(p.x, p.y, t.identifier)) continue;
     if (_checkAttackBtnTouch(p.x, p.y)) continue;
@@ -993,12 +970,11 @@ function onMD(e) {
   if (_checkPartyInviteTouch(p.x, p.y)) return;
   if (_checkPartyLeaveBtnTouch(p.x, p.y)) return;
   if (_checkPvpBtnTouch(p.x, p.y)) return;
-  if (_checkProfessionBtnTouch(p.x, p.y)) return;
-  if (_checkClassChangeBtnTouch(p.x, p.y)) return;
+  if (_checkFriendBtnTouch(p.x, p.y)) return;
+  if (_checkComboBtnTouch(p.x, p.y)) return;
   if (_checkOfflineFarmBtnTouch(p.x, p.y)) return;
   if (_checkMailBonusBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
-  if (_checkFriendBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;
   if (_checkAutoBtnTouch(p.x, p.y, 'mouse')) return;
   if (_checkAttackBtnTouch(p.x, p.y)) return;

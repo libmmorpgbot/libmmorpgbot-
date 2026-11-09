@@ -5806,3 +5806,16 @@ canvas { display:block; width:100%; height:100%; }
 }
 .storage-sec.active { border-color: rgba(238,194,118,.6); background: rgba(238,194,118,.12); color: #eec276; }
 .storage-sec-n { font-weight: 600; opacity: .7; font-size: 10px; }
+
+/* Вкладка «Навыки» — «Профессия» и «Смена класса» (раньше кнопки на экране) */
+.skill-extra-btns { display: flex; gap: 8px; margin: 4px 0 8px; }
+.skill-extra-btn {
+  flex: 1; padding: 9px 6px; border-radius: 10px;
+  border: 1px solid rgba(93,154,198,.4); background: rgba(16,27,42,.9);
+  color: #e0bc7f; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.skill-extra-btn.ready {
+  border-color: rgba(205,184,236,.85); color: #cdb8ec;
+  background: linear-gradient(180deg, rgba(44,30,66,.97), rgba(21,13,32,.99));
+  box-shadow: 0 0 10px rgba(165,143,196,.35);
+}

@@ -545,6 +545,11 @@
   </div>
   <!-- Skills sub-tab -->
   <div id="inv-tab-content-2" style="display:none">
+    <!-- «Профессия» и «Смена класса» — раньше кнопками на экране под Мир/ПК -->
+    <div class="skill-extra-btns">
+      <button class="skill-extra-btn" id="skill-prof-btn" onclick="openProfessionPanel()" data-i18n="skillProfBtn">📖 Профессия</button>
+      <button class="skill-extra-btn" onclick="openClassChangeModal()" data-i18n="skillClassBtn">⚔️ Смена класса</button>
+    </div>
     <div class="profile-tabs">
       <button class="profile-tab active" id="sktab-active" onclick="switchSkillTab('active')" data-i18n="tabSkillsActive">Активные</button>
       <button class="profile-tab" id="sktab-passive" onclick="switchSkillTab('passive')" data-i18n="tabSkillsPassive">Пассивные</button>

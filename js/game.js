@@ -1749,12 +1749,11 @@ function _renderUI() {
   drawHeader();
   if (typeof drawQuestNotif === 'function') drawQuestNotif();
   drawPvpButton();
-  drawProfessionButton();
-  drawClassChangeButton();
+  if (typeof drawFriendButton === 'function') drawFriendButton();
+  drawComboButton();
   drawOfflineFarmButton();
   drawMailBonusButton();
   drawStarterBonusButton();
-  if (typeof drawFriendButton === 'function') drawFriendButton();
   drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();

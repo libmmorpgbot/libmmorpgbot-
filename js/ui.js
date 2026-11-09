@@ -1833,7 +1833,7 @@ function renderProfessionPanel() {
     <div class="profp-cards">${cards}</div>
     <div class="profp-hint">${t('profpFarmHint')}</div>
     ${/* Кнопки смены класса здесь БОЛЬШЕ НЕТ: она переехала на экран, под
-         «Проф» (drawClassChangeButton). Внутри панели это было два нажатия и
+         «Проф» на экране, а теперь — во вкладку «Навыки». Внутри панели это было два нажатия и
          место, где её никто не искал. */ ''}
   `;
 }
@@ -2191,6 +2191,10 @@ let _activeSkillSubTab = 'active';
 
 function switchSkillTab(tab) {
   _activeSkillSubTab = tab;
+  // «Профессия» подсвечивается, когда в ней есть что изучить или улучшить —
+  // так же, как подсвечивалась кнопка на экране.
+  const profBtn = document.getElementById('skill-prof-btn');
+  if (profBtn && typeof _professionHasReady === 'function') profBtn.classList.toggle('ready', !!_professionHasReady());
   const wrapActive  = document.getElementById('skill-active-wrap');
   const wrapPassive = document.getElementById('skill-passive-wrap');
   const btnActive   = document.getElementById('sktab-active');
@@ -4586,8 +4590,7 @@ function _buildUiBtnGrads() {
   const ab  = getAttackBtnPos();
   const aab = getAutoBtnPos();
   const pvp = getPvpBtnPos();
-  const prof = getProfessionBtnPos();
-  const cc  = getClassChangeBtnPos();
+  const prof = getComboBtnPos();
   const pty = getPartyBtnPos();
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
@@ -4638,8 +4641,8 @@ function _buildUiBtnGrads() {
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
                   fanBg, fanCollar, fanC: fc,
-                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, profBtn: prof,
-                  ccBtn: cc, ptyBtn: pty };
+                  potBtn: pb, tgtBtn: tb, atkBtn: ab, autoBtn: aab, pvpBtn: pvp, comboBtn: prof,
+                  ptyBtn: pty };
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4964,68 +4967,33 @@ function drawPvpButton() {
 }
 
 // ─────────────────────────────────────────────────────────
-//  ПРОФЕССИЯ BUTTON — below Мир/ПК, opens the advanced-skills panel
+//  КОМБО BUTTON — под «Дружбой» (getComboBtnPos, js/input.js), открывает
+//  окно «Дружбы» сразу на вкладке «Комбо дня». Стоит на месте прежней
+//  «Класс»; «Проф» и «Класс» переехали во вкладку «Навыки».
 // ─────────────────────────────────────────────────────────
-function drawProfessionButton() {
-  if (!player) return;
-  if (!_uiBtnGrads) _buildUiBtnGrads();
-  const pb = _uiBtnGrads.profBtn;
-  const F = 'system-ui, -apple-system, Arial';
-  const ready = _professionHasReady();
-
-  ctx.save();
-
-  ctx.fillStyle = ready ? _uiBtnGrads.pfg1 : _uiBtnGrads.pfg0;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.fill();
-
-  ctx.strokeStyle = ready ? 'rgba(205,184,236,0.85)' : 'rgba(93,154,198,0.4)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, pb.x, pb.y, pb.w, pb.h, 9); ctx.stroke();
-
-  if (ready) {
-    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 320);
-    ctx.strokeStyle = `rgba(165,143,196,${(0.10 + 0.10 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
-    roundRect(ctx, pb.x - 2, pb.y - 2, pb.w + 4, pb.h + 4, 11); ctx.stroke();
-  }
-
-  const profColor = ready ? '#cdb8ec' : 'rgba(224,188,127,0.9)';
-  drawIconCtx(ctx, 'book', pb.x + pb.w / 2 - hud(14), pb.y + pb.h / 2, hud(12), profColor);
-  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = profColor;
-  ctx.fillText(t('professionBtnLbl'), pb.x + pb.w / 2 - hud(5), pb.y + pb.h / 2);
-
-  ctx.restore();
-}
-
-// ─────────────────────────────────────────────────────────
-//  КЛАСС BUTTON — прямо под Профессией, открывает окно смены класса.
-//  Первый заход спрятал смену ВНУТРЬ панели профессии, внизу: за два нажатия
-//  и там, где её никто не искал. Просили кнопку на экране — вот она.
-//  См. getClassChangeBtnPos/_checkClassChangeBtnTouch, js/input.js.
-// ─────────────────────────────────────────────────────────
-// Тише Профессии намеренно: смена класса стоит Liberty и делается один раз
-// за долгую игру, а Профессия — то, куда заходят каждый уровень. Поэтому
-// подсветки «готово» у неё нет, только ровная рамка колонки.
-function drawClassChangeButton() {
+function drawComboButton() {
   if (!player || !player.type) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
-  const cb = _uiBtnGrads.ccBtn;
+  const cb = getComboBtnPos();
   const F = 'system-ui, -apple-system, Arial';
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 520);
 
   ctx.save();
-
-  ctx.fillStyle = _uiBtnGrads.pfg0;
+  ctx.fillStyle = _uiBtnGrads.pfg1;
   roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.fill();
-  ctx.strokeStyle = 'rgba(93,154,198,0.4)';
+  ctx.strokeStyle = `rgba(232,193,90,${(0.45 + 0.3 * pulse).toFixed(3)})`;
   ctx.lineWidth = 1.5;
   roundRect(ctx, cb.x, cb.y, cb.w, cb.h, 9); ctx.stroke();
 
-  const col = 'rgba(224,188,127,0.9)';
-  drawIconCtx(ctx, 'sword', cb.x + cb.w / 2 - hud(14), cb.y + cb.h / 2, hud(12), col);
+  const lbl = t('comboBtnLbl');
+  const icoSz = hud(12), gap = hud(3);
   ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = col;
-  ctx.fillText(t('classChangeBtnLbl'), cb.x + cb.w / 2 - hud(5), cb.y + cb.h / 2);
-
+  const maxTw = cb.w - hud(8) - icoSz - gap;
+  const tw = Math.min(ctx.measureText(lbl).width, maxTw);
+  const x0 = cb.x + (cb.w - (icoSz + gap + tw)) / 2;
+  drawIconCtx(ctx, 'pet', x0 + icoSz / 2, cb.y + cb.h / 2, icoSz, '#f0d27a');
+  ctx.fillStyle = '#f6e3a8';
+  ctx.fillText(lbl, x0 + icoSz + gap, cb.y + cb.h / 2, maxTw);
   ctx.restore();
 }
 
