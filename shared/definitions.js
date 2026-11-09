@@ -4107,6 +4107,55 @@ const MAIL_BONUS = {
   ticket: { buffPotions: 20, wing: 'wing_c', boxes: { box_uncommon: 3, box_rare: 3 } },
 };
 
+// ── Дружба (второй запуск) ──────────────────────────────────────────────────
+// Событие на 40 дней: награды за приглашённых друзей, дошедших до
+// FRIEND_EVENT_LEVEL. Считаются ТОЛЬКО аккаунты, созданные по ссылке игрока
+// после FRIEND_EVENT_START_AT — у всех счётчик стартует с нуля, друзья,
+// приглашённые раньше, не засчитываются.
+//
+// Начало — 9 ноября 2026, 00:00 по Москве (21:00 UTC 8-го).
+//
+// Забранные тиры лежат в player_friendship_claims (миграция 022) под номером
+// FRIEND_EVENT_TIER_BASE + count: старые записи первой «Дружбы» (1, 5, 10…)
+// с ними не пересекаются, и новой миграции не нужно.
+//
+// pet — питомец на выбор указанной редкости; classGear — предметы этих слотов
+// на класс персонажа (на момент получения) редкости classGearRarity.
+// ton — выплачивается вручную: операторы получают сообщение (server/
+// db/repos/friendship.js), в игре валюты TON нет.
+const FRIEND_EVENT_START_AT = Date.UTC(2026, 10, 8, 21, 0, 0);
+const FRIEND_EVENT_DAYS = 40;
+const FRIEND_EVENT_END_AT = FRIEND_EVENT_START_AT + FRIEND_EVENT_DAYS * 86400000;
+const FRIEND_EVENT_LEVEL = 30;
+const FRIEND_EVENT_TIER_BASE = 2000;
+const FRIEND_EVENT_TIERS = [
+  { count: 1,   nexum: 100 },
+  { count: 5,   nexum: 1000 },
+  { count: 10,  nexum: 1000,  items: ['wing_u'] },
+  { count: 30,  nexum: 2000,  items: ['wing_r'] },
+  { count: 50,  nexum: 5000,  items: ['wing_r'], pet: 'rare' },
+  { count: 100, nexum: 10000, gram: 10, items: ['wing_e'], pet: 'epic' },
+  { count: 300, ton: 30, items: ['wing_l'], pet: 'epic', classGear: ['artifact', 'cloak'], classGearRarity: 'rare' },
+];
+function friendEventOn(now = Date.now()) { return now >= FRIEND_EVENT_START_AT && now < FRIEND_EVENT_END_AT; }
+function friendEventTier(count) { return FRIEND_EVENT_TIERS.find(t => t.count === Number(count)) || null; }
+// Питомцы редкости — из каталога, а не списком: новый питомец сам попадёт в выбор.
+function friendEventPets(rarity) {
+  return ITEM_DEF.filter(d => d.slot === 'pet' && d.rarity === rarity).map(d => d.id);
+}
+
+// ── Комбо дня ───────────────────────────────────────────────────────────────
+// Под «Дружбой»: угадать три питомца в правильном порядке. Комбинация своя на
+// каждые сутки (по дате базы, та же CURRENT_DATE, что у дневных попыток),
+// одинаковая для всех и считается на сервере от секрета — клиент её не знает.
+// После каждой попытки сервер говорит про каждую позицию: угадан на месте
+// ('hit'), есть в комбо, но не здесь ('near'), нет в комбо ('miss').
+// Награда раз в сутки: каждое баф-зелье по buffPotions и nexum Liberty.
+const DAILY_COMBO = { len: 3, attempts: 5, buffPotions: 1, nexum: 10 };
+function dailyComboPets() {
+  return ITEM_DEF.filter(d => d.slot === 'pet').map(d => d.id);
+}
+
 // ── Cost of learning and upgrading ──────────────────────────────────────────
 // Books to unlock a locked (level 0) skill or passive, books per upgrade
 // attempt once studied, and the chance an attempt succeeds. These lived in
@@ -5131,6 +5180,8 @@ if (typeof module !== 'undefined') module.exports = {
   monsterHPAtLevel, monsterATKAtLevel, monsterDEFAtLevel, monsterStatsAtLevel,
   MONSTER_RANK_M, MONSTER_RANK_F, monsterNameAtLevel, monsterColorAtLevel,
   UPGRADE_RESET_COST, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
+  FRIEND_EVENT_START_AT, FRIEND_EVENT_DAYS, FRIEND_EVENT_END_AT, FRIEND_EVENT_LEVEL, FRIEND_EVENT_TIER_BASE,
+  FRIEND_EVENT_TIERS, friendEventOn, friendEventTier, friendEventPets, DAILY_COMBO, dailyComboPets,
   PASSIVE_MAX_LEVEL, PASSIVE_CLASS_DEF, PASSIVE_COMMON_DEF,
   SKILL_MAX_LEVEL, SKILL_DMG_MULT, skillScaleMult, skillDamageMult,
   SKILL_DEF_IGNORE, skillDefIgnoreOf, skillBuffSecOf, skillTimeLevel,

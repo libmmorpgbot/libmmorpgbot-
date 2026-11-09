@@ -456,6 +456,7 @@ const HEAVY = new Set([
   'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
   'seasonRating', 'seasonSync', 'seasonBurnBook', 'itemDisassemble',
   'empower', 'resetUpgrades', 'getRating', 'eliteRating', 'starterBonusClaim', 'mailBonusClaim',
+  'friendEventSync', 'friendEventClaim', 'dailyComboGuess', 'marketShare', 'marketShareLeft',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanSetDescription', 'clanSearch', 'clanRequest',
   'clanStorageDeposit', 'clanStorageDepositAll', 'clanStorageGive', 'clanStorageClaim', 'clanStorageCancel',
@@ -511,7 +512,7 @@ const HEAVY = new Set([
 // refusal delivered somewhere the player was not looking.
 const RL_ERR_EVENT = new Map();
 for (const [channel, events] of Object.entries({
-  marketError: ['marketBrowse', 'marketMyListings', 'marketHistory', 'marketBuy', 'marketCancel'],
+  marketError: ['marketBrowse', 'marketMyListings', 'marketHistory', 'marketBuy', 'marketCancel', 'marketShare', 'marketShareLeft'],
   marketListError: ['marketList'],
   gramError: ['gramGetHistory', 'gramDepositRequest', 'gramWithdrawRequest', 'getReferrals'],
   gramShopError: ['claimVipRewards', 'vipSync', 'gramShopBuy'],
@@ -540,6 +541,7 @@ for (const [channel, events] of Object.entries({
   itemDisassembleError: ['itemDisassemble'],
   starterBonusError: ['starterBonusClaim'],
   mailBonusError: ['mailBonusClaim'],
+  friendEventError: ['friendEventSync', 'friendEventClaim', 'dailyComboGuess'],
   empowerError: ['empower'],
   resetUpgradesError: ['resetUpgrades'],
   ratingError: ['getRating'],

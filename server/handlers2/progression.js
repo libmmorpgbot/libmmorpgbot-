@@ -16,6 +16,8 @@ const progression = require('../db/repos/progression');
 const items = require('../db/repos/items');
 const runes = require('../db/repos/runes');
 const shopRepo = require('../db/repos/shop');
+const friendship = require('../db/repos/friendship');
+const ops = require('../tg-ops');
 const consumables = require('../db/repos/consumables');
 const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, EMPOWER_LEVEL, EMPOWER_BONUS_SP,
@@ -517,6 +519,49 @@ module.exports = function registerProgression(s, safeOn) {
     s.socket.emit('mailBonusDone', { seasonTicket: res.seasonTicket });
     return res;
   }, r => r && { seasonTicket: r.seasonTicket, items: (r.granted || []).map(g => g.itemId) }));
+
+  // ── «Дружба» и «Комбо дня» ───────────────────────────────────────────────
+  // Счётчик друзей, тиры и комбинация — только на сервере
+  // (server/db/repos/friendship.js); клиент присылает номер тира, выбранного
+  // питомца и свои три догадки, и больше ничего.
+  safeOn('friendEventSync', () => s.act('friendEventSync', 'friendEventError', async (t, pid) => {
+    s.socket.emit('friendEventData', {
+      ...await friendship.friendStatus(t, pid),
+      combo: await friendship.comboStatus(t, pid),
+    });
+  }));
+
+  safeOn('friendEventClaim', ({ count, petId } = {}) => s.act('friendEventClaim', 'friendEventError', async (t, pid) => {
+    const res = await friendship.claimFriendTier(t, pid, Number(count), typeof petId === 'string' ? petId : null);
+    await s.pushItems(t); await s.pushBalances(t); await s.pushStats(t);
+    s.socket.emit('friendEventClaimed', {
+      count: res.count, nexum: res.nexum, gram: res.gram, ton: res.ton,
+      items: res.granted.map(g => g.itemId),
+      status: await friendship.friendStatus(t, pid),
+    });
+    if (res.ton) {
+      // TON в игре не начисляется — выплату делают операторы руками. После
+      // ответа игроку и вне транзакции: сообщение не должно сорвать выдачу.
+      const { query } = require('../db');
+      const who = await query(t, 'SELECT username, telegram_id FROM players WHERE id = $1', [pid]);
+      const u = who.rows[0] || {};
+      setImmediate(() => {
+        ops.send('withdrawals',
+          `🤝 <b>Дружба: ${res.count} друзей — выплатить ${res.ton} TON вручную</b>\n`
+          + `Игрок: @${ops.esc(String(u.username || '?'))} (id ${pid}, tg <code>${ops.esc(String(u.telegram_id || ''))}</code>)`)
+          .catch(() => {});
+      });
+    }
+    return res;
+  }, r => r && { тир: r.count, друзей: r.friends, предметы: (r.granted || []).map(g => g.itemId),
+    liberty: r.nexum, gram: r.gram, ton: r.ton }));
+
+  safeOn('dailyComboGuess', ({ picks } = {}) => s.act('dailyComboGuess', 'friendEventError', async (t, pid) => {
+    const res = await friendship.comboGuess(t, pid, picks);
+    if (res.won) { await s.pushItems(t); await s.pushBalances(t); }
+    s.socket.emit('dailyComboResult', { ...res, combo: await friendship.comboStatus(t, pid) });
+    return res;
+  }, r => r && { день: r.day, выбор: r.picks, итог: r.result, выигрыш: r.won }));
 
   // ── referrals ────────────────────────────────────────────────────────────
   safeOn('getReferrals', () => s.act('getReferrals', 'gramError', async (t, pid) => {

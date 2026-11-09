@@ -82,7 +82,7 @@ const WRITE_ACTIONS = new Set([
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
   // player-log row at all.
   'pickupWorldDrop',
-  'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'buyTeleportStone', 'useTeleportStone',
+  'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'friendEventClaim', 'dailyComboGuess', 'buyTeleportStone', 'useTeleportStone',
   'seasonBurnBook', 'itemDisassemble',
   'enterLocation',
   // Запуск оффлайн-фарма. Выдача (offlineFarmClaim) пишется своей строкой в

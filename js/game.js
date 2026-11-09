@@ -1754,6 +1754,7 @@ function _renderUI() {
   drawOfflineFarmButton();
   drawMailBonusButton();
   drawStarterBonusButton();
+  if (typeof drawFriendButton === 'function') drawFriendButton();
   drawBuffStrip();
   drawPartyButton();
   drawPartyHUD();

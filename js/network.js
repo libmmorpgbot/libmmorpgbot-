@@ -4726,6 +4726,16 @@ function netStarterBonusClaim() {
 // сезонному билету из своей базы. Локально не применяется ничего: инвентарь
 // приезжает своим inventorySync, а mailBonusDone несёт только флаг и то, по
 // какой ветке награда ушла.
+// «Дружба» и «Комбо дня» (server/db/repos/friendship.js).
+function netFriendEventSync() {
+  if (socket?.connected) socket.emit('friendEventSync');
+}
+function netFriendEventClaim(count, petId) {
+  if (socket?.connected) socket.emit('friendEventClaim', { count, petId: petId || null });
+}
+function netDailyComboGuess(picks) {
+  if (socket?.connected) socket.emit('dailyComboGuess', { picks });
+}
 function netMailBonusClaim() {
   if (socket?.connected) socket.emit('mailBonusClaim');
 }
@@ -6135,6 +6145,19 @@ function _initPetCraftHandlers(s) {
   s.on('mailBonusError', ({ msg }) => {
     if (player && /получен/i.test(msg || '')) player.mailBonus = true;
     if (typeof onMailBonusError === 'function') onMailBonusError(msg);
+  });
+
+  s.on('friendEventData', (data) => {
+    if (typeof onFriendEventData === 'function') onFriendEventData(data || {});
+  });
+  s.on('friendEventClaimed', (data) => {
+    if (typeof onFriendEventClaimed === 'function') onFriendEventClaimed(data || {});
+  });
+  s.on('dailyComboResult', (data) => {
+    if (typeof onDailyComboResult === 'function') onDailyComboResult(data || {});
+  });
+  s.on('friendEventError', ({ msg } = {}) => {
+    if (typeof onFriendEventError === 'function') onFriendEventError(msg);
   });
 
 }

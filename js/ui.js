@@ -12407,6 +12407,7 @@ function onRefData(data) {
   _refFriendsList = data.friends || [];
   window._refLink = data.refLink || '';
   if (window._profileTab === 'friends') updateFriendsUI();
+  if (document.getElementById('friend-ov') && _friendTab === 'friends') _friendRender();
 }
 
 function onFriendJoined(data) {
@@ -13954,4 +13955,350 @@ function closeWhatsNewModal() {
   const ov = document.getElementById('whatsnew-ov');
   if (ov) ov.remove();
   try { localStorage.setItem('whatsNewSeen', WHATS_NEW_VERSION); } catch (_) {}
+}
+
+// ─────────────────────────────────────────────────────────
+//  ДРУЖБА — кнопка под «Бонусом» (getFriendBtnPos, js/input.js) и окно с
+//  двумя вкладками: «Дружба» (награды за друзей, дошедших до
+//  FRIEND_EVENT_LEVEL) и «Комбо дня» (угадать трёх питомцев по порядку).
+//  Состав наград — FRIEND_EVENT_TIERS / DAILY_COMBO (shared/definitions.js);
+//  выдаёт и считает сервер (server/db/repos/friendship.js).
+// ─────────────────────────────────────────────────────────
+let _friendData = null;          // последний friendEventData
+let _friendClockSkew = 0;        // серверное now − локальное
+let _friendTab = 'friends';
+let _friendTimerIv = null;
+const _friendPetPick = {};       // тир → выбранный питомец
+let _comboPicks = [];            // текущий набор в «Комбо дня»
+let _friendBusy = false;
+
+function _friendNow() { return Date.now() + _friendClockSkew; }
+
+function _friendFmtLeft(ms) {
+  if (ms <= 0) return '00:00:00';
+  const sec = Math.floor(ms / 1000), d = Math.floor(sec / 86400);
+  const p2 = n => String(n).padStart(2, '0');
+  const hms = `${p2(Math.floor(sec / 3600) % 24)}:${p2(Math.floor(sec / 60) % 60)}:${p2(sec % 60)}`;
+  return d > 0 ? `${d}${t('friendDaysShort')} ${hms}` : hms;
+}
+
+function drawFriendButton() {
+  if (!player || !player.type) return;
+  if (typeof _friendBtnVisible === 'function' && !_friendBtnVisible()) return;
+  const fb = getFriendBtnPos();
+  if (!fb.h) return;
+  const F = 'system-ui, -apple-system, Arial';
+  const tnow = Date.now();
+  const pulse = 0.5 + 0.5 * Math.sin(tnow / 420);
+
+  ctx.save();
+  // Изумрудная плашка с бегущим бликом — «подарок за друзей».
+  const sweep = (Math.sin(tnow / 1200 + 1) + 1) / 2;
+  const grad = ctx.createLinearGradient(fb.x, fb.y, fb.x + fb.w, fb.y + fb.h);
+  grad.addColorStop(0, '#0d2a22');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#14382c');
+  grad.addColorStop(sweep, '#2f9e6f');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#14382c');
+  grad.addColorStop(1, '#0b2019');
+  ctx.fillStyle = grad;
+  roundRect(ctx, fb.x, fb.y, fb.w, fb.h, 9); ctx.fill();
+  ctx.strokeStyle = `rgba(110,230,170,${(0.5 + 0.3 * pulse).toFixed(3)})`;
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, fb.x, fb.y, fb.w, fb.h, 9); ctx.stroke();
+  ctx.strokeStyle = `rgba(80,220,150,${(0.08 + 0.12 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, fb.x - 2, fb.y - 2, fb.w + 4, fb.h + 4, 11); ctx.stroke();
+
+  const y1 = fb.y + hud(12);
+  const lbl = t('friendBtnLbl');
+  const icoSz = hud(11), gap = hud(3);
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  let tw = ctx.measureText(lbl).width;
+  const maxTw = fb.w - hud(8) - icoSz - gap;
+  if (tw > maxTw) { ctx.font = `bold ${hudF(10)}px ${F}`; tw = Math.min(ctx.measureText(lbl).width, maxTw); }
+  const x0 = fb.x + (fb.w - (icoSz + gap + tw)) / 2;
+  drawIconCtx(ctx, 'heart', x0 + icoSz / 2, y1, icoSz, '#7cf0b4');
+  ctx.fillStyle = '#c8ffe2';
+  ctx.fillText(lbl, x0 + icoSz + gap, y1, maxTw);
+
+  const y2 = fb.y + fb.h - hud(11);
+  ctx.font = `bold ${hudF(10)}px ui-monospace, Menlo, Consolas, ${F}`;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  roundRect(ctx, fb.x + hud(5), y2 - hud(7), fb.w - hud(10), hud(14), 6); ctx.fill();
+  ctx.fillStyle = '#d6ffe9';
+  ctx.fillText(_friendFmtLeft(FRIEND_EVENT_END_AT - _friendNow()), fb.x + fb.w / 2, y2 + 0.5, fb.w - hud(12));
+  ctx.restore();
+}
+
+function openFriendPanel(tab) {
+  if (tab) _friendTab = tab;
+  const existing = document.getElementById('friend-ov');
+  if (existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.id = 'friend-ov';
+  ov.onclick = () => closeFriendPanel();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:380px;max-height:86vh;display:flex;flex-direction:column;background:#0b1a16;border-radius:16px;border:1px solid rgba(110,230,170,.25);padding:16px 14px;">
+    <div style="display:flex;gap:6px;margin-bottom:10px;flex-shrink:0">
+      <button class="friend-tab" data-tab="friends" onclick="_friendSetTab('friends')">${t('friendTabFriends')}</button>
+      <button class="friend-tab" data-tab="combo" onclick="_friendSetTab('combo')">${t('friendTabCombo')}</button>
+      <button onclick="closeFriendPanel()" style="margin-left:auto;background:none;border:none;color:#7fa391;font-size:20px;cursor:pointer;padding:0 6px">×</button>
+    </div>
+    <div id="friend-body" class="ov-scroll" style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px"></div>
+    <div id="friend-err" style="display:none;font-size:12.5px;color:#f88;margin-top:8px;flex-shrink:0"></div>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+  _friendRender();
+  if (_friendTimerIv) clearInterval(_friendTimerIv);
+  _friendTimerIv = setInterval(() => {
+    const el = document.getElementById('friend-timer');
+    if (el) el.textContent = _friendFmtLeft(FRIEND_EVENT_END_AT - _friendNow());
+    if (!document.getElementById('friend-ov')) { clearInterval(_friendTimerIv); _friendTimerIv = null; }
+  }, 1000);
+  if (typeof netFriendEventSync === 'function') netFriendEventSync();
+  if (!window._refLink && typeof netGetReferrals === 'function') netGetReferrals();
+}
+
+function closeFriendPanel() {
+  const ov = document.getElementById('friend-ov');
+  if (ov) ov.remove();
+  if (_friendTimerIv) { clearInterval(_friendTimerIv); _friendTimerIv = null; }
+}
+
+function _friendSetTab(tab) {
+  _friendTab = tab;
+  _friendErr('');
+  _friendRender();
+}
+
+function _friendErr(msg) {
+  const box = document.getElementById('friend-err');
+  if (!box) return;
+  box.style.display = msg ? 'block' : 'none';
+  box.textContent = msg || '';
+}
+
+function _friendRender() {
+  const body = document.getElementById('friend-body');
+  if (!body) return;
+  document.querySelectorAll('#friend-ov .friend-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === _friendTab));
+  body.innerHTML = _friendTab === 'combo' ? _comboHtml() : _friendHtml();
+}
+
+// Строки наград тира — тем же видом, что у письма и набора новичка.
+function _friendTierRows(tier) {
+  const out = [];
+  if (tier.nexum) out.push(_bonusItemRow(_nexumIconHtml(16), 'Liberty', tier.nexum));
+  if (tier.gram) out.push(_bonusItemRow('💎', 'GRAM', tier.gram));
+  if (tier.ton) out.push(_bonusItemRow('💠', 'TON', tier.ton));
+  for (const id of tier.items || []) {
+    const def = _anyItemDef(id);
+    if (def) out.push(_bonusItemRow(_itemIcon(def, 16), `<span style="color:${RARITY_COLOR[def.rarity] || '#ccc'}">${def.name}</span>`, 1));
+  }
+  if (tier.pet) {
+    const any = _anyItemDef(friendEventPets(tier.pet)[0]);
+    const col = any ? (RARITY_COLOR[any.rarity] || '#ccc') : '#ccc';
+    out.push(_bonusItemRow(_itemIcon({ slot: 'pet', ...(any || {}) }, 16),
+      `<span style="color:${col}">${t('friendPetChoiceLbl')}</span>`, 1));
+  }
+  for (const slot of tier.classGear || []) {
+    const cls = (player && player.type) || 'lev';
+    const def = ITEM_DEF.find(d => d.slot === slot && d.rarity === tier.classGearRarity
+      && Array.isArray(d.forClass) && d.forClass.includes(cls));
+    if (def) out.push(_bonusItemRow(_itemIcon(def, 16), `<span style="color:${RARITY_COLOR[def.rarity] || '#ccc'}">${def.name}</span>`, 1));
+  }
+  return out.join('');
+}
+
+function _friendPetPicker(tier, enabled) {
+  const pool = friendEventPets(tier.pet);
+  const sel = _friendPetPick[tier.count];
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px">${pool.map(id => {
+    const def = _anyItemDef(id) || { id, name: id };
+    const on = sel === id;
+    return `<button ${enabled ? `onclick="_friendPickPet(${tier.count},'${id}')"` : 'disabled'} title="${def.name}" style="
+      display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 6px;border-radius:9px;cursor:${enabled ? 'pointer' : 'default'};
+      background:${on ? 'rgba(110,230,170,.18)' : 'rgba(255,255,255,.04)'};border:1px solid ${on ? '#6ee6aa' : 'rgba(255,255,255,.10)'};
+      color:#cfe;font-size:10px;min-width:58px">${_itemIcon(def, 28)}<span>${def.name}</span></button>`;
+  }).join('')}</div>`;
+}
+
+function _friendPickPet(count, id) {
+  _friendPetPick[count] = id;
+  _friendRender();
+}
+
+function _friendHtml() {
+  const d = _friendData;
+  const link = window._refLink || '';
+  const count = d ? d.count : 0;
+  const claimed = new Set((d && d.claimed) || []);
+  const head = `
+    <div style="font-size:16px;font-weight:800;color:#7cf0b4;margin-bottom:4px">${t('friendTitle')}</div>
+    <div style="font-size:12px;color:#8fb3a2;line-height:1.5;margin-bottom:8px">${tVars('friendDesc', { lvl: FRIEND_EVENT_LEVEL })}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#9fc7b4;margin-bottom:8px">
+      <span>${t('friendEndsLbl')}</span>
+      <b id="friend-timer" style="font-family:ui-monospace,Menlo,Consolas,monospace;color:#d6ffe9">${_friendFmtLeft(FRIEND_EVENT_END_AT - _friendNow())}</b>
+    </div>
+    <div class="ref-link-box" style="margin-bottom:8px">
+      <span style="flex:1;font-size:11px;word-break:break-all">${link ? _escHtml(link) : t('questLoading')}</span>
+      <button class="ref-copy-btn" onclick="refCopyLink()">${t('copyBtn')}</button>
+    </div>
+    <div class="ref-stats-row" style="margin-bottom:10px">
+      <div class="ref-stat-box"><div class="ref-stat-num">${d ? count : '…'}</div><div class="ref-stat-lbl">${tVars('friendDoneLbl', { lvl: FRIEND_EVENT_LEVEL })}</div></div>
+      <div class="ref-stat-box"><div class="ref-stat-num">${d ? d.invited : '…'}</div><div class="ref-stat-lbl">${t('friendInvitedLbl')}</div></div>
+    </div>`;
+  const tiers = FRIEND_EVENT_TIERS.map(tier => {
+    const got = claimed.has(tier.count);
+    const ready = !got && count >= tier.count;
+    const btn = got
+      ? `<span style="color:#7cf0b4;font-weight:700;font-size:12px">✓ ${t('friendClaimedLbl')}</span>`
+      : ready
+        ? `<button onclick="_friendClaim(${tier.count})" style="padding:7px 14px;border:none;border-radius:9px;background:linear-gradient(135deg,#1f6b4c,#2f9e6f);color:#e6fff2;font-weight:800;font-size:12px;cursor:pointer">${t('friendClaimBtn')}</button>`
+        : `<span style="color:#7f9a8d;font-size:12px;font-weight:700">${Math.min(count, tier.count)}/${tier.count}</span>`;
+    return `<div style="border:1px solid ${ready ? 'rgba(110,230,170,.55)' : 'rgba(193,213,204,.10)'};border-radius:12px;padding:10px 10px 6px;margin-bottom:8px;${got ? 'opacity:.55' : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:13px;font-weight:800;color:${ready ? '#7cf0b4' : '#b9d6c8'}">${tVars('friendTierHdr', { n: tier.count })}</div>
+        ${btn}
+      </div>
+      <div class="vip-items-row">${_friendTierRows(tier)}</div>
+      ${tier.pet && !got ? _friendPetPicker(tier, ready) : ''}
+    </div>`;
+  }).join('');
+  return head + tiers + `<div style="font-size:11px;color:#6f8a7d;margin:4px 2px 2px;line-height:1.45">${tVars('friendRulesNote', { lvl: FRIEND_EVENT_LEVEL })}</div>`;
+}
+
+function _friendClaim(count) {
+  if (_friendBusy) return;
+  const tier = FRIEND_EVENT_TIERS.find(x => x.count === count);
+  if (!tier) return;
+  if (tier.pet && !_friendPetPick[count]) { _friendErr(t('friendPickPetErr')); return; }
+  _friendErr('');
+  _friendBusy = true;
+  setTimeout(() => { _friendBusy = false; }, 5000);
+  if (typeof netFriendEventClaim === 'function') netFriendEventClaim(count, _friendPetPick[count] || null);
+}
+
+// ── Комбо дня ───────────────────────────────────────────────────────────────
+// Догадки за сегодня хранятся у игрока локально (только для показа) — сервер
+// помнит попытки и выигрыш сам, и ключ меняется вместе с датой базы.
+function _comboHistKey(day) { return 'combo_hist_' + (day || ''); }
+function _comboHist(day) {
+  try { return JSON.parse(localStorage.getItem(_comboHistKey(day)) || '[]') || []; } catch { return []; }
+}
+function _comboHistPush(day, entry) {
+  try {
+    const h = _comboHist(day); h.push(entry);
+    localStorage.setItem(_comboHistKey(day), JSON.stringify(h.slice(-10)));
+  } catch { /* локальная история — только для показа */ }
+}
+
+function _comboHtml() {
+  const c = _friendData && _friendData.combo;
+  const len = (c && c.len) || DAILY_COMBO.len;
+  const pets = (c && c.pets) || dailyComboPets();
+  const left = c ? c.left : DAILY_COMBO.attempts;
+  const won = !!(c && c.won);
+  const reward = ITEM_DEF.filter(d => d.slot === 'buff_potion')
+    .map(bp => _bonusItemRow(_itemIcon(bp, 16), bp.name, DAILY_COMBO.buffPotions)).join('')
+    + _bonusItemRow(_nexumIconHtml(16), 'Liberty', DAILY_COMBO.nexum);
+  const markColor = { hit: '#57d98a', near: '#e8c15a', miss: '#5d6b66' };
+  const hist = c ? _comboHist(c.day) : [];
+  const histHtml = hist.map(h => `<div style="display:flex;gap:6px;margin-bottom:5px">${h.picks.map((id, i) => {
+    const def = _anyItemDef(id) || { id, name: id };
+    return `<div style="flex:1;display:flex;align-items:center;gap:4px;padding:4px;border-radius:8px;border:2px solid ${markColor[h.result[i]] || '#555'};background:rgba(0,0,0,.2);font-size:10px;color:#cfe">${_itemIcon(def, 20)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${def.name}</span></div>`;
+  }).join('')}</div>`).join('');
+
+  const slots = Array.from({ length: len }, (_, i) => {
+    const id = _comboPicks[i];
+    const def = id ? (_anyItemDef(id) || { id, name: id }) : null;
+    return `<div onclick="${id ? `_comboUnpick(${i})` : ''}" style="flex:1;height:64px;border-radius:10px;border:1px dashed rgba(110,230,170,.45);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:${id ? 'pointer' : 'default'};background:rgba(110,230,170,.05);font-size:10px;color:#cfe">
+      ${def ? `${_itemIcon(def, 30)}<span>${def.name}</span>` : `<span style="font-size:18px;color:#4f7464">${i + 1}</span>`}</div>`;
+  }).join('');
+
+  const grid = pets.map(id => {
+    const def = _anyItemDef(id) || { id, name: id };
+    const used = _comboPicks.includes(id);
+    return `<button ${won || used || left <= 0 ? 'disabled' : `onclick="_comboPick('${id}')"`} style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:9px;
+      background:rgba(255,255,255,.04);border:1px solid ${RARITY_COLOR[def.rarity] ? RARITY_COLOR[def.rarity] + '55' : 'rgba(255,255,255,.1)'};color:#cfe;font-size:10px;cursor:pointer;${used ? 'opacity:.35' : ''}">
+      ${_itemIcon(def, 32)}<span>${def.name}</span></button>`;
+  }).join('');
+
+  const canGo = !won && left > 0 && _comboPicks.length === len;
+  return `
+    <div style="font-size:16px;font-weight:800;color:#7cf0b4;margin-bottom:4px">${t('comboTitle')}</div>
+    <div style="font-size:12px;color:#8fb3a2;line-height:1.5;margin-bottom:8px">${tVars('comboDesc', { n: len })}</div>
+    <div class="vip-items-row" style="margin-bottom:10px">${reward}</div>
+    ${won
+      ? `<div style="padding:12px;border-radius:12px;background:rgba(87,217,138,.12);border:1px solid rgba(87,217,138,.45);color:#9ff0c2;font-weight:700;text-align:center;margin-bottom:10px">${t('comboWonLbl')}</div>`
+      : `<div style="display:flex;gap:6px;margin-bottom:8px">${slots}</div>
+         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px">${grid}</div>
+         <button ${canGo ? 'onclick="_comboGo()"' : 'disabled'} style="width:100%;padding:11px;border:none;border-radius:10px;
+           background:${canGo ? 'linear-gradient(135deg,#1f6b4c,#2f9e6f)' : 'rgba(255,255,255,.06)'};color:${canGo ? '#e6fff2' : '#6f8a7d'};font-weight:800;font-size:14px;cursor:${canGo ? 'pointer' : 'default'}">
+           ${left > 0 ? tVars('comboCheckBtn', { left, max: (c && c.max) || DAILY_COMBO.attempts }) : t('comboNoAttemptsLbl')}</button>`}
+    ${histHtml ? `<div style="font-size:11px;color:#8fb3a2;margin:12px 0 6px">${t('comboHistHdr')}</div>${histHtml}
+      <div style="font-size:10.5px;color:#6f8a7d;margin-top:4px">${t('comboLegend')}</div>` : ''}`;
+}
+
+function _comboPick(id) {
+  const len = (_friendData && _friendData.combo && _friendData.combo.len) || DAILY_COMBO.len;
+  if (_comboPicks.length >= len || _comboPicks.includes(id)) return;
+  _comboPicks.push(id);
+  _friendRender();
+}
+function _comboUnpick(i) {
+  _comboPicks.splice(i, 1);
+  _friendRender();
+}
+function _comboGo() {
+  if (_friendBusy) return;
+  _friendErr('');
+  _friendBusy = true;
+  setTimeout(() => { _friendBusy = false; }, 5000);
+  if (typeof netDailyComboGuess === 'function') netDailyComboGuess(_comboPicks.slice());
+}
+
+// ── ответы сервера ──────────────────────────────────────────────────────────
+function onFriendEventData(data) {
+  if (Number.isFinite(data.now)) _friendClockSkew = data.now - Date.now();
+  _friendData = data;
+  _friendRender();
+}
+
+function onFriendEventClaimed(data) {
+  _friendBusy = false;
+  if (data.status) _friendData = { ...(_friendData || {}), ...data.status };
+  if (Number.isFinite(data.status && data.status.now)) _friendClockSkew = data.status.now - Date.now();
+  _friendRender();
+  if (typeof updateInvUI === 'function') updateInvUI();
+  const parts = [];
+  if (data.nexum) parts.push(`+${data.nexum} Liberty`);
+  if (data.gram) parts.push(`+${data.gram} GRAM`);
+  if (data.items && data.items.length) parts.push(t('friendItemsLbl'));
+  if (data.ton) parts.push(tVars('friendTonLbl', { n: data.ton }));
+  if (typeof _marketToast === 'function') _marketToast(`${t('friendClaimDoneToast')} ${parts.join(' · ')}`, 'ok');
+  if (typeof Sound !== 'undefined') Sound.loot?.();
+}
+
+function onDailyComboResult(data) {
+  _friendBusy = false;
+  if (data.picks && data.result) _comboHistPush(data.day, { picks: data.picks, result: data.result });
+  if (data.combo) _friendData = { ...(_friendData || {}), combo: data.combo };
+  _comboPicks = [];
+  _friendRender();
+  if (data.won) {
+    if (typeof updateInvUI === 'function') updateInvUI();
+    if (typeof _marketToast === 'function') _marketToast(t('comboWonToast'), 'ok');
+    if (typeof Sound !== 'undefined') Sound.loot?.();
+  } else if (typeof _marketToast === 'function') {
+    const hits = (data.result || []).filter(r => r === 'hit').length;
+    _marketToast(tVars('comboMissToast', { hits, n: (data.result || []).length, left: data.left }), 'err');
+  }
+}
+
+function onFriendEventError(msg) {
+  _friendBusy = false;
+  if (document.getElementById('friend-ov')) _friendErr(msg || t('genericErrorLbl'));
+  else if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
 }
