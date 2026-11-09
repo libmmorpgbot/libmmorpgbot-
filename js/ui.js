@@ -14091,7 +14091,6 @@ function _friendTierRows(tier) {
   const out = [];
   if (tier.nexum) out.push(_bonusItemRow(_nexumIconHtml(16), 'Liberty', tier.nexum));
   if (tier.gram) out.push(_bonusItemRow('💎', 'GRAM', tier.gram));
-  if (tier.ton) out.push(_bonusItemRow('💠', 'TON', tier.ton));
   for (const id of tier.items || []) {
     const def = _anyItemDef(id);
     if (def) out.push(_bonusItemRow(_itemIcon(def, 16), `<span style="color:${RARITY_COLOR[def.rarity] || '#ccc'}">${def.name}</span>`, 1));
@@ -14276,7 +14275,6 @@ function onFriendEventClaimed(data) {
   if (data.nexum) parts.push(`+${data.nexum} Liberty`);
   if (data.gram) parts.push(`+${data.gram} GRAM`);
   if (data.items && data.items.length) parts.push(t('friendItemsLbl'));
-  if (data.ton) parts.push(tVars('friendTonLbl', { n: data.ton }));
   if (typeof _marketToast === 'function') _marketToast(`${t('friendClaimDoneToast')} ${parts.join(' · ')}`, 'ok');
   if (typeof Sound !== 'undefined') Sound.loot?.();
 }

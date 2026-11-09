@@ -108,9 +108,10 @@ async function friend(refTg, n, { lvl = D.FRIEND_EVENT_LEVEL, banned = false, ol
   const g0 = Number((await money.balancesOf(null, me)).gram || 0);
   ok((await tryTx(t => fr.claimFriendTier(t, me, 100, 'pet_nerb'))).ok, 'тир 100 выдан');
   eq(Number((await money.balancesOf(null, me)).gram || 0) - g0, 10, '+10 GRAM');
+  const g1 = Number((await money.balancesOf(null, me)).gram || 0);
   const top = await tryTx(t => fr.claimFriendTier(t, me, 300, 'pet_vilord'));
   ok(top.ok, 'тир 300 выдан', top.msg);
-  eq(top.res && top.res.ton, 30, 'тир 300 сообщает о 30 TON к ручной выплате');
+  eq(Number((await money.balancesOf(null, me)).gram || 0) - g1, 30, 'тир 300: +30 GRAM');
   const invT = await invOf(me);
   eq(invT.wing_r, 2, 'синие крылья ×2 (тиры 30 и 50)');
   ok(invT.wing_e === 1 && invT.wing_l === 1, 'фиолетовые и легендарные крылья');

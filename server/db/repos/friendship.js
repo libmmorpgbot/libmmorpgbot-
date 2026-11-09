@@ -129,7 +129,7 @@ async function claimFriendTier(db, playerId, count, petId) {
       { reason: 'friendship', refType: 'friendship', refId: String(tier.count), idemKey: `${idem}:gram` });
   }
   return {
-    count: tier.count, granted, nexum: tier.nexum || 0, gram: tier.gram || 0, ton: tier.ton || 0,
+    count: tier.count, granted, nexum: tier.nexum || 0, gram: tier.gram || 0,
     friends: c.done,
   };
 }

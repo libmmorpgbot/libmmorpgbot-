@@ -4121,8 +4121,6 @@ const MAIL_BONUS = {
 //
 // pet — питомец на выбор указанной редкости; classGear — предметы этих слотов
 // на класс персонажа (на момент получения) редкости classGearRarity.
-// ton — выплачивается вручную: операторы получают сообщение (server/
-// db/repos/friendship.js), в игре валюты TON нет.
 const FRIEND_EVENT_START_AT = Date.UTC(2026, 10, 8, 21, 0, 0);
 const FRIEND_EVENT_DAYS = 40;
 const FRIEND_EVENT_END_AT = FRIEND_EVENT_START_AT + FRIEND_EVENT_DAYS * 86400000;
@@ -4135,7 +4133,7 @@ const FRIEND_EVENT_TIERS = [
   { count: 30,  nexum: 2000,  items: ['wing_r'] },
   { count: 50,  nexum: 5000,  items: ['wing_r'], pet: 'rare' },
   { count: 100, nexum: 10000, gram: 10, items: ['wing_e'], pet: 'epic' },
-  { count: 300, ton: 30, items: ['wing_l'], pet: 'epic', classGear: ['artifact', 'cloak'], classGearRarity: 'rare' },
+  { count: 300, gram: 30, items: ['wing_l'], pet: 'epic', classGear: ['artifact', 'cloak'], classGearRarity: 'rare' },
 ];
 function friendEventOn(now = Date.now()) { return now >= FRIEND_EVENT_START_AT && now < FRIEND_EVENT_END_AT; }
 function friendEventTier(count) { return FRIEND_EVENT_TIERS.find(t => t.count === Number(count)) || null; }

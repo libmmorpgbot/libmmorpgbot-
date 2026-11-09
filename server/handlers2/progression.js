@@ -17,7 +17,6 @@ const items = require('../db/repos/items');
 const runes = require('../db/repos/runes');
 const shopRepo = require('../db/repos/shop');
 const friendship = require('../db/repos/friendship');
-const ops = require('../tg-ops');
 const consumables = require('../db/repos/consumables');
 const {
   SKILL_MAX_LEVEL, PASSIVE_MAX_LEVEL, EMPOWER_LEVEL, EMPOWER_BONUS_SP,
@@ -535,26 +534,13 @@ module.exports = function registerProgression(s, safeOn) {
     const res = await friendship.claimFriendTier(t, pid, Number(count), typeof petId === 'string' ? petId : null);
     await s.pushItems(t); await s.pushBalances(t); await s.pushStats(t);
     s.socket.emit('friendEventClaimed', {
-      count: res.count, nexum: res.nexum, gram: res.gram, ton: res.ton,
+      count: res.count, nexum: res.nexum, gram: res.gram,
       items: res.granted.map(g => g.itemId),
       status: await friendship.friendStatus(t, pid),
     });
-    if (res.ton) {
-      // TON в игре не начисляется — выплату делают операторы руками. После
-      // ответа игроку и вне транзакции: сообщение не должно сорвать выдачу.
-      const { query } = require('../db');
-      const who = await query(t, 'SELECT username, telegram_id FROM players WHERE id = $1', [pid]);
-      const u = who.rows[0] || {};
-      setImmediate(() => {
-        ops.send('withdrawals',
-          `🤝 <b>Дружба: ${res.count} друзей — выплатить ${res.ton} TON вручную</b>\n`
-          + `Игрок: @${ops.esc(String(u.username || '?'))} (id ${pid}, tg <code>${ops.esc(String(u.telegram_id || ''))}</code>)`)
-          .catch(() => {});
-      });
-    }
     return res;
   }, r => r && { тир: r.count, друзей: r.friends, предметы: (r.granted || []).map(g => g.itemId),
-    liberty: r.nexum, gram: r.gram, ton: r.ton }));
+    liberty: r.nexum, gram: r.gram }));
 
   safeOn('dailyComboGuess', ({ picks } = {}) => s.act('dailyComboGuess', 'friendEventError', async (t, pid) => {
     const res = await friendship.comboGuess(t, pid, picks);
