@@ -3634,6 +3634,9 @@ function setTab(n) {
   document.querySelectorAll('.bpanel').forEach(p => { p.classList.remove('open'); });
   _syncGameOnlyBtns(n);
   if (n !== 0) {
+    // Чат живёт только на вкладке «Игра»: уход с неё по любой причине
+    // (кнопка из окна, уведомление) оставлял панель чата висеть поверх.
+    if (typeof _chatClose === 'function' && document.getElementById('chat-panel')?.classList.contains('open')) _chatClose();
     joy.active = false; joy.dx = 0; joy.dy = 0;
     const tb = document.getElementById('npc-talk-btn');
     if (tb) tb.style.display = 'none';

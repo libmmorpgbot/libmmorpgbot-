@@ -882,6 +882,9 @@ function init(io) {
     if (result.isBoss && !result.bossLair && room && Number.isFinite(room.floor)) {
       io.to(`floor_${room.floor}`).emit('bossStatus', {
         arm: result.arm, alive: false, respawnAt: result.respawnAt,
+        // Сколько осталось — по нему клиент считает срок по СВОИМ часам
+        // (часы телефона и сервера расходятся на минуты).
+        respawnIn: Math.max(0, (result.respawnAt || 0) - Date.now()),
       });
     }
     return false;

@@ -456,7 +456,7 @@
   <div class="cp-hdr">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" stroke="#c8a0ff" stroke-width="2" fill="none" style="flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
     <span class="cp-title" data-i18n="chatTitle">Чат</span>
-    <button class="cp-close" onclick="_chatClose()">✕</button>
+    <button class="cp-close" onpointerdown="event.preventDefault();_chatClose()" onclick="_chatClose()">✕</button>
   </div>
   <div class="chat-tabs">
     <div class="chat-tab active" id="chat-tab-global" onclick="_chatSetTab('global')" data-i18n="chatTabGlobal">Общий</div>
@@ -926,7 +926,7 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 .cp-title { flex:1; font-size:14px; font-weight:700; color:#c8a0ff; }
 .cp-close {
   background:none; border:none; color:#425368; font-size:20px;
-  cursor:pointer; padding:0 2px; line-height:1; touch-action:manipulation;
+  cursor:pointer; padding:6px 8px; margin:-6px -8px; line-height:1; touch-action:manipulation;
 }
 .cp-close:active { color:#99abbb; }
 .chat-tabs {
@@ -1161,11 +1161,34 @@ function _chatOpen() {
   // по ним ещё и попадали пальцем мимо поля ввода.
   const nav = document.getElementById('bottom-nav');
   if (nav) nav.style.visibility = 'hidden';
-  setTimeout(() => { const i = document.getElementById('chat-input'); if (i) i.focus(); }, 300);
+  // Фокус — после того как панель доехала. Таймер запоминается и снимается
+  // в _chatClose: если чат успели закрыть раньше, focus() на поле уехавшей
+  // за край панели заставлял браузер прокрутить её обратно в кадр (и поднять
+  // клавиатуру) — класса 'open' уже нет, а окно чата так и оставалось на экране.
+  clearTimeout(_chatFocusTimer);
+  _chatFocusTimer = setTimeout(() => {
+    _chatFocusTimer = 0;
+    const p = document.getElementById('chat-panel');
+    const i = document.getElementById('chat-input');
+    if (i && p && p.classList.contains('open')) i.focus({ preventScroll: true });
+  }, 300);
 }
+let _chatFocusTimer = 0;
 function _chatClose() {
+  clearTimeout(_chatFocusTimer);
+  _chatFocusTimer = 0;
   const panel = document.getElementById('chat-panel');
-  if (panel) panel.classList.remove('open');
+  if (panel) {
+    panel.classList.remove('open');
+    // Поле ввода с фокусом держит клавиатуру и тянет панель в кадр.
+    const inp = document.getElementById('chat-input');
+    if (inp && document.activeElement === inp) inp.blur();
+    // Если браузер уже успел прокрутить контейнер к полю ввода — вернуть,
+    // иначе translateY(100%) прячет панель туда, откуда её снова видно.
+    const host = panel.parentElement;
+    if (host && host.scrollTop) host.scrollTop = 0;
+    if (host && host.scrollLeft) host.scrollLeft = 0;
+  }
   // visibility, а не display: display переписал бы то, чем навигацию
   // показывают и прячут при смене вкладок, и после закрытия чата она
   // появилась бы там, где её быть не должно.

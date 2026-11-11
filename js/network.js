@@ -1157,7 +1157,8 @@ function netConnect(onReady) {
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
-    bossStatus = bs || {};
+    bossStatus = {};
+    for (const k in (bs || {})) bossStatus[k] = _localBossStatus(bs[k]);
     resetNetCodecMaps(); // binary handle→id maps are scoped to the room
     // ── и сервер должен узнать, что мы всё забыли ─────────────────────────
     // Карта нового этажа едет по сети, и эта пересборка происходит через
@@ -2122,9 +2123,9 @@ function netConnect(onReady) {
   // One boss per corridor — bossStatus is a map keyed by arm name
   // ({ left: {alive,...}, top: {...}, ... }). This push updates just the
   // arm that changed; 'gameStart' below sets the initial full map.
-  socket.on('bossStatus', ({ arm, alive, respawnAt }) => {
+  socket.on('bossStatus', ({ arm, alive, respawnAt, respawnIn }) => {
     if (!bossStatus) bossStatus = {};
-    if (arm) bossStatus[arm] = { alive, respawnAt };
+    if (arm) bossStatus[arm] = _localBossStatus({ alive, respawnAt, respawnIn });
   });
 
   // spawnProj/spawnAoe as their own events are gone — other players' arrows
@@ -2968,8 +2969,10 @@ function _scheduleWorldWipe() {
     clanData = null;
     const chatBtn = document.getElementById('chat-btn');
     if (chatBtn) chatBtn.style.display = 'none';
-    const chatPanel = document.getElementById('chat-panel');
-    if (chatPanel) chatPanel.classList.remove('open');
+    // _chatClose, а не только снять 'open': он ещё возвращает нижнюю
+    // навигацию, которую прячет открытый чат.
+    if (typeof _chatClose === 'function') _chatClose();
+    else { const chatPanel = document.getElementById('chat-panel'); if (chatPanel) chatPanel.classList.remove('open'); }
     const chatPreview = document.getElementById('chat-preview');
     if (chatPreview) chatPreview.style.display = 'none';
     const teleBtn = document.getElementById('teleport-btn');
@@ -6225,3 +6228,14 @@ if (typeof initLocale === 'function') initLocale();
 // Init Telegram widget on page load (bundle runs at end of <body>)
 _initTelegramWidget();
 
+// respawnAt сервер ставит по СВОИМ часам; часы телефона с ними расходятся,
+// и таймер босса врал ровно на эту разницу. respawnIn — сколько осталось
+// на момент отправки — переводим в срок по местным часам.
+function _localBossStatus(st) {
+  if (!st) return st;
+  const out = { alive: !!st.alive };
+  if (!st.alive) {
+    out.respawnAt = Number.isFinite(st.respawnIn) ? Date.now() + st.respawnIn : (st.respawnAt || 0);
+  }
+  return out;
+}

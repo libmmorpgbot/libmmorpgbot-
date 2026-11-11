@@ -761,7 +761,7 @@ class Room {
       return {
         ...e, hp, aggro: false, atkTimer: 1 + Math.random(), hurtTimer: 0, atkAnimTimer: 0,
         _sx: e.x, _sy: e.y, _shp: hp,
-        ...(respawnTimer !== undefined ? { respawnTimer } : {}),
+        ...(respawnTimer !== undefined ? { respawnTimer, _respawnAt: savedAt } : {}),
       };
     });
     // O(1) enemy lookup for attack handler
@@ -1982,6 +1982,25 @@ class Room {
     return out;
   }
 
+  // Босс возрождается по абсолютному сроку (_respawnAt), а не по счётчику
+  // respawnTimer: _tick() не идёт, пока на этаже никого нет (и dt в нём
+  // обрезан до 0.1 с), так что счётчик отставал от настоящего времени —
+  // таймер у игроков показывал одно, а босс появлялся совсем в другое время
+  // (или висел на «1 мин», пока кто-нибудь не зайдёт). Возвращает true, если
+  // босс только что ожил.
+  _reviveBossIfDue(e) {
+    if (!e || !e.isBoss || e.hp > 0 || !e._respawnAt || Date.now() < e._respawnAt) return false;
+    e.hp = e.maxHp;
+    e.x = e.spawnX; e.y = e.spawnY;
+    e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
+    e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0; e._atkSlowUntil = 0;
+    e._shp = -1;
+    delete e.respawnTimer;
+    delete e._respawnAt;
+    this.io.to(`floor_${this.floor}`).emit('bossStatus', { arm: e.arm, alive: true });
+    return true;
+  }
+
   // One boss per corridor (arm) — alive or, once dead, the timestamp it
   // respawns at. respawnTimer is undefined for the single tick right after
   // death (the AI loop hasn't assigned it its full duration yet), so fall
@@ -1992,9 +2011,15 @@ class Room {
     [...ARM_NAMES, 'openWorld'].forEach(arm => {
       const boss = this.enemies.find(e => e.isBoss && e.arm === arm);
       if (!boss) return;
+      // Срок истёк, пока комната спала без игроков, — босс жив уже сейчас.
+      this._reviveBossIfDue(boss);
       if (boss.hp > 0) { status[arm] = { alive: true }; return; }
-      const secs = boss.respawnTimer !== undefined ? boss.respawnTimer : _bossRespawnSecs();
-      status[arm] = { alive: false, respawnAt: Date.now() + Math.max(0, secs) * 1000 };
+      if (!boss._respawnAt) {
+        boss.respawnTimer = boss.respawnTimer !== undefined ? boss.respawnTimer : _bossRespawnSecs();
+        boss._respawnAt = Date.now() + Math.max(0, boss.respawnTimer) * 1000;
+      }
+      const respawnIn = Math.max(0, boss._respawnAt - Date.now());
+      status[arm] = { alive: false, respawnAt: boss._respawnAt, respawnIn };
     });
     return status;
   }
@@ -2294,9 +2319,13 @@ class Room {
         // timer, or for a boss killed through some other path.
         if (e.respawnTimer === undefined) {
           e.respawnTimer = e.isBoss ? _bossRespawnSecs() : 12;
-          if (e.isBoss && this._onBossDeath) this._onBossDeath(e.arm, Date.now() + e.respawnTimer * 1000);
+          if (e.isBoss) {
+            e._respawnAt = Date.now() + e.respawnTimer * 1000;
+            if (this._onBossDeath) this._onBossDeath(e.arm, e._respawnAt);
+          }
           return;
         }
+        if (e.isBoss && e._respawnAt) { this._reviveBossIfDue(e); return; }
         e.respawnTimer -= dt;
         if (e.respawnTimer <= 0) {
           e.hp = e.maxHp;
@@ -5432,6 +5461,7 @@ class Room {
       if (enemy.isBoss) {
         enemy.respawnTimer = _bossRespawnSecs();
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
+        enemy._respawnAt = respawnAt;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
       // `at` stamps THIS death. An enemy id is stable across respawns — the rat
@@ -5539,6 +5569,7 @@ class Room {
       if (enemy.isBoss) {
         enemy.respawnTimer = _bossRespawnSecs();
         respawnAt = Date.now() + enemy.respawnTimer * 1000;
+        enemy._respawnAt = respawnAt;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
       // `at` stamps THIS death. An enemy id is stable across respawns — the rat
