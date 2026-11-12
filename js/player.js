@@ -480,6 +480,7 @@ function recompute() {
     defMult *= (player.type === 'mage' && _advActive('E')) ? 1.80 : 1.50;
   }
   if (typeof faithShieldTimer !== 'undefined' && faithShieldTimer > 0) defMult *= 1.50;
+  if (typeof butterfliesDefTimer !== 'undefined' && butterfliesDefTimer > 0) defMult *= BUTTERFLIES_DEF_MULT; // «Бабочки»
   if (defMult !== 1) d = Math.floor(d * defMult);
   // "Пульс" (adv Rune Fighter R) — the one skill that buffs maxHP rather
   // than atk/def/crit. Same active-skill-buff treatment as the others here:
@@ -1303,6 +1304,8 @@ function _dispatchSkillEffect(cls, sk) {
         // Таймер — для иконки. Тики лечения идут с сервера (_regenTick), где
         // им и место: раньше их отсчитывал кадр, и сервер о них не знал.
         butterfliesTimer = BUTTERFLIES_SEC;
+        butterfliesDefTimer = BUTTERFLIES_DEF_SEC;
+        recompute();
         // Перезарядка — ровно 16 с, без сокращения уровнем и «Ясным разумом»,
         // как на сервере (SKILL_CD_FIXED_ADV_SEC).
         player.skillCooldowns[_cooldownKeyFor('Q')] = SKILL_CD_FIXED_ADV_SEC.warlock.Q;

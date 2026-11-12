@@ -1192,6 +1192,7 @@ function update(dt, realDt) {
   if (dodgeTimer > 0) dodgeTimer -= realDt;
   if (atkSpeedTimer > 0) { atkSpeedTimer -= realDt; if (atkSpeedTimer <= 0) { atkSpeedTimer = 0; recompute(); } }
   if (faithShieldTimer > 0) { faithShieldTimer -= realDt; if (faithShieldTimer <= 0) { faithShieldTimer = 0; recompute(); } }
+  if (butterfliesDefTimer > 0) { butterfliesDefTimer -= realDt; if (butterfliesDefTimer <= 0) { butterfliesDefTimer = 0; recompute(); } }
   if (guardTimer > 0) { guardTimer -= realDt; if (guardTimer <= 0) { guardTimer = 0; recompute(); } }
   if (vampirismTimer > 0) { vampirismTimer -= realDt; if (vampirismTimer <= 0) vampirismTimer = 0; }
   // Advanced-skill timers ("вторая профессия") — same realDt/recompute()

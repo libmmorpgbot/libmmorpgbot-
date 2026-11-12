@@ -4596,6 +4596,11 @@ const BUTTERFLIES_TICK_PCT = 0.02;
 // Тот же тик у игрока с включённым ПК (Room._regenTick): в PvP «Бабочки»
 // висят без перерыва, и полные 5% в секунду делали целителя неубиваемым.
 const BUTTERFLIES_TICK_PCT_PVP = 0.02;
+// «Бабочки» вдобавок к лечению дают +30% защиты на первые 6 секунд —
+// через тот же 'buff'-канал, что и Тёмный щит (Room.setSkillWindow), только
+// в своём слоте, чтобы не затирать и не затираться щитом на E.
+const BUTTERFLIES_DEF_MULT = 1.30;
+const BUTTERFLIES_DEF_SEC = 6;
 
 // Вампиризм (Q Рыцаря Смерти): доля НАНЕСЁННОГО урона, возвращаемая здоровьем.
 // Переехали сюда из js/state.js — сервер применяет урон и, значит, он же
@@ -5275,7 +5280,7 @@ if (typeof module !== 'undefined') module.exports = {
   GRAM_MIN_WITHDRAW,
   SKILL_SELF_HEAL, SKILL_HASTE, skillHasteOf,
   SKILL_BUFFS, skillBuffOf,
-  BUTTERFLIES_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP,
+  BUTTERFLIES_SEC, BUTTERFLIES_TICK_PCT, BUTTERFLIES_TICK_PCT_PVP, BUTTERFLIES_DEF_MULT, BUTTERFLIES_DEF_SEC,
   VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
   SAFE_ZONE_REGEN_PER_SEC, LEVEL_UP_HEAL,
   skillHealMult, skillSelfHealOf,

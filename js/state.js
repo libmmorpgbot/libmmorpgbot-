@@ -159,6 +159,7 @@ let battleCryTimer = 0;
 let dodgeTimer = 0;
 let atkSpeedTimer = 0;
 let faithShieldTimer = 0;
+let butterfliesDefTimer = 0; // «Бабочки» (adv warlock Q) — +30% DEF, BUTTERFLIES_DEF_SEC
 let invisTimer = 0;
 let guardTimer = 0;      // Танк (lev) E — +80% DEF buff
 let vampirismTimer = 0;  // Рыцарь Смерти (deathknight) Q — % lifesteal buff

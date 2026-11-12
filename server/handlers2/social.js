@@ -21,7 +21,7 @@ const ach = require('../achievements');
 const translate = require('../translate');
 const chat = require('../db/repos/chat');
 const chatMod = require('../chat-mod');
-const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC,
+const { SKILL_SELF_HEAL, skillSelfHealOf, BUTTERFLIES_SEC, BUTTERFLIES_DEF_MULT, BUTTERFLIES_DEF_SEC,
         SKILL_HASTE, skillHasteOf, skillBuffOf, skillBuffSecOf, skillTimeLevel, skillCooldownFloorMs, skillBuffAtkOf,
         VAMPIRISM_SEC, VAMPIRISM_PCT, ADV_VAMPIRISM_PCT,
         RUNEFIGHTER_REGEN_RATE, RUNEFIGHTER_REGEN_SEC, FOREIGN_SKILL_KEY, slotSkillLevel } = require('../../shared/definitions');
@@ -734,6 +734,8 @@ module.exports = function registerSocial(s, safeOn, deps) {
     // права и запись окна.
     if (cls === 'warlock' && rk === 'Q' && adv) {
       s.room.setSkillWindow(s.socket.id, 'butterflies', BUTTERFLIES_SEC * 1000);
+      s.room.setSkillWindow(s.socket.id, 'buff', BUTTERFLIES_DEF_SEC * 1000,
+        { slot: 'butterfliesDef', def: BUTTERFLIES_DEF_MULT });
       lastHealAt.set(k, now);
       return { window: 'butterflies', sec: BUTTERFLIES_SEC };
     }
