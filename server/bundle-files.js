@@ -17,6 +17,8 @@ module.exports = [
   'js/city.js',
   'js/zones.js',
   'js/ashen.js',
+  'js/pm-data.js',
+  'js/pm-monsters.js',
   'js/definitions.js',
   'js/i18n.js',
   'js/tonconnect.js',

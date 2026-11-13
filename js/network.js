@@ -2043,13 +2043,14 @@ function netConnect(onReady) {
     const _seen = typeof _isPosVisible !== 'function' || _isPosVisible(px, py);
     if (typeof Sound !== 'undefined' && _seen) Sound.death();
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;
-    if (dd) {
+    const pmDie = e && typeof PM_MONSTER !== 'undefined' && PM_MONSTER[e.eid];
+    if (dd || pmDie) {
       // Keep the corpse just long enough to play the death animation;
       // game.js removes it when _deathTimer expires. All targeting/collision
       // loops skip hp <= 0, so the corpse is inert.
       e.hp = 0;
       e.atkAnimTimer = 0; e.hurtTimer = 0; e._moveTimer = 0;
-      e._deathTimer = dd.cols / dd.fps + 0.1;
+      e._deathTimer = pmDie ? 1.6 : dd.cols / dd.fps + 0.1;
     } else {
       serverEnemiesMap.delete(id);
       if (typeof pixiRemoveEnemy === 'function') pixiRemoveEnemy(id);

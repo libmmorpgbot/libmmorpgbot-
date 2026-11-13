@@ -1258,7 +1258,65 @@ function _aeTexture(name, white) {
 
 // Один кадр монстра «Пепельного края». Возвращает высоту макушки над
 // центром контейнера (для полосы здоровья) или null, если рисовать нечем.
+// Монстр «Пограничья» (js/pm-monsters.js): 8 направлений, анимации листа.
+// Возвращает высоту макушки или null, пока атлас не загружен.
+function _pmUpdateEnemy(e, obj, dt, ds) {
+  const def = typeof PM_MONSTER !== 'undefined' ? PM_MONSTER[e.eid] : null;
+  if (!def) return null;
+  const sh = _pmSheet(def[0]);
+  if (!sh) return null;
+  if (!obj.pmSpr) {
+    obj.pmSpr = new PIXI.Sprite(PIXI.Texture.EMPTY);
+    obj.ct.addChildAt(obj.pmSpr, obj.ct.getChildIndex(obj.spr) + 1);
+  }
+  const an = sh.d.an, dead = e.hp <= 0;
+  // Взгляд — по движению, в ударе — на героя.
+  const mx = e.x - (obj._pmX ?? e.x), my = e.y - (obj._pmY ?? e.y);
+  obj._pmX = e.x; obj._pmY = e.y;
+  const sp = Math.hypot(mx, my) / Math.max(dt, 1e-3);
+  obj._pmMv = (obj._pmMv || 0) * 0.8 + (sp > 12 ? 0.2 : 0);
+  if (obj._pmDir == null) obj._pmDir = 2;
+  if (sp > 12) obj._pmDir = pmDir(mx, my);
+  if (e.atkAnimTimer > 0 && typeof player !== 'undefined' && player) obj._pmDir = pmDir(player.x - e.x, player.y - e.y);
+  // Какая анимация: смерть > удар > попадание > бег > стойка.
+  let key = 'stance';
+  if (dead) key = 'die';
+  else if (e.atkAnimTimer > 0 && !obj._pmWasAtk) { key = 'atk'; obj._pmAtkT = 0; }
+  obj._pmWasAtk = !dead && e.atkAnimTimer > 0;
+  if (!dead) {
+    if (obj._pmAtkT != null && obj._pmAtkT < an.atk[2] / 1000) key = 'atk';
+    else if ((e.hurtTimer || 0) > 0.15) key = 'hit';
+    else if (obj._pmMv > 0.5) key = 'run';
+  }
+  if (obj._pmAtkT != null) obj._pmAtkT += dt;
+  if (obj._pmKey !== key) { obj._pmKey = key; obj._pmT = 0; } else obj._pmT += dt;
+  const fr = _pmFrame(an[key] || an.stance, key === 'atk' ? obj._pmAtkT : obj._pmT) * 8 + obj._pmDir;
+  const tex = sh.tex[fr] || sh.tex[obj._pmDir];
+  const s = obj.pmSpr;
+  if (s.texture !== tex) { s.texture = tex; s.anchor.copyFrom(tex.defaultAnchor); }
+  // Рост — от размера монстра в Liberty: тело sh.d.bh пикселей атласа.
+  const sc = ds * 0.8 * (def[2] || 1) * (e.isBoss ? 1.35 : 1) / sh.d.bh;
+  const feet = e.size * 0.6;
+  // Высота полёта уже нарисована в кадрах (тень на земле — в атласе).
+  const fly = 0;
+  s.x = 0; s.y = feet - fly;
+  s.scale.set(sc);
+  // Тело после смерти лежит и тает.
+  const al = dead ? Math.max(0, 1 - Math.max(0, obj._pmT - 0.9) / 0.6) : 1;
+  s.alpha = al; s.visible = al > 0;
+  const hit = (e.hurtTimer || 0) > 0.2;
+  s.tint = hit ? 0xffb0a0 : (e.slowTimer || 0) > 0 ? 0x9cc8ff : (def[1] || 0xffffff);
+  obj.spr.visible = false;
+  return feet - fly - sh.d.bh * sc - 6;
+}
+
 function _aeUpdateEnemy(e, obj, dt, ds) {
+  const pmTop = _pmUpdateEnemy(e, obj, dt, ds);
+  if (pmTop != null) {
+    if (obj.aeSpr) { obj.aeSpr.visible = false; obj.aeWhite.visible = false; obj.aeShadow.visible = false; }
+    return pmTop;
+  }
+  if (obj.pmSpr) obj.pmSpr.visible = false;
   const def = typeof AE_MONSTER !== 'undefined' ? AE_MONSTER[e.eid] : null;
   if (!def) return null;
   const tex = _aeTexture(def[0]);
@@ -2332,6 +2390,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   // Монстры «Пепельного края» (js/ashen.js) — вместо листа анимаций выше.
   const aeTop = _aeUpdateEnemy(e, obj, dt, ds);
   if (aeTop == null && obj.aeSpr) { obj.aeSpr.visible = false; obj.aeWhite.visible = false; obj.aeShadow.visible = false; }
+  if (aeTop == null && obj.pmSpr) obj.pmSpr.visible = false;
 
   const hurt    = (e.hurtTimer||0)  > 0;
   const slowed  = (e.slowTimer||0)  > 0;
