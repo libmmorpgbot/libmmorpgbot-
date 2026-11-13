@@ -2425,14 +2425,16 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   // под ногами, сплюснутое, как в той игре.
   if (isSelected) {
     gfx.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * pulse);
-    if (aeTop != null) { const rr = e.size * 1.7 + 6 + pulse * 3; gfx.drawEllipse(0, e.size * 0.6, rr, rr * 0.42); }
+    if (aeTop != null) { const rr = e.size * 0.85 + 4 + pulse * 2; gfx.drawEllipse(0, e.size * 0.6, rr, rr * 0.42); }
     else gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
     gfx.lineStyle(0);
   }
 
   // Status overlays
-  if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
-  if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size); gfx.endFill(); }
+  // Монстры «Пепельного края»/«Пограничья» вдвое меньше — и круги под ними.
+  const rk = aeTop != null ? 0.5 : 1;
+  if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size * rk); gfx.endFill(); }
+  if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size * rk); gfx.endFill(); }
 
   obj._gfxHurt     = hurt;
   obj._gfxSlowed    = slowed;
@@ -2455,7 +2457,8 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
 
   if (isBossAlive) {
     gfx.lineStyle(3, 0xff3232, bossGlow);
-    gfx.drawCircle(0, 0, e.size + 5);
+    if (aeTop != null) { const br = e.size * 0.7 + 3; gfx.drawEllipse(0, e.size * 0.6, br, br * 0.5); }
+    else gfx.drawCircle(0, 0, e.size + 5);
     gfx.lineStyle(0);
   }
 
