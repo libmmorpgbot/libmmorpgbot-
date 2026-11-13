@@ -1794,16 +1794,23 @@ function generateOpenArm(dir, armIdx) {
 // сколько стоит на споте, решает вызывающий (makeEnemy) — виды, уровни и
 // метки зон остаются его, а не этой раскладки.
 const AE_FARM = 64;
-function _aeFarmLayout(seed, biome, rockShare) {
-  const w = AE_FARM, h = AE_FARM, c = AE_FARM / 2;
-  const spots = [{ x: 16, y: 16, r: 8 }, { x: 48, y: 16, r: 8 }, { x: 16, y: 48, r: 8 }, { x: 48, y: 48, r: 8 }];
-  const roads = [[[c, 6], [c, h - 6]], ...spots.map(s => [[c, s.y], [s.x, s.y]])];
-  const M = _aeOpenMap({ seed, w, h, spawn: { x: c, y: c }, spots, roads, groves: 26, ponds: 3, rockShare,
-    keep: [{ x: c, y: 8, r: 3 }, { x: c, y: h - 9, r: 3 }] });
-  return { M, spots, c, biome };
+// spots: 4 — зона (2×2 вокруг входа), 8 — сезонное крыло (2 ряда по 4,
+// карта шире, дорога вдоль середины и отвод к каждому споту).
+function _aeFarmLayout(seed, biome, rockShare, nSpots) {
+  const wide = nSpots === 8;
+  const w = wide ? 104 : AE_FARM, h = AE_FARM, cx = w / 2, cy = h / 2;
+  const spots = wide
+    ? [14, 38, 66, 90].flatMap(x => [{ x, y: 16, r: 8 }, { x, y: 48, r: 8 }])
+    : [{ x: 16, y: 16, r: 8 }, { x: 48, y: 16, r: 8 }, { x: 16, y: 48, r: 8 }, { x: 48, y: 48, r: 8 }];
+  const roads = wide
+    ? [[[cx, 6], [cx, h - 6]], [[8, cy], [w - 8, cy]], ...spots.map(s => [[s.x, cy], [s.x, s.y]])]
+    : [[[cx, 6], [cx, h - 6]], ...spots.map(s => [[cx, s.y], [s.x, s.y]])];
+  const M = _aeOpenMap({ seed, w, h, spawn: { x: cx, y: cy }, spots, roads, groves: wide ? 40 : 26, ponds: wide ? 5 : 3, rockShare,
+    keep: [{ x: cx, y: 8, r: 3 }, { x: cx, y: h - 9, r: 3 }] });
+  return { M, spots, cx, cy, biome };
 }
 function _aeFarmZone(o) {
-  const { M, spots, c } = _aeFarmLayout(o.seed, o.biome, o.rockShare);
+  const { M, spots, cx, cy } = _aeFarmLayout(o.seed, o.biome, o.rockShare, o.spots || 4);
   const rng = M.rng;
   const rooms = [], enemyList = [], spotInfo = [];
   let eid = 0;
@@ -1817,9 +1824,9 @@ function _aeFarmZone(o) {
   });
   return {
     grid: M.grid, rooms, w: M.w, h: M.h,
-    spawn: { x: c * TILE + TILE / 2, y: c * TILE + TILE / 2 },
-    returnPad: { x: c * TILE + TILE / 2, y: 8 * TILE + TILE / 2 },
-    seasonPadAt: { x: c * TILE + TILE / 2, y: (AE_FARM - 9) * TILE + TILE / 2 },
+    spawn: { x: cx * TILE + TILE / 2, y: cy * TILE + TILE / 2 },
+    returnPad: { x: cx * TILE + TILE / 2, y: 8 * TILE + TILE / 2 },
+    seasonPadAt: { x: cx * TILE + TILE / 2, y: (AE_FARM - 9) * TILE + TILE / 2 },
     aeMap: { biome: o.biome, name: o.mapName, terrain: M.rle, spots: spotInfo },
     enemies: enemyList,
   };
@@ -1869,13 +1876,12 @@ function generateFarmZone() {
   return { ...z, seasonPad, farmZone: { bounds: { x0: 0, y0: 0, x1: z.w, y1: z.h }, minLevel: FARM_ENTRY_LEVEL } };
 }
 
-// Сезонное крыло Фарм-зоны — свой этаж за билетом, четыре спота. Монстров на
-// споте вдвое больше, чем в зоне: раньше в крыле было восемь комнат, и
-// выход крыла за час игры не должен упасть вдвое из-за раскладки.
+// Сезонное крыло Фарм-зоны — свой этаж за билетом, восемь спотов (2 ряда по
+// 4), на каждом столько же монстров, сколько на споте самой зоны.
 function generateFarmSeason() {
   const z = _aeFarmZone({
-    seed: 2026 * 1337 + 777 + 602, biome: 'swamp', rockShare: 0.2, mapName: 'Сезонное крыло', prefix: 'farmsz',
-    perSpot: FARM_MOBS_PER_ROOM * 2, lvl: [FARM_LVL_MIN, FARM_LVL_MAX], spotName: `${FARM_LVL_MIN}–${FARM_LVL_MAX}`,
+    seed: 2026 * 1337 + 777 + 602, biome: 'swamp', rockShare: 0.2, mapName: 'Сезонное крыло', prefix: 'farmsz', spots: 8,
+    perSpot: FARM_MOBS_PER_ROOM, lvl: [FARM_LVL_MIN, FARM_LVL_MAX], spotName: `${FARM_LVL_MIN}–${FARM_LVL_MAX}`,
     roomExtra: { isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone' },
     makeEnemy: _farmMob(_FARM1()),
   });
@@ -1899,8 +1905,8 @@ function generateFarmHigh() {
 
 function generateFarmHighSeason() {
   const z = _aeFarmZone({
-    seed: 2026 * 1337 + 777 + 603, biome: 'wastes', rockShare: 0.8, mapName: 'Сезонное крыло 2', prefix: 'farmhs',
-    perSpot: FARM_HIGH_MOBS_PER_ROOM * 2, lvl: [FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX], spotName: `${FARM_HIGH_LVL_MIN}–${FARM_HIGH_LVL_MAX}`,
+    seed: 2026 * 1337 + 777 + 603, biome: 'wastes', rockShare: 0.8, mapName: 'Сезонное крыло 2', prefix: 'farmhs', spots: 8,
+    perSpot: FARM_HIGH_MOBS_PER_ROOM, lvl: [FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX], spotName: `${FARM_HIGH_LVL_MIN}–${FARM_HIGH_LVL_MAX}`,
     roomExtra: { isFarmHigh: true, monsterLvl: Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2), arm: 'farmHigh' },
     makeEnemy: _farmMob(_FARM2()),
   });

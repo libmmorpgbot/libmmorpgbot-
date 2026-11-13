@@ -128,9 +128,9 @@ eq(wing.returnPad.target, 'farmZone', 'возврат из крыла ведёт
 ok(!zone.returnPad.target, 'у первой зоны цели возврата нет — клиент читает хаб по умолчанию');
 
 // ════════════════════════════════════════════════════════════════════════════
-head('четыре спота — и это те же монстры');
+head('восемь спотов — и это те же монстры');
 
-eq(wing.rooms.length, 4, 'в крыле четыре спота (открытая местность, как в «Пепельном крае»)');
+eq(wing.rooms.length, 8, 'в крыле восемь спотов (открытая местность, как в «Пепельном крае»)');
 eq(zone.rooms.length, 4, 'и первая зона осталась при своих четырёх — крыло ДОБАВЛЕНО, а не отрезано от неё');
 eq(wing.enemies.length, FARM_MOBS_PER_ROOM * 8, `${FARM_MOBS_PER_ROOM} монстров в каждой`);
 
@@ -220,7 +220,7 @@ ok(Math.hypot(hi.seasonPad.x - hi.returnPad.x, hi.seasonPad.y - hi.returnPad.y) 
 ok(!hiWing.seasonPad, 'внутри крыла второго пада нет');
 eq(hiWing.returnPad.target, 'farmHigh', 'возврат из крыла ведёт обратно в Фарм зону 2');
 
-eq(hiWing.rooms.length, 4, 'в крыле четыре спота (открытая местность, как в «Пепельном крае»)');
+eq(hiWing.rooms.length, 8, 'в крыле восемь спотов (открытая местность, как в «Пепельном крае»)');
 eq(hi.rooms.length, 4, 'сама Фарм зона 2 осталась при своих четырёх');
 eq(hiWing.enemies.length, FARM_HIGH_MOBS_PER_ROOM * 8, `${FARM_HIGH_MOBS_PER_ROOM} монстров в каждой`);
 reachAll(hiWing, 'крыло Фарм зоны 2');
