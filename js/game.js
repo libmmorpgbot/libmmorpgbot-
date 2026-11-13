@@ -594,10 +594,19 @@ function update(dt, realDt) {
         // Speed depends only on player.speed (character stat), not on how
         // far the stick is pushed — inp.dx/dy are already a unit vector
         // (inputDir() normalizes them), so no inp.len factor here.
-        const vx = inp.dx * player.speed * _spdMult * dt;
-        const vy = inp.dy * player.speed * _spdMult * dt;
+        // Разгон, как в «Пепельном крае»: скорость догоняет желаемую
+        // экспоненциально (k = 18/с — 95% за ~0,17 с), а не включается
+        // рывком. Сверху она ограничена той же player.speed, что и раньше,
+        // поэтому серверная проверка скорости ничего нового не видит.
+        const _ak = 1 - Math.exp(-dt * 18);
+        player._mvx = (player._mvx || 0) + (inp.dx * player.speed * _spdMult - (player._mvx || 0)) * _ak;
+        player._mvy = (player._mvy || 0) + (inp.dy * player.speed * _spdMult - (player._mvy || 0)) * _ak;
+        const vx = player._mvx * dt;
+        const vy = player._mvy * dt;
         if (canMoveX(player, vx, 12) && !_isGateBlocked(player.x + vx, player.y) && !_isRaceBarrierBlocked(player.x + vx, player.y) && !_isCoopBarrierBlocked(player.x + vx, player.y)) player.x += vx;
+        else player._mvx = 0;
         if (canMoveY(player, vy, 12) && !_isGateBlocked(player.x, player.y + vy) && !_isRaceBarrierBlocked(player.x, player.y + vy) && !_isCoopBarrierBlocked(player.x, player.y + vy)) player.y += vy;
+        else player._mvy = 0;
         // 8-way facing from joystick angle, with hysteresis: near a sector
         // boundary, tiny input jitter would otherwise flip facing (and
         // restart the run animation) every frame. The new angle must move
@@ -698,7 +707,24 @@ function update(dt, realDt) {
         }
       } else {
         player._chasing = false;
+        // Стик отпущен — короткий доезд с торможением (k = 22/с, ~4 px на
+        // полной скорости), а не остановка как вкопанный.
+        const _sv = Math.hypot(player._mvx || 0, player._mvy || 0);
+        if (_sv > 8) {
+          const _dk = Math.exp(-dt * 22);
+          player._mvx *= _dk; player._mvy *= _dk;
+          const gvx = player._mvx * dt, gvy = player._mvy * dt;
+          if (canMoveX(player, gvx, 12) && !_isGateBlocked(player.x + gvx, player.y) && !_isRaceBarrierBlocked(player.x + gvx, player.y) && !_isCoopBarrierBlocked(player.x + gvx, player.y)) player.x += gvx;
+          else player._mvx = 0;
+          if (canMoveY(player, gvy, 12) && !_isGateBlocked(player.x, player.y + gvy) && !_isRaceBarrierBlocked(player.x, player.y + gvy) && !_isCoopBarrierBlocked(player.x, player.y + gvy)) player.y += gvy;
+          else player._mvy = 0;
+        } else { player._mvx = 0; player._mvy = 0; }
       }
+      // Погоня и автобой двигают героя сами, со своей скоростью — инерция
+      // ручного хода к ним не подмешивается.
+      if (player._chasing && inp.len <= 0) { player._mvx = 0; player._mvy = 0; }
+    } else {
+      player._mvx = 0; player._mvy = 0;
     }
 
     // Entities (monsters, other players) no longer block or push the
@@ -780,6 +806,7 @@ function update(dt, realDt) {
   _updateTeleportPads(dt);
 
   // Advance sprite animation frame
+  smoothFacing8(player, dt, player.atkAnimTimer > 0);
   if (SPRITE_DEF[player.type]) {
     const ak = getSpriteAnimKey(player);
     // Только действие, без направления: 'frontright-attack' → 'attack'.
@@ -1363,6 +1390,7 @@ function update(dt, realDt) {
     if ((op._swingTimer || 0) > 0) op._swingTimer -= dt;
     if ((op.stunTimer || 0) > 0) op.stunTimer -= dt;
     if ((op.slowTimer || 0) > 0) op.slowTimer -= dt;
+    smoothFacing8(op, dt, (op.atkAnimTimer || 0) > 0);
     if (op.type && SPRITE_DEF[op.type]) {
       if (op.animFrame === undefined) { op.animFrame = 0; op.animTimer = 0; }
       const ak = getOtherPlayerAnimKey(op);
@@ -1521,7 +1549,14 @@ function update(dt, realDt) {
     if (e.targetX !== undefined) {
       const cedx = e.targetX - e.x, cedy = e.targetY - e.y;
       const err2 = cedx * cedx + cedy * cedy;
-      if (err2 > 100) {
+      if (!e.aggro && err2 > 0.25 && err2 <= 150 * 150) {
+        // Не в погоне — это блуждание у спавна или путь домой (Room.js,
+        // _wander/_returnHome). Своей копии этого ИИ у клиента нет, значит и
+        // спорить с сервером нечему: просто мягко идём за ним, без мёртвой
+        // зоны в 10 px, из-за которой медленный шаг шёл рывками.
+        const k = 1 - Math.exp(-10 * dt);
+        e.x += cedx * k; e.y += cedy * k;
+      } else if (err2 > 100) {
         const k = 1 - Math.exp(-(err2 > 150 * 150 ? 13 : 2.5) * dt);
         e.x += cedx * k; e.y += cedy * k;
       }
@@ -1976,7 +2011,7 @@ function _shakeOffset(dt) {
 
 function getOtherPlayerAnimKey(p) {
   if ((p.hp ?? 1) <= 0) return 'die';
-  const dir = p.facing || 'front';
+  const dir = p._vfacing || p.facing || 'front';
   if ((p.atkAnimTimer || 0) > 0) return castAnimKey(p, dir, false);
   if (p.moving) return `${dir}-run`;
   return `${dir}-idle`;

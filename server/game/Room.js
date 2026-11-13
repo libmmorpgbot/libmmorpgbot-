@@ -407,6 +407,9 @@ function _isRangedSingleTargetSkill(cls, key, advActive) {
 
 const TICK_MS   = 25;              // 40 ticks/sec — halves avg broadcast wait vs 50ms
 const LEASH_R2  = 420 * 420;      // max distance from spawn before leash triggers
+// Бродят у спавна и возвращаются домой пешком (_roams) — монстры коридоров.
+const ROAM_ARMS = new Set(['left', 'top', 'bottom', 'right']);
+const WANDER_R = 70;
 // Насколько далеко видно других игроков.
 //
 // Здесь стояло 600 с комментарием «экран примерно 700px шириной, 600 покрывает
@@ -2024,6 +2027,81 @@ class Room {
     return status;
   }
 
+  // ── Поведение монстров «Пепельного края» ────────────────────────────────
+  // Только обычные монстры четырёх коридоров прокачки. Боссы, событийные
+  // режимы (Страх, Сотрудничество, Башня, Война гильдий), фарм-зоны с их
+  // пачками и всё, что стоит намеренно (stationary, trialHarmless), живут по
+  // старым правилам.
+  _roams(e) {
+    return !e.isBoss && !e.stationary && !e.guildWar && !e.ignoresSafeZone && !e.trialHarmless
+      && !e.farmZone && !e.farmHigh && !e.farmZone2 && ROAM_ARMS.has(e.arm);
+  }
+
+  // Вместо телепорта на спавн — пешком домой. Для тех, кто не бродит, —
+  // прежний мгновенный возврат (heal: с полным здоровьем, как у поводка).
+  _sendHome(e, heal) {
+    e.aggro = false;
+    e._targetId = null;
+    e._cachedTarget = null;
+    if (this._roams(e)) {
+      if (!e._returning) { e._returning = true; e._retT = 0; e._retBest = Infinity; e._retStuck = 0; }
+      return;
+    }
+    e.x = e.spawnX; e.y = e.spawnY;
+    if (heal) e.hp = e.maxHp;
+    e._shp = -1;
+  }
+
+  // Шаг к точке со скольжением вдоль стен; true — сдвинулся.
+  _stepTo(e, tx, ty, spd, dt) {
+    const dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy);
+    if (d < 1) return false;
+    const st = Math.min(d, spd * dt);
+    const vx = dx / d * st, vy = dy / d * st;
+    const x0 = e.x, y0 = e.y;
+    if (!this._isWall(e.x + vx, e.y)) e.x += vx;
+    if (!this._isWall(e.x, e.y + vy)) e.y += vy;
+    return e.x !== x0 || e.y !== y0;
+  }
+
+  // Возврат домой: со своей скоростью, по 30% здоровья в секунду. Упёрся в
+  // стену и не приближается — тогда, как раньше, на спавн мгновенно, но
+  // только когда рядом никого: путей монстры не ищут, а прыжок на глазах у
+  // игрока — ровно то, на что жаловались (dev/aggro-check.js).
+  _returnHome(e, dt, watched) {
+    e._retT += dt;
+    if (e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.3 * dt);
+    const d = Math.hypot(e.spawnX - e.x, e.spawnY - e.y);
+    if (d < e._retBest - 1) { e._retBest = d; e._retStuck = 0; } else e._retStuck += dt;
+    if (d < 1) { this._homeArrived(e); return; }
+    if ((e._retStuck > 1.5 || e._retT > 8) && !watched) {
+      e.x = e.spawnX; e.y = e.spawnY;
+      this._homeArrived(e);
+      return;
+    }
+    this._stepTo(e, e.spawnX, e.spawnY, e.spd, dt);
+  }
+  _homeArrived(e) {
+    e.hp = e.maxHp;
+    e._returning = false; e._wt = 1 + Math.random() * 2; e._wx = null;
+    e._shp = -1;
+  }
+
+  // Покой: раз в 2–5 с — новая точка в 70 px от спавна, к ней шагом на
+  // трети скорости. Точка в стене не выбирается.
+  _wander(e, dt) {
+    e._wt = (e._wt == null ? Math.random() * 3 : e._wt) - dt;
+    if (e._wt <= 0) {
+      e._wt = 2 + Math.random() * 3;
+      const wx = e.spawnX + (Math.random() * 2 - 1) * WANDER_R, wy = e.spawnY + (Math.random() * 2 - 1) * WANDER_R;
+      if (!this._isWall(wx, wy)) { e._wx = wx; e._wy = wy; }
+    }
+    if (e._wx == null) return;
+    if (Math.hypot(e._wx - e.x, e._wy - e.y) > 8) {
+      if (!this._stepTo(e, e._wx, e._wy, e.spd * 0.35, dt)) { e._wx = e.x; e._wy = e.y; }
+    }
+  }
+
   _isWall(x, y) {
     const d = this._dungeon;
     const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
@@ -2244,11 +2322,7 @@ class Room {
         const e = this.enemies[i];
         if (e.hp <= 0 || e.ignoresSafeZone) continue; // event boss chases into the hub
         if (!e._targetId || !entered.has(e._targetId)) continue;
-        e.x = e.spawnX; e.y = e.spawnY;
-        e.aggro = false;
-        e._targetId = null;
-        e._cachedTarget = null;
-        e._shp = -1;
+        this._sendHome(e, false);
       }
     }
 
@@ -2332,6 +2406,7 @@ class Room {
           e.x = e.spawnX; e.y = e.spawnY;
           e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
           e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0; e._atkSlowUntil = 0;
+          e._returning = false; e._wx = null;
           e._shp = -1;
           delete e.respawnTimer;
           if (e.isBoss) this.io.to(`floor_${this.floor}`).emit('bossStatus', { arm: e.arm, alive: true });
@@ -2396,8 +2471,10 @@ class Room {
       // player later wanders close enough to re-target it.
       if (!closest) {
         e._targetId = null;
-        if (e.aggro && !e.ignoresSafeZone) { e.aggro = false; e.x = e.spawnX; e.y = e.spawnY; e._shp = -1; }
+        if (e.aggro && !e.ignoresSafeZone) this._sendHome(e, false);
         if (e.ignoresSafeZone) e.aggro = false;
+        if (e._returning) this._returnHome(e, dt, false);
+        else if (this._roams(e)) this._wander(e, dt);
         return;
       }
       e._targetId = closest.socketId;
@@ -2427,15 +2504,18 @@ class Room {
       // instead — see _wakePack — but never wake on proximity alone.
       // `passive` — лоу-споты Мира (generateWorld): та же логика, пачка
       // просыпается только от удара.
-      if (!e.aggro && !e.farmZone && !e.farmHigh && !e.farmZone2 && !e.passive && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
+      // Удар по монстру (attackEnemy ставит aggro) прерывает возврат домой;
+      // сам по себе идущий домой не оглядывается, как в «Пепельном крае».
+      if (e.aggro && e._returning) e._returning = false;
+      if (!e.aggro && !e._returning && !e.farmZone && !e.farmHigh && !e.farmZone2 && !e.passive && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't
       // leave the enemy stranded wherever the chase ended.
-      if (closestD > e.aggroR * 2.2 && e.aggro && !e.ignoresSafeZone) {
-        e.aggro = false;
-        e.x = e.spawnX; e.y = e.spawnY;
-        e._shp = -1;
+      if (closestD > e.aggroR * 2.2 && e.aggro && !e.ignoresSafeZone) this._sendHome(e, false);
+      if (!e.aggro) {
+        if (e._returning) this._returnHome(e, dt, closestD < ENEMY_AOI_R);
+        else if (this._roams(e)) this._wander(e, dt);
       }
 
       // trialHarmless gates the WHOLE block, not just the self-aggro trigger
@@ -2546,11 +2626,8 @@ class Room {
       // either one needs — same reasoning as Fear's and Coop's exemptions.
       const ldx = e.x - e.spawnX, ldy = e.y - e.spawnY;
       if (!e.ignoresSafeZone && e.arm !== 'fear' && e.arm !== 'coop' &&
-          !e.farmZone && !e.farmHigh && !e.farmZone2 && ldx * ldx + ldy * ldy > LEASH_R2) {
-        e.hp = e.maxHp;
-        e.x = e.spawnX; e.y = e.spawnY;
-        e.aggro = false;
-        e._shp = -1;
+          !e.farmZone && !e.farmHigh && !e.farmZone2 && !e._returning && ldx * ldx + ldy * ldy > LEASH_R2) {
+        this._sendHome(e, true);
       }
     });
 

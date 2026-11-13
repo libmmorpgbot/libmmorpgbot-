@@ -34,17 +34,21 @@ function _zVar(hex, tx, ty, salt, amt) { return _zShade(hex, (_zh(tx, ty, salt) 
 // владельца): кирпичный пол, толща стен в темноте, мелкие детали на
 // клетках. Различаются палитрой и деталями. Вторая тема в паре — на случай,
 // если захочется смены по ходу коридора; сейчас у всех одна.
+// Сейчас — биомы «Пепельного края» (js/ashen.js): первая половина коридора
+// одна, ближе к боссу — следующая по ходу той игры. Прежние темы
+// (sewer, orcvault, ossuary, emberhall) остались ниже и включаются заменой
+// названий здесь.
 const _ZONE_ARMS = {
-  left:   ['sewer', 'sewer'],         // с 1 ур.
-  top:    ['orcvault', 'orcvault'],   // с 20 ур.
-  bottom: ['ossuary', 'ossuary'],     // с 40 ур.
-  right:  ['emberhall', 'emberhall'], // с 60 ур.
+  left:   ['ae_forest', 'ae_swamp'],    // с 1 ур.:  Шепчущий лес → Гнилые топи
+  top:    ['ae_grave', 'ae_wastes'],    // с 20 ур.: Погост Скорби → Пепельные пустоши
+  bottom: ['ae_fortress', 'ae_frozen'], // с 40 ур.: Крепость Падших → Мёрзлый перевал
+  right:  ['ae_abyss', 'ae_abyss'],     // с 60 ур.: Багровая бездна
 };
 // Фарм-зоны — в том же стиле, со своими темами.
 const _ZONE_FARMS = {
-  farmZone:  ['frostvault', 'frostvault'],    // Фарм-зона и её сезонное крыло
-  farmHigh:  ['crystalmine', 'crystalmine'],  // Фарм зона 2 и её сезонное крыло
-  farmZone2: ['goldvault', 'goldvault'],      // Элитная фарм-зона
+  farmZone:  ['ae_frozen', 'ae_frozen'],      // Фарм-зона и её сезонное крыло
+  farmHigh:  ['ae_wastes', 'ae_wastes'],      // Фарм зона 2 и её сезонное крыло
+  farmZone2: ['ae_fortress', 'ae_fortress'],  // Элитная фарм-зона
 };
 // Война гильдий — своя тема: боевая крепость.
 const _ZONE_GW = ['warkeep', 'warkeep'];
@@ -76,7 +80,7 @@ function _zoneLayout() {
   let x0 = 1e9, x1 = -1e9;
   for (const r of d.rooms) { x0 = Math.min(x0, r.x); x1 = Math.max(x1, r.x + r.size); }
   if (x1 <= x0) { x0 = 0; x1 = d.w; }
-  return (_zoneCache = { stages, x0, x1 });
+  return (_zoneCache = { stages, x0, x1, ae: /^ae_/.test(stages[0]) && typeof aeDrawGround === 'function' });
 }
 function zonesToggle(on) {
   _zonesEnabled = !!on;
@@ -95,6 +99,8 @@ function zoneWallColor(Z, tx, ty) { return _zoneStage(Z, tx, ty).wall; }
 
 // Земля и стены — до теней и «обрыва» стен.
 function zonesDrawGround(c, Z, tx0, ty0, tx1, ty1) {
+  // «Пепельный край» рисует землю, дорогу и предметы сам (js/ashen.js).
+  if (Z.ae) { aeDrawGround(c, Z, tx0, ty0, tx1, ty1); return; }
   const T = TILE;
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const st = _zoneStage(Z, tx, ty);
@@ -138,7 +144,7 @@ function zonesDrawDecor(c, Z, tx0, ty0, tx1, ty1, ptx0, pty0, ptx1, pty1, torchL
     c.fillRect(tx * T, ty * T, T, T);
     // Толща стены уходит в темноту: чем дальше от прохода, тем темнее, —
     // иначе кладка стены и пол одного тона, и коридор в ней теряется.
-    if (!isFloor(tx, ty) && !Z.world) {
+    if (!isFloor(tx, ty) && !Z.world && !Z.ae) {
       let d = 3;
       for (let r = 1; r <= 2 && d === 3; r++) {
         for (let oy = -r; oy <= r && d === 3; oy++) for (let ox = -r; ox <= r; ox++) if (isFloor(tx + ox, ty + oy)) { d = r; break; }

@@ -17,6 +17,23 @@ function facing8FromDelta(dx, dy, cur) {
   }
   return FACING8_DIRS[Math.round(angle / 45) % 8];
 }
+// Поворот, как в «Пепельном крае»: спрайт не перескакивает со «смотрит
+// вправо» сразу на «смотрит влево», а доворачивается через промежуточные
+// направления — 13 рад/с (вдвое быстрее во время удара, чтобы замах шёл
+// туда, куда бьют). p.facing остаётся логическим направлением (по нему
+// целятся рывки и прыжки), p._vfacing — только то, что нарисовано.
+function smoothFacing8(p, dt, fast) {
+  const want = Math.max(0, FACING8_DIRS.indexOf(p.facing || 'front')) * Math.PI / 4;
+  if (p._vfAng == null || !Number.isFinite(p._vfAng) || !(dt > 0)) p._vfAng = want;
+  let d = want - p._vfAng;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  const r = (fast ? 26 : 13) * Math.min(dt || 0, 0.1);
+  p._vfAng += Math.abs(d) < r ? d : Math.sign(d) * r;
+  const i = ((Math.round(p._vfAng / (Math.PI / 4)) % 8) + 8) % 8;
+  p._vfacing = FACING8_DIRS[i];
+  return p._vfacing;
+}
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 const _hasNativeRoundRect = typeof CanvasRenderingContext2D !== 'undefined' &&
   typeof CanvasRenderingContext2D.prototype.roundRect === 'function';

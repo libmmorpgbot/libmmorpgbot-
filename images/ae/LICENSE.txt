@@ -1,0 +1,3 @@
+atlas.png — 16x16 DungeonTileset II by 0x72 (Robert), CC0 1.0 (public domain).
+https://0x72.itch.io/dungeontileset-ii
+Взят из игры «Пепельный край» (ashen-edge.html) вместе с раскладкой кадров AE_SL (js/ashen.js).

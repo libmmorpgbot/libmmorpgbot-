@@ -1233,6 +1233,110 @@ function _enemyTextures(eid, sheetKey) {
   return (_eTex[k] = rows);
 }
 
+// Спрайты монстров «Пепельного края» (js/ashen.js): один кадр из атласа,
+// без листов анимации — движение рисуется преобразованием спрайта, как в той
+// игре. Пиксельная графика масштабируется без сглаживания.
+const _aeTex = new Map();
+let _aeBase = null, _aeBaseW = null;
+function _aeTexture(name, white) {
+  const k = (white ? 'w|' : '') + name;
+  let t = _aeTex.get(k);
+  if (t) return t;
+  const r = typeof AE_SL !== 'undefined' && AE_SL[name];
+  if (!r || typeof _aeAtlasReady !== 'function' || !_aeAtlasReady()) return null;
+  if (white && !_aeWhite) return null;
+  let bt = white ? _aeBaseW : _aeBase;
+  if (!bt) {
+    bt = PIXI.BaseTexture.from(white ? _aeWhite : _aeAtlas);
+    bt.scaleMode = PIXI.SCALE_MODES.NEAREST;
+    if (white) _aeBaseW = bt; else _aeBase = bt;
+  }
+  t = new PIXI.Texture(bt, new PIXI.Rectangle(r[0], r[1], r[2], r[3]));
+  _aeTex.set(k, t);
+  return t;
+}
+
+// Один кадр монстра «Пепельного края». Возвращает высоту макушки над
+// центром контейнера (для полосы здоровья) или null, если рисовать нечем.
+function _aeUpdateEnemy(e, obj, dt, ds) {
+  const def = typeof AE_MONSTER !== 'undefined' ? AE_MONSTER[e.eid] : null;
+  if (!def) return null;
+  const tex = _aeTexture(def[0]);
+  if (!tex) return null;
+  if (!obj.aeSpr) {
+    obj.aeShadow = new PIXI.Graphics();
+    obj.aeSpr = new PIXI.Sprite(tex); obj.aeSpr.anchor.set(0.5, 1);
+    obj.aeWhite = new PIXI.Sprite(PIXI.Texture.EMPTY); obj.aeWhite.anchor.set(0.5, 1);
+    // Под подписью и полосой (gfx/lbl), над аурой.
+    const at = obj.ct.getChildIndex(obj.spr) + 1;
+    obj.ct.addChildAt(obj.aeShadow, at);
+    obj.ct.addChildAt(obj.aeSpr, at + 1);
+    obj.ct.addChildAt(obj.aeWhite, at + 2);
+  }
+  const fly = !!def[1];
+  const r = AE_SL[def[0]];
+  // Масштаб от размера монстра, а не от размера картинки: огр крупнее
+  // гоблина, как и был в «Пепельном крае».
+  const sc = Math.max(2, ds * 0.55 / 16) * (e.isBoss ? 1.5 : 1);
+  const feet = e.size * 0.6;
+  if (obj.aeSpr.texture !== tex) obj.aeSpr.texture = tex;
+  if (obj._aeShadowFor !== sc) {
+    obj._aeShadowFor = sc;
+    obj.aeShadow.clear();
+    obj.aeShadow.beginFill(0x000000, 0.45);
+    obj.aeShadow.drawEllipse(0, feet + 1, Math.max(10, r[2] * sc * 0.42), Math.max(4, r[2] * sc * 0.18));
+    obj.aeShadow.endFill();
+  }
+  e._aeBob = (e._aeBob || Math.random() * 6) + dt;
+  // Лицом — по движению, во время удара — к герою.
+  if (e._aeFace == null) e._aeFace = 1;
+  if (e._facing === 'left') e._aeFace = -1; else if (e._facing === 'right') e._aeFace = 1;
+  if (e.atkAnimTimer > 0 && typeof player !== 'undefined' && player) e._aeFace = player.x < e.x ? -1 : 1;
+  const f = e._aeFace;
+  // Идёт ли — по сдвигу между кадрами: сервер присылает позиции, анимации
+  // ходьбы у этих спрайтов нет.
+  const mv = Math.hypot(e.x - (obj._aeX ?? e.x), e.y - (obj._aeY ?? e.y)) / Math.max(dt, 1e-3);
+  obj._aeX = e.x; obj._aeY = e.y;
+  obj._aeMv = (obj._aeMv || 0) * 0.8 + (mv > 12 ? 1 : 0) * 0.2;
+  // Удар: 0,3 с выпада к цели и вытягивания вверх.
+  if (e.atkAnimTimer > 0 && !obj._aeWasAtk) e._aeAtk = 0.3;
+  obj._aeWasAtk = e.atkAnimTimer > 0;
+  if ((e._aeAtk || 0) > 0) e._aeAtk = Math.max(0, e._aeAtk - dt);
+  const dead = e.hp <= 0;
+  if (dead) e._aeDie = (e._aeDie || 0) + dt; else e._aeDie = 0;
+  const al = dead ? Math.max(0, 1 - e._aeDie / 0.6) : 1;
+
+  let lift = 0, sy = 1, sx = 1, rot = 0;
+  const ph = (e._aeAtk || 0) > 0 ? Math.sin(e._aeAtk / 0.3 * Math.PI) : 0;
+  const lun = ph * 8 * f;
+  if (fly) lift = 12 + Math.sin(e._aeBob * 4) * 4;
+  else if (obj._aeMv > 0.5) { lift = Math.abs(Math.sin(e._aeBob * 10)) * 3; rot = Math.sin(e._aeBob * 10) * 0.08; }
+  else sy = 1 + Math.sin(e._aeBob * 3) * 0.035;
+  sy *= 1 + ph * 0.14;
+  // Попадание: белая вспышка и сплющивание (hurtTimer ставится в 0,3 с).
+  const ht = e.hurtTimer || 0;
+  const squash = Math.max(0, ht - 0.2);
+  if (squash > 0) { sy *= 1 - squash * 1.6; sx = 1 + squash * 1.4; }
+  if (dead) rot = (1 - al) * 1.5 * f;
+
+  const s = obj.aeSpr;
+  s.x = lun; s.y = feet - lift; s.rotation = rot;
+  s.scale.set(f * sc * sx, sc * sy);
+  s.alpha = al; s.visible = al > 0;
+  s.tint = (e.slowTimer || 0) > 0 ? 0x9cc8ff : 0xffffff;
+  const w = obj.aeWhite;
+  const wt = ht > 0.2 ? _aeTexture(def[0], true) : null;
+  if (wt) {
+    if (w.texture !== wt) w.texture = wt;
+    w.x = s.x; w.y = s.y; w.rotation = rot; w.scale.copyFrom(s.scale);
+    w.alpha = 0.8 * al; w.visible = true;
+  } else w.visible = false;
+  obj.aeShadow.visible = true;
+  obj.aeShadow.alpha = al;
+  obj.spr.visible = false;
+  return feet - r[3] * sc - (fly ? 16 : 3);
+}
+
 function _npcTextures(id) {
   if (_npcTex[id]) return _npcTex[id];
   const def = NPC_SPRITE_DEF[id];
@@ -2222,6 +2326,9 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   } else {
     spr.visible = false;
   }
+  // Монстры «Пепельного края» (js/ashen.js) — вместо листа анимаций выше.
+  const aeTop = _aeUpdateEnemy(e, obj, dt, ds);
+  if (aeTop == null && obj.aeSpr) { obj.aeSpr.visible = false; obj.aeWhite.visible = false; obj.aeShadow.visible = false; }
 
   const hurt    = (e.hurtTimer||0)  > 0;
   const slowed  = (e.slowTimer||0)  > 0;
@@ -2243,17 +2350,21 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     obj._gfxStunned   !== stunned ||
     obj._gfxDead       !== dead ||
     obj._gfxHp          !== e.hp ||
-    obj._gfxMaxHp         !== e.maxHp;
+    obj._gfxMaxHp         !== e.maxHp ||
+    obj._gfxAeTop        !== aeTop;
 
   if (!needsRedraw) return;
 
   gfx.clear();
   obj._gfxSelected = isSelected;
 
-  // Selection ring
+  obj._gfxAeTop = aeTop;
+  // Selection ring — у монстров «Пепельного края» кольцо лежит на земле
+  // под ногами, сплюснутое, как в той игре.
   if (isSelected) {
     gfx.lineStyle(2.5, 0xff3c3c, 0.65 + 0.35 * pulse);
-    gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
+    if (aeTop != null) { const rr = e.size * 1.7 + 6 + pulse * 3; gfx.drawEllipse(0, e.size * 0.6, rr, rr * 0.42); }
+    else gfx.drawCircle(0, 0, e.size + 8 + pulse * 3);
     gfx.lineStyle(0);
   }
 
@@ -2274,7 +2385,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const bw  = Math.round(ds * 0.7 * 0.85);
   const bh  = 5;
   const bx  = -bw / 2;
-  const by  = -ds * 0.55 - 8;
+  const by  = aeTop != null ? aeTop - 10 : -ds * 0.55 - 8;
   gfx.beginFill(0x440000); gfx.drawRect(bx, by, bw, bh); gfx.endFill();
   const pct = e.hp / e.maxHp;
   const bc  = pct > 0.5 ? 0x22dd22 : pct > 0.25 ? 0xddaa22 : 0xdd2222;

@@ -746,7 +746,7 @@ function castAnimKey(p, dir, own) {
 
 function getSpriteAnimKey(p) {
   if (state === 'dead') return 'die';
-  const dir = p.facing || 'front';
+  const dir = p._vfacing || p.facing || 'front';
   if (p.atkAnimTimer > 0)  return castAnimKey(p, dir, true);
   const inp = inputDir();
   if (inp.len > 0.05 || p._chasing) return `${dir}-run`;
