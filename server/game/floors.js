@@ -1,5 +1,5 @@
 const {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateWorld, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateOpenArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateWorld, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
 } = require('./dungeon');
 const { FEAR_FLOOR_ID } = require('../../shared/definitions');
@@ -63,10 +63,10 @@ const FLOOR_IDS = {
 // the floor id so nothing there needs to change.
 const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.hub,      key: 'hub',      generate: () => generateHub() },
-  { id: FLOOR_IDS.left,     key: 'left',     generate: () => generateArm('left', 1) },
-  { id: FLOOR_IDS.top,      key: 'top',      generate: () => generateArm('top', 2) },
-  { id: FLOOR_IDS.bottom,   key: 'bottom',   generate: () => generateArm('bottom', 3) },
-  { id: FLOOR_IDS.right,    key: 'right',    generate: () => generateArm('right', 4) },
+  { id: FLOOR_IDS.left,     key: 'left',     generate: () => generateOpenArm('left', 1) },
+  { id: FLOOR_IDS.top,      key: 'top',      generate: () => generateOpenArm('top', 2) },
+  { id: FLOOR_IDS.bottom,   key: 'bottom',   generate: () => generateOpenArm('bottom', 3) },
+  { id: FLOOR_IDS.right,    key: 'right',    generate: () => generateOpenArm('right', 4) },
   { id: FLOOR_IDS.guildWar, key: 'guildWar', generate: () => generateGuildWar() },
   { id: FLOOR_IDS.farmZone, key: 'farmZone', generate: () => generateFarmZone() },
   { id: FLOOR_IDS.arena,    key: 'arena',    generate: () => generateArena() },

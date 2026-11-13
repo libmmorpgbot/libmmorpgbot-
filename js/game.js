@@ -735,6 +735,7 @@ function update(dt, realDt) {
   }
 
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
+  if (typeof aeJuiceTick === 'function') aeJuiceTick(realDt);
   if (swingTimer > 0)       swingTimer -= dt;
   if (player.atkAnimTimer > 0) player.atkAnimTimer -= dt;
 
@@ -1194,6 +1195,8 @@ function update(dt, realDt) {
     let j = 0;
     for (let i = 0; i < dmgNums.length; i++) {
       const d = dmgNums[i]; d.y += d.vy * dt; d.life -= dt;
+      if (d.vx) { d.x += d.vx * dt; d.vx *= Math.pow(0.93, dt * 60); }
+      d.age = (d.age || 0) + dt;
       if (d.life > 0) dmgNums[j++] = dmgNums[i];
     }
     dmgNums.length = Math.min(j, _qualityTier > 0 ? 14 : 28);
@@ -3025,6 +3028,8 @@ function _floorTexOfFloor() {
   if (!dungeon || typeof _floorImgTex !== 'function') return null;
   if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
   if (dungeon.tournamentArena) return _floorImgTex('arena');
+  // Локации «Пепельного края» (js/ashen.js) рисуются кодом целиком.
+  if (typeof _zoneLayout === 'function') { const _z = _zoneLayout(); if (_z && _z.ae) return null; }
   if (typeof _abyssFloor === 'function' && _abyssFloor()) return _floorImgTex('abyss');
   if (dungeon.armEntries) return _floorImgTex('temple');
   const arm = typeof _armDecorKey === 'function' ? _armDecorKey() : null;
@@ -3286,7 +3291,7 @@ function _buildChunk(cx, cy) {
         c.fillStyle = g; c.fillRect(x + TILE - 14, y, 14, TILE);
       }
     }
-  } else if (!(zone && zone.world)) {
+  } else if (!(zone && (zone.world || zone.aeT))) {
   // (Мир — без этих полос: у рощи и реки нет прямоугольной «тени стены».)
   c.fillStyle = 'rgba(0,0,0,0.4)';
   for (let ty = ty0; ty <= ty1; ty++) {
@@ -3602,7 +3607,9 @@ function loop(ts) {
   // realDt is divided the same way so buffs/cooldowns still tick exactly once
   // over the frame's real duration rather than once per step.
   const _steps = Math.min(_PHYS_STEPS_MAX, Math.max(1, Math.ceil(dt / _PHYS_STEP_MAX)));
-  const _stepDt = dt / _steps;
+  // Хитстоп «Пепельного края» (js/ashen.js): на крите и убийстве кадр на
+  // долю секунды почти замирает. realDt не трогается — таймеры баффов идут.
+  const _stepDt = dt / _steps * (typeof aeTimeScale === 'function' ? aeTimeScale(realDt) : 1);
   const _stepRealDt = realDt / _steps;
   // update()/render() used to run unguarded — one exception on one frame (a
   // specific class/pet/zone edge case, an unloaded texture, whatever) threw

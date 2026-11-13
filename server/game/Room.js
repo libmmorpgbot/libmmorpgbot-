@@ -1876,7 +1876,7 @@ class Room {
     // coop only ever carries `bounds` here (see generateCoop's own comment)
     // — `lanes`/`boss`/`bossRoomX0` are per-run geometry Room.js reads
     // directly off this._dungeon.coop, never meant for the wire.
-    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, worldEntry: d.worldEntry, dungeonEntry: d.dungeonEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, openWorld: d.openWorld, classPads: d.classPads, dungeonZone: d.dungeonZone, tournamentArena: d.tournamentArena, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
+    return { gridPacked: this._gridPacked, rooms: d.rooms, spawn: d.spawn, w: d.w, h: d.h, safeZone: d.safeZone, armEntries: d.armEntries, farmZoneEntry: d.farmZoneEntry, farmHighEntry: d.farmHighEntry, worldEntry: d.worldEntry, dungeonEntry: d.dungeonEntry, returnPad: d.returnPad, seasonPad: d.seasonPad, corridorGates: d.corridorGates, race10: d.race10, guildWar: d.guildWar, farmZone: d.farmZone, farmHigh: d.farmHigh, farmZone2: d.farmZone2, openWorld: d.openWorld, aeMap: d.aeMap, classPads: d.classPads, dungeonZone: d.dungeonZone, tournamentArena: d.tournamentArena, coop: d.coop ? { bounds: d.coop.bounds, barriers: d.coop.barriers } : undefined };
   }
 
   _inSafeZone(x, y) {
@@ -2116,6 +2116,19 @@ class Room {
   // be applied on another (an arm's coordinates are far outside the hub's
   // 68x68 grid), and a restore that drops someone inside geometry is worse
   // than one that puts them on the spawn.
+  // Восстановление сохранённой позиции при входе. На открытых этажах
+  // «Пепельного края» (aeMap) координаты, сохранённые на старой раскладке
+  // коридоров, указывают в случайное место новой карты — и могут поставить
+  // героя прямо в кучку монстров не по уровню. Туда — только если ни один
+  // спот рядом не сильнее героя больше чем на 3 уровня; иначе — вход.
+  canRestoreAt(x, y, lvl) {
+    if (!this.canStandAt(x, y)) return false;
+    const m = this._dungeon.aeMap;
+    if (!m || !m.spots) return true;
+    const L = Number(lvl) || 1;
+    return !m.spots.some(sp => sp.lvl[0] > L + 3 && Math.hypot(sp.x - x, sp.y - y) < sp.r + 6 * TILE);
+  }
+
   canStandAt(x, y) {
     return Number.isFinite(x) && Number.isFinite(y) && !this._isWall(x, y);
   }

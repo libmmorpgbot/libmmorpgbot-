@@ -174,9 +174,6 @@ const GW_ENTRY_ROOM = 10;
 // FARM_LVL_MIN/MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT and
 // FARM_SPECIES now live in shared/definitions.js (imported above) — the
 // client needs them too, for its own Фарм-зона reference list (js/ui.js).
-const FARM_ROOM = 16;
-const FARM_GAP = 8;
-const FARM_SIZE = FARM_ROOM * 2 + FARM_GAP;
 
 // ── Элитная фарм-зона (Elite Farm Zone 2) ─────────────────────────────────
 // Its own floor now (generateFarmZone2, below) — a private instance built
@@ -520,392 +517,8 @@ function generateGuildWar() {
   };
 }
 
-// Фарм-зона (Farm Zone), now its own floor (see server/game/floors.js)
-// instead of a corner of the hub's mega-grid — same self-contained small
-// 0,0-origin grid pattern generateGuildWar() above uses. Four identical
-// square rooms in a 2x2 grid joined by a plus-shaped corridor through their
-// shared gap, baked in at world-gen (not runtime-spawned) since every
-// monster here is a fixed level range with no escalation to track. Entry is
-// level-gated server-side now (see _doEnterLocation, server/index.js) —
-// FARM_ENTRY_LEVEL used to only ever be checked client-side.
-function generateFarmZone() {
-  const rng = seededRng(2026 * 1337 + 777 + 600);
-  const w = FARM_SIZE + MARGIN * 2, h = FARM_SIZE + MARGIN * 2;
-  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
-  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
-  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
-  function paintRect(x0, y0, x1, y1) {
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
-  }
-
-  const X0 = MARGIN, Y0 = MARGIN;
-  const roomCoords = [
-    { x: X0, y: Y0 },                                     // top-left
-    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 },              // top-right
-    { x: X0, y: Y0 + FARM_ROOM + FARM_GAP },              // bottom-left
-    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 + FARM_ROOM + FARM_GAP }, // bottom-right
-  ];
-  const rooms = roomCoords.map(({ x, y }) => {
-    const room = {
-      x, y, size: FARM_ROOM,
-      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
-      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
-      // Level varies per monster (FARM_LVL_MIN-FARM_LVL_MAX) — this is just a
-      // representative midpoint for the HUD's single-number room label.
-      isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone',
-    };
-    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
-    return room;
-  });
-  const midX = X0 + Math.floor(FARM_SIZE / 2);
-  // Top-row and bottom-row corridors (through the horizontal gap), plus one
-  // vertical corridor through the centre column tying both rows together —
-  // every room reaches every other one without lengthening any room itself.
-  paintRect(X0, rooms[0].cy - CW, X0 + FARM_SIZE - 1, rooms[0].cy + CW);
-  paintRect(X0, rooms[2].cy - CW, X0 + FARM_SIZE - 1, rooms[2].cy + CW);
-  paintRect(midX - CW, Y0, midX + CW, Y0 + FARM_SIZE - 1);
-  const midY = Y0 + Math.floor(FARM_SIZE / 2);
-
-  // Same halving every other packed room applies ("regular monsters spawn
-  // in packs — halved individually") — 20 in a 16x16 room is denser than
-  // the usual 5-10, so this matters here too.
-  const FARM_WEAK_MULT = 0.5;
-  const maxLocalLvl = roomsInArm(2) - 1; // arm 2's own rank scale (19)
-  const enemyList = [];
-  let eid = 0;
-  rooms.forEach((room, ri) => {
-    for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
-      const d = _enemyByEid.get(FARM_SPECIES[Math.floor(rng() * FARM_SPECIES.length)]);
-      if (!d) continue;
-      const lvl = FARM_LVL_MIN + Math.floor(rng() * (FARM_LVL_MAX - FARM_LVL_MIN + 1));
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
-      }
-      // Named/colored the same way arm 2's own rooms would at this level
-      // (localLvl relative to ARM_OFFSETS[1]) so a level-27 zombie here looks
-      // exactly like a level-27 zombie anywhere else in the open world.
-      const localLvl = lvl - ARM_OFFSETS[1];
-      enemyList.push({
-        id: `farm_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
-        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
-        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
-        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(),
-        // Never self-pulls (Room.js's tick loop exempts farmZone from the
-        // aggroR-triggered self-aggro check explicitly) — attackEnemy/
-        // skillAttackEnemy still unconditionally set aggro:true on any hit,
-        // so it fights back once attacked. aggroR itself stays a normal
-        // value: it's what the tick loop's de-aggro leash (aggroR * 2.2)
-        // uses to decide when a retaliating monster gives up and walks back
-        // to spawn — aggroR:0 collapsed that leash to 0 too and reset aggro
-        // right back to false the tick after it was set, so nothing ever
-        // visibly retaliated.
-        aggro: false, aggroR: 175 + rng() * 55,
-      });
-    }
-  });
-
-  // Sits 2 tiles into the corridor from the north edge — offset from the
-  // entry spawn (dead centre of the plus) so arriving and leaving don't
-  // trigger each other, same as every other zone's own entrance/return pair.
-  const returnPad = { x: midX * TILE + TILE / 2, y: (Y0 + 2) * TILE + TILE / 2 };
-
-  // ── пад в сезонное крыло ─────────────────────────────────────────────────
-  // Противоположный конец того же вертикального коридора: возврат в хаб на
-  // севере, сезонное крыло на юге. Дальше друг от друга их на этой карте не
-  // поставить, а стоять они должны врозь — иначе один шаг попадал бы в оба.
-  //
-  // Пад — это ЕДИНСТВЕННАЯ дверь в крыло, и разделяет он именно комнаты:
-  // пройти туда ногами нельзя, крыло лежит на своём этаже. Гейт при этом не
-  // здесь: клиент рисует замок по seasonPad.requiresTicket, а пускает или
-  // отказывает сервер (resolveFloor/TICKET_ONLY, server/world.js). Клиентская
-  // проверка тут была бы охраной платной зоны силами клиента.
-  const seasonPad = {
-    x: midX * TILE + TILE / 2, y: (Y0 + FARM_SIZE - 3) * TILE + TILE / 2,
-    req: FARM_ENTRY_LEVEL, requiresTicket: true,
-  };
-
-  return {
-    grid, rooms, w, h,
-    spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
-    returnPad, seasonPad,
-    farmZone: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_ENTRY_LEVEL },
-    enemies: enemyList,
-  };
-}
-
-// ── сезонное крыло: восемь комнат ───────────────────────────────────────────
-// Две строки по четыре комнаты того же размера, что в самих фарм-зонах
-// (FARM_ROOM), с тем же зазором. Каждая строка прошита своим горизонтальным
-// коридором, а три вертикальных — по одному в каждом зазоре между колонками —
-// связывают строки, так что до любой комнаты недалеко. Вход и возврат стоят в
-// среднем вертикальном коридоре, как в зонах 2x2.
-const WING_COLS = 4, WING_ROWS = 2;
-function _farmWingLayout() {
-  const innerW = FARM_ROOM * WING_COLS + FARM_GAP * (WING_COLS - 1);
-  const innerH = FARM_ROOM * WING_ROWS + FARM_GAP * (WING_ROWS - 1);
-  const w = innerW + MARGIN * 2, h = innerH + MARGIN * 2;
-  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
-  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
-  function paintRect(x0, y0, x1, y1) {
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) if (inBounds(gx, gy)) grid[gy][gx] = FLOOR;
-  }
-  const X0 = MARGIN, Y0 = MARGIN;
-  const cells = [];
-  for (let r = 0; r < WING_ROWS; r++) for (let c = 0; c < WING_COLS; c++) {
-    const x = X0 + c * (FARM_ROOM + FARM_GAP), y = Y0 + r * (FARM_ROOM + FARM_GAP);
-    cells.push({
-      x, y, size: FARM_ROOM,
-      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
-      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
-    });
-    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
-  }
-  for (let r = 0; r < WING_ROWS; r++) {
-    const cy = cells[r * WING_COLS].cy;
-    paintRect(X0, cy - CW, X0 + innerW - 1, cy + CW);
-  }
-  for (let c = 0; c < WING_COLS - 1; c++) {
-    const gx = X0 + (c + 1) * FARM_ROOM + c * FARM_GAP + Math.floor(FARM_GAP / 2);
-    paintRect(gx - CW, Y0, gx + CW, Y0 + innerH - 1);
-  }
-  const midX = X0 + Math.floor(innerW / 2), midY = Y0 + Math.floor(innerH / 2);
-  return { grid, w, h, cells, inBounds, X0, Y0, midX, midY };
-}
-
-// Случайная клетка пола внутри комнаты — как в самих фарм-зонах.
-function _wingSpot(L, room, rng) {
-  let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-    const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-    if (L.inBounds(gx, gy) && L.grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
-  }
-  return { ex, ey };
-}
-
-// Сезонное крыло Фарм-зоны — восемь комнат, вход только с сезонным
-// билетом. Это ОТДЕЛЬНЫЙ этаж, а не половина карты первой зоны, и причина
-// одна: барьеры внутри этажа в этой игре клиентские (см. _isGateBlocked,
-// js/game.js — по нему и работают уровневые ворота коридоров), а крыло
-// оплачено за GRAM. Переход между этажами сервер проверяет сам и по-другому
-// в него не попасть, поэтому дверь сюда — пад, а не стена.
-//
-// Монстры — как в первой зоне: те же виды, та же полоса 21-30, то же
-// половинение статов и та же таблица дропа. Помечены `farmZone: true`
-// НАМЕРЕННО, а не по недосмотру: по этой метке сервер выбирает таблицу дропа,
-// ставку Liberty и отказ в GRAM (см. rollLoot и соседей, server/handlers2/
-// world.js). Своей ветки в выплате у крыла быть не должно.
-function generateFarmSeason() {
-  const rng = seededRng(2026 * 1337 + 777 + 602); // сосед seed'ов первой зоны (600) и Фарм зоны 2 (601)
-  const L = _farmWingLayout();
-  const rooms = L.cells.map(c => ({
-    ...c, isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone',
-  }));
-
-  const FARM_WEAK_MULT = 0.5;
-  const maxLocalLvl = roomsInArm(2) - 1; // шкала рукава 2 — та же полоса, те же виды
-  const enemyList = [];
-  let eid = 0;
-  rooms.forEach((room, ri) => {
-    for (let n = 0; n < FARM_MOBS_PER_ROOM; n++) {
-      const d = _enemyByEid.get(FARM_SPECIES[Math.floor(rng() * FARM_SPECIES.length)]);
-      if (!d) continue;
-      const lvl = FARM_LVL_MIN + Math.floor(rng() * (FARM_LVL_MAX - FARM_LVL_MIN + 1));
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      const { ex, ey } = _wingSpot(L, room, rng);
-      const localLvl = lvl - ARM_OFFSETS[1];
-      enemyList.push({
-        // Префикс свой, чтобы id не столкнулись с id первой зоны: этажи разные,
-        // но журналы и античит смотрят на id, а не на этаж.
-        id: `farmsz_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmZone', farmZone: true,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
-        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
-        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
-        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl) * FARM_XP_MULT, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(),
-        aggro: false, aggroR: 175 + rng() * 55,
-      });
-    }
-  });
-
-  return {
-    grid: L.grid, rooms, w: L.w, h: L.h,
-    spawn: { x: L.midX * TILE + TILE / 2, y: L.midY * TILE + TILE / 2 },
-    // Возврат ведёт НАЗАД В ЗОНУ, а не в хаб: сюда пришли из неё, и высадка в
-    // центральном зале означала бы идти весь путь заново ради одного шага.
-    // Клиент читает 'hub' там, где цели нет (см. _returnPads, js/game.js).
-    returnPad: { x: L.midX * TILE + TILE / 2, y: (L.Y0 + 2) * TILE + TILE / 2, target: 'farmZone' },
-    // Те же границы под тем же именем — по ним клиент красит плитку палитрой
-    // фарм-зоны и подписывает место на карте. `seasonWing` отличает крыло от
-    // первой зоны там, где подпись должна это сказать.
-    farmZone: { bounds: { x0: 0, y0: 0, x1: L.w, y1: L.h }, minLevel: FARM_ENTRY_LEVEL, seasonWing: true },
-    enemies: enemyList,
-  };
-}
-
-// Сезонное крыло Фарм зоны 2 — такое же, как у первой зоны: восемь комнат,
-// свой этаж, вход с пада в самой Фарм зоне 2 и только с сезонным билетом
-// (TICKET_ONLY, server/world.js). Монстры — её полоса 40-53, её виды и её
-// половинение; помечены `farmHigh: true`, поэтому дроп, опыт и сезонные
-// задания идут по таблицам Фарм зоны 2 без отдельной ветки.
-function generateFarmHighSeason() {
-  const rng = seededRng(2026 * 1337 + 777 + 603);
-  const L = _farmWingLayout();
-  const rooms = L.cells.map(c => ({
-    ...c, isFarmHigh: true, monsterLvl: Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2), arm: 'farmHigh',
-  }));
-
-  const FARM_WEAK_MULT = 0.5;
-  const maxLocalLvl = FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1; // шкала самой зоны, см. generateFarmHigh
-  const enemyList = [];
-  let eid = 0;
-  rooms.forEach((room, ri) => {
-    for (let n = 0; n < FARM_HIGH_MOBS_PER_ROOM; n++) {
-      const d = _enemyByEid.get(FARM_HIGH_SPECIES[Math.floor(rng() * FARM_HIGH_SPECIES.length)]);
-      if (!d) continue;
-      const lvl = FARM_HIGH_LVL_MIN + Math.floor(rng() * (FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1));
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      const { ex, ey } = _wingSpot(L, room, rng);
-      const localLvl = lvl - FARM_HIGH_LVL_MIN + 1;
-      enemyList.push({
-        id: `farmhs_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmHigh', farmHigh: true,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
-        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
-        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
-        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl) * FARM_HIGH_XP_MULT, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(),
-        aggro: false, aggroR: 175 + rng() * 55,
-      });
-    }
-  });
-
-  return {
-    grid: L.grid, rooms, w: L.w, h: L.h,
-    spawn: { x: L.midX * TILE + TILE / 2, y: L.midY * TILE + TILE / 2 },
-    returnPad: { x: L.midX * TILE + TILE / 2, y: (L.Y0 + 2) * TILE + TILE / 2, target: 'farmHigh' },
-    farmHigh: { bounds: { x0: 0, y0: 0, x1: L.w, y1: L.h }, minLevel: FARM_HIGH_ENTRY_LEVEL, seasonWing: true },
-    enemies: enemyList,
-  };
-}
-
-// Фарм зона 2 (см. блок FARM_HIGH_* в shared/definitions.js — там же разбор,
-// почему префикс не FARM2_: то имя занято Элитной фарм-зоной). Копия
-// generateFarmZone выше — те же четыре квадратные комнаты 2x2, соединённые
-// коридором-плюсом, та же половинная сила монстров, тот же возвратный пад, —
-// с тремя отличиями: полоса 40-53 вместо 21-30, виды рукава 3 вместо рукава
-// 2 и своя таблица дропа (_rollFarmHighLoot, server/game/loot.js). Вход, как
-// и у первой зоны, проверяется на сервере (resolveFloor/ZONE_LEVEL_REQ,
-// server/world.js), а не только клиентом.
-function generateFarmHigh() {
-  const rng = seededRng(2026 * 1337 + 777 + 601); // сосед seed'а первой зоны (600) — другая раскладка при той же геометрии
-  const w = FARM_SIZE + MARGIN * 2, h = FARM_SIZE + MARGIN * 2;
-  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
-  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
-  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
-  function paintRect(x0, y0, x1, y1) {
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
-  }
-
-  const X0 = MARGIN, Y0 = MARGIN;
-  const roomCoords = [
-    { x: X0, y: Y0 },                                     // top-left
-    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 },              // top-right
-    { x: X0, y: Y0 + FARM_ROOM + FARM_GAP },              // bottom-left
-    { x: X0 + FARM_ROOM + FARM_GAP, y: Y0 + FARM_ROOM + FARM_GAP }, // bottom-right
-  ];
-  const rooms = roomCoords.map(({ x, y }) => {
-    const room = {
-      x, y, size: FARM_ROOM,
-      bx1: x - 1, by1: y - 1, bx2: x + FARM_ROOM + 1, by2: y + FARM_ROOM + 1,
-      cx: x + Math.floor(FARM_ROOM / 2), cy: y + Math.floor(FARM_ROOM / 2),
-      isFarmHigh: true, monsterLvl: Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2), arm: 'farmHigh',
-    };
-    paintRect(x, y, x + FARM_ROOM - 1, y + FARM_ROOM - 1);
-    return room;
-  });
-  const midX = X0 + Math.floor(FARM_SIZE / 2);
-  paintRect(X0, rooms[0].cy - CW, X0 + FARM_SIZE - 1, rooms[0].cy + CW);
-  paintRect(X0, rooms[2].cy - CW, X0 + FARM_SIZE - 1, rooms[2].cy + CW);
-  paintRect(midX - CW, Y0, midX + CW, Y0 + FARM_SIZE - 1);
-  const midY = Y0 + Math.floor(FARM_SIZE / 2);
-
-  const FARM_WEAK_MULT = 0.5; // то же половинение, что и в первой зоне
-  // ── ранг и цвет считаются по полосе САМОЙ ЗОНЫ ────────────────────────────
-  // «Слабый» … «Запредельный» — это положение монстра на шкале. Первая
-  // Фарм-зона берёт шкалой рукав (её 21-30 целиком лежат внутри рукава 2), и
-  // это там верно. Полоса 40-53 так не ложится: по рукавной шкале уровень 40
-  // — это местный 20 рукава 2 при потолке 19, то есть «Запредельный», а
-  // следующий за ним 41 — местный 1 рукава 3, то есть «Слабый». Подъём
-  // рушился бы ровно посреди зоны, и цвет вместе с ним.
-  //
-  // Шкала зоны такой границы не знает: 40 — низ, 53 — верх, между ними ровный
-  // подъём, и ранг означает «насколько он силён ДЛЯ ЭТОЙ ЗОНЫ».
-  const maxLocalLvl = FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1;
-  const enemyList = [];
-  let eid = 0;
-  rooms.forEach((room, ri) => {
-    for (let n = 0; n < FARM_HIGH_MOBS_PER_ROOM; n++) {
-      const d = _enemyByEid.get(FARM_HIGH_SPECIES[Math.floor(rng() * FARM_HIGH_SPECIES.length)]);
-      if (!d) continue;
-      const lvl = FARM_HIGH_LVL_MIN + Math.floor(rng() * (FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1));
-      const stats = monsterStatsAtLevel(lvl, d.eType);
-      let ex = room.cx * TILE + TILE / 2, ey = room.cy * TILE + TILE / 2;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const gx = room.x + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        const gy = room.y + 1 + Math.floor(rng() * Math.max(1, room.size - 2));
-        if (inBounds(gx, gy) && grid[gy][gx] === FLOOR) { ex = gx * TILE + TILE / 2; ey = gy * TILE + TILE / 2; break; }
-      }
-      const localLvl = lvl - FARM_HIGH_LVL_MIN + 1;
-      enemyList.push({
-        id: `farmhi_${ri}_${eid++}`, ...d, isBoss: false, arm: 'farmHigh', farmHigh: true,
-        rlvl: lvl,
-        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, maxLocalLvl),
-        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, maxLocalLvl),
-        maxHp: Math.floor(stats.hp * FARM_WEAK_MULT), hp: Math.floor(stats.hp * FARM_WEAK_MULT),
-        atk: Math.floor(stats.atk * FARM_WEAK_MULT), def: stats.def, spd: d.spd,
-        xp: xpAtLevel(lvl) * FARM_HIGH_XP_MULT, gold: goldAtLevel(lvl),
-        x: ex, y: ey, spawnX: ex, spawnY: ey,
-        atkTimer: 1 + rng(),
-        // Сами не бросаются — ровно как в первой Фарм-зоне (Room.js исключает
-        // farmHigh из проверки самоагра наравне с farmZone/farmZone2), но
-        // отвечают на удар и держат обычный aggroR как поводок отхода.
-        aggro: false, aggroR: 175 + rng() * 55,
-      });
-    }
-  });
-
-  const returnPad = { x: midX * TILE + TILE / 2, y: (Y0 + 2) * TILE + TILE / 2 };
-  // Пад в её сезонное крыло (generateFarmHighSeason) — там же, где у первой
-  // зоны: южный конец вертикального коридора, подальше от возврата. target
-  // говорит клиенту, в какое из двух крыльев просить переход.
-  const seasonPad = {
-    x: midX * TILE + TILE / 2, y: (Y0 + FARM_SIZE - 3) * TILE + TILE / 2,
-    req: FARM_HIGH_ENTRY_LEVEL, requiresTicket: true, target: 'farmHighSeason',
-  };
-
-  return {
-    grid, rooms, w, h,
-    spawn: { x: midX * TILE + TILE / 2, y: midY * TILE + TILE / 2 },
-    returnPad, seasonPad,
-    farmHigh: { bounds: { x0: 0, y0: 0, x1: w, y1: h }, minLevel: FARM_HIGH_ENTRY_LEVEL },
-    enemies: enemyList,
-  };
-}
+// Фарм-зоны и их сезонные крылья — открытые местности на четыре спота,
+// см. generateFarmZone и соседей в блоке «Открытые локации» ниже.
 
 // Мир (см. блок WORLD_* в shared/definitions.js — там заказ и разбор ярусов).
 // Не комнаты с коридорами, а одна открытая местность, как в MMORPG: луг у
@@ -1949,8 +1562,355 @@ function generateCoop() {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  ОТКРЫТЫЕ ЛОКАЦИИ «ПЕПЕЛЬНОГО КРАЯ»
+// ═══════════════════════════════════════════════════════════════════════════
+// Этажи прокачки и фарм-зоны без комнат и коридоров: одна местность, как в
+// «Пепельном крае», — кромка леса или скал по краю, рощи и валуны, водоёмы
+// (в Лаве — лава), петляющая дорога и монстры КУЧКАМИ на полянах-спотах.
+// Проходимость по-прежнему решает grid; что нарисовать на клетке, клиент
+// берёт из aeMap.terrain (коды WORLD_T, RLE — тот же формат, что у Мира) и
+// aeMap.biome (js/ashen.js).
+//
+// rooms здесь, как и в Мире, — квадраты вокруг спотов: по ним клиент сужает
+// автоприцел до своего спота, подписывает уровень и строит бестиарий.
+const AE_ARM_BIOME = { left: 'forest', top: 'desert', bottom: 'lava', right: 'abyss' };
+const AE_ARM_NAME = { left: 'Лес разбойников', top: 'Пустыня', bottom: 'Лава', right: 'Багровая бездна' };
+
+function _aeOpenMap(o) {
+  const rng = seededRng(o.seed);
+  const w = o.w, h = o.h, T = WORLD_T;
+  const terrain = Array.from({ length: h }, () => new Array(w).fill(T.GRASS));
+  const inBounds = (x, y) => x >= 0 && x < w && y >= 0 && y < h;
+  const ph = Array.from({ length: 4 }, () => rng() * Math.PI * 2);
+  const wob = (x, y) => Math.sin(x * 0.23 + ph[0]) * 0.5 + Math.sin(y * 0.19 + ph[1]) * 0.5 + Math.sin((x + y) * 0.13 + ph[2]) * 0.6;
+  const near = (x, y, cx, cy, r) => (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+  const keep = [{ x: o.spawn.x, y: o.spawn.y, r: 5 }, ...o.spots, ...(o.boss ? [o.boss] : []), ...(o.keep || [])];
+  const kept = (x, y, pad) => keep.some(k => near(x, y, k.x, k.y, k.r + pad));
+  const obstacle = () => (rng() < (o.rockShare || 0) ? T.ROCK : T.TREE);
+
+  // Кромка по краю карты — рваная, не по линейке.
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const edge = Math.min(x, y, w - 1 - x, h - 1 - y);
+    if (edge < 3 + 1.3 * (wob(x, y) + 1.6)) terrain[y][x] = (o.rockShare || 0) > 0.5 ? T.ROCK : T.TREE;
+  }
+
+  // Дорога: ломаная по точкам пути, полоса в 3 клетки.
+  const road = [];
+  function paintRoad(x0, y0, x1, y1) {
+    const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 2);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const bend = Math.sin(t * Math.PI) * Math.sin((x0 + y1) * 0.7) * 1.2;
+      const L = Math.max(1, Math.hypot(x1 - x0, y1 - y0));
+      const cx = x0 + (x1 - x0) * t + bend * (y1 - y0) / L, cy = y0 + (y1 - y0) * t - bend * (x1 - x0) / L;
+      road.push([cx, cy]);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const x = Math.round(cx + dx), y = Math.round(cy + dy);
+        if (!inBounds(x, y) || x < 2 || y < 2 || x > w - 3 || y > h - 3) continue;
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= 2) terrain[y][x] = T.ROAD;
+        else if (d2 <= 5 && terrain[y][x] !== T.ROAD) terrain[y][x] = T.GRASS;
+      }
+    }
+  }
+  for (const path of o.roads) for (let i = 0; i + 1 < path.length; i++) paintRoad(path[i][0], path[i][1], path[i + 1][0], path[i + 1][1]);
+  const nearRoad = (x, y, r) => road.some(p => near(x, y, p[0], p[1], r));
+
+  // Рощи / валуны / водоёмы — не на дороге и не на спотах.
+  const blobs = [];
+  for (let i = 0; i < (o.groves || 0) * 8 && blobs.length < (o.groves || 0); i++) {
+    const x = 5 + rng() * (w - 10), y = 5 + rng() * (h - 10);
+    if (kept(x, y, 3) || nearRoad(x, y, 4)) continue;
+    blobs.push({ x, y, r: 1.2 + rng() * 2.6, kind: obstacle() });
+  }
+  for (let i = 0; i < (o.ponds || 0) * 10 && blobs.filter(b => b.kind === T.WATER).length < (o.ponds || 0); i++) {
+    const x = 6 + rng() * (w - 12), y = 6 + rng() * (h - 12);
+    if (kept(x, y, 4) || nearRoad(x, y, 5)) continue;
+    blobs.push({ x, y, r: 1.6 + rng() * 2.4, kind: T.WATER });
+  }
+  for (const g of blobs) {
+    for (let y = Math.floor(g.y - g.r - 2); y <= g.y + g.r + 2; y++) for (let x = Math.floor(g.x - g.r - 2); x <= g.x + g.r + 2; x++) {
+      if (!inBounds(x, y) || terrain[y][x] !== T.GRASS || kept(x, y, 1)) continue;
+      if (near(x, y, g.x, g.y, g.r + wob(x * 2, y * 2) * 0.5)) terrain[y][x] = g.kind;
+    }
+  }
+
+  // Поляны спотов и площадь босса — расчищены.
+  for (const k of keep) {
+    for (let y = Math.floor(k.y - k.r - 1); y <= k.y + k.r + 1; y++) for (let x = Math.floor(k.x - k.r - 1); x <= k.x + k.r + 1; x++) {
+      if (!inBounds(x, y) || x < 2 || y < 2 || x > w - 3 || y > h - 3) continue;
+      if (near(x, y, k.x, k.y, k.r + 0.5) && terrain[y][x] !== T.ROAD) terrain[y][x] = T.GRASS;
+    }
+  }
+  if (o.boss) {
+    const B = o.boss;
+    for (let y = B.y - B.r - 1; y <= B.y + B.r + 1; y++) for (let x = B.x - B.r - 1; x <= B.x + B.r + 1; x++) {
+      if (inBounds(x, y) && near(x, y, B.x, B.y, B.r)) terrain[y][x] = T.PLAZA;
+    }
+  }
+
+  const passable = v => v === T.GRASS || v === T.ROAD || v === T.BRIDGE || v === T.PLAZA;
+  const grid = terrain.map(row => row.map(v => (passable(v) ? FLOOR : WALL)));
+  // Всё, куда от входа не дойти, — тоже стена: там не встанет монстр.
+  const seen = Array.from({ length: h }, () => new Uint8Array(w));
+  const stack = [[o.spawn.x, o.spawn.y]];
+  seen[o.spawn.y][o.spawn.x] = 1;
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (!inBounds(nx, ny) || seen[ny][nx] || grid[ny][nx] !== FLOOR) continue;
+      seen[ny][nx] = 1; stack.push([nx, ny]);
+    }
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (seen[y][x] || grid[y][x] !== FLOOR) continue;
+    grid[y][x] = WALL; terrain[y][x] = obstacle();
+  }
+
+  // Клетки спота для монстров: на полу, внутри круга, без повторов.
+  function spotTiles(sp, n) {
+    const out = [], taken = new Set();
+    for (let attempt = 0; attempt < n * 40 && out.length < n; attempt++) {
+      const a = rng() * Math.PI * 2, d = Math.sqrt(rng()) * (sp.r - 0.5);
+      const gx = Math.round(sp.x + Math.cos(a) * d), gy = Math.round(sp.y + Math.sin(a) * d);
+      if (!inBounds(gx, gy) || grid[gy][gx] !== FLOOR || taken.has(gy * w + gx)) continue;
+      taken.add(gy * w + gx); out.push({ gx, gy });
+    }
+    while (out.length < n) out.push({ gx: sp.x, gy: sp.y });
+    return out;
+  }
+  const spotRoom = (sp, extra) => {
+    const size = Math.ceil(sp.r) * 2 + 3, x = sp.x - Math.floor(size / 2), y = sp.y - Math.floor(size / 2);
+    return { x, y, size, bx1: x - 1, by1: y - 1, bx2: x + size + 1, by2: y + size + 1, cx: sp.x, cy: sp.y, ...extra };
+  };
+  return { grid, terrain, w, h, rng, spotTiles, spotRoom, rle: _worldTerrainRle(terrain) };
+}
+
+// Этаж прокачки: 20 кучек по 10-15 монстров вдоль змейки дороги, уровень
+// растёт от входа (внизу слева) к площади босса (вверху). Уровни — те же,
+// что были у комнат коридора (ARM_OFFSETS + местный уровень), виды — те же
+// полосы FLOOR_ENEMIES, сила — та же половина, что у пачек в комнатах.
+const AE_ARM_W = 92, AE_ARM_H = 136, AE_ARM_SPOTS = 20;
+function generateOpenArm(dir, armIdx) {
+  const fe = FLOOR_ENEMIES[armIdx];
+  const N = roomsInArm(armIdx);          // местный уровень босса
+  const off = ARM_OFFSETS[armIdx - 1];
+  const legsY = [118, 89, 60, 31], X0 = 12, X1 = 80;
+  const spawnT = { x: X0, y: 124 };
+  const path = [[X0, 127], [X0, legsY[0]], [X1, legsY[0]], [X1, legsY[1]], [X0, legsY[1]], [X0, legsY[2]],
+    [X1, legsY[2]], [X1, legsY[3]], [X0, legsY[3]], [X0, 16], [40, 12]];
+  const boss = { x: 48, y: 12, r: 5 };
+  const xs = [20, 33, 46, 59, 72];
+  const spots = [];
+  for (let leg = 0; leg < 4; leg++) {
+    const order = leg % 2 ? xs.slice().reverse() : xs;
+    order.forEach((x, j) => {
+      const side = (j % 2 ? 1 : -1) * (leg % 2 ? -1 : 1);
+      spots.push({ x, y: legsY[leg] + side * 8, r: 4.5, roadY: legsY[leg] });
+    });
+  }
+  const roads = [path, ...spots.map(s => [[s.x, s.roadY], [s.x, s.y]])];
+  const M = _aeOpenMap({
+    seed: 2026 * 1337 + 900 + armIdx, w: AE_ARM_W, h: AE_ARM_H, spawn: spawnT, spots, boss, roads,
+    groves: 90, ponds: dir === 'top' ? 4 : 10,
+    rockShare: { left: 0.15, top: 0.75, bottom: 0.8, right: 0.6 }[dir] || 0.3,
+  });
+  const rng = M.rng;
+  const rooms = [], enemyList = [], spotInfo = [];
+  let eid = 0;
+
+  spots.forEach((sp, k) => {
+    const lo = Math.min(N - 1, 1 + Math.floor(k * (N - 2) / (AE_ARM_SPOTS - 1)));
+    const hi = Math.min(N - 1, lo + 2);
+    // Один вид на кучку — как одна комната раньше: так кучки и различают.
+    const pool = bandForLocalLevel(fe, lo).pool;
+    const d = _enemyByEid.get(pool[Math.floor(rng() * pool.length)]);
+    rooms.push(M.spotRoom(sp, { isSmall: false, arm: dir, localLvl: lo, monsterLvl: off + lo, isBoss: false, isWorldSpot: true, spot: 'k' + k }));
+    spotInfo.push({ id: 'k' + k, name: `${off + lo}–${off + hi}`, lvl: [off + lo, off + hi], x: sp.x * TILE + TILE / 2, y: sp.y * TILE + TILE / 2, r: sp.r * TILE });
+    if (!d) return;
+    const n = 10 + Math.floor(rng() * 6);
+    const tiles = M.spotTiles(sp, n);
+    const pack = [];
+    tiles.forEach(({ gx, gy }) => {
+      const localLvl = lo + Math.floor(rng() * (hi - lo + 1));
+      const mLvl = off + localLvl;
+      const stats = monsterStatsAtLevel(mLvl, d.eType);
+      const spdMult = mLvl > 20 ? 1.5 : 1;
+      const ex = gx * TILE + TILE / 2, ey = gy * TILE + TILE / 2;
+      pack.push({
+        id: `e_${dir}_${eid++}`, ...d, isBoss: false, arm: dir, spot: 'k' + k,
+        rlvl: mLvl,
+        name: monsterNameAtLevel(d.name, localLvl, false, d.fem, N - 1),
+        color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, N - 1),
+        maxHp: Math.floor(stats.hp * 0.5), hp: Math.floor(stats.hp * 0.5),
+        atk: Math.floor(stats.atk * 0.5), def: stats.def, spd: d.spd * spdMult,
+        xp: xpAtLevel(mLvl), gold: goldAtLevel(mLvl),
+        x: ex, y: ey, spawnX: ex, spawnY: ey,
+        atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+      });
+    });
+    // Удар по одному будит кучку (Room.js, _wakePack) — как в «Пепельном
+    // крае», где на шум сбегается весь спот.
+    const ids = pack.map(e => e.id);
+    pack.forEach(e => { e.packMateIds = ids.filter(id => id !== e.id); });
+    enemyList.push(...pack);
+  });
+
+  // Босс — на площади в конце дороги, с прежними правилами боссов коридора.
+  const bd = _enemyByEid.get(fe.boss);
+  if (bd) {
+    const mLvl = off + N;
+    const stats = monsterStatsAtLevel(mLvl, 'boss');
+    const isLvl20Boss = mLvl === 20;
+    const bx = boss.x * TILE + TILE / 2, by = boss.y * TILE + TILE / 2;
+    rooms.push(M.spotRoom(boss, { isSmall: false, arm: dir, localLvl: N, monsterLvl: mLvl, isBoss: true, isWorldSpot: true, spot: 'boss' }));
+    spotInfo.push({ id: 'boss', name: 'boss', lvl: [mLvl, mLvl], x: bx, y: by, r: boss.r * TILE, boss: true });
+    enemyList.push({
+      id: `e_${dir}_${eid++}`, ...bd, isBoss: true, arm: dir, spot: 'boss',
+      rlvl: mLvl,
+      name: monsterNameAtLevel(bd.name, N, true, bd.fem, N - 1),
+      color: monsterColorAtLevel(bd.color, bd.endColor, N, true, N - 1),
+      maxHp: Math.floor(stats.hp * (isLvl20Boss ? 10 : 1)), hp: Math.floor(stats.hp * (isLvl20Boss ? 10 : 1)),
+      atk: stats.atk, def: stats.def, spd: bd.spd * (mLvl > 20 || isLvl20Boss ? 1.5 : 1),
+      xp: xpAtLevel(mLvl), gold: goldAtLevel(mLvl),
+      x: bx, y: by, spawnX: bx, spawnY: by,
+      atkTimer: 1 + rng(), aggro: false, aggroR: 175 + rng() * 55,
+    });
+  }
+
+  return {
+    grid: M.grid, rooms, w: M.w, h: M.h,
+    spawn: { x: spawnT.x * TILE + TILE / 2, y: spawnT.y * TILE + TILE / 2 },
+    returnPad: { x: X0 * TILE + TILE / 2, y: 128 * TILE + TILE / 2 },
+    corridorGates: [],
+    aeMap: { biome: AE_ARM_BIOME[dir], name: AE_ARM_NAME[dir], terrain: M.rle, spots: spotInfo },
+    enemies: enemyList,
+  };
+}
+
+// Фарм-зона на открытой местности: четыре спота по углам, дороги от входа в
+// центре к каждому, возврат на севере, пад в сезонное крыло на юге. Кто и
+// сколько стоит на споте, решает вызывающий (makeEnemy) — виды, уровни и
+// метки зон остаются его, а не этой раскладки.
+const AE_FARM = 64;
+function _aeFarmLayout(seed, biome, rockShare) {
+  const w = AE_FARM, h = AE_FARM, c = AE_FARM / 2;
+  const spots = [{ x: 16, y: 16, r: 8 }, { x: 48, y: 16, r: 8 }, { x: 16, y: 48, r: 8 }, { x: 48, y: 48, r: 8 }];
+  const roads = [[[c, 6], [c, h - 6]], ...spots.map(s => [[c, s.y], [s.x, s.y]])];
+  const M = _aeOpenMap({ seed, w, h, spawn: { x: c, y: c }, spots, roads, groves: 26, ponds: 3, rockShare,
+    keep: [{ x: c, y: 8, r: 3 }, { x: c, y: h - 9, r: 3 }] });
+  return { M, spots, c, biome };
+}
+function _aeFarmZone(o) {
+  const { M, spots, c } = _aeFarmLayout(o.seed, o.biome, o.rockShare);
+  const rng = M.rng;
+  const rooms = [], enemyList = [], spotInfo = [];
+  let eid = 0;
+  spots.forEach((sp, ri) => {
+    rooms.push(M.spotRoom(sp, o.roomExtra));
+    spotInfo.push({ id: 's' + ri, name: o.spotName, lvl: o.lvl, x: sp.x * TILE + TILE / 2, y: sp.y * TILE + TILE / 2, r: sp.r * TILE });
+    M.spotTiles(sp, o.perSpot).forEach(({ gx, gy }) => {
+      const e = o.makeEnemy(rng, `${o.prefix}_${ri}_${eid++}`, gx * TILE + TILE / 2, gy * TILE + TILE / 2);
+      if (e) enemyList.push(e);
+    });
+  });
+  return {
+    grid: M.grid, rooms, w: M.w, h: M.h,
+    spawn: { x: c * TILE + TILE / 2, y: c * TILE + TILE / 2 },
+    returnPad: { x: c * TILE + TILE / 2, y: 8 * TILE + TILE / 2 },
+    seasonPadAt: { x: c * TILE + TILE / 2, y: (AE_FARM - 9) * TILE + TILE / 2 },
+    aeMap: { biome: o.biome, name: o.mapName, terrain: M.rle, spots: spotInfo },
+    enemies: enemyList,
+  };
+}
+
+// Монстр фарм-зоны — тот же, что ставили её комнаты: вид, полоса уровней,
+// половинение, шкала ранга и метки зоны (по меткам считаются дроп и опыт).
+function _farmMob(o) {
+  return (rng, id, ex, ey) => {
+    const d = _enemyByEid.get(o.species[Math.floor(rng() * o.species.length)]);
+    if (!d) return null;
+    const lvl = o.lvlMin + Math.floor(rng() * (o.lvlMax - o.lvlMin + 1));
+    const stats = monsterStatsAtLevel(lvl, d.eType);
+    const localLvl = lvl - o.localBase;
+    return {
+      id, ...d, isBoss: false, arm: o.arm, ...o.flags,
+      rlvl: lvl,
+      name: monsterNameAtLevel(d.name, localLvl, false, d.fem, o.maxLocalLvl),
+      color: monsterColorAtLevel(d.color, d.endColor, localLvl, false, o.maxLocalLvl),
+      maxHp: Math.floor(stats.hp * 0.5), hp: Math.floor(stats.hp * 0.5),
+      atk: Math.floor(stats.atk * 0.5), def: stats.def, spd: d.spd,
+      xp: xpAtLevel(lvl) * o.xpMult, gold: goldAtLevel(lvl),
+      x: ex, y: ey, spawnX: ex, spawnY: ey,
+      atkTimer: 1 + rng(),
+      // Сами не бросаются (Room.js исключает фарм-зоны из самоагра), но
+      // отвечают на удар; aggroR — поводок отхода.
+      aggro: false, aggroR: 175 + rng() * 55,
+    };
+  };
+}
+const _FARM1 = () => ({ species: FARM_SPECIES, lvlMin: FARM_LVL_MIN, lvlMax: FARM_LVL_MAX, localBase: ARM_OFFSETS[1],
+  maxLocalLvl: roomsInArm(2) - 1, xpMult: FARM_XP_MULT, arm: 'farmZone', flags: { farmZone: true } });
+const _FARM2 = () => ({ species: FARM_HIGH_SPECIES, lvlMin: FARM_HIGH_LVL_MIN, lvlMax: FARM_HIGH_LVL_MAX, localBase: FARM_HIGH_LVL_MIN - 1,
+  maxLocalLvl: FARM_HIGH_LVL_MAX - FARM_HIGH_LVL_MIN + 1, xpMult: FARM_HIGH_XP_MULT, arm: 'farmHigh', flags: { farmHigh: true } });
+
+function generateFarmZone() {
+  const z = _aeFarmZone({
+    seed: 2026 * 1337 + 777 + 600, biome: 'frozen', rockShare: 0.5, mapName: 'Фарм-зона', prefix: 'farm',
+    perSpot: FARM_MOBS_PER_ROOM, lvl: [FARM_LVL_MIN, FARM_LVL_MAX], spotName: `${FARM_LVL_MIN}–${FARM_LVL_MAX}`,
+    roomExtra: { isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone' },
+    makeEnemy: _farmMob(_FARM1()),
+  });
+  // Пад в сезонное крыло — единственная дверь в него; пускает сервер
+  // (resolveFloor/TICKET_ONLY), клиент лишь рисует замок.
+  const seasonPad = { ...z.seasonPadAt, req: FARM_ENTRY_LEVEL, requiresTicket: true };
+  delete z.seasonPadAt;
+  return { ...z, seasonPad, farmZone: { bounds: { x0: 0, y0: 0, x1: z.w, y1: z.h }, minLevel: FARM_ENTRY_LEVEL } };
+}
+
+// Сезонное крыло Фарм-зоны — свой этаж за билетом, четыре спота. Монстров на
+// споте вдвое больше, чем в зоне: раньше в крыле было восемь комнат, и
+// выход крыла за час игры не должен упасть вдвое из-за раскладки.
+function generateFarmSeason() {
+  const z = _aeFarmZone({
+    seed: 2026 * 1337 + 777 + 602, biome: 'swamp', rockShare: 0.2, mapName: 'Сезонное крыло', prefix: 'farmsz',
+    perSpot: FARM_MOBS_PER_ROOM * 2, lvl: [FARM_LVL_MIN, FARM_LVL_MAX], spotName: `${FARM_LVL_MIN}–${FARM_LVL_MAX}`,
+    roomExtra: { isFarmZone: true, monsterLvl: Math.round((FARM_LVL_MIN + FARM_LVL_MAX) / 2), arm: 'farmZone' },
+    makeEnemy: _farmMob(_FARM1()),
+  });
+  delete z.seasonPadAt;
+  // Возврат — назад в зону, а не в хаб.
+  z.returnPad = { ...z.returnPad, target: 'farmZone' };
+  return { ...z, farmZone: { bounds: { x0: 0, y0: 0, x1: z.w, y1: z.h }, minLevel: FARM_ENTRY_LEVEL, seasonWing: true } };
+}
+
+function generateFarmHigh() {
+  const z = _aeFarmZone({
+    seed: 2026 * 1337 + 777 + 601, biome: 'grave', rockShare: 0.4, mapName: 'Фарм зона 2', prefix: 'farmhi',
+    perSpot: FARM_HIGH_MOBS_PER_ROOM, lvl: [FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX], spotName: `${FARM_HIGH_LVL_MIN}–${FARM_HIGH_LVL_MAX}`,
+    roomExtra: { isFarmHigh: true, monsterLvl: Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2), arm: 'farmHigh' },
+    makeEnemy: _farmMob(_FARM2()),
+  });
+  const seasonPad = { ...z.seasonPadAt, req: FARM_HIGH_ENTRY_LEVEL, requiresTicket: true, target: 'farmHighSeason' };
+  delete z.seasonPadAt;
+  return { ...z, seasonPad, farmHigh: { bounds: { x0: 0, y0: 0, x1: z.w, y1: z.h }, minLevel: FARM_HIGH_ENTRY_LEVEL } };
+}
+
+function generateFarmHighSeason() {
+  const z = _aeFarmZone({
+    seed: 2026 * 1337 + 777 + 603, biome: 'wastes', rockShare: 0.8, mapName: 'Сезонное крыло 2', prefix: 'farmhs',
+    perSpot: FARM_HIGH_MOBS_PER_ROOM * 2, lvl: [FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX], spotName: `${FARM_HIGH_LVL_MIN}–${FARM_HIGH_LVL_MAX}`,
+    roomExtra: { isFarmHigh: true, monsterLvl: Math.round((FARM_HIGH_LVL_MIN + FARM_HIGH_LVL_MAX) / 2), arm: 'farmHigh' },
+    makeEnemy: _farmMob(_FARM2()),
+  });
+  delete z.seasonPadAt;
+  z.returnPad = { ...z.returnPad, target: 'farmHigh' };
+  return { ...z, farmHigh: { bounds: { x0: 0, y0: 0, x1: z.w, y1: z.h }, minLevel: FARM_HIGH_ENTRY_LEVEL, seasonWing: true } };
+}
+
 module.exports = {
-  generateHub, generateArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateWorld, generateFarmZone2, generateArena, generatePvpArena,
+  generateHub, generateArm, generateOpenArm, generateGuildWar, generateFarmZone, generateFarmSeason, generateFarmHighSeason, generateFarmHigh, generateWorld, generateFarmZone2, generateArena, generatePvpArena,
   generateRace10, generateFear, generateCoop, generateTournamentPit, generateTrial, generateDungeonHub, generateDungeonZone,
   TILE, WALL, FLOOR,
 };

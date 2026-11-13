@@ -1983,8 +1983,14 @@ function netConnect(onReady) {
       // ещё и толкает камеру.
       if (player) {
         const _dx = e.x - player.x, _dy = e.y - player.y, _l = Math.hypot(_dx, _dy) || 1;
-        e._flinchT = isCrit ? 0.2 : 0.14; e._flinchMax = e._flinchT;
-        e._flinchX = _dx / _l; e._flinchY = _dy / _l; e._flinchPx = isCrit ? 9 : 5;
+        // Отброс сильнее, как в «Пепельном крае»: монстр заметно отлетает.
+        e._flinchT = isCrit ? 0.24 : 0.16; e._flinchMax = e._flinchT;
+        e._flinchX = _dx / _l; e._flinchY = _dy / _l; e._flinchPx = isCrit ? 20 : 10;
+      }
+      if (typeof aeOnEnemyHurt === 'function' && player) {
+        const _mine = (id === targetId && !targetIsPlayer)
+          || ((player.atkAnimTimer || 0) > 0 && Math.hypot(e.x - player.x, e.y - player.y) < 450);
+        aeOnEnemyHurt(e, dmg, !!isCrit, _mine);
       }
       if (isCrit && id === targetId && !targetIsPlayer && typeof camShake === 'function') camShake(3, 0.14);
       if (dmg && typeof fxHit === 'function') fxHit(e.x, e.y, !!isCrit, (typeof FX_PAL !== 'undefined' && player && FX_PAL[player.type] && id === targetId) ? FX_PAL[player.type].c3 : null);
@@ -2029,6 +2035,9 @@ function netConnect(onReady) {
     }
     spawnBurst(px, py, color || '#f80', 8);
     if (typeof fxKill === 'function') fxKill(px, py, color || '#ff8a4a');
+    // Убийство своё — если по нему пришёл урон (dmg), то есть добил этот
+    // клиент: сервер шлёт dmg только добившему.
+    if (typeof aeOnEnemyKilled === 'function') aeOnEnemyKilled(px, py, e || { eid }, !!dmg);
     const _seen = typeof _isPosVisible !== 'function' || _isPosVisible(px, py);
     if (typeof Sound !== 'undefined' && _seen) Sound.death();
     const dd = e && typeof ENEMY_SPRITE_DEF !== 'undefined' && ENEMY_SPRITE_DEF[e.eid]?.sheets?.death;

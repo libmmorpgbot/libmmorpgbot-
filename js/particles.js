@@ -60,7 +60,11 @@ function dmgNum(x, y, text, color, fontSize) {
   // текстом (_updateDmgNums, js/pixi-world.js), а не глифом шрифта.
   const sp = typeof emojiSplit === 'function' ? emojiSplit(text) : { icon: null, text: String(text) };
   const t = sp.text;
-  dmgNums.push({ x, y, text: t, icon: sp.icon, color: _dmgLegible(color), life: 1.1, vy: -52, fontSize: fontSize || (isNaN(t) || t === '' ? 12 : 15) });
+  // Число урона, как в «Пепельном крае»: вылетает с увеличением и уходит
+  // вбок, крит — крупнее и дрожит (_updateDmgNums, js/pixi-world.js).
+  const num = !isNaN(t) && t !== '' || /^⚡/.test(String(text));
+  dmgNums.push({ x, y, text: t, icon: sp.icon, color: _dmgLegible(color), life: 1.1, vy: -52, fontSize: fontSize || (isNaN(t) || t === '' ? 12 : 15),
+    vx: num ? (Math.random() - 0.5) * 60 : 0, age: 0, crit: (fontSize || 0) >= 19 });
 }
 
 

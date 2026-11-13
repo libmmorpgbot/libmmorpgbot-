@@ -62,6 +62,20 @@ function _zoneLayout() {
   if (!d || !d.rooms) return null;
   if (_zoneCacheFor === d) return _zoneCache;
   _zoneCacheFor = d;
+  // Открытые локации «Пепельного края» (js/ashen.js): этажи прокачки и
+  // фарм-зоны — по своей местности и биому этажа; Мир — по своей местности,
+  // биом по краю карты (луг → лес, лес за рекой → топи, за грядой —
+  // пустоши); Подземелье — логово с плитами 0x72.
+  if (typeof aeTerrainLayout === 'function') {
+    if (d.aeMap && d.aeMap.terrain) return (_zoneCache = aeTerrainLayout(d, d.aeMap.terrain, () => d.aeMap.biome));
+    if (d.openWorld && d.openWorld.terrain) {
+      return (_zoneCache = aeTerrainLayout(d, d.openWorld.terrain, (tx, ty) => {
+        const j = (_zh(tx, ty, 7) - 0.5) * 3;
+        return tx + j < WORLD_RIVER_X ? 'forest' : tx + j < WORLD_RIDGE_X ? 'swamp' : 'wastes';
+      }));
+    }
+    if (d.dungeonZone || d.classPads) return (_zoneCache = { ae: true, stages: ['ae_lair', 'ae_lair'], x0: 0, x1: d.w });
+  }
   // Мир рисуется не полосами тем, а по своей карте местности (_worldStage ниже).
   if (d.openWorld && d.openWorld.terrain) return (_zoneCache = _worldLayout(d));
   // Коридор прокачки — по названию ветки в его комнатах; фарм-зоны — по
@@ -89,6 +103,7 @@ function zonesToggle(on) {
 }
 
 function _zoneStage(Z, tx, ty) {
+  if (Z.aeT) return _ZONE_ST['ae_' + Z.biomeAt(tx, ty)] || _ZONE_ST.ae_forest;
   if (Z.world) return _worldStage(Z, tx, ty);
   const t = (tx - Z.x0) / Math.max(1, Z.x1 - Z.x0);
   const j = (_zh(tx, ty, 7) - 0.5) * 0.14;

@@ -1229,7 +1229,7 @@ class Session {
     if (!INSTANCED_FLOORS.has(target)) this.socket.join(`floor_${target}`);
 
     const p = dest.players.get(this.socket.id);
-    if (p && pos && dest.canStandAt(pos.x, pos.y)) { p.x = pos.x; p.y = pos.y; }
+    if (p && pos && dest.canRestoreAt(pos.x, pos.y, p.lvl)) { p.x = pos.x; p.y = pos.y; }
 
     this.socket.to(`floor_${target}`).emit('playerJoined', { id: this.socket.id, username: this.username });
     this.socket.to(`floor_${target}`).emit('playerChar', { id: this.socket.id, type: was.type });

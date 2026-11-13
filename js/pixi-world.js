@@ -2047,10 +2047,13 @@ function _updateDmgNums() {
       if (t.text !== d.text) t.text = d.text;
       // Scaled, not re-sized: BitmapText.fontSize rebuilds the glyph layout,
       // scale is a transform the GPU applies for free.
-      const sc = size / _DMG_BAKE_PX;
+      // Вылет с увеличением и дрожь крита — «Пепельный край».
+      const age = d.age || 0;
+      const pop = age < 0.12 ? 1 + (1 - age / 0.12) * (d.crit ? 1.3 : 0.7) : 1;
+      const sc = size / _DMG_BAKE_PX * pop;
       if (t.scale.x !== sc) t.scale.set(sc);
       t.tint = tint; t.alpha = alpha;
-      t.x = d.x; t.y = d.y;
+      t.x = d.x + (d.crit && age < 0.25 ? (Math.random() * 5 - 2.5) : 0); t.y = d.y;
       shown = t;
     } else {
       let t = _dmgTxt[_dmgTxtN];

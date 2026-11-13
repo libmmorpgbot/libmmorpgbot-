@@ -61,6 +61,7 @@ function _aeShadow(c, x, y, r, a) {
 // отдельно (_updateLights).
 function _aeFlatDraw(cx,f){const now=0;
   if(f.type==='flower'){cx.fillStyle=f.c;cx.fillRect(f.x,f.y,3,3);cx.fillStyle='#ffffff66';cx.fillRect(f.x+1,f.y,1,1)}
+  else if(f.type==='dune'){cx.strokeStyle='rgba(120,90,50,.45)';cx.lineWidth=1.5;for(let k=0;k<3;k++){cx.beginPath();cx.moveTo(f.x-12,f.y+k*5);cx.quadraticCurveTo(f.x,f.y-4+k*5,f.x+12,f.y+k*5);cx.stroke()}cx.strokeStyle='rgba(255,240,200,.35)';cx.beginPath();cx.moveTo(f.x-10,f.y-1);cx.quadraticCurveTo(f.x,f.y-5,f.x+10,f.y-1);cx.stroke()}
   else if(f.type==='mush'){cx.fillStyle='#e8dcc8';cx.fillRect(f.x,f.y,2,4);cx.fillStyle='#b8402e';cx.beginPath();cx.arc(f.x+1,f.y,4,Math.PI,0);cx.fill()}
   else if(f.type==='fence'){cx.fillStyle='#5a4230';cx.fillRect(f.x,f.y-14,4,16);cx.fillRect(f.x-2,f.y-10,28,3);cx.fillRect(f.x-2,f.y-4,28,3)}
   else if(f.type==='bones'){cx.strokeStyle='#cfc6b2';cx.globalAlpha=.6;cx.lineWidth=2;cx.beginPath();cx.moveTo(f.x,f.y);cx.lineTo(f.x+10*Math.cos(f.v*6),f.y+6*Math.sin(f.v*6));cx.stroke();cx.globalAlpha=1}
@@ -166,6 +167,26 @@ function _aeDecoDraw(cx,d){const now=0;
 // крона никогда не легла на проход и герой не «шёл по кроне». short —
 // низкие (камни, пни, могилы): годятся и для кромки у прохода.
 const AE_BIOME = {
+  // Пустыня: песок с барханами, кактусы, выбеленные кости, оазисы.
+  desert: {
+    base: '#b8945c', pal: ['#c4a36b', '#a5834e', '#d0b07a', '#9a7a48'], road: ['#9a7a50', '#6e5536'],
+    tall: [['cactus', 0.55], ['dead', 0.15], ['rock', 0.3]], short: [['rock', 0.55], ['cactusS', 0.3], ['bonepile', 0.15]],
+    rocks: [['rock', 0.7], ['cactus', 0.3]],
+    flat: [['bones', 0.45], ['skull', 0.3], ['dune', 0.25]], dark: '30,16,0', da: 0.2, rock: ['#a28462', '#6e5840'], water: 'oasis', dunes: 1,
+  },
+  // Лава: чёрная порода в трещинах с жаром, лавовые озёра, обсидиан.
+  lava: {
+    base: '#2a1a16', pal: ['#3a221c', '#1e1210', '#47291f', '#160c0a'], road: ['#4a3a32', '#241a16'],
+    tall: [['rock', 0.5], ['spike', 0.25], ['crystal', 0.1], ['dead', 0.15]], short: [['rock', 0.75], ['bonepile', 0.25]],
+    flat: [['lava', 0.3], ['bones', 0.4], ['skull', 0.3]], dark: '24,4,0', da: 0.45, rock: ['#4a3a34', '#2a1e1a'], cracks: 2, water: 'lava',
+  },
+  // Подземелье — логово Пепельного Владыки: плиты пола из атласа 0x72,
+  // тёмная кладка, колонны и факелы у стен.
+  lair: {
+    base: '#1e1719', pal: ['#2a2124', '#161113', '#33272a', '#1b1416'], road: ['#2a2124', '#161113'],
+    tall: [['column', 0.45], ['rock', 0.4], ['torch', 0.15]], short: [['rock', 0.5], ['bonepile', 0.3], ['torch', 0.2]],
+    flat: [['bones', 0.4], ['skull', 0.4], ['candles', 0.2]], dark: '14,0,0', da: 0.6, rock: ['#3a2e30', '#221a1c'], lair: 1,
+  },
   forest: {
     base: '#24391f', pal: ['#2c4a27', '#1a2c17', '#335430', '#162614'], road: ['#55452e', '#2f271b'], grass: ['#4a7a38', '#1d3319'],
     tall: [['tree', 0.5], ['pine', 0.42], ['dead', 0.08]], short: [['rock', 0.5], ['stump', 0.3], ['bush', 0.2]],
@@ -174,7 +195,7 @@ const AE_BIOME = {
   swamp: {
     base: '#1f2620', pal: ['#283126', '#151b16', '#2f3a2a', '#131812'], road: ['#3f3a2c', '#221f18'], grass: ['#3d4a2c', '#18200f'],
     tall: [['mtree', 0.6], ['dead', 0.4]], short: [['rock', 0.45], ['stump', 0.55]],
-    flat: [['pool', 0.25], ['reed', 0.45], ['gmush', 0.15], ['bones', 0.15]], dark: '2,10,6', da: 0.6, rock: ['#4b5246', '#2c3129'], pools: 1,
+    flat: [['pool', 0.25], ['reed', 0.45], ['gmush', 0.15], ['bones', 0.15]], dark: '2,10,6', da: 0.6, rock: ['#4b5246', '#2c3129'], pools: 1, water: 'bog',
   },
   grave: {
     base: '#24242a', pal: ['#2c2c33', '#18181d', '#33333b', '#1d1d22'], road: ['#47433f', '#25221f'], grass: ['#4a4d40', '#1d1f1a'],
@@ -184,7 +205,7 @@ const AE_BIOME = {
   wastes: {
     base: '#3a322d', pal: ['#463c35', '#2e2724', '#514238', '#3d2f2a'], road: ['#52463d', '#2a221e'],
     tall: [['dead', 0.55], ['rock', 0.35], ['crystal', 0.1]], short: [['rock', 0.85], ['crystal', 0.15]],
-    flat: [['lava', 0.12], ['bones', 0.6], ['skull', 0.28]], dark: '16,4,2', da: 0.5, rock: ['#5a4e48', '#3a322f'], cracks: 1,
+    flat: [['lava', 0.12], ['bones', 0.6], ['skull', 0.28]], dark: '16,4,2', da: 0.5, rock: ['#5a4e48', '#3a322f'], cracks: 1, water: 'lava',
   },
   fortress: {
     base: '#2f2b28', pal: ['#38332f', '#221f1c', '#403a35', '#1c1917'], road: ['#5c5650', '#2e2a26'],
@@ -194,17 +215,17 @@ const AE_BIOME = {
   frozen: {
     base: '#8e9eab', pal: ['#a8b8c4', '#7a8a98', '#b8c6d0', '#6c7c8a'], road: ['#c8d4dc', '#8090a0'],
     tall: [['snowpine', 0.8], ['dead', 0.08], ['icecrystal', 0.12]], short: [['snowrock', 0.7], ['icecrystal', 0.3]],
-    flat: [['snowdrift', 0.7], ['icepatch', 0.3]], dark: '4,10,28', da: 0.44, rock: ['#6a7682', '#465260'], snow: 1,
+    flat: [['snowdrift', 0.7], ['icepatch', 0.3]], dark: '4,10,28', da: 0.44, rock: ['#6a7682', '#465260'], snow: 1, water: 'ice', rocks: [['snowrock', 1]],
   },
   abyss: {
     base: '#241012', pal: ['#2e1416', '#170809', '#3a1a1a', '#120607'], road: ['#3e2220', '#1e0e0e'],
     tall: [['spike', 0.4], ['rock', 0.25], ['bonepile', 0.2], ['crystalR', 0.1], ['column', 0.05]], short: [['rock', 0.4], ['bonepile', 0.35], ['spike', 0.25]],
-    flat: [['blood', 0.35], ['bones', 0.35], ['skull', 0.3]], dark: '18,0,2', da: 0.62, rock: ['#4a2a28', '#2a1414'], cracks: 2,
+    flat: [['blood', 0.35], ['bones', 0.35], ['skull', 0.3]], dark: '18,0,2', da: 0.62, rock: ['#4a2a28', '#2a1414'], cracks: 2, water: 'lava',
   },
 };
 const _AE_DECO_SCALE = 0.8;   // предметы «Пепельного края» под рост героев Liberty
 const _AE_FLOWER = ['#e9d36a', '#d8d0f0', '#e07a9a'];
-const _AE_GLOW = new Set(['brazier', 'crystal', 'crystalR', 'icecrystal']);
+const _AE_GLOW = new Set(['brazier', 'crystal', 'crystalR', 'icecrystal', 'torch']);
 
 // Темы для js/zones.js: сама картинка рисуется aeDrawGround ниже, тема
 // несёт лишь вуаль биома и флаги. wall: null — каменного «обрыва» у стены
@@ -213,7 +234,7 @@ const _AE_GLOW = new Set(['brazier', 'crystal', 'crystalR', 'icecrystal']);
 Object.keys(AE_BIOME).forEach(k => {
   const B = AE_BIOME[k];
   _ZONE_ST['ae_' + k] = {
-    ae: k, wall: null, noDepth: true,
+    ae: k, wall: B.lair ? '#2b2326' : null, noDepth: true,
     // Вуаль слабее, чем у «Пепельного края»: там её прорезает свет вокруг
     // героя, здесь она запечена в пол ровным слоем.
     overlay: `rgba(${B.dark},${(B.da * 0.3).toFixed(3)})`,
@@ -316,14 +337,17 @@ function _aeTileGround(c, B, x, y, tx, ty) {
 // Дорога: полоса цвета B.road[0] с тёмной кромкой B.road[1] там, где
 // дальше не дорога, и крапинкой, как у «Пепельного края».
 function _aeTileRoad(c, B, x, y, tx, ty) {
+  _aeTileRoadEdges(c, B, x, y, tx, ty, (dx, dy) => _aeRoad(tx + dx, ty + dy) || _aeInRoom(tx + dx, ty + dy));
+}
+function _aeTileRoadEdges(c, B, x, y, tx, ty, road) {
   const T = TILE, h = (s) => _zh(tx, ty, s);
   c.fillStyle = B.road[0]; c.fillRect(x, y, T, T);
   const E = 6;
   c.fillStyle = B.road[1];
-  if (!_aeRoad(tx - 1, ty) && !_aeInRoom(tx - 1, ty)) c.fillRect(x, y, E, T);
-  if (!_aeRoad(tx + 1, ty) && !_aeInRoom(tx + 1, ty)) c.fillRect(x + T - E, y, E, T);
-  if (!_aeRoad(tx, ty - 1) && !_aeInRoom(tx, ty - 1)) c.fillRect(x, y, T, E);
-  if (!_aeRoad(tx, ty + 1) && !_aeInRoom(tx, ty + 1)) c.fillRect(x, y + T - E, T, E);
+  if (!road(-1, 0)) c.fillRect(x, y, E, T);
+  if (!road(1, 0)) c.fillRect(x + T - E, y, E, T);
+  if (!road(0, -1)) c.fillRect(x, y, T, E);
+  if (!road(0, 1)) c.fillRect(x, y + T - E, T, E);
   for (let k = 0; k < 6; k++) {
     c.globalAlpha = 0.35; c.fillStyle = h(350 + k) < 0.5 ? B.pal[2] : B.road[1];
     c.fillRect(x + 4 + h(360 + k) * (T - 8), y + 4 + h(370 + k) * (T - 8), 2, 2);
@@ -341,7 +365,18 @@ function _aeTileRoad(c, B, x, y, tx, ty) {
 
 function _aeObject(c, type, B, x, y, v) {
   c.save(); c.translate(x, y); c.scale(_AE_DECO_SCALE, _AE_DECO_SCALE);
-  if (type === 'bush') {
+  if (type === 'cactus' || type === 'cactusS') {
+    const big = type === 'cactus', hgt = big ? 46 + v * 16 : 22 + v * 8;
+    _aeShadow(c, 2, 2, big ? 14 : 10, 0.3);
+    c.fillStyle = '#2f6b34'; c.fillRect(-5, -hgt, 10, hgt); c.beginPath(); c.arc(0, -hgt, 5, Math.PI, 0); c.fill();
+    if (big) {
+      c.fillRect(-16, -hgt * 0.62, 6, 16); c.fillRect(-16, -hgt * 0.62 + 10, 12, 6);
+      c.fillRect(10, -hgt * 0.8, 6, 18); c.fillRect(4, -hgt * 0.8 + 12, 12, 6);
+    }
+    c.fillStyle = '#4f9a4a'; c.fillRect(-4, -hgt, 3, hgt);
+    c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(2, -hgt, 3, hgt);
+    c.fillStyle = '#e9d36a'; for (let k = 0; k < 4; k++) c.fillRect(-5 + (k & 1) * 9, -hgt + 6 + k * 9, 1, 1);
+  } else if (type === 'bush') {
     _aeShadow(c, 0, 2, 18, 0.35);
     c.fillStyle = '#1f3d1e'; c.beginPath(); c.arc(-8, -8, 11, 0, 7); c.arc(8, -9, 10, 0, 7); c.arc(0, -16, 12, 0, 7); c.fill();
     c.fillStyle = '#2a4d27'; c.beginPath(); c.arc(-3, -15, 7, 0, 7); c.fill();
@@ -358,6 +393,7 @@ function _aeObject(c, type, B, x, y, v) {
 // соседей). Три прохода: основа, детали клетки, предметы на стенах — в
 // порядке строк, так что нижний предмет ложится поверх верхнего.
 function aeDrawGround(c, Z, tx0, ty0, tx1, ty1) {
+  if (Z.aeT) { _aeDrawTerrain(c, Z, tx0, ty0, tx1, ty1); return; }
   const T = TILE;
   // Основа — без дрожания границы, которое у тем по клеткам: у биомов разный
   // тон земли, и клеточная граница читалась шахматкой. Здесь тон плавно
@@ -375,7 +411,8 @@ function aeDrawGround(c, Z, tx0, ty0, tx1, ty1) {
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const B = AE_BIOME[_zoneStage(Z, tx, ty).ae] || AE_BIOME.forest;
     const x = tx * T, y = ty * T;
-    if (_aeRoad(tx, ty)) _aeTileRoad(c, B, x, y, tx, ty);
+    if (B.lair) { if (_aeFloor(tx, ty)) _aeLairFloor(c, x, y, tx, ty); }
+    else if (_aeRoad(tx, ty)) _aeTileRoad(c, B, x, y, tx, ty);
     else _aeTileGround(c, B, x, y, tx, ty);
   }
   // Толща стены — мягкой тенью по земле, до предметов: так деревья в глубине
@@ -418,6 +455,130 @@ function aeDrawGround(c, Z, tx0, ty0, tx1, ty1) {
   }
 }
 
+// ── Открытые локации: рисунок по коду клетки ─────────────
+// Сервер присылает местность (aeMap.terrain у этажей прокачки и фарм-зон,
+// openWorld.terrain у Мира — коды WORLD_T, RLE), биом — по этажу или по
+// краю Мира. Трава/дорога/площадь — проход, деревья/скалы/вода — стены grid.
+function aeTerrainLayout(d, rle, biomeAt) {
+  const flat = new Uint8Array(d.w * d.h);
+  let i = 0;
+  for (const run of rle.split('.')) {
+    if (!run) continue;
+    const v = run.charCodeAt(0) - 48, n = parseInt(run.slice(1), 36);
+    flat.fill(v, i, Math.min(flat.length, i + n));
+    i += n;
+  }
+  const W = d.w, H = d.h;
+  const at = (tx, ty) => (tx < 0 || ty < 0 || tx >= W || ty >= H ? WORLD_T.TREE : flat[ty * W + tx]);
+  return { ae: true, aeT: true, at, biomeAt, stages: null, x0: 0, x1: W };
+}
+const _aeObst = k => k === WORLD_T.TREE || k === WORLD_T.ROCK;
+
+function _aeTileWater(c, B, x, y, tx, ty, land) {
+  const T = TILE, h = s => _zh(tx, ty, s), kind = B.water || 'water';
+  if (kind === 'lava') {
+    // Ровная раскалённая заливка, пятна жара и корки поверх — без
+    // градиента на клетку, который читался квадратами.
+    c.fillStyle = '#d4481a'; c.fillRect(x, y, T, T);
+    for (let k = 0; k < 3; k++) _zBlob(c, x + h(500 + k) * T, y + h(503 + k) * T, 7 + h(506 + k) * 8, 4 + h(509 + k) * 4, 'rgba(255,170,70,0.55)');
+    for (let k = 0; k < 2; k++) _zBlob(c, x + h(512 + k) * T, y + h(514 + k) * T, 4 + h(516 + k) * 5, 2 + h(518 + k) * 2, 'rgba(50,12,4,0.6)');
+  } else {
+    const col = { water: ['#1d3f63', '#2a5a86'], bog: ['#0d1a17', '#1e3a30'], ice: ['#a8d4ee', '#e4f4ff'], oasis: ['#2a7fc0', '#5ab0e0'] }[kind] || ['#1d3f63', '#2a5a86'];
+    c.fillStyle = col[0]; c.fillRect(x, y, T, T);
+    c.strokeStyle = col[1]; c.lineWidth = 2; c.lineCap = 'round'; c.globalAlpha = 0.7;
+    for (let k = 0; k < 2; k++) {
+      const wx = x + 4 + h(510 + k) * 24, wy = y + 8 + h(512 + k) * 26;
+      c.beginPath(); c.moveTo(wx, wy); c.quadraticCurveTo(wx + 5, wy - 3, wx + 10, wy); c.stroke();
+    }
+    c.globalAlpha = 1; c.lineCap = 'butt';
+  }
+  // Берег — тёмная кромка там, где за краем суша.
+  const rim = kind === 'lava' ? '#1a0a06' : kind === 'ice' ? '#6a8ca8' : '#0d1a14';
+  c.fillStyle = rim;
+  if (land(-1, 0)) c.fillRect(x, y, 4, T);
+  if (land(1, 0)) c.fillRect(x + T - 4, y, 4, T);
+  if (land(0, -1)) c.fillRect(x, y, T, 4);
+  if (land(0, 1)) c.fillRect(x, y + T - 4, T, 4);
+}
+
+function _aeTilePlaza(c, B, x, y, tx, ty) {
+  const T = TILE;
+  c.fillStyle = B.road[1]; c.fillRect(x, y, T, T);
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 2; k++) {
+    c.fillStyle = _zVar(B.lair ? '#3a2e30' : B.rock[0], tx * 2 + k, ty * 2 + r, 520, 0.25);
+    c.fillRect(x + 1 + k * 20 + (r & 1) * 0, y + 1 + r * 20, 18, 18);
+  }
+}
+
+function _aeDrawTerrain(c, Z, tx0, ty0, tx1, ty1) {
+  const T = TILE, WT = WORLD_T;
+  const BB = (tx, ty) => AE_BIOME[Z.biomeAt(tx, ty)] || AE_BIOME.forest;
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    c.fillStyle = BB(tx, ty).base; c.fillRect(tx * T, ty * T, T, T);
+  }
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const B = BB(tx, ty), k = Z.at(tx, ty), x = tx * T, y = ty * T;
+    if (k === WT.ROAD) {
+      const road = (dx, dy) => { const v = Z.at(tx + dx, ty + dy); return v === WT.ROAD || v === WT.BRIDGE || v === WT.PLAZA; };
+      _aeTileRoadEdges(c, B, x, y, tx, ty, road);
+    } else if (k === WT.PLAZA) _aeTilePlaza(c, B, x, y, tx, ty);
+    else if (k === WT.WATER || k === WT.BRIDGE) {
+      _aeTileWater(c, B, x, y, tx, ty, (dx, dy) => { const v = Z.at(tx + dx, ty + dy); return v !== WT.WATER && v !== WT.BRIDGE; });
+      if (k === WT.BRIDGE) {
+        c.fillStyle = '#6a4a2a'; c.fillRect(x, y + 6, T, T - 12);
+        c.fillStyle = '#4a321c'; for (let p = 0; p < 4; p++) c.fillRect(x + p * 10, y + 6, 2, T - 12);
+      }
+    } else _aeTileGround(c, B, x, y, tx, ty);
+  }
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    if (!_aeObst(Z.at(tx, ty))) continue;
+    const d = _aeDepth(tx, ty);
+    if (d) { c.fillStyle = `rgba(0,0,0,${[0, 0.15, 0.27, 0.38][d]})`; c.fillRect(tx * T, ty * T, T, T); }
+  }
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const k = Z.at(tx, ty);
+    if (k !== WT.GRASS && k !== WT.ROAD) continue;
+    if (_zh(tx, ty, 400) > (k === WT.ROAD ? 0.03 : 0.1)) continue;
+    const B = BB(tx, ty), type = _aePick(B.flat, _zh(tx, ty, 401));
+    if (k === WT.ROAD && (type === 'pool' || type === 'lava' || type === 'blood')) continue;
+    _aeFlatDraw(c, { type, x: tx * T + 8 + _zh(tx, ty, 402) * 24, y: ty * T + 10 + _zh(tx, ty, 403) * 24,
+      v: _zh(tx, ty, 404), r: 10 + _zh(tx, ty, 405) * 12, c: _AE_FLOWER[(tx + ty) % 3] });
+  }
+  const W = dungeon.w, H = dungeon.h;
+  for (let ty = ty0; ty <= Math.min(H - 1, ty1 + 2); ty++) {
+    for (let tx = Math.max(0, tx0 - 1); tx <= Math.min(W - 1, tx1 + 1); tx++) {
+      const k = Z.at(tx, ty);
+      if (!_aeObst(k)) continue;
+      const B = BB(tx, ty), depth = _aeDepth(tx, ty);
+      if (depth === 3 && _zh(tx, ty, 411) < 0.3) continue;
+      // Скальный массив — не валун на каждой клетке: ровная сетка камней
+      // читалась мостовой.
+      if (k === WT.ROCK && depth >= 2 && _zh(tx, ty, 416) < 0.45) continue;
+      let type;
+      if (k === WT.ROCK) type = _aePick(B.rocks || [['rock', 1]], _zh(tx, ty, 412));
+      else {
+        const tall = _aeObst(Z.at(tx, ty - 1)) && _zh(tx, ty, 410) < 0.88;
+        type = _aePick(tall ? B.tall : B.short, _zh(tx, ty, 412));
+      }
+      if (_AE_GLOW.has(type) && depth !== 1) type = 'rock';
+      _aeObject(c, type, B, tx * T + 20 + (_zh(tx, ty, 413) - 0.5) * 22, ty * T + T - 2 - _zh(tx, ty, 414) * 12, _zh(tx, ty, 415));
+    }
+  }
+}
+
+// Плиты пола Подземелья — из атласа 0x72, 16 px × 2,5 = ровно клетка.
+function _aeLairFloor(c, x, y, tx, ty) {
+  const fp = AE_SL.floor_plain;
+  if (!_aeAtlasReady() || !fp) { c.fillStyle = '#2a2124'; c.fillRect(x, y, TILE, TILE); return; }
+  c.imageSmoothingEnabled = false;
+  c.drawImage(_aeAtlas, fp[0], fp[1], fp[2], fp[3], x, y, TILE, TILE);
+  const r = _zh(tx, ty, 530);
+  const n = r < 0.07 ? 'floor_stain_1' : r < 0.12 ? 'floor_stain_2' : r < 0.16 ? 'floor_stain_3' : r < 0.22 ? 'floor_light' : null;
+  if (n) { const q = AE_SL[n]; c.drawImage(_aeAtlas, q[0], q[1], q[2], q[3], x, y, TILE, TILE); }
+  c.fillStyle = 'rgba(26,10,12,0.35)'; c.fillRect(x, y, TILE, TILE);
+  c.imageSmoothingEnabled = true;
+}
+
 // ── Монстры ──────────────────────────────────────────────
 // Вид Liberty → спрайт «Пепельного края» из атласа. fly — висит над тенью
 // и покачивается в воздухе. Неизвестные виды (вышки, особые режимы)
@@ -437,3 +598,102 @@ const AE_MONSTER = {
   demon_event_boss: ['monster_demon'], race10_boss: ['monster_demon'],
   dungeon_lich_skeleton: ['monster_skelet'], dungeon_lich_blue: ['monster_necromancer'], dungeon_lich_commander: ['monster_dark_knight'],
 };
+
+// ── Динамика боя, как в «Пепельном крае» ─────────────────
+// Только вид: хитстоп (кадр почти замирает на крите и убийстве), брызги по
+// материалу монстра с пятном на земле, тряска на каждый свой удар, счётчик
+// комбо и объявления серии убийств. Урон, опыт и награды — сервер, как и было.
+let _aeHitStop = 0;
+function aeHitStop(t) { _aeHitStop = Math.max(_aeHitStop, Math.min(0.12, t)); }
+// Множитель шага симуляции на этот кадр (js/game.js, loop).
+function aeTimeScale(realDt) {
+  if (_aeHitStop <= 0) return 1;
+  _aeHitStop -= realDt;
+  return 0.12;
+}
+
+// Материал по виду монстра: [светлый, тёмный] — брызги и пятно на земле.
+const _AE_MATC = {
+  blood: ['#c41a1a', '#5a0808'], rot: ['#8a9a2a', '#3a4a18'], goo: ['#5ae070', '#1a6a3a'],
+  bone: ['#efe6cc', '#8a8070'], fire: ['#ffb040', '#7a2a0a'], void: ['#c070ff', '#3a1060'], wood: ['#8a6a3a', '#3a2a14'],
+};
+function _aeMatOf(eid) {
+  const s = String(eid || '');
+  if (/^slime|^plant/.test(s)) return 'goo';
+  if (/^zombie/.test(s)) return 'rot';
+  if (/^imp|^demon|race10|event_boss/.test(s)) return 'fire';
+  if (/^beholder/.test(s)) return 'void';
+  if (/^ent/.test(s)) return 'wood';
+  if (/lich/.test(s)) return 'bone';
+  return 'blood';
+}
+function _aeGore(x, y, eid, n, power) {
+  if (typeof fxP !== 'function' || (typeof _isPosVisible === 'function' && !_isPosVisible(x, y))) return;
+  const c = _AE_MATC[_aeMatOf(eid)];
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = (50 + Math.random() * 160) * power;
+    fxP({ k: 'shard', layer: 'smoke', x: x + (Math.random() - 0.5) * 10, y: y + 4, z: 14 + Math.random() * 10,
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.55, vz: 120 + Math.random() * 200 * power, az: -900, drag: 2.2,
+      life: 0.7 + Math.random() * 0.4, s0: 4 + Math.random() * 4, s1: 3, col: i & 1 ? c[0] : c[1], rot: Math.random() * 6, vr: 8 });
+  }
+  // Пятно на земле — гаснет за несколько секунд.
+  fxP({ k: 'dot', layer: 'smoke', x, y: y + 6, s0: 16 * power + 10, s1: 18 * power + 12, sx: 2.2, life: 5, col: c[1], a0: 0.55 });
+}
+
+let _aeCombo = 0, _aeComboT = 0, _aeStreak = 0, _aeStreakT = 0, _aeComboEl = null, _aeBannerEl = null;
+function _aeHudEls() {
+  if (_aeComboEl || typeof document === 'undefined') return;
+  const st = document.createElement('style');
+  st.textContent = '#aeCombo{position:fixed;right:14px;top:38%;z-index:30;pointer-events:none;font:800 22px system-ui,Arial;color:#ffd27a;'
+    + 'text-shadow:0 2px 0 #3a1a00,0 0 10px rgba(255,140,40,.6);text-align:right;transition:opacity .25s;opacity:0}'
+    + '#aeCombo small{display:block;font-size:11px;letter-spacing:.2em;color:#ffb36a}'
+    + '#aeCombo.pop{animation:aePop .18s ease-out}@keyframes aePop{0%{transform:scale(1.5)}100%{transform:scale(1)}}'
+    + '#aeBanner{position:fixed;left:0;right:0;top:24%;z-index:30;pointer-events:none;text-align:center;font:900 34px Georgia,serif;'
+    + 'letter-spacing:.12em;color:#ff5a3a;text-shadow:0 3px 0 #2a0400,0 0 18px rgba(255,60,20,.7);opacity:0}'
+    + '#aeBanner.go{animation:aeBan 1.6s ease-out}@keyframes aeBan{0%{opacity:0;transform:scale(2.2)}12%{opacity:1;transform:scale(1)}75%{opacity:1}100%{opacity:0;transform:translateY(-20px)}}';
+  document.head.appendChild(st);
+  _aeComboEl = document.createElement('div'); _aeComboEl.id = 'aeCombo'; document.body.appendChild(_aeComboEl);
+  _aeBannerEl = document.createElement('div'); _aeBannerEl.id = 'aeBanner'; document.body.appendChild(_aeBannerEl);
+}
+function _aeComboHit() {
+  _aeHudEls();
+  _aeCombo++; _aeComboT = 2.2;
+  if (_aeCombo >= 3 && _aeComboEl) {
+    _aeComboEl.innerHTML = `×${_aeCombo}<small>КОМБО</small>`;
+    _aeComboEl.style.opacity = '1';
+    _aeComboEl.classList.remove('pop'); void _aeComboEl.offsetWidth; _aeComboEl.classList.add('pop');
+  }
+}
+const _AE_STREAK = { 10: 'РЕЗНЯ', 20: 'БОЙНЯ', 35: 'ИСТРЕБЛЕНИЕ', 50: 'АПОКАЛИПСИС' };
+function _aeStreakKill() {
+  _aeHudEls();
+  _aeStreak++; _aeStreakT = 3.2;
+  const t = _AE_STREAK[_aeStreak];
+  if (t && _aeBannerEl) {
+    _aeBannerEl.textContent = t;
+    _aeBannerEl.classList.remove('go'); void _aeBannerEl.offsetWidth; _aeBannerEl.classList.add('go');
+    if (typeof camShake === 'function') camShake(6, 0.3);
+  }
+}
+// Таймеры комбо и серии — по реальному времени (js/game.js, update).
+function aeJuiceTick(dt) {
+  if (_aeComboT > 0) { _aeComboT -= dt; if (_aeComboT <= 0) { _aeCombo = 0; if (_aeComboEl) _aeComboEl.style.opacity = '0'; } }
+  if (_aeStreakT > 0) { _aeStreakT -= dt; if (_aeStreakT <= 0) _aeStreak = 0; }
+}
+
+// Попадание по монстру (js/network.js, enemyHurt). mine — удар свой.
+function aeOnEnemyHurt(e, dmg, isCrit, mine) {
+  if (!e || !dmg) return;
+  _aeGore(e.x, e.y, e.eid, isCrit ? 7 : 3, isCrit ? 1.3 : 0.8);
+  if (!mine) return;
+  _aeComboHit();
+  if (typeof camShake === 'function') camShake(isCrit ? 5 : 1.6, isCrit ? 0.18 : 0.08);
+  if (isCrit) aeHitStop(0.07);
+}
+function aeOnEnemyKilled(x, y, e, mine) {
+  _aeGore(x, y, e && e.eid, 12, 1.5);
+  if (!mine) return;
+  _aeStreakKill();
+  aeHitStop(0.05);
+  if (typeof camShake === 'function') camShake(3.5, 0.16);
+}
