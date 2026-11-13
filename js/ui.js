@@ -4056,7 +4056,8 @@ function drawHeader() {
   if (hasCp) {
     _hudBar(barX, py + hud(39), barW, hud(8),
       Math.max(0, p.cp || 0) / p.maxCp,
-      '#22449a', '#5d8ef0',
+      // CP — оранжевая полоса.
+      '#9a4a10', '#f59a3c',
       'CP ' + Math.ceil(Math.max(0, p.cp || 0)).toLocaleString() + ' / ' + Math.floor(p.maxCp).toLocaleString(),
       null, 0.7);
   }
