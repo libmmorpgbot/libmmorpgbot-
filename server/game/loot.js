@@ -24,7 +24,7 @@ const {
   FARM2_NORM_STONE_CHANCE, FARM2_BLESS_STONE_CHANCE,
   FARM2_EPIC_RECIPE_CHANCE, FARM2_LEGENDARY_RECIPE_CHANCE, FARM2_ADV_SKILL_BOOK_CHANCE,
   FARM2_UNIQUE_WEAPON_CHANCE,
-  DUNGEON_SCROLL_CHANCE,
+  DUNGEON_SCROLL_CHANCE, DUNGEON_CLASSES,
   BOSS_SCROLL_CHANCE, BOSS_SCROLL_MIN_QTY, BOSS_SCROLL_MAX_QTY,
 } = require('../../shared/definitions');
 const { _invAdd } = require('../inventory');
@@ -354,7 +354,10 @@ function _rollFarm2Loot(inv) {
 function _rollDungeonLoot(inv, eid, dungeonClass) {
   const granted = _rollFarmHighLoot(inv, eid) || [];
   if (dungeonClass && Math.random() < DUNGEON_SCROLL_CHANCE) {
-    const mat = CRAFT_MATS.find(m => m.id === `dungeon_scroll_${dungeonClass}`);
+    // 'any' — восьмой спот общей локации: свиток случайного класса.
+    const cls = dungeonClass === 'any'
+      ? DUNGEON_CLASSES[Math.floor(Math.random() * DUNGEON_CLASSES.length)] : dungeonClass;
+    const mat = CRAFT_MATS.find(m => m.id === `dungeon_scroll_${cls}`);
     if (mat && _invAdd(inv, { ...mat, qty: 1 })) granted.push({ id: mat.id, name: mat.name, rarity: mat.rarity, qty: 1 });
   }
   return granted;

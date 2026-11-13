@@ -1,4 +1,4 @@
-const { TILE, WALL, FLOOR, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_MOB_STAT_MULT, WORLD_BOSS_HP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT, WORLD_RIVER_X, WORLD_RIDGE_X, WORLD_ROADS, WORLD_T, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
+const { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_MOB_STAT_MULT, WORLD_BOSS_HP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT, WORLD_RIVER_X, WORLD_RIDGE_X, WORLD_ROADS, WORLD_T, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB, DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES } = require('../../shared/definitions');
 
 function seededRng(seed) {
@@ -940,57 +940,64 @@ function generateFarmZone2() {
 // no in-floor class-gate geometry to draw or check here, unlike the old
 // Башня's own corridor gates.
 function generateDungeonHub() {
-  const classes = DUNGEON_CLASSES;
-  // Halved from 8/10/24 (owner's own follow-up: "подземелье локацию в 2 раза
-  // меньше там где телепорты") — 4/5/12, each term exactly half of what it
-  // replaces, so HALL itself comes out exactly half of its old value (29 vs
-  // 58 at 7 classes) rather than just approximately smaller.
-  const padGap = 4;
-  // Square, not just wide — roomAt (js/game.js) tests tx < r.x + r.size and
-  // ty < r.y + r.size against the SAME size, so a non-square hall would
-  // mis-hit-test its own shorter axis. 12 is a floor so a 7-class row still
-  // leaves the spawn/return end some breathing room even at padGap's own
-  // smaller multiples.
-  const HALL = Math.max((classes.length - 1) * padGap + 5, 12);
-  const w = MARGIN * 2 + HALL, h = MARGIN * 2 + HALL;
-
-  const grid = Array.from({ length: h }, () => new Array(w).fill(WALL));
-  function inBounds(gx, gy) { return gx >= 0 && gx < w && gy >= 0 && gy < h; }
-  function paintFloor(gx, gy) { if (inBounds(gx, gy)) grid[gy][gx] = FLOOR; }
-  function paintRect(x0, y0, x1, y1) {
-    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) paintFloor(gx, gy);
+  // ── Подземелье — общая локация ──────────────────────────────────────────
+  // Одна открытая карта на всех (раньше — зал с семью телепортами в
+  // классовые зоны). Вокруг центральной площади кольцом стоят восемь спотов
+  // личей, к каждому — дорога; вход и возврат — внизу. У каждого спота свой
+  // свиток: споты 1–7 — свиток своего класса (DUNGEON_CLASSES по порядку),
+  // восьмой — случайный свиток любого класса (dungeonClass 'any',
+  // _rollDungeonLoot, server/game/loot.js). Монстры — прежние DUNGEON_LICH,
+  // пачками по DUNGEON_PACK_SIZE, агрессивные с появления.
+  const W = 84, H = 84, C = { x: 42, y: 40 };
+  const SPOTS = 8, R = 27;
+  const spots = [];
+  for (let k = 0; k < SPOTS; k++) {
+    const a = -Math.PI / 2 + (k + 0.5) * (Math.PI * 2 / SPOTS);
+    spots.push({ x: Math.round(C.x + Math.cos(a) * R), y: Math.round(C.y + Math.sin(a) * R * 0.95), r: 6 });
   }
-
-  const roomX0 = MARGIN, roomY0 = MARGIN, roomX1 = w - MARGIN - 1, roomY1 = h - MARGIN - 1;
-  paintRect(roomX0, roomY0, roomX1, roomY1);
-  const room = {
-    x: roomX0, y: roomY0, size: HALL,
-    bx1: roomX0 - 1, by1: roomY0 - 1, bx2: roomX1 + 1, by2: roomY1 + 1,
-    cx: roomX0 + Math.floor(HALL / 2), cy: roomY0 + Math.floor(HALL / 2),
-    isDungeonHub: true,
-  };
-
-  // One row of pads near the north wall — client draws each with that
-  // class's own badge icon (drawClassBadgeCtx, js/icons.js), same artwork
-  // the old branch-mouth signs used, just on a walk-to pad now instead of a
-  // baked floor decal.
-  const padsY = roomY0 + 5;
-  const firstX = roomX0 + Math.floor((HALL - (classes.length - 1) * padGap) / 2);
-  const classPads = classes.map((cls, i) => ({ cls, tx: firstX + i * padGap, ty: padsY }));
-
-  const cx = room.cx;
-  // returnPad sits right at the entrance (south wall); spawn a few tiles
-  // further in, clear of it — same "returnPad closer to the door than
-  // spawn" shape every arm's own entrance uses (see generateArm above).
-  const spawn = { x: cx * TILE + TILE / 2, y: (roomY1 - 4) * TILE + TILE / 2 };
-  const returnPad = { x: cx * TILE + TILE / 2, y: (roomY1 - 1) * TILE + TILE / 2 };
-
+  const spawnT = { x: C.x, y: 77 };
+  const roads = [[[C.x, 81], [C.x, C.y]], ...spots.map(sp => [[C.x, C.y], [sp.x, sp.y]])];
+  const M = _aeOpenMap({ seed: 2026 * 1337 + 13400, w: W, h: H, spawn: spawnT, spots, roads,
+    groves: 40, ponds: 4, rockShare: 0.85, keep: [{ x: C.x, y: C.y, r: 5 }, { x: C.x, y: 80, r: 2 }] });
+  const rng = M.rng;
+  const classes = DUNGEON_CLASSES;
+  const rooms = [], enemyList = [], spotInfo = [];
+  let eid = 0;
+  spots.forEach((sp, k) => {
+    const cls = k < classes.length ? classes[k] : 'any';
+    const label = cls === 'any' ? 'Свиток: любой класс' : `Свиток: ${(CHAR_DEF[cls] && CHAR_DEF[cls].name) || cls}`;
+    rooms.push(M.spotRoom(sp, { isDungeon: true, arm: 'dungeon', dungeonClass: cls, spot: 'd' + k }));
+    spotInfo.push({ id: 'd' + k, name: label, lvl: [DUNGEON_LVL, DUNGEON_LVL], cls, x: sp.x * TILE + TILE / 2, y: sp.y * TILE + TILE / 2, r: sp.r * TILE });
+    const tiles = M.spotTiles(sp, DUNGEON_MOBS_PER_ROOM);
+    for (let i = 0; i < tiles.length; i += DUNGEON_PACK_SIZE) {
+      const pack = [];
+      for (const { gx, gy } of tiles.slice(i, i + DUNGEON_PACK_SIZE)) {
+        const L = DUNGEON_LICH[DUNGEON_SPECIES[Math.floor(rng() * DUNGEON_SPECIES.length)]];
+        const ex = gx * TILE + TILE / 2, ey = gy * TILE + TILE / 2;
+        pack.push({
+          id: `dungeon_d${k}_${eid++}`, eid: L.eid, name: L.name, color: L.color, size: L.size,
+          isBoss: false, arm: 'dungeon', dungeon: true, dungeonClass: cls, spot: 'd' + k,
+          rlvl: DUNGEON_LVL,
+          maxHp: L.hp, hp: L.hp, atk: L.atk, def: 0, spd: L.spd,
+          atkRange: L.atkRange, atkCdMult: L.atkCdMult,
+          xp: L.xp, gold: L.gold,
+          x: ex, y: ey, spawnX: ex, spawnY: ey,
+          atkTimer: 1 + rng(), aggro: true, aggroR: 175 + rng() * 55,
+        });
+      }
+      pack.forEach(e => { e.packMateIds = pack.filter(o => o !== e).map(o => o.id); });
+      enemyList.push(...pack);
+    }
+  });
   return {
-    grid, rooms: [room], w, h,
-    spawn,
-    returnPad,
-    classPads,
-    enemies: [],
+    grid: M.grid, rooms, w: M.w, h: M.h,
+    spawn: { x: spawnT.x * TILE + TILE / 2, y: spawnT.y * TILE + TILE / 2 },
+    returnPad: { x: C.x * TILE + TILE / 2, y: 80 * TILE + TILE / 2 },
+    // 'all' — общая локация: клиент по этому полю узнаёт Подземелье
+    // (подпись места, бестиарий, круг АВТО), класс спота — в rooms.
+    dungeonZone: 'all',
+    aeMap: { biome: 'lair', name: 'Подземелье', terrain: M.rle, spots: spotInfo },
+    enemies: enemyList,
   };
 }
 

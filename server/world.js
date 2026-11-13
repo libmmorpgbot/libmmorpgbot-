@@ -158,8 +158,9 @@ function resolveFloor(floorId, progress, ctx = {}) {
   const need = ZONE_LEVEL_REQ[FLOOR_KEY[f]] || 0;
   if ((progress && progress.lvl ? progress.lvl : 1) < need) return FLOOR_IDS.hub;
   if (TICKET_ONLY.has(f) && !(ctx.seasonTicket && seasonTicketPeriodOn())) return FLOOR_IDS.hub;
-  const wantClass = DUNGEON_CLASS_ZONE[f];
-  if (wantClass && (!progress || progress.charClass !== wantClass)) return FLOOR_IDS.hub;
+  // Классовых зон Подземелья больше нет — оно одна общая локация
+  // (generateDungeonHub). Стоявших в старой зоне вход ставит в общую.
+  if (DUNGEON_CLASS_ZONE[f]) return resolveFloor(FLOOR_IDS.dungeon, progress, ctx);
   if (!_timedZoneOpen(f)) return FLOOR_IDS.hub;
   return f;
 }

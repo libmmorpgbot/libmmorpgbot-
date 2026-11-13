@@ -526,10 +526,12 @@ function _aeDrawTerrain(c, Z, tx0, ty0, tx1, ty1) {
   }
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     const B = BB(tx, ty), k = Z.at(tx, ty), x = tx * T, y = ty * T;
-    if (k === WT.ROAD) {
+    if (k === WT.ROAD && B.lair) { _aeLairFloor(c, x, y, tx, ty); c.fillStyle = 'rgba(255,190,120,0.05)'; c.fillRect(x, y, TILE, TILE); }
+    else if (k === WT.ROAD) {
       const road = (dx, dy) => { const v = Z.at(tx + dx, ty + dy); return v === WT.ROAD || v === WT.BRIDGE || v === WT.PLAZA; };
       _aeTileRoadEdges(c, B, x, y, tx, ty, road);
-    } else if (k === WT.PLAZA) _aeTilePlaza(c, B, x, y, tx, ty);
+    } else if (B.lair && (k === WT.GRASS || k === WT.PLAZA)) _aeLairFloor(c, x, y, tx, ty);
+    else if (k === WT.PLAZA) _aeTilePlaza(c, B, x, y, tx, ty);
     else if (k === WT.WATER || k === WT.BRIDGE) {
       _aeTileWater(c, B, x, y, tx, ty, (dx, dy) => { const v = Z.at(tx + dx, ty + dy); return v !== WT.WATER && v !== WT.BRIDGE; });
       if (k === WT.BRIDGE) {

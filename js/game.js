@@ -2553,6 +2553,17 @@ function _buildDecals(ts) {
         color: _WORLD_TIER_COLOR[sp.tier] || '#fff', px: 12, mid: false });
     }
   }
+  // Открытые локации «Пепельного края» (aeMap): подпись над каждым спотом —
+  // в Подземелье это свиток, который там падает, на этажах — уровни.
+  if (dungeon.aeMap && dungeon.aeMap.spots) {
+    for (const sp of dungeon.aeMap.spots) {
+      const txt = dungeon.dungeonZone ? sp.name
+        : sp.boss ? '\u{1F480} ' + (typeof t === 'function' ? t('bossTag') : 'БОСС') + ` [${sp.lvl[0]}]`
+        : `[${sp.lvl[0] === sp.lvl[1] ? sp.lvl[0] : sp.lvl[0] + '-' + sp.lvl[1]}]`;
+      _decalLbls.push({ wx: sp.x, wy: sp.y - sp.r, dy: -6, text: txt,
+        color: dungeon.dungeonZone ? '#7fd7ff' : sp.boss ? '#ff8a6a' : '#f3d892', px: 12, mid: false });
+    }
+  }
   // Пад в сезонное крыло — то же кольцо, что и у возврата, только запертое,
   // пока билета нет: замок в подписи и красный контур — тот же язык, которым
   // говорят уровневые ворота коридоров, и переучивать игрока незачем.

@@ -2424,9 +2424,11 @@ function _currentLocationBounds() {
   // below needs: dungeonZone alone (generateDungeonZone, server/game/
   // dungeon.js) is enough to both name it and cover it entirely.
   if (dungeon.dungeonZone) {
+    // Общая локация ('all'): класс свитка — у спота, где стоит игрок.
+    const _dr = dungeon.dungeonZone === 'all' && typeof _getRoomAt === 'function' ? _getRoomAt(player.x, player.y) : null;
     return {
       tx0: 0, ty0: 0, tx1: dungeon.w - 1, ty1: dungeon.h - 1,
-      zoneLabel: 'dungeonLbl', dungeonClass: dungeon.dungeonZone,
+      zoneLabel: 'dungeonLbl', dungeonClass: (_dr && _dr.dungeonClass) || dungeon.dungeonZone,
     };
   }
   // Sealed zones that carry their own tile-space `bounds` (Фарм-зона, Война
@@ -3313,9 +3315,17 @@ function _dungeonFullShardRows() {
   return pool.map(sh => _dropRow(_mi(sh, 20), sh.name, pct, '#c9a24b')).join('');
 }
 function _dungeonScrollRow(cls) {
-  const mat = (typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : []).find(m => m.id === `dungeon_scroll_${cls}`);
-  if (!mat) return '';
+  const mats = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : [];
   const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  // 'all' — вне спотов, 'any' — восьмой спот: свиток любого класса.
+  if (cls === 'all' || cls === 'any') {
+    const all = mats.filter(m => /^dungeon_scroll_/.test(m.id));
+    const note = cls === 'any' ? 'Любой из свитков' : 'Свой свиток на каждом споте';
+    return `<div style="font-size:10px;color:#83725a;margin:2px 0 4px">${note}</div>`
+      + all.map(m => _dropRow(_mi(m, 16), m.name, _pctSmall(DUNGEON_SCROLL_CHANCE * 100 / (cls === 'any' ? all.length : 1)), '#7fd7ff')).join('');
+  }
+  const mat = mats.find(m => m.id === `dungeon_scroll_${cls}`);
+  if (!mat) return '';
   return _dropRow(_mi(mat, 16), mat.name, _pctSmall(DUNGEON_SCROLL_CHANCE * 100), '#7fd7ff');
 }
 function _dungeonSpeciesBodyHtml(e, cls) {
