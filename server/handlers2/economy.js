@@ -325,6 +325,14 @@ module.exports = function registerEconomy(s, safeOn, deps) {
   });
 
   // ── merchant: teleport stones ────────────────────────────────────────────
+  // Банки ЦП у торговца — за Liberty (consumables.buyCpPotions).
+  safeOn('buyCpPotion', ({ qty } = {}) => s.act('buyCpPotion', 'goldError', async (t, pid) => {
+    const res = await consumables.buyCpPotions(t, pid, qty);
+    await s.pushBalances(t);
+    s.socket.emit('potionBag', { potionBag: res.potionBag, bought: { id: 'cp1', n: res.qty } });
+    return res;
+  }, r => r && { банкиЦП: r.qty, liberty: r.cost }));
+
   safeOn('buyTeleportStone', ({ qty } = {}) =>
     s.act('buyTeleportStone', 'teleportStoneError', async (t, pid) => {
       const res = await consumables.buyTeleportStone(t, pid, qty);

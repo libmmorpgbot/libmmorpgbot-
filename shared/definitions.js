@@ -4015,15 +4015,16 @@ const POTION_CAP = 999;          // per kind, in potionBag
 // перезарядка у неё та же, что у банок здоровья (4 с, js/player.js). Не в
 // ITEM_DEF: тот список читается как «банки здоровья» (slot 'use') и как
 // каталог инвентаря, а эта банка ни то, ни другое. Свой потолок — бонус
-// сезонного билета даёт 5000 штук разом, больше общего POTION_CAP.
-const CP_POTION = { id: 'cp1', name: 'Банка ЦП', img: '/images/potion/cp.png', pct: 0.05 };
+// у торговца можно купить больше общего POTION_CAP.
+// price — в Liberty за штуку, у торговца (consumables.buyCpPotions).
+const CP_POTION = { id: 'cp1', name: 'Банка ЦП', img: '/images/potion/cp.png', pct: 0.05, price: 1 };
 const CP_POTION_CAP = 99999;
 
 // ── Бонус сезонного билета ──────────────────────────────────────────────────
 // Один раз на аккаунт за сезон, владельцу билета — по кнопке «Билет» →
 // «Забрать» (server/db/repos/shop.js, claimSeasonBonus). Отметка «выдано» —
 // строка kv `season_bonus:<сезон>:<игрок>`.
-const SEASON_TICKET_BONUS = { shards: 1000, nexum: 300, buffPotions: 5, cpPotions: 5000 };
+const SEASON_TICKET_BONUS = { shards: 1000, nexum: 300, buffPotions: 5, cpPotions: 1000 };
 const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
 
 // ── Награда новичка (newbie buff) ───────────────────────────────────────────

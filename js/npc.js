@@ -121,6 +121,28 @@ function _merchantBody() {
   });
   html += '</div>';
 
+  // Банки ЦП — за Liberty, CP_POTION.price за штуку (buyCpPotions на сервере).
+  {
+    const nx = window._nexumBalance || 0;
+    const have = (bag[CP_POTION.id] || 0);
+    const room = Math.max(0, CP_POTION_CAP - have);
+    const afford = CP_POTION.price > 0 ? Math.floor(nx / CP_POTION.price) : room;
+    const want = _potionQty === 'max' ? Math.min(room, afford) : _potionQty;
+    const canBuy = want > 0 && want <= room && want <= afford;
+    const btnQty = canBuy ? want : (_potionQty === 'max' ? 1 : _potionQty);
+    html += `<div class="shop-sec">Банки ЦП &nbsp;·&nbsp; ${typeof _nexumIconHtml === 'function' ? _nexumIconHtml(14) : ''} Liberty: <b>${Math.floor(nx)}</b></div><div class="shop-list">`;
+    html += `<div class="shop-row">
+      <span class="shop-item-icon"><img src="${CP_POTION.img}" width="22" height="22" style="image-rendering:pixelated"></span>
+      <div class="shop-item-info">
+        <span class="shop-item-name">${CP_POTION.name}</span>
+        <span class="shop-item-stat">+${Math.round(CP_POTION.pct * 100)}% ЦП · <b style="color:#f59a3c">×${have}</b></span>
+      </div>
+      <button class="shop-btn${canBuy ? '' : ' disabled'}" onclick="buyCpPotion(${want})">
+        ${btnQty > 1 ? `<span class="shop-btn-qty">×${btnQty}</span> ` : ''}${CP_POTION.price * btnQty} Liberty
+      </button>
+    </div></div>`;
+  }
+
   // Teleport stones — the one merchant row NOT priced in gold. Liberty is
   // server-authoritative (see buyTeleportStone, server/index.js), so unlike
   // every row above, the button only ever asks; the actual stone and the new
@@ -163,6 +185,14 @@ function buyPotion(idx, qty) {
   if (cur + n > POTION_CAP) { _shopMsg(typeof t === 'function' ? t('npcMaxPotions') : 'Максимум 999 зелий!'); return; }
   if (player.gold < entry.price * n) { _shopMsg(typeof t === 'function' ? t('npcNotEnoughGold') : 'Мало золота!'); return; }
   netBuyPotion(idx, n);
+}
+
+// Банки ЦП за Liberty: проверка здесь — вежливость, списывает и решает сервер.
+function buyCpPotion(qty) {
+  if (!player) return;
+  const n = Math.max(1, Math.floor(qty) || 1);
+  if ((window._nexumBalance || 0) < CP_POTION.price * n) { _shopMsg(`Нужно ${CP_POTION.price * n} Liberty`); return; }
+  if (typeof netBuyCpPotion === 'function') netBuyCpPotion(n);
 }
 
 // Liberty-priced, unlike buyPotion above — the charge and the grant both

@@ -14,7 +14,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ITEM_DEF, POTION_CAP, CP_POTION, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
+  ITEM_DEF, POTION_CAP, CP_POTION, CP_POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
   codexSetById, codexItemMeetsReq, codexTotalBonus,
   gemCodexEntry, gemCodexCount, gemCodexMax, GEM_CODEX_KEY,
 } = require('../../../shared/definitions');
@@ -269,6 +269,31 @@ async function buyTeleportStone(db, playerId, qty = 1) {
   return { qty: n, cost, rowId };
 }
 
+// Банки ЦП у торговца — за Liberty, CP_POTION.price за штуку. Списание и
+// пополнение сумки в одной транзакции; потолок сумки — CP_POTION_CAP,
+// проверен до списания и ещё раз в самом UPDATE.
+async function buyCpPotions(db, playerId, qty = 1) {
+  const n = Math.max(1, Math.min(CP_POTION_CAP, Math.floor(Number(qty)) || 1));
+  await items.lockPlayer(db, playerId);
+  const bag = await potionBagOf(db, playerId);
+  const have = Math.max(0, Math.floor(Number(bag[CP_POTION.id]) || 0));
+  if (have + n > CP_POTION_CAP) err('potion_cap', `Максимум ${CP_POTION_CAP} банок ЦП`);
+  const cost = CP_POTION.price * n;
+  const paid = await money.spend(db, playerId, 'nexum', cost, {
+    reason: 'merchant_buy', refType: 'cp_potion', refId: CP_POTION.id,
+    idemKey: `cp_buy:${playerId}:${crypto.randomUUID()}`,
+  });
+  if (!paid) err('no_nexum', `Нужно ${cost} Liberty`);
+  const { rows } = await query(db, `
+    UPDATE player_progress
+       SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text],
+             to_jsonb(LEAST($4::int, COALESCE((potion_bag->>$2)::int, 0) + $3::int)))
+     WHERE player_id = $1
+    RETURNING potion_bag`, [playerId, CP_POTION.id, n, CP_POTION_CAP]);
+  if (!rows.length) err('no_player', 'Игрок не найден');
+  return { qty: n, cost, potionBag: rows[0].potion_bag };
+}
+
 async function useTeleportStone(db, playerId) {
   await items.lockPlayer(db, playerId);
   if (!await items.removeQty(db, playerId, 'teleport_stone', 1)) {
@@ -478,7 +503,7 @@ async function registerCodexGem(db, playerId, gemId, qty) {
 }
 
 module.exports = {
-  usePotion, useCpPotion, buyPotions, potionBagOf, useBuffPotion,
+  usePotion, useCpPotion, buyCpPotions, buyPotions, potionBagOf, useBuffPotion,
   buffsRemaining, buffActive, pruneBuffs,
   useTeleportStone, buyTeleportStone, pickupDrop, grantKillReward,
   registerCodexItem, registerCodexGem,

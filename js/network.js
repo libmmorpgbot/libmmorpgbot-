@@ -2734,7 +2734,8 @@ function netConnect(onReady) {
     // The "✓ Куплено" line the shop used to print itself, before the purchase
     // became a request and the confirmation moved to the reply.
     if (bought && typeof _shopMsgOk === 'function') {
-      const def = typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bought.id) : null;
+      const def = (typeof CP_POTION !== 'undefined' && bought.id === CP_POTION.id) ? CP_POTION
+        : typeof ITEM_DEF !== 'undefined' ? ITEM_DEF.find(d => d.id === bought.id) : null;
       _shopMsgOk((typeof t === 'function' ? t('npcBoughtPrefix') : '✓ Куплено: ') +
         ((def && def.name) || bought.id) + (bought.n > 1 ? ' ×' + bought.n : ''));
     }
@@ -4467,6 +4468,9 @@ function netSendMove() {
 // number. Callers must pass the potion they drank, not just its size.
 function netUsePotion(id) {
   if (socket?.connected) socket.emit('usePotion', { id });
+}
+function netBuyCpPotion(qty) {
+  if (socket?.connected) socket.emit('buyCpPotion', { qty });
 }
 function netSeasonBonusClaim() {
   if (socket?.connected) socket.emit('seasonBonusClaim');
