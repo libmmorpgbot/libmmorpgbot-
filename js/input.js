@@ -592,8 +592,8 @@ const POTION_LONGPRESS_MS = 450;
 let _potionTouchId = null;
 let _potionPressTimer = null;
 let _potionLongFired = false;
-// Какая банка под пальцем: 'hp' — здоровье, 'cp' — ЦП. Долгое нажатие на
-// любую открывает одни и те же настройки авто-использования (openHpPicker).
+// Какая банка под пальцем: 'hp' — здоровье, 'cp' — ЦП. Долгое нажатие
+// открывает окно своей банки: openHpPicker или openCpPicker (js/ui.js).
 let _potionKind = 'hp';
 function _potionBtnPos(kind) { return kind === 'cp' ? getCpPotionBtnPos() : getPotionBtnPos(); }
 
@@ -604,7 +604,8 @@ function _potionPressStart(touchId, kind) {
   clearTimeout(_potionPressTimer);
   _potionPressTimer = setTimeout(() => {
     _potionLongFired = true;
-    if (typeof openHpPicker === 'function') openHpPicker();
+    if (_potionKind === 'cp') { if (typeof openCpPicker === 'function') openCpPicker(); }
+    else if (typeof openHpPicker === 'function') openHpPicker();
   }, POTION_LONGPRESS_MS);
 }
 

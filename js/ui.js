@@ -550,6 +550,51 @@ function _cpPickerSection() {
   </div>`;
 }
 
+// ── окно банок ЦП ─────────────────────────────────────────────────────────
+// Открывается удержанием кнопки банки ЦП (js/input.js) — устроено как окно
+// банок здоровья: сколько банок, авто вкл/выкл и ползунок порога.
+function openCpPicker() {
+  if (!player) return;
+  const existing = document.getElementById('cp-picker-ov');
+  if (existing) existing.remove();
+  const cnt = (player.potionBag || {})[CP_POTION.id] || 0;
+  const cur = autoCpPct();
+  const on = cur > 0, pctInt = Math.round((on ? cur : 0.5) * 100);
+  const ov = document.createElement('div');
+  ov.id = 'cp-picker-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:220;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-height:88vh;overflow-y:auto;background:#16120a;border-radius:18px 18px 0 0;border-top:1px solid rgba(209,204,197,.1);padding:18px 16px 30px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:800;color:#f59a3c">Банки ЦП</div>
+      <button onclick="document.getElementById('cp-picker-ov').remove()" style="width:28px;height:28px;border:none;border-radius:50%;background:rgba(209,204,197,.08);color:#968a7a;font-size:13px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:10px 6px;border-radius:10px;text-align:center;border:2px solid #f59a3c;background:rgba(245,154,60,0.10);margin-bottom:16px">
+      <img src="${CP_POTION.img}" width="28" height="28" style="image-rendering:pixelated;display:block;margin:0 auto 2px">
+      <div style="font-size:10px;color:#f59a3c;font-weight:700">${CP_POTION.name}</div>
+      <div style="font-size:11px;color:#f5b06a;margin-top:2px">×${cnt.toLocaleString()}</div>
+      <div style="font-size:9px;color:#72685a">+${Math.round(CP_POTION.pct * 100)}% ЦП · перезарядка 4 с · клавиша G</div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:11px;color:#72685a">Пить автоматически, когда ЦП ниже порога</span>
+      <button onclick="toggleAutoCp()" style="padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
+        background:${on ? 'rgba(245,154,60,.18)' : 'rgba(209,204,197,0.06)'};color:${on ? '#f59a3c' : '#968a7a'};
+        border:1px solid ${on ? 'rgba(245,154,60,.35)' : 'transparent'}">${on ? t('onLbl') : t('offLbl')}</button>
+    </div>
+    ${on ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <input type="range" min="1" max="99" step="1" value="${pctInt}"
+        oninput="document.getElementById('auto-cp-pct-label2').textContent=this.value+'%'"
+        onchange="setAutoCpPct(Number(this.value)/100)" style="flex:1;accent-color:#f59a3c">
+      <span id="auto-cp-pct-label2" style="min-width:40px;text-align:right;font-weight:700;color:#f59a3c">${pctInt}%</span>
+    </div>` : ''}
+    <button onclick="useCpPotion();document.getElementById('cp-picker-ov').remove()" style="
+      width:100%;margin-top:14px;padding:12px;border:none;border-radius:12px;
+      background:linear-gradient(135deg,#4a2a10,#7a4416);color:#f59a3c;font-size:15px;font-weight:700;cursor:pointer;
+    ">${t('useBtn')}</button>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
 function setAutoHpPct(pct) {
   if (!player) return;
   player.autoHpPct = pct;
@@ -4099,9 +4144,7 @@ function drawHeader() {
   _hudBar(barX, py + hud(hasCp ? 61 : 58), barW, hud(hasCp ? 8 : 10),
     p.xpNext ? p.xp / p.xpNext : 0,
     '#6a48b0', '#a27fe3',
-    // Опыт — процентом, как в «Пепельном крае»: на высоких уровнях полные
-    // числа длиной в двенадцать цифр не читались.
-    (p.xpNext ? Math.min(100, p.xp / p.xpNext * 100) : 0).toFixed(2) + '%',
+    Math.floor(p.xp).toLocaleString() + ' / ' + Math.floor(p.xpNext).toLocaleString(),
     null, 0.7);
 
   // ── Currency chips ────────────────────────────────────────

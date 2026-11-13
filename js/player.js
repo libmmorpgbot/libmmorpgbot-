@@ -698,7 +698,9 @@ function autoCpPct() {
 }
 function setAutoCpPct(pct) {
   try { localStorage.setItem('liberty.autoCpPct', String(pct)); } catch (e) { /* приватный режим */ }
-  if (typeof openHpPicker === 'function') openHpPicker();
+  // Перерисовать то окно, из которого порог меняли.
+  if (document.getElementById('cp-picker-ov')) { if (typeof openCpPicker === 'function') openCpPicker(); }
+  else if (typeof openHpPicker === 'function') openHpPicker();
 }
 function toggleAutoCp() { setAutoCpPct(autoCpPct() > 0 ? 0 : 0.5); }
 
