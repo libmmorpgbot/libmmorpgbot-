@@ -1090,6 +1090,8 @@ function netConnect(onReady) {
   });
 
   socket.on('gameStart', payload => {
+    // Вход прошёл — техработы кончились, заставка обновления больше не нужна.
+    { const ms = document.getElementById('maint-screen'); if (ms) ms.style.display = 'none'; }
     // When this payload ARRIVED, not when it is applied — the two differ by a
     // whole HTTP fetch on a first visit to a floor (see below), and anything
     // the server told us after this instant is newer than what it carries.
@@ -3162,6 +3164,20 @@ function showAuthError(msg, code) {
   // at a chat that can't help with it.
   const link = document.getElementById('auth-chat-link');
   if (link) link.style.display = code === 'maintenance' ? '' : 'none';
+  // Техработы — своя заставка «Идёт обновление» с кнопкой в чат поверх всего.
+  const ms = document.getElementById('maint-screen');
+  if (ms) {
+    if (code === 'maintenance') {
+      const img = document.getElementById('maint-img');
+      if (img && !img.getAttribute('src')) img.src = '/images/maintenance-liberty.jpg';
+      ms.style.display = 'flex';
+    } else if (code) {
+      // Другая названная причина отказа (бан, вход с другого устройства) —
+      // заставка не про неё. «Нет соединения» без кода её не снимает: во
+      // время обновления сервер перезапускается, и это ожидаемо.
+      ms.style.display = 'none';
+    }
+  }
 }
 
 // ── what the write-access gate tells the server ─────────────────────────────
