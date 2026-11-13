@@ -466,6 +466,10 @@ module.exports = function registerProgression(s, safeOn) {
     const res = await shopRepo.buyPackage(t, pid, pkgId, petId);
     await s.refreshVip(t);       // the package may have moved a VIP tier or bought the ticket
     await s.pushItems(t); await s.pushBalances(t); await s.pushProgress(t); await s.pushStats(t);
+    // Купил билет — бонус сезонного билета сразу. _sendState держит вызов до
+    // фиксации ЭТОЙ транзакции: выдача идёт своей, уже видя купленный билет,
+    // и не может ни задержать покупку, ни откатить её.
+    if (s.seasonTicket) s._sendState(() => { s.grantSeasonBonus(); });
     s.socket.emit('gramShopResult', {
       pkgId: res.pkgId, price: res.price, gold: res.gold, nexum: res.nexum,
       bonusSP: res.bonusSP, seasonTicket: res.seasonTicket,

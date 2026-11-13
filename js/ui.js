@@ -513,6 +513,7 @@ function openHpPicker() {
       ${autoToggleBtn}
     </div>
     ${autoSlider}
+    ${_cpPickerSection()}
     <div style="font-size:11px;font-weight:700;color:#a3957c;margin:18px 0 4px">${t('autoBuffsHdr')}</div>
     ${autoBuffRows}
     <button onclick="usePotion();document.getElementById('hp-picker-ov').remove()" style="
@@ -521,6 +522,32 @@ function openHpPicker() {
     ">${t('useBtn')}</button>
   </div>`;
   document.getElementById('app').appendChild(ov);
+}
+
+// Банки ЦП в том же окне: сколько есть и авто-использование по порогу ЦП.
+function _cpPickerSection() {
+  const cnt = (player.potionBag || {})[CP_POTION.id] || 0;
+  const cur = autoCpPct();
+  const on = cur > 0, pctInt = Math.round((on ? cur : 0.5) * 100);
+  return `<div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(209,204,197,.08)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <img src="${CP_POTION.img}" width="28" height="28" style="image-rendering:pixelated">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700;color:#f59a3c">${CP_POTION.name} ×${cnt}</div>
+        <div style="font-size:10px;color:#72685a">+${Math.round(CP_POTION.pct * 100)}% ЦП · перезарядка 4 с · клавиша G</div>
+      </div>
+      <button onclick="toggleAutoCp()" style="padding:6px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;
+        background:${on ? 'rgba(245,154,60,.18)' : 'rgba(209,204,197,0.06)'};color:${on ? '#f59a3c' : '#968a7a'};
+        border:1px solid ${on ? 'rgba(245,154,60,.35)' : 'transparent'}">${on ? t('onLbl') : t('offLbl')}</button>
+    </div>
+    ${on ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <span style="font-size:11px;color:#72685a">ЦП ниже</span>
+      <input type="range" min="1" max="99" step="1" value="${pctInt}"
+        oninput="document.getElementById('auto-cp-pct-label').textContent=this.value+'%'"
+        onchange="setAutoCpPct(Number(this.value)/100)" style="flex:1;accent-color:#f59a3c">
+      <span id="auto-cp-pct-label" style="min-width:40px;text-align:right;font-weight:700;color:#f59a3c">${pctInt}%</span>
+    </div>` : ''}
+  </div>`;
 }
 
 function setAutoHpPct(pct) {
@@ -4699,6 +4726,40 @@ function drawPotionButton() {
     ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
   }
 
+  ctx.restore();
+}
+
+// ─────────────────────────────────────────────────────────
+//  CP POTION BUTTON
+// ─────────────────────────────────────────────────────────
+// Банка ЦП — рядом с зельем здоровья, того же вида, с оранжевой каймой в
+// цвет полосы ЦП. Тап — выпить, удержание — настройки авто (openHpPicker).
+let _cpPotImg = null;
+function drawCpPotionButton() {
+  if (!player || !(player.maxCp > 0)) return;
+  const pb = getCpPotionBtnPos();
+  const count = (player.potionBag || {})[CP_POTION.id] || 0;
+  const cd = player.cpPotCd || 0;
+  const ready = count > 0 && (player.cp || 0) < player.maxCp && cd <= 0;
+  const F = 'system-ui, -apple-system, Arial';
+  ctx.save();
+  _aeBtn(pb.x, pb.y, pb.r, ready ? '#f59a3c' : '#43363f', 1.5, null);
+  if (!_cpPotImg) { _cpPotImg = new Image(); _cpPotImg.src = CP_POTION.img; }
+  ctx.globalAlpha = ready ? 1 : 0.45;
+  if (_cpPotImg.complete && _cpPotImg.naturalWidth > 0) {
+    const is = Math.round(pb.r * 0.85);
+    ctx.drawImage(_cpPotImg, pb.x - is / 2, pb.y - is / 2 - 5, is, is);
+  } else {
+    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), '#f59a3c');
+  }
+  ctx.globalAlpha = 1;
+  if (cd > 0) _aeCdSweep(pb.x, pb.y, pb.r - 1.5, cd / 4);
+  ctx.textAlign = 'center';
+  ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#f1e8d3';
+  ctx.fillText('×' + (count >= 10000 ? Math.floor(count / 1000) + 'k' : count), pb.x, pb.y + pb.r - 3);
+  ctx.font = `${hudF(7)}px ${F}`; ctx.fillStyle = 'rgba(245,154,60,0.7)';
+  ctx.fillText(autoCpPct() > 0 ? 'АВТО ' + Math.round(autoCpPct() * 100) + '%' : 'ЦП [G]', pb.x, pb.y + pb.r + 10);
   ctx.restore();
 }
 

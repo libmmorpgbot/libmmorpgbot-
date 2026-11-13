@@ -20,7 +20,7 @@ const runes = require('../db/repos/runes');
 const ach = require('../achievements');
 const consumables = require('../db/repos/consumables');
 const players = require('../db/repos/players');
-const { CODEX_SETS, ITEM_DEF } = require('../../shared/definitions');
+const { CODEX_SETS, ITEM_DEF, CP_POTION } = require('../../shared/definitions');
 
 // The equipment slots that exist. A slot name arrives from the client, and it
 // reaches a UNIQUE INDEX — an unknown one would be stored happily and then
@@ -265,6 +265,16 @@ module.exports = function registerItems(s, safeOn) {
     if (s.room) s.room.healPlayer(s.socket.id, res.healed);
     return res;
   }, r => r && { зелье: r.potionId, вылечено: r.healed, стало: r.hp, осталось: r.left }));
+
+  // Банка ЦП: списание — в базе, восстановление — в комнате, где живой запас
+  // ЦП. Сколько восстановить, клиент не присылает: 5% — CP_POTION.pct.
+  safeOn('useCpPotion', () => s.act('useCpPotion', 'itemError', async (t, pid) => {
+    const res = await consumables.useCpPotion(t, pid);
+    s.socket.emit('potionBag', { potionBag: await consumables.potionBagOf(t, pid) });
+    const gained = s.room && typeof s.room.restoreCpPct === 'function'
+      ? s.room.restoreCpPct(s.socket.id, CP_POTION.pct) : 0;
+    return { left: res.left, gained: Math.round(gained) };
+  }, r => r && { осталось: r.left, цп: r.gained }));
 
   safeOn('useBuffPotion', ({ id } = {}) => s.act('useBuffPotion', 'itemError', async (t, pid) => {
     const res = await consumables.useBuffPotion(t, pid, String(id || ''));

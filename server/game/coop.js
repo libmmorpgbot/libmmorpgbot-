@@ -209,9 +209,12 @@ module.exports = function createCoop(deps) {
   }
 
   // Called right after a kill lands on the coop boss (see the attack/
-  // skillAttack handlers). Picks one of the two participants at random for the
-  // fixed reward (1 bless_stone + 100 Liberty — see socket.data.
-  // _grantCoopBossReward) and ends the run for BOTH with cleared:true.
+  // skillAttack handlers). Награда — КАЖДОМУ из двоих: 50 Liberty и камень
+  // безопасной заточки (socket.data._grantCoopBossReward), каждому своей
+  // транзакцией. Не вышло у одного (соединение пропало, база отказала) —
+  // у второго это ничего не отменяет. Каждый получает свой итог: в нём он
+  // сам и победитель (winnerId — его сокет), поэтому клиент пишет «ваша
+  // награда» обоим. Затем забег кончается у обоих с cleared:true.
   async function _coopBossTrackKill(socketId, result) {
     if (result.arm !== 'coop') return;
     const run = _coop.get(socketId);
@@ -219,29 +222,17 @@ module.exports = function createCoop(deps) {
     const partnerId = run.partnerId;
     const participants = [socketId, partnerId].filter(sid => sid && _coop.has(sid));
     if (!participants.length) return;
-    const drawn = participants[Math.floor(Math.random() * participants.length)];
-    // Выпавшему — первым; не вышло выдать (соединение пропало, база
-    // отказала) — напарнику. Награда за пройденное подземелье не должна
-    // пропадать у обоих из-за сбоя у одного.
-    let winnerId = drawn, winnerSocket = io.sockets.sockets.get(drawn), reward = null;
-    for (const sid of [drawn, ...participants.filter(x => x !== drawn)]) {
+    for (const sid of participants) {
       const sock = io.sockets.sockets.get(sid);
-      if (!sock?.data?._grantCoopBossReward) continue;
-      reward = await sock.data._grantCoopBossReward();
-      if (reward) { winnerId = sid; winnerSocket = sock; break; }
+      const reward = sock?.data?._grantCoopBossReward ? await sock.data._grantCoopBossReward() : null;
+      io.to(sid).emit('coopBossReward', {
+        winnerId: sid, winnerName: (sock && sock.data && sock.data.username) || null,
+        nexum: reward?.nexum || 0,
+        items: (reward?.items || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
+        missed: (reward?.missed || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
+        failed: !reward,
+      });
     }
-    // Что именно легло — а не только кому. Клиент показывает это в итоговом
-    // окне: «не дали награду» чаще всего значило «досталась напарнику» или
-    // «камень не влез в полную сумку», и ни того, ни другого игрок не видел.
-    const winnerName = (winnerSocket && winnerSocket.data && winnerSocket.data.username) || null;
-    const payload = {
-      winnerId, winnerName,
-      nexum: reward?.nexum || 0,
-      items: (reward?.items || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
-      missed: (reward?.missed || []).map(it => ({ id: it.id, qty: it.qty || 1 })),
-      failed: !reward,
-    };
-    participants.forEach(sid => io.to(sid).emit('coopBossReward', payload));
     participants.forEach(sid => _coopFinish(sid, true));
   }
 

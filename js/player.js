@@ -102,6 +102,7 @@ function makePlayer(type) {
     hudPotion: 'pt1',
     buffs: {},
     potCd: 0,
+    cpPotCd: 0,
     autoHpPct: 0,
     autoBuffTypes: {},
     // Auto-cast (АВТО) settings — see _autoCastSkills (js/game.js) and the
@@ -672,6 +673,34 @@ function usePotion() {
   if (typeof updateInvUI === 'function') updateInvUI();
   netSaveProgress();
 }
+
+// ── банка ЦП ─────────────────────────────────────────────────────────────
+// 5% запаса ЦП (CP_POTION, shared/definitions.js); перезарядка — те же 4 с,
+// что у банки здоровья, но своя: одна не блокирует другую. Сколько ЦП
+// прибавилось, присылает сервер (cpSync) — здесь только просьба.
+function useCpPotion() {
+  if (!player || state !== 'playing') return;
+  if ((player.cpPotCd || 0) > 0) return;
+  if (((player.potionBag || {})[CP_POTION.id] || 0) <= 0) return;
+  if (!(player.maxCp > 0) || (player.cp || 0) >= player.maxCp) return;
+  player.cpPotCd = 4;
+  spawnBurst(player.x, player.y, '#f59a3c', 5);
+  netUseCpPotion();
+}
+
+// Порог авто-банки ЦП — свойство экрана, как прозрачность джойстика: в
+// localStorage. 0 — выключено, иначе доля запаса ЦП, ниже которой банка
+// пьётся сама (js/game.js).
+function autoCpPct() {
+  let v;
+  try { v = parseFloat(localStorage.getItem('liberty.autoCpPct')); } catch (e) { v = 0; }
+  return Number.isFinite(v) ? Math.min(0.99, Math.max(0, v)) : 0;
+}
+function setAutoCpPct(pct) {
+  try { localStorage.setItem('liberty.autoCpPct', String(pct)); } catch (e) { /* приватный режим */ }
+  if (typeof openHpPicker === 'function') openHpPicker();
+}
+function toggleAutoCp() { setAutoCpPct(autoCpPct() > 0 ? 0 : 0.5); }
 
 // Buff types with a drink already asked for and not yet answered.
 //
@@ -1717,6 +1746,7 @@ function restoreFromSave(data) {
   delete player.buffs.xpPenalty;
   if (_xpLeft > 0) player.buffs.deathPenalty = _xpLeft;
   player.potCd      = 0;
+  player.cpPotCd    = 0;
   player.autoHpPct  = data.autoHpPct  != null ? data.autoHpPct : 0;
   player.autoBuffTypes = data.autoBuffTypes || {};
   // Absent means "never set" — auto-cast stays on, which is what every

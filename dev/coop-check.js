@@ -380,16 +380,18 @@ const usedOf = async (pid) => {
     ok(sent.some(m => m.sid === 'A' && m.ev === 'coopFinished'), 'погибшему — тоже');
     room._stopLoop && room._stopLoop();
 
-    // Босс: победитель и что именно легло — в пакете обоим.
+    // Босс: награда каждому — свой пакет, в нём он сам и что именно легло.
     sent.length = 0; homed.length = 0;
     room = deploy();
-    const grant = async () => ({ nexum: 100, items: [{ id: 'bless_stone', qty: 1 }], missed: [] });
+    const grant = async () => ({ nexum: 50, items: [{ id: 'bless_stone', qty: 1 }], missed: [] });
     sockets.set('A', { data: { username: 'Аня', _grantCoopBossReward: grant } });
     sockets.set('B', { data: { username: 'Боря', _grantCoopBossReward: grant } });
     await coop._coopBossTrackKill('A', { arm: 'coop', isBoss: true });
     const rw = sent.filter(m => m.ev === 'coopBossReward');
-    ok(rw.length === 2 && rw.every(m => m.d.nexum === 100 && m.d.items.length === 1 && m.d.winnerName),
-      'итог босса несёт победителя, Liberty и предметы', JSON.stringify(rw[0] && rw[0].d));
+    ok(rw.length === 2 && rw.every(m => m.d.nexum === 50 && m.d.items.length === 1 && m.d.winnerName),
+      'итог босса несёт Liberty и предметы', JSON.stringify(rw[0] && rw[0].d));
+    ok(rw.some(m => m.sid === 'A' && m.d.winnerId === 'A') && rw.some(m => m.sid === 'B' && m.d.winnerId === 'B'),
+      'награда — обоим: каждому свой итог, где победитель он сам');
     ok(homed.length === 2, 'после босса оба дома');
     room._stopLoop && room._stopLoop();
 

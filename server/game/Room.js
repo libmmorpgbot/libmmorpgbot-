@@ -3628,6 +3628,19 @@ class Room {
     return this._gainCp(this.players.get(socketId), amount, true);
   }
 
+  // Банка ЦП (consumables.useCpPotion): доля ЗАПАСА ЦП, а не здоровья —
+  // поэтому мимо _gainCp с его PVP_CP_MULT. Возвращает, сколько добавилось.
+  restoreCpPct(socketId, pct) {
+    const p = this.players.get(socketId);
+    if (!p || !p.type || p.hp <= 0 || !(pct > 0)) return 0;
+    const max = this._maxCpOf(p);
+    if (!Number.isFinite(p.cp) || p.cp >= max) return 0;
+    const before = p.cp;
+    p.cp = Math.min(max, p.cp + max * pct);
+    p._cpSyncAt = 0;
+    return p.cp - before;
+  }
+
   // Удар игрока по игроку: сперва CP, остаток — по здоровью.
   _pvpHurt(target, dmg) {
     const max = this._maxCpOf(target);

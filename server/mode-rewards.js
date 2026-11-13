@@ -52,7 +52,8 @@ const {
 
 // The co-op boss. Not in shared/definitions because nothing else refers to it
 // — stated here, where it is paid.
-const COOP_BOSS_NEXUM = 100;
+// Каждому из двоих участников (server/game/coop.js, _coopBossTrackKill).
+const COOP_BOSS_NEXUM = 50;
 const COOP_BOSS_ITEM = 'bless_stone';
 const ARENA3_NEXUM = 10;
 
@@ -281,8 +282,8 @@ function attach(socket, s) {
     } catch (err) { _report(ref, err, id); return 0; }
   };
 
-  // Co-op boss: Liberty plus one safe-enhancement stone, to whoever landed the
-  // killing blow. The run ends for both participants either way.
+  // Co-op boss: Liberty plus one safe-enhancement stone — each of the two
+  // participants gets this, each in their own transaction.
   socket.data._grantCoopBossReward = async () => {
     const id = pid();
     if (!id) return null;

@@ -2705,6 +2705,18 @@ function netConnect(onReady) {
   });
 
   // The authoritative potion bag, after a purchase or a use.
+  // Бонус сезонного билета (server/db/repos/shop.js, grantSeasonBonus):
+  // приходит один раз — при входе или сразу после покупки билета.
+  socket.on('seasonBonus', ({ noRoom, need, nexum, shards, buffPotions, cpPotions } = {}) => {
+    if (typeof _marketToast !== 'function') return;
+    if (noRoom) {
+      _marketToast(`Бонус сезонного билета ждёт вас: освободите ${need || ''} мест в инвентаре и перезайдите`, 'err');
+      return;
+    }
+    _marketToast(`Бонус сезонного билета: +${shards} звёздных осколков, +${nexum} Liberty, по ${buffPotions} банок каждого бафа, ${cpPotions} банок ЦП`);
+    if (typeof Sound !== 'undefined' && Sound.levelUp) Sound.levelUp();
+  });
+
   socket.on('potionBag', ({ potionBag, bought } = {}) => {
     if (!player || !potionBag) return;
     player.potionBag = { ...potionBag };
@@ -4450,6 +4462,10 @@ function netSendMove() {
 // number. Callers must pass the potion they drank, not just its size.
 function netUsePotion(id) {
   if (socket?.connected) socket.emit('usePotion', { id });
+}
+// Банка ЦП: сервер спишет из сумки и восстановит 5% ЦП в комнате (cpSync).
+function netUseCpPotion() {
+  if (socket?.connected) socket.emit('useCpPotion');
 }
 
 // Kept as a no-op rather than deleted, because js/player.js calls it from

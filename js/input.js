@@ -27,6 +27,7 @@ const FAN_A_SKILL  = -74;        // topmost skill …
 const FAN_A_STEP   = -37;        // … and counter-clockwise from there
 const FAN_A_POTION = -84;
 const FAN_A_TARGET = -104;
+const FAN_A_CPPOT  = -124;      // банка ЦП — та же дуга, левее цели
 
 function fanCenter() { return { x: W - FAN_MX, y: H - NAV_H - FAN_MY }; }
 
@@ -97,6 +98,14 @@ function getPetBtnPos() {
   const o = (typeof hudOverride === 'function') ? hudOverride('pet') : null;
   const p = o || p0;
   return { x: p.x, y: p.y, r: PET_BTN_R };
+}
+
+// Банка ЦП (useCpPotion, js/player.js) — на дуге зелья и цели, левее цели.
+function getCpPotionBtnPos() {
+  const p0 = fanPos(FAN_R_OUTER, FAN_A_CPPOT);
+  const o = (typeof hudOverride === 'function') ? hudOverride('cppotion') : null;
+  const p = o || p0;
+  return { x: p.x, y: p.y, r: POTION_R + 2 };
 }
 
 function getTargetBtnPos() {
@@ -257,6 +266,7 @@ function _hudEditElements() {
     { id: 'skillR', label: 'R', get: () => { const p = getSkillBtnPos(3); return { x: p.cx, y: p.cy, r: p.r }; } },
     { id: 'joystick', label: t('hudElJoystick'), get: () => { const c = joyCenter(); return { x: c.x, y: c.y, r: JOY_R }; } },
     { id: 'potion', label: t('hudElPotion'), get: () => { const p = getPotionBtnPos(); return { x: p.x, y: p.y, r: p.r }; } },
+    { id: 'cppotion', label: 'Банка ЦП', get: () => { const p = getCpPotionBtnPos(); return { x: p.x, y: p.y, r: p.r }; } },
     { id: 'target', label: t('hudElTarget'), get: () => { const p = getTargetBtnPos(); return { x: p.x, y: p.y, r: p.r }; } },
     { id: 'auto', label: t('hudElAuto'), get: () => { const p = getAutoBtnPos(); return { x: p.cx, y: p.cy, r: p.r }; } },
   ];
@@ -582,9 +592,14 @@ const POTION_LONGPRESS_MS = 450;
 let _potionTouchId = null;
 let _potionPressTimer = null;
 let _potionLongFired = false;
+// Какая банка под пальцем: 'hp' — здоровье, 'cp' — ЦП. Долгое нажатие на
+// любую открывает одни и те же настройки авто-использования (openHpPicker).
+let _potionKind = 'hp';
+function _potionBtnPos(kind) { return kind === 'cp' ? getCpPotionBtnPos() : getPotionBtnPos(); }
 
-function _potionPressStart(touchId) {
+function _potionPressStart(touchId, kind) {
   _potionTouchId = touchId;
+  _potionKind = kind || 'hp';
   _potionLongFired = false;
   clearTimeout(_potionPressTimer);
   _potionPressTimer = setTimeout(() => {
@@ -598,7 +613,10 @@ function _potionPressEnd(touchId) {
   clearTimeout(_potionPressTimer);
   _potionPressTimer = null;
   _potionTouchId = null;
-  if (!_potionLongFired) usePotion();
+  if (!_potionLongFired) {
+    if (_potionKind === 'cp') { if (typeof useCpPotion === 'function') useCpPotion(); }
+    else usePotion();
+  }
 }
 
 function _potionPressCancel(touchId) {
@@ -609,10 +627,12 @@ function _potionPressCancel(touchId) {
 }
 
 function _checkPotionTouch(cx, cy, touchId) {
-  const pb = getPotionBtnPos();
-  if (Math.hypot(cx - pb.x, cy - pb.y) < pb.r + 6) {
-    _potionPressStart(touchId);
-    return true;
+  for (const kind of ['hp', 'cp']) {
+    const pb = _potionBtnPos(kind);
+    if (Math.hypot(cx - pb.x, cy - pb.y) < pb.r + 6) {
+      _potionPressStart(touchId, kind);
+      return true;
+    }
   }
   return false;
 }
@@ -928,7 +948,7 @@ function onTM(e) {
     // instead of firing either once the finger lifts elsewhere.
     if (t.identifier === _potionTouchId) {
       const p = _toCanvasXY(t.clientX, t.clientY);
-      const pb = getPotionBtnPos();
+      const pb = _potionBtnPos(_potionKind);
       if (Math.hypot(p.x - pb.x, p.y - pb.y) > pb.r + 40) _potionPressCancel(t.identifier);
     }
     // Same for the AUTO button's own tap/hold.
@@ -995,7 +1015,7 @@ function onMM(e) {
   }
   if (_potionTouchId === 'mouse') {
     const p = _toCanvasXY(e.clientX, e.clientY);
-    const pb = getPotionBtnPos();
+    const pb = _potionBtnPos(_potionKind);
     if (Math.hypot(p.x - pb.x, p.y - pb.y) > pb.r + 40) _potionPressCancel('mouse');
   }
   if (_autoTouchId === 'mouse') {
@@ -1095,6 +1115,7 @@ function initInput() {
       // ability the jackpot handed out).
       if ((e.code === 'Digit5' || e.code === 'Numpad5') && player.foreignSkill) useForeignSkill();
       if (e.code === 'KeyF') usePotion();
+      if (e.code === 'KeyG') useCpPotion();
       if (e.code === 'Tab') { e.preventDefault(); cycleTarget(); }
     }
   });

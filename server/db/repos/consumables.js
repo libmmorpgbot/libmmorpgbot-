@@ -14,7 +14,7 @@ const { query } = require('../index');
 const items = require('./items');
 const money = require('./money');
 const {
-  ITEM_DEF, POTION_CAP, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
+  ITEM_DEF, POTION_CAP, CP_POTION, TELEPORT_CAST_MS, TELEPORT_STONE_PRICE, MERCHANT_SHOP,
   codexSetById, codexItemMeetsReq, codexTotalBonus,
   gemCodexEntry, gemCodexCount, gemCodexMax, GEM_CODEX_KEY,
 } = require('../../../shared/definitions');
@@ -140,6 +140,22 @@ async function buyPotions(db, playerId, itemId, qty = 1) {
   if (!rows.length) err('no_player', 'Игрок не найден');
 
   return { itemId, qty: n, cost: entry.price * n, goldLeft: paid.balance, potionBag: rows[0].potion_bag };
+}
+
+// ── банка ЦП ────────────────────────────────────────────────────────────────
+// Тратит одну банку из сумки тем же условным UPDATE, что и usePotion (проверка
+// «есть ли» и списание — один оператор). Сколько вернуть ЦП, решает комната
+// (Room.restoreCpPct) — у неё живой запас; здесь только списание.
+async function useCpPotion(db, playerId) {
+  await items.lockPlayer(db, playerId);
+  const { rows } = await query(db, `
+    UPDATE player_progress
+       SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text],
+             to_jsonb(COALESCE((potion_bag->>$2)::int, 0) - 1))
+     WHERE player_id = $1 AND COALESCE((potion_bag->>$2)::int, 0) >= 1
+    RETURNING COALESCE((potion_bag->>$2)::int, 0) AS left`, [playerId, CP_POTION.id]);
+  if (!rows.length) err('no_potion', 'Нет банок ЦП');
+  return { left: Number(rows[0].left) };
 }
 
 async function useBuffPotion(db, playerId, potionId) {
@@ -462,7 +478,7 @@ async function registerCodexGem(db, playerId, gemId, qty) {
 }
 
 module.exports = {
-  usePotion, buyPotions, potionBagOf, useBuffPotion,
+  usePotion, useCpPotion, buyPotions, potionBagOf, useBuffPotion,
   buffsRemaining, buffActive, pruneBuffs,
   useTeleportStone, buyTeleportStone, pickupDrop, grantKillReward,
   registerCodexItem, registerCodexGem,

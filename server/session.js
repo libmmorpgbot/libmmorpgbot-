@@ -1022,6 +1022,43 @@ class Session {
     return this.clan;
   }
 
+  // ── бонус сезонного билета ───────────────────────────────────────────────
+  // Своей транзакцией и ПОСЛЕ неё — рассылка: вход или покупку, которые его
+  // вызвали, сбой здесь не должен откатывать. Выдача сама идемпотентна
+  // (repos/shop.js, grantSeasonBonus), повторный вызов ничего не даёт.
+  async grantSeasonBonus({ quiet = false } = {}) {
+    if (!this.playerId || !this.seasonTicket) return null;
+    let res;
+    try {
+      const shopRepo = require('./db/repos/shop');
+      res = await tx(t => shopRepo.grantSeasonBonus(t, this.playerId));
+    } catch (err) {
+      console.error('[session] seasonBonus:', err.message);
+      return null;
+    }
+    if (!res) return null;
+    // quiet — при входе: клиент ещё не собран, всё выданное он получит в
+    // authOk, а уведомление пришлёт вызывающий (notifySeasonBonus).
+    if (quiet) return res;
+    if (!res.noRoom) {
+      try {
+        await this.pushItems(); await this.pushBalances();
+        const consumables = require('./db/repos/consumables');
+        this._emitRaw('potionBag', { potionBag: await consumables.potionBagOf(null, this.playerId) });
+      } catch (err) { console.error('[session] seasonBonus push:', err.message); }
+    }
+    this.notifySeasonBonus(res);
+    return res;
+  }
+
+  notifySeasonBonus(res) {
+    if (!res) return;
+    if (res.noRoom) { this._emitRaw('seasonBonus', { noRoom: true, need: res.need }); return; }
+    this._emitRaw('seasonBonus', {
+      nexum: res.nexum, shards: res.shards, buffPotions: res.buffPotions, cpPotions: res.cpPotions,
+    });
+  }
+
   async refreshVip(db = null) {
     try {
       const progression = require('./db/repos/progression');

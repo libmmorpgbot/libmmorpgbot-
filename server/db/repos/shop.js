@@ -31,6 +31,7 @@ const progression = require('./progression');
 const { refLink } = require('../../security');
 const {
   ITEM_DEF, CRAFT_MATS, BOX_DEF, STARTER_BONUS, NEWBIE_BUFF, NEWBIE_BUFF_LAUNCH_AT, MAIL_BONUS,
+  SEASON_TICKET_BONUS, SEASON_TICKET_SEASON, CP_POTION, CP_POTION_CAP,
   seasonActive, seasonTicketPeriodOn, shopPackOn, mailBonusOn, seasonShopPoints, rollRuneStats,
 } = require('../../../shared/definitions');
 const {
@@ -356,6 +357,51 @@ async function claimMailBonus(db, playerId) {
   return { granted, seasonTicket: hasTicket };
 }
 
+// ── бонус сезонного билета ──────────────────────────────────────────────────
+// SEASON_TICKET_BONUS, один раз на аккаунт за сезон, только владельцу билета
+// ЭТОГО сезона — билет читается здесь, из player_vip, клиент ничего не
+// присылает. Вызывается сервером сам (Session.grantSeasonBonus): при входе и
+// после покупки в GRAM-магазине.
+//
+// Отметка — строка kv `season_bonus:<сезон>:<игрок>`, вставляется условно ДО
+// выдачи, в той же транзакции: задвоенная награда хуже потерянной, а
+// потерянной она быть не может — откат снимет отметку вместе с выдачей.
+// Liberty идёт в журнал денег с тем же ключом идемпотентности, предметы — в
+// журнал предметов через items.add, банки ЦП — в сумку зелий.
+//
+// Не влезло в инвентарь — ничего не выдаётся и не отмечается: вернётся
+// { noRoom } с тем, сколько мест нужно, и выдача повторится при следующем
+// входе.
+async function grantSeasonBonus(db, playerId) {
+  await items.lockPlayer(db, playerId);
+  const vip = await progression.vipOf(db, playerId);
+  if (!vip.seasonTicket) return null;
+  const key = `season_bonus:${SEASON_TICKET_SEASON}:${playerId}`;
+  const { rows: done } = await query(db, 'SELECT 1 FROM kv WHERE key = $1', [key]);
+  if (done.length) return null;
+
+  const B = SEASON_TICKET_BONUS;
+  const list = [{ itemId: 'star_shard', qty: B.shards, enhance: 0 }];
+  for (const bp of _VIP_BP) list.push({ itemId: bp.id, qty: B.buffPotions, enhance: 0 });
+  const room = await _roomForAll(db, playerId, list);
+  if (!room.fits) return { noRoom: true, need: room.need, used: room.used };
+
+  const { rowCount } = await query(db,
+    'INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, String(Date.now())]);
+  if (!rowCount) return null;
+
+  const granted = await _grantAll(db, playerId, list);
+  await money.credit(db, playerId, 'nexum', B.nexum, {
+    reason: 'season_bonus', refType: 'season', refId: String(SEASON_TICKET_SEASON), idemKey: key,
+  });
+  await query(db, `
+    UPDATE player_progress
+       SET potion_bag = jsonb_set(potion_bag, ARRAY[$2::text],
+             to_jsonb(LEAST($4::int, COALESCE((potion_bag->>$2)::int, 0) + $3::int)))
+     WHERE player_id = $1`, [playerId, CP_POTION.id, B.cpPotions, CP_POTION_CAP]);
+  return { granted, nexum: B.nexum, shards: B.shards, buffPotions: B.buffPotions, cpPotions: B.cpPotions };
+}
+
 // ── referrals ───────────────────────────────────────────────────────────────
 // Who this player brought in, and what each of them has earned them. The bonus
 // is 5% of every confirmed deposit those friends made — read from gram_tx,
@@ -399,6 +445,6 @@ async function referralsOf(db, playerId) {
 }
 
 module.exports = {
-  buyPackage, claimStarterBonus, claimMailBonus, referralsOf,
+  buyPackage, claimStarterBonus, claimMailBonus, grantSeasonBonus, referralsOf,
   _packageContents, _roomForAll, ShopError,
 };

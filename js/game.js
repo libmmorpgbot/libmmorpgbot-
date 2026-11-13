@@ -756,6 +756,7 @@ function update(dt, realDt) {
 
   // Potion cooldown tick
   if ((player.potCd || 0) > 0) player.potCd = Math.max(0, player.potCd - realDt);
+  if ((player.cpPotCd || 0) > 0) player.cpPotCd = Math.max(0, player.cpPotCd - realDt);
 
   // Buff timers tick — realDt, so a 10-minute potion lasts ten real minutes
   // instead of ten minutes of foreground animation frames.
@@ -785,6 +786,11 @@ function update(dt, realDt) {
   const _autoPct = player.autoHpPct || 0;
   if (_autoPct > 0 && player.potCd <= 0 && player.hp < player.maxHp * _autoPct) {
     usePotion();
+  }
+  // Авто-банка ЦП — по своему порогу (autoCpPct, js/player.js).
+  const _autoCp = typeof autoCpPct === 'function' ? autoCpPct() : 0;
+  if (_autoCp > 0 && (player.cpPotCd || 0) <= 0 && player.maxCp > 0 && (player.cp || 0) < player.maxCp * _autoCp) {
+    useCpPotion();
   }
   // Safe zone regen: +1 HP/sec; auto-disable PvP on entry
   if (inSafeZone(player.x, player.y)) {
@@ -1801,6 +1807,7 @@ function _renderUI() {
     drawSkillButtons();
     drawPetSkillButton();
     drawPotionButton();
+    if (typeof drawCpPotionButton === 'function') drawCpPotionButton();
     drawTargetButton();
     drawAttackButton();
     drawAutoToggle();

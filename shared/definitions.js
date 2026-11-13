@@ -4008,6 +4008,22 @@ const MERCHANT_SHOP = [
   { itemId:'pt2', price:500 },
 ];
 const POTION_CAP = 999;          // per kind, in potionBag
+
+// ── Банка ЦП ────────────────────────────────────────────────────────────────
+// Восстанавливает CP_POTION_PCT (5%) запаса ЦП. Лежит в той же сумке зелий
+// (player_progress.potion_bag), что и банки здоровья, под своим ключом, и
+// перезарядка у неё та же, что у банок здоровья (4 с, js/player.js). Не в
+// ITEM_DEF: тот список читается как «банки здоровья» (slot 'use') и как
+// каталог инвентаря, а эта банка ни то, ни другое. Свой потолок — бонус
+// сезонного билета даёт 5000 штук разом, больше общего POTION_CAP.
+const CP_POTION = { id: 'cp1', name: 'Банка ЦП', img: '/images/potion/cp.png', pct: 0.05 };
+const CP_POTION_CAP = 99999;
+
+// ── Бонус сезонного билета ──────────────────────────────────────────────────
+// Один раз на аккаунт за сезон, каждому владельцу билета: уже купившим — при
+// следующем входе, новым — сразу после покупки (server/db/repos/shop.js,
+// grantSeasonBonus). Отметка «выдано» — строка kv `season_bonus:<сезон>:<игрок>`.
+const SEASON_TICKET_BONUS = { shards: 1000, nexum: 300, buffPotions: 5, cpPotions: 5000 };
 const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
 
 // ── Награда новичка (newbie buff) ───────────────────────────────────────────
@@ -5195,7 +5211,7 @@ if (typeof module !== 'undefined') module.exports = {
   SKILL_DEF_DOWN, skillDefDownOf,
   skillBookId, advSkillBookId, passiveBookId, UPGRADE_KEYS, UPGRADE_STEP, upgradeCost, UPGRADE_MAX, upgLvlCapped,
   FOREIGN_SKILL_KEY,
-  MERCHANT_SHOP, POTION_CAP, CLAN_CREATE_COST, questComplete, questKillsFor,
+  MERCHANT_SHOP, POTION_CAP, CP_POTION, CP_POTION_CAP, SEASON_TICKET_BONUS, CLAN_CREATE_COST, questComplete, questKillsFor,
   passiveDefById, passivesForClass, passiveBonusTotal,
   VIP_THRESHOLDS, VIP_CUMULATIVE, VIP_BONUSES, VIP_MAX_LEVEL,
   SEASON_TICKET_SEASON, SEASON_TICKET_END_AT, seasonTicketPeriodOn,

@@ -451,7 +451,7 @@ const HEAVY = new Set([
   'enhanceItem', 'openLootBox', 'buyPotion', 'sellItem',
   'buyTeleportStone', 'useTeleportStone',
   'equipItem', 'unequipItem', 'storageDeposit', 'storageWithdraw',
-  'registerCodexSetItem', 'registerCodexGem', 'codexSync', 'spendUpgrade', 'usePotion', 'useBuffPotion',
+  'registerCodexSetItem', 'registerCodexGem', 'codexSync', 'spendUpgrade', 'usePotion', 'useCpPotion', 'useBuffPotion',
   'learnSkill', 'upgradeSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
   'seasonRating', 'seasonSync', 'seasonBurnBook', 'itemDisassemble',
@@ -870,6 +870,11 @@ io.on('connection', (socket) => {
       return socket.disconnect(true);
     }
     clearTimeout(authTimer);
+    // Бонус сезонного билета — ДО того, как собраны данные для authOk: тогда
+    // осколки, банки и Liberty уже лежат в том, что клиент получит при входе.
+    // Уведомление — после authOk (ниже), когда клиенту есть где его показать.
+    const seasonBonus = await s.grantSeasonBonus({ quiet: true });
+    if (seasonBonus && !seasonBonus.noRoom) res.state = await s.fullState();
     // Everything another connection may need to know about this one without
     // going through the database. `username` in particular: a party invite is
     // addressed to a socket and has to name the person behind it, and the
@@ -1069,6 +1074,9 @@ io.on('connection', (socket) => {
         });
       }
     }
+
+    // Бонус сезонного билета (выдан выше, до authOk) — уведомление.
+    if (seasonBonus) s.notifySeasonBonus(seasonBonus);
 
     // ── the season, at login ──────────────────────────────────────────────
     // The HUD's season-ticket chip needs BOTH `seasonTicketActive` (which
