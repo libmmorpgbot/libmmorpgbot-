@@ -346,7 +346,7 @@ function _netNotice(text, blocking) {
   }
   d.style.cssText = blocking
     ? 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;'
-      + 'justify-content:center;background:rgba(6,6,16,.92);color:#edc174;'
+      + 'justify-content:center;background:rgba(12,8,13,.92);color:#edc174;'
       + 'font:600 15px system-ui,Arial;text-align:center;padding:24px;'
     // pointer-events:none is not cosmetic. This element is put up by a timer
     // and taken down by a socket event, and if those two ever fail to pair up
@@ -354,7 +354,7 @@ function _netNotice(text, blocking) {
     // entirely. It can be wrong and still be harmless.
     : 'position:fixed;left:0;right:0;top:0;z-index:99998;pointer-events:none;'
       + 'display:flex;align-items:center;justify-content:center;'
-      + 'background:rgba(6,6,16,.92);color:#edc174;'
+      + 'background:rgba(12,8,13,.92);color:#edc174;'
       + 'font:600 13px system-ui,Arial;text-align:center;'
       + 'padding:calc(6px + env(safe-area-inset-top)) 14px 6px;';
   d.textContent = text;

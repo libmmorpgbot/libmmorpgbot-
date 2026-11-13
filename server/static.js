@@ -86,6 +86,9 @@ function mount(app, { floorRooms }) {
   // ── media ────────────────────────────────────────────────────────────────
   app.use('/images', express.static(path.join(ROOT, 'images'), { maxAge: '30d', immutable: true }));
   app.use('/audio',  express.static(path.join(ROOT, 'audio'),  { maxAge: '30d', immutable: true }));
+  // Шрифты темы «Пепельного края» (css/style.css, @font-face) — свои, а не с
+  // Google Fonts: CSP пускает шрифты только с этого же домена (fontSrc).
+  app.use('/fonts',  express.static(path.join(ROOT, 'fonts'),  { maxAge: '30d', immutable: true }));
   app.use('/css',    express.static(path.join(ROOT, 'css')));
 
   // ── the world's geometry ─────────────────────────────────────────────────

@@ -12,6 +12,10 @@
   и /images/patches (скриншоты патча).
 -->
 <style>
+  @font-face{font-family:'Philosopher';font-weight:400;font-display:swap;src:url('/fonts/philosopher-cyrillic-400-normal.woff2') format('woff2'),url('/fonts/philosopher-latin-400-normal.woff2') format('woff2')}
+  @font-face{font-family:'Philosopher';font-weight:700;font-display:swap;src:url('/fonts/philosopher-cyrillic-700-normal.woff2') format('woff2'),url('/fonts/philosopher-latin-700-normal.woff2') format('woff2')}
+  @font-face{font-family:'Fira Sans Condensed';font-weight:400;font-display:swap;src:url('/fonts/fira-sans-condensed-cyrillic-400-normal.woff2') format('woff2')}
+  @font-face{font-family:'Fira Sans Condensed';font-weight:700;font-display:swap;src:url('/fonts/fira-sans-condensed-cyrillic-700-normal.woff2') format('woff2')}
   :root {
     --ink: #0b0805;
     --panel: #17130b;
@@ -29,13 +33,13 @@
 
     --c-tank: #9aa3ab;
     --c-dk: #a58fc4;
-    --c-mage: #66aaff;
+    --c-mage: #e7c173;
     --c-heal: #c47a92;
     --c-rune: #a86b3f;
     --c-assassin: #8f7fb0;
 
-    --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --serif: "Philosopher", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    --sans: "Fira Sans Condensed", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -198,7 +202,7 @@
   .pod .place { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   .pod .base { border-radius: 10px 10px 0 0; font-weight: 900; font-size: 22px; color: rgba(0,0,0,.5); padding: 14px 0; transform-origin: bottom; }
   .pod.p1 .base { background: linear-gradient(180deg, #ffd96b, #b98a22); padding: 34px 0; }
-  .pod.p2 .base { background: linear-gradient(180deg, #e3e9ee, #8f9ba5); padding: 22px 0; }
+  .pod.p2 .base { background: linear-gradient(180deg, #f0ebe1, #8f9ba5); padding: 22px 0; }
   .pod.p3 .base { background: linear-gradient(180deg, #e8ab70, #9c6331); padding: 14px 0; }
   .reveal.in .pod .base { animation: rise .9s cubic-bezier(.2,.9,.3,1.2) both; }
   .reveal.in .pod.p2 .base { animation-delay: .15s; } .reveal.in .pod.p3 .base { animation-delay: .3s; }
@@ -415,7 +419,7 @@
   .ladder .b { display: flex; flex-wrap: wrap; gap: 4px; }
   .st { font-style: normal; font-size: 11.5px; font-weight: 800; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
   .st.atk { color: #ffb08a; background: rgba(255,120,70,.12); }
-  .st.def { color: #9cc8ff; background: rgba(90,150,255,.12); }
+  .st.def { color: #efd5a0; background: rgba(230,188,105,.12); }
   .st.hp  { color: #9ff0b0; background: rgba(90,220,120,.12); }
   .st.spd { color: #ffe08a; background: rgba(255,200,60,.14); }
   .gem-max { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(0,0,0,.28); border: 1px dashed rgba(var(--gc), .35); }
@@ -439,7 +443,7 @@
   .lim-head b { color: var(--gold-bright); }
   .lim-bar { display: flex; gap: 5px; }
   .lim-bar i { flex: 1; height: 14px; border-radius: 5px; background: rgba(0,0,0,.45); border: 1px dashed rgba(196,153,74,.3); }
-  .lim-bar i.on { border: 1px solid #4a8fd4; background: linear-gradient(180deg, #4a8fd4, #275e9c); box-shadow: 0 0 10px rgba(74,143,212,.45); }
+  .lim-bar i.on { border: 1px solid #cfa147; background: linear-gradient(180deg, #cfa147, #6c4a6f); box-shadow: 0 0 10px rgba(207,161,71,.45); }
 
   /* ── Сотрудничество ───────────────────────────────────────── */
   .coop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
@@ -559,7 +563,7 @@
     background: radial-gradient(circle at 35% 30%, #2c241a, #0e0a06 75%); border: 3px solid var(--m1);
     box-shadow: 0 0 0 3px rgba(0,0,0,.55), 0 0 22px -4px var(--m1); animation: float 4s ease-in-out infinite;
   }
-  .medal.silver { --m1: #d6dee6; } .medal.gold { --m1: #ffcf56; } .medal.emerald { --m1: #6fe0b4; } .medal.legend { --m1: #d29bff; }
+  .medal.silver { --m1: #e8e1d4; } .medal.gold { --m1: #ffcf56; } .medal.emerald { --m1: #6fe0b4; } .medal.legend { --m1: #d29bff; }
   .tier5:nth-child(2) .medal { animation-delay: -.8s; } .tier5:nth-child(3) .medal { animation-delay: -1.6s; }
   .tier5:nth-child(4) .medal { animation-delay: -2.4s; } .tier5:nth-child(5) .medal { animation-delay: -3.2s; }
   .ach-note { margin-top: 14px; padding: 12px 16px; display: flex; gap: 12px; align-items: center; font-size: 13.5px; }
@@ -595,7 +599,7 @@
 
   /* ── Турнир (29 октября) ──────────────────────────────────── */
   .tr-orbit .orbit-ring img { image-rendering: auto; border-radius: 50%; background: radial-gradient(circle, rgba(255,207,92,.16), rgba(0,0,0,.45) 70%); border: 1px solid rgba(255,207,92,.35); padding: 6px; }
-  .tr-step { border-top: 3px solid var(--tc); --tc: #66aaff; }
+  .tr-step { border-top: 3px solid var(--tc); --tc: #e7c173; }
   .tr-step.lb { --tc: #ff9a5c; } .tr-step.gf { --tc: #ffcf5c; }
   .tr-step b { color: var(--tc); }
   .tr-rounds { list-style: none; margin: 14px 0 0; padding: 6px 16px; }
@@ -603,7 +607,7 @@
   .tr-rounds li:first-child { border-top: none; }
   .tr-rounds li > span:last-child { color: var(--muted); font-size: 12.5px; }
   .tr-rn { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; color: #0b0805; background: var(--rc); }
-  .tr-rounds li { --rc: #66aaff; } .tr-rounds li.lb { --rc: #ff9a5c; } .tr-rounds li.gf { --rc: #ffcf5c; }
+  .tr-rounds li { --rc: #e7c173; } .tr-rounds li.lb { --rc: #ff9a5c; } .tr-rounds li.gf { --rc: #ffcf5c; }
   .tr-rounds li.gf .tr-rn { box-shadow: 0 0 14px rgba(255,207,92,.7); }
   .tr-rounds b { color: var(--gold-bright); }
   .tr-points { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
@@ -979,7 +983,7 @@
               <div class="gem-drop">попытки ковки необычной руны · 3 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/armor/uhp.png" alt="">Руна доспеха · Необычная</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/weapon/wuncommon.png" alt="">Руна оружия · Необычная</i><i class="rw" style="--rc:#8fc461"><img src="/images/ore/ures.png" alt="">Необычная руда ×300</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/armor/uhp.png" alt="">Руна доспеха · Необычная</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#8fc461"><img src="/images/rune/weapon/wuncommon.png" alt="">Руна оружия · Необычная</i><i class="rw" style="--rc:#8fc461"><img src="/images/ore/ures.png" alt="">Необычная руда ×300</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#d1af6a"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:74,123,171">
           <div class="gem-top">
@@ -989,7 +993,7 @@
               <div class="gem-drop">попытки ковки редкой руны · 3 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/weapon/wrare.png" alt="">Руна оружия · Редкая</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/ore/rres.png" alt="">Редкая руда ×200</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw rune" style="--rc:#d1af6a"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">50</span><span class="b"><i class="rw rune" style="--rc:#d1af6a"><img src="/images/rune/weapon/wrare.png" alt="">Руна оружия · Редкая</i><i class="rw" style="--rc:#d1af6a"><img src="/images/ore/rres.png" alt="">Редкая руда ×200</i></span></li><li><span class="n">100</span><span class="b"><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:138,92,194">
           <div class="gem-top">
@@ -1031,7 +1035,7 @@
               <div class="gem-drop">неудачная ковка руны · 3 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#b8aea4"><img src="/images/ore/cres.png" alt="">Обычная руда ×1 000</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/ore/ures.png" alt="">Необычная руда ×800</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/ore/rres.png" alt="">Редкая руда ×500</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#b8aea4"><img src="/images/ore/cres.png" alt="">Обычная руда ×1 000</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/ore/ures.png" alt="">Необычная руда ×800</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/ore/rres.png" alt="">Редкая руда ×500</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:127,211,255">
           <div class="gem-top">
@@ -1041,7 +1045,7 @@
               <div class="gem-drop">перебросы характеристик руны · 3 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">200 Liberty</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">1 000 Liberty</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#7fd3ff"><img src="/images/nexum-coin_v2.png" alt="">3 000 Liberty</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#ebca88"><img src="/images/nexum-coin_v2.png" alt="">200 Liberty</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ebca88"><img src="/images/nexum-coin_v2.png" alt="">1 000 Liberty</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#ebca88"><img src="/images/nexum-coin_v2.png" alt="">3 000 Liberty</i></span></li></ol>
         </div>
       </div>
       <div class="card ach-note"><span class="big"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ff8a3d" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8z"/><line x1="3.5" y1="19" x2="5.5" y2="17"/><line x1="20.5" y1="19" x2="18.5" y2="17"/><line x1="12" y1="18.5" x2="12" y2="21.5"/></svg></span><span>Даже неудачная ковка не пропадает зря — она идёт в «Невезучего кузнеца» и возвращает руду.</span></div>
@@ -1061,7 +1065,7 @@
               <div class="gem-drop">предмет заточен до уровня · 10 ступеней</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">+3</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">+5</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×10</i></span></li><li><span class="n">+7</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×3</i></span></li><li><span class="n">+9</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">+10</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">+11</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×10</i></span></li><li><span class="n">+12</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×15</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×20</i></span></li><li><span class="n">+13</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×20</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×30</i></span></li><li><span class="n">+14</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×30</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li><li><span class="n">+15</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×50</i><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/weapon/wlegendary.png" alt="">Руна оружия · Легендарная</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">+3</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">+5</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×10</i></span></li><li><span class="n">+7</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×3</i></span></li><li><span class="n">+9</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">+10</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">+11</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×10</i></span></li><li><span class="n">+12</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×15</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×20</i></span></li><li><span class="n">+13</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×20</i><i class="rw" style="--rc:#b48ae6"><img src="/images/material/shard.png" alt="">Звёздный осколок ×30</i></span></li><li><span class="n">+14</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×30</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/armor/ehp.png" alt="">Руна доспеха · Эпическая</i></span></li><li><span class="n">+15</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×50</i><i class="rw rune" style="--rc:#f2c64e"><img src="/images/rune/weapon/wlegendary.png" alt="">Руна оружия · Легендарная</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:111,156,74">
           <div class="gem-top">
@@ -1071,7 +1075,7 @@
               <div class="gem-drop">успешная заточка · 4 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×30</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×20</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×50</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×30</i></span></li><li><span class="n">500</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×20</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×50</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:241,126,98">
           <div class="gem-top">
@@ -1081,7 +1085,7 @@
               <div class="gem-drop">предмет сгорел на заточке · 3 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×15</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×15</i></span></li></ol>
         </div>
       </div>
     </section>
@@ -1100,7 +1104,7 @@
               <div class="gem-drop">убитые монстры · 6 ступеней</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 000 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>5 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">10 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×3</i></span></li><li><span class="n">50 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i></span></li><li><span class="n">100 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">500 000</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×10</i><i class="rw" style="--rc:#6fa3d6"><img src="/images/ore/rres.png" alt="">Редкая руда ×400</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 000 золота</i></span></li><li><span class="n">1 000</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>5 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">10 000</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×3</i></span></li><li><span class="n">50 000</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i></span></li><li><span class="n">100 000</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×10</i></span></li><li><span class="n">500 000</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×10</i><i class="rw" style="--rc:#d1af6a"><img src="/images/ore/rres.png" alt="">Редкая руда ×400</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:192,96,255">
           <div class="gem-top">
@@ -1110,7 +1114,7 @@
               <div class="gem-drop">добитые боссы · 4 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×3</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×3</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс</i></span></li><li><span class="n">50</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:255,207,86">
           <div class="gem-top">
@@ -1120,7 +1124,7 @@
               <div class="gem-drop">уровень персонажа — засчитан сразу · 7 ступеней</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">ур. 10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 000 золота</i></span></li><li><span class="n">ур. 20</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>3 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">ур. 30</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li><li><span class="n">ур. 40</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">ур. 50</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">ур. 60</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i><i class="rw rune" style="--rc:#6fa3d6"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">ур. 70</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">ур. 10</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>1 000 золота</i></span></li><li><span class="n">ур. 20</span><span class="b"><i class="rw" style="--rc:#ffd35c"><span><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M15 9.5a3 3 0 0 0-6 0c0 1.5 1 2.2 3 3 2 .8 3 1.5 3 3a3 3 0 0 1-6 0"/></svg></span>3 000 золота</i><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×5</i></span></li><li><span class="n">ур. 30</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс ×2</i></span></li><li><span class="n">ур. 40</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×5</i></span></li><li><span class="n">ур. 50</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li><li><span class="n">ур. 60</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×3</i><i class="rw rune" style="--rc:#d1af6a"><img src="/images/rune/armor/rhp.png" alt="">Руна доспеха · Редкая</i></span></li><li><span class="n">ур. 70</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×5</i><i class="rw rune" style="--rc:#b48ae6"><img src="/images/rune/weapon/wepic.png" alt="">Руна оружия · Эпическая</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:127,211,255">
           <div class="gem-top">
@@ -1151,13 +1155,13 @@
         </div>
         <div class="gem-card ach-c" style="--gc:154,163,171">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fb4e8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e4c079" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span></div>
             <div>
               <div class="gem-name">Кузнец</div>
               <div class="gem-drop">скованное снаряжение · 2 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×3</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/bless.png" alt="">Камень безопасной заточки ×3</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">1</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/norm.png" alt="">Камень обычной заточки ×3</i></span></li><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/bless.png" alt="">Камень безопасной заточки ×3</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:255,120,70">
           <div class="gem-top">
@@ -1177,7 +1181,7 @@
               <div class="gem-drop">открытые боксы · 2 ступени</div>
             </div>
           </div>
-          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#6fa3d6"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li></ol>
+          <ol class="ladder"><li><span class="n">10</span><span class="b"><i class="rw" style="--rc:#8fc461"><img src="/images/material/boxu.png" alt="">Необычный бокс</i></span></li><li><span class="n">100</span><span class="b"><i class="rw" style="--rc:#d1af6a"><img src="/images/material/boxr.png" alt="">Редкий бокс ×2</i></span></li></ol>
         </div>
         <div class="gem-card ach-c" style="--gc:255,207,86">
           <div class="gem-top">
@@ -1201,7 +1205,7 @@
         </div>
         <div class="gem-card ach-c" style="--gc:90,169,230">
           <div class="gem-top">
-            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
+            <div class="gem-art"><span class="emo"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#efd5a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span></div>
             <div>
               <div class="gem-name">Душа компании</div>
               <div class="gem-drop">сообщения в чат · 3 ступени</div>
@@ -1248,7 +1252,7 @@
 
     <section class="sec reveal" id="world-main">
       <div class="tiles stagger">
-        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>С 35 уровня</b><span>Телепорт в городе → «<svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fb4e8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg> Мир»</span></div>
+        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>С 35 уровня</b><span>Телепорт в городе → «<svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e4c079" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg> Мир»</span></div>
         <div class="card tile"><img src="/images/material/gem_red.png" alt=""><b>Монстры 40–59</b><span>Чем дальше на восток — тем сильнее</span></div>
         <div class="card tile"><img src="/images/material/gem_shard.png" alt=""><b>Опыт ×10</b><span>Втрое больше, чем в фарм-зонах</span></div>
         <div class="card tile"><img src="/images/nexum-coin_v2.png" alt=""><b>Дроп Фарм зоны 2</b><span>Снаряжение, книги, осколки, самоцветы, Liberty</span></div>
@@ -1473,7 +1477,7 @@
       <div class="coop-grid stagger">
         <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></span><div><b>Видно, что выпало</b><span>В итоге забега написано, кому по жребию досталась награда за босса и что именно выдано.</span></div></div>
         <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#c9a45c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="8" y1="12" x2="16" y2="12"/></svg></span><div><b>Полная сумка</b><span>Если Камень безопасной заточки не поместился — появится сообщение, а не тишина.</span></div></div>
-        <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span><div><b>Попытка возвращается</b><span>Если вход сорвался или связь оборвалась до первой волны.</span></div></div>
+        <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#efd5a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></span><div><b>Попытка возвращается</b><span>Если вход сорвался или связь оборвалась до первой волны.</span></div></div>
         <div class="card coop-item"><span class="ci"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e0d6c8" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg></span><div><b>Смерть заканчивает забег</b><span>Напарник сразу уходит домой, а не ждёт на «Дождитесь напарника».</span></div></div>
       </div>
     </section>
@@ -1530,14 +1534,14 @@
         </div>
         <div class="card task-group">
           <div class="tg-head"><b><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg> Ежедневные</b><span>сброс в 00:00 МСК</span></div>
-          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="t-name">Отправить 10 сообщений в игровой чат</div><span class="pill">+30</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#efd5a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="t-name">Отправить 10 сообщений в игровой чат</div><span class="pill">+30</span></div>
           <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#7fd3a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></div><div class="t-name">Купить на маркете на 3 GRAM</div><span class="pill">+100</span></div>
           <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf5c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l-1.5 3h-3z"/><path d="M10.5 6C6 8 4 12 4 15.5 4 19 7 21 12 21s8-2 8-5.5C20 12 18 8 13.5 6"/><path d="M14 11.5c-.4-.8-1.2-1-2-1-1.1 0-2 .6-2 1.5s.9 1.3 2 1.5 2 .6 2 1.5-.9 1.5-2 1.5c-.8 0-1.6-.3-2-1"/><path d="M12 9.5v1"/><path d="M12 16.5v1"/></svg></div><div class="t-name">Продать на маркете на 3 GRAM</div><span class="pill">+100</span></div>
         </div>
         <div class="card task-group">
-          <div class="tg-head"><b><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/></svg> Еженедельные</b><span>сброс в понедельник</span></div>
+          <div class="tg-head"><b><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#efd5a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/></svg> Еженедельные</b><span>сброс в понедельник</span></div>
           <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e6c27a" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5,17.5 3,6 3,3 6,3 17.5,14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5,6.5 18,3 21,3 21,6 17.5,9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg></div><div class="t-name">Убить 100 000 монстров на 1 этаже</div><span class="pill">+300</span></div>
-          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#d6dee6" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4l-9.5 9.5"/><path d="M20 4h-3.5L8.5 12"/><path d="M20 4v3.5L12 15.5"/><path d="M6.5 13.5l4 4"/><path d="M8.5 15.5L4 20"/></svg></div><div class="t-name">Убить 100 000 монстров на 2 этаже</div><span class="pill">+300</span></div>
+          <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e8e1d4" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4l-9.5 9.5"/><path d="M20 4h-3.5L8.5 12"/><path d="M20 4v3.5L12 15.5"/><path d="M6.5 13.5l4 4"/><path d="M8.5 15.5L4 20"/></svg></div><div class="t-name">Убить 100 000 монстров на 2 этаже</div><span class="pill">+300</span></div>
           <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e3c35c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 22 16 8"/><path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/></svg></div><div class="t-name">Убить 100 000 монстров в фарм зоне</div><span class="pill">+300</span></div>
           <div class="task"><div class="t-ico"><img src="/images/potion/atk.png" alt="" class="px"></div><div class="t-name">Скрафтить зелье атаки 10 раз</div><span class="pill">+50</span></div>
           <div class="task"><div class="t-ico"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#c9a45c" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 20v-9H2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2Z"/><path d="M18 11V4H6v7"/><path d="M15 22v-4a3 3 0 0 0-6 0v4"/><path d="M22 11V9"/><path d="M2 11V9"/><path d="M6 4V2"/><path d="M18 4V2"/><path d="M10 4V2"/><path d="M14 4V2"/></svg></div><div class="t-name">Участвовать в Кровавой Башне 3 раза</div><span class="pill">+200</span></div>
@@ -1560,7 +1564,7 @@
     <div class="split">
       <div class="card">
         <div class="podium">
-          <div class="pod p2"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#d6dee6" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">50 USDT</div><div class="place">2 место</div><div class="base">2</div></div>
+          <div class="pod p2"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e8e1d4" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">50 USDT</div><div class="place">2 место</div><div class="base">2</div></div>
           <div class="pod p1"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#ffcf56" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">100 USDT</div><div class="place">1 место</div><div class="base">1</div></div>
           <div class="pod p3"><div class="medal"><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#e0a46e" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.21 15 2.66 7.14a2 2 0 0 1 .13-2.2L4.4 2.8A2 2 0 0 1 6 2h12a2 2 0 0 1 1.6.8l1.6 2.14a2 2 0 0 1 .14 2.2L16.79 15"/><path d="M11 12 5.12 2.2"/><path d="m13 12 5.88-9.8"/><path d="M8 7h8"/><circle cx="12" cy="17" r="5"/><path d="M12 18v-2h-.5"/></svg></div><div class="usd">50 USDT</div><div class="place">3 место</div><div class="base">3</div></div>
         </div>
@@ -1661,7 +1665,7 @@
         <div class="lvl-cap"><span>ур. 1</span><span>ур. 10</span></div>
       </div>
       <div class="card">
-        <h3><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#9cc8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg> Смена класса</h3>
+        <h3><svg class="ico" viewBox="0 0 24 24" width="1.15em" height="1.15em" stroke="#efd5a0" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg> Смена класса</h3>
         <div>Теперь можно выбрать <b>Ассасина</b> и <b>Рунного бойца</b>.</div>
         <div class="cls-row">
           <img src="/images/classicon/assassin.png" alt="Ассасин" style="--accent: var(--c-assassin)">

@@ -1396,8 +1396,8 @@ function _dispatchSkillEffect(cls, sk) {
       // advanced ×2 damage at radius 220.
       const _advW4 = _advActive('W');
       const r2 = _advW4 ? 220 : 110;
-      spawnAOE(player.x, player.y, r2, 'shockwave', '#ccccdd');
-      _skillAOEMult(r2, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r2, 'shockwave', '#ccccdd');
+      spawnAOE(player.x, player.y, r2, 'shockwave', '#e0d8c9');
+      _skillAOEMult(r2, _skillMult('W'), 'W'); netSpawnAoe(player.x, player.y, r2, 'shockwave', '#e0d8c9');
       _pvpSkillAOE(r2, _skillMult('W'), 'W');
     } else if (sk.key === 'E') { // Гнев мертвеца / Щит — +80% DEF 10s (+1s per
       // level) either way; advanced additionally gives +10% ATK for the same duration.

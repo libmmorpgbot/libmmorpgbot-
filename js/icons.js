@@ -201,10 +201,10 @@ const ICON_SVG = {
 // игроком в чате. Типографские значки (✓ ✕ → ★) — не эмодзи и не трогаются.
 const EMOJI_ICON = {
   '🔒': ['lock', '#c9b48a'], '🔓': ['unlock', '#8fd65a'],
-  '⚔': ['swords', '#e6c27a'], '🗡': ['dagger', '#d6dee6'], '🏹': ['bow', '#c9a45c'],
+  '⚔': ['swords', '#e6c27a'], '🗡': ['dagger', '#e8e1d4'], '🏹': ['bow', '#c9a45c'],
   '🛡': ['shield', '#7fb4e8'], '💀': ['skullFace', '#e0d6c8'], '☠': ['skullFace', '#e0d6c8'],
   '🏆': ['trophy', '#ffcf5c'], '👑': ['crown', '#ffcf5c'], '⭐': ['star', '#ffcf5c'], '🌟': ['star', '#ffe08a'],
-  '🥇': ['medal', '#ffcf56'], '🥈': ['medal', '#d6dee6'], '🥉': ['medal', '#e0a46e'], '🏅': ['medal', '#ffcf56'],
+  '🥇': ['medal', '#ffcf56'], '🥈': ['medal', '#e8e1d4'], '🥉': ['medal', '#e0a46e'], '🏅': ['medal', '#ffcf56'],
   '⏳': ['hourglass', '#e3b066'], '⌛': ['hourglass', '#e3b066'], '⏱': ['timer', '#9cc8ff'], '⏰': ['timer', '#9cc8ff'],
   '🕐': ['clock', '#9cc8ff'], '🕒': ['clock', '#9cc8ff'],
   '🏰': ['castle', '#c9a45c'], '🌀': ['portal', '#4fc3ff'], '🌍': ['globe', '#7fb4e8'], '🌐': ['globe', '#7fb4e8'],
@@ -215,30 +215,30 @@ const EMOJI_ICON = {
   '⚡': ['lightning', '#ffd35c'], '🔥': ['flame', '#ff8a3d'], '❄': ['snowflake', '#a8e0ff'], '☀': ['sun', '#ffcf5c'], '🌙': ['moon', '#ffe08a'],
   '💥': ['burst', '#ff8a3d'], '💢': ['burst', '#ff5a4a'], '✨': ['sparkles', '#ffe08a'], '🎉': ['confetti', '#ff9ad5'],
   '❤': ['heart', '#ff6b7a'], '💗': ['heart', '#ff8ab0'], '💜': ['heart', '#b48ae6'], '🩸': ['drop', '#e8574f'],
-  '👹': ['demon', '#e8574f'], '👻': ['ghost', '#c9d3dc'], '🗿': ['statue', '#b9a58a'], '😱': ['scream', '#ffcf5c'],
+  '👹': ['demon', '#e8574f'], '👻': ['ghost', '#dfd7c6'], '🗿': ['statue', '#b9a58a'], '😱': ['scream', '#ffcf5c'],
   '🤖': ['bot', '#9cc8ff'], '🦋': ['butterfly', '#7fd3ff'], '🐾': ['pet', '#d6b38a'], '🐌': ['snail', '#c9a45c'],
   '👥': ['party', '#9cc8ff'], '👤': ['user', '#9cc8ff'], '👇': ['arrowDown', '#ffcf5c'], '✋': ['hand', '#e2d6c1'],
   '📜': ['scroll', '#e3c48a'], '📖': ['book', '#e3c48a'], '📚': ['book', '#e3c48a'], '📬': ['mail', '#9cc8ff'], '✉': ['mail', '#9cc8ff'],
   '📈': ['trendUp', '#8fd65a'], '📊': ['chart', '#9cc8ff'], '📅': ['calendar', '#9cc8ff'], '🔎': ['search', '#9cc8ff'], '🔍': ['search', '#9cc8ff'],
-  '🔗': ['link', '#7fb4e8'], '⛓': ['chain', '#a1b2c1'], '🕳': ['hole', '#a58fc4'],
+  '🔗': ['link', '#7fb4e8'], '⛓': ['chain', '#c6b89c'], '🕳': ['hole', '#a58fc4'],
   '🧪': ['flask', '#7ee0c0'], '⚗': ['flask', '#7ee0c0'], '🔮': ['orb', '#c38cff'], '🎲': ['dice', '#e2d6c1'], '🎯': ['target', '#ff6b6b'],
-  '⚒': ['hammer', '#c9a45c'], '🔨': ['hammer', '#c9a45c'], '🔧': ['craftsman', '#a1b2c1'], '⚙': ['gear', '#a1b2c1'],
-  '🥾': ['boots', '#c9a45c'], '🎒': ['inventory', '#c9a45c'], '💨': ['wind', '#c9d3dc'], '🏃': ['run', '#9cc8ff'], '🚀': ['rocket', '#ff8a3d'],
-  '💬': ['chat', '#9cc8ff'], '🔔': ['bell', '#ffcf5c'], '🔇': ['mute', '#a1b2c1'], '🔊': ['speaker', '#a1b2c1'], '🔈': ['speaker', '#a1b2c1'], '🎵': ['music', '#c9a6f0'],
+  '⚒': ['hammer', '#c9a45c'], '🔨': ['hammer', '#c9a45c'], '🔧': ['craftsman', '#c6b89c'], '⚙': ['gear', '#c6b89c'],
+  '🥾': ['boots', '#c9a45c'], '🎒': ['inventory', '#c9a45c'], '💨': ['wind', '#dfd7c6'], '🏃': ['run', '#9cc8ff'], '🚀': ['rocket', '#ff8a3d'],
+  '💬': ['chat', '#9cc8ff'], '🔔': ['bell', '#ffcf5c'], '🔇': ['mute', '#c6b89c'], '🔊': ['speaker', '#c6b89c'], '🔈': ['speaker', '#c6b89c'], '🎵': ['music', '#c9a6f0'],
   '✅': ['checkCircle', '#8fd65a'], '❌': ['xCircle', '#eb4e61'], '⚠': ['warning', '#ffb347'], '🚫': ['ban', '#eb4e61'], '⛔': ['ban', '#eb4e61'],
   '✎': ['pencil', '#e2d6c1'], '✏': ['pencil', '#e2d6c1'], '↩': ['undo', '#9cc8ff'], '🔁': ['repeat', '#9cc8ff'], '🔄': ['repeat', '#9cc8ff'],
-  '🟢': ['dot', '#5fd068'], '🔴': ['dot', '#eb4e61'], '⚪': ['dot', '#c9d3dc'], '🟡': ['dot', '#ffcf5c'], '🔷': ['gem', '#5aa9e6'],
+  '🟢': ['dot', '#5fd068'], '🔴': ['dot', '#eb4e61'], '⚪': ['dot', '#dfd7c6'], '🟡': ['dot', '#ffcf5c'], '🔷': ['gem', '#5aa9e6'],
   '📍': ['crosshair', '#eb4e61'], '🎮': ['game', '#9cc8ff'],
 };
 // Флаги — не контур, а заливка: три полосы читаются, только если они цветные.
 const _FLAG = (body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20" width="1.4em" height="0.95em" style="display:inline-block;vertical-align:-0.12em;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.35)">${body}</svg>`;
 const EMOJI_FLAG = {
-  '🇷🇺': _FLAG('<rect width="30" height="20" fill="#fff"/><rect y="6.67" width="30" height="6.67" fill="#1c57a7"/><rect y="13.33" width="30" height="6.67" fill="#d52b1e"/>'),
-  '🇺🇦': _FLAG('<rect width="30" height="10" fill="#0057b7"/><rect y="10" width="30" height="10" fill="#ffd700"/>'),
+  '🇷🇺': _FLAG('<rect width="30" height="20" fill="#fff"/><rect y="6.67" width="30" height="6.67" fill="#6c4a6f"/><rect y="13.33" width="30" height="6.67" fill="#d52b1e"/>'),
+  '🇺🇦': _FLAG('<rect width="30" height="10" fill="#654668"/><rect y="10" width="30" height="10" fill="#ffd700"/>'),
   '🇪🇸': _FLAG('<rect width="30" height="20" fill="#c60b1e"/><rect y="5" width="30" height="10" fill="#ffc400"/>'),
   '🇹🇷': _FLAG('<rect width="30" height="20" fill="#e30a17"/><circle cx="11" cy="10" r="5" fill="#fff"/><circle cx="12.3" cy="10" r="4" fill="#e30a17"/><path d="M16.2 10l3.6-1.2-2.2 3.1V8.1l2.2 3.1z" fill="#fff"/>'),
-  '🇧🇷': _FLAG('<rect width="30" height="20" fill="#009c3b"/><path d="M15 2.5 27.5 10 15 17.5 2.5 10z" fill="#ffdf00"/><circle cx="15" cy="10" r="4.2" fill="#002776"/>'),
-  '🇬🇧': _FLAG('<rect width="30" height="20" fill="#012169"/><path d="M0 0 30 20M30 0 0 20" stroke="#fff" stroke-width="4"/><path d="M0 0 30 20M30 0 0 20" stroke="#c8102e" stroke-width="1.6"/><path d="M15 0v20M0 10h30" stroke="#fff" stroke-width="6"/><path d="M15 0v20M0 10h30" stroke="#c8102e" stroke-width="3.4"/>'),
+  '🇧🇷': _FLAG('<rect width="30" height="20" fill="#009c3b"/><path d="M15 2.5 27.5 10 15 17.5 2.5 10z" fill="#ffdf00"/><circle cx="15" cy="10" r="4.2" fill="#412d43"/>'),
+  '🇬🇧': _FLAG('<rect width="30" height="20" fill="#3b283c"/><path d="M0 0 30 20M30 0 0 20" stroke="#fff" stroke-width="4"/><path d="M0 0 30 20M30 0 0 20" stroke="#c8102e" stroke-width="1.6"/><path d="M15 0v20M0 10h30" stroke="#fff" stroke-width="6"/><path d="M15 0v20M0 10h30" stroke="#c8102e" stroke-width="3.4"/>'),
 };
 const _EMOJI_KEYS = [...Object.keys(EMOJI_FLAG), ...Object.keys(EMOJI_ICON)]
   .sort((a, b) => b.length - a.length);

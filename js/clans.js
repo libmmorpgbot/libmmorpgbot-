@@ -1164,7 +1164,7 @@ function _clanStorageHTML() {
     return `${treasury}
       <div class="clx-hdr">Хранилище клана</div>
       <div class="clx-card clx-locked">
-        ${_clxIco('lock', 22, '#8ea4b8')}
+        ${_clxIco('lock', 22, '#beac88')}
         <div>${tVars('clanStorageLockedFmt', { n: _num(cost) })}</div>
         ${s.isLeader
           ? `<button class="clx-btn${afford ? '' : ' off'}" ${afford ? '' : 'disabled'} onclick="_clanStorageUnlockConfirm()">${tVars('clanStorageUnlockBtn', { n: _num(cost) })}</button>
@@ -1273,7 +1273,7 @@ function _clanActivityHTML() {
   // турнир и Владыка — отдельными строками и своими кусками полосы.
   const total = r => (r.points || 0) + (r.tour || 0) + (r.boss || 0) + (r.war || 0);
   const top = Math.max(1, ...rows.map(total));
-  const medal = ['#f0c75e', '#c8d3de', '#d08a5a'];
+  const medal = ['#f0c75e', '#e1d8c5', '#d08a5a'];
   return `${hdr}<div class="clx-list">${rows.map((r, i) => `
     <div class="clx-rank${String(r.telegramId) === String(myTg) ? ' me' : ''}">
       <span class="clx-rank-n" ${i < 3 ? `style="--mc:${medal[i]}"` : ''}>${i + 1}</span>

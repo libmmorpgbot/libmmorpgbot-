@@ -231,7 +231,7 @@
      Rates come from the server (offlineFarmInfo, server/offline-farm.js). -->
 <div id="offline-farm-panel" style="display:none">
   <div class="vip-header">
-    <div class="vip-title" style="color:#7fb4e8"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span data-i18n="offlineFarmHdr">Оффлайн-фарм</span></div>
+    <div class="vip-title" style="color:#e4c079"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span data-i18n="offlineFarmHdr">Оффлайн-фарм</span></div>
     <button class="vip-close" onclick="closeOfflineFarmPanel()">✕</button>
   </div>
   <div id="offline-farm-panel-body" class="vip-body"></div>
@@ -495,7 +495,7 @@
 <div id="panel-inv" class="bpanel">
   <div class="panel-hdr">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:5px"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg><span data-i18n="navChar">Персонаж</span>
-    <span id="inv-count" style="font-size:11px;color:#484860;font-weight:normal;"></span>
+    <span id="inv-count" style="font-size:11px;color:#544b55;font-weight:normal;"></span>
   </div>
   <div class="inv-tabs">
     <div class="inv-tab active" id="inv-tab-0" onclick="setInvTab(0)" data-i18n="storageInvTab">Инвентарь</div>
@@ -578,13 +578,13 @@
       <span id="pt-modal-icon"></span>
       <div>
         <div id="pt-modal-name" style="font-size:16px;font-weight:800;color:#3ef07a;"></div>
-        <div id="pt-modal-stat" style="font-size:12px;color:#7080a0;margin-top:3px;"></div>
+        <div id="pt-modal-stat" style="font-size:12px;color:#a79269;margin-top:3px;"></div>
       </div>
       <button onclick="closePotionModal()" style="margin-left:auto;width:28px;height:28px;border:none;border-radius:50%;background:rgba(255,255,255,.08);color:#888;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:10px">
       <button id="pt-modal-use" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#1a3a1a,#2a5a2a);color:#3ef07a;font-size:15px;font-weight:700;cursor:pointer;" data-i18n="useBtn">Использовать</button>
-      <button id="pt-modal-hud" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#1a1a3a,#2a2a5a);color:#a0b4ff;font-size:15px;font-weight:700;cursor:pointer;" data-i18n="hudBtnLbl">В HUD</button>
+      <button id="pt-modal-hud" style="width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(135deg,#2e212f,#473449);color:#f0d6a3;font-size:15px;font-weight:700;cursor:pointer;" data-i18n="hudBtnLbl">В HUD</button>
     </div>
   </div>
 </div>
@@ -690,11 +690,11 @@
   position:absolute; bottom:72px; left:10px; z-index:62;
   pointer-events:all; touch-action:manipulation;
   width:42px; height:42px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, rgba(19,33,51,0.96), rgba(8,14,22,0.97));
+  background:radial-gradient(circle at 35% 30%, rgba(39,27,40,0.96), rgba(17,11,17,0.97));
   border:1px solid rgba(203,161,89,0.55);
   color:#eac47e; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(216,207,190,0.06);
 }
 #chat-btn:active { opacity:0.75; }
 /* Sits directly above #chat-btn (same left offset, one button-height plus
@@ -704,11 +704,11 @@
   position:absolute; bottom:122px; left:10px; z-index:62;
   pointer-events:all; touch-action:manipulation;
   width:42px; height:42px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, rgba(17,28,37,0.96), rgba(6,11,15,0.97));
-  border:1px solid rgba(79,195,255,0.5);
-  color:#7fd7ff; cursor:pointer;
+  background:radial-gradient(circle at 35% 30%, rgba(29,21,30,0.96), rgba(12,8,12,0.97));
+  border:1px solid rgba(228,184,96,0.5);
+  color:#ebca88; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(216,207,190,0.06);
 }
 #teleport-btn:active { opacity:0.75; }
 /* Над #teleport-btn — тот же шаг вверх, что у него над чатом. */
@@ -720,7 +720,7 @@
   border:1px solid rgba(243,207,114,0.55);
   color:#f3cf72; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(193,204,213,0.06);
+  box-shadow:0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(216,207,190,0.06);
 }
 #sticker-btn:active { opacity:0.75; }
 #sticker-btn.on { background:radial-gradient(circle at 35% 30%, rgba(80,60,20,0.97), rgba(30,22,8,0.97)); }
@@ -765,7 +765,7 @@
 #tut-card .tut-bar i { display:block; height:100%; background:linear-gradient(90deg,#c9962f,#f3cf72); transition:width .4s; }
 #tut-card .tut-name { font-weight:700; font-size:13.5px; color:#fff3d6; margin-bottom:3px; }
 #tut-card .tut-prog { color:#7fd46a; font-weight:700; margin-left:4px; }
-#tut-card .tut-hint { margin-top:6px; color:#8fd0ff; font-weight:600; }
+#tut-card .tut-hint { margin-top:6px; color:#edd095; font-weight:600; }
 #tut-card .tut-flash { animation:tutFlash .9s ease-out; }
 #tut-card .tut-btns { display:flex; gap:6px; margin-top:8px; }
 #tut-card .tut-btn {
@@ -822,7 +822,7 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 .stk-a-sleep  { animation:stkSleep 2s ease-in-out infinite; transform-origin:50% 90%; }
 .stk-a-sleep::after {
   content:'z'; position:absolute; right:-6px; top:-4px;
-  font:900 12px var(--font-display); color:#cfe6ff; text-shadow:0 0 3px #000;
+  font:900 12px var(--font-display); color:#f6e7ca; text-shadow:0 0 3px #000;
   animation:stkZ 2s ease-in-out infinite;
 }
 @keyframes stkBounce { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-7px); } }
@@ -844,7 +844,7 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 @keyframes stkPickerIn { from { opacity:0; transform:translateY(8px) scale(.96); } to { opacity:1; transform:none; } }
 #teleport-stone-badge {
   position:absolute; top:-4px; right:-4px;
-  background:#2d7bb8; color:#fff;
+  background:#af842f; color:#fff;
   font-size:9px; font-weight:700; line-height:1;
   min-width:17px; height:17px; border-radius:9px;
   display:none; align-items:center; justify-content:center;
@@ -858,15 +858,15 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
   pointer-events:all;
   display:none; align-items:center; justify-content:space-between; gap:8px;
   padding:8px 10px; padding-top:calc(8px + env(safe-area-inset-top, 0px));
-  background:rgba(8,14,22,0.94); border-bottom:1px solid rgba(235,171,74,0.4);
+  background:rgba(17,11,17,0.94); border-bottom:1px solid rgba(235,171,74,0.4);
   box-shadow:0 4px 14px rgba(0,0,0,0.5);
 }
-#hud-edit-hint { font-size:11px; color:#c1ccd5; flex:1; min-width:0; }
+#hud-edit-hint { font-size:11px; color:#d8cfbe; flex:1; min-width:0; }
 #hud-edit-toolbar button {
   flex-shrink:0; padding:6px 12px; border-radius:8px; border:none;
   font-size:12px; font-weight:700; cursor:pointer; touch-action:manipulation;
 }
-#hud-edit-reset { background:#2a3346; color:#c1ccd5; }
+#hud-edit-reset { background:#3a2f3b; color:#d8cfbe; }
 #hud-edit-reset:active { opacity:0.75; }
 #hud-edit-done { background:linear-gradient(135deg,#e3941d,#ebab4b); color:#1a1408; }
 #hud-edit-done:active { opacity:0.75; }
@@ -880,10 +880,10 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
   position:absolute; bottom:72px; left:58px; z-index:61;
   max-width:min(170px, calc(100vw - 250px));
   pointer-events:all; touch-action:manipulation; cursor:pointer;
-  background:rgba(8,14,22,0.94); border:1px solid rgba(203,161,89,0.4);
+  background:rgba(17,11,17,0.94); border:1px solid rgba(203,161,89,0.4);
   border-radius:4px 14px 14px 14px; padding:7px 12px;
   display:none; flex-direction:column; gap:1px;
-  box-shadow:0 2px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(193,204,213,0.05);
+  box-shadow:0 2px 12px rgba(0,0,0,0.45), inset 0 1px 0 rgba(216,207,190,0.05);
 }
 #chat-preview:active { opacity:0.75; }
 #chat-preview-name {
@@ -892,7 +892,7 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 }
 #chat-preview-name.is-me { color:#3ef07a; }
 #chat-preview-text {
-  font-size:12px; color:#b9c5d0; line-height:1.3;
+  font-size:12px; color:#d3c9b6; line-height:1.3;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 #chat-badge {
@@ -925,10 +925,10 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 }
 .cp-title { flex:1; font-size:14px; font-weight:700; color:#c8a0ff; }
 .cp-close {
-  background:none; border:none; color:#425368; font-size:20px;
+  background:none; border:none; color:#584959; font-size:20px;
   cursor:pointer; padding:6px 8px; margin:-6px -8px; line-height:1; touch-action:manipulation;
 }
-.cp-close:active { color:#99abbb; }
+.cp-close:active { color:#c0b194; }
 .chat-tabs {
   display:flex; flex-shrink:0;
   border-bottom:1px solid rgba(255,255,255,0.06);
@@ -936,7 +936,7 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 }
 .chat-tab {
   flex:1; text-align:center; padding:8px 0; font-size:12px; font-weight:700;
-  color:#5c5c7a; cursor:pointer; border-bottom:2px solid transparent;
+  color:#6b5f6c; cursor:pointer; border-bottom:2px solid transparent;
   touch-action:manipulation; transition:color .15s;
 }
 .chat-tab.active { color:#c8a0ff; border-bottom-color:#7030c0; }
@@ -979,10 +979,10 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 .chat-role { font-size:9px; font-weight:700; margin-left:4px; padding:0 4px; border-radius:3px; text-transform:lowercase; }
 .chat-role-admin { color:#ff4d4d; border:1px solid #ff4d4d; }
 .chat-name-clickable:active { text-decoration:underline; }
-.chat-time { font-size:10px; color:#3a3a5a; }
-.chat-text { font-size:13px; color:#c2cdd6; line-height:1.45; word-break:break-word; }
+.chat-time { font-size:10px; color:#4c3f4d; }
+.chat-text { font-size:13px; color:#d9d0bf; line-height:1.45; word-break:break-word; }
 .chat-translate-btn {
-  margin-left:auto; background:none; border:none; padding:2px; color:#4a4a68;
+  margin-left:auto; background:none; border:none; padding:2px; color:#5a4e5b;
   cursor:pointer; touch-action:manipulation; display:flex; align-items:center;
   flex-shrink:0;
 }
@@ -1001,10 +1001,10 @@ body.tut-on .bpanel.open { padding-bottom:190px; }
 #chat-input {
   flex:1; padding:8px 14px;
   border:1px solid rgba(100,60,200,0.4); border-radius:22px;
-  background:rgba(255,255,255,0.05); color:#ebeef1;
+  background:rgba(255,255,255,0.05); color:#f2efea;
   font-size:14px; outline:none; touch-action:manipulation;
 }
-#chat-input::placeholder { color:#383858; }
+#chat-input::placeholder { color:#4a3e4b; }
 #chat-send-btn {
   width:38px; height:38px; flex-shrink:0; border:none; border-radius:50%;
   background:linear-gradient(135deg,#5020a0,#7030c0);

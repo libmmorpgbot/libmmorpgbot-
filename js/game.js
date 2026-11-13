@@ -2981,9 +2981,9 @@ function _isGuildWarTile(tx, ty) {
 // the biome theme (getTheme() clamps every floor past index 4 to the same
 // golem-fortress brown) — cold, dim blues instead of the old bright
 // green/tan so the zone reads as a frozen grinding spot, not a sunlit field.
-const _FARM_WALL    = '#2e4a5e';
-const _FARM_FLOOR_A = '#16242e';
-const _FARM_FLOOR_B = '#1c2f3a';
+const _FARM_WALL    = '#4b384d';
+const _FARM_FLOOR_A = '#251b25';
+const _FARM_FLOOR_B = '#2e222f';
 // Обе фарм-зоны, а не только первая: Фарм зона 2 — её копия, и без этой ветки
 // она уезжала бы в биомную тему (getTheme() зажимает всё после 4-го этажа в
 // один и тот же коричневый форт големов) и не читалась бы как фарм-зона. Поля

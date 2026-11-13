@@ -2530,7 +2530,7 @@ function drawWorldMapPanel() {
   mc.style.width = pw + 'px'; mc.style.height = ph + 'px';
   const c = mc.getContext('2d');
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
-  c.fillStyle = '#0b0f14'; c.fillRect(0, 0, pw, ph);
+  c.fillStyle = '#100d11'; c.fillRect(0, 0, pw, ph);
   const wx = tx => pad + tx * sc, wy = ty => pad + ty * sc;
 
   // рамка и сама местность
@@ -3371,7 +3371,7 @@ function _monsterDropBodyHtml(e, floor, lvl) {
   const _blessStone = CRAFT_MATS.find(m=>m.id==='bless_stone');
   const stoneRow = isBoss
     ? _dropRow(_itemIcon(_boxUncommon, 16), _boxUncommon.name, `&times;1 · <b style="color:#90d653">50%</b>`, '#90d653')
-    + _dropRow(_itemIcon(_boxRare, 16), _boxRare.name, `&times;1 · <b style="color:#4a7bab">10%</b>`, '#4a7bab')
+    + _dropRow(_itemIcon(_boxRare, 16), _boxRare.name, `&times;1 · <b style="color:#a58950">10%</b>`, '#a58950')
     + _dropRow(_mi(_normStone, 16), _normStone.name, `&times;1 · <b style="color:#f17e8b">10%</b>`, '#f17e8b')
     + _dropRow(_mi(_blessStone, 16), _blessStone.name, `&times;1 · <b style="color:#efc680">1%</b>`, '#efc680')
     : '';
@@ -3725,7 +3725,7 @@ const HUD_FRAME     = 'rgba(104,178,240,0.55)';
 const HUD_FRAME_DIM = 'rgba(104,178,240,0.26)';
 const HUD_GLOW      = 'rgba(86,170,255,0.16)';
 const HUD_TEXT      = '#dbe9f8';
-const HUD_TEXT_DIM  = '#8fb0cd';
+const HUD_TEXT_DIM  = '#cab792';
 
 // Both header plates — the player one and the map one — are this tall, so
 // they read as one row (hudMiniMapRect / drawHeader below).
@@ -3750,8 +3750,8 @@ function _hudCorners(x, y, w, h, len, color) {
 // nothing next to keeping them in sync with a resize.
 function _hudPanel(x, y, w, h, r, frame) {
   const g = ctx.createLinearGradient(0, y, 0, y + h);
-  g.addColorStop(0, 'rgba(22,42,67,0.93)');
-  g.addColorStop(1, 'rgba(8,15,26,0.95)');
+  g.addColorStop(0, 'rgba(49,34,51,0.93)');
+  g.addColorStop(1, 'rgba(19,13,19,0.95)');
   ctx.fillStyle = g;
   roundRect(ctx, x, y, w, h, r); ctx.fill();
 
@@ -3773,7 +3773,7 @@ function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor, fontScale) {
   // which is a second, smaller source of the same "blurry" look as the
   // undersized label font below.
   x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
-  ctx.fillStyle = 'rgba(4,9,16,0.85)';
+  ctx.fillStyle = 'rgba(11,8,11,0.85)';
   roundRect(ctx, x, y, w, h, h / 2); ctx.fill();
   ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
   roundRect(ctx, x, y, w, h, h / 2); ctx.stroke();
@@ -3863,7 +3863,7 @@ function drawMiniMapPanel() {
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   roundRect(ctx, mmX, mmY, mmW, mmH, 8); ctx.clip();
-  ctx.fillStyle = '#060b12'; ctx.fillRect(mmX, mmY, mmW, mmH);
+  ctx.fillStyle = '#0d090e'; ctx.fillRect(mmX, mmY, mmW, mmH);
 
   // The floor pattern only actually changes when the player crosses into a
   // new tile — this window's origin is float-precision but the underlying
@@ -3999,7 +3999,7 @@ function drawHeader() {
     if (!_avBgGrad || _avBgColor !== p.charDef.color) {
       _avBgGrad = ctx.createRadialGradient(avX - 6, avY - 6, 2, avX, avY, avR);
       _avBgGrad.addColorStop(0, p.charDef.color + '55');
-      _avBgGrad.addColorStop(1, 'rgba(4,9,17,0.85)');
+      _avBgGrad.addColorStop(1, 'rgba(12,8,12,0.85)');
       _avBgColor = p.charDef.color;
     }
     ctx.fillStyle = _avBgGrad;
@@ -4012,7 +4012,7 @@ function drawHeader() {
   ctx.beginPath(); ctx.arc(avX, avY, avR + hud(3), 0, Math.PI * 2); ctx.stroke();
 
   const lbR = hud(11), lbX = avX - hud(14), lbY = avY + avR - 2;
-  ctx.fillStyle = 'rgba(9,18,31,0.96)';
+  ctx.fillStyle = 'rgba(22,15,23,0.96)';
   ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = 'rgba(240,196,110,0.9)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.stroke();
@@ -4026,7 +4026,7 @@ function drawHeader() {
   // still appears on the avatar (the name+class line below is text only).
   const cbR = hud(11), cbX = avX + hud(14), cbY = avY + avR - 2;
   drawClassBadgeCtx(ctx, p.type, cbX, cbY, cbR * 2);
-  ctx.strokeStyle = 'rgba(9,18,31,0.96)'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(22,15,23,0.96)'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(cbX, cbY, cbR, 0, Math.PI * 2); ctx.stroke();
 
   // ── Name + class ──────────────────────────────────────────
@@ -4102,7 +4102,7 @@ function drawHeader() {
   ctx.textBaseline = 'middle';
   for (let i = 0; i < chips.length; i++) {
     const c = chips[i], cx = chipX0 + i * (chipW + chipGap);
-    ctx.fillStyle = 'rgba(9,19,32,0.85)';
+    ctx.fillStyle = 'rgba(23,16,23,0.85)';
     roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.fill();
     ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
     roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.stroke();
@@ -4221,8 +4221,8 @@ function drawJoystick() {
   ctx.globalAlpha = held ? Math.min(1, _ja + 0.29) : _ja;
 
   const ring = ctx.createRadialGradient(jc.x, jc.y, JOY_R * 0.55, jc.x, jc.y, JOY_R);
-  ring.addColorStop(0, 'rgba(10,20,34,0.10)');
-  ring.addColorStop(1, 'rgba(12,26,45,0.55)');
+  ring.addColorStop(0, 'rgba(24,17,25,0.10)');
+  ring.addColorStop(1, 'rgba(32,22,32,0.55)');
   ctx.fillStyle = ring;
   ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill();
 
@@ -4260,7 +4260,7 @@ function drawJoystick() {
   if (_joyKnobGrad === null || kx !== _joyKnobGradKx || ky !== _joyKnobGradKy) {
     _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .35, ky - JOY_KNOB * .35, 0, kx, ky, JOY_KNOB);
     _joyKnobGrad.addColorStop(0, 'rgba(150,205,255,0.95)');
-    _joyKnobGrad.addColorStop(1, 'rgba(30,66,110,0.92)');
+    _joyKnobGrad.addColorStop(1, 'rgba(78,53,80,0.92)');
     _joyKnobGradKx = kx; _joyKnobGradKy = ky;
   }
   ctx.fillStyle = 'rgba(86,170,255,0.18)';
@@ -4370,11 +4370,11 @@ function _buildSkillBtnGrads() {
   _skillBtnGradCache = Array.from({ length: 5 }, (_, i) => {
     const b = getSkillBtnPos(i);
     const flash = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    flash.addColorStop(0, 'rgba(31,53,83,0.97)'); flash.addColorStop(1, 'rgba(16,28,43,0.99)');
+    flash.addColorStop(0, 'rgba(63,43,65,0.97)'); flash.addColorStop(1, 'rgba(33,22,34,0.99)');
     const ready = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    ready.addColorStop(0, 'rgba(19,33,51,0.97)'); ready.addColorStop(1, 'rgba(10,17,26,0.99)');
+    ready.addColorStop(0, 'rgba(39,27,40,0.97)'); ready.addColorStop(1, 'rgba(20,14,21,0.99)');
     const cd = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
-    cd.addColorStop(0, 'rgba(11,19,30,0.97)'); cd.addColorStop(1, 'rgba(7,11,18,0.99)');
+    cd.addColorStop(0, 'rgba(23,16,23,0.97)'); cd.addColorStop(1, 'rgba(14,10,14,0.99)');
     return { flash, ready, cd, x: b.x, y: b.y, w: b.w, h: b.h };
   });
 }
@@ -4445,15 +4445,15 @@ function drawSkillButtons() {
 
     // Border
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(32,56,87,0.7)';
+    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(66,45,68,0.7)';
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
     // Not-yet-studied skills show a lock instead of a cooldown countdown
     if (locked) {
-      drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#c1ccd5');
+      drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#d8cfbe');
     } else if (!ready) {
       ctx.font = `bold ${hudF(14)}px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#c1ccd5';
+      ctx.fillStyle = '#d8cfbe';
       ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
     }
   }
@@ -4491,7 +4491,7 @@ function drawHudEditOverlay() {
     }
     ctx.font = `bold ${hudF(11)}px ${_F_SKILL}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(12,22,34,0.9)';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(25,17,26,0.9)';
     ctx.strokeText(e.label, p.x, p.y - rr - 12);
     ctx.fillStyle = '#f2d39c';
     ctx.fillText(e.label, p.x, p.y - rr - 12);
@@ -4527,7 +4527,7 @@ function drawPetSkillButton() {
   const ready = left <= 0;
 
   // Фон
-  ctx.fillStyle = active ? 'rgba(38,58,44,0.92)' : ready ? 'rgba(30,46,66,0.92)' : 'rgba(18,26,38,0.92)';
+  ctx.fillStyle = active ? 'rgba(38,58,44,0.92)' : ready ? 'rgba(52,38,53,0.92)' : 'rgba(30,22,31,0.92)';
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
 
   // ── иконка видна ВСЕГДА ──────────────────────────────────────────────────
@@ -4551,7 +4551,7 @@ function drawPetSkillButton() {
   // до следующего применения вернётся сразу, как только баф кончится.
   if (!ready && !active && period > 0) {
     const frac = Math.min(1, left / period);     // сколько ОСТАЛОСЬ
-    ctx.fillStyle = 'rgba(4,8,14,0.62)';
+    ctx.fillStyle = 'rgba(10,7,10,0.62)';
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.arc(cx, cy, r, -Math.PI / 2 + Math.PI * 2 * (1 - frac), Math.PI * 1.5);
@@ -4564,7 +4564,7 @@ function drawPetSkillButton() {
   // состояние, которое стоит выделить, потому что оно длится десять секунд.
   ctx.lineWidth = active ? 2.5 : 1.5;
   ctx.strokeStyle = active ? (sk.color || '#8fd17a')
-    : ready ? 'rgba(203,161,89,0.7)' : 'rgba(32,56,87,0.7)';
+    : ready ? 'rgba(203,161,89,0.7)' : 'rgba(66,45,68,0.7)';
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
 
   // Число. Пока навык действует — это ЕГО остаток, а не отката: в эти
@@ -4577,9 +4577,9 @@ function drawPetSkillButton() {
     const txt = num >= 10 ? String(Math.ceil(num)) : num.toFixed(1);
     // Обводка обязательна: число ложится прямо на картинку навыка, а она
     // яркая — без неё цифры читаются только на тёмной её половине.
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(2,5,9,0.9)';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(6,4,6,0.9)';
     ctx.strokeText(txt, cx, cy);
-    ctx.fillStyle = active ? (sk.color || '#8fd17a') : '#e4ecf3';
+    ctx.fillStyle = active ? (sk.color || '#8fd17a') : '#f2eee5';
     ctx.fillText(txt, cx, cy);
   }
 }
@@ -4597,22 +4597,22 @@ function _buildUiBtnGrads() {
   const pty = getPartyBtnPos();
 
   const pg0 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
-  pg0.addColorStop(0,'rgba(16,27,42,0.98)'); pg0.addColorStop(1,'rgba(9,16,25,0.99)');
+  pg0.addColorStop(0,'rgba(32,22,33,0.98)'); pg0.addColorStop(1,'rgba(19,13,19,0.99)');
   const pg1 = ctx.createRadialGradient(pb.x-5, pb.y-5, 2, pb.x, pb.y, pb.r);
   pg1.addColorStop(0,'rgba(44,63,27,0.98)'); pg1.addColorStop(1,'rgba(18,27,11,0.99)');
 
   const tg0 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
-  tg0.addColorStop(0,'rgba(16,27,42,0.98)'); tg0.addColorStop(1,'rgba(9,16,25,0.99)');
+  tg0.addColorStop(0,'rgba(32,22,33,0.98)'); tg0.addColorStop(1,'rgba(19,13,19,0.99)');
   const tg1 = ctx.createRadialGradient(tb.x-4, tb.y-4, 2, tb.x, tb.y, tb.r);
   tg1.addColorStop(0,'rgba(52,13,18,0.98)'); tg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const pvg0 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
-  pvg0.addColorStop(0,'rgba(16,27,42,0.97)'); pvg0.addColorStop(1,'rgba(9,16,25,0.99)');
+  pvg0.addColorStop(0,'rgba(32,22,33,0.97)'); pvg0.addColorStop(1,'rgba(19,13,19,0.99)');
   const pvg1 = ctx.createLinearGradient(pvp.x, pvp.y, pvp.x, pvp.y+pvp.h);
   pvg1.addColorStop(0,'rgba(66,14,20,0.98)'); pvg1.addColorStop(1,'rgba(33,7,10,0.99)');
 
   const pfg0 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
-  pfg0.addColorStop(0,'rgba(16,27,42,0.97)'); pfg0.addColorStop(1,'rgba(9,16,25,0.99)');
+  pfg0.addColorStop(0,'rgba(32,22,33,0.97)'); pfg0.addColorStop(1,'rgba(19,13,19,0.99)');
   const pfg1 = ctx.createLinearGradient(prof.x, prof.y, prof.x, prof.y+prof.h);
   pfg1.addColorStop(0,'rgba(44,30,66,0.97)'); pfg1.addColorStop(1,'rgba(21,13,32,0.99)');
 
@@ -4623,11 +4623,11 @@ function _buildUiBtnGrads() {
   ptg1.addColorStop(0,'rgba(47,13,17,0.97)'); ptg1.addColorStop(1,'rgba(24,6,8,0.99)');
 
   const ag0 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag0.addColorStop(0,'rgba(14,24,37,0.90)'); ag0.addColorStop(1,'rgba(8,13,20,0.92)');
+  ag0.addColorStop(0,'rgba(28,19,29,0.90)'); ag0.addColorStop(1,'rgba(15,11,16,0.92)');
   const ag1 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
   ag1.addColorStop(0,'rgba(56,14,19,0.98)'); ag1.addColorStop(1,'rgba(26,7,9,0.99)');
   const ag2 = ctx.createRadialGradient(ab.x-6, ab.y-6, 3, ab.x, ab.y, ab.r);
-  ag2.addColorStop(0,'rgba(19,33,51,0.98)'); ag2.addColorStop(1,'rgba(10,17,26,0.99)');
+  ag2.addColorStop(0,'rgba(39,27,40,0.98)'); ag2.addColorStop(1,'rgba(20,14,21,0.99)');
 
   const aag0 = ctx.createLinearGradient(aab.x, aab.y, aab.x, aab.y+aab.h);
   aag0.addColorStop(0,'rgba(33,7,10,0.95)'); aag0.addColorStop(1,'rgba(17,4,6,0.97)');
@@ -4637,9 +4637,9 @@ function _buildUiBtnGrads() {
   // Action-fan backdrop (drawActionFan below) — concentric with the attack hub
   const fc = fanCenter();
   const fanBg = ctx.createRadialGradient(fc.x, fc.y, FAN_R_ATK, fc.x, fc.y, FAN_TRAY_OUT);
-  fanBg.addColorStop(0,'rgba(14,24,37,0.88)'); fanBg.addColorStop(1,'rgba(6,10,16,0.66)');
+  fanBg.addColorStop(0,'rgba(28,19,29,0.88)'); fanBg.addColorStop(1,'rgba(12,8,13,0.66)');
   const fanCollar = ctx.createRadialGradient(fc.x, fc.y, FAN_COLLAR_IN, fc.x, fc.y, FAN_COLLAR_OUT);
-  fanCollar.addColorStop(0,'rgba(23,40,62,0.88)'); fanCollar.addColorStop(1,'rgba(10,17,26,0.88)');
+  fanCollar.addColorStop(0,'rgba(47,32,48,0.88)'); fanCollar.addColorStop(1,'rgba(20,14,21,0.88)');
 
   // Cache positions too — avoids creating new objects every _renderUI() call
   _uiBtnGrads = { pg0, pg1, tg0, tg1, pvg0, pvg1, pfg0, pfg1, ptg0, ptg1, ag0, ag1, ag2, aag0, aag1,
@@ -4679,7 +4679,7 @@ function drawPotionButton() {
   ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(41,72,112,0.6)';
+  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(85,58,87,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
   if (ready && cd <= 0) {
@@ -4712,7 +4712,7 @@ function drawPotionButton() {
     ctx.font = `bold ${hudF(9)}px ${F}`; ctx.fillStyle = '#f17e8b';
     ctx.fillText(cd.toFixed(1) + t('secAbbrev'), pb.x, pb.y + pb.r + 10);
   } else {
-    ctx.font = `${hudF(7)}px ${F}`; ctx.fillStyle = 'rgba(109,131,161,0.55)';
+    ctx.font = `${hudF(7)}px ${F}`; ctx.fillStyle = 'rgba(169,146,101,0.55)';
     ctx.fillText('[F]', pb.x, pb.y + pb.r + 10);
   }
 
@@ -4733,7 +4733,7 @@ function drawTargetButton() {
   ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
 
-  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(47,98,135,0.6)';
+  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(101,69,104,0.6)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
   if (hasTarget) {
@@ -4829,7 +4829,7 @@ function drawBuffStrip() {
     { t: typeof faithShieldTimer !== 'undefined' ? faithShieldTimer : 0, icon:'shield',    color:'#ebad4e' },
     { t: typeof invisTimer       !== 'undefined' ? invisTimer       : 0, icon:'teleport',  color:'#f2d197' },
     { t: typeof dodgeTimer       !== 'undefined' ? dodgeTimer       : 0, icon:'dash',      color:'#98e456' },
-    { t: typeof guardTimer       !== 'undefined' ? guardTimer       : 0, icon:'shield',    color:'#90a4b5' },
+    { t: typeof guardTimer       !== 'undefined' ? guardTimer       : 0, icon:'shield',    color:'#bbab8a' },
     { t: typeof vampirismTimer   !== 'undefined' ? vampirismTimer   : 0, icon:'drop',      color:'#c23b5e' },
   ];
   for (const b of skillBuffs) {
@@ -4889,7 +4889,7 @@ function drawBuffStrip() {
     const chip = chips[i];
 
     // Background cell
-    ctx.fillStyle = chip.debuff ? 'rgba(37,8,11,0.90)' : 'rgba(10,17,26,0.90)';
+    ctx.fillStyle = chip.debuff ? 'rgba(37,8,11,0.90)' : 'rgba(20,14,21,0.90)';
     roundRect(ctx, cx, cy, SZ, SZ, 5); ctx.fill();
     ctx.globalAlpha = 0.75;
     ctx.strokeStyle = chip.color; ctx.lineWidth = 1;
@@ -4992,7 +4992,7 @@ function drawOfflineFarmButton() {
   ctx.save();
   const grad = ctx.createLinearGradient(ob.x, ob.y, ob.x, ob.y + ob.h);
   grad.addColorStop(0, '#2f6aa8');
-  grad.addColorStop(1, '#1d4a7a');
+  grad.addColorStop(1, '#543956');
   ctx.fillStyle = grad;
   roundRect(ctx, ob.x, ob.y, ob.w, ob.h, 7); ctx.fill();
   ctx.strokeStyle = 'rgba(127,180,232,0.75)';
@@ -5046,11 +5046,11 @@ function drawMailBonusButton() {
   // такт и читались как одна.
   const sweep = (Math.sin(Date.now() / 1100 + Math.PI / 2) + 1) / 2;
   const grad = ctx.createLinearGradient(mb.x, mb.y, mb.x + mb.w, mb.y + mb.h);
-  grad.addColorStop(0, '#17283e');
-  grad.addColorStop(Math.max(0, sweep - 0.3), '#233e60');
+  grad.addColorStop(0, '#2f2030');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#49324b');
   grad.addColorStop(sweep, '#4fc3ff');
-  grad.addColorStop(Math.min(1, sweep + 0.3), '#233e60');
-  grad.addColorStop(1, '#17283e');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#49324b');
+  grad.addColorStop(1, '#2f2030');
   ctx.fillStyle = grad;
   roundRect(ctx, mb.x, mb.y, mb.w, mb.h, 9); ctx.fill();
 
@@ -5097,10 +5097,10 @@ function _mailBonusCard(kind, mine) {
   const title = kind === 'ticket' ? t('mailBonusTicketHdr') : t('mailBonusFreeHdr');
   const accent = kind === 'ticket' ? '#ffcf56' : '#4fc3ff';
   const lockNote = kind === 'ticket' ? t('mailBonusNeedTicket') : t('mailBonusHaveTicket');
-  return `<div style="border:1px solid ${mine ? accent + '66' : 'rgba(193,204,213,.10)'};
+  return `<div style="border:1px solid ${mine ? accent + '66' : 'rgba(216,207,190,.10)'};
       border-radius:12px;padding:12px 12px 8px;margin-bottom:10px;
       background:${mine ? 'rgba(79,195,255,.05)' : 'transparent'};${mine ? '' : 'opacity:.5'}">
-    <div style="font-size:13px;font-weight:800;color:${mine ? accent : '#5b7183'};margin-bottom:8px">
+    <div style="font-size:13px;font-weight:800;color:${mine ? accent : '#897855'};margin-bottom:8px">
       ${title}${mine ? '' : ` <span style="font-weight:600;font-size:11px">· ${lockNote}</span>`}</div>
     <div class="vip-items-row">${_mailBonusRows(tier)}</div>
   </div>`;
@@ -5120,9 +5120,9 @@ function openMailBonusPanel() {
   // целиком, и там это сходило с рук: одна награда, список короткий. Здесь их
   // две, вместе они выше экрана — и «Забрать» уезжала под нижний край. Кнопку,
   // ради которой окно открыли, искать прокруткой игрок не должен.
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;display:flex;flex-direction:column;background:#0c1420;border-radius:16px;border:1px solid rgba(79,195,255,.22);padding:20px 18px;">
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;display:flex;flex-direction:column;background:#181119;border-radius:16px;border:1px solid rgba(79,195,255,.22);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#4fc3ff;margin-bottom:6px">${t('mailBonusTitle')}</div>
-    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('mailBonusDesc')}</div>
+    <div style="font-size:12.5px;color:#b19f7b;line-height:1.5;margin-bottom:12px">${t('mailBonusDesc')}</div>
     <div class="ov-scroll" style="flex:1;min-height:0;overflow:auto;margin:0 -4px;padding:0 4px">
       ${_mailBonusCard('free', mine === 'free')}
       ${_mailBonusCard('ticket', mine === 'ticket')}
@@ -5130,11 +5130,11 @@ function openMailBonusPanel() {
     <div id="mail-bonus-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
     <div style="display:flex;gap:10px;margin-top:16px;flex-shrink:0">
       <button onclick="document.getElementById('mail-bonus-ov').remove()" style="
-        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(193,204,213,.07);
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(216,207,190,.07);
         color:#5797c4;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
       <button id="mail-bonus-go" onclick="_confirmMailBonus()" style="
         flex:1;padding:11px;border:none;border-radius:10px;
-        background:linear-gradient(135deg,#1d4a63,#2b7a9e);color:#bfe4ff;
+        background:linear-gradient(135deg,#473149,#6f4c73);color:#bfe4ff;
         font-size:14px;font-weight:700;cursor:pointer">${t('mailBonusClaimBtn')}</button>
     </div>
   </div>`;
@@ -5209,11 +5209,11 @@ function drawStarterBonusButton() {
   // so the two never pulse in lockstep.
   const sweep = (Math.sin(Date.now() / 1100 + Math.PI) + 1) / 2;
   const grad = ctx.createLinearGradient(bb.x, bb.y, bb.x + bb.w, bb.y + bb.h);
-  grad.addColorStop(0, '#17283e');
-  grad.addColorStop(Math.max(0, sweep - 0.3), '#233e60');
+  grad.addColorStop(0, '#2f2030');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#49324b');
   grad.addColorStop(sweep, '#f0b44a');
-  grad.addColorStop(Math.min(1, sweep + 0.3), '#233e60');
-  grad.addColorStop(1, '#17283e');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#49324b');
+  grad.addColorStop(1, '#2f2030');
   ctx.fillStyle = grad;
   roundRect(ctx, bb.x, bb.y, bb.w, bb.h, 9); ctx.fill();
 
@@ -5567,19 +5567,19 @@ function openStarterBonusPanel() {
   ov.id = 'starter-bonus-ov';
   ov.onclick = () => ov.remove();
   ov.style.cssText = 'position:fixed;inset:0;z-index:240;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
-  ov.innerHTML = `<div class="ov-scroll" onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#0c1420;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
+  ov.innerHTML = `<div class="ov-scroll" onclick="event.stopPropagation()" style="width:100%;max-width:340px;max-height:82vh;overflow:auto;background:#181119;border-radius:16px;border:1px solid rgba(240,180,74,.22);padding:20px 18px;">
     <div style="font-size:16px;font-weight:800;color:#f0b44a;margin-bottom:6px">${t('starterBonusTitle')}</div>
-    <div style="font-size:12.5px;color:#8197ab;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
+    <div style="font-size:12.5px;color:#b19f7b;line-height:1.5;margin-bottom:12px">${t('starterBonusDesc')}</div>
     <div class="vip-items-row">${gearRows}${bpRows}${hpRow}</div>
     ${buffLine ? `<div style="font-size:12.5px;color:#f0b44a;font-weight:700;margin-top:10px">${buffLine}</div>` : ''}
     <div id="starter-bonus-err" style="display:none;font-size:12.5px;color:#f88;margin-top:10px"></div>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button onclick="document.getElementById('starter-bonus-ov').remove()" style="
-        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(193,204,213,.07);
+        flex:1;padding:11px;border:none;border-radius:10px;background:rgba(216,207,190,.07);
         color:#5797c4;font-size:14px;font-weight:600;cursor:pointer">${t('cancelBtn')}</button>
       <button id="starter-bonus-go" onclick="_confirmStarterBonus()" style="
         flex:1;padding:11px;border:none;border-radius:10px;
-        background:linear-gradient(135deg,#233e60,#2b597a);color:#ffe0a3;
+        background:linear-gradient(135deg,#49324b,#5b3f5e);color:#ffe0a3;
         font-size:14px;font-weight:700;cursor:pointer">${t('starterBonusClaimBtn')}</button>
     </div>
   </div>`;
@@ -5693,7 +5693,7 @@ function drawAttackButton() {
 
   const borderColor = !autoAttackMode
     ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
-    : 'rgba(41,72,112,0.45)';
+    : 'rgba(85,58,87,0.45)';
   ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
   if (!autoAttackMode && hasTarget && ready) {
@@ -5702,7 +5702,7 @@ function drawAttackButton() {
   }
 
   ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#2b5a7b' : '#f1ce90');
+  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c3f5f' : '#f1ce90');
   drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
 
   ctx.globalAlpha = 1;
@@ -5832,7 +5832,7 @@ function drawPartyHUD() {
       roundRect(ctx, hbx, hby, hbw * pct, hbh, 3); ctx.fill();
     }
     ctx.font = `${hudF(6.5)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(193,204,213,0.88)';
+    ctx.fillStyle = 'rgba(216,207,190,0.88)';
     ctx.fillText(Math.ceil(hp) + '/' + maxHp, hbx + hbw / 2, hby + hbh / 2);
 
     ctx.restore();
@@ -5876,7 +5876,7 @@ function drawPartyInvitePopup() {
 
   drawIconCtx(ctx, 'party', px + hud(20), py + hud(18), hud(16), '#90d653');
   ctx.font = `bold ${hudF(12)}px ${F}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = '#c6d0d9';
+  ctx.fillStyle = '#dcd4c3';
   ctx.fillText(t('partyInviteTitle'), px + 34, py + 14);
   ctx.font = `${hudF(10)}px ${F}`; ctx.fillStyle = '#90d653';
   ctx.fillText(inv.fromName, px + 34, py + 28);
@@ -6075,7 +6075,7 @@ function _runeRerollAllBar(it) {
   return `<div style="display:flex;flex-direction:column;gap:4px">
     <button class="imod-btn imod-enhance-btn" style="padding:9px;font-size:13px"
             onclick="_runeRerollAllConfirm(${it.rowId})">Переработать</button>
-    <div style="font-size:11px;color:#8197ab;text-align:center">${note}</div>
+    <div style="font-size:11px;color:#b19f7b;text-align:center">${note}</div>
   </div>`;
 }
 
@@ -6262,7 +6262,7 @@ function openRuneModal(it) {
     </div>
     <div class="imod-stats">${_runeStatRows(it, { canReroll: true })}</div>
     ${_runeRerollAllBar(it)}
-    <div style="font-size:11px;color:#8197ab;padding:0 4px 4px">
+    <div style="font-size:11px;color:#b19f7b;padding:0 4px 4px">
       Вставляется через гнёзда предмета: откройте вещь и нажмите на гнездо.
       Замочек оставляет характеристику нетронутой и удваивает цену общего перебора.
     </div>
@@ -7353,7 +7353,7 @@ function _ofarmDur(sec) {
 // Плитка добычи: иконка предмета, количество в углу, название под ней.
 function _ofarmItemTile(it) {
   const def = (typeof _anyItemDef === 'function' && _anyItemDef(it.id)) || it;
-  const rc = (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[it.rarity || def.rarity]) || '#5c6b78';
+  const rc = (typeof RARITY_COLOR !== 'undefined' && RARITY_COLOR[it.rarity || def.rarity]) || '#6a5f6b';
   const name = _escHtml(it.name || def.name || it.id);
   const qty = (it.qty || 1) > 1 ? `<span class="ofarm-tile-qty">×${_ofarmFmt(it.qty)}</span>` : '';
   return `<div class="ofarm-tile" title="${name}" style="border-color:${rc}66">
@@ -9826,7 +9826,7 @@ function _farm2DropRows() {
 
   const rows = [
     _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(FARM2_LIBERTY_CHANCE * 100), '#e8c15a'),
-    boxRare     ? _dropRow(_itemIcon(boxRare, 16),     boxRare.name,     _pctSmall(FARM2_BOX_RARE_CHANCE * 100),     '#4a7bab') : '',
+    boxRare     ? _dropRow(_itemIcon(boxRare, 16),     boxRare.name,     _pctSmall(FARM2_BOX_RARE_CHANCE * 100),     '#a58950') : '',
     boxUncommon ? _dropRow(_itemIcon(boxUncommon, 16), boxUncommon.name, _pctSmall(FARM2_BOX_UNCOMMON_CHANCE * 100), '#90d653') : '',
     normStone   ? _dropRow(_itemIcon(normStone, 16),   normStone.name,   _pctSmall(FARM2_NORM_STONE_CHANCE * 100),   '#f17e8b') : '',
     blessStone  ? _dropRow(_itemIcon(blessStone, 16),  blessStone.name,  _pctSmall(FARM2_BLESS_STONE_CHANCE * 100),  '#efc680') : '',
@@ -9980,7 +9980,7 @@ function hideArena3Timer() {
 // относительно смотрящего (_gwSideOf: свой / чужой / ничья). Без бесконечных
 // CSS-анимаций: панель перерисовывается раз в секунду, и анимация
 // начиналась бы заново каждый раз.
-const _GW_SIDE_FILL = { mine: '#40c878', enemy: '#eb463c', neutral: '#9aa8c0' };
+const _GW_SIDE_FILL = { mine: '#40c878', enemy: '#eb463c', neutral: '#c6b594' };
 function _gwFieldHTML(st, live) {
   const owners = new Map(((live && st.towers) || []).map(x => [x.i, x.ownerClanName]));
   const corners = [[38, 38], [162, 38], [38, 162], [162, 162]];
@@ -10822,7 +10822,7 @@ function showEventBossBanner(text, color) {
 let _gwClockSkew = 0;
 function _gwMyClan() { return (typeof clanData !== 'undefined' && clanData && clanData.name) || null; }
 function _gwSideOf(name) { return !name ? 'neutral' : (name === _gwMyClan() ? 'mine' : 'enemy'); }
-const _GW_SIDE_CSS = { mine: '#40c878', enemy: '#eb463c', neutral: '#9aa8c0' };
+const _GW_SIDE_CSS = { mine: '#40c878', enemy: '#eb463c', neutral: '#c6b594' };
 
 function _gwHpEl() {
   let el = document.getElementById('gw-tower-hp');
@@ -11667,7 +11667,7 @@ function showGramShopBtn() {
 const _SPECIAL_PET_PKGS_UI = [
   { id:'extrapkg1', gram:30, untilSeasonEnd:true,  get label() { return t('shopTierStarter'); },   petChoice:'common',   classCloak:'common',   classArtifact:'common', wings:'common',   rune:'common',   color:'#9c9086' },
   { id:'extrapkg2', gram:65, untilSeasonEnd:true,  get label() { return t('shopTierBasic'); },     petChoice:'uncommon', classCloak:'uncommon', classArtifact:'uncommon', wings:'uncommon', rune:'uncommon', color:'#6f9c4a' },
-  { id:'extrapkg3', gram:220, untilSeasonEnd:true, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#4a7bab' },
+  { id:'extrapkg3', gram:220, untilSeasonEnd:true, get label() { return t('shopTierAdvanced'); }, petChoice:'rare',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#a58950' },
   { id:'extrapkg4', gram:370, untilSeasonEnd:true, get label() { return t('shopTierExcellent'); }, petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'rare',     rune:'rare',     color:'#deb568' },
   { id:'extrapkg5', gram:550, untilSeasonEnd:true, get label() { return t('shopTierTop'); },       petChoice:'epic',     classCloak:'rare',     classArtifact:'rare',   wings:'epic',     rune:'epic',     color:'#e6af5e' },
   { id:'extrapkg6', gram:700, untilSeasonEnd:true, get label() { return t('shopTierAdmin'); },     wings:'legendary', enhance:10, color:'#c084fc' },
@@ -12246,7 +12246,7 @@ function _renderSoundPicker() {
     <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('perfModeHint')}</div>
 
     <div class="gram-section-title" style="margin:18px 0 10px">${t('hudLayoutTitle')}</div>
-    <button class="skill-upg-btn" style="background:linear-gradient(135deg,#306387,#4187b9)" onclick="openHudEditMode()">${t('hudLayoutOpenBtn')}</button>
+    <button class="skill-upg-btn" style="background:linear-gradient(135deg,#654668,#4187b9)" onclick="openHudEditMode()">${t('hudLayoutOpenBtn')}</button>
     <div style="font-size:11px;color:#82745b;margin-top:8px;text-align:center">${t('hudLayoutHint')}</div>
   `;
 }

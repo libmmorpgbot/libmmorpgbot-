@@ -410,7 +410,7 @@ function _hlpBody(ctx, def, t, tier) {
       _hlpShine(ctx, -r * 0.45, -r * 0.5, r * 0.25);
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.beginPath(); ctx.arc(r * 0.5, r * 0.45, r * 0.08, 0, Math.PI * 2); ctx.fill();
-      _hlpEyes(ctx, 0, r * 0.1, r * 0.34, r * 0.15, t, { seed, color: '#123a5a' });
+      _hlpEyes(ctx, 0, r * 0.1, r * 0.34, r * 0.15, t, { seed, color: '#3c293e' });
       break;
     }
     case 'flame': {
