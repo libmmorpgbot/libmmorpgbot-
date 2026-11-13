@@ -407,3 +407,5 @@ let _seasonWinners = null;  // "Итоги" screen data — null = not fetched y
 // onGramShopResult, js/ui.js). Drives its chip in the buff strip
 // (drawBuffStrip) and its "already owned" state in the GRAM shop card.
 let _seasonTicketActive = false;
+// Есть ли что забрать по кнопке «Билет» (seasonBonusState, js/network.js).
+let _seasonBonusAvail = false;

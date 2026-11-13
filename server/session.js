@@ -82,7 +82,7 @@ const WRITE_ACTIONS = new Set([
   // Rewards and purchases. gramShopBuy is a real-money purchase and had no
   // player-log row at all.
   'pickupWorldDrop',
-  'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'friendEventClaim', 'dailyComboGuess', 'buyTeleportStone', 'useTeleportStone',
+  'gramShopBuy', 'starterBonusClaim', 'mailBonusClaim', 'seasonBonusClaim', 'friendEventClaim', 'dailyComboGuess', 'buyTeleportStone', 'useTeleportStone',
   'seasonBurnBook', 'itemDisassemble',
   'enterLocation',
   // Запуск оффлайн-фарма. Выдача (offlineFarmClaim) пишется своей строкой в
@@ -1023,40 +1023,18 @@ class Session {
   }
 
   // ── бонус сезонного билета ───────────────────────────────────────────────
-  // Своей транзакцией и ПОСЛЕ неё — рассылка: вход или покупку, которые его
-  // вызвали, сбой здесь не должен откатывать. Выдача сама идемпотентна
-  // (repos/shop.js, grantSeasonBonus), повторный вызов ничего не даёт.
-  async grantSeasonBonus({ quiet = false } = {}) {
-    if (!this.playerId || !this.seasonTicket) return null;
-    let res;
+  // Не начисляется сам: владелец билета забирает его кнопкой
+  // (seasonBonusClaim, server/handlers2/progression.js). Здесь — только
+  // сказать клиенту, есть ли что забирать: при входе и после покупки.
+  async pushSeasonBonusState(db = null) {
+    if (!this.playerId) return;
     try {
       const shopRepo = require('./db/repos/shop');
-      res = await tx(t => shopRepo.grantSeasonBonus(t, this.playerId));
+      const available = await shopRepo.seasonBonusAvailable(db, this.playerId);
+      this._sendState(() => this._emitRaw('seasonBonusState', { available }));
     } catch (err) {
-      console.error('[session] seasonBonus:', err.message);
-      return null;
+      console.error('[session] seasonBonusState:', err.message);
     }
-    if (!res) return null;
-    // quiet — при входе: клиент ещё не собран, всё выданное он получит в
-    // authOk, а уведомление пришлёт вызывающий (notifySeasonBonus).
-    if (quiet) return res;
-    if (!res.noRoom) {
-      try {
-        await this.pushItems(); await this.pushBalances();
-        const consumables = require('./db/repos/consumables');
-        this._emitRaw('potionBag', { potionBag: await consumables.potionBagOf(null, this.playerId) });
-      } catch (err) { console.error('[session] seasonBonus push:', err.message); }
-    }
-    this.notifySeasonBonus(res);
-    return res;
-  }
-
-  notifySeasonBonus(res) {
-    if (!res) return;
-    if (res.noRoom) { this._emitRaw('seasonBonus', { noRoom: true, need: res.need }); return; }
-    this._emitRaw('seasonBonus', {
-      nexum: res.nexum, shards: res.shards, buffPotions: res.buffPotions, cpPotions: res.cpPotions,
-    });
   }
 
   async refreshVip(db = null) {

@@ -168,6 +168,14 @@ function getMailBonusBtnPos() {
   return { x: cb.x, y: cb.y + cb.h + 6, w: cb.w, h: cb.h };
 }
 
+// Кнопка бонуса сезонного билета — в слоте «Письма», когда письма нет, и
+// справа от него, когда есть оба.
+function getSeasonBonusBtnPos() {
+  const mb = getMailBonusBtnPos();
+  const mailOn = typeof _mailBonusAvailable === 'function' && _mailBonusAvailable();
+  return mailOn ? { x: mb.x + mb.w + 6, y: mb.y, w: mb.w, h: mb.h } : mb;
+}
+
 // Directly below Письмо, same column — opens the free "Набор новичка"
 // kit (openStarterBonusPanel, js/ui.js). Only drawn while the account still
 // has it to claim, but the position is unconditional: the party list below is
@@ -694,6 +702,16 @@ function _checkComboBtnTouch(cx, cy) {
 // Та же оговорка, что и у «Бонуса» ниже: пока награда не забрана, слот ловит
 // нажатие, а после — обязан перестать, иначе он съедал бы нажатия по тому,
 // что нарисовано под ним.
+function _checkSeasonBonusBtnTouch(cx, cy) {
+  if (typeof _seasonBonusAvail === 'undefined' || !_seasonBonusAvail) return false;
+  const sb = getSeasonBonusBtnPos();
+  if (cx >= sb.x && cx <= sb.x + sb.w && cy >= sb.y && cy <= sb.y + sb.h) {
+    if (typeof openSeasonBonusPanel === 'function') openSeasonBonusPanel();
+    return true;
+  }
+  return false;
+}
+
 function _checkMailBonusBtnTouch(cx, cy) {
   if (typeof _mailBonusAvailable === 'function' && !_mailBonusAvailable()) return false;
   const mb = getMailBonusBtnPos();
@@ -899,6 +917,7 @@ function onTS(e) {
     if (_checkFriendBtnTouch(p.x, p.y)) continue;
     if (_checkComboBtnTouch(p.x, p.y)) continue;
     if (_checkOfflineFarmBtnTouch(p.x, p.y)) continue;
+    if (_checkSeasonBonusBtnTouch(p.x, p.y)) continue;
     if (_checkMailBonusBtnTouch(p.x, p.y)) continue;
     if (_checkStarterBonusBtnTouch(p.x, p.y)) continue;
     if (_checkPartyBtnTouch(p.x, p.y)) continue;
@@ -994,6 +1013,7 @@ function onMD(e) {
   if (_checkFriendBtnTouch(p.x, p.y)) return;
   if (_checkComboBtnTouch(p.x, p.y)) return;
   if (_checkOfflineFarmBtnTouch(p.x, p.y)) return;
+  if (_checkSeasonBonusBtnTouch(p.x, p.y)) return;
   if (_checkMailBonusBtnTouch(p.x, p.y)) return;
   if (_checkStarterBonusBtnTouch(p.x, p.y)) return;
   if (_checkPartyBtnTouch(p.x, p.y)) return;

@@ -466,10 +466,8 @@ module.exports = function registerProgression(s, safeOn) {
     const res = await shopRepo.buyPackage(t, pid, pkgId, petId);
     await s.refreshVip(t);       // the package may have moved a VIP tier or bought the ticket
     await s.pushItems(t); await s.pushBalances(t); await s.pushProgress(t); await s.pushStats(t);
-    // Купил билет — бонус сезонного билета сразу. _sendState держит вызов до
-    // фиксации ЭТОЙ транзакции: выдача идёт своей, уже видя купленный билет,
-    // и не может ни задержать покупку, ни откатить её.
-    if (s.seasonTicket) s._sendState(() => { s.grantSeasonBonus(); });
+    // Купил билет — у него появилась кнопка «Забрать» бонус сезонного билета.
+    if (res.seasonTicket) await s.pushSeasonBonusState(t);
     s.socket.emit('gramShopResult', {
       pkgId: res.pkgId, price: res.price, gold: res.gold, nexum: res.nexum,
       bonusSP: res.bonusSP, seasonTicket: res.seasonTicket,
@@ -517,6 +515,20 @@ module.exports = function registerProgression(s, safeOn) {
   // клиент показал ту же награду, что легла в инвентарь, а не ту, которую он
   // нарисовал по своему флагу: если билет купили в другой вкладке, эти два
   // мнения расходятся, и правым остаётся сервер.
+  // Бонус сезонного билета — по кнопке. Кто может и что дать, решает
+  // repos/shop.js (claimSeasonBonus); клиент присылает только просьбу.
+  safeOn('seasonBonusClaim', () => s.act('seasonBonusClaim', 'seasonBonusError', async (t, pid) => {
+    const res = await shopRepo.claimSeasonBonus(t, pid);
+    await s.pushItems(t); await s.pushBalances(t);
+    const potionBag = await require('../db/repos/consumables').potionBagOf(t, pid);
+    s._sendState(() => {
+      s._emitRaw('potionBag', { potionBag });
+      s._emitRaw('seasonBonus', { nexum: res.nexum, shards: res.shards, buffPotions: res.buffPotions, cpPotions: res.cpPotions });
+      s._emitRaw('seasonBonusState', { available: false });
+    });
+    return res;
+  }, r => r && { liberty: r.nexum, осколки: r.shards, банкиЦП: r.cpPotions }));
+
   safeOn('mailBonusClaim', () => s.act('mailBonusClaim', 'mailBonusError', async (t, pid) => {
     const res = await shopRepo.claimMailBonus(t, pid);
     await s.pushItems(t); await s.pushStats(t);

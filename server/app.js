@@ -455,7 +455,7 @@ const HEAVY = new Set([
   'learnSkill', 'upgradeSkill', 'upgradeForeignSkill', 'learnPassive', 'upgradePassive', 'learnAdvSkill',
   'toggleAdvSkill', 'claimQuest', 'completeSpecialQuest', 'claimVipRewards', 'vipSync',
   'seasonRating', 'seasonSync', 'seasonBurnBook', 'itemDisassemble',
-  'empower', 'resetUpgrades', 'getRating', 'eliteRating', 'starterBonusClaim', 'mailBonusClaim',
+  'empower', 'resetUpgrades', 'getRating', 'eliteRating', 'starterBonusClaim', 'mailBonusClaim', 'seasonBonusClaim',
   'friendEventSync', 'friendEventClaim', 'dailyComboGuess', 'marketShare', 'marketShareLeft',
   'clanCreate', 'clanApply', 'clanApprove', 'clanDecline', 'clanKick', 'clanLeave',
   'clanDisband', 'clanTransferLeader', 'clanSetDescription', 'clanSearch', 'clanRequest',
@@ -541,6 +541,7 @@ for (const [channel, events] of Object.entries({
   itemDisassembleError: ['itemDisassemble'],
   starterBonusError: ['starterBonusClaim'],
   mailBonusError: ['mailBonusClaim'],
+  seasonBonusError: ['seasonBonusClaim'],
   friendEventError: ['friendEventSync', 'friendEventClaim', 'dailyComboGuess'],
   empowerError: ['empower'],
   resetUpgradesError: ['resetUpgrades'],
@@ -870,11 +871,6 @@ io.on('connection', (socket) => {
       return socket.disconnect(true);
     }
     clearTimeout(authTimer);
-    // Бонус сезонного билета — ДО того, как собраны данные для authOk: тогда
-    // осколки, банки и Liberty уже лежат в том, что клиент получит при входе.
-    // Уведомление — после authOk (ниже), когда клиенту есть где его показать.
-    const seasonBonus = await s.grantSeasonBonus({ quiet: true });
-    if (seasonBonus && !seasonBonus.noRoom) res.state = await s.fullState();
     // Everything another connection may need to know about this one without
     // going through the database. `username` in particular: a party invite is
     // addressed to a socket and has to name the person behind it, and the
@@ -1075,8 +1071,8 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Бонус сезонного билета (выдан выше, до authOk) — уведомление.
-    if (seasonBonus) s.notifySeasonBonus(seasonBonus);
+    // Бонус сезонного билета ждёт кнопку «Забрать» — сообщаем, есть ли он.
+    await s.pushSeasonBonusState();
 
     // ── the season, at login ──────────────────────────────────────────────
     // The HUD's season-ticket chip needs BOTH `seasonTicketActive` (which

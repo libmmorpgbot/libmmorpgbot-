@@ -5152,6 +5152,69 @@ function drawMailBonusButton() {
   ctx.restore();
 }
 
+// ── бонус сезонного билета ──────────────────────────────────────────────────
+// Кнопка «Билет» — золотая, пока есть что забрать (_seasonBonusAvail); окно с
+// наградами и «Забрать» (netSeasonBonusClaim). Что именно дать и кому, решает
+// сервер (claimSeasonBonus, server/db/repos/shop.js).
+function drawSeasonBonusButton() {
+  if (typeof _seasonBonusAvail === 'undefined' || !_seasonBonusAvail) return;
+  const sb = getSeasonBonusBtnPos();
+  const F = 'system-ui, -apple-system, Arial';
+  ctx.save();
+  const sweep = (Math.sin(Date.now() / 1000) + 1) / 2;
+  const grad = ctx.createLinearGradient(sb.x, sb.y, sb.x + sb.w, sb.y + sb.h);
+  grad.addColorStop(0, '#2a1d12');
+  grad.addColorStop(Math.max(0, sweep - 0.3), '#4a3418');
+  grad.addColorStop(sweep, '#e2b75e');
+  grad.addColorStop(Math.min(1, sweep + 0.3), '#4a3418');
+  grad.addColorStop(1, '#2a1d12');
+  ctx.fillStyle = grad;
+  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 9); ctx.fill();
+  ctx.strokeStyle = 'rgba(226,183,94,0.85)'; ctx.lineWidth = 1.5;
+  roundRect(ctx, sb.x, sb.y, sb.w, sb.h, 9); ctx.stroke();
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
+  ctx.strokeStyle = `rgba(226,183,94,${(0.12 + 0.14 * pulse).toFixed(3)})`; ctx.lineWidth = 4;
+  roundRect(ctx, sb.x - 2, sb.y - 2, sb.w + 4, sb.h + 4, 11); ctx.stroke();
+  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffe9b0';
+  ctx.fillText('Билет', sb.x + sb.w / 2, sb.y + sb.h / 2);
+  ctx.restore();
+}
+
+function openSeasonBonusPanel() {
+  const old = document.getElementById('season-bonus-ov');
+  if (old) old.remove();
+  const B = SEASON_TICKET_BONUS;
+  const row = (img, name, qty) => `<div class="db-reward-row">${img ? `<img src="${img}" alt="">` : '<span class="db-reward-fallback">🎁</span>'}
+      <span>${name}</span><span class="db-reward-qty">${qty}</span></div>`;
+  const shard = typeof _anyItemDef === 'function' ? _anyItemDef('star_shard') : null;
+  const rows = [
+    row(shard && shard.img, (shard && shard.name) || 'Звёздный осколок', '×' + B.shards),
+    row('/images/nexum-coin_v2.png', 'Liberty', '+' + B.nexum),
+    ...ITEM_DEF.filter(d => d.slot === 'buff_potion').map(d => row(d.img, d.name, '×' + B.buffPotions)),
+    row(CP_POTION.img, CP_POTION.name, '×' + B.cpPotions),
+  ];
+  const ov = document.createElement('div');
+  ov.id = 'season-bonus-ov';
+  ov.onclick = () => ov.remove();
+  ov.style.cssText = 'position:fixed;inset:0;z-index:230;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="width:100%;max-width:360px;max-height:84vh;overflow-y:auto;background:var(--leather);border:1px solid var(--panel-line);border-radius:16px;padding:18px 16px;box-shadow:0 10px 40px rgba(0,0,0,.6)">
+    <div style="font-family:var(--font-display);font-size:19px;font-weight:700;color:var(--gold);text-align:center;margin-bottom:4px">Бонус сезонного билета</div>
+    <div style="font-size:12px;color:var(--parchment-dim);text-align:center;margin-bottom:12px">Один раз за сезон — для владельцев билета</div>
+    <div>${rows.join('')}</div>
+    <button id="season-bonus-claim" onclick="claimSeasonBonus()" style="width:100%;margin-top:14px;padding:12px;border:none;border-radius:12px;
+      background:linear-gradient(#f3d892,#e2b75e 55%,#b88a3a);color:#2a1a08;font-size:15px;font-weight:800;cursor:pointer">Забрать</button>
+    <button onclick="document.getElementById('season-bonus-ov').remove()" style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--panel-line);border-radius:12px;background:transparent;color:var(--parchment-dim);font-size:13px;cursor:pointer">${t('cancelBtn')}</button>
+  </div>`;
+  document.getElementById('app').appendChild(ov);
+}
+
+function claimSeasonBonus() {
+  const b = document.getElementById('season-bonus-claim');
+  if (b) { b.disabled = true; b.textContent = '…'; }
+  if (typeof netSeasonBonusClaim === 'function') netSeasonBonusClaim();
+}
+
 // Строки одной награды: баф-зелья всех видов, затем материалы, затем сундуки,
 // затем крылья — в том же порядке, в каком их складывает claimMailBonus,
 // чтобы обещание и выдача читались одним списком.

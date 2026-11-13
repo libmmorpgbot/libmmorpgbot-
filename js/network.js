@@ -2705,16 +2705,21 @@ function netConnect(onReady) {
   });
 
   // The authoritative potion bag, after a purchase or a use.
-  // Бонус сезонного билета (server/db/repos/shop.js, grantSeasonBonus):
-  // приходит один раз — при входе или сразу после покупки билета.
-  socket.on('seasonBonus', ({ noRoom, need, nexum, shards, buffPotions, cpPotions } = {}) => {
-    if (typeof _marketToast !== 'function') return;
-    if (noRoom) {
-      _marketToast(`Бонус сезонного билета ждёт вас: освободите ${need || ''} мест в инвентаре и перезайдите`, 'err');
-      return;
+  // Бонус сезонного билета: есть ли что забрать (кнопка «Билет»), итог
+  // «Забрать» и отказ (нет мест, уже получен).
+  socket.on('seasonBonusState', ({ available } = {}) => { _seasonBonusAvail = !!available; });
+  socket.on('seasonBonus', ({ nexum, shards, buffPotions, cpPotions } = {}) => {
+    _seasonBonusAvail = false;
+    const ov = document.getElementById('season-bonus-ov');
+    if (ov) ov.remove();
+    if (typeof _marketToast === 'function') {
+      _marketToast(`Получено: +${shards} звёздных осколков, +${nexum} Liberty, по ${buffPotions} банок каждого бафа, ${cpPotions} банок ЦП`);
     }
-    _marketToast(`Бонус сезонного билета: +${shards} звёздных осколков, +${nexum} Liberty, по ${buffPotions} банок каждого бафа, ${cpPotions} банок ЦП`);
-    if (typeof Sound !== 'undefined' && Sound.levelUp) Sound.levelUp();
+  });
+  socket.on('seasonBonusError', ({ msg } = {}) => {
+    const b = document.getElementById('season-bonus-claim');
+    if (b) { b.disabled = false; b.textContent = 'Забрать'; }
+    if (typeof _marketToast === 'function') _marketToast(msg || t('genericErrorLbl'), 'err');
   });
 
   socket.on('potionBag', ({ potionBag, bought } = {}) => {
@@ -4462,6 +4467,9 @@ function netSendMove() {
 // number. Callers must pass the potion they drank, not just its size.
 function netUsePotion(id) {
   if (socket?.connected) socket.emit('usePotion', { id });
+}
+function netSeasonBonusClaim() {
+  if (socket?.connected) socket.emit('seasonBonusClaim');
 }
 // Банка ЦП: сервер спишет из сумки и восстановит 5% ЦП в комнате (cpSync).
 function netUseCpPotion() {

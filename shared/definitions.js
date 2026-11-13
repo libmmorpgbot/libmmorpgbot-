@@ -4020,9 +4020,9 @@ const CP_POTION = { id: 'cp1', name: 'Банка ЦП', img: '/images/potion/cp.
 const CP_POTION_CAP = 99999;
 
 // ── Бонус сезонного билета ──────────────────────────────────────────────────
-// Один раз на аккаунт за сезон, каждому владельцу билета: уже купившим — при
-// следующем входе, новым — сразу после покупки (server/db/repos/shop.js,
-// grantSeasonBonus). Отметка «выдано» — строка kv `season_bonus:<сезон>:<игрок>`.
+// Один раз на аккаунт за сезон, владельцу билета — по кнопке «Билет» →
+// «Забрать» (server/db/repos/shop.js, claimSeasonBonus). Отметка «выдано» —
+// строка kv `season_bonus:<сезон>:<игрок>`.
 const SEASON_TICKET_BONUS = { shards: 1000, nexum: 300, buffPotions: 5, cpPotions: 5000 };
 const CLAN_CREATE_COST = 100;    // gold, charged server-side by clanCreate
 

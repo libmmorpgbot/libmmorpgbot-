@@ -359,36 +359,41 @@ async function claimMailBonus(db, playerId) {
 
 // ── бонус сезонного билета ──────────────────────────────────────────────────
 // SEASON_TICKET_BONUS, один раз на аккаунт за сезон, только владельцу билета
-// ЭТОГО сезона — билет читается здесь, из player_vip, клиент ничего не
-// присылает. Вызывается сервером сам (Session.grantSeasonBonus): при входе и
-// после покупки в GRAM-магазине.
+// ЭТОГО сезона и только по кнопке «Забрать» (seasonBonusClaim). Билет
+// читается здесь, из player_vip, — клиент присылает только просьбу.
 //
 // Отметка — строка kv `season_bonus:<сезон>:<игрок>`, вставляется условно ДО
 // выдачи, в той же транзакции: задвоенная награда хуже потерянной, а
 // потерянной она быть не может — откат снимет отметку вместе с выдачей.
 // Liberty идёт в журнал денег с тем же ключом идемпотентности, предметы — в
 // журнал предметов через items.add, банки ЦП — в сумку зелий.
-//
-// Не влезло в инвентарь — ничего не выдаётся и не отмечается: вернётся
-// { noRoom } с тем, сколько мест нужно, и выдача повторится при следующем
-// входе.
-async function grantSeasonBonus(db, playerId) {
+function _seasonBonusKey(playerId) { return `season_bonus:${SEASON_TICKET_SEASON}:${playerId}`; }
+
+async function seasonBonusAvailable(db, playerId) {
+  const vip = await progression.vipOf(db, playerId);
+  if (!vip.seasonTicket) return false;
+  const { rows } = await query(db, 'SELECT 1 FROM kv WHERE key = $1', [_seasonBonusKey(playerId)]);
+  return rows.length === 0;
+}
+
+async function claimSeasonBonus(db, playerId) {
   await items.lockPlayer(db, playerId);
   const vip = await progression.vipOf(db, playerId);
-  if (!vip.seasonTicket) return null;
-  const key = `season_bonus:${SEASON_TICKET_SEASON}:${playerId}`;
-  const { rows: done } = await query(db, 'SELECT 1 FROM kv WHERE key = $1', [key]);
-  if (done.length) return null;
+  if (!vip.seasonTicket) err('no_ticket', 'Бонус — для владельцев сезонного билета');
+  const key = _seasonBonusKey(playerId);
 
   const B = SEASON_TICKET_BONUS;
   const list = [{ itemId: 'star_shard', qty: B.shards, enhance: 0 }];
   for (const bp of _VIP_BP) list.push({ itemId: bp.id, qty: B.buffPotions, enhance: 0 });
   const room = await _roomForAll(db, playerId, list);
-  if (!room.fits) return { noRoom: true, need: room.need, used: room.used };
+  if (!room.fits) {
+    const { SERVER_INV_MAX } = require('../../anticheat');
+    err('no_room', `Нужно ${room.need} свободных мест в инвентаре (занято ${room.used}/${SERVER_INV_MAX})`);
+  }
 
   const { rowCount } = await query(db,
     'INSERT INTO kv (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, String(Date.now())]);
-  if (!rowCount) return null;
+  if (!rowCount) err('already', 'Бонус сезонного билета уже получен');
 
   const granted = await _grantAll(db, playerId, list);
   await money.credit(db, playerId, 'nexum', B.nexum, {
@@ -445,6 +450,6 @@ async function referralsOf(db, playerId) {
 }
 
 module.exports = {
-  buyPackage, claimStarterBonus, claimMailBonus, grantSeasonBonus, referralsOf,
+  buyPackage, claimStarterBonus, claimMailBonus, seasonBonusAvailable, claimSeasonBonus, referralsOf,
   _packageContents, _roomForAll, ShopError,
 };

@@ -1797,6 +1797,7 @@ function _renderUI() {
   drawComboButton();
   drawOfflineFarmButton();
   drawMailBonusButton();
+  if (typeof drawSeasonBonusButton === 'function') drawSeasonBonusButton();
   drawStarterBonusButton();
   drawBuffStrip();
   drawPartyButton();
