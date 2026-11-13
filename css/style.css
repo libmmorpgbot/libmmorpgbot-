@@ -1201,42 +1201,35 @@ canvas { display:block; width:100%; height:100%; }
 .floor-section .sec-title { padding:8px 0 8px; }
 
 /* ── BOTTOM NAV ────────────────────────── */
+/* Нижняя навигация «Пепельного края»: ровная тёмная полоса без рамки,
+   приглушённые значки, активная вкладка — золотом на мягкой «таблетке». */
 #bottom-nav {
   position:absolute; bottom:0; left:0; right:0; height:var(--nav-h);
-  background:linear-gradient(0deg,#0e0a0e,#221823 70%);
-  border-top:1px solid rgba(228,183,93,.45);
-  box-shadow:0 -6px 18px rgba(0,0,0,.55), inset 0 1px 0 rgba(237,207,146,.10);
+  background:#120d10;
+  box-shadow:0 -1px 0 #2e2428, 0 -8px 24px rgba(0,0,0,.45);
   z-index:50; display:none;
 }
-.nav-tabs { display:flex; height:100%; }
+.nav-tabs { display:flex; height:100%; padding:4px 6px 0; box-sizing:border-box; }
 .nav-tab  {
   flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center;
-  cursor:pointer; color:#543956; gap:2.7px;
+  cursor:pointer; color:var(--parchment-dim); gap:2px;
   position:relative;
-  transition:color 0.15s;
+  transition:color 0.18s;
   user-select:none;
 }
-.nav-tab:active { opacity:0.7; }
-.nav-tab.active { color:#f4e1bd; }
-/* The lit plate under the active tab, not just a hairline: it is the one
-   piece of the nav that has to read at a glance while the thumb is on the
-   action fan at the other end of the screen. */
-.nav-tab.active::before {
-  content:""; position:absolute; inset:3px 6px 3px 6px;
-  border-radius:7px;
-  background:linear-gradient(180deg, rgba(187,144,60,.34), rgba(53,36,55,.30));
-  border:1px solid rgba(234,200,131,.55);
-  box-shadow:0 0 12px rgba(229,187,102,.28), inset 0 1px 0 rgba(242,221,178,.18);
+.nav-tab:active { transform:scale(.96); }
+.nav-tab.active { color:var(--gold); }
+.nav-tab::before {
+  content:""; position:absolute; inset:2px 4px 6px 4px; border-radius:14px;
+  background:rgba(226,183,94,.13); box-shadow:inset 0 0 0 1px rgba(226,183,94,.2);
+  opacity:0; transform:scale(.85); transition:opacity .2s, transform .2s;
 }
-.nav-tab.active::after {
-  content:""; position:absolute; top:0; left:24%; right:24%; height:2px;
-  background:#efd49e; box-shadow:0 0 8px #e8c378;
-}
-.nav-tab.active .ni, .nav-tab.active .nl { position:relative; }
-.nav-tab.active .ni { filter:drop-shadow(0 0 5px rgba(234,200,131,.65)); }
+.nav-tab.active::before { opacity:1; transform:none; }
+.nav-tab .ni, .nav-tab .nl { position:relative; }
 .nav-tab .ni { font-size:15.3px; line-height:1; }
-.nav-tab .nl { font-size:7.65px; letter-spacing:0.3px; text-transform:uppercase; }
+.nav-tab .ni svg { width:20px; height:20px; stroke-width:1.8; }
+.nav-tab .nl { font-size:9.5px; font-weight:500; letter-spacing:.02em; }
 
 /* ── UPGRADE PANEL ────────────────────── */
 .upg-section-hdr {

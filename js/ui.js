@@ -3721,10 +3721,10 @@ function setTelegramAvatar(url) {
 // party list — is the same shell: a glass-navy body, a lit frame, a highlight
 // along the top edge and four corner ticks. Drawn from one place so the look
 // only has to be changed once.
-const HUD_FRAME     = 'rgba(104,178,240,0.55)';
-const HUD_FRAME_DIM = 'rgba(104,178,240,0.26)';
-const HUD_GLOW      = 'rgba(86,170,255,0.16)';
-const HUD_TEXT      = '#dbe9f8';
+const HUD_FRAME     = 'rgba(138,106,47,0.85)';
+const HUD_FRAME_DIM = 'rgba(138,106,47,0.4)';
+const HUD_GLOW      = 'rgba(0,0,0,0.35)';
+const HUD_TEXT      = '#f1e8d3';
 const HUD_TEXT_DIM  = '#cab792';
 
 // Both header plates — the player one and the map one — are this tall, so
@@ -3732,7 +3732,7 @@ const HUD_TEXT_DIM  = '#cab792';
 const HUD_PLATE_H = hud(96);
 
 function _hudCorners(x, y, w, h, len, color) {
-  ctx.strokeStyle = color || 'rgba(150,215,255,0.7)';
+  ctx.strokeStyle = color || 'rgba(238,210,155,0.7)';
   ctx.lineWidth = 1.6; ctx.lineCap = 'round';
   const corners = [[x, y, 1, 1], [x + w, y, -1, 1], [x, y + h, 1, -1], [x + w, y + h, -1, -1]];
   for (const [cx, cy, sx, sy] of corners) {
@@ -3748,6 +3748,14 @@ function _hudCorners(x, y, w, h, len, color) {
 // The whole HUD is redrawn at 15fps into a cached canvas (see _renderUI,
 // js/game.js), so building these two gradients per panel per rebuild is
 // nothing next to keeping them in sync with a resize.
+// Середина между двумя цветами (#rrggbb) — средний тон градиента полосы.
+function _hudMid(a, b) {
+  if (!/^#[0-9a-f]{6}$/i.test(a) || !/^#[0-9a-f]{6}$/i.test(b)) return b;
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const A = p(a), B = p(b);
+  return '#' + A.map((v, i) => Math.round(v * 0.4 + B[i] * 0.6).toString(16).padStart(2, '0')).join('');
+}
+
 function _hudPanel(x, y, w, h, r, frame) {
   const g = ctx.createLinearGradient(0, y, 0, y + h);
   g.addColorStop(0, 'rgba(49,34,51,0.93)');
@@ -3759,7 +3767,7 @@ function _hudPanel(x, y, w, h, r, frame) {
   roundRect(ctx, x - 1, y - 1, w + 2, h + 2, r + 1); ctx.stroke();
   ctx.strokeStyle = frame || HUD_FRAME; ctx.lineWidth = 1.2;
   roundRect(ctx, x, y, w, h, r); ctx.stroke();
-  ctx.strokeStyle = 'rgba(150,210,255,0.13)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(238,210,155,0.13)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(x + r, y + 1.5); ctx.lineTo(x + w - r, y + 1.5); ctx.stroke();
 
   _hudCorners(x, y, w, h, 10);
@@ -3768,23 +3776,23 @@ function _hudPanel(x, y, w, h, r, frame) {
 // A value bar (HP, XP, a party member's health) in the HUD's own style:
 // sunken track, gradient fill, a shine along the top of the fill.
 function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor, fontScale) {
-  // Snapped to whole device-independent pixels: a track/fill drawn on a
-  // half-pixel boundary gets anti-aliased on both edges instead of one,
-  // which is a second, smaller source of the same "blurry" look as the
-  // undersized label font below.
+  // Полоса «Пепельного края»: скруглённая, тёмный жёлоб с тонкой светлой
+  // каймой, заливка — вертикальный градиент (светлый верх, тёмный низ),
+  // цифры по центру. c0 — тёмный тон, c1 — светлый.
   x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
-  ctx.fillStyle = 'rgba(11,8,11,0.85)';
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
   roundRect(ctx, x, y, w, h, h / 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
-  roundRect(ctx, x, y, w, h, h / 2); ctx.stroke();
-  const fw = Math.max(0, Math.min(1, pct)) * (w - 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, (h - 1) / 2); ctx.stroke();
+  const fw = Math.max(0, Math.min(1, pct)) * w;
   if (fw > 1) {
-    const g = ctx.createLinearGradient(x, 0, x + w, 0);
-    g.addColorStop(0, c0); g.addColorStop(1, c1);
+    const g = ctx.createLinearGradient(0, y, 0, y + h);
+    g.addColorStop(0, c1); g.addColorStop(0.6, _hudMid(c0, c1)); g.addColorStop(1, c0);
     ctx.fillStyle = g;
-    roundRect(ctx, x + 1, y + 1, fw, h - 2, (h - 2) / 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.16)';
-    roundRect(ctx, x + 1, y + 1, fw, (h - 2) / 2, (h - 2) / 2); ctx.fill();
+    ctx.save();
+    roundRect(ctx, x, y, w, h, h / 2); ctx.clip();
+    roundRect(ctx, x, y, Math.max(h, fw), h, h / 2); ctx.fill();
+    ctx.restore();
   }
   if (label) {
     // h*0.62 put the HP/XP readout at 6-7px on a scaled HUD — canvas text has
@@ -3798,14 +3806,14 @@ function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor, fontScale) {
     const fs = fontScale || 1;
     let fontPx = Math.max(Math.round(12 * fs), Math.round(h * 0.85 * fs));
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `bold ${fontPx}px system-ui, -apple-system, sans-serif`;
+    ctx.font = `bold ${fontPx}px 'Fira Sans Condensed', system-ui, sans-serif`;
     // Shrink-to-fit: a full, comma-separated HP/XP number can run longer than
     // an abbreviated one ever did, and this is the guard against it running
     // past the bar's own ends.
     const maxTextW = w - 6;
     while (fontPx > 7 && ctx.measureText(label).width > maxTextW) {
       fontPx -= 0.5;
-      ctx.font = `bold ${fontPx}px system-ui, -apple-system, sans-serif`;
+      ctx.font = `bold ${fontPx}px 'Fira Sans Condensed', system-ui, sans-serif`;
     }
     const lx = Math.round(x + w / 2), ly = Math.round(y + h / 2 + 0.5);
     // A real stroke instead of a second offset fillText: the old approach
@@ -3815,7 +3823,7 @@ function _hudBar(x, y, w, h, pct, c0, c1, label, labelColor, fontScale) {
     ctx.lineWidth = Math.max(2.5, fontPx * 0.22);
     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
     ctx.strokeText(label, lx, ly);
-    ctx.fillStyle = labelColor || '#f4f9ff';
+    ctx.fillStyle = labelColor || '#fbf5e9';
     ctx.fillText(label, lx, ly);
   }
 }
@@ -3945,7 +3953,7 @@ function drawMiniMapPanel() {
   ctx.fill();
   if (socket?.connected) {
     const _mmRop = Math.max(1.5, mmSc);
-    ctx.fillStyle = 'rgba(126,196,255,0.95)';
+    ctx.fillStyle = 'rgba(235,201,135,0.95)';
     ctx.beginPath();
     otherPlayers.forEach(op => {
       if (op.x == null) return;
@@ -3985,40 +3993,21 @@ function drawHeader() {
   const pRight = px + pw - hud(11);
   _hudPanel(px, py, pw, ph, 12);
 
-  // ── Avatar + level badge ──────────────────────────────────
-  const avR = hud(25), avX = px + hud(30), avY = py + hud(32);
-  const hasTgAvatar = _tgAvatarReady && _tgAvatarImg;
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
-  if (hasTgAvatar) {
-    ctx.save();
-    ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.clip();
-    ctx.drawImage(_tgAvatarImg, avX - avR, avY - avR, avR * 2, avR * 2);
-    ctx.restore();
-  } else {
-    if (!_avBgGrad || _avBgColor !== p.charDef.color) {
-      _avBgGrad = ctx.createRadialGradient(avX - 6, avY - 6, 2, avX, avY, avR);
-      _avBgGrad.addColorStop(0, p.charDef.color + '55');
-      _avBgGrad.addColorStop(1, 'rgba(12,8,12,0.85)');
-      _avBgColor = p.charDef.color;
-    }
-    ctx.fillStyle = _avBgGrad;
-    ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
-    drawClassIconCtx(ctx, p.type, avX, avY + 1, 26);
-  }
-  ctx.strokeStyle = 'rgba(122,196,255,0.85)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = p.charDef.color + '55'; ctx.lineWidth = 4;
+  // ── Значок уровня, как в «Пепельном крае» ─────────────────
+  // Круглая тёмная медаль с золотым кольцом и крупной золотой цифрой.
+  const avR = hud(23), avX = px + hud(30), avY = py + hud(32);
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = hud(4);
   ctx.beginPath(); ctx.arc(avX, avY, avR + hud(3), 0, Math.PI * 2); ctx.stroke();
-
-  const lbR = hud(11), lbX = avX - hud(14), lbY = avY + avR - 2;
-  ctx.fillStyle = 'rgba(22,15,23,0.96)';
-  ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(240,196,110,0.9)'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(lbX, lbY, lbR, 0, Math.PI * 2); ctx.stroke();
-  ctx.font = `bold ${hudF(11)}px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#f4d9a4';
-  ctx.fillText(p.lvl, lbX, lbY + 0.5);
+  const _lvG = ctx.createRadialGradient(avX - avR * 0.2, avY - avR * 0.3, 1, avX, avY, avR * 1.4);
+  _lvG.addColorStop(0, '#3a2d24'); _lvG.addColorStop(0.7, '#151116');
+  ctx.fillStyle = _lvG;
+  ctx.beginPath(); ctx.arc(avX, avY, avR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#8a6a2f'; ctx.lineWidth = hud(2);
+  ctx.beginPath(); ctx.arc(avX, avY, avR + hud(1), 0, Math.PI * 2); ctx.stroke();
+  ctx.font = `bold ${hudF(p.lvl >= 100 ? 17 : 21)}px 'Philosopher', Georgia, serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e2b75e';
+  ctx.fillText(p.lvl, avX, avY + 1);
 
   // Class badge — the opposite corner from the level badge, same size/style.
   // Drawn regardless of hasTgAvatar above: when the Telegram photo is showing
@@ -4032,7 +4021,7 @@ function drawHeader() {
   // ── Name + class ──────────────────────────────────────────
   const infoX = avX + avR + hud(12);
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-  ctx.font = `bold ${hudF(14)}px ${F}`; ctx.fillStyle = HUD_TEXT;
+  ctx.font = `bold ${hudF(15)}px 'Philosopher', Georgia, serif`; ctx.fillStyle = HUD_TEXT;
   // Ник — до кнопки «Оффлайн» в той же строке (getOfflineFarmBtnPos,
   // js/input.js): длинный обрезается многоточием, а не уходит под кнопку.
   let nick = (netUsername || p.charDef.name).slice(0, 14);
@@ -4067,13 +4056,13 @@ function drawHeader() {
   if (hasCp) {
     _hudBar(barX, py + hud(39), barW, hud(8),
       Math.max(0, p.cp || 0) / p.maxCp,
-      '#8a6a10', '#f2d23c',
+      '#22449a', '#5d8ef0',
       'CP ' + Math.ceil(Math.max(0, p.cp || 0)).toLocaleString() + ' / ' + Math.floor(p.maxCp).toLocaleString(),
       null, 0.7);
   }
   _hudBar(barX, py + hud(hasCp ? 49 : 42), barW, hud(hasCp ? 10 : 12),
     p.maxHp ? p.hp / p.maxHp : 0,
-    '#2f7a2a', '#5fd45a',
+    '#8a2219', '#e0563f',
     Math.ceil(p.hp).toLocaleString() + ' / ' + Math.floor(p.maxHp).toLocaleString(),
     null, 0.7);
   // Floor the XP readout: party kills split their reward (result.xp / members
@@ -4081,8 +4070,10 @@ function drawHeader() {
   // that into "858.9999999999418" on the bar.
   _hudBar(barX, py + hud(hasCp ? 61 : 58), barW, hud(hasCp ? 8 : 10),
     p.xpNext ? p.xp / p.xpNext : 0,
-    '#8a5a12', '#f0a63c',
-    Math.floor(p.xp).toLocaleString() + ' / ' + Math.floor(p.xpNext).toLocaleString(),
+    '#6a48b0', '#a27fe3',
+    // Опыт — процентом, как в «Пепельном крае»: на высоких уровнях полные
+    // числа длиной в двенадцать цифр не читались.
+    (p.xpNext ? Math.min(100, p.xp / p.xpNext * 100) : 0).toFixed(2) + '%',
     null, 0.7);
 
   // ── Currency chips ────────────────────────────────────────
@@ -4104,7 +4095,7 @@ function drawHeader() {
     const c = chips[i], cx = chipX0 + i * (chipW + chipGap);
     ctx.fillStyle = 'rgba(23,16,23,0.85)';
     roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.fill();
-    ctx.strokeStyle = 'rgba(96,160,220,0.30)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(215,174,91,0.30)'; ctx.lineWidth = 1;
     roundRect(ctx, cx, chipY, chipW, chipH, hud(9)); ctx.stroke();
     if (c.img) {
       const img = _getPotImg(c.img);
@@ -4220,57 +4211,61 @@ function drawJoystick() {
   const _ja = joyAlpha();
   ctx.globalAlpha = held ? Math.min(1, _ja + 0.29) : _ja;
 
-  const ring = ctx.createRadialGradient(jc.x, jc.y, JOY_R * 0.55, jc.x, jc.y, JOY_R);
-  ring.addColorStop(0, 'rgba(24,17,25,0.10)');
-  ring.addColorStop(1, 'rgba(32,22,32,0.55)');
+  // Джойстик «Пепельного края»: прозрачный диск с тонким кольцом и золотая
+  // ручка с бликом — без стрелок и заклёпок.
+  const ring = ctx.createRadialGradient(jc.x, jc.y, 0, jc.x, jc.y, JOY_R);
+  ring.addColorStop(0, 'rgba(255,255,255,0.05)'); ring.addColorStop(0.55, 'rgba(255,255,255,0.05)');
+  ring.addColorStop(0.56, 'rgba(255,255,255,0.11)'); ring.addColorStop(0.58, 'rgba(255,255,255,0.11)');
+  ring.addColorStop(0.6, 'rgba(255,255,255,0.03)'); ring.addColorStop(1, 'rgba(255,255,255,0.03)');
   ctx.fillStyle = ring;
   ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.17)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R - 0.75, 0, Math.PI * 2); ctx.stroke();
 
-  ctx.strokeStyle = 'rgba(104,178,240,0.60)'; ctx.lineWidth = 1.6;
-  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = 'rgba(86,170,255,0.16)'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R + 3, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = 'rgba(104,178,240,0.18)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(jc.x, jc.y, JOY_R * 0.62, 0, Math.PI * 2); ctx.stroke();
-
-  // Direction arrows (N/E/S/W) and diamond studs on the diagonals
-  const ar = JOY_R - 11;
-  ctx.fillStyle = 'rgba(140,206,255,0.72)';
-  for (let i = 0; i < 4; i++) {
-    const a = i * Math.PI / 2 - Math.PI / 2;
-    const ca = Math.cos(a), sa = Math.sin(a);
-    const tx = jc.x + ca * ar, ty = jc.y + sa * ar;
-    ctx.beginPath();
-    ctx.moveTo(tx + ca * 5, ty + sa * 5);
-    ctx.lineTo(tx - ca * 3 - sa * 5, ty - sa * 3 + ca * 5);
-    ctx.lineTo(tx - ca * 3 + sa * 5, ty - sa * 3 - ca * 5);
-    ctx.closePath(); ctx.fill();
-  }
-  ctx.fillStyle = 'rgba(122,196,255,0.85)';
-  for (let i = 0; i < 4; i++) {
-    const a = i * Math.PI / 2 - Math.PI / 4;
-    const sx = jc.x + Math.cos(a) * JOY_R, sy = jc.y + Math.sin(a) * JOY_R;
-    ctx.beginPath();
-    ctx.moveTo(sx, sy - 4); ctx.lineTo(sx + 4, sy); ctx.lineTo(sx, sy + 4); ctx.lineTo(sx - 4, sy);
-    ctx.closePath(); ctx.fill();
-  }
-
-  // Knob
   const kx = jc.x + joy.dx * JOY_R, ky = jc.y + joy.dy * JOY_R;
   if (_joyKnobGrad === null || kx !== _joyKnobGradKx || ky !== _joyKnobGradKy) {
-    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * .35, ky - JOY_KNOB * .35, 0, kx, ky, JOY_KNOB);
-    _joyKnobGrad.addColorStop(0, 'rgba(150,205,255,0.95)');
-    _joyKnobGrad.addColorStop(1, 'rgba(78,53,80,0.92)');
+    _joyKnobGrad = ctx.createRadialGradient(kx - JOY_KNOB * 0.2, ky - JOY_KNOB * 0.3, 0, kx, ky, JOY_KNOB * 1.1);
+    _joyKnobGrad.addColorStop(0, '#f6e3b4'); _joyKnobGrad.addColorStop(0.55, '#b98c3e'); _joyKnobGrad.addColorStop(1, '#5b4120');
     _joyKnobGradKx = kx; _joyKnobGradKy = ky;
   }
-  ctx.fillStyle = 'rgba(86,170,255,0.18)';
-  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB + 5, 0, Math.PI * 2); ctx.fill();
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.65)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
   ctx.fillStyle = _joyKnobGrad;
   ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(178,224,255,0.85)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(kx, ky, JOY_KNOB + 1, 0, Math.PI * 2); ctx.stroke();
 
   ctx.restore();
+}
+
+// ── Кнопки «Пепельного края» ───────────────────────────────────────────────
+// Круглая тёмная кнопка: радиальный градиент с бликом слева сверху, золотое
+// кольцо (ring — цвет кольца, w — толщина), тень под кнопкой.
+function _aeBtn(x, y, r, ring, w, glow) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+  const g = ctx.createRadialGradient(x - r * 0.2, y - r * 0.36, 1, x, y, r * 1.1);
+  g.addColorStop(0, '#3b2c2a'); g.addColorStop(0.72, '#151016');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  if (glow) {
+    ctx.save(); ctx.shadowColor = glow; ctx.shadowBlur = 18;
+    ctx.strokeStyle = ring; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.arc(x, y, r - w / 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.strokeStyle = ring; ctx.lineWidth = w;
+  ctx.beginPath(); ctx.arc(x, y, r - w / 2, 0, Math.PI * 2); ctx.stroke();
+}
+// Перезарядка сектором-«часами» поверх кнопки: frac — оставшаяся доля.
+function _aeCdSweep(x, y, r, frac) {
+  if (!(frac > 0)) return;
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
+  ctx.beginPath(); ctx.moveTo(x, y);
+  ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, frac));
+  ctx.closePath(); ctx.fill();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4311,8 +4306,11 @@ function _fanGem(x, y, s) {
   ctx.closePath(); ctx.fill();
 }
 
+// В «Пепельном крае» под навыками нет подставки — кнопки висят над миром
+// сами по себе. Подставка Liberty выключена; вернуть — true здесь.
+let _hudFanTray = false;
 function drawActionFan() {
-  if (!player) return;
+  if (!player || !_hudFanTray) return;
   if (!_uiBtnGrads) _buildUiBtnGrads();
   const c = _uiBtnGrads.fanC;
 
@@ -4419,42 +4417,35 @@ function drawSkillButtons() {
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const r = b.w / 2;
 
-    // Background gradient (cached) — circular
-    ctx.fillStyle = isFlash ? grads.flash : ready ? grads.ready : grads.cd;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-
-    // Icon — clipped to the circle and scaled to fully cover it, no padding
-    // and no key-letter label, so the art fills the whole button.
+    // Кнопка «Пепельного края»: тёмный круг, золотое кольцо; вспышка — ярче.
+    _aeBtn(cx, cy, r, isFlash ? '#f3d892' : '#8a6a2f', 2, isFlash ? 'rgba(226,183,94,0.6)' : null);
     ctx.save();
-    ctx.beginPath(); ctx.arc(cx, cy, r - 1.5, 0, Math.PI * 2); ctx.clip();
-    ctx.globalAlpha = ready ? 1 : 0.45;
+    ctx.beginPath(); ctx.arc(cx, cy, r - 2, 0, Math.PI * 2); ctx.clip();
+    ctx.globalAlpha = locked ? 0.4 : 1;
     const img = sk.img ? _getPotImg(sk.img) : null;
     if (img && img.complete && img.naturalWidth > 0) {
-      const d = r * 2;
+      const d = (r - 2) * 2;
       ctx.drawImage(img, cx - d / 2, cy - d / 2, d, d);
     } else {
-      drawIconCtx(ctx, sk.icon, cx, cy, r * 1.3, ready ? '#f2d39c' : '#3d7eac');
+      drawIconCtx(ctx, sk.icon, cx, cy, r * 1.05, '#f1e8d3');
     }
-    if (!ready) {
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.restore();
     ctx.globalAlpha = 1;
-
-    // Border
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = isFlash ? 'rgba(234,167,66,0.95)' : ready ? 'rgba(203,161,89,0.7)' : 'rgba(66,45,68,0.7)';
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    // Перезарядка — тёмный сектор, убывающий по часовой, как в той игре.
+    if (!locked && cd > 0) _aeCdSweep(cx, cy, r, cd / Math.max(cd, sk.cd || cd));
+    ctx.restore();
+    if (locked) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.arc(cx, cy, r - 2, 0, Math.PI * 2); ctx.fill();
+    }
 
     // Not-yet-studied skills show a lock instead of a cooldown countdown
     if (locked) {
-      drawIconCtx(ctx, 'lock', cx, cy, r * 0.85, '#d8cfbe');
+      drawIconCtx(ctx, 'lock', cx, cy, r * 0.8, '#a99c88');
     } else if (!ready) {
-      ctx.font = `bold ${hudF(14)}px ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-      ctx.fillStyle = '#d8cfbe';
-      ctx.fillText(cd >= 10 ? Math.ceil(cd) : cd.toFixed(1), cx, cy);
+      ctx.font = `bold ${hudF(15)}px 'Fira Sans Condensed', ${_F_SKILL}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineJoin = 'round';
+      const _cdt = cd >= 10 ? Math.ceil(cd) : cd.toFixed(1);
+      ctx.strokeText(_cdt, cx, cy); ctx.fillStyle = '#f1e8d3'; ctx.fillText(_cdt, cx, cy);
     }
   }
 }
@@ -4675,17 +4666,8 @@ function drawPotionButton() {
 
   ctx.save();
 
-  // Circle background (cached gradient)
-  ctx.fillStyle = ready && cd <= 0 ? _uiBtnGrads.pg1 : _uiBtnGrads.pg0;
-  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.fill();
-
-  ctx.strokeStyle = ready && cd <= 0 ? 'rgba(127,181,79,0.75)' : 'rgba(85,58,87,0.6)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r, 0, Math.PI * 2); ctx.stroke();
-  if (ready && cd <= 0) {
-    ctx.strokeStyle = 'rgba(144,199,96,0.15)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(pb.x, pb.y, pb.r + 2, 0, Math.PI * 2); ctx.stroke();
-  }
+  // Зелье — малая кнопка «Пепельного края» с тонкой каймой.
+  _aeBtn(pb.x, pb.y, pb.r, ready && cd <= 0 ? '#8a6a2f' : '#43363f', 1.5, null);
 
   // Draw PNG image or fallback SVG icon
   const hudDef = ITEM_DEF.find(d => d.id === hudPt);
@@ -4696,15 +4678,15 @@ function drawPotionButton() {
       const is = Math.round(pb.r * 0.85);
       ctx.drawImage(img, pb.x - is / 2, pb.y - is / 2 - 5, is, is);
     } else {
-      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), '#3d7eac');
+      drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), '#a4823e');
     }
   } else {
-    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), ready && cd <= 0 ? '#90d653' : '#3d7eac');
+    drawIconCtx(ctx, 'potion', pb.x, pb.y - 5, Math.round(pb.r * 0.69), ready && cd <= 0 ? '#90d653' : '#a4823e');
   }
 
   ctx.globalAlpha = 1;
   ctx.font = `bold ${hudF(10)}px ${F}`; ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = ready && cd <= 0 ? '#90d653' : 'rgba(62,129,177,0.7)';
+  ctx.fillStyle = ready && cd <= 0 ? '#90d653' : 'rgba(169,134,63,0.7)';
   ctx.fillText('×' + count, pb.x, pb.y + pb.r - 3);
 
   // Show cooldown if active
@@ -4730,12 +4712,7 @@ function drawTargetButton() {
 
   ctx.save();
 
-  ctx.fillStyle = hasTarget ? _uiBtnGrads.tg1 : _uiBtnGrads.tg0;
-  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.fill();
-
-  ctx.strokeStyle = hasTarget ? 'rgba(235,73,92,0.85)' : 'rgba(101,69,104,0.6)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r, 0, Math.PI * 2); ctx.stroke();
+  _aeBtn(tb.x, tb.y, tb.r, hasTarget ? '#e0553f' : '#43363f', 1.5, null);
   if (hasTarget) {
     ctx.strokeStyle = 'rgba(235,73,92,0.15)'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(tb.x, tb.y, tb.r + 2, 0, Math.PI * 2); ctx.stroke();
@@ -5678,31 +5655,14 @@ function drawAttackButton() {
   const ready = (player.atkTimer || 0) <= 0 && !animBusy;
 
   ctx.save();
-  ctx.fillStyle = hasTarget && ready ? _uiBtnGrads.ag1 : (!autoAttackMode ? _uiBtnGrads.ag2 : _uiBtnGrads.ag0);
-  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.fill();
+  // Большая кнопка удара «Пепельного края»: толстое золотое кольцо и мягкое
+  // золотое свечение; цель в радиусе — свечение ярче.
+  _aeBtn(ab.x, ab.y, ab.r, autoAttackMode ? '#8a6a2f' : '#e2b75e', 2.5,
+    autoAttackMode ? null : (hasTarget && ready ? 'rgba(255,190,90,0.75)' : 'rgba(226,183,94,0.3)'));
+  if (animBusy && player.castDuration > 0) _aeCdSweep(ab.x, ab.y, ab.r - 2.5, (player.atkAnimTimer || 0) / player.castDuration * 0.6);
 
-  // cooldown arc overlay while attack animation is playing
-  if (animBusy && player.castDuration > 0) {
-    const frac = (player.atkAnimTimer || 0) / player.castDuration;
-    ctx.strokeStyle = 'rgba(233,59,79,0.55)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(ab.x, ab.y, ab.r - 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
-    ctx.stroke();
-  }
-
-  const borderColor = !autoAttackMode
-    ? (hasTarget && ready ? 'rgba(235,73,92,0.9)' : 'rgba(203,163,93,0.7)')
-    : 'rgba(85,58,87,0.45)';
-  ctx.strokeStyle = borderColor; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r, 0, Math.PI * 2); ctx.stroke();
-  if (!autoAttackMode && hasTarget && ready) {
-    ctx.strokeStyle = 'rgba(234,66,85,0.15)'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(ab.x, ab.y, ab.r + 2, 0, Math.PI * 2); ctx.stroke();
-  }
-
-  ctx.globalAlpha = autoAttackMode ? 0.4 : (animBusy ? 0.55 : 1);
-  const iconColor = hasTarget && ready ? '#ee6272' : (autoAttackMode ? '#5c3f5f' : '#f1ce90');
+  ctx.globalAlpha = autoAttackMode ? 0.55 : (animBusy ? 0.7 : 1);
+  const iconColor = hasTarget && ready ? '#ffe2a8' : (autoAttackMode ? '#a99c88' : '#f1e8d3');
   drawIconCtx(ctx, 'sword', ab.x, ab.y, Math.round(ab.r * 0.87), iconColor);
 
   ctx.globalAlpha = 1;
@@ -5719,12 +5679,7 @@ function drawAutoToggle() {
   const F = 'system-ui, -apple-system, Arial';
   const cx = ab.x + ab.w / 2, cy = ab.y + ab.h / 2, r = ab.w / 2;
   ctx.save();
-  ctx.fillStyle = autoAttackMode ? _uiBtnGrads.aag1 : _uiBtnGrads.aag0;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-
-  ctx.strokeStyle = autoAttackMode ? 'rgba(127,181,79,0.7)' : 'rgba(210,150,60,0.7)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  _aeBtn(cx, cy, r, autoAttackMode ? '#74c15c' : '#43363f', 1.5, autoAttackMode ? 'rgba(116,193,92,0.45)' : null);
 
   // 8 was sized for the chip's old fixed 15px (base, pre-hud()) radius; the
   // button is now the potion button's size (POTION_R's own base of 26)
@@ -5733,7 +5688,7 @@ function drawAutoToggle() {
   // would double-scale it, since r (ab.w/2) has already been through hud().
   ctx.font = `bold ${hudF(8 * 26 / 15)}px ${F}`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = autoAttackMode ? '#90d653' : '#e5aa52';
+  ctx.fillStyle = autoAttackMode ? '#a8e08a' : '#e2b75e';
   ctx.fillText(autoAttackMode ? t('autoModeAbbrev') : t('manualModeAbbrev'), cx, cy + 0.5);
   ctx.restore();
 }
