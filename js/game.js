@@ -735,7 +735,6 @@ function update(dt, realDt) {
   }
 
   if (player.hurtTimer > 0) player.hurtTimer -= dt;
-  if (typeof aeJuiceTick === 'function') aeJuiceTick(realDt);
   if (swingTimer > 0)       swingTimer -= dt;
   if (player.atkAnimTimer > 0) player.atkAnimTimer -= dt;
 

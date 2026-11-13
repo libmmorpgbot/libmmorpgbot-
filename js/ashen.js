@@ -601,8 +601,8 @@ const AE_MONSTER = {
 
 // ── Динамика боя, как в «Пепельном крае» ─────────────────
 // Только вид: хитстоп (кадр почти замирает на крите и убийстве), брызги по
-// материалу монстра с пятном на земле, тряска на каждый свой удар, счётчик
-// комбо и объявления серии убийств. Урон, опыт и награды — сервер, как и было.
+// материалу монстра с пятном на земле, тряска на каждый свой удар. Урон,
+// опыт и награды — сервер, как и было.
 let _aeHitStop = 0;
 function aeHitStop(t) { _aeHitStop = Math.max(_aeHitStop, Math.min(0.12, t)); }
 // Множитель шага симуляции на этот кадр (js/game.js, loop).
@@ -640,60 +640,17 @@ function _aeGore(x, y, eid, n, power) {
   fxP({ k: 'dot', layer: 'smoke', x, y: y + 6, s0: 16 * power + 10, s1: 18 * power + 12, sx: 2.2, life: 5, col: c[1], a0: 0.55 });
 }
 
-let _aeCombo = 0, _aeComboT = 0, _aeStreak = 0, _aeStreakT = 0, _aeComboEl = null, _aeBannerEl = null;
-function _aeHudEls() {
-  if (_aeComboEl || typeof document === 'undefined') return;
-  const st = document.createElement('style');
-  st.textContent = '#aeCombo{position:fixed;right:14px;top:38%;z-index:30;pointer-events:none;font:800 22px system-ui,Arial;color:#ffd27a;'
-    + 'text-shadow:0 2px 0 #3a1a00,0 0 10px rgba(255,140,40,.6);text-align:right;transition:opacity .25s;opacity:0}'
-    + '#aeCombo small{display:block;font-size:11px;letter-spacing:.2em;color:#ffb36a}'
-    + '#aeCombo.pop{animation:aePop .18s ease-out}@keyframes aePop{0%{transform:scale(1.5)}100%{transform:scale(1)}}'
-    + '#aeBanner{position:fixed;left:0;right:0;top:24%;z-index:30;pointer-events:none;text-align:center;font:900 34px Georgia,serif;'
-    + 'letter-spacing:.12em;color:#ff5a3a;text-shadow:0 3px 0 #2a0400,0 0 18px rgba(255,60,20,.7);opacity:0}'
-    + '#aeBanner.go{animation:aeBan 1.6s ease-out}@keyframes aeBan{0%{opacity:0;transform:scale(2.2)}12%{opacity:1;transform:scale(1)}75%{opacity:1}100%{opacity:0;transform:translateY(-20px)}}';
-  document.head.appendChild(st);
-  _aeComboEl = document.createElement('div'); _aeComboEl.id = 'aeCombo'; document.body.appendChild(_aeComboEl);
-  _aeBannerEl = document.createElement('div'); _aeBannerEl.id = 'aeBanner'; document.body.appendChild(_aeBannerEl);
-}
-function _aeComboHit() {
-  _aeHudEls();
-  _aeCombo++; _aeComboT = 2.2;
-  if (_aeCombo >= 3 && _aeComboEl) {
-    _aeComboEl.innerHTML = `×${_aeCombo}<small>КОМБО</small>`;
-    _aeComboEl.style.opacity = '1';
-    _aeComboEl.classList.remove('pop'); void _aeComboEl.offsetWidth; _aeComboEl.classList.add('pop');
-  }
-}
-const _AE_STREAK = { 10: 'РЕЗНЯ', 20: 'БОЙНЯ', 35: 'ИСТРЕБЛЕНИЕ', 50: 'АПОКАЛИПСИС' };
-function _aeStreakKill() {
-  _aeHudEls();
-  _aeStreak++; _aeStreakT = 3.2;
-  const t = _AE_STREAK[_aeStreak];
-  if (t && _aeBannerEl) {
-    _aeBannerEl.textContent = t;
-    _aeBannerEl.classList.remove('go'); void _aeBannerEl.offsetWidth; _aeBannerEl.classList.add('go');
-    if (typeof camShake === 'function') camShake(6, 0.3);
-  }
-}
-// Таймеры комбо и серии — по реальному времени (js/game.js, update).
-function aeJuiceTick(dt) {
-  if (_aeComboT > 0) { _aeComboT -= dt; if (_aeComboT <= 0) { _aeCombo = 0; if (_aeComboEl) _aeComboEl.style.opacity = '0'; } }
-  if (_aeStreakT > 0) { _aeStreakT -= dt; if (_aeStreakT <= 0) _aeStreak = 0; }
-}
-
 // Попадание по монстру (js/network.js, enemyHurt). mine — удар свой.
 function aeOnEnemyHurt(e, dmg, isCrit, mine) {
   if (!e || !dmg) return;
   _aeGore(e.x, e.y, e.eid, isCrit ? 7 : 3, isCrit ? 1.3 : 0.8);
   if (!mine) return;
-  _aeComboHit();
   if (typeof camShake === 'function') camShake(isCrit ? 5 : 1.6, isCrit ? 0.18 : 0.08);
   if (isCrit) aeHitStop(0.07);
 }
 function aeOnEnemyKilled(x, y, e, mine) {
   _aeGore(x, y, e && e.eid, 12, 1.5);
   if (!mine) return;
-  _aeStreakKill();
   aeHitStop(0.05);
   if (typeof camShake === 'function') camShake(3.5, 0.16);
 }
