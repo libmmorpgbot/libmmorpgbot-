@@ -59,8 +59,15 @@ let _zoneCache = null, _zoneCacheFor = null;
 function _zoneLayout() {
   if (!_zonesEnabled) return null;
   const d = typeof dungeon !== 'undefined' ? dungeon : null;
-  if (!d || !d.rooms) return null;
+  if (!d) return null;
   if (_zoneCacheFor === d) return _zoneCache;
+  // События — в биомах «Пепельного края» по своей геометрии (js/ashen.js).
+  if (d.aeEvent && typeof aeDrawGround === 'function') {
+    _zoneCacheFor = d;
+    const st = 'ae_' + d.aeEvent;
+    return (_zoneCache = { ae: true, event: true, stages: [st, st], x0: 0, x1: d.w });
+  }
+  if (!d.rooms) return null;
   _zoneCacheFor = d;
   // Открытые локации «Пепельного края» (js/ashen.js): этажи прокачки и
   // фарм-зоны — по своей местности и биому этажа; Мир — по своей местности,

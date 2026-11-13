@@ -237,7 +237,7 @@ Object.keys(AE_BIOME).forEach(k => {
     ae: k, wall: B.lair ? '#2b2326' : null, noDepth: true,
     // Вуаль слабее, чем у «Пепельного края»: там её прорезает свет вокруг
     // героя, здесь она запечена в пол ровным слоем.
-    overlay: `rgba(${B.dark},${(B.da * 0.3).toFixed(3)})`,
+    overlay: `rgba(${B.dark},${(B.da * (B.lair ? 0.12 : 0.3)).toFixed(3)})`,
     floor() {}, wallTile() {}, deco() {},
   };
 });
@@ -272,6 +272,11 @@ function _aeFloor(tx, ty) {
 }
 // Дорога — проходы между комнатами; комнаты — поляны того же биома.
 function _aeRoad(tx, ty) { return _aeFloor(tx, ty) && !_aeInRoom(tx, ty); }
+// Узкий проход (коридор шириной до 3 клеток) — по горизонтали или вертикали.
+function _aeNarrow(tx, ty) {
+  const run = (dx, dy) => { let n = 0; for (let k = 1; k <= 2 && _aeFloor(tx + dx * k, ty + dy * k); k++) n++; return n; };
+  return run(1, 0) + run(-1, 0) < 2 || run(0, 1) + run(0, -1) < 2;
+}
 // 0 — проход, 1..3 — сколько клеток до ближайшего прохода (3 — «дальше»).
 function _aeDepth(tx, ty) {
   if (_aeFloor(tx, ty)) return 0;
@@ -412,6 +417,9 @@ function aeDrawGround(c, Z, tx0, ty0, tx1, ty1) {
     const B = AE_BIOME[_zoneStage(Z, tx, ty).ae] || AE_BIOME.forest;
     const x = tx * T, y = ty * T;
     if (B.lair) { if (_aeFloor(tx, ty)) _aeLairFloor(c, x, y, tx, ty); }
+    // События: комнат как полян у них нет — весь пол одна земля биома, а
+    // узкие проходы (в 1–3 клетки) — утоптанная тропа.
+    else if (Z.event) { if (_aeFloor(tx, ty) && _aeNarrow(tx, ty)) _aeTileRoadEdges(c, B, x, y, tx, ty, (dx, dy) => _aeFloor(tx + dx, ty + dy) && _aeNarrow(tx + dx, ty + dy)); else _aeTileGround(c, B, x, y, tx, ty); }
     else if (_aeRoad(tx, ty)) _aeTileRoad(c, B, x, y, tx, ty);
     else _aeTileGround(c, B, x, y, tx, ty);
   }
@@ -425,7 +433,7 @@ function aeDrawGround(c, Z, tx0, ty0, tx1, ty1) {
   // Мелочь на полянах и у дороги — под предметами стен.
   for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
     if (!_aeFloor(tx, ty)) continue;
-    const road = !_aeInRoom(tx, ty);
+    const road = Z.event ? _aeNarrow(tx, ty) : !_aeInRoom(tx, ty);
     const h1 = _zh(tx, ty, 400);
     if (h1 > (road ? 0.04 : 0.14)) continue;
     const B = AE_BIOME[_zoneStage(Z, tx, ty).ae] || AE_BIOME.forest;
@@ -575,7 +583,7 @@ function _aeLairFloor(c, x, y, tx, ty) {
   const r = _zh(tx, ty, 530);
   const n = r < 0.07 ? 'floor_stain_1' : r < 0.12 ? 'floor_stain_2' : r < 0.16 ? 'floor_stain_3' : r < 0.22 ? 'floor_light' : null;
   if (n) { const q = AE_SL[n]; c.drawImage(_aeAtlas, q[0], q[1], q[2], q[3], x, y, TILE, TILE); }
-  c.fillStyle = 'rgba(26,10,12,0.35)'; c.fillRect(x, y, TILE, TILE);
+  c.fillStyle = 'rgba(26,10,12,0.12)'; c.fillRect(x, y, TILE, TILE);
   c.imageSmoothingEnabled = true;
 }
 

@@ -3025,10 +3025,10 @@ function _drawGrassTuft(c, x, y, tx, ty, color) {
 
 function _floorTexOfFloor() {
   if (!dungeon || typeof _floorImgTex !== 'function') return null;
-  if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
   if (dungeon.tournamentArena) return _floorImgTex('arena');
   // Локации «Пепельного края» (js/ashen.js) рисуются кодом целиком.
   if (typeof _zoneLayout === 'function') { const _z = _zoneLayout(); if (_z && _z.ae) return null; }
+  if (dungeonLvl === FEAR_FLOOR_ID) return _hubLavaTex();
   if (typeof _abyssFloor === 'function' && _abyssFloor()) return _floorImgTex('abyss');
   if (dungeon.armEntries) return _floorImgTex('temple');
   const arm = typeof _armDecorKey === 'function' ? _armDecorKey() : null;

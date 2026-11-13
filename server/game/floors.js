@@ -91,6 +91,19 @@ const FLOOR_REGISTRY = [
   { id: FLOOR_IDS.dungeonAssassin,     key: 'dungeonAssassin',     generate: () => generateDungeonZone('assassin', 6) },
 ];
 
+// Оформление событий в биомах «Пепельного края» (js/ashen.js). Геометрия
+// событий не меняется — только то, чем клиент рисует пол и стены.
+const AE_EVENT_BIOME = {
+  arena: 'lair', pvpArena: 'desert', race10: 'abyss', fear: 'lava', coop: 'forest',
+  farmZone2: 'swamp', guildWar: 'fortress', trial: 'forest',
+};
+for (const f of FLOOR_REGISTRY) {
+  const biome = AE_EVENT_BIOME[f.key];
+  if (!biome) continue;
+  const gen = f.generate;
+  f.generate = () => Object.assign(gen(), { aeEvent: biome });
+}
+
 const _byId = new Map(FLOOR_REGISTRY.map(f => [f.id, f]));
 
 function floorEntry(floorId) { return _byId.get(floorId); }
