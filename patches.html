@@ -641,6 +641,88 @@
   .s5-karma em.g { color: var(--green); }
   .s5-karma b { display: block; color: var(--gold-bright); margin: 2px 0 4px; }
   .s5-karma span { font-size: 13px; color: var(--muted); }
+
+  /* ── Владыка Подземелья (14 ноября) ───────────────────────── */
+  .db-orbit { width: 300px; height: 300px; }
+  .db-orbit::before { border-color: rgba(255,112,96,.55); }
+  .db-orbit .orbit-ring img { --r: -128px; width: 46px; height: 46px; margin: -23px 0 0 -23px; }
+  .db-orbit .orbit-core {
+    inset: 40px; filter: none; z-index: 2; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle, rgba(255,112,96,.45) 0%, rgba(120,20,40,.35) 45%, transparent 70%);
+  }
+  .db-orbit .orbit-core::after { content: none; }
+  .db-orbit .orbit-core img { width: 230px; max-width: none; filter: drop-shadow(0 0 18px rgba(255,90,70,.75)); animation: dbHover 3.2s ease-in-out infinite; }
+  .db-orbit .orbit-ring img { border-radius: 50%; background: radial-gradient(circle, rgba(245,197,66,.18), rgba(0,0,0,.5) 70%); border: 1px solid rgba(245,197,66,.4); padding: 7px; }
+  @keyframes dbHover { 50% { transform: translateY(-7px) scale(1.03); } }
+  .hero.db-hero::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse 60% 45% at 50% 30%, rgba(255,80,60,.14), transparent 70%);
+  }
+
+  .db-card { grid-template-columns: 200px 1fr; border-color: rgba(255,112,96,.45);
+    background: radial-gradient(ellipse 320px 220px at 0% 50%, rgba(255,90,70,.18), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel));
+    box-shadow: 0 26px 50px -26px rgba(0,0,0,.95), 0 0 40px -18px rgba(255,90,70,.6); }
+  .db-card h3 { color: #ffd2c8; }
+  .db-card .boss-facts i { color: #ffd2c8; background: rgba(255,112,96,.14); border-color: rgba(255,112,96,.38); }
+  .db-portrait { position: relative; display: flex; align-items: center; justify-content: center; height: 150px; }
+  .db-portrait img { width: 200px; filter: drop-shadow(0 0 22px rgba(255,90,70,.7)); animation: dbHover 3.2s ease-in-out infinite; }
+  .db-portrait::after { content: ''; position: absolute; bottom: 4px; width: 120px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.55); filter: blur(5px); animation: dbShadow 3.2s ease-in-out infinite; z-index: -1; }
+  @keyframes dbShadow { 50% { transform: scale(.85); opacity: .7; } }
+
+  .db-vs { display: grid; gap: 12px; margin-top: 16px; }
+  .db-vs-row { display: grid; grid-template-columns: 54px 1fr; gap: 10px; align-items: center; font-size: 12.5px; }
+  .db-vs-row > b { color: var(--gold-bright); font-size: 12px; letter-spacing: .06em; }
+  .db-bars { display: grid; gap: 4px; }
+  .db-bar { position: relative; height: 18px; border-radius: 9px; background: rgba(255,255,255,.05); overflow: hidden; }
+  .db-bar i { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 9px; transition: width 1.4s cubic-bezier(.2,.9,.3,1); }
+  .db-bar.w i { background: linear-gradient(90deg, #6a3d8f, #c060ff); }
+  .db-bar.d i { background: linear-gradient(90deg, #8f2a20, #ff7060); box-shadow: 0 0 14px rgba(255,112,96,.6); }
+  .db-bar span { position: absolute; left: 10px; top: 0; line-height: 18px; font-size: 11px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+  .reveal.in .db-bar i { width: var(--w); }
+
+  .db-clock-wrap { display: grid; grid-template-columns: 220px 1fr; gap: 22px; align-items: center; }
+  .db-clock { position: relative; width: 210px; height: 210px; margin: 0 auto; border-radius: 50%;
+    background: radial-gradient(circle, #1d1510 0%, #120d08 70%); border: 2px solid var(--hairline-strong);
+    box-shadow: inset 0 0 30px rgba(0,0,0,.8), 0 0 40px -14px rgba(255,112,96,.55); }
+  .db-clock .tick { position: absolute; left: 50%; top: 50%; width: 2px; height: 8px; margin: -4px 0 0 -1px; background: rgba(196,153,74,.5);
+    transform: rotate(var(--a)) translateY(-92px); }
+  .db-clock .tick.big { height: 13px; width: 3px; background: var(--gold); }
+  .db-clock .num { position: absolute; left: 50%; top: 50%; width: 30px; margin: -9px 0 0 -15px; text-align: center; font-size: 11px; font-weight: 800; color: var(--muted);
+    transform: rotate(var(--a)) translateY(-70px) rotate(calc(-1 * var(--a))); }
+  .db-clock .hand { position: absolute; left: 50%; top: 50%; width: 4px; height: 78px; margin: -78px 0 0 -2px; transform-origin: 50% 100%;
+    border-radius: 2px; background: linear-gradient(180deg, #ff7060, rgba(255,112,96,.2)); transform: rotate(var(--h, 0deg)); transition: transform 1.1s cubic-bezier(.3,1.4,.5,1); }
+  .db-clock .skull { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; transform: rotate(var(--h, 0deg)) translateY(-92px) rotate(calc(-1 * var(--h, 0deg))); transition: transform 1.1s cubic-bezier(.3,1.4,.5,1);
+    filter: drop-shadow(0 0 8px rgba(255,90,70,.9)); }
+  .db-clock .hub { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    background: #0b0805; border: 1px solid var(--hairline-strong); font-size: 12px; font-weight: 800; color: #ffd2c8; }
+  .db-clock .q { position: absolute; inset: -6px; border-radius: 50%; border: 1px dashed rgba(255,112,96,.35); animation: spin 18s linear infinite; }
+
+  .db-loot { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; }
+  .db-set { padding: 16px; border-radius: 18px; border: 1px solid rgba(245,197,66,.45); position: relative; overflow: hidden;
+    background: radial-gradient(ellipse 260px 180px at 100% 0%, rgba(245,197,66,.16), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel)); }
+  .db-set h3 { margin: 0 0 2px; font-family: var(--serif); color: #ffe39a; font-size: 20px; }
+  .db-set .big { font-family: var(--serif); font-size: 44px; font-weight: 700; line-height: 1; color: #f5c542; text-shadow: 0 0 22px rgba(245,197,66,.55); }
+  .db-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-top: 12px; }
+  .db-grid img { width: 100%; aspect-ratio: 1; object-fit: contain; padding: 4px; border-radius: 8px; background: rgba(0,0,0,.35); border: 1px solid rgba(245,197,66,.18);
+    image-rendering: auto; animation: dbGlint 4.2s ease-in-out infinite; animation-delay: calc(var(--i) * -0.1s); }
+  @keyframes dbGlint { 0%, 80%, 100% { border-color: rgba(245,197,66,.18); box-shadow: none; } 88% { border-color: rgba(245,197,66,.9); box-shadow: 0 0 12px rgba(245,197,66,.6); } }
+  .db-list { list-style: none; margin: 0; padding: 6px 16px; }
+  .db-list li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(196,153,74,0.12); font-size: 13.5px; }
+  .db-list li:first-child { border-top: none; }
+  .db-list li img { width: 26px; height: 26px; object-fit: contain; }
+  .db-list li em { margin-left: auto; font-style: normal; font-weight: 800; color: var(--gold-bright); font-size: 12.5px; white-space: nowrap; }
+  .db-clan { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-radius: 18px; margin-top: 14px;
+    border: 1px solid rgba(208,140,255,.45); background: radial-gradient(ellipse 300px 160px at 0% 50%, rgba(208,140,255,.18), transparent 70%), linear-gradient(180deg, var(--panel-raised), var(--panel)); }
+  .db-clan b.n { font-family: var(--serif); font-size: 38px; color: #e3c4ff; text-shadow: 0 0 18px rgba(208,140,255,.6); line-height: 1; }
+
+  @media (max-width: 720px) {
+    .db-card { grid-template-columns: 1fr; }
+    .db-clock-wrap, .db-loot { grid-template-columns: 1fr; }
+    .db-orbit { width: 270px; height: 270px; }
+    .db-orbit .orbit-ring img { --r: -114px; width: 40px; height: 40px; margin: -20px 0 0 -20px; }
+    .db-orbit .orbit-core img { width: 200px; }
+  }
 </style>
 </head>
 <body>
@@ -663,40 +745,41 @@
      Новый патч: новая витрина здесь, новый <article class="patch"> первым в
      ленте ниже, строка в .patch-nav — и поднять UPDATES_VERSION в js/ui.js,
      чтобы на кнопке в игре загорелась точка. -->
-<header class="hero">
+<header class="hero db-hero">
   <canvas id="fx"></canvas>
   <div class="hero-inner">
-    <div class="orbit ach-orbit tr-orbit">
-      <div class="orbit-core"><svg viewBox="0 0 24 24" stroke="#ffcf5c" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg></div>
+    <div class="orbit db-orbit">
+      <div class="orbit-core"><img src="/images/patches/dungeon-boss.webp" alt="Владыка Подземелья"></div>
       <div class="orbit-ring">
-        <img src="/images/classicon/assassin.png" alt="" style="--a:0deg">
-        <img src="/images/classicon/deathknight.png" alt="" style="--a:51deg">
-        <img src="/images/classicon/lev.png" alt="" style="--a:103deg">
-        <img src="/images/classicon/mage.png" alt="" style="--a:154deg">
-        <img src="/images/classicon/ranger.png" alt="" style="--a:206deg">
-        <img src="/images/classicon/runefighter.png" alt="" style="--a:257deg">
-        <img src="/images/classicon/warlock.png" alt="" style="--a:309deg">
+        <img src="/images/uniqueset/lev/helmet.png" alt="" style="--a:0deg">
+        <img src="/images/uniqueset/deathknight/helmet.png" alt="" style="--a:51deg">
+        <img src="/images/uniqueset/ranger/helmet.png" alt="" style="--a:103deg">
+        <img src="/images/uniqueset/mage/helmet.png" alt="" style="--a:154deg">
+        <img src="/images/uniqueset/warlock/helmet.png" alt="" style="--a:206deg">
+        <img src="/images/uniqueset/runefighter/helmet.png" alt="" style="--a:257deg">
+        <img src="/images/uniqueset/assassin/helmet.png" alt="" style="--a:309deg">
       </div>
     </div>
-    <div class="eyebrow"><span class="dot"></span>Патч · 2 ноября 2026</div>
-    <h1 class="title">Сезон 5</h1>
-    <p class="lede">Новый сезон до <b>1 декабря</b>, <b>19 помощников</b> — драконы, феи, суккубы и бесята, <b>карма</b> за убийства
-      игроков и <b>войны кланов</b>. А ещё новая арена турнира и сезонный билет с <b>x3 к опыту</b>.</p>
+    <div class="eyebrow"><span class="dot"></span>Патч · 14 ноября 2026</div>
+    <h1 class="title">Владыка Подземелья</h1>
+    <p class="lede">На площади Подземелья проснулся тот, кого боится сам Владыка Мира. <b>В 20 раз больше здоровья</b>,
+      бьёт издалека и приходит <b>раз в сутки — когда захочет</b>. Кто его добьёт, может унести <b>часть уникального сета</b>.</p>
     <div class="hero-chips">
-      <span><img src="/images/season_ticket.png?v=2" alt="">Билет — 15 GRAM</span>
-      <span><img src="/images/material/shard.png" alt="">19 помощников</span>
-      <span><svg viewBox="0 0 24 24" stroke="#ff6a6a" width="1.15em" height="1.15em" class="ico" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5"/><line x1="13" y1="19" x2="19" y2="13"/><line x1="16" y1="16" x2="20" y2="20"/><line x1="19" y1="21" x2="21" y2="19"/><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5"/><line x1="5" y1="14" x2="9" y2="18"/><line x1="7" y1="17" x2="4" y2="20"/><line x1="3" y1="19" x2="5" y2="21"/></svg> Войны кланов</span>
-      <span><img src="/images/nexum-coin_v2.png" alt="">Награды 4 сезона</span>
+      <span>💀 ×20 здоровья</span>
+      <span>🕛 Раз в сутки</span>
+      <span><img src="/images/uniqueset/mage/body.png" alt="">1% — уникальный сет</span>
+      <span>⚑ +2000 клану</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="#p-1102">Что нового ↓</a>
-      <a class="btn" href="#s5-helpers">Помощники</a>
+      <a class="btn primary" href="#p-1114">Что нового ↓</a>
+      <a class="btn" href="#db-loot">Дроп</a>
     </div>
   </div>
 </header>
 
 <nav class="patch-nav" aria-label="Патчи">
-  <a href="#p-1102" class="on"><i class="pn-dot new"></i><b>2 ноя</b><span>Сезон 5</span></a>
+  <a href="#p-1114" class="on"><i class="pn-dot new"></i><b>14 ноя</b><span>Владыка Подземелья</span></a>
+  <a href="#p-1102"><i class="pn-dot"></i><b>2 ноя</b><span>Сезон 5</span></a>
   <a href="#p-1029"><i class="pn-dot"></i><b>29 окт</b><span>Турнир</span></a>
   <a href="#p-1025"><i class="pn-dot"></i><b>25 окт</b><span>Достижения</span></a>
   <a href="#p-1017"><i class="pn-dot"></i><b>17 окт</b><span>Мир</span></a>
@@ -706,10 +789,154 @@
 </nav>
 
 <main>
+  <!-- ══ Патч · 14 ноября 2026 · Владыка Подземелья ════════════════════ -->
+  <article class="patch" id="p-1114">
+    <header class="patch-head reveal">
+      <span class="patch-date new">14 ноября 2026</span>
+      <h2>Владыка Подземелья</h2>
+      <p class="dek">Новый босс на центральной площади Подземелья — сильнейший в игре. Приходит раз в сутки в случайное
+        время, а с его тела можно поднять часть уникального сета любого класса.</p>
+    </header>
+
+    <section class="sec reveal" id="db-main">
+      <div class="tiles stagger">
+        <div class="card tile"><img src="/images/patches/dungeon-boss.webp" alt=""><b>Новый босс</b><span>Площадь Подземелья</span></div>
+        <div class="card tile"><img src="/images/uniqueset/runefighter/helmet.png" alt=""><b>Уникальный сет</b><span>1% на любую часть</span></div>
+        <div class="card tile"><img src="/images/material/boxr.png" alt=""><b>Дроп ×50</b><span>Как у Владыки Мира</span></div>
+        <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>+2000 клану</b><span>Тому, кто добьёт</span></div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="db-boss">
+      <div class="sec-eyebrow">Босс</div>
+      <h2>Сильнее Владыки Мира</h2>
+      <div class="boss-card db-card">
+        <div class="db-portrait"><img src="/images/patches/dungeon-boss.webp" alt="Владыка Подземелья"></div>
+        <div>
+          <h3>Владыка Подземелья</h3>
+          <p class="dek" style="margin:0">Дракон 60 уровня. Не подпускает к себе: останавливается на расстоянии и бьёт
+            огненными шарами издалека. Одному его не взять — собирайте группу.</p>
+          <div class="boss-facts"><i>60 уровень</i><i>Дальний бой</i><i>Раз в сутки</i><i>Центр Подземелья</i></div>
+        </div>
+      </div>
+      <div class="card reveal" style="padding:16px 18px;margin-top:14px">
+        <div class="db-vs">
+          <div class="db-vs-row"><b>HP</b><div class="db-bars">
+            <div class="db-bar w"><i style="--w:5%"></i><span>Владыка Мира · 1 587 000</span></div>
+            <div class="db-bar d"><i style="--w:100%"></i><span>Владыка Подземелья · 31 740 000 · ×20</span></div></div></div>
+          <div class="db-vs-row"><b>АТАКА</b><div class="db-bars">
+            <div class="db-bar w"><i style="--w:60%"></i><span>Владыка Мира · 4 409</span></div>
+            <div class="db-bar d"><i style="--w:100%"></i><span>Владыка Подземелья · 7 348</span></div></div></div>
+          <div class="db-vs-row"><b>ЗАЩИТА</b><div class="db-bars">
+            <div class="db-bar w"><i style="--w:20%"></i><span>Владыка Мира · 60</span></div>
+            <div class="db-bar d"><i style="--w:100%"></i><span>Владыка Подземелья · 300 · ×5</span></div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="db-time">
+      <div class="sec-eyebrow">Появление</div>
+      <h2>Раз в сутки. Когда — не скажет никто</h2>
+      <div class="db-clock-wrap">
+        <div class="db-clock" id="db-clock">
+          <div class="q"></div><i class="tick big" style="--a:0deg"></i><i class="tick" style="--a:15deg"></i><i class="tick" style="--a:30deg"></i><i class="tick" style="--a:45deg"></i><i class="tick" style="--a:60deg"></i><i class="tick" style="--a:75deg"></i><i class="tick big" style="--a:90deg"></i><i class="tick" style="--a:105deg"></i><i class="tick" style="--a:120deg"></i><i class="tick" style="--a:135deg"></i><i class="tick" style="--a:150deg"></i><i class="tick" style="--a:165deg"></i><i class="tick big" style="--a:180deg"></i><i class="tick" style="--a:195deg"></i><i class="tick" style="--a:210deg"></i><i class="tick" style="--a:225deg"></i><i class="tick" style="--a:240deg"></i><i class="tick" style="--a:255deg"></i><i class="tick big" style="--a:270deg"></i><i class="tick" style="--a:285deg"></i><i class="tick" style="--a:300deg"></i><i class="tick" style="--a:315deg"></i><i class="tick" style="--a:330deg"></i><i class="tick" style="--a:345deg"></i><span class="num" style="--a:0deg">0</span><span class="num" style="--a:90deg">6</span><span class="num" style="--a:180deg">12</span><span class="num" style="--a:270deg">18</span>
+          <div class="hand"></div><div class="skull">💀</div><div class="hub" id="db-clock-t">??:??</div>
+        </div>
+        <div class="card fixes">
+          <div class="fix"><span class="tag new">Сутки</span><span>Убили — следующий раз он придёт <b>завтра по Москве</b>, в случайную минуту суток.</span></div>
+          <div class="fix"><span class="tag chg">Таймер</span><span>Сколько осталось до появления, видно на <b>карте Подземелья</b> в списке монстров.</span></div>
+          <div class="fix"><span class="tag fixd">Важно</span><span>Время возрождения сохраняется — перезапуск сервера его не сбросит.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec reveal" id="db-loot">
+      <div class="sec-eyebrow">Дроп</div>
+      <h2>За что стоит драться</h2>
+      <div class="db-loot">
+        <div class="db-set">
+          <div class="big">1%</div>
+          <h3>Любая часть уникального сета</h3>
+          <p class="dek" style="margin:4px 0 0;font-size:13px">Шлем, доспех, перчатки, ботинки, поножи или пояс — любого из семи классов.
+            42 вещи, которые раньше только крафтились.</p>
+          <div class="db-grid stagger">
+          <img src="/images/uniqueset/lev/helmet.png" alt="" style="--i:0">
+          <img src="/images/uniqueset/lev/body.png" alt="" style="--i:1">
+          <img src="/images/uniqueset/lev/gloves.png" alt="" style="--i:2">
+          <img src="/images/uniqueset/lev/boots.png" alt="" style="--i:3">
+          <img src="/images/uniqueset/lev/legs.png" alt="" style="--i:4">
+          <img src="/images/uniqueset/lev/belt.png" alt="" style="--i:5">
+          <img src="/images/uniqueset/deathknight/helmet.png" alt="" style="--i:6">
+          <img src="/images/uniqueset/deathknight/body.png" alt="" style="--i:7">
+          <img src="/images/uniqueset/deathknight/gloves.png" alt="" style="--i:8">
+          <img src="/images/uniqueset/deathknight/boots.png" alt="" style="--i:9">
+          <img src="/images/uniqueset/deathknight/legs.png" alt="" style="--i:10">
+          <img src="/images/uniqueset/deathknight/belt.png" alt="" style="--i:11">
+          <img src="/images/uniqueset/ranger/helmet.png" alt="" style="--i:12">
+          <img src="/images/uniqueset/ranger/body.png" alt="" style="--i:13">
+          <img src="/images/uniqueset/ranger/gloves.png" alt="" style="--i:14">
+          <img src="/images/uniqueset/ranger/boots.png" alt="" style="--i:15">
+          <img src="/images/uniqueset/ranger/legs.png" alt="" style="--i:16">
+          <img src="/images/uniqueset/ranger/belt.png" alt="" style="--i:17">
+          <img src="/images/uniqueset/mage/helmet.png" alt="" style="--i:18">
+          <img src="/images/uniqueset/mage/body.png" alt="" style="--i:19">
+          <img src="/images/uniqueset/mage/gloves.png" alt="" style="--i:20">
+          <img src="/images/uniqueset/mage/boots.png" alt="" style="--i:21">
+          <img src="/images/uniqueset/mage/legs.png" alt="" style="--i:22">
+          <img src="/images/uniqueset/mage/belt.png" alt="" style="--i:23">
+          <img src="/images/uniqueset/warlock/helmet.png" alt="" style="--i:24">
+          <img src="/images/uniqueset/warlock/body.png" alt="" style="--i:25">
+          <img src="/images/uniqueset/warlock/gloves.png" alt="" style="--i:26">
+          <img src="/images/uniqueset/warlock/boots.png" alt="" style="--i:27">
+          <img src="/images/uniqueset/warlock/legs.png" alt="" style="--i:28">
+          <img src="/images/uniqueset/warlock/belt.png" alt="" style="--i:29">
+          <img src="/images/uniqueset/runefighter/helmet.png" alt="" style="--i:30">
+          <img src="/images/uniqueset/runefighter/body.png" alt="" style="--i:31">
+          <img src="/images/uniqueset/runefighter/gloves.png" alt="" style="--i:32">
+          <img src="/images/uniqueset/runefighter/boots.png" alt="" style="--i:33">
+          <img src="/images/uniqueset/runefighter/legs.png" alt="" style="--i:34">
+          <img src="/images/uniqueset/runefighter/belt.png" alt="" style="--i:35">
+          <img src="/images/uniqueset/assassin/helmet.png" alt="" style="--i:36">
+          <img src="/images/uniqueset/assassin/body.png" alt="" style="--i:37">
+          <img src="/images/uniqueset/assassin/gloves.png" alt="" style="--i:38">
+          <img src="/images/uniqueset/assassin/boots.png" alt="" style="--i:39">
+          <img src="/images/uniqueset/assassin/legs.png" alt="" style="--i:40">
+          <img src="/images/uniqueset/assassin/belt.png" alt="" style="--i:41">
+          </div>
+        </div>
+        <div class="card" style="padding:4px 0">
+          <ul class="db-list">
+            <li><img src="/images/material/boxu.png" alt="">Необычный бокс<em>50%</em></li>
+            <li><img src="/images/norm.png" alt="">Камень заточки<em>10%</em></li>
+            <li><img src="/images/bless.png" alt="">Камень безопасной заточки<em>1%</em></li>
+            <li><img src="/images/nexum-coin_v2.png" alt="">Liberty<em>как у Владыки Мира</em></li>
+            <li>✦ Снаряжение, книги, осколки, самоцветы, рецепты, монета удачи<em>шансы ×50</em></li>
+          </ul>
+        </div>
+      </div>
+      <div class="db-clan">
+        <b class="n">+2000</b>
+        <span>очков опыта <b>клану</b> того, кто нанесёт последний удар. Во вкладке клана «Вклад» — своя строка
+          «Владыка Подземелья».</span>
+      </div>
+      <p class="dek" style="margin-top:14px">Весь дроп с шансами — на <b>карте Подземелья</b>: карточка Владыки открыта сверху списка монстров.</p>
+    </section>
+
+    <section class="sec reveal" id="fixes-1114">
+      <div class="sec-eyebrow">Ещё</div>
+      <h2>Изменения</h2>
+      <div class="card fixes">
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Монстры больше не бегают <b>задом и боком</b> — смотрят туда, куда идут.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Во время удара монстр поворачивается к тому, <b>кого бьёт</b>, а не всегда к вам.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Больше не мелькают <b>старые картинки монстров</b> перед новыми — новые грузятся сразу при входе в локацию.</span></div>
+      </div>
+    </section>
+  </article>
+
   <!-- ══ Патч · 2 ноября 2026 · Сезон 5 ════════════════════════════════ -->
   <article class="patch" id="p-1102">
     <header class="patch-head reveal">
-      <span class="patch-date new">2 ноября 2026</span>
+      <span class="patch-date">2 ноября 2026</span>
       <h2>Сезон 5</h2>
       <p class="dek">Очки сезона обнулены — все начинают с нуля. Победители 4 сезона получили награды, в игре появились
         помощники, карма и войны кланов.</p>
@@ -1821,6 +2048,26 @@
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     try { history.replaceState(null, '', '#' + id); } catch (_) { /* file:// */ }
   });
+</script>
+<script>
+  // Часы «Раз в сутки»: стрелка с черепом прыгает на случайное время —
+  // никто не знает, когда придёт Владыка Подземелья.
+  (function () {
+    var c = document.getElementById('db-clock'), t = document.getElementById('db-clock-t');
+    if (!c || !t) return;
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var deg = 0;
+    function jump() {
+      var m = Math.floor(Math.random() * 1440);
+      var target = m / 1440 * 360;
+      deg += ((target - deg % 360) + 360) % 360 + 360;
+      c.style.setProperty('--h', deg + 'deg');
+      var hh = String(Math.floor(m / 60)).padStart(2, '0'), mm = String(m % 60).padStart(2, '0');
+      setTimeout(function () { t.textContent = hh + ':' + mm; }, still ? 0 : 900);
+    }
+    jump();
+    if (!still) setInterval(jump, 2600);
+  })();
 </script>
 </body>
 </html>

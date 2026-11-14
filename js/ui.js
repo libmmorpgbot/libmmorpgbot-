@@ -3360,7 +3360,7 @@ function _dungeonMonsterListHtml(cls) {
       </div>
       <div class="mon-body">${_dungeonSpeciesBodyHtml(sp, cls)}</div>
     </div>`).join('');
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('dungeonBestiaryHint')}</div>${items}${_dungeonBossItemHtml()}`;
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('dungeonBestiaryHint')}</div>${_dungeonBossItemHtml()}${items}`;
 }
 // Владыка Подземелья (generateDungeonHub, server/game/dungeon.js): жив ли и
 // когда вернётся (bossStatus.dungeon), сила и чем особенен его дроп.
@@ -3376,7 +3376,7 @@ function _dungeonBossItemHtml() {
   const hp = Math.floor(st.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT * DUNGEON_BOSS_HP_MULT);
   const color = (typeof _WORLD_TIER_COLOR !== 'undefined' && _WORLD_TIER_COLOR.boss) || '#ff8a6a';
   return `
-    <div class="mon-item">
+    <div class="mon-item open">
       <div class="mon-hdr" onclick="_toggleMonster(this)">
         <span class="dot" style="background:${color}"></span>
         <div class="mon-titles">
@@ -3386,15 +3386,100 @@ function _dungeonBossItemHtml() {
         <span class="mon-chevron">›</span>
       </div>
       <div style="padding:0 8px 8px;color:#83725a;font-size:11px">${line}</div>
-      <div class="mon-body">
+      <div class="mon-body" style="display:block">
         <div class="fi-mstats">
           <span>HP <b>${hp}</b></span>
           <span>ATK <b>${Math.round(st.atk * DUNGEON_BOSS_MULT / DUNGEON_BOSS_ATK_DIV)}</b></span>
           <span>DEF <b>${st.def * DUNGEON_BOSS_MULT}</b></span>
         </div>
         <div style="padding:4px 0 8px;color:#83725a;font-size:11px;line-height:1.5">${tVars('dungeonBossDropNote', { p: _pctSmall(DUNGEON_BOSS_UNIQUE_SET_CHANCE * 100) })}</div>
+        ${_dungeonBossDropHtml()}
       </div>
     </div>`;
+}
+
+// Весь дроп Владыки Подземелья — ровно то, что бросает сервер (rollLoot,
+// server/handlers2/world.js): таблица Мира (_rollFarmHighLoot) с
+// WORLD_BOSS_DROP_MULT к каждому шансу и полными пулами (его eid нет в
+// таблицах деления по видам), монета удачи с тем же множителем, Liberty,
+// руда по уровню, боссовые сундуки и камни, уникальный сет и очки клану.
+function _dungeonBossDropHtml() {
+  const M = typeof WORLD_BOSS_DROP_MULT !== 'undefined' ? WORLD_BOSS_DROP_MULT : 1;
+  const pc = c => _pctSmall(Math.min(1, c * M) * 100);
+  const mats = typeof CRAFT_MATS !== 'undefined' ? CRAFT_MATS : [];
+  const mat = id => mats.find(m => m.id === id);
+  const _mi = typeof _matIcon === 'function' ? _matIcon : () => '';
+  const sec = (hdr, rows) => rows ? `<div class="fi-drops-hdr" style="margin-top:8px">${hdr}</div><div class="fi-drops">${rows}</div>` : '';
+  const row = (m, chance, color) => m ? _dropRow(_mi(m, 16), m.name, chance, color) : '';
+
+  // Основное: опыт, золото (у босса — всегда), Liberty, руда, камни,
+  // самоцветы, монета, рецепты.
+  const xp = xpAtLevel(WORLD_BOSS_LEVEL) * WORLD_XP_MULT * 20;
+  const gold = goldAtLevel(WORLD_BOSS_LEVEL) * 20;
+  const main = [
+    _dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${xp}</b>`, '#b4eb84'),
+    _dropRow('🪙', t('npcGoldLbl'), `${gold}g · 100%`),
+    (typeof WORLD_LIBERTY_CHANCE !== 'undefined' && WORLD_LIBERTY_CHANCE > 0)
+      ? _dropRow(_nexumIconHtml(16), t('libertyLbl'), _pctSmall(WORLD_LIBERTY_CHANCE * 100), '#e8c15a') : '',
+    _zoneOreRow(WORLD_BOSS_LEVEL),
+    row(mat('norm_stone'), pc(FARM_HIGH_NORM_STONE_CHANCE), '#f17e8b'),
+    row(mat('bless_stone'), pc(FARM_HIGH_BLESS_STONE_CHANCE), '#efc680'),
+    row(mat('gem_jewel'), pc(FARM_GEM_COMMON_CHANCE), '#7fd7ff'),
+    row(mat('gem_red'), pc(FARM_GEM_COMMON_CHANCE), '#ff7b7b'),
+    row(mat('gem_shard'), pc(FARM_GEM_RARE_CHANCE), '#c98fef'),
+    row(mat('gem_stone'), pc(FARM_GEM_RARE_CHANCE), '#c98fef'),
+    typeof WORLD_CLOVER_CHANCE !== 'undefined' ? row(mat('clover_coin'), pc(WORLD_CLOVER_CHANCE), '#b6e26a') : '',
+    row(mat('rece'), pc(FARM_HIGH_EPIC_RECIPE_CHANCE), '#c98fef'),
+    row(mat('recl'), pc(FARM_HIGH_LEGENDARY_RECIPE_CHANCE), '#f5c542'),
+  ].join('');
+
+  // Боссовые сундуки и камни — фиксированные шансы, как у всех боссов.
+  const box = id => (typeof BOX_DEF !== 'undefined' ? BOX_DEF : []).find(b => b.id === id);
+  const bu = box('box_uncommon'), br = box('box_rare');
+  const chests = [
+    bu ? _dropRow(_itemIcon(bu, 16), bu.name, '<b style="color:#90d653">50%</b>', '#90d653') : '',
+    br ? _dropRow(_itemIcon(br, 16), br.name, '<b style="color:#a58950">10%</b>', '#a58950') : '',
+    row(mat('norm_stone'), '<b style="color:#f17e8b">10%</b>', '#f17e8b'),
+    row(mat('bless_stone'), '<b style="color:#efc680">1%</b>', '#efc680'),
+  ].join('');
+
+  // Уникальный сет: один бросок, вещь — любая из всех классов и слотов.
+  const setPool = ITEM_DEF.filter(d => d.uniqueSet);
+  const setPer = _pctSmall(DUNGEON_BOSS_UNIQUE_SET_CHANCE / Math.max(1, setPool.length) * 100);
+  const setRows = _dropRow('🎲', t('dungeonBossSetAny'), `<b style="color:#f5c542">${_pctSmall(DUNGEON_BOSS_UNIQUE_SET_CHANCE * 100)}</b>`, '#f5c542')
+    + setPool.map(it => _dropRow(_itemIcon(it, 16), it.name, setPer, '#f5c542')).join('');
+
+  // Снаряжение — по броску на редкость, пул без деления по видам.
+  const slots = ['weapon', 'helmet', 'body', 'gloves', 'boots', 'ring', 'belt'];
+  const gear = Object.keys(FARM_HIGH_GEAR_CHANCE).map(rarity => {
+    const pool = ITEM_DEF.filter(d => d.rarity === rarity && !d.noDrop && slots.includes(d.slot));
+    if (!pool.length) return '';
+    const rc = (typeof RARITY_COLOR !== 'undefined' ? RARITY_COLOR[rarity] : null) || '#aea599';
+    const rn = (typeof _RARITY_NAMES !== 'undefined' ? _RARITY_NAMES[rarity] : null) || rarity;
+    const per = _pctSmall(Math.min(1, FARM_HIGH_GEAR_CHANCE[rarity] * M) / pool.length * 100);
+    return sec(tVars('gearRarityFmt', { rn }), pool.map(it => _dropRow(_itemIcon(it, 16), it.name, per, rc)).join(''));
+  }).join('');
+
+  const shards = (typeof UNIQUE_SHARDS !== 'undefined' ? UNIQUE_SHARDS : [])
+    .map(sh => _dropRow(_mi(sh, 20), sh.name, pc(FARM_HIGH_SHARD_CHANCE), '#c9a24b')).join('');
+  const books = (ids, chance, iconFor) => {
+    const pool = ids.map(id => mat(id)).filter(Boolean);
+    if (!pool.length) return '';
+    const per = _pctSmall(Math.min(1, chance * M) / pool.length * 100);
+    return pool.map(b => _dropRow(iconFor(b), b.name, per, _FARM_ADV_BOOK_CLASS_COLOR[b.forClass] || '#cdb8ec', b.id)).join('');
+  };
+  const clan = typeof DUNGEON_BOSS_CLAN_XP !== 'undefined'
+    ? `<div style="margin-top:8px;color:#d08cff;font-size:11px">${tVars('dungeonBossClanLine', { n: DUNGEON_BOSS_CLAN_XP })}</div>` : '';
+
+  return `${clan}
+    ${sec(t('dungeonBossSetHdr'), setRows)}
+    ${sec(tVars('dungeonBossMainHdr', { m: M }), main)}
+    ${sec(t('dungeonBossChestHdr'), chests)}
+    ${gear}
+    ${sec(t('uniqueShardsHdr'), shards)}
+    ${sec(t('farmHighSkillBooksHdr'), books(mats.filter(m => m.skillKey).map(m => m.id), FARM_HIGH_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
+    ${sec(t('farmHighAdvBooksHdr'), books(mats.filter(m => m.advSkillKey).map(m => m.id), FARM_HIGH_ADV_SKILL_BOOK_CHANCE, _farmHighSkillBookIcon))}
+    ${sec(t('farmHighPassiveBooksHdr'), books(mats.filter(m => m.passiveId).map(m => m.id), FARM_HIGH_PASSIVE_BOOK_CHANCE, b => _itemIcon(b, 16)))}`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {
@@ -8260,7 +8345,7 @@ function _positionUpdatesBtn() {
 // Новый патч — поднять UPDATES_VERSION: у всех, кто его ещё не открывал,
 // загорится точка на кнопке. Хранится у игрока в браузере — это удобство, а
 // не данные, и без хранилища точка просто горит, пока панель не открыта.
-const UPDATES_VERSION = '2026-11-02';
+const UPDATES_VERSION = '2026-11-14';
 const _UPD_SEEN_KEY = 'liberty_updates_seen';
 function _updatesSeen() {
   try { return localStorage.getItem(_UPD_SEEN_KEY) === UPDATES_VERSION; } catch { return false; }
