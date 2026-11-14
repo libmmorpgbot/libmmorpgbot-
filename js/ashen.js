@@ -220,7 +220,7 @@ const AE_BIOME = {
   abyss: {
     base: '#241012', pal: ['#2e1416', '#170809', '#3a1a1a', '#120607'], road: ['#3e2220', '#1e0e0e'],
     tall: [['spike', 0.4], ['rock', 0.25], ['bonepile', 0.2], ['crystalR', 0.1], ['column', 0.05]], short: [['rock', 0.4], ['bonepile', 0.35], ['spike', 0.25]],
-    flat: [['blood', 0.35], ['bones', 0.35], ['skull', 0.3]], dark: '18,0,2', da: 0.62, rock: ['#4a2a28', '#2a1414'], cracks: 2, water: 'lava',
+    flat: [['bones', 0.55], ['skull', 0.45]], dark: '18,0,2', da: 0.62, rock: ['#4a2a28', '#2a1414'], cracks: 2, water: 'lava',
   },
 };
 const _AE_DECO_SCALE = 0.8;   // предметы «Пепельного края» под рост героев Liberty
@@ -611,7 +611,7 @@ const AE_MONSTER = {
 
 // ── Динамика боя, как в «Пепельном крае» ─────────────────
 // Только вид: хитстоп (кадр почти замирает на крите и убийстве), брызги по
-// материалу монстра с пятном на земле, тряска на каждый свой удар. Урон,
+// материалу монстра (без пятен на земле), тряска на каждый свой удар. Урон,
 // опыт и награды — сервер, как и было.
 let _aeHitStop = 0;
 function aeHitStop(t) { _aeHitStop = Math.max(_aeHitStop, Math.min(0.12, t)); }
@@ -622,7 +622,7 @@ function aeTimeScale(realDt) {
   return 0.12;
 }
 
-// Материал по виду монстра: [светлый, тёмный] — брызги и пятно на земле.
+// Материал по виду монстра: [светлый, тёмный] — брызги.
 const _AE_MATC = {
   blood: ['#c41a1a', '#5a0808'], rot: ['#8a9a2a', '#3a4a18'], goo: ['#5ae070', '#1a6a3a'],
   bone: ['#efe6cc', '#8a8070'], fire: ['#ffb040', '#7a2a0a'], void: ['#c070ff', '#3a1060'], wood: ['#8a6a3a', '#3a2a14'],
@@ -646,8 +646,6 @@ function _aeGore(x, y, eid, n, power) {
       vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.55, vz: 120 + Math.random() * 200 * power, az: -900, drag: 2.2,
       life: 0.7 + Math.random() * 0.4, s0: 4 + Math.random() * 4, s1: 3, col: i & 1 ? c[0] : c[1], rot: Math.random() * 6, vr: 8 });
   }
-  // Пятно на земле — гаснет за несколько секунд.
-  fxP({ k: 'dot', layer: 'smoke', x, y: y + 6, s0: 16 * power + 10, s1: 18 * power + 12, sx: 2.2, life: 5, col: c[1], a0: 0.55 });
 }
 
 // Попадание по монстру (js/network.js, enemyHurt). mine — удар свой.

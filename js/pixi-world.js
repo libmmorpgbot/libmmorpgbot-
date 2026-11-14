@@ -1295,7 +1295,7 @@ function _pmUpdateEnemy(e, obj, dt, ds) {
   const s = obj.pmSpr;
   if (s.texture !== tex) { s.texture = tex; s.anchor.copyFrom(tex.defaultAnchor); }
   // Рост — от размера монстра в Liberty: тело sh.d.bh пикселей атласа.
-  const sc = ds * 0.4 * (def[2] || 1) * (e.isBoss ? 1.35 : 1) / sh.d.bh;
+  const sc = ds * 0.44 * (def[2] || 1) * (e.isBoss ? 1.35 : 1) / sh.d.bh;
   const feet = e.size * 0.6;
   // Высота полёта уже нарисована в кадрах (тень на земле — в атласе).
   const fly = 0;
@@ -1335,7 +1335,7 @@ function _aeUpdateEnemy(e, obj, dt, ds) {
   const r = AE_SL[def[0]];
   // Масштаб от размера монстра, а не от размера картинки: огр крупнее
   // гоблина, как и был в «Пепельном крае».
-  const sc = Math.max(1, ds * 0.275 / 16) * (e.isBoss ? 1.5 : 1);
+  const sc = Math.max(1, ds * 0.3 / 16) * (e.isBoss ? 1.5 : 1);
   const feet = e.size * 0.6;
   if (obj.aeSpr.texture !== tex) obj.aeSpr.texture = tex;
   if (obj._aeShadowFor !== sc) {
