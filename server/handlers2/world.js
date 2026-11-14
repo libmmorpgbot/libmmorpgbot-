@@ -41,7 +41,7 @@ const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
   FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_BOSS_CLAN_XP, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_SPOTS,
-  DUNGEON_BOSS_UNIQUE_SET_CHANCE, ITEM_DEF,
+  DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_CLAN_XP, ITEM_DEF,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -873,7 +873,13 @@ module.exports = function registerWorld(s, safeOn, deps) {
       if (result.isBoss && result.openWorld && WORLD_BOSS_CLAN_XP > 0) {
         const m = await clans.clanOf(t, pid);
         const xp = m ? await clans.addBonusXp(t, m.clanId, pid, 'world_boss', WORLD_BOSS_CLAN_XP) : null;
-        if (xp) clanBoss = { clanId: m.clanId, ...xp };
+        if (xp) clanBoss = { clanId: m.clanId, amount: WORLD_BOSS_CLAN_XP, ...xp };
+      }
+      // Владыка Подземелья — так же, своим источником и своей суммой.
+      if (result.dungeonBoss && DUNGEON_BOSS_CLAN_XP > 0) {
+        const m = await clans.clanOf(t, pid);
+        const xp = m ? await clans.addBonusXp(t, m.clanId, pid, 'dungeon_boss', DUNGEON_BOSS_CLAN_XP) : null;
+        if (xp) clanBoss = { clanId: m.clanId, amount: DUNGEON_BOSS_CLAN_XP, ...xp };
       }
       let refBonus = null;
       // The stats.refreshBm that used to be here has moved into
@@ -916,7 +922,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
 
     const { reward, drops, refBonus, clanBoss } = done;
     if (clanBoss) {
-      s.socket.emit('clanStorageOk', { msg: `Владыка повержен — +${WORLD_BOSS_CLAN_XP} очков вашему клану` });
+      s.socket.emit('clanStorageOk', { msg: `Владыка повержен — +${clanBoss.amount} очков вашему клану` });
       if (clanBoss.leveledUp) clans.refreshMembersBm(clanBoss.clanId).catch(() => {});
     }
     // The referrer is a different session and may be offline entirely. The

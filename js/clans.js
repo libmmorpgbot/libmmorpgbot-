@@ -1271,7 +1271,7 @@ function _clanActivityHTML() {
   const myTg = _myTelegramId();
   // Всего принёс клану — пожертвования, победы в турнире и добитые Владыки;
   // турнир и Владыка — отдельными строками и своими кусками полосы.
-  const total = r => (r.points || 0) + (r.tour || 0) + (r.boss || 0) + (r.war || 0);
+  const total = r => (r.points || 0) + (r.tour || 0) + (r.boss || 0) + (r.war || 0) + (r.dboss || 0);
   const top = Math.max(1, ...rows.map(total));
   const medal = ['#f0c75e', '#e1d8c5', '#d08a5a'];
   return `${hdr}<div class="clx-list">${rows.map((r, i) => `
@@ -1279,9 +1279,10 @@ function _clanActivityHTML() {
       <span class="clx-rank-n" ${i < 3 ? `style="--mc:${medal[i]}"` : ''}>${i + 1}</span>
       <div class="clx-rank-main">
         <span class="clx-rank-name">${_esc(r.username)}${r.inClan ? '' : ` <small>(${_clxT('clanActivityLeftClan', 'покинул клан')})</small>`}</span>
-        <span class="clx-rank-bar"><i style="width:${Math.round((r.points || 0) / top * 100)}%"></i><i class="tour" style="width:${Math.round((r.tour || 0) / top * 100)}%"></i><i class="boss" style="width:${Math.round((r.boss || 0) / top * 100)}%"></i></span>
+        <span class="clx-rank-bar"><i style="width:${Math.round((r.points || 0) / top * 100)}%"></i><i class="tour" style="width:${Math.round((r.tour || 0) / top * 100)}%"></i><i class="boss" style="width:${Math.round(((r.boss || 0) + (r.dboss || 0)) / top * 100)}%"></i></span>
         ${r.tour ? `<span class="clx-rank-tour">${iconHTML('trophy', 11, '#f0c75e')} с турнира +${_num(r.tour)} · ${_num(r.tourWins || 0)} ${_clxWinsWord(r.tourWins || 0)}</span>` : ''}
         ${r.boss ? `<span class="clx-rank-tour boss">${iconHTML('skull', 11, '#d08cff')} Владыка Мира +${_num(r.boss)} · добит ×${_num(r.bossKills || 0)}</span>` : ''}
+        ${r.dboss ? `<span class="clx-rank-tour boss">${iconHTML('skull', 11, '#d08cff')} Владыка Подземелья +${_num(r.dboss)} · добит ×${_num(r.dbossKills || 0)}</span>` : ''}
         ${r.war ? `<span class="clx-rank-tour war">${iconHTML('swords', 11, '#ff6a6a')} Война кланов +${_num(r.war)} · врагов ×${_num(r.warKills || 0)}</span>` : ''}
       </div>
       <span class="clx-rank-v">${_num(total(r))}${r.qty ? `<small>${_num(r.qty)} оск.</small>` : ''}</span>
