@@ -1,0 +1,17 @@
+Hero sprites (images/pm/hero_*.webp, frame data js/hero-data.js)
+
+Built by dev/hero-atlas.py from the layered avatar art of Flare
+(flare-game, mods/fantasycore: images/avatar, animations/avatar),
+https://github.com/flareteam/flare-game
+
+License: Creative Commons Attribution-ShareAlike 3.0 Unported (CC-BY-SA 3.0)
+https://creativecommons.org/licenses/by-sa/3.0/
+
+Flare art by: Blarumyrran, Brandon Morris "Augmentality", Clint Bellanger,
+Holly Daniel, Justin Jacobs, Justin Nichol, Jessica "Zeldyn" Cox, remaxim,
+rubberduck, Sarah Benalene, Scrittl, Stefan Beller — and the additional
+open-licensed art credited in flare-game's CREDITS.txt.
+
+Changes made here: layers composited per character class, some layers
+re-tinted, frames downscaled and packed into WebP atlases. These derived
+atlases are distributed under the same CC-BY-SA 3.0 license.

@@ -34,7 +34,7 @@ const _otherPool  = new Map(); // sid → {ct, spr, gfx}
 const _npcPool    = new Map(); // npc.id → {ct, spr, gfx}
 
 // Player rendering objects
-let _plSpr = null, _plGfx = null, _plSfx = null, _plSfxState = {};
+let _plSpr = null, _plGfx = null, _plSfx = null, _plSfxState = {}, _plHero = null, _plHeroSt = {};
 
 // petId whose sheets loadPetSprites() has been asked to fetch for the LOCAL
 // player. Other players' pets are fetched as their ids arrive (js/network.js).
@@ -588,7 +588,7 @@ function _dropGpuState() {
     Object.keys(cache).forEach(k => delete cache[k]);
   }
   _npcNames.length = 0;
-  _plSpr = null; _plGfx = null; _plAura = null; _plSfx = null; _plSfxState = {};
+  _plSpr = null; _plGfx = null; _plAura = null; _plSfx = null; _plSfxState = {}; _plHero = null; _plHeroSt = {};
   _petLoadedFor = null;
   _lastBgColor = null;
 }
@@ -2817,9 +2817,11 @@ function _getOtherPlayer(sid) {
   spr.visible = false;
   const gfx = new PIXI.Graphics();
   const sfx = new PIXI.Graphics();
-  ct.addChild(aura, spr, gfx, sfx);
+  const hero = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  hero.visible = false;
+  ct.addChild(aura, spr, hero, gfx, sfx);
   _otherPCt.addChild(ct);
-  const obj = { ct, spr, gfx, aura, sfx };
+  const obj = { ct, spr, gfx, aura, sfx, hero, heroSt: {} };
   _otherPool.set(sid, obj);
   return obj;
 }
@@ -2859,7 +2861,22 @@ function _updateOtherPlayers(pulse, ts) {
     // Sprite — always updated, the texture/frame changes with the walk/idle
     // animation every frame regardless of whether the Graphics layer redraws.
     const want     = getOtherPlayerAnimKey(p);
-    const got      = p.type ? _fallbackTextures(_playerTextures,
+    // Герой Flare — вместо прежнего листа, как только его атлас готов.
+    const _hf = heroFrame(p.type, obj.heroSt, p, want, 1 / 60);
+    let _heroTop = null;
+    if (_hf) {
+      const h = obj.hero, _lg = _lungeOffset(p);
+      if (h.texture !== _hf.tex) { h.texture = _hf.tex; h.anchor.copyFrom(_hf.tex.defaultAnchor); }
+      h.scale.set(_hf.sc);
+      h.x = _lg.x; h.y = HERO_FEET_Y + _lg.y;
+      h.tint = (p.hurtTimer || 0) > 0 ? 0xff9090 : 0xffffff;
+      h.visible = true;
+      _heroTop = HERO_FEET_Y - HERO_BODY_H;
+    } else obj.hero.visible = false;
+    // Пока атлас героя грузится — прежний лист не показываем (иначе на глазах
+    // один персонаж сменяется другим); старый — только если атлас не пришёл.
+    const _heroWait = !_hf && typeof pmOwns === 'function' && pmOwns('hero_' + p.type);
+    const got      = (p.type && !_hf && !_heroWait) ? _fallbackTextures(_playerTextures,
       typeof loadSpriteSheet === 'function' ? loadSpriteSheet : null, p.type, want) : null;
     const key      = got ? got.key : want;
     const textures = got && got.tex;
@@ -2891,7 +2908,8 @@ function _updateOtherPlayers(pulse, ts) {
     // low against the chest instead of clear above the head. Scaling by the
     // SAME ratio the sprite itself grew by keeps every other class's tuning
     // exactly as it was (dispScale 1.5 → ratio 1 → unchanged).
-    const barTop = usedSprite ? -39 * ((def.dispScale || 1.5) / 1.5) : -20;
+    if (_hf) usedSprite = true;
+    const barTop = _heroTop != null ? _heroTop - 8 : usedSprite ? -39 * ((def.dispScale || 1.5) / 1.5) : -20;
     p._nameBarTop = barTop;
 
     const slowed  = (p.slowTimer||0) > 0;
@@ -2965,8 +2983,10 @@ function _initPlayer() {
   _plGfx  = new PIXI.Graphics();
   _plAura = new PIXI.Graphics();
   _plSfx  = new PIXI.Graphics();
+  _plHero = new PIXI.Sprite(PIXI.Texture.EMPTY);
+  _plHero.visible = false;
   // Under the sprite, same as other players' aura layer.
-  _playerCt.addChild(_plAura, _plSpr, _plGfx, _plSfx);
+  _playerCt.addChild(_plAura, _plSpr, _plHero, _plGfx, _plSfx);
 }
 
 function _updatePlayer(dt, ts) {
@@ -2994,10 +3014,24 @@ function _updatePlayer(dt, ts) {
   if (_selfAura) _drawAura(_plAura, player.x, player.y, ts, _selfAura);
 
   const key      = getSpriteAnimKey(player);
-  const textures = _playerTextures(player.type, key);
+  // Герой Flare (heroFrame, js/pm-monsters.js) — пока его атлас грузится,
+  // рисуется прежний лист ниже.
+  const _hf = heroFrame(player.type, _plHeroSt, player, key, dt);
+  const textures = _hf ? null : _playerTextures(player.type, key);
   const def      = SPRITE_DEF[player.type];
   let usedSprite = false;
-  if (textures && def) {
+  let _heroTop = null;
+  if (_hf) {
+    const _lg = _lungeOffset(player);
+    if (_plHero.texture !== _hf.tex) { _plHero.texture = _hf.tex; _plHero.anchor.copyFrom(_hf.tex.defaultAnchor); }
+    _plHero.scale.set(_hf.sc);
+    _plHero.x = player.x + _lg.x; _plHero.y = player.y + HERO_FEET_Y + _lg.y;
+    _plHero.tint = (player.hurtTimer > 0) ? 0xff9090 : 0xffffff;
+    _plHero.visible = true;
+    _plSpr.visible = false;
+    _heroTop = HERO_FEET_Y - HERO_BODY_H;
+  } else if (textures && def) {
+    _plHero.visible = false;
     const ad = def.anims[key];
     const fi = Math.min(Math.floor(player.animFrame), (ad?.n || 1) - 1);
     const cache = spriteCache[player.type];
@@ -3014,6 +3048,7 @@ function _updatePlayer(dt, ts) {
     usedSprite = true;
   } else {
     _plSpr.visible = false;
+    _plHero.visible = false;
     const hurt = player.hurtTimer > 0;
     const fc   = parseInt((player.charDef?.color || '#888888').replace('#',''), 16);
     _plGfx.beginFill(hurt ? 0xff4444 : fc);
@@ -3035,7 +3070,7 @@ function _updatePlayer(dt, ts) {
   // above (see its comment) — stored in _lastPlayerBarTop so
   // _drawPlayerNameOnUI (js/game.js) positions this player's OWN name the
   // same way _nameBarTop already does for everyone else's.
-  const barOffset = usedSprite ? -39 * ((def.dispScale || 1.5) / 1.5) : -28;
+  const barOffset = _heroTop != null ? _heroTop - 8 : usedSprite ? -39 * ((def.dispScale || 1.5) / 1.5) : -28;
   _lastPlayerBarTop = barOffset;
   const barTop = player.y + barOffset;
   const bw = 44, bh = 4, bx = player.x - bw / 2;

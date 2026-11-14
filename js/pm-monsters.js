@@ -94,9 +94,11 @@ function _pmSheet(kind, onReady) {
 // грузится). Пока грузится — не показываем вместо него старый спрайт:
 // иначе на глазах у игрока один монстр сменяется другим.
 function pmOwns(eid) {
-  const def = typeof PM_MONSTER !== 'undefined' ? PM_MONSTER[eid] : null;
-  if (!def || typeof PM_SPR === 'undefined' || !PM_SPR[def[0]]) return false;
-  const s = _pmSheets.get(def[0]);
+  // 'hero_<класс>' — атлас героя (ниже), монстры — через PM_MONSTER.
+  const kind = typeof eid === 'string' && eid.indexOf('hero_') === 0 ? eid
+    : (typeof PM_MONSTER !== 'undefined' && PM_MONSTER[eid] ? PM_MONSTER[eid][0] : null);
+  if (!kind || typeof PM_SPR === 'undefined' || !PM_SPR[kind]) return false;
+  const s = _pmSheets.get(kind);
   return !(s && s.failed);
 }
 
@@ -129,4 +131,42 @@ function _pmFrame(an, t) {
     k = i < n ? i : per - i;
   } else k = Math.floor(t / dur * n) % n;
   return an[0] + k;
+}
+
+// ── Герои ────────────────────────────────────────────────────────────────
+// Персонажи игроков из слоёв героя Flare (dev/hero-atlas.py → js/hero-data.js,
+// атласы images/pm/hero_<класс>.webp): те же 8 направлений и тот же формат
+// кадров, что у монстров выше, — грузятся тем же _pmSheet.
+// Рост на экране и где ноги относительно точки игрока: ноги там же, где были
+// у прежних спрайтов (+20), рост чуть больше прежних ~55 px.
+const HERO_BODY_H = 62, HERO_FEET_Y = 20;
+function heroOwns(type) {
+  return !!(type && typeof PM_SPR !== 'undefined' && PM_SPR['hero_' + type]);
+}
+// Готовый лист героя или null (и тогда начинается загрузка).
+function heroSheet(type, onReady) { return heroOwns(type) ? _pmSheet('hero_' + type, onReady) : null; }
+// Направление героя: из 8-стороннего facing (FACING8_DIRS, js/utils.js:
+// 0 — вправо, дальше по часовой) в порядок кадров атласа (0 — запад).
+function heroDirOf(facing) {
+  const i = typeof FACING8_DIRS !== 'undefined' ? FACING8_DIRS.indexOf(facing) : -1;
+  return i < 0 ? 6 : (i + 4) % 8;
+}
+// Кадр героя. animKey — тот же ключ, что у прежних листов
+// (getSpriteAnimKey/getOtherPlayerAnimKey): 'die', '<сторона>-run',
+// '<сторона>-idle', всё остальное — атака/каст. st — состояние анимации
+// этого героя (хранится у вызывающего). Возвращает { tex, sc } или null.
+function heroFrame(type, st, p, animKey, dt) {
+  const sh = heroSheet(type);
+  if (!sh) return null;
+  const an = sh.d.an;
+  let key = animKey === 'die' ? 'die' : /-run$/.test(animKey) ? 'run' : /-idle$/.test(animKey) ? 'stance' : 'atk';
+  if (key === 'stance' && (p.hurtTimer || 0) > 0.15) key = 'hit';
+  // Новый удар — анимация атаки с начала, даже если прошлая не доиграла.
+  const at = p.atkAnimTimer || 0;
+  const freshAtk = key === 'atk' && (st.key !== 'atk' || at > (st.lastAt || 0) + 0.05);
+  st.lastAt = at;
+  if (st.key !== key || freshAtk) { st.key = key; st.t = 0; } else st.t = (st.t || 0) + dt;
+  const dir = heroDirOf(p._vfacing || p.facing || 'front');
+  const tex = sh.tex[_pmFrame(an[key] || an.stance, st.t) * 8 + dir] || sh.tex[dir];
+  return { tex, sc: HERO_BODY_H / sh.d.bh };
 }

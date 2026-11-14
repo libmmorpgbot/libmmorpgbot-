@@ -952,6 +952,7 @@ function netConnect(onReady) {
   socket.on('playerChar', ({ id, type }) => {
     if (!otherPlayers.has(id)) otherPlayers.set(id, { animFrame: 0, animTimer: 0, moving: false });
     otherPlayers.get(id).type = type;
+    if (typeof heroSheet === 'function') heroSheet(type);
     // Sheets load when first drawn — see loadSpriteSheet (js/sprites.js).
   });
 
@@ -1520,6 +1521,8 @@ function netConnect(onReady) {
           otherPlayers.set(p.id, { ...p, targetX: p.x, targetY: p.y,
             _buf: [{ x: p.x, y: p.y, t }],
             animFrame: 0, animTimer: 0, moving: !!p.moving });
+          // Атлас героя его класса — сразу: один на класс, не на игрока.
+          if (p.type && typeof heroSheet === 'function') heroSheet(p.type);
           // Sheets load when first drawn — see loadSpriteSheet (js/sprites.js).
           // Loading the whole class here (25 sheets) for everyone who walked
           // into view, drawn or not, is what filled the memory in crowds.
