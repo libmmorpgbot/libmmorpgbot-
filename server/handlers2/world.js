@@ -41,7 +41,7 @@ const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
   FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_BOSS_CLAN_XP, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_SPOTS,
-  DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_CLAN_XP, ITEM_DEF,
+  DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_CLAN_XP, DUNGEON_BOSS_STAR_SHARDS, ITEM_DEF,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -538,6 +538,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Владыка Подземелья сверх дропа Владыки Мира: с шансом
     // DUNGEON_BOSS_UNIQUE_SET_CHANCE — одна случайная часть любого
     // уникального сета (любой класс, любой слот, UNIQUE_SET_ITEMS).
+    // Звёздные осколки — с каждого Владыки Подземелья, от и до
+    // (DUNGEON_BOSS_STAR_SHARDS), без броска на шанс.
+    if (result.dungeonBoss && DUNGEON_BOSS_STAR_SHARDS) {
+      const [lo, hi] = DUNGEON_BOSS_STAR_SHARDS;
+      const star = CRAFT_MATS.find(m => m.id === 'star_shard');
+      const qty = lo + Math.floor(rand() * (hi - lo + 1));
+      if (star && qty > 0) out.items.push({ id: star.id, name: star.name, rarity: star.rarity, qty });
+    }
     if (result.dungeonBoss && rand() < (DUNGEON_BOSS_UNIQUE_SET_CHANCE || 0)) {
       const pool = ITEM_DEF.filter(d => d.uniqueSet);
       if (pool.length) {
@@ -972,6 +980,22 @@ module.exports = function registerWorld(s, safeOn, deps) {
         text: `Игрок ${s.username || '?'} получил ${paidGram} GRAM с элитного монстра`,
         time: new Date().toISOString(),
       });
+    }
+
+    // Владыка Подземелья: весь сервер узнаёт, кто его добил, и — отдельной
+    // строкой — если выпала часть уникального сета. После транзакции, как и
+    // GRAM элитного выше: объявляем только то, что действительно выдано
+    // (вещь, не влезшая в сумку, ниже ляжет на пол — она всё равно его).
+    if (result.dungeonBoss) {
+      const who = s.username || '?';
+      const now = new Date().toISOString();
+      io.emit('chatMsg', { username: 'СОБЫТИЕ', text: `💀 ${who} добил Владыку Подземелья!`, time: now });
+      for (const it of reward.items) {
+        const def = ITEM_DEF.find(d => d.id === it.id);
+        if (def && def.uniqueSet) {
+          io.emit('chatMsg', { username: 'СОБЫТИЕ', text: `🌟 ${who} получил с Владыки Подземелья уникальную вещь: ${def.name}!`, time: now });
+        }
+      }
     }
 
     // What would not fit stays on the floor. The reward for a kill is not owed

@@ -1972,6 +1972,7 @@ function netConnect(onReady) {
       if (!e) return;
       if (type === 'stun') e.stunTimer = duration;
       else if (type === 'slow') e.slowTimer = duration;
+      else if (type === 'defDown') e.defDownTimer = duration;
     }
     if (enemyId) _applyCC(enemyId);
     if (enemyIds) enemyIds.forEach(_applyCC);

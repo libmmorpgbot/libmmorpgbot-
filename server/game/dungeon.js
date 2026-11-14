@@ -1007,6 +1007,8 @@ function generateDungeonHub() {
     const hp = Math.floor(bs.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT * DUNGEON_BOSS_HP_MULT);
     enemyList.push({
       id: 'dungeon_boss', ...bd, isBoss: true, arm: 'dungeon', dungeon: true, dungeonBoss: true, spot: 'dboss',
+      // Невосприимчив к стану, замедлениям и снижению защиты (Room.js, ccImmune).
+      ccImmune: true,
       rlvl: WORLD_BOSS_LEVEL, name: DUNGEON_BOSS_NAME, size: 34,
       maxHp: hp, hp,
       atk: Math.round(bs.atk * DUNGEON_BOSS_MULT / DUNGEON_BOSS_ATK_DIV), def: bs.def * DUNGEON_BOSS_MULT, spd: bd.spd * 1.5,

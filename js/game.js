@@ -1483,8 +1483,13 @@ function update(dt, realDt) {
     if ((e.atkAnimTimer || 0) > 0) e.atkAnimTimer -= dt;
     if ((e._moveTimer || 0) > 0) e._moveTimer -= dt;
     if ((e._srvMoving || 0) > 0) e._srvMoving -= dt;
+    // Владыка Подземелья невосприимчив к контролю (ccImmune на сервере) —
+    // стан/замедление, которые клиент ставит сам в момент каста, снимаем
+    // сразу, чтобы над ним не мелькали эффекты, которых нет.
+    if (e.id === 'dungeon_boss') { e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0; }
     if ((e.stunTimer || 0) > 0) e.stunTimer -= dt;
     if ((e.slowTimer || 0) > 0) e.slowTimer -= dt;
+    if ((e.defDownTimer || 0) > 0) e.defDownTimer -= dt;
 
     // Find closest player — squared dist avoids sqrts in comparison loop
     let closestD2 = _epd2, closestTgt = player;
@@ -2262,6 +2267,20 @@ function _buildArmGates() {
 
 // True while a world boss is announced, alive, or its loot is still on the
 // floor — the window in which the arena is reachable.
+// Все телепорты текущей локации — для мини-карты (drawMiniMapPanel,
+// js/ui.js): портал хаба, пады возврата, сезонный пад, классовые пады
+// Подземелья, арена события и Война гильдий. kind — для цвета.
+function minimapPads() {
+  const out = [];
+  if (_portalPad) out.push({ x: _portalPad.x, y: _portalPad.y, kind: 'portal' });
+  (_returnPads || []).forEach(p => out.push({ x: p.x, y: p.y, kind: 'return' }));
+  if (_seasonPad) out.push({ x: _seasonPad.x, y: _seasonPad.y, kind: 'season' });
+  (_dungeonClassPads || []).forEach(p => out.push({ x: p.x, y: p.y, kind: p.cls === (player && player.type) ? 'portal' : 'locked' }));
+  if (_evtPad && _evtArenaOpen()) out.push({ x: _evtPad.x, y: _evtPad.y, kind: 'event' });
+  if (_gwPad && _gwOpen()) out.push({ x: _gwPad.x, y: _gwPad.y, kind: 'event' });
+  return out;
+}
+
 function _evtArenaOpen() {
   return (typeof _evtBossSpawnAt !== 'undefined' && _evtBossSpawnAt > Date.now()) ||
          _evtBossAlive ||

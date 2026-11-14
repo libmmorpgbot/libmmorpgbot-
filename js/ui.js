@@ -3416,7 +3416,10 @@ function _dungeonBossDropHtml() {
   // самоцветы, монета, рецепты.
   const xp = xpAtLevel(WORLD_BOSS_LEVEL) * WORLD_XP_MULT * 20;
   const gold = goldAtLevel(WORLD_BOSS_LEVEL) * 20;
+  const star = mat('star_shard');
+  const SS = typeof DUNGEON_BOSS_STAR_SHARDS !== 'undefined' ? DUNGEON_BOSS_STAR_SHARDS : null;
   const main = [
+    (star && SS) ? _dropRow(_mi(star, 16), star.name, `&times;${SS[0]}–${SS[1]} · <b style="color:#ffd76a">100%</b>`, '#ffd76a') : '',
     _dropRow('✨', t('clanPerkXp'), `<b style="color:#b4eb84">${xp}</b>`, '#b4eb84'),
     _dropRow('🪙', t('npcGoldLbl'), `${gold}g · 100%`),
     (typeof WORLD_LIBERTY_CHANCE !== 'undefined' && WORLD_LIBERTY_CHANCE > 0)
@@ -4144,6 +4147,34 @@ function drawMiniMapPanel() {
     const ex = mmX + (e.x / TILE - winTx) * mmSc, ey = mmY + (e.y / TILE - winTy) * mmSc;
     ctx.fillText('💀', ex, ey);
   });
+  // Телепорты: светящееся кольцо с точкой. Пад за краем окна прижимаем к
+  // краю стрелкой-точкой — видно, куда идти к выходу.
+  if (typeof minimapPads === 'function') {
+    const _PAD_COL = { portal: '#5fd6ff', return: '#4ee69a', season: '#ffd24a', event: '#ff7a5c', locked: '#7a6e86' };
+    const _pr = Math.max(3, mmSc * 2.2);
+    const _tt = performance.now() / 1000;
+    for (const pd of minimapPads()) {
+      let px = mmX + (pd.x / TILE - winTx) * mmSc, py = mmY + (pd.y / TILE - winTy) * mmSc;
+      const col = _PAD_COL[pd.kind] || '#5fd6ff';
+      const inside = px >= mmX + 3 && px <= mmX + mmW - 3 && py >= mmY + 3 && py <= mmY + mmH - 3;
+      if (!inside) {
+        px = Math.max(mmX + 4, Math.min(mmX + mmW - 4, px));
+        py = Math.max(mmY + 4, Math.min(mmY + mmH - 4, py));
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
+      const pulse = 1 + Math.sin(_tt * 3 + pd.x) * 0.18;
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(px, py, _pr * 1.6 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(px, py, _pr, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(px, py, Math.max(1, _pr * 0.35), 0, Math.PI * 2); ctx.fill();
+    }
+  }
   const _mmRn = Math.max(1, mmSc);
   ctx.fillStyle = 'rgba(240,168,60,0.95)';
   ctx.beginPath();

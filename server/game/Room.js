@@ -5540,13 +5540,13 @@ class Room {
     const base = Math.max(1, this._atkOf(attacker) - _effDef + Math.floor(Math.random() * 7) - 3);
     const { dmg: _rawDmg, isCrit } = _critDmg(base, this._critChanceOf(attacker), this._critPowerOf(attacker));
     // Обычный удар Танка и Рыцаря Смерти: +10% замедления на 10 с (до 50%).
-    if (_ATK_SLOW_CLS.has(attacker.type)) {
+    if (_ATK_SLOW_CLS.has(attacker.type) && !enemy.ccImmune) {
       const _t = Date.now();
       enemy._atkSlowPct = atkSlowStack(enemy._atkSlowPct, enemy._atkSlowUntil, _t);
       enemy._atkSlowUntil = _t + ATK_SLOW_SEC * 1000;
     }
     // Рыцарь Смерти: микростан 0.3 с с шансом 20% на каждый обычный удар.
-    if (attacker.type === 'deathknight' && Math.random() < DK_MICROSTUN_CHANCE) {
+    if (attacker.type === 'deathknight' && !enemy.ccImmune && Math.random() < DK_MICROSTUN_CHANCE) {
       enemy.stunTimer = Math.max(enemy.stunTimer || 0, DK_MICROSTUN_SEC);
     }
     // Splash always lands at exactly 50% of what the same hit would have
@@ -5670,7 +5670,7 @@ class Room {
     (attacker._slotHitAt || (attacker._slotHitAt = {}))[key] = Date.now();
     // «Разряд»: −20% защиты попавшему на SKILL_DEF_DOWN.sec (продлевается).
     const _defDown = skillDefDownOf(_slotCls, _slotKey, _advActiveNow);
-    if (_defDown) enemy.defDownTimer = Math.max(enemy.defDownTimer || 0, _defDown.sec);
+    if (_defDown && !enemy.ccImmune) enemy.defDownTimer = Math.max(enemy.defDownTimer || 0, _defDown.sec);
     this._vampGain(attacker, dmg);
     enemy.aggro = true;
     this._wakePack(enemy);
@@ -5743,6 +5743,9 @@ class Room {
     const reach = CC_REACH + (enemy.size || 0);
     if (dx * dx + dy * dy > reach * reach) return false;
     if (!this._hasLOS(caster.x, caster.y, enemy.x, enemy.y)) return false;
+    // Невосприимчив к контролю (Владыка Подземелья, ccImmune) — эффект не
+    // ложится, и в ответ «не попал»: клиентам нечего рисовать.
+    if (enemy.ccImmune) return false;
     if (type === 'stun') enemy.stunTimer = Math.min(duration, 6);
     else if (type === 'slow') enemy.slowTimer = Math.min(duration, 6);
     // "Охота" (advanced deathknight R, js/player.js) — same 6s cap as

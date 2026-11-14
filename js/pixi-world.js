@@ -34,7 +34,7 @@ const _otherPool  = new Map(); // sid → {ct, spr, gfx}
 const _npcPool    = new Map(); // npc.id → {ct, spr, gfx}
 
 // Player rendering objects
-let _plSpr = null, _plGfx = null;
+let _plSpr = null, _plGfx = null, _plSfx = null, _plSfxState = {};
 
 // petId whose sheets loadPetSprites() has been asked to fetch for the LOCAL
 // player. Other players' pets are fetched as their ids arrive (js/network.js).
@@ -588,7 +588,7 @@ function _dropGpuState() {
     Object.keys(cache).forEach(k => delete cache[k]);
   }
   _npcNames.length = 0;
-  _plSpr = null; _plGfx = null; _plAura = null;
+  _plSpr = null; _plGfx = null; _plAura = null; _plSfx = null; _plSfxState = {};
   _petLoadedFor = null;
   _lastBgColor = null;
 }
@@ -2244,6 +2244,130 @@ function _updateStickers(camX, camY) {
 
 // ── enemy pool ────────────────────────────────────────────
 
+
+// ── Эффекты статусов ─────────────────────────────────────────────────────
+// Вместо цветных кругов под ногами — у каждого статуса своя картинка:
+//   стан       — три звезды кружат над головой;
+//   удержание  — из-под земли вырастают корни с листьями и обвивают ноги
+//                (замедление навыком, ×0,35 к скорости);
+//   мороз      — ледяные кристаллы у ног и снежинки (складное замедление
+//                от ударов Танка и Рыцаря Смерти);
+//   слом брони — треснувший щит над головой и осыпающиеся осколки
+//                («Охота», снижение защиты).
+// Рисуется заново каждый кадр, пока статус идёт (это анимация), в свой
+// Graphics поверх спрайта; без статусов — один clear() и всё.
+// g — Graphics, cx/cy — точка «центр» сущности в координатах g, headY и
+// feetY — смещения макушки и ног от cy, w — полуширина сущности, st —
+// { stun, root, frost, defDown, rootAge }, ts — секунды.
+function _sfxStar(g, x, y, r, rot, col, a) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 ? r * 0.45 : r, an = rot + i * Math.PI / 5 - Math.PI / 2;
+    pts.push(x + Math.cos(an) * rr, y + Math.sin(an) * rr);
+  }
+  g.beginFill(col, a); g.drawPolygon(pts); g.endFill();
+  g.beginFill(0xffffff, a * 0.9); g.drawCircle(x, y, r * 0.22); g.endFill();
+}
+function _drawStatusFx(g, cx, cy, headY, feetY, w, st, ts) {
+  // ── удержание: корни ──────────────────────────────────────────────────
+  if (st.root) {
+    const grow = Math.min(1, (st.rootAge || 0) * 4);
+    const fy = cy + feetY, rw = Math.max(10, w * 0.9);
+    // Взрыхлённая земля.
+    g.beginFill(0x3a2a14, 0.45); g.drawEllipse(cx, fy, rw * 1.15, rw * 0.38); g.endFill();
+    const N = 6;
+    for (let i = 0; i < N; i++) {
+      const side = i % 2 ? 1 : -1;
+      const bx = cx + (i / (N - 1) - 0.5) * rw * 1.8, by = fy + (i % 3 - 1) * 2;
+      const h = (22 + (i * 7) % 13) * grow;
+      const sway = Math.sin(ts * 2.2 + i) * 2.5;
+      const tx = bx + side * (rw * 0.35) + sway, ty = by - h;
+      const mx = bx - side * 6, my = by - h * 0.55;
+      g.lineStyle(3.2, 0x4a3218, 0.95);
+      g.moveTo(bx, by); g.quadraticCurveTo(mx, my, tx, ty);
+      g.lineStyle(1.4, 0x7aa64a, 0.9);
+      g.moveTo(bx, by - 1); g.quadraticCurveTo(mx, my - 1, tx, ty);
+      g.lineStyle(0);
+      if (grow > 0.6) {
+        // Листик на кончике и один посередине.
+        g.beginFill(0x8fd65a, 0.95); g.drawEllipse(tx, ty, 3.2, 1.8); g.endFill();
+        g.beginFill(0x6fbf3f, 0.9); g.drawEllipse((bx + tx) / 2 - side * 3, (by + ty) / 2, 2.6, 1.5); g.endFill();
+      }
+    }
+  }
+  // ── мороз: кристаллы и снежинки ──────────────────────────────────────
+  if (st.frost) {
+    const fy = cy + feetY, rw = Math.max(10, w * 0.9);
+    g.beginFill(0x9fdcff, 0.22); g.drawEllipse(cx, fy, rw * 1.2, rw * 0.4); g.endFill();
+    for (let i = 0; i < 5; i++) {
+      const an = i / 5 * Math.PI * 2 + 0.4;
+      const x = cx + Math.cos(an) * rw, y = fy + Math.sin(an) * rw * 0.33;
+      const h = 9 + (i % 3) * 3;
+      g.beginFill(0xcff0ff, 0.9);
+      g.drawPolygon([x - 3, y, x, y - h, x + 3, y, x, y + 2]);
+      g.endFill();
+      g.lineStyle(1, 0xffffff, 0.8); g.moveTo(x, y - h); g.lineTo(x, y); g.lineStyle(0);
+    }
+    for (let i = 0; i < 4; i++) {
+      const k = ((ts * 0.6 + i / 4) % 1);
+      const x = cx + Math.sin(i * 2.1 + ts) * rw * 0.8, y = cy + headY + (feetY - headY) * k;
+      const a = 0.9 * (1 - k);
+      g.lineStyle(1.2, 0xe8f8ff, a);
+      for (let j = 0; j < 3; j++) {
+        const an = j * Math.PI / 3 + ts;
+        g.moveTo(x - Math.cos(an) * 3, y - Math.sin(an) * 3); g.lineTo(x + Math.cos(an) * 3, y + Math.sin(an) * 3);
+      }
+      g.lineStyle(0);
+    }
+  }
+  // ── слом брони: треснувший щит ───────────────────────────────────────
+  if (st.defDown) {
+    const x = cx + w * 0.75 + 6, y = cy + headY + 6 + Math.sin(ts * 3) * 1.5;
+    g.beginFill(0x2a1638, 0.85);
+    g.drawPolygon([x - 7, y - 8, x + 7, y - 8, x + 7, y, x, y + 9, x - 7, y]);
+    g.endFill();
+    g.lineStyle(1.5, 0xc58bff, 0.95);
+    g.drawPolygon([x - 7, y - 8, x + 7, y - 8, x + 7, y, x, y + 9, x - 7, y]);
+    g.lineStyle(1.6, 0xff6a6a, 0.95);
+    g.moveTo(x - 1, y - 8); g.lineTo(x + 2, y - 3); g.lineTo(x - 2, y + 1); g.lineTo(x + 1, y + 7);
+    g.lineStyle(0);
+    for (let i = 0; i < 3; i++) {
+      const k = (ts * 0.9 + i / 3) % 1;
+      g.beginFill(0xc58bff, 0.9 * (1 - k));
+      g.drawRect(x - 6 + i * 5, y + 9 + k * 16, 2, 2);
+      g.endFill();
+    }
+  }
+  // ── стан: звёзды над головой ─────────────────────────────────────────
+  if (st.stun) {
+    const y0 = cy + headY - 6, rx = Math.max(15, w * 0.9), ry = 5;
+    // Задние звёзды — тусклее и меньше, передние — ярче: кольцо читается
+    // как объёмное.
+    for (let i = 0; i < 3; i++) {
+      const an = ts * 4 + i * Math.PI * 2 / 3;
+      const depth = (Math.sin(an) + 1) / 2;
+      _sfxStar(g, cx + Math.cos(an) * rx, y0 + Math.sin(an) * ry, 5 + depth * 3, ts * 3 + i,
+        0xffe14a, 0.55 + depth * 0.45);
+    }
+    // Искорка.
+    const sa = ts * 7;
+    g.beginFill(0xffffff, 0.6 + 0.4 * Math.sin(sa));
+    g.drawCircle(cx + Math.cos(sa * 0.5) * rx * 0.5, y0 - 6, 1.3);
+    g.endFill();
+  }
+}
+// Обёртка для объектов с полем sfx: рисует, если есть статус, иначе
+// один раз чистит. rootAge — сколько уже держат корни (для анимации роста).
+function _statusFxFor(obj, key, g, cx, cy, headY, feetY, w, st, dt, ts) {
+  if (st.root) obj[key + 'RootAge'] = (obj[key + 'RootAge'] || 0) + dt; else obj[key + 'RootAge'] = 0;
+  st.rootAge = obj[key + 'RootAge'];
+  const any = st.stun || st.root || st.frost || st.defDown;
+  if (!any) { if (obj[key + 'On']) { g.clear(); obj[key + 'On'] = false; } return; }
+  obj[key + 'On'] = true;
+  g.clear();
+  _drawStatusFx(g, cx, cy, headY, feetY, w, st, ts);
+}
+
 function _getEnemy(id) {
   if (_enemyPool.has(id)) return _enemyPool.get(id);
   const ct  = new PIXI.Container();
@@ -2261,9 +2385,10 @@ function _getEnemy(id) {
   const warn = new PIXI.Sprite(PIXI.Texture.EMPTY);
   warn.anchor.set(1, 0.5);
   warn.visible = false;
-  ct.addChild(aura, spr, gfx, lbl, warn);
+  const sfx = new PIXI.Graphics();
+  ct.addChild(aura, spr, gfx, sfx, lbl, warn);
   _enemyCt.addChild(ct);
-  const obj = { ct, spr, gfx, lbl, aura, warn };
+  const obj = { ct, spr, gfx, sfx, lbl, aura, warn };
   _enemyPool.set(id, obj);
   return obj;
 }
@@ -2449,6 +2574,16 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
   const dead    = e.hp <= 0;
   const isBossAlive = e.isBoss && !dead;
 
+  // Эффекты статусов (_drawStatusFx) — свой слой, анимируются каждый кадр.
+  {
+    const headY = aeTop != null ? aeTop + 6 : -ds * 0.5;
+    const feetY = aeTop != null ? e.size * 0.6 : ds * 0.38;
+    const w = aeTop != null ? e.size * 0.7 : ds * 0.3;
+    _statusFxFor(obj, '_sfx', obj.sfx, 0, 0, headY, feetY, w, {
+      stun: !dead && stunned, root: !dead && slowed, defDown: !dead && (e.defDownTimer || 0) > 0,
+    }, dt, performance.now() / 1000);
+  }
+
   // The selection ring and boss glow pulse every frame (sin-based), so those
   // force a rebuild while active. Everything else here — HP bar, status
   // tints — only changes when the underlying state changes, so
@@ -2483,9 +2618,7 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
 
   // Status overlays
   // Монстры «Пепельного края»/«Пограничья» вдвое меньше — и круги под ними.
-  const rk = aeTop != null ? 0.5 : 1;
-  if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,e.size * rk); gfx.endFill(); }
-  if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,e.size * rk); gfx.endFill(); }
+  // (Стан и замедление — эффектами _drawStatusFx выше, не кругами.)
 
   obj._gfxHurt     = hurt;
   obj._gfxSlowed    = slowed;
@@ -2683,9 +2816,10 @@ function _getOtherPlayer(sid) {
   const spr  = new PIXI.Sprite(PIXI.Texture.WHITE);
   spr.visible = false;
   const gfx = new PIXI.Graphics();
-  ct.addChild(aura, spr, gfx);
+  const sfx = new PIXI.Graphics();
+  ct.addChild(aura, spr, gfx, sfx);
   _otherPCt.addChild(ct);
-  const obj = { ct, spr, gfx, aura };
+  const obj = { ct, spr, gfx, aura, sfx };
   _otherPool.set(sid, obj);
   return obj;
 }
@@ -2763,6 +2897,8 @@ function _updateOtherPlayers(pulse, ts) {
     const slowed  = (p.slowTimer||0) > 0;
     const stunned = (p.stunTimer||0) > 0;
     const hp = p.hp || 0, maxHp = p.maxHp || 1;
+    _statusFxFor(obj, '_sfx', obj.sfx, 0, 0, barTop + 12, 18, 16,
+      { stun: stunned && hp > 0, root: slowed && hp > 0 }, 1 / 60, performance.now() / 1000);
 
     // Selection ring pulses continuously while active, so it forces a redraw
     // every frame it's on. Everything else (swing arc, HP bar, status tints,
@@ -2804,8 +2940,7 @@ function _updateOtherPlayers(pulse, ts) {
       gfx.beginFill(fc); gfx.drawCircle(0, 0, 14); gfx.endFill();
     }
 
-    if (slowed)  { gfx.beginFill(0x44aaff, 0.28); gfx.drawCircle(0,0,18); gfx.endFill(); }
-    if (stunned) { gfx.beginFill(0xffff88, 0.35); gfx.drawCircle(0,0,18); gfx.endFill(); }
+    // (Стан и замедление — эффектами _drawStatusFx, слой sfx.)
 
     const bw = 38, bh = 4;
     gfx.beginFill(0x330000); gfx.drawRect(-bw/2, barTop, bw, bh); gfx.endFill();
@@ -2829,8 +2964,9 @@ function _initPlayer() {
   _plSpr.visible = false;
   _plGfx  = new PIXI.Graphics();
   _plAura = new PIXI.Graphics();
+  _plSfx  = new PIXI.Graphics();
   // Under the sprite, same as other players' aura layer.
-  _playerCt.addChild(_plAura, _plSpr, _plGfx);
+  _playerCt.addChild(_plAura, _plSpr, _plGfx, _plSfx);
 }
 
 function _updatePlayer(dt, ts) {
@@ -2842,6 +2978,13 @@ function _updatePlayer(dt, ts) {
   _playerCt.visible = true;
   _playerCt.alpha   = invisTimer > 0 ? 0.35 : 1;
   _plGfx.clear();
+  // Свои статусы: стан, удержание (замедление навыком), мороз от ударов
+  // Танка/Рыцаря Смерти (atkSlowTimer, js/network.js pvpPlayerCC).
+  _statusFxFor(_plSfxState, '_sfx', _plSfx, player.x, player.y, -30, 18, 16, {
+    stun: (player.stunTimer || 0) > 0 && player.hp > 0,
+    root: (player.slowTimer || 0) > 0 && player.hp > 0,
+    frost: (player.atkSlowTimer || 0) > 0 && player.hp > 0,
+  }, dt, performance.now() / 1000);
 
   // The leader sees their own aura too. netUsername is this client's own name,
   // the same value the rating table matches on.
