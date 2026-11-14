@@ -1275,9 +1275,14 @@ function _pmUpdateEnemy(e, obj, dt, ds) {
   obj._pmX = e.x; obj._pmY = e.y;
   const sp = Math.hypot(mx, my) / Math.max(dt, 1e-3);
   obj._pmMv = (obj._pmMv || 0) * 0.8 + (sp > 12 ? 0.2 : 0);
-  if (obj._pmDir == null) obj._pmDir = 2;
+  if (obj._pmDir == null) obj._pmDir = 6; // лицом к нам
   if (sp > 12) obj._pmDir = pmDir(mx, my);
-  if (e.atkAnimTimer > 0 && typeof player !== 'undefined' && player) obj._pmDir = pmDir(player.x - e.x, player.y - e.y);
+  // В ударе — к тому, кого бьёт (ближайший игрок, js/network.js), а не
+  // всегда к своему герою.
+  if (e.atkAnimTimer > 0) {
+    if (e._atkTx != null) obj._pmDir = pmDir(e._atkTx - e.x, e._atkTy - e.y);
+    else if (typeof player !== 'undefined' && player) obj._pmDir = pmDir(player.x - e.x, player.y - e.y);
+  }
   // Какая анимация: смерть > удар > попадание > бег > стойка.
   let key = 'stance';
   if (dead) key = 'die';
@@ -1317,6 +1322,12 @@ function _aeUpdateEnemy(e, obj, dt, ds) {
     return pmTop;
   }
   if (obj.pmSpr) obj.pmSpr.visible = false;
+  // Атлас «Пограничья» ещё грузится — ничего прежнего вместо него.
+  if (typeof pmOwns === 'function' && pmOwns(e.eid)) {
+    if (obj.aeSpr) { obj.aeSpr.visible = false; obj.aeWhite.visible = false; obj.aeShadow.visible = false; }
+    obj.spr.visible = false;
+    return null;
+  }
   const def = typeof AE_MONSTER !== 'undefined' ? AE_MONSTER[e.eid] : null;
   if (!def) return null;
   const tex = _aeTexture(def[0]);
@@ -2364,7 +2375,10 @@ function _updateEnemyObj(e, obj, dt, pulse, bossGlow) {
     aura.clear();
     aura.visible = false;
   }
-  const texRows = def ? _enemyTextures(e.eid, key) : null;
+  // Монстр «Пограничья» (js/pm-monsters.js) прежний лист не рисует вовсе —
+  // даже пока его атлас грузится, см. _aeUpdateEnemy.
+  const pmOwned = typeof pmOwns === 'function' && pmOwns(e.eid);
+  const texRows = def && !pmOwned ? _enemyTextures(e.eid, key) : null;
   const sh = def?.sheets[key];
   if (texRows && sh) {
     const facing = e._facing || 'down';

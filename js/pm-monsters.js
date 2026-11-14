@@ -43,37 +43,78 @@ const PM_MONSTER = {
   dungeon_lich_commander: ['skeleton_knight_boss', 0x9cb4ff, 1.08],
 };
 
-// Атласы и кадры: вид → { base, tex[] } после загрузки.
+// Атласы и кадры: вид → { tex[] } после загрузки. Кто ждёт атлас (экран
+// загрузки, loadEnemySprites в js/sprites.js), передаёт onReady — он
+// вызывается и при успехе, и при окончательной неудаче (тогда s.failed, и
+// монстр рисуется прежним листом).
 const _pmSheets = new Map();
-function _pmSheet(kind) {
+const PM_LOAD_RETRIES = 4;
+function _pmSheet(kind, onReady) {
   let s = _pmSheets.get(kind);
-  if (s) return s.ready ? s : null;
+  if (s) {
+    if (s.ready || s.failed) { if (onReady) onReady(); return s.ready ? s : null; }
+    if (onReady) s.cbs.push(onReady);
+    return null;
+  }
   const d = typeof PM_SPR !== 'undefined' ? PM_SPR[kind] : null;
-  if (!d || typeof PIXI === 'undefined') return null;
-  s = { ready: false, tex: null, d };
+  if (!d || typeof PIXI === 'undefined') { if (onReady) onReady(); return null; }
+  s = { ready: false, failed: false, tex: null, d, cbs: onReady ? [onReady] : [], tries: 0 };
   _pmSheets.set(kind, s);
-  const img = new Image();
-  img.decoding = 'async';
-  img.onload = () => {
-    const bt = PIXI.BaseTexture.from(img);
-    const f = d.f, n = f.length / 6, tex = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const o = i * 6;
-      tex[i] = new PIXI.Texture(bt, new PIXI.Rectangle(f[o], f[o + 1], Math.max(1, f[o + 2]), Math.max(1, f[o + 3])),
-        null, null, 0, new PIXI.Point(f[o + 4] / Math.max(1, f[o + 2]), f[o + 5] / Math.max(1, f[o + 3])));
-    }
-    s.tex = tex; s.ready = true;
+  const flush = () => { const cbs = s.cbs; s.cbs = []; cbs.forEach(cb => { try { cb(); } catch (_e) { /* чужой колбэк */ } }); };
+  const load = () => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => {
+      const bt = PIXI.BaseTexture.from(img);
+      const f = d.f, n = f.length / 6, tex = new Array(n);
+      for (let i = 0; i < n; i++) {
+        const o = i * 6;
+        tex[i] = new PIXI.Texture(bt, new PIXI.Rectangle(f[o], f[o + 1], Math.max(1, f[o + 2]), Math.max(1, f[o + 3])),
+          null, null, 0, new PIXI.Point(f[o + 4] / Math.max(1, f[o + 2]), f[o + 5] / Math.max(1, f[o + 3])));
+      }
+      s.tex = tex; s.ready = true;
+      flush();
+    };
+    // Обрыв сети — не повод навсегда остаться со старым спрайтом: несколько
+    // повторов с паузой, как у листов в js/sprites.js.
+    img.onerror = () => {
+      s.tries++;
+      if (s.tries <= PM_LOAD_RETRIES) { setTimeout(load, 600 * s.tries); return; }
+      console.error('[pm] не удалось загрузить атлас', kind);
+      s.failed = true;
+      flush();
+    };
+    img.src = '/images/pm/' + kind + '.webp?v=' + PM_VER + (s.tries ? '&retry=' + s.tries : '');
   };
-  img.onerror = () => { _pmSheets.delete(kind); };
-  img.src = '/images/pm/' + kind + '.webp?v=' + PM_VER;
+  load();
   return null;
 }
 
-// Направление 0..7 (0 — запад, дальше против часовой по экрану: ЮЗ, Ю, ЮВ,
-// В, СВ, С, СЗ) по вектору взгляда.
+// Рисуется ли этот монстр спрайтом «Пограничья» (атлас есть или ещё
+// грузится). Пока грузится — не показываем вместо него старый спрайт:
+// иначе на глазах у игрока один монстр сменяется другим.
+function pmOwns(eid) {
+  const def = typeof PM_MONSTER !== 'undefined' ? PM_MONSTER[eid] : null;
+  if (!def || typeof PM_SPR === 'undefined' || !PM_SPR[def[0]]) return false;
+  const s = _pmSheets.get(def[0]);
+  return !(s && s.failed);
+}
+
+// Заранее загрузить атлас монстра; onDone — когда готов (или не вышло).
+// false — у этого eid нет спрайта «Пограничья».
+function pmPreload(eid, onDone) {
+  if (!pmOwns(eid)) return false;
+  _pmSheet(PM_MONSTER[eid][0], onDone);
+  return true;
+}
+
+// Направление 0..7 по вектору взгляда на экране (y вниз). Порядок кадров в
+// атласах — по часовой: 0 — запад, 1 — СЗ, 2 — север (спиной к нам),
+// 3 — СВ, 4 — восток, 5 — ЮВ, 6 — юг (лицом к нам), 7 — ЮЗ. Раньше здесь
+// считали против часовой — север и юг и все диагонали были перепутаны.
 function pmDir(dx, dy) {
   const a = Math.atan2(dy, dx);
-  return ((4 - Math.round(a / (Math.PI / 4))) % 8 + 8) % 8;
+  return ((Math.round(a / (Math.PI / 4)) + 4) % 8 + 8) % 8;
 }
 
 // Номер кадра анимации an=[start,count,ms,mode] за время t (сек).

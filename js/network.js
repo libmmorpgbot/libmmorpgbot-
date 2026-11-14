@@ -1157,6 +1157,9 @@ function netConnect(onReady) {
       if (typeof initNpcs === 'function') initNpcs();
     }
     serverEnemies = (initialEnemies || []).map(e => ({ ...e, targetX: e.x, targetY: e.y }));
+    // Атласы «Пограничья» для всех видов этого этажа — сразу, а не когда
+    // монстр окажется рядом: пока атлас не пришёл, монстра не видно.
+    if (typeof pmPreload === 'function') new Set(serverEnemies.map(e => e.eid)).forEach(eid => pmPreload(eid));
     serverEnemiesMap = new Map(serverEnemies.map(e => [e.id, e]));
     otherPlayers = new Map();
     bossStatus = {};
@@ -1643,6 +1646,7 @@ function netConnect(onReady) {
             const d2 = (op.x - se.x) ** 2 + (op.y - se.y) ** 2;
             if (d2 < best) { best = d2; tx = op.x; ty = op.y; }
           });
+          ex._atkTx = tx; ex._atkTy = ty;
           if (tx !== undefined) {
             const fdx = tx - se.x, fdy = ty - se.y;
             if (Math.abs(fdx) >= Math.abs(fdy)) ex._facing = fdx > 0 ? 'right' : 'left';

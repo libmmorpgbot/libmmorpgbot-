@@ -430,6 +430,24 @@ const ENEMY_SPRITE_RETRY_DELAY_MS = 600;
 
 function loadEnemySprites(eid, onDone) {
   onDone = onDone || function () {};
+  // Монстр «Пограничья» (js/pm-monsters.js): качаем его атлас, а не прежние
+  // листы — иначе экран загрузки и подгрузка рядом с монстром тратили время
+  // на старую картинку, и игрок видел сначала её, а потом новую. Если атлас
+  // так и не загрузился — тогда уже прежние листы, чтобы монстр не остался
+  // невидимым.
+  if (typeof pmOwns === 'function' && pmOwns(eid)) {
+    if (_enemySpriteLoadPromises[eid]) { _enemySpriteLoadPromises[eid].then(onDone); return; }
+    enemySpriteCache[eid] = {};
+    const p = new Promise(res => pmPreload(eid, res)).then(() => {
+      if (pmOwns(eid)) return;
+      delete enemySpriteCache[eid];
+      delete _enemySpriteLoadPromises[eid];
+      return new Promise(res => loadEnemySprites(eid, res));
+    });
+    _enemySpriteLoadPromises[eid] = p;
+    p.then(onDone);
+    return;
+  }
   const def = ENEMY_SPRITE_DEF[eid];
   if (!def || !def.sheets) { onDone(); return; }
   if (_enemySpriteLoadPromises[eid]) { _enemySpriteLoadPromises[eid].then(onDone); return; }
