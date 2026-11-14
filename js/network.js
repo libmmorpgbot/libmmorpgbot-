@@ -1664,6 +1664,13 @@ function netConnect(onReady) {
               const dlen = Math.hypot(tx - se.x, ty - se.y) || 1;
               const dvx = (tx - se.x) / dlen * 400, dvy = (ty - se.y) / dlen * 400;
               otherProjs.push({ x: se.x, y: se.y, vx: dvx, vy: dvy, color: '#ffffff', size: 7, life: 1.2, projType: 'ball' });
+            } else if (se.id === 'dungeon_boss') {
+              // Владыка Подземелья бьёт издалека — крупный фиолетовый шар.
+              // life — ровно на дистанцию до цели, чтобы шар не улетал за неё.
+              const dlen = Math.hypot(tx - se.x, ty - se.y) || 1;
+              const v = 450;
+              otherProjs.push({ x: se.x, y: se.y, vx: (tx - se.x) / dlen * v, vy: (ty - se.y) / dlen * v,
+                color: '#c060ff', size: 12, life: Math.min(1.2, dlen / v), projType: 'ball' });
             }
           }
         }

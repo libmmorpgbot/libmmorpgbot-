@@ -3373,7 +3373,7 @@ function _dungeonBossItemHtml() {
     line = tVars('dungeonBossRespawnFmt', { h: Math.floor(mins / 60), m: mins % 60 });
   }
   const st = monsterStatsAtLevel(WORLD_BOSS_LEVEL, 'boss');
-  const hp = Math.floor(st.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT);
+  const hp = Math.floor(st.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT * DUNGEON_BOSS_HP_MULT);
   const color = (typeof _WORLD_TIER_COLOR !== 'undefined' && _WORLD_TIER_COLOR.boss) || '#ff8a6a';
   return `
     <div class="mon-item">
@@ -3389,7 +3389,7 @@ function _dungeonBossItemHtml() {
       <div class="mon-body">
         <div class="fi-mstats">
           <span>HP <b>${hp}</b></span>
-          <span>ATK <b>${st.atk * DUNGEON_BOSS_MULT}</b></span>
+          <span>ATK <b>${Math.round(st.atk * DUNGEON_BOSS_MULT / DUNGEON_BOSS_ATK_DIV)}</b></span>
           <span>DEF <b>${st.def * DUNGEON_BOSS_MULT}</b></span>
         </div>
         <div style="padding:4px 0 8px;color:#83725a;font-size:11px;line-height:1.5">${tVars('dungeonBossDropNote', { p: _pctSmall(DUNGEON_BOSS_UNIQUE_SET_CHANCE * 100) })}</div>

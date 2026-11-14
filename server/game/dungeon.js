@@ -1,6 +1,6 @@
 const { TILE, WALL, FLOOR, CHAR_DEF, ENEMY_DEF, FLOOR_ENEMIES, bandForLocalLevel, monsterStatsAtLevel, monsterNameAtLevel, monsterColorAtLevel, xpAtLevel, goldAtLevel, ARM_NAMES, ARM_ROOM_PAIRS, ARM_OFFSETS, ARM_LEVEL_REQ, roomsInArm, FARM_LVL_MIN, FARM_LVL_MAX, FARM_MOBS_PER_ROOM, FARM_ENTRY_LEVEL, FARM_XP_MULT, FARM_SPECIES, FARM_HIGH_LVL_MIN, FARM_HIGH_LVL_MAX, FARM_HIGH_MOBS_PER_ROOM, FARM_HIGH_ENTRY_LEVEL, FARM_HIGH_XP_MULT, FARM_HIGH_SPECIES, WORLD_ENTRY_LEVEL, WORLD_LVL_MIN, WORLD_LVL_MAX, WORLD_BOSS_LEVEL, WORLD_XP_MULT, WORLD_MOB_STAT_MULT, WORLD_BOSS_HP_MULT, WORLD_W, WORLD_H, WORLD_SPAWN, WORLD_TIERS, WORLD_SPOTS, WORLD_BOSS_SPOT, WORLD_RIVER_X, WORLD_RIDGE_X, WORLD_ROADS, WORLD_T, FARM2_LVL_MIN, FARM2_LVL_MAX, FARM2_ENTRY_LEVEL, FARM2_PARTY_SIZE, FARM2_MOBS_PER_ROOM, FARM2_PACK_SIZE, FARM2_SPD_MULT, FARM2_STAT_MULT, FARM2_XP_PER_KILL, FARM2_SPECIES,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB, DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES,
-  DUNGEON_BOSS_MULT, DUNGEON_BOSS_NAME } = require('../../shared/definitions');
+  DUNGEON_BOSS_MULT, DUNGEON_BOSS_NAME, DUNGEON_BOSS_ATK_DIV, DUNGEON_BOSS_HP_MULT, DUNGEON_BOSS_ATK_RANGE } = require('../../shared/definitions');
 
 function seededRng(seed) {
   let s = seed >>> 0;
@@ -1004,15 +1004,18 @@ function generateDungeonHub() {
     const bossSpot = { x: C.x, y: C.y, r: 5 };
     rooms.push(M.spotRoom(bossSpot, { isDungeon: true, arm: 'dungeon', spot: 'dboss', isBoss: true }));
     spotInfo.push({ id: 'dboss', name: '\u{1F480} ' + DUNGEON_BOSS_NAME, boss: true, lvl: [WORLD_BOSS_LEVEL, WORLD_BOSS_LEVEL], x: bx, y: by, r: bossSpot.r * TILE });
-    const hp = Math.floor(bs.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT);
+    const hp = Math.floor(bs.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT * DUNGEON_BOSS_HP_MULT);
     enemyList.push({
       id: 'dungeon_boss', ...bd, isBoss: true, arm: 'dungeon', dungeon: true, dungeonBoss: true, spot: 'dboss',
       rlvl: WORLD_BOSS_LEVEL, name: DUNGEON_BOSS_NAME, size: 34,
       maxHp: hp, hp,
-      atk: bs.atk * DUNGEON_BOSS_MULT, def: bs.def * DUNGEON_BOSS_MULT, spd: bd.spd * 1.5,
+      atk: Math.round(bs.atk * DUNGEON_BOSS_MULT / DUNGEON_BOSS_ATK_DIV), def: bs.def * DUNGEON_BOSS_MULT, spd: bd.spd * 1.5,
+      // Дальний бой — тот же механизм, что у личей (atkRange, Room.js _tick):
+      // останавливается на дистанции и бьёт оттуда.
+      atkRange: DUNGEON_BOSS_ATK_RANGE,
       xp: xpAtLevel(WORLD_BOSS_LEVEL) * WORLD_XP_MULT * 20, gold: goldAtLevel(WORLD_BOSS_LEVEL) * 20,
       x: bx, y: by, spawnX: bx, spawnY: by,
-      atkTimer: 1 + rng(), aggro: false, aggroR: 220,
+      atkTimer: 1 + rng(), aggro: false, aggroR: DUNGEON_BOSS_ATK_RANGE + 20,
     });
   }
   return {
