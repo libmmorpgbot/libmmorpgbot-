@@ -1278,6 +1278,27 @@ module.exports = function registerAdminRoutes(app, deps) {
     return r;
   }, 'world_boss_summon');
 
+  // ── Владыка Подземелья ─────────────────────────────────────────────────
+  // Сам возрождается раз в сутки в случайное время; кнопка — поднять его
+  // сейчас (Room.forceReviveBoss). Живого не трогает.
+  const _dungeonRoom = () => {
+    const w = require('../world');
+    return w.roomOf(w.FLOOR_IDS.dungeon);
+  };
+  app.get('/admin/dungeon-boss', guard, (req, res) => {
+    const room = _dungeonRoom();
+    const st = room && room.getBossStatus ? (room.getBossStatus().dungeon || null) : null;
+    res.json(st ? { alive: !!st.alive, respawnAt: st.respawnAt || 0 } : { missing: true });
+  });
+  modeCtl('/admin/dungeon-boss', () => {
+    const room = _dungeonRoom();
+    if (!room) throw Object.assign(new Error('no dungeon room'), { userMessage: 'Этаж Подземелья не запущен' });
+    const r = room.forceReviveBoss('dungeon');
+    if (r.error) throw Object.assign(new Error(r.error), { userMessage: r.error });
+    if (r.alreadyAlive) throw Object.assign(new Error('alive'), { userMessage: 'Владыка Подземелья и так жив' });
+    return r;
+  }, 'dungeon_boss_spawn');
+
   app.get('/admin/guildwar', guard, (req, res) => res.json(deps.guildWarState ? deps.guildWarState() : {}));
   modeCtl('/admin/guildwar/open',  () => need('_gwOpenWindow')(Date.now()), 'guildwar_open');
   modeCtl('/admin/guildwar/close', () => need('_gwCloseWindow')(), 'guildwar_close');

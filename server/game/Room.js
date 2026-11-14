@@ -2012,6 +2012,21 @@ class Room {
     return true;
   }
 
+  // Админка: поднять босса этого arm прямо сейчас (Владыка Подземелья —
+  // arm 'dungeon'). Живой — не трогаем. Срок «сейчас» уходит и в boss_state,
+  // иначе после перезапуска сервер восстановил бы старый срок и босс снова
+  // оказался бы мёртвым.
+  forceReviveBoss(arm) {
+    const boss = this.enemies.find(e => e.isBoss && e.arm === arm);
+    if (!boss) return { error: 'Босса на этом этаже нет' };
+    if (boss.hp > 0) return { alreadyAlive: true };
+    const now = Date.now();
+    boss._respawnAt = now;
+    this._reviveBossIfDue(boss);
+    if (this._onBossDeath) this._onBossDeath(arm, now);
+    return { revived: true };
+  }
+
   // One boss per corridor (arm) — alive or, once dead, the timestamp it
   // respawns at. respawnTimer is undefined for the single tick right after
   // death (the AI loop hasn't assigned it its full duration yet), so fall

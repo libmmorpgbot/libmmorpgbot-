@@ -292,6 +292,15 @@ header .online-badge{background:var(--green);color:#000;font-size:11px;font-weig
         </div>
       </div>
       <div class="card">
+        <h3>💀 Владыка Подземелья</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="dboss-status">—</div>
+        <button class="btn btn-primary" id="dboss-btn" onclick="spawnDungeonBoss()">Заспавнить босса</button>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px">
+          Появляется сразу на площади Подземелья. Сам возрождается раз в сутки в случайное время;
+          если босс жив — кнопка неактивна.
+        </div>
+      </div>
+      <div class="card">
         <h3>🗼 Кровавая Башня</h3>
         <div style="font-size:12px;color:var(--text2);margin-bottom:10px" id="race10-status">—</div>
         <div class="action-grid">
@@ -732,6 +741,7 @@ async function loadDashboard() {
   } catch(e) { console.error(e); }
   loadMaintenance();
   loadEventBoss();
+  loadDungeonBoss();
   loadRace10();
   loadGuildWar();
   loadArena3();
@@ -818,6 +828,36 @@ async function summonEventBoss() {
     else toast(d.error || 'Ошибка', false);
   } catch(e) { toast('Ошибка', false); }
   loadEventBoss();
+}
+
+// ── Владыка Подземелья ──────────────────────────────────
+async function loadDungeonBoss() {
+  const el = document.getElementById('dboss-status');
+  const btn = document.getElementById('dboss-btn');
+  if (!el) return;
+  try {
+    const d = await (await api('/admin/dungeon-boss')).json();
+    let txt, busy = false;
+    if (d.missing) { txt = '— этаж Подземелья не запущен'; busy = true; }
+    else if (d.alive) { txt = '🔴 Босс жив, стоит на площади'; busy = true; }
+    else {
+      const left = Math.max(0, Math.round(((d.respawnAt || 0) - Date.now()) / 60000));
+      txt = '⚪ Мёртв · сам вернётся через ' + Math.floor(left / 60) + ' ч ' + (left % 60) + ' мин';
+    }
+    el.textContent = txt;
+    if (btn) { btn.disabled = busy; btn.style.opacity = busy ? '.5' : '1'; }
+  } catch(e) { el.textContent = '—'; }
+}
+
+async function spawnDungeonBoss() {
+  if (!confirm('Заспавнить Владыку Подземелья прямо сейчас?')) return;
+  try {
+    const r = await api('/admin/dungeon-boss', { method:'POST' });
+    const d = await r.json();
+    if (r.ok) toast('Владыка Подземелья появился');
+    else toast(d.error || 'Ошибка', false);
+  } catch(e) { toast('Ошибка', false); }
+  loadDungeonBoss();
 }
 
 // ── Кровавая Башня ──────────────────────────────────────
