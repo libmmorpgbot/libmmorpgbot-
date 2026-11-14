@@ -14,6 +14,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
         DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC, ELITE_MOB_HP, ELITE_MOB_SIZE_MULT,
         ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX, PVP_OFF_COOLDOWN_MS,
+  dungeonBossNextSpawnAt,
 } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
@@ -707,6 +708,13 @@ const BOSS_RESPAWN_MIN_S = 60 * 60;
 const BOSS_RESPAWN_MAX_S = 2 * 60 * 60;
 function _bossRespawnSecs() {
   return BOSS_RESPAWN_MIN_S + Math.random() * (BOSS_RESPAWN_MAX_S - BOSS_RESPAWN_MIN_S);
+}
+// Срок возрождения конкретного босса, абсолютный (мс). Владыка Подземелья
+// (dungeonBoss, generateDungeonHub) — раз в сутки в случайное время
+// (dungeonBossNextSpawnAt, shared/definitions.js); остальные — через 1-2 часа.
+function _bossRespawnAtFor(e, now = Date.now()) {
+  if (e && e.dungeonBoss) return dungeonBossNextSpawnAt(now);
+  return now + _bossRespawnSecs() * 1000;
 }
 
 class Room {
@@ -2010,16 +2018,18 @@ class Room {
   // back to the same constant used to seed it.
   getBossStatus() {
     const status = {};
-    // 'openWorld' — Владыка Мира (generateWorld), тот же механизм таймера.
-    [...ARM_NAMES, 'openWorld'].forEach(arm => {
+    // 'openWorld' — Владыка Мира (generateWorld), тот же механизм таймера;
+    // 'dungeon' — Владыка Подземелья (generateDungeonHub), раз в сутки.
+    [...ARM_NAMES, 'openWorld', 'dungeon'].forEach(arm => {
       const boss = this.enemies.find(e => e.isBoss && e.arm === arm);
       if (!boss) return;
       // Срок истёк, пока комната спала без игроков, — босс жив уже сейчас.
       this._reviveBossIfDue(boss);
       if (boss.hp > 0) { status[arm] = { alive: true }; return; }
       if (!boss._respawnAt) {
-        boss.respawnTimer = boss.respawnTimer !== undefined ? boss.respawnTimer : _bossRespawnSecs();
-        boss._respawnAt = Date.now() + Math.max(0, boss.respawnTimer) * 1000;
+        boss._respawnAt = boss.respawnTimer !== undefined
+          ? Date.now() + Math.max(0, boss.respawnTimer) * 1000 : _bossRespawnAtFor(boss);
+        boss.respawnTimer = Math.max(0, boss._respawnAt - Date.now()) / 1000;
       }
       const respawnIn = Math.max(0, boss._respawnAt - Date.now());
       status[arm] = { alive: false, respawnAt: boss._respawnAt, respawnIn };
@@ -2405,9 +2415,10 @@ class Room {
         // it dies, so this branch only ever fires for regular enemies' 12s
         // timer, or for a boss killed through some other path.
         if (e.respawnTimer === undefined) {
-          e.respawnTimer = e.isBoss ? _bossRespawnSecs() : 12;
+          e.respawnTimer = 12;
           if (e.isBoss) {
-            e._respawnAt = Date.now() + e.respawnTimer * 1000;
+            e._respawnAt = _bossRespawnAtFor(e);
+            e.respawnTimer = Math.max(0, e._respawnAt - Date.now()) / 1000;
             if (this._onBossDeath) this._onBossDeath(e.arm, e._respawnAt);
           }
           return;
@@ -5562,8 +5573,8 @@ class Room {
       // then actually assigned.
       let respawnAt;
       if (enemy.isBoss) {
-        enemy.respawnTimer = _bossRespawnSecs();
-        respawnAt = Date.now() + enemy.respawnTimer * 1000;
+        respawnAt = _bossRespawnAtFor(enemy);
+        enemy.respawnTimer = Math.max(0, respawnAt - Date.now()) / 1000;
         enemy._respawnAt = respawnAt;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
@@ -5572,7 +5583,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, guildBoss: enemy.guildBoss || null, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, guildBoss: enemy.guildBoss || null, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonBoss: !!enemy.dungeonBoss, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };
@@ -5670,8 +5681,8 @@ class Room {
       // then actually assigned.
       let respawnAt;
       if (enemy.isBoss) {
-        enemy.respawnTimer = _bossRespawnSecs();
-        respawnAt = Date.now() + enemy.respawnTimer * 1000;
+        respawnAt = _bossRespawnAtFor(enemy);
+        enemy.respawnTimer = Math.max(0, respawnAt - Date.now()) / 1000;
         enemy._respawnAt = respawnAt;
         if (this._onBossDeath) this._onBossDeath(enemy.arm, respawnAt);
       }
@@ -5680,7 +5691,7 @@ class Room {
       // alone reads every later kill of that spawn as a repeat of the first.
       // The reward path keys its idempotency on it, and without this a player
       // farming one spawn was paid exactly once, ever.
-      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, guildBoss: enemy.guildBoss || null, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
+      return { killed: true, at: now, xp: enemy.xp, gold: g, dmg, isCrit, ex: enemy.x, ey: enemy.y, color: enemy.color, isBoss: !!enemy.isBoss, bossLair: !!enemy.bossLair, guildBoss: enemy.guildBoss || null, eid: enemy.eid, rlvl: enemy.rlvl || 0, arm: enemy.arm, lane: enemy.lane, respawnAt, farmZone: !!enemy.farmZone, farmHigh: !!enemy.farmHigh, farmZone2: !!enemy.farmZone2, openWorld: !!enemy.openWorld, spot: enemy.spot, dungeon: !!enemy.dungeon, dungeonBoss: !!enemy.dungeonBoss, dungeonClass: enemy.dungeonClass, elite: !!enemy.elite };
     }
     if (enemy.raceBoss) return { killed: false, hp: enemy.hp, dmg, isCrit, raceBoss: true };
     return { killed: false, hp: enemy.hp, dmg, isCrit };

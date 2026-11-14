@@ -2026,6 +2026,17 @@ const WORLD_BOSS_DROP_MULT = 50;
 // Очки опыта клану того, кто нанёс Владыке последний удар
 // (server/handlers2/world.js, onKill).
 const WORLD_BOSS_CLAN_XP = 30;
+// ── Босс Подземелья ─────────────────────────────────────────────────────────
+// Стоит на центральной площади общей локации Подземелья (generateDungeonHub,
+// server/game/dungeon.js). «В 5 раз сильнее босса в мире и здоровье тоже» —
+// здоровье, атака и защита Владыки Мира ×DUNGEON_BOSS_MULT. Дроп — тот же, что
+// у Владыки (таблица Мира ×WORLD_BOSS_DROP_MULT, монета удачи, Liberty,
+// боссовые сундуки и камни), плюс DUNGEON_BOSS_UNIQUE_SET_CHANCE на одну
+// случайную часть любого уникального сета (UNIQUE_SET_ITEMS, любой класс).
+// Возрождается раз в сутки в случайное время — dungeonBossNextSpawnAt ниже.
+const DUNGEON_BOSS_MULT = 5;
+const DUNGEON_BOSS_UNIQUE_SET_CHANCE = 0.01;
+const DUNGEON_BOSS_NAME = 'Владыка Подземелья';
 // Размер этажа в тайлах.
 const WORLD_W = 150;
 const WORLD_H = 110;
@@ -3577,6 +3588,15 @@ const EVENT_NOTIFY_BEFORE_MS = 30 * 60 * 1000;
 // then shift that date's midnight back to real UTC before adding the hour.
 // Shared so the client's countdown and the server's timers can't disagree.
 // `days` are Moscow weekdays, 0 = воскресенье .. 6 = суббота.
+// Когда вернётся Босс Подземелья, убитый в `from`: в случайный момент
+// СЛЕДУЮЩИХ суток по Москве. Так он появляется ровно раз в сутки, а время
+// каждый день своё — не угадать заранее.
+function dungeonBossNextSpawnAt(from = Date.now(), rnd = Math.random) {
+  const OFF = MSK_OFFSET_H * 3600000, DAY = 86400000;
+  const tomorrowMsk = (Math.floor((from + OFF) / DAY) + 1) * DAY;
+  return tomorrowMsk - OFF + Math.floor(rnd() * DAY);
+}
+
 function nextEventStartAt(days, hours, from = Date.now()) {
   const OFF = MSK_OFFSET_H * 3600000;
   const msk = new Date(from + OFF);
@@ -5270,6 +5290,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_UNIQUE_WEAPON_CHANCE,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB,
   DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES, DUNGEON_SCROLL_CHANCE,
+  DUNGEON_BOSS_MULT, DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_NAME, dungeonBossNextSpawnAt,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,

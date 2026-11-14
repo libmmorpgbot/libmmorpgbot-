@@ -3360,7 +3360,41 @@ function _dungeonMonsterListHtml(cls) {
       </div>
       <div class="mon-body">${_dungeonSpeciesBodyHtml(sp, cls)}</div>
     </div>`).join('');
-  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('dungeonBestiaryHint')}</div>${items}`;
+  return `<div style="padding:0 4px 12px;color:#83725a;font-size:11px;line-height:1.5">${t('dungeonBestiaryHint')}</div>${items}${_dungeonBossItemHtml()}`;
+}
+// Владыка Подземелья (generateDungeonHub, server/game/dungeon.js): жив ли и
+// когда вернётся (bossStatus.dungeon), сила и чем особенен его дроп.
+function _dungeonBossItemHtml() {
+  if (typeof DUNGEON_BOSS_NAME === 'undefined') return '';
+  const bs = (typeof bossStatus !== 'undefined' && bossStatus && bossStatus.dungeon) || null;
+  let line = t('dungeonBossAlive');
+  if (bs && !bs.alive) {
+    const mins = Math.max(1, Math.ceil(((bs.respawnAt || 0) - Date.now()) / 60000));
+    line = tVars('dungeonBossRespawnFmt', { h: Math.floor(mins / 60), m: mins % 60 });
+  }
+  const st = monsterStatsAtLevel(WORLD_BOSS_LEVEL, 'boss');
+  const hp = Math.floor(st.hp * WORLD_BOSS_HP_MULT * DUNGEON_BOSS_MULT);
+  const color = (typeof _WORLD_TIER_COLOR !== 'undefined' && _WORLD_TIER_COLOR.boss) || '#ff8a6a';
+  return `
+    <div class="mon-item">
+      <div class="mon-hdr" onclick="_toggleMonster(this)">
+        <span class="dot" style="background:${color}"></span>
+        <div class="mon-titles">
+          <span class="mon-lvl" style="color:${color}">${t('worldTierBoss')} · ${t('levelAbbrev')} ${WORLD_BOSS_LEVEL}</span>
+          <div class="mon-name-row"><span class="mon-name">${DUNGEON_BOSS_NAME}</span></div>
+        </div>
+        <span class="mon-chevron">›</span>
+      </div>
+      <div style="padding:0 8px 8px;color:#83725a;font-size:11px">${line}</div>
+      <div class="mon-body">
+        <div class="fi-mstats">
+          <span>HP <b>${hp}</b></span>
+          <span>ATK <b>${st.atk * DUNGEON_BOSS_MULT}</b></span>
+          <span>DEF <b>${st.def * DUNGEON_BOSS_MULT}</b></span>
+        </div>
+        <div style="padding:4px 0 8px;color:#83725a;font-size:11px;line-height:1.5">${tVars('dungeonBossDropNote', { p: _pctSmall(DUNGEON_BOSS_UNIQUE_SET_CHANCE * 100) })}</div>
+      </div>
+    </div>`;
 }
 
 function _levelAccordionItem(lvl, variants, floor, isBossLvl) {

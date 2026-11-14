@@ -41,6 +41,7 @@ const {
   CHAR_DEF, FEAR_MAX_WAVE,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonActive, seasonTicketPeriodOn,
   FARM2_LIBERTY_CHANCE, COOP_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, WORLD_LIBERTY_CHANCE, WORLD_BOSS_DROP_MULT, WORLD_BOSS_CLAN_XP, WORLD_CLOVER_CHANCE, WORLD_SCROLL_CHANCE, WORLD_SPOTS,
+  DUNGEON_BOSS_UNIQUE_SET_CHANCE, ITEM_DEF,
   GRAM_DROP_CHANCE, GRAM_PER_LEVEL, clanBonusOf, LEVEL_UP_HEAL,
   FARM_LIBERTY_CHANCE,
   RESPAWN_HP_PCT, DEATH_XP_PENALTY_PCT, DEATH_XP_PENALTY_SEC, DEATH_XP_PENALTY_KEY,
@@ -521,15 +522,28 @@ module.exports = function registerWorld(s, safeOn, deps) {
         result.farmZone  ? loot._rollFarmZoneLoot(inv, result.eid, dropMult)
       : result.farmHigh  ? loot._rollFarmHighLoot(inv, result.eid, dropMult)
       : result.openWorld ? loot._rollFarmHighLoot(inv, result.eid, worldMult)
+      // Владыка Подземелья — дроп Владыки Мира (та же таблица с тем же
+      // множителем), а не таблица личей со свитками.
+      : result.dungeonBoss ? loot._rollFarmHighLoot(inv, result.eid, worldMult)
       : result.farmZone2 ? loot._rollFarm2Loot(inv)
       : result.dungeon   ? loot._rollDungeonLoot(inv, result.eid, result.dungeonClass)
       : loot._rollMobLoot(inv, result.eid, result.rlvl, dropMult);
     out.items = rollTable(scratch) || [];
     // Монета удачи — только в Мире, свой бросок поверх таблицы зоны (Владыке
     // — с тем же множителем, что и вся его таблица).
-    if (result.openWorld && rand() < (WORLD_CLOVER_CHANCE || 0) * worldMult) {
+    if ((result.openWorld || result.dungeonBoss) && rand() < (WORLD_CLOVER_CHANCE || 0) * worldMult) {
       const coin = CRAFT_MATS.find(m => m.id === 'clover_coin');
       if (coin) out.items.push({ id: coin.id, name: coin.name, rarity: coin.rarity, qty: 1 });
+    }
+    // Владыка Подземелья сверх дропа Владыки Мира: с шансом
+    // DUNGEON_BOSS_UNIQUE_SET_CHANCE — одна случайная часть любого
+    // уникального сета (любой класс, любой слот, UNIQUE_SET_ITEMS).
+    if (result.dungeonBoss && rand() < (DUNGEON_BOSS_UNIQUE_SET_CHANCE || 0)) {
+      const pool = ITEM_DEF.filter(d => d.uniqueSet);
+      if (pool.length) {
+        const it = pool[Math.floor(rand() * pool.length)];
+        out.items.push({ id: it.id, name: it.name, rarity: it.rarity, qty: 1 });
+      }
     }
     // Свитки уникальных сетов — свои у каждого спота Мира (WORLD_SPOTS[].scrolls),
     // по броску на свиток. Спот приходит с убийством (result.spot, Room.js).
@@ -746,7 +760,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
       : result.farmZone2 ? (FARM2_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : result.farmZone ? (FARM_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : result.farmHigh ? (FARM_HIGH_LIBERTY_CHANCE || 0) * ticketLibertyMult
-      : result.openWorld ? (WORLD_LIBERTY_CHANCE || 0) * ticketLibertyMult
+      : (result.openWorld || result.dungeonBoss) ? (WORLD_LIBERTY_CHANCE || 0) * ticketLibertyMult
       : 0;
     // Руны оружия со строкой «Шанс Liberty» — множитель к шансу, как
     // сезонный билет выше. Множитель, а не прибавка: +10% к шансу 0.1% — это
