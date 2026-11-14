@@ -267,7 +267,7 @@ module.exports = function registerItems(s, safeOn) {
   }, r => r && { зелье: r.potionId, вылечено: r.healed, стало: r.hp, осталось: r.left }));
 
   // Банка ЦП: списание — в базе, восстановление — в комнате, где живой запас
-  // ЦП. Сколько восстановить, клиент не присылает: 5% — CP_POTION.pct.
+  // ЦП. Сколько восстановить, клиент не присылает: 10% — CP_POTION.pct.
   safeOn('useCpPotion', () => s.act('useCpPotion', 'itemError', async (t, pid) => {
     const res = await consumables.useCpPotion(t, pid);
     s.socket.emit('potionBag', { potionBag: await consumables.potionBagOf(t, pid) });

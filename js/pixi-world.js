@@ -2045,7 +2045,44 @@ function _updateParticles() {
 
 // ── projectiles ───────────────────────────────────────────
 
+// Молния лича: ломаная от sx,sy к tx,ty, каждый кадр заново — дрожит, как
+// настоящий разряд. Широкий полупрозрачный ореол, белая сердцевина и одна
+// короткая ветка; гаснет к концу жизни (life/maxLife).
+function _pixiDrawLightning(p, col) {
+  const dx = p.tx - p.sx, dy = p.ty - p.sy, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  const n = Math.max(5, Math.round(len / 16));
+  const a = Math.max(0, Math.min(1, p.life / (p.maxLife || 0.3)));
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const k = i / n, off = (i === 0 || i === n) ? 0 : (Math.random() - 0.5) * 30;
+    pts.push(p.sx + dx * k + nx * off, p.sy + dy * k + ny * off);
+  }
+  const line = (w, c, al) => {
+    _projGfx.lineStyle(w, c, al);
+    _projGfx.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) _projGfx.lineTo(pts[i], pts[i + 1]);
+  };
+  line(9, col, 0.22 * a);
+  line(4, col, 0.7 * a);
+  line(1.6, 0xffffff, a);
+  // Ветка от середины разряда.
+  const m = (Math.floor(n / 2)) * 2, bl = len * 0.25, s = Math.random() < 0.5 ? 1 : -1;
+  _projGfx.lineStyle(2, col, 0.6 * a);
+  _projGfx.moveTo(pts[m], pts[m + 1]);
+  _projGfx.lineTo(pts[m] + (dx / len) * bl * 0.5 + nx * s * bl * 0.6, pts[m + 1] + (dy / len) * bl * 0.5 + ny * s * bl * 0.6);
+  _projGfx.lineStyle(0);
+  _projSprite(_texGlow, p.tx, p.ty, 46, col, 0.6 * a);
+  _projSprite(_texGlow, p.sx, p.sy, 30, col, 0.45 * a);
+}
+
 function _pixiDrawProj(p) {
+  if (p.projType === 'lightning') {
+    // Видна, если на экране хоть один конец разряда.
+    const on = (x, y) => x >= _vL && x <= _vR && y >= _vT && y <= _vB;
+    if (on(p.sx, p.sy) || on(p.tx, p.ty)) _pixiDrawLightning(p, _tintOf(p.color, 0x9fd4ff));
+    return;
+  }
   if (p.x < _vL || p.x > _vR || p.y < _vT || p.y > _vB) return;
   const col = _tintOf(p.color, 0xffaa00);
   if (p.projType === 'arrow') {

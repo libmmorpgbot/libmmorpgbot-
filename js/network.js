@@ -1661,16 +1661,19 @@ function netConnect(onReady) {
             // can omit eid once the enemy's full entry has already synced.
             const _eid = ex.eid || se.eid;
             if (typeof _eid === 'string' && _eid.indexOf('dungeon_lich_') === 0) {
-              const dlen = Math.hypot(tx - se.x, ty - se.y) || 1;
-              const dvx = (tx - se.x) / dlen * 400, dvy = (ty - se.y) / dlen * 400;
-              otherProjs.push({ x: se.x, y: se.y, vx: dvx, vy: dvy, color: '#ffffff', size: 7, life: 1.2, projType: 'ball' });
+              // Личи бьют молнией: мгновенный ломаный разряд от лича к цели,
+              // гаснет за ~0,3 с (_pixiDrawProj, projType 'lightning'), и
+              // искры в точке удара.
+              otherProjs.push({ x: (se.x + tx) / 2, y: (se.y + ty) / 2, sx: se.x, sy: se.y - 10, tx, ty,
+                vx: 0, vy: 0, color: '#9fd4ff', size: 4, life: 0.3, maxLife: 0.3, projType: 'lightning', fromEnemy: true });
+              if (typeof spawnBurst === 'function') spawnBurst(tx, ty, '#cfe9ff', 8);
             } else if (se.id === 'dungeon_boss') {
               // Владыка Подземелья бьёт издалека — крупный фиолетовый шар.
               // life — ровно на дистанцию до цели, чтобы шар не улетал за неё.
               const dlen = Math.hypot(tx - se.x, ty - se.y) || 1;
               const v = 450;
               otherProjs.push({ x: se.x, y: se.y, vx: (tx - se.x) / dlen * v, vy: (ty - se.y) / dlen * v,
-                color: '#c060ff', size: 12, life: Math.min(1.2, dlen / v), projType: 'ball' });
+                color: '#c060ff', size: 12, life: Math.min(1.2, dlen / v), projType: 'ball', fromEnemy: true });
             }
           }
         }

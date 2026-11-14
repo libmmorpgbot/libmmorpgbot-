@@ -1132,6 +1132,15 @@ function update(dt, realDt) {
     for (let i = 0; i < otherProjs.length; i++) {
       const p = otherProjs[i];
       p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      // Снаряд монстра (fromEnemy, js/network.js) долетает до своей цели и
+      // гаснет там. Об монстров он не бьётся: вылетает из центра стрелка, и
+      // раньше проверка ниже «попадала» в него самого в первом же кадре —
+      // атаки дальних монстров исчезали, не успев появиться.
+      if (p.fromEnemy) {
+        if (p.life <= 0) { if (p.projType !== 'lightning') spawnBurst(p.x, p.y, p.color, 6); continue; }
+        otherProjs[j++] = p;
+        continue;
+      }
       if (p.life <= 0 || isWall(p.x, p.y)) continue;
       const ps = p.size; let hit = false;
       for (let k = 0; k < serverEnemies.length; k++) {

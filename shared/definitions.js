@@ -4041,14 +4041,14 @@ const MERCHANT_SHOP = [
 const POTION_CAP = 999;          // per kind, in potionBag
 
 // ── Банка ЦП ────────────────────────────────────────────────────────────────
-// Восстанавливает CP_POTION_PCT (5%) запаса ЦП. Лежит в той же сумке зелий
+// Восстанавливает CP_POTION.pct (10%) запаса ЦП. Лежит в той же сумке зелий
 // (player_progress.potion_bag), что и банки здоровья, под своим ключом, и
 // перезарядка у неё та же, что у банок здоровья (4 с, js/player.js). Не в
 // ITEM_DEF: тот список читается как «банки здоровья» (slot 'use') и как
 // каталог инвентаря, а эта банка ни то, ни другое. Свой потолок — бонус
 // у торговца можно купить больше общего POTION_CAP.
 // price — в Liberty за штуку, у торговца (consumables.buyCpPotions).
-const CP_POTION = { id: 'cp1', name: 'Банка ЦП', img: '/images/potion/cp.png', pct: 0.05, price: 1 };
+const CP_POTION = { id: 'cp1', name: 'Банка ЦП', img: '/images/potion/cp.png', pct: 0.10, price: 1 };
 const CP_POTION_CAP = 99999;
 
 // ── Бонус сезонного билета ──────────────────────────────────────────────────

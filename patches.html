@@ -651,7 +651,7 @@
     background: radial-gradient(circle, rgba(255,112,96,.45) 0%, rgba(120,20,40,.35) 45%, transparent 70%);
   }
   .db-orbit .orbit-core::after { content: none; }
-  .db-orbit .orbit-core img { width: 230px; max-width: none; filter: drop-shadow(0 0 18px rgba(255,90,70,.75)); animation: dbHover 3.2s ease-in-out infinite; }
+  .db-orbit .orbit-core img { width: 170px; max-width: none; filter: drop-shadow(0 0 18px rgba(192,96,255,.75)); animation: dbHover 3.2s ease-in-out infinite; }
   .db-orbit .orbit-ring img { border-radius: 50%; background: radial-gradient(circle, rgba(245,197,66,.18), rgba(0,0,0,.5) 70%); border: 1px solid rgba(245,197,66,.4); padding: 7px; }
   @keyframes dbHover { 50% { transform: translateY(-7px) scale(1.03); } }
   .hero.db-hero::after {
@@ -664,8 +664,8 @@
     box-shadow: 0 26px 50px -26px rgba(0,0,0,.95), 0 0 40px -18px rgba(255,90,70,.6); }
   .db-card h3 { color: #ffd2c8; }
   .db-card .boss-facts i { color: #ffd2c8; background: rgba(255,112,96,.14); border-color: rgba(255,112,96,.38); }
-  .db-portrait { position: relative; display: flex; align-items: center; justify-content: center; height: 150px; }
-  .db-portrait img { width: 200px; filter: drop-shadow(0 0 22px rgba(255,90,70,.7)); animation: dbHover 3.2s ease-in-out infinite; }
+  .db-portrait { position: relative; display: flex; align-items: center; justify-content: center; height: 200px; }
+  .db-portrait img { width: 190px; filter: drop-shadow(0 0 22px rgba(255,90,70,.7)); animation: dbHover 3.2s ease-in-out infinite; }
   .db-portrait::after { content: ''; position: absolute; bottom: 4px; width: 120px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.55); filter: blur(5px); animation: dbShadow 3.2s ease-in-out infinite; z-index: -1; }
   @keyframes dbShadow { 50% { transform: scale(.85); opacity: .7; } }
 
@@ -721,7 +721,7 @@
     .db-clock-wrap, .db-loot { grid-template-columns: 1fr; }
     .db-orbit { width: 270px; height: 270px; }
     .db-orbit .orbit-ring img { --r: -114px; width: 40px; height: 40px; margin: -20px 0 0 -20px; }
-    .db-orbit .orbit-core img { width: 200px; }
+    .db-orbit .orbit-core img { width: 150px; }
   }
 </style>
 </head>
@@ -749,7 +749,7 @@
   <canvas id="fx"></canvas>
   <div class="hero-inner">
     <div class="orbit db-orbit">
-      <div class="orbit-core"><img src="/images/patches/dungeon-boss.webp" alt="Владыка Подземелья"></div>
+      <div class="orbit-core"><img src="/images/patches/dungeon-boss.webp?v=2" alt="Владыка Подземелья"></div>
       <div class="orbit-ring">
         <img src="/images/uniqueset/lev/helmet.png" alt="" style="--a:0deg">
         <img src="/images/uniqueset/deathknight/helmet.png" alt="" style="--a:51deg">
@@ -766,6 +766,7 @@
       бьёт издалека и приходит <b>раз в сутки — когда захочет</b>. Кто его добьёт, может унести <b>часть уникального сета</b>.</p>
     <div class="hero-chips">
       <span>💀 ×20 здоровья</span>
+      <span>✦ Дальний бой</span>
       <span>🕛 Раз в сутки</span>
       <span><img src="/images/uniqueset/mage/body.png" alt="">1% — уникальный сет</span>
       <span>⚑ +2000 клану</span>
@@ -800,7 +801,7 @@
 
     <section class="sec reveal" id="db-main">
       <div class="tiles stagger">
-        <div class="card tile"><img src="/images/patches/dungeon-boss.webp" alt=""><b>Новый босс</b><span>Площадь Подземелья</span></div>
+        <div class="card tile"><img src="/images/patches/dungeon-boss.webp?v=2" alt=""><b>Новый босс</b><span>Площадь Подземелья</span></div>
         <div class="card tile"><img src="/images/uniqueset/runefighter/helmet.png" alt=""><b>Уникальный сет</b><span>1% на любую часть</span></div>
         <div class="card tile"><img src="/images/material/boxr.png" alt=""><b>Дроп ×50</b><span>Как у Владыки Мира</span></div>
         <div class="card tile"><img src="/images/classicon/lev.png" alt=""><b>+2000 клану</b><span>Тому, кто добьёт</span></div>
@@ -811,11 +812,11 @@
       <div class="sec-eyebrow">Босс</div>
       <h2>Сильнее Владыки Мира</h2>
       <div class="boss-card db-card">
-        <div class="db-portrait"><img src="/images/patches/dungeon-boss.webp" alt="Владыка Подземелья"></div>
+        <div class="db-portrait"><img src="/images/patches/dungeon-boss.webp?v=2" alt="Владыка Подземелья"></div>
         <div>
           <h3>Владыка Подземелья</h3>
-          <p class="dek" style="margin:0">Дракон 60 уровня. Не подпускает к себе: останавливается на расстоянии и бьёт
-            огненными шарами издалека. Одному его не взять — собирайте группу.</p>
+          <p class="dek" style="margin:0">Древний маг 60 уровня в золотой броне. Не подпускает к себе: останавливается на
+            расстоянии и бьёт магическими сферами издалека. Одному его не взять — собирайте группу.</p>
           <div class="boss-facts"><i>60 уровень</i><i>Дальний бой</i><i>Раз в сутки</i><i>Центр Подземелья</i></div>
         </div>
       </div>
@@ -926,6 +927,9 @@
       <div class="sec-eyebrow">Ещё</div>
       <h2>Изменения</h2>
       <div class="card fixes">
+        <div class="fix"><span class="tag chg">Изменено</span><span><b>Банка ЦП</b> восстанавливает <b>10%</b> ЦП вместо 5%.</span></div>
+        <div class="fix"><span class="tag new">Новое</span><span><b>Личи</b> в Подземелье бьют <b>молниями</b>.</span></div>
+        <div class="fix"><span class="tag fixd">Исправлено</span><span>Атаки <b>дальних монстров</b> снова видно — снаряд долетает до цели, а не гаснет у самого монстра.</span></div>
         <div class="fix"><span class="tag fixd">Исправлено</span><span>Монстры больше не бегают <b>задом и боком</b> — смотрят туда, куда идут.</span></div>
         <div class="fix"><span class="tag fixd">Исправлено</span><span>Во время удара монстр поворачивается к тому, <b>кого бьёт</b>, а не всегда к вам.</span></div>
         <div class="fix"><span class="tag fixd">Исправлено</span><span>Больше не мелькают <b>старые картинки монстров</b> перед новыми — новые грузятся сразу при входе в локацию.</span></div>
