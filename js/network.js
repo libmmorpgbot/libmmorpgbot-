@@ -662,6 +662,17 @@ function _releaseLogin() {
 }
 
 // ── Socket setup ──────────────────────────────────────────────
+// Радиус удара монстра — тот же, что у сервера (Room.js _tick: e.atkRange,
+// иначе size + 20). atkRange на клиент не приходит, поэтому берём его из
+// тех же определений, откуда его берёт сервер: личи Подземелья и Владыка.
+function _enemyAtkReach(eid, id, size) {
+  if (id === 'dungeon_boss' && typeof DUNGEON_BOSS_ATK_RANGE !== 'undefined') return DUNGEON_BOSS_ATK_RANGE;
+  if (typeof eid === 'string' && typeof DUNGEON_LICH !== 'undefined') {
+    for (const k in DUNGEON_LICH) if (DUNGEON_LICH[k].eid === eid) return DUNGEON_LICH[k].atkRange || 210;
+  }
+  return (size || 20) + 20;
+}
+
 function netConnect(onReady) {
   // Уже подключены — сборка на этом соединении давно проверена, гейт бы только
   // добавил секунду ожидания на ровном месте. Флаг всё равно проверяется:
@@ -1646,6 +1657,13 @@ function netConnect(onReady) {
             const d2 = (op.x - se.x) ** 2 + (op.y - se.y) ** 2;
             if (d2 < best) { best = d2; tx = op.x; ty = op.y; }
           });
+          // Сервер бьёт ближайшего, но только в радиусе удара. Если ближайший
+          // из тех, кого видим мы, дальше этого радиуса — монстр бьёт кого-то,
+          // кого у нас на экране нет (или его позиция у нас устарела). Тогда
+          // ни разворота, ни снаряда: иначе молния лича из-за края экрана
+          // летела в своего героя, хотя урона не было.
+          const _reach = _enemyAtkReach(ex.eid || se.eid, se.id, ex.size || se.size);
+          if (tx !== undefined && best > (_reach + 70) ** 2) { tx = undefined; ty = undefined; }
           ex._atkTx = tx; ex._atkTy = ty;
           if (tx !== undefined) {
             const fdx = tx - se.x, fdy = ty - se.y;

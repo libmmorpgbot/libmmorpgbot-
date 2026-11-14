@@ -1280,8 +1280,8 @@ function _pmUpdateEnemy(e, obj, dt, ds) {
   // В ударе — к тому, кого бьёт (ближайший игрок, js/network.js), а не
   // всегда к своему герою.
   if (e.atkAnimTimer > 0) {
+    // Цели нет — монстр бьёт кого-то вне нашего экрана: не разворачиваем.
     if (e._atkTx != null) obj._pmDir = pmDir(e._atkTx - e.x, e._atkTy - e.y);
-    else if (typeof player !== 'undefined' && player) obj._pmDir = pmDir(player.x - e.x, player.y - e.y);
   }
   // Какая анимация: смерть > удар > попадание > бег > стойка.
   let key = 'stance';
