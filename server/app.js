@@ -1541,7 +1541,11 @@ io.on('connection', (socket) => {
         m._pvpEliminate(socket.id, undefined, s.room, {
           fearGrace: true, telegramId: s.telegramId,
         });
-        if (m._farm2EjectOnDisconnect) m._farm2EjectOnDisconnect(socket.id);
+        // Элитная фарм-зона ждёт переподключения так же, как группа
+        // (party.holdOnDisconnect): свёрнутый Телеграм или погасший экран —
+        // не уход, и выкидывать за это всю тройку нельзя.
+        if (m._farm2HoldOnDisconnect) m._farm2HoldOnDisconnect(socket.id, s.telegramId);
+        else if (m._farm2EjectOnDisconnect) m._farm2EjectOnDisconnect(socket.id);
         // The pre-run lobbies get no grace, deliberately: they are a queue,
         // and a queue that holds places for absent people stops filling.
         if (m._coopGroupDropOnDisconnect) m._coopGroupDropOnDisconnect(socket.id);

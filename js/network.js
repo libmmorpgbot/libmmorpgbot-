@@ -5693,10 +5693,13 @@ function _initFarm2Handlers(s) {
   // FARM2_PARTY_SIZE and everyone still in was pulled out with it
   // (reason:'partyBroken'). A voluntary exit (walking onto the return pad)
   // never reaches this: the client already knows why in that case.
-  s.on('farm2Finished', ({ reason }) => {
+  s.on('farm2Finished', ({ reason, who, why }) => {
     _farm2InRun = false;
+    // Кто и почему развалил тройку — раньше было только «осталось меньше 3».
+    const whyTxt = { disconnect: t('farm2WhyDisconnect'), leftZone: t('farm2WhyLeftZone'),
+      leftParty: t('farm2WhyLeftParty'), timeCap: t('farm2WhyTimeCap') }[why];
     const msg = reason === 'timeCap' ? t('farm2TimeCapMsg')
-      : reason === 'partyBroken' ? t('farm2PartyBrokenMsg')
+      : reason === 'partyBroken' ? t('farm2PartyBrokenMsg') + (who ? ` (${who}${whyTxt ? ': ' + whyTxt : ''})` : '')
       : null;
     if (msg && typeof showEventBossBanner === 'function') showEventBossBanner(msg, '#f07886');
     if (typeof netFarm2Return === 'function') netFarm2Return();

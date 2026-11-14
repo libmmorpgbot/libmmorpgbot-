@@ -759,13 +759,16 @@ module.exports = function registerCoopFarm2(s, safeOn, deps) {
           // to see, and the run's last (or only) partial one is settled there.
           const run = {
             room: farm2Room, participantIds: allIds,
+            // Текущий socket id и имя: после переподключения (_farm2Resume-
+            // OnLogin) id меняется, а таймеры ниже читают его отсюда.
+            sid, name: allNames[i],
             telegramId: allSockets[i].data.telegramId,
             startedAt: Date.now(), chargedMin: 0,
             capTimer: null, minuteTimer: null,
           };
           run.capTimer = safeTimeout('farm2Cap_' + sid, () => {
-            _farm2Finish(sid, 'timeCap');
-            _farm2CascadeCheck(farm2Room, allIds);
+            _farm2Finish(run.sid, 'timeCap');
+            _farm2CascadeCheck(farm2Room, allIds, { who: run.name, why: 'timeCap' });
           }, minutesLeft[i] * 60000);
           run.minuteTimer = safeInterval('farm2Min_' + sid, () => {
             // Charged against the ACCOUNT, not the connection — a reconnect

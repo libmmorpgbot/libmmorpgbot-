@@ -191,11 +191,13 @@ module.exports = function createFarm2(deps) {
     return run;
   }
 
-  function _farm2Finish(socketId, reason) {
+  // extra — кто и почему развалил группу ({ who, why }), чтобы остальные
+  // видели причину, а не одно «осталось меньше 3».
+  function _farm2Finish(socketId, reason, extra) {
     const run = _farm2ReleaseRun(socketId);
     if (!run) return;
     const spot = _returnToHub(socketId);
-    io.to(socketId).emit('farm2Finished', { reason, x: spot?.x, y: spot?.y });
+    io.to(socketId).emit('farm2Finished', { reason, x: spot?.x, y: spot?.y, ...(extra || {}) });
   }
 
   // Called after any ONE participant's own membership just ended (finished,
@@ -205,11 +207,16 @@ module.exports = function createFarm2(deps) {
   // ends for them too. `room`/`participantIds` are the ones captured on the
   // run record BEFORE the triggering release, since that release already
   // removed its own socket from `_farm2`.
-  function _farm2CascadeCheck(room, participantIds) {
+  function _farm2CascadeCheck(room, participantIds, cause) {
     if (!room || !participantIds) return;
     const stillIn = participantIds.filter(sid => _farm2.has(sid) && _farm2.get(sid).room === room);
     if (stillIn.length > 0 && stillIn.length < FARM2_PARTY_SIZE) {
-      stillIn.forEach(sid => _farm2Finish(sid, 'partyBroken'));
+      stillIn.forEach(sid => {
+        // Ждущий переподключения (_farm2Held) — тоже участник: снять его
+        // ожидание, раз забега больше нет.
+        _farm2DropHeldFor(sid);
+        _farm2Finish(sid, 'partyBroken', cause);
+      });
     }
   }
 
@@ -221,8 +228,9 @@ module.exports = function createFarm2(deps) {
     const run = _farm2.get(socketId);
     if (!run) return false;
     const { room, participantIds } = run;
+    _farm2DropHeldFor(socketId);
     _farm2Finish(socketId, 'left');
-    _farm2CascadeCheck(room, participantIds);
+    _farm2CascadeCheck(room, participantIds, { who: run.name, why: 'leftParty' });
     return true;
   }
 
@@ -233,8 +241,89 @@ module.exports = function createFarm2(deps) {
   function _farm2EjectOnDisconnect(socketId) {
     const run = _farm2ReleaseRun(socketId);
     if (!run) return false;
-    _farm2CascadeCheck(run.room, run.participantIds);
+    _farm2CascadeCheck(run.room, run.participantIds, { who: run.name, why: 'disconnect' });
     return true;
+  }
+
+  // ── переподключение ────────────────────────────────────────────────────
+  // «С элиткой стабильно выкидывает, пишет что осталось меньше троих — хотя
+  // все с фулл хп, интернет нормальный». Телеграм на телефоне рвёт сокет,
+  // стоит свернуть приложение, погасить экран или открыть уведомление, — и
+  // раньше это мгновенно выкидывало всю тройку. Теперь место держится
+  // FARM2_RECONNECT_GRACE_MS (столько же, сколько держится место в группе,
+  // server/party.js): вернулся — снова в своей зоне, с тем же здоровьем; не
+  // вернулся — как раньше, забег заканчивается для всех.
+  const FARM2_RECONNECT_GRACE_MS = 45000;
+  // telegramId -> { oldSid, timer, pos }
+  const _farm2Held = new Map();
+
+  function _farm2DropHeldFor(sid) {
+    for (const [tid, h] of _farm2Held) {
+      if (h.oldSid === sid) { clearTimeout(h.timer); _farm2Held.delete(tid); }
+    }
+  }
+
+  function _farm2HoldOnDisconnect(socketId, telegramId) {
+    const run = _farm2.get(socketId);
+    if (!run) return false;
+    if (telegramId == null) return _farm2EjectOnDisconnect(socketId);
+    const tid = String(telegramId);
+    const rec = run.room && run.room.players.get(socketId);
+    const prior = _farm2Held.get(tid);
+    if (prior) clearTimeout(prior.timer);
+    const timer = setTimeout(() => {
+      const h = _farm2Held.get(tid);
+      if (!h || h.oldSid !== socketId) return;
+      _farm2Held.delete(tid);
+      _farm2EjectOnDisconnect(socketId);
+    }, FARM2_RECONNECT_GRACE_MS);
+    if (timer.unref) timer.unref();
+    _farm2Held.set(tid, { oldSid: socketId, timer, pos: rec ? { x: rec.x, y: rec.y, hp: rec.hp } : null });
+    return true;
+  }
+
+  // Вызывается, когда переподключившийся уже стоит в мире (handlers2/
+  // world.js). Переносит забег на новый socket id и возвращает в ту же
+  // комнату. false — ждать было нечего.
+  function _farm2ResumeOnLogin(telegramId, newSid, enter) {
+    if (telegramId == null) return false;
+    const tid = String(telegramId);
+    let h = _farm2Held.get(tid);
+    if (h) { clearTimeout(h.timer); _farm2Held.delete(tid); }
+    else {
+      // Старый сокет ещё не отвалился (сервер узнаёт о разрыве только по
+      // таймауту пинга) — забег всё ещё записан на него.
+      for (const [sid, r] of _farm2) {
+        if (sid !== newSid && r.telegramId != null && String(r.telegramId) === tid) {
+          const rec = r.room && r.room.players.get(sid);
+          h = { oldSid: sid, pos: rec ? { x: rec.x, y: rec.y, hp: rec.hp } : null };
+          break;
+        }
+      }
+      if (!h) return false;
+    }
+    const run = _farm2.get(h.oldSid);
+    if (!run) return false;
+    // Сначала — переключить запись, потом входить: вход уводит сессию с
+    // текущего этажа, и выход из хаба не должен ничего знать о забеге.
+    _farm2.delete(h.oldSid);
+    run.sid = newSid;
+    _farm2.set(newSid, run);
+    const ids = run.participantIds;
+    const i = ids ? ids.indexOf(h.oldSid) : -1;
+    if (i !== -1) ids[i] = newSid;            // один массив на всю тройку
+    if (run.room) { run.room.farm2Release(h.oldSid); }
+    const spot = h.pos || (run.room && run.room.farm2Entry());
+    const ok = enter(run.room, spot);
+    if (!ok) {
+      // Не смогли вернуть — значит, вышел; остальным честно сказать, кто.
+      _farm2Finish(newSid, 'left');
+      _farm2CascadeCheck(run.room, ids, { who: run.name, why: 'disconnect' });
+      return false;
+    }
+    if (!run.room._farm2Members) run.room._farm2Members = new Set();
+    run.room._farm2Members.add(newSid);
+    return { run, pos: spot };
   }
 
   return {
@@ -243,6 +332,6 @@ module.exports = function createFarm2(deps) {
     _farm2GroupOpenList, _farm2GroupBroadcastList, _farm2GroupDissolve, _farm2GroupDropOnDisconnect,
     _createFarm2Room, _farm2Rooms, _liveFarm2Rooms,
     _farm2, _farm2ClearTimers, _farm2ReleaseRun, _farm2SettleMinutes, _farm2Finish, _farm2CascadeCheck,
-    _farm2Eliminate, _farm2EjectOnDisconnect,
+    _farm2Eliminate, _farm2EjectOnDisconnect, _farm2HoldOnDisconnect, _farm2ResumeOnLogin, _farm2Held,
   };
 };

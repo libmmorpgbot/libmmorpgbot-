@@ -159,7 +159,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Outside the transaction on purpose: this moves the connection between
     // two Rooms and pushes a second gameStart, none of which belongs inside a
     // database transaction, and it must not run at all if the login failed.
-    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); }
+    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); _resumeFarm2Run(); }
   });
 
   // ── a Страх run held across a disconnect ─────────────────────────────────
@@ -291,6 +291,23 @@ module.exports = function registerWorld(s, safeOn, deps) {
       roster: [...m._race10.alive.entries()].map(([id, r]) => ({ id, name: r.name, lane: r.lane })),
     });
     plog.log(s.playerId, 'race10Resume', { lane: run.lane });
+  }
+
+  // ── Элитная фарм-зона, пережившая переподключение ────────────────────────
+  // Место держит _farm2HoldOnDisconnect (server/game/farm2.js); здесь — вернуть
+  // в ту же комнату, на то же место и с тем же здоровьем.
+  function _resumeFarm2Run() {
+    const m = deps.modes || require('../modes').modes;
+    if (!m || typeof m._farm2ResumeOnLogin !== 'function') return;
+    const res = m._farm2ResumeOnLogin(s.telegramId, s.socket.id,
+      (room, pos) => !!s.socket.data._forceEnterLocation?.('farmZone2', { room, pos: pos && { x: pos.x, y: pos.y } }));
+    if (!res) return;
+    if (res.pos && res.pos.hp > 0 && typeof s.room.setPlayerHp === 'function') s.room.setPlayerHp(s.socket.id, res.pos.hp);
+    const at = s.room.players.get(s.socket.id);
+    m.farm2MinutesLeft(s.socket.id).then(minutesLeft => {
+      s.socket.emit('farm2Started', { x: at ? at.x : res.pos.x, y: at ? at.y : res.pos.y, hp: at && at.hp, minutesLeft, resumed: true });
+    }).catch(() => {});
+    plog.log(s.playerId, 'farm2Resume', {});
   }
 
   // ── турнир, переживший перезагрузку ──────────────────────────────────────

@@ -790,7 +790,7 @@ function init(io) {
         if (!run) return;
         const { room, participantIds } = run;
         modes._farm2ReleaseRun(socketId);
-        modes._farm2CascadeCheck(room, participantIds);
+        modes._farm2CascadeCheck(room, participantIds, { who: run.name, why: 'leftZone' });
         io.to(socketId).emit('farm2State', {
           entryLevel: FARM2_ENTRY_LEVEL, partySize: FARM2_PARTY_SIZE,
           dailyMinutes: FARM2_DAILY_MINUTES, inRun: false,
