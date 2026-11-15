@@ -1950,9 +1950,7 @@ function selectChar(type) {
   });
   // Gate the loading screen on BOTH player and floor-1 enemy sprites being decoded.
   const _floor1Eids = (FLOOR_ENEMIES[1]?.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([FLOOR_ENEMIES[1]?.boss]).filter(Boolean);
-  // +1 — атлас героя своего класса (heroSheet, js/pm-monsters.js), если он есть.
-  const _heroPre = typeof heroOwns === 'function' && heroOwns(type);
-  let _spritesPending = 1 + _floor1Eids.length + (_heroPre ? 1 : 0);
+  let _spritesPending = 1 + _floor1Eids.length;
   // Полоса считает НАБОРЫ, а не листы: наборов ровно столько, сколько ждёт
   // _spritesPending, и это то число, по которому видно, сколько осталось.
   const _spritesTotal = _spritesPending;
@@ -1963,7 +1961,6 @@ function selectChar(type) {
     if (--_spritesPending === 0) csOnSpritesReady();
   };
   _floor1Eids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
-  if (_heroPre) heroSheet(type, _onSpriteSetReady);
   loadSprites(type, _onSpriteSetReady);
   netSelectChar(type, savedStats);
 }
@@ -1990,8 +1987,7 @@ function startTrial(type) {
   const _trialArmIdx = (typeof armIndexForLevel === 'function') ? armIndexForLevel(TRIAL_MOB_LEVEL) : 1;
   const _trialArm = FLOOR_ENEMIES[_trialArmIdx];
   const _trialEids = (_trialArm?.species || []).flatMap(sp => [sp + '_guard', sp + '_warrior']).concat([_trialArm?.boss]).filter(Boolean);
-  const _heroPre = typeof heroOwns === 'function' && heroOwns(type);
-  let _spritesPending = 1 + _trialEids.length + (_heroPre ? 1 : 0);
+  let _spritesPending = 1 + _trialEids.length;
   const _spritesTotal = _spritesPending;
   const _onSpriteSetReady = () => {
     if (typeof csLoadProgress === 'function') {
@@ -2000,7 +1996,6 @@ function startTrial(type) {
     if (--_spritesPending === 0) csOnSpritesReady();
   };
   _trialEids.forEach(eid => loadEnemySprites(eid, _onSpriteSetReady));
-  if (_heroPre) heroSheet(type, _onSpriteSetReady);
   loadSprites(type, _onSpriteSetReady);
   netTrialEnter(type);
 }

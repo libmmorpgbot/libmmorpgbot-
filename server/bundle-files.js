@@ -18,7 +18,6 @@ module.exports = [
   'js/zones.js',
   'js/ashen.js',
   'js/pm-data.js',
-  'js/hero-data.js',
   'js/pm-monsters.js',
   'js/definitions.js',
   'js/i18n.js',
