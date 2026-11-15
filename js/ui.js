@@ -7633,8 +7633,6 @@ function _ofarmDropHtml(id) {
   let html;
   if (loc.kind === 'farmZone') html = _farmZoneMonsterListHtml({ noGems: true });
   else if (loc.kind === 'farmHigh') html = _farmHighMonsterListHtml({ noGems: true });
-  // Мир бросает таблицу Фарм зоны 2 (как онлайн) плюс монету удачи.
-  else if (loc.kind === 'world') html = `<div class="ofarm-drop-note">Мир: таблица Фарм зоны 2 и монета удачи, опыт ×${WORLD_XP_MULT}.</div>` + _farmHighMonsterListHtml({ noGems: true });
   else {
     const arm = ARM_NAMES.indexOf(loc.arm) + 1;
     const base = ENEMY_DEF.find(e => e.eid === loc.species[0]);
@@ -7720,7 +7718,6 @@ function _ofI(name, size = 16) {
 function _ofarmLocName(l) {
   if (l.kind === 'farmZone') return 'Фарм-зона';
   if (l.kind === 'farmHigh') return 'Фарм зона 2';
-  if (l.kind === 'world') return 'Мир';
   return _OFARM_ARM_RU[l.arm] || 'Коридор';
 }
 function _ofarmLocSub(l) {
@@ -7751,7 +7748,7 @@ function _ofarmRowHtml(l, best) {
   const name = _ofarmLocName(l), sub = _ofarmLocSub(l);
   const open = _ofarmOpen === l.id;
   const isBest = best && l.id === best.id;
-  const kindCls = l.kind === 'corridor' ? 'k-corr' : l.kind === 'farmHigh' ? 'k-high' : l.kind === 'world' ? 'k-world' : 'k-zone';
+  const kindCls = l.kind === 'corridor' ? 'k-corr' : l.kind === 'farmHigh' ? 'k-high' : 'k-zone';
   const ico = !l.open ? 'lock' : !l.ok ? 'skull' : (l.kind === 'corridor' ? 'door' : 'zone');
   const state = !l.open ? ' locked' : !l.ok ? ' tough' : '';
   const dropBtn = `<button class="of-btn-ghost${open ? ' open' : ''}" onclick="offlineFarmToggleDrop('${l.id}')">${_ofI('bag', 14)}${open ? 'Скрыть дроп' : 'Дроп'}</button>`;

@@ -4810,16 +4810,6 @@ function offlineFarmLocations() {
     id: 'farmHigh', kind: 'farmHigh', minLvl: FARM_HIGH_LVL_MIN, maxLvl: FARM_HIGH_LVL_MAX,
     reqLevel: FARM_HIGH_ENTRY_LEVEL, species: FARM_HIGH_SPECIES.slice(), xpMult: FARM_HIGH_XP_MULT,
   });
-  // Мир — главная онлайн-локация 40+ (опыт ×10), которой в оффлайне не было:
-  // игроку 50-го уровня оставалась Фарм-зона с монстрами 21-30, и 7 часов
-  // давали копейки. Те же виды и уровни, что в generateWorld, и та же сила:
-  // hp/atk ×WEAK_MULT×WORLD_MOB_STAT_MULT, def ×WORLD_MOB_STAT_MULT (statMult
-  // ниже поверх общего половинения).
-  out.push({
-    id: 'world', kind: 'world', minLvl: WORLD_LVL_MIN, maxLvl: WORLD_LVL_MAX,
-    reqLevel: WORLD_ENTRY_LEVEL, species: FARM_HIGH_SPECIES.slice(), xpMult: WORLD_XP_MULT,
-    statMult: WORLD_MOB_STAT_MULT,
-  });
   return out;
 }
 function offlineFarmLocation(id) {
@@ -4837,12 +4827,11 @@ function offlineFarmMobs(loc) {
     if (!d) continue;
     for (let lvl = loc.minLvl; lvl <= loc.maxLvl; lvl++) {
       const st = monsterStatsAtLevel(lvl, d.eType);
-      const sm = loc.statMult || 1;
       mobs.push({
         eid, eType: d.eType, rlvl: lvl,
-        hp: Math.max(1, Math.floor(st.hp * OFFLINE_FARM_WEAK_MULT * sm)),
-        atk: Math.floor(st.atk * OFFLINE_FARM_WEAK_MULT * sm),
-        def: Math.floor(st.def * sm),
+        hp: Math.max(1, Math.floor(st.hp * OFFLINE_FARM_WEAK_MULT)),
+        atk: Math.floor(st.atk * OFFLINE_FARM_WEAK_MULT),
+        def: st.def,
         xp: xpAtLevel(lvl) * (loc.xpMult || 1),
         gold: goldAtLevel(lvl),
       });
