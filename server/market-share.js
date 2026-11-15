@@ -20,6 +20,8 @@ const {
 } = require('../shared/definitions');
 const { _tgEsc, miniAppLink } = require('./security');
 
+// Больше не проверяется: показ — по сезонному билету (marketShare,
+// server/handlers2/economy.js). Остался в ответе marketShareLeft для старых клиентов.
 const MARKET_SHARE_VIP = 5;
 const MARKET_SHARE_PER_DAY = 3;
 const MARKET_SHARE_MODE = 'mshare';

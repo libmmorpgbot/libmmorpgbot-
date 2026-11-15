@@ -10755,7 +10755,7 @@ function _marketRowHtml(l, mode) {
       ? `<button class="market-buy-btn disabled" disabled>${t('marketOwnLotBtn')}</button>`
       : `<button class="market-buy-btn" onclick="openMarketBuyConfirm('${l.id}')">${t('buyBtn')}</button>`)
     : `<button class="market-cancel-btn" onclick="marketCancelListing('${l.id}')">${t('cancelListingBtn')}</button>`;
-  // «Показать в чате» — только у своих лотов. VIP 5+ и 3 раза в сутки; сервер
+  // «Показать в чате» — только у своих лотов. Сезонный билет и 3 раза в сутки; сервер
   // проверяет оба условия сам (marketShare, server/handlers2/economy.js),
   // здесь — только подпись со счётчиком и подсказка без лишнего запроса.
   const shareBtn = mode === 'mine'
@@ -11399,8 +11399,8 @@ let _marketShareBusy = false;
 function marketShareListing(listingId) {
   if (_marketShareBusy) return;
   // Предпроверка только для подсказки — настоящая проверка на сервере.
-  if ((window._vipData?.level || 0) < _marketShareVip) {
-    _marketToast(tVars('marketShareVipToast', { vip: _marketShareVip }), 'err');
+  if (typeof _seasonTicketOn === 'function' && !_seasonTicketOn()) {
+    _marketToast(t('marketShareTicketToast'), 'err');
     return;
   }
   if (_marketShareLeft === 0) {

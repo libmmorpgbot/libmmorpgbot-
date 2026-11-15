@@ -608,14 +608,15 @@ module.exports = function registerEconomy(s, safeOn, deps) {
 
   // ── «Показать в чате» ────────────────────────────────────────────────────
   // Свой активный лот → карточка в общий Telegram-чат (server/market-share.js).
-  // VIP 5+, 3 раза в сутки. Попытка списывается в этой транзакции и
-  // откатывается вместе с ней, если отправка не удалась.
+  // Только с действующим сезонным билетом (было — VIP 5+), 3 раза в сутки.
+  // Попытка списывается в этой транзакции и откатывается вместе с ней, если
+  // отправка не удалась.
   safeOn('marketShare', ({ listingId } = {}) => s.act('marketShare', 'marketError', async (t, pid) => {
     const id = rowId(listingId);
     if (!id) fail('Лот не найден — список обновлён', 'bad_listing');
     const vip = await progression.vipOf(t, pid);
-    if ((vip.level || 0) < share.MARKET_SHARE_VIP) {
-      fail(`Показ в чате доступен с VIP ${share.MARKET_SHARE_VIP}`, 'vip_required');
+    if (!(vip.seasonTicket && require('../../shared/definitions').seasonTicketPeriodOn())) {
+      fail('Показ лота в чате доступен только с сезонным билетом', 'ticket_required');
     }
     const lot = await market.byId(t, id);
     if (!lot || lot.sellerId !== Number(pid) || lot.status !== 'active') {
