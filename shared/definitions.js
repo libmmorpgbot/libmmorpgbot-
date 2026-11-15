@@ -2281,6 +2281,12 @@ const UNIQUE_WEAPONS = [
   // Целитель — same numbers as the mage staff it replaces for warlocks
   { id:'uq_heal_e',  name:'Жезл бездны',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/e_healer.png', atk:120, hpPct:0.20,      hp:300, skillPct:0.20, rarity:'epic'      },
   { id:'uq_heal_l',  name:'Жезл первых',     slot:'weapon', forClass:['warlock'],     img:'/images/wep/uniq/l_healer.png', atk:240, hpPct:0.40, critChance:0.20, hp:1000, skillPct:0.50, rarity:'legendary' },
+  // Рунный боец — ×2 of rf4 (atk 48, crit .12) / rf5 (atk 70, crit .28)
+  { id:'uq_chakram_e', name:'Чакрам бездны', slot:'weapon', forClass:['runefighter'], img:'/images/wep/uniq/e_runefighter.png', atk:96,  critChance:0.24, hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_chakram_l', name:'Чакрам первых', slot:'weapon', forClass:['runefighter'], img:'/images/wep/uniq/l_runefighter.png', atk:140, critChance:0.56, hp:1000, skillPct:0.50, rarity:'legendary' },
+  // Ассасин — ×2 of as4 (atk 50, crit .16) / as5 (atk 74, crit .32)
+  { id:'uq_trident_e', name:'Трезубец бездны', slot:'weapon', forClass:['assassin'], img:'/images/wep/uniq/e_assassin.png', atk:100, critChance:0.32, hp:300, skillPct:0.20, rarity:'epic'      },
+  { id:'uq_trident_l', name:'Трезубец первых', slot:'weapon', forClass:['assassin'], img:'/images/wep/uniq/l_assassin.png', atk:148, critChance:0.64, hp:1000, skillPct:0.50, rarity:'legendary' },
 ];
 
 // One recipe per weapon: every shard kind at the tier's cost, nothing else.
