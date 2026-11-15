@@ -4150,6 +4150,7 @@ canvas { display:block; width:100%; height:100%; }
 .of-ico.k-zone { color: #efd6a2; background: linear-gradient(135deg, rgba(207,161,71,.45), rgba(84,57,86,.35)); }
 .of-ico.k-high { color: #d9b8ff; background: linear-gradient(135deg, rgba(150,100,220,.45), rgba(70,40,120,.35)); }
 .of-ico.k-corr { color: #a9e0b9; background: linear-gradient(135deg, rgba(80,170,120,.4), rgba(30,80,60,.35)); }
+.of-ico.k-world { color: #ffe3a0; background: linear-gradient(135deg, rgba(232,193,90,.5), rgba(192,96,255,.35)); }
 .of-card.locked .of-ico { color: #b7a683; background: rgba(216,207,190,.08); }
 .of-card.tough .of-ico { color: #f17e8b; background: rgba(241,126,139,.12); }
 .of-card-info { flex: 1; min-width: 0; }

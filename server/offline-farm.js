@@ -35,6 +35,7 @@ const {
   offlineFarmLocations, offlineFarmLocation, offlineFarmRate,
   VIP_BONUSES, SEASON_TICKET_DROP_PCT, SEASON_TICKET_XP_PCT, SEASON_TICKET_LIBERTY_PCT, seasonTicketPeriodOn,
   FARM_LIBERTY_CHANCE, FARM_HIGH_LIBERTY_CHANCE, GRAM_DROP_CHANCE, GRAM_PER_LEVEL,
+  WORLD_LIBERTY_CHANCE, WORLD_CLOVER_CHANCE,
   clanBonusOf, oreDropChance, CRAFT_MATS, NEWBIE_BUFF, seasonDayKey,
 } = require('../shared/definitions');
 
@@ -207,12 +208,15 @@ function simulate(loc, snap, kills, bonus = {}) {
   const ticketLibertyMult = ticketOn ? 1 + (SEASON_TICKET_LIBERTY_PCT || 0) / 100 : 1;
   const runeNexumMult = 1 + (snap.gearNexumPct || 0) / 100;
   const libertyChance = (loc.kind === 'farmZone' ? (FARM_LIBERTY_CHANCE || 0)
-    : loc.kind === 'farmHigh' ? (FARM_HIGH_LIBERTY_CHANCE || 0) : 0) * ticketLibertyMult * runeNexumMult;
+    : loc.kind === 'farmHigh' ? (FARM_HIGH_LIBERTY_CHANCE || 0)
+    : loc.kind === 'world' ? (WORLD_LIBERTY_CHANCE || 0) : 0) * ticketLibertyMult * runeNexumMult;
+  // Мир: монета удачи — свой бросок поверх таблицы, как в rollLoot онлайн.
+  const clover = loc.kind === 'world' ? _MAT_BY_ID.get('clover_coin') : null;
   const payGram = loc.kind === 'corridor';
 
   const rollTable = (inv, m) =>
       loc.kind === 'farmZone' ? loot._rollFarmZoneLoot(inv, m.eid)
-    : loc.kind === 'farmHigh' ? loot._rollFarmHighLoot(inv, m.eid)
+    : (loc.kind === 'farmHigh' || loc.kind === 'world') ? loot._rollFarmHighLoot(inv, m.eid)
     : loot._rollMobLoot(inv, m.eid, m.rlvl);
 
   // Материалы складываются в одну стопку на вид, снаряжение — по штуке: оно
@@ -250,6 +254,7 @@ function simulate(loc, snap, kills, bonus = {}) {
       rollOre(m);
     }
     if (libertyChance > 0 && rand() < libertyChance) out.nexum++;
+    if (clover && rand() < (WORLD_CLOVER_CHANCE || 0)) push({ id: clover.id, name: clover.name, rarity: clover.rarity, qty: 1 });
     if (payGram && rand() < (GRAM_DROP_CHANCE || 0)) gram += (m.rlvl || 1) * (GRAM_PER_LEVEL || 0);
   }
   out.kills = kills;
