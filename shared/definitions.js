@@ -2045,6 +2045,12 @@ const DUNGEON_BOSS_ATK_DIV = 3;
 // здоровье в 4 раза»): итого ×20 к Владыке Мира.
 const DUNGEON_BOSS_HP_MULT = 4;
 const DUNGEON_BOSS_ATK_RANGE = 240;
+// Ближний бой (CHAR_DEF[..].atkType === 'melee': Танк, Рыцарь Смерти, Рунный
+// боец, Ассасин) должен подойти к Владыке вплотную, поэтому против его
+// обычных ударов их защита считается ×DUNGEON_BOSS_MELEE_DEF_MULT (Room.js,
+// удар монстра). Массовый удар (DUNGEON_BOSS_SLAM) идёт мимо защиты, его это
+// не касается.
+const DUNGEON_BOSS_MELEE_DEF_MULT = 4;
 // Очки опыта клану того, кто добил Владыку Подземелья (как WORLD_BOSS_CLAN_XP
 // у Владыки Мира), источник 'dungeon_boss' во «Вкладе».
 const DUNGEON_BOSS_CLAN_XP = 2000;
@@ -5317,7 +5323,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_UNIQUE_WEAPON_CHANCE,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB,
   DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES, DUNGEON_SCROLL_CHANCE,
-  DUNGEON_BOSS_MULT, DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_NAME, DUNGEON_BOSS_ATK_DIV, DUNGEON_BOSS_HP_MULT, DUNGEON_BOSS_ATK_RANGE, DUNGEON_BOSS_CLAN_XP, DUNGEON_BOSS_STAR_SHARDS, DUNGEON_BOSS_SLAM, dungeonBossNextSpawnAt,
+  DUNGEON_BOSS_MULT, DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_NAME, DUNGEON_BOSS_ATK_DIV, DUNGEON_BOSS_HP_MULT, DUNGEON_BOSS_ATK_RANGE, DUNGEON_BOSS_MELEE_DEF_MULT, DUNGEON_BOSS_CLAN_XP, DUNGEON_BOSS_STAR_SHARDS, DUNGEON_BOSS_SLAM, dungeonBossNextSpawnAt,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,

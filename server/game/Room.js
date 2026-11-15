@@ -14,7 +14,7 @@ const { calcGoldDrop, CHAR_DEF, ARM_NAMES, EVENT_BOSS, EVENT_BOSS_DROP_LIFE_MS, 
         ATK_SLOW_CLASSES, ATK_SLOW_SEC, atkSlowStack, upgLvlCapped, skillDefDownOf,
         DK_MICROSTUN_CHANCE, DK_MICROSTUN_SEC, ELITE_MOB_HP, ELITE_MOB_SIZE_MULT,
         ELITE_MOB_LVL_MIN, ELITE_MOB_LVL_MAX, PVP_OFF_COOLDOWN_MS,
-  dungeonBossNextSpawnAt,
+  dungeonBossNextSpawnAt, DUNGEON_BOSS_MELEE_DEF_MULT,
 } = require('../../shared/definitions');
 const _ATK_SLOW_CLS = new Set(ATK_SLOW_CLASSES);
 
@@ -2661,7 +2661,10 @@ class Room {
           // Округляется по той же причине, что и урон игрока: _defOf множит
           // целую защиту на дробный множитель бафа, и без этого дробным
           // становилось здоровье игрока — а оно уезжает в базу в целую колонку.
-          const dmg = Math.max(1, Math.round(e.atk - this._defOf(closest)));
+          // Владыка Подземелья: ближнему бою защита ×DUNGEON_BOSS_MELEE_DEF_MULT.
+          let _vDef = this._defOf(closest);
+          if (e.dungeonBoss && _charDef(closest.type)?.atkType === 'melee') _vDef *= DUNGEON_BOSS_MELEE_DEF_MULT;
+          const dmg = Math.max(1, Math.round(e.atk - _vDef));
           closest.hp = Math.max(0, closest.hp - dmg);
           // Straight down the victim's own socket, not io.to(id): the room
           // form builds a BroadcastOperator plus a rooms Set on every call,
