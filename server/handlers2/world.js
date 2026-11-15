@@ -160,7 +160,7 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Outside the transaction on purpose: this moves the connection between
     // two Rooms and pushes a second gameStart, none of which belongs inside a
     // database transaction, and it must not run at all if the login failed.
-    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); _resumeFarm2Run(); }
+    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); _resumeFarm2Run(); _resumeCoopRun(); }
   });
 
   // ── a Страх run held across a disconnect ─────────────────────────────────
@@ -311,6 +311,26 @@ module.exports = function registerWorld(s, safeOn, deps) {
     plog.log(s.playerId, 'farm2Resume', {});
   }
 
+  // ── Сотрудничество, пережившее переподключение ───────────────────────────
+  // Место держит _coopHoldOnDisconnect (server/game/coop.js); здесь — вернуть
+  // в ту же комнату и дорожку, на то же место и с тем же здоровьем.
+  function _resumeCoopRun() {
+    const m = deps.modes || require('../modes').modes;
+    if (!m || typeof m._coopResumeOnLogin !== 'function') return;
+    const res = m._coopResumeOnLogin(s.telegramId, s.socket.id,
+      (room, pos) => !!s.socket.data._forceEnterLocation?.('coop', { room, pos }));
+    if (!res) return;
+    if (res.pos && res.pos.hp > 0 && typeof s.room.setPlayerHp === 'function') s.room.setPlayerHp(s.socket.id, res.pos.hp);
+    const at = s.room.players.get(s.socket.id);
+    s.socket.emit('coopStarted', {
+      x: at ? at.x : 0, y: at ? at.y : 0, hp: at && at.hp,
+      maxStage: require('../../shared/definitions').COOP_STAGE_LEVELS.length, readyAt: 0, resumed: true,
+    });
+    const stage = res.run.room.coopStage();
+    if (stage > 0) s.socket.emit('coopStage', { stage, maxStage: require('../../shared/definitions').COOP_STAGE_LEVELS.length });
+    plog.log(s.playerId, 'coopResume', { lane: res.run.lane });
+  }
+
   // ── турнир, переживший перезагрузку ──────────────────────────────────────
   // Всё решает _trResumeOnLogin (server/game/tournament.js): находит прежний
   // socket id этого аккаунта, переносит на новый регистрацию, место в сетке и
@@ -334,6 +354,9 @@ module.exports = function registerWorld(s, safeOn, deps) {
   function _resumeArena3Match() {
     const m = deps.modes || require('../modes').modes;
     if (!m || !m._a3 || !m._a3.live) return;
+    // Бой держал место после разрыва (_a3HoldOnDisconnect) — перенести запись
+    // со старого сокета на этот, иначе alive ниже его не найдёт.
+    if (typeof m._a3ResumeOnLogin === 'function') m._a3ResumeOnLogin(s.telegramId, s.socket.id);
     const run = m._a3.alive.get(s.socket.id);
     if (!run) return;
     const p = s.forceFloor('pvpArena');

@@ -315,8 +315,73 @@ module.exports = function createCoop(deps) {
     return true;
   }
 
+  // ── переподключение ────────────────────────────────────────────────────
+  // Раньше разрыв соединения у одного заканчивал забег у обоих сразу
+  // (_coopEjectOnDisconnect): свернул Телеграм — и единственная попытка за
+  // день сгорела у двоих. Теперь место держится COOP_RECONNECT_GRACE_MS, как
+  // в Элитной фарм-зоне, Башне, Страхе и группе: дорожка, её монстры и
+  // прогресс ждут, напарник продолжает свою; вернулся — снова в той же
+  // комнате и дорожке, на том же месте и с тем же здоровьем; не вернулся —
+  // забег кончается, как раньше.
+  const COOP_RECONNECT_GRACE_MS = 45000;
+  const _coopHeld = new Map();   // telegramId -> { oldSid, timer, pos }
+
+  function _coopHoldOnDisconnect(socketId, telegramId) {
+    const run = _coop.get(socketId);
+    if (!run) return false;
+    if (telegramId == null) return _coopEjectOnDisconnect(socketId);
+    const tid = String(telegramId);
+    const rec = run.room && run.room.players.get(socketId);
+    const prior = _coopHeld.get(tid);
+    if (prior) clearTimeout(prior.timer);
+    const timer = setTimeout(() => {
+      const h = _coopHeld.get(tid);
+      if (!h || h.oldSid !== socketId) return;
+      _coopHeld.delete(tid);
+      _coopEjectOnDisconnect(socketId);
+    }, COOP_RECONNECT_GRACE_MS);
+    if (timer.unref) timer.unref();
+    _coopHeld.set(tid, { oldSid: socketId, timer, pos: rec ? { x: rec.x, y: rec.y, hp: rec.hp } : null });
+    if (run.partnerId && _coop.has(run.partnerId)) io.to(run.partnerId).emit('coopPartnerAway', { sec: COOP_RECONNECT_GRACE_MS / 1000 });
+    return true;
+  }
+
+  // Вызывается при входе (handlers2/world.js). enter(room, pos) — поставить
+  // эту сессию в комнату забега. Возвращает { run, pos } или false.
+  function _coopResumeOnLogin(telegramId, newSid, enter) {
+    if (telegramId == null) return false;
+    const tid = String(telegramId);
+    const h = _coopHeld.get(tid);
+    if (!h) return false;
+    clearTimeout(h.timer);
+    _coopHeld.delete(tid);
+    const run = _coop.get(h.oldSid);
+    if (!run || !run.room) return false;
+    // Сначала — переключить запись, потом входить: вход уводит сессию с
+    // текущего этажа, и выход из хаба не должен ничего знать о забеге.
+    _coop.delete(h.oldSid);
+    _coop.set(newSid, run);
+    const partner = run.partnerId && _coop.get(run.partnerId);
+    if (partner) partner.partnerId = newSid;
+    const pos = h.pos || run.room.coopLaneEntry(run.lane);
+    const ok = enter(run.room, pos && { x: pos.x, y: pos.y });
+    if (!ok || !run.room.coopRebind(run.lane, newSid)) {
+      _coopEjectOnDisconnect(newSid);
+      return false;
+    }
+    // Разрыв пришёлся на отсчёт перед первой волной: таймер старта искал
+    // записи по прежнему сокету и молча не сработал — запускаем сами.
+    if (run.room.coopStage() === 0 && partner) {
+      run.room.coopStartFirstStage();
+      [newSid, run.partnerId].forEach(sid => io.to(sid).emit('coopStage', { stage: 1, maxStage: COOP_STAGE_LEVELS.length }));
+    }
+    if (run.partnerId) io.to(run.partnerId).emit('coopPartnerBack', {});
+    return { run, pos: h.pos };
+  }
+
   return {
     COOP_ATTEMPTS, COOP_MIN_LEVEL, COOP_START_DELAY_MS, COOP_LIBERTY_CHANCE,
+    _coopHoldOnDisconnect, _coopResumeOnLogin, _coopHeld,
     _coop, _coopGroups, _coopGroupOf, _coopGroupStateFor, _coopGroupPush,
     _coopGroupOpenList, _coopGroupBroadcastList, _coopGroupDissolve, _coopGroupDropOnDisconnect,
     _createCoopRoom, _coopRooms, _liveCoopRooms, _trackCoopRoom, _coopDeathEnd,

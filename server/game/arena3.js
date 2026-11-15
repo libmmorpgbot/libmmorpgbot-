@@ -425,6 +425,47 @@ module.exports = function createArena3(deps) {
   // окна регистрации молча терял запись, а мёртвый socketId висел в очереди и
   // завышал счётчик «записалось» до ближайшего _a3TryStart — это и есть
   // «показывает больше чем зарегистрировано» с другой стороны.
+  // ── переподключение посреди боя ───────────────────────────────────────
+  // Раньше разрыв соединения был выбыванием на месте: свернул Телеграм,
+  // погас экран — и команда осталась вдвоём. Теперь место держится
+  // A3_RECONNECT_GRACE_MS (столько же, сколько у Башни, турнира, Страха и
+  // группы): вернулся — _a3ResumeOnLogin переносит запись на новый сокет, и
+  // _resumeArena3Match (handlers2/world.js) ставит обратно на базу команды;
+  // не вернулся — выбывает, как раньше.
+  const A3_RECONNECT_GRACE_MS = 45000;
+  const _a3Held = new Map();   // telegramId -> { oldSid, timer }
+  function _a3HoldOnDisconnect(socketId, telegramId) {
+    if (!_a3.live || !_a3.alive.has(socketId)) return false;
+    if (telegramId == null) return _a3Eliminate(socketId);
+    const tid = String(telegramId);
+    const prior = _a3Held.get(tid);
+    if (prior) clearTimeout(prior.timer);
+    const timer = setTimeout(() => {
+      const h = _a3Held.get(tid);
+      if (!h || h.oldSid !== socketId) return;
+      _a3Held.delete(tid);
+      _a3Eliminate(socketId);
+    }, A3_RECONNECT_GRACE_MS);
+    if (timer.unref) timer.unref();
+    _a3Held.set(tid, { oldSid: socketId, timer });
+    return true;
+  }
+  // true — бой ждал этого игрока, запись уже на newSid.
+  function _a3ResumeOnLogin(telegramId, newSid) {
+    if (telegramId == null) return false;
+    const h = _a3Held.get(String(telegramId));
+    if (!h) return false;
+    clearTimeout(h.timer);
+    _a3Held.delete(String(telegramId));
+    if (!_a3.live || !_a3.alive.has(h.oldSid)) return false;
+    _a3Rekey(h.oldSid, newSid);
+    return true;
+  }
+  function _a3DropHeld() {
+    for (const h of _a3Held.values()) clearTimeout(h.timer);
+    _a3Held.clear();
+  }
+
   function _a3Rekey(oldSocketId, newSocketId) {
     if (oldSocketId === newSocketId) return;
     if (_a3.queue.has(oldSocketId)) {
@@ -447,6 +488,7 @@ module.exports = function createArena3(deps) {
 
   async function _a3Finish(winner, wedged) {
     if (!_a3.live) return;
+    _a3DropHeld();
     _a3Rollback();
     // The match is decided by wiping the other side — there are no guard
     // bosses to knock down as a shortcut any more, so this needs nothing torn
@@ -497,6 +539,6 @@ module.exports = function createArena3(deps) {
     ARENA3_TEAM_SIZE, ARENA3_NEEDED, ARENA3_MIN_LEVEL, ARENA3_FREEZE_MS, ARENA3_REWARD, ARENA3_ROUND_MS,
     _a3, _a3NextOpenAt, _a3PublicState, _a3Broadcast, _a3Schedule, _a3OpenWindow, _a3CloseWindow,
     _a3Frozen, _a3Allies, _a3Enemies, _a3TryStartSafe, _a3TryStart, _a3Deploy, _a3Eliminate, _a3Finish,
-    _a3ReleaseRun, _a3Rekey,
+    _a3ReleaseRun, _a3Rekey, _a3HoldOnDisconnect, _a3ResumeOnLogin,
   };
 };

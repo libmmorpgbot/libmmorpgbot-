@@ -1562,6 +1562,21 @@ class Room {
   // Who currently owns lane `lane`, or null.
   coopOwnerOf(lane) { return this._coopOwner.get(lane) ?? null; }
 
+  // Переподключение в забег (server/game/coop.js, _coopResumeOnLogin):
+  // дорожка переходит на новый сокет, игрок — уже на этаже (forceFloor) —
+  // встаёт в неё обратно, без сброса здоровья, как сделал бы coopDeploy.
+  coopRebind(lane, socketId) {
+    const p = this.players.get(socketId);
+    if (!p || lane == null || !this._dungeon.coop || !this._dungeon.coop.lanes[lane]) return false;
+    this._coopOwner.set(lane, socketId);
+    p._coopLane = lane;
+    p._raceLane = null;
+    p._fearLane = null;
+    p._profileRev++;
+    this._markPlaced(p);
+    return true;
+  }
+
   // Current stage number (0 = not started, 1..COOP_STAGE_LEVELS.length while
   // live, past the end once the boss is up) — read by server/index.js's
   // coopSync so a panel reopened mid-run shows the real stage.

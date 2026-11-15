@@ -1100,6 +1100,7 @@ function netConnect(onReady) {
     setTimeout(() => { try { location.reload(); } catch (e) { /* nothing left to try */ } }, 900);
   });
 
+  let _gameStartSeq = 0;
   socket.on('gameStart', payload => {
     // Вход прошёл — техработы кончились, заставка обновления больше не нужна.
     { const ms = document.getElementById('maint-screen'); if (ms) ms.style.display = 'none'; }
@@ -1112,11 +1113,20 @@ function netConnect(onReady) {
     // the handler runs start to finish in the same task, exactly as it did
     // when the map travelled inline. Only a genuinely first-time (or new-floor)
     // load defers.
+    // ── применяется только ПОСЛЕДНИЙ переход ─────────────────────────────
+    // Карту нового этажа клиент при первом визите качает (ниже), а уже
+    // знакомую применяет сразу. Два перехода подряд — «город, а следом
+    // коридор» — и коридор (карта в кэше) применялся мгновенно, а город
+    // докачивался ПОЗЖЕ и затирал его: сервер держал игрока в коридоре, а
+    // клиент рисовал город, и монстры коридора ходили по городу. Каждый
+    // gameStart получает номер; докачавшаяся карта применяется, только если
+    // после неё не пришло ничего новее.
+    const seq = ++_gameStartSeq;
     const cachedEntry = _mapCache.get(payload.floor);
     const cached = (cachedEntry && cachedEntry.version === payload.mapVersion) ? cachedEntry.data : null;
     if (cached) return _applyGameStart(payload, cached, rxAt);
     _loadWorldMap(payload.floor, payload.mapVersion)
-      .then(d => _applyGameStart(payload, d, rxAt))
+      .then(d => { if (seq === _gameStartSeq) _applyGameStart(payload, d, rxAt); })
       .catch(err => {
         console.error('[map] could not load world map:', err);
         showAuthError(typeof t === 'function' ? t('noServerConn') : 'Нет соединения с сервером');
@@ -5643,6 +5653,15 @@ function _initCoopHandlers(s) {
   // (cleared: true). A death already sends the player home through the
   // generic death/respawn flow (js/game.js's respawnPlayer), so only the
   // "cleared" case still needs an explicit return trip.
+  // Напарник потерял связь — место держится 45 с (server/game/coop.js,
+  // _coopHoldOnDisconnect); вернулся — забег идёт дальше.
+  s.on('coopPartnerAway', ({ sec } = {}) => {
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(tVars('coopPartnerAwayMsg', { sec: sec || 45 }), '#ffcf6b');
+  });
+  s.on('coopPartnerBack', () => {
+    if (typeof showEventBossBanner === 'function') showEventBossBanner(t('coopPartnerBackMsg'), '#8ff0c0');
+  });
+
   s.on('coopFinished', ({ cleared, reason, refunded }) => {
     _coopInRun = false;
     _coopStageNo = 0;

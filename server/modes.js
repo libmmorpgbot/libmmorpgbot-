@@ -569,7 +569,10 @@ function init(io) {
   // handles it, and only a death that NO mode claimed is an open-world kill
   // worth writing to the duel history.
   modes._pvpEliminate = (socketId, killerSocketId, room, opts) => {
-    const a3Handled   = modes._a3Eliminate(socketId, killerSocketId);
+    // Арена 3х3: разрыв — не выбывание, место держится 45 с (_a3HoldOnDisconnect).
+    const a3Handled   = (opts && opts.fearGrace)
+      ? modes._a3HoldOnDisconnect(socketId, opts.telegramId)
+      : modes._a3Eliminate(socketId, killerSocketId);
     // Кровавая Башня runs up to RACE10_MAX_MS — long enough that a disconnect
     // ending it on the spot (as arena3 still does; that one is
     // short) cost a tunnel blip the whole day's one attempt, with no way
@@ -586,8 +589,9 @@ function init(io) {
     const fearHandled = (opts && opts.fearGrace)
       ? modes._fearHoldOnDisconnect(socketId, opts.telegramId)
       : modes._fearEliminate(socketId);
+    // Сотрудничество: разрыв — 45 с на возвращение (_coopHoldOnDisconnect).
     const coopHandled = (opts && opts.fearGrace)
-      ? modes._coopEjectOnDisconnect(socketId)
+      ? modes._coopHoldOnDisconnect(socketId, opts.telegramId)
       : modes._coopEliminate(socketId);
     // Гильдийский босс: смерть — домой и обратно в этот вызов нельзя.
     // Отключение ничего не решает — зал стоит, вернуться можно из вкладки.
