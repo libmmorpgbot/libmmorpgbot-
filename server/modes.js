@@ -613,6 +613,74 @@ function init(io) {
   modes._returnToHub = returnToHub;
   modes._recordPvpHistory = recordPvpHistory;
 
+  // ── награды тем, кто был «на удержании» ──────────────────────────────────
+  // Башня, Арена 3х3 и Сотрудничество держат место 45 с после обрыва связи.
+  // Если событие закончилось в эти секунды, выдать награду было некому:
+  // выплата идёт через соединение игрока (socket.data._*Grant*, server/
+  // mode-rewards.js), а его нет. Раньше такая награда просто пропадала —
+  // теперь она ждёт по аккаунту и выдаётся при входе (flushPendingRewards,
+  // handlers2/world.js), вместе с экраном итога. В памяти: перезапуск
+  // сервера её не переживёт, как и само удержание.
+  const _pendingRewards = new Map();   // telegramId -> [{ kind, ... }]
+  modes.queuePendingReward = (telegramId, item) => {
+    if (telegramId == null || !item) return;
+    const tid = String(telegramId);
+    if (!_pendingRewards.has(tid)) _pendingRewards.set(tid, []);
+    _pendingRewards.get(tid).push(item);
+  };
+  modes.flushPendingRewards = async (telegramId, socketId) => {
+    if (telegramId == null) return;
+    const tid = String(telegramId);
+    const list = _pendingRewards.get(tid);
+    const sock = io.sockets.sockets.get(socketId);
+    if (!list || !sock) return;
+    _pendingRewards.delete(tid);
+    for (const it of list) {
+      try {
+        if (it.kind === 'race10') {
+          const paid = sock.data._race10GrantReward ? await sock.data._race10GrantReward(it.won) : null;
+          sock.emit('race10Result', { ...it.result, reward: paid ? paid.nexum : 0,
+            items: ((paid && paid.items) || []).map(i => ({ id: i.id, name: i.name, img: i.img, qty: i.qty })) });
+        } else if (it.kind === 'arena3') {
+          const reward = sock.data._a3GrantWin ? await sock.data._a3GrantWin() : 0;
+          sock.emit('arena3Result', { ...it.result, reward });
+        } else if (it.kind === 'coop') {
+          const reward = sock.data._grantCoopBossReward ? await sock.data._grantCoopBossReward() : null;
+          sock.emit('coopBossReward', {
+            winnerId: socketId, winnerName: sock.data.username || null,
+            nexum: (reward && reward.nexum) || 0,
+            items: ((reward && reward.items) || []).map(i => ({ id: i.id, qty: i.qty || 1 })),
+            missed: ((reward && reward.missed) || []).map(i => ({ id: i.id, qty: i.qty || 1 })),
+            failed: !reward,
+          });
+          sock.emit('coopFinished', { cleared: true });
+        }
+      } catch (err) { console.error('[pendingReward]', it.kind, err); }
+    }
+  };
+
+  // ── запись на событие, пережившая обрыв ──────────────────────────────────
+  // Очереди Башни и Арены ключуются сокетом. Перенос записи на новый сокет
+  // (_race10Rekey/_a3Rekey) срабатывал, только пока старое соединение ещё
+  // висело на сервере; оборвалось полностью — запись оставалась на мёртвом
+  // сокете и молча выбрасывалась на старте: «зарегистрировался — не забрало».
+  // Запись помнит аккаунт (tid), по нему её и возвращаем при входе.
+  modes.reclaimEventQueues = (telegramId, newSid) => {
+    if (telegramId == null) return;
+    const tid = String(telegramId);
+    const reclaim = (q, rekey, regEvent) => {
+      if (!q) return;
+      for (const [sid, entry] of [...q]) {
+        if (sid === newSid || !entry || entry.tid == null || String(entry.tid) !== tid) continue;
+        if (io.sockets.sockets.get(sid)) continue;          // старый ещё жив — его время не вышло
+        rekey(sid, newSid);
+        io.to(newSid).emit(regEvent, { registered: true });
+      }
+    };
+    reclaim(modes._race10 && modes._race10.queue, (a, b) => modes._race10Rekey(a, b), 'race10Registered');
+    reclaim(modes._a3 && modes._a3.queue, (a, b) => modes._a3Rekey(a, b), 'arena3Registered');
+  };
+
   // ── the world boss ───────────────────────────────────────────────────────
   // Room.spawnEventBoss() exists, is correct, and was called by nothing: the
   // scheduler that summons it four evenings a week did not survive the

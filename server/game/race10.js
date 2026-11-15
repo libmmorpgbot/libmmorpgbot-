@@ -696,6 +696,21 @@ module.exports = function createRace10(deps) {
       // corridor, or who ran it but never got a swing in, takes nothing; the
       // winner takes the bigger tier of the same reward.
       const hitTheBoss = (dmg.get(sid) || 0) > 0;
+      // На удержании после обрыва — соединения нет, выдать не через что:
+      // награда и итог ждут его входа (modes.queuePendingReward).
+      if (!s) {
+        const held = [..._race10Grace].find(([, h]) => h.socketId === sid);
+        if (held) {
+          clearTimeout(held[1].timer);
+          _race10Grace.delete(held[0]);
+          if (hitTheBoss) {
+            require('../modes').modes.queuePendingReward(held[0], { kind: 'race10', won, result: {
+              won, winnerName: winnerId ? names.get(winnerId) : null,
+              myDamage: dmg.get(sid) || 0, timedOut: !!timedOut,
+            } });
+          }
+        }
+      }
       let reward = 0, rewardItems = [];
       if (hitTheBoss && s?.data?._race10GrantReward) {
         const paid = await s.data._race10GrantReward(won);

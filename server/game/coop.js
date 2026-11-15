@@ -224,6 +224,16 @@ module.exports = function createCoop(deps) {
     if (!participants.length) return;
     for (const sid of participants) {
       const sock = io.sockets.sockets.get(sid);
+      if (!sock) {
+        // Напарник на удержании после обрыва: награда ждёт его входа.
+        const held = [..._coopHeld].find(([, h]) => h.oldSid === sid);
+        if (held) {
+          clearTimeout(held[1].timer);
+          _coopHeld.delete(held[0]);
+          require('../modes').modes.queuePendingReward(held[0], { kind: 'coop' });
+        }
+        continue;
+      }
       const reward = sock?.data?._grantCoopBossReward ? await sock.data._grantCoopBossReward() : null;
       io.to(sid).emit('coopBossReward', {
         winnerId: sid, winnerName: (sock && sock.data && sock.data.username) || null,

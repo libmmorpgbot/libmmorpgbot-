@@ -488,6 +488,8 @@ module.exports = function createArena3(deps) {
 
   async function _a3Finish(winner, wedged) {
     if (!_a3.live) return;
+    // Кто на удержании — тому итог и награда при входе (не сейчас: соединения нет).
+    const heldTid = new Map([..._a3Held].map(([tid, h]) => [h.oldSid, tid]));
     _a3DropHeld();
     _a3Rollback();
     // The match is decided by wiping the other side — there are no guard
@@ -511,6 +513,10 @@ module.exports = function createArena3(deps) {
     for (const [sid, team] of teams) {
       const won = !!winner && team === winner;
       const s = io.sockets.sockets.get(sid);
+      if (!s && heldTid.has(sid)) {
+        require('../modes').modes.queuePendingReward(heldTid.get(sid),
+          won ? { kind: 'arena3', result: { won, winner, wedged: !!wedged, team } } : null);
+      }
       let reward = 0;
       if (won && s?.data?._a3GrantWin) {
         reward = await s.data._a3GrantWin();

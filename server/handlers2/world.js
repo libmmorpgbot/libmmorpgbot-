@@ -160,7 +160,14 @@ module.exports = function registerWorld(s, safeOn, deps) {
     // Outside the transaction on purpose: this moves the connection between
     // two Rooms and pushes a second gameStart, none of which belongs inside a
     // database transaction, and it must not run at all if the login failed.
-    if (landed) { _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); _resumeFarm2Run(); _resumeCoopRun(); }
+    if (landed) {
+      _resumeHeldFearRun(); _resumeHeldRace10Run(); _resumeArena3Match(); _resumeTournament(); _resumeFarm2Run(); _resumeCoopRun();
+      // Запись на Башню/Арену, оставшаяся на оборванном сокете, и награды,
+      // выданные событием, пока игрок был без связи (server/modes.js).
+      const _m = deps.modes || require('../modes').modes;
+      if (_m && _m.reclaimEventQueues) _m.reclaimEventQueues(s.telegramId, s.socket.id);
+      if (_m && _m.flushPendingRewards) _m.flushPendingRewards(s.telegramId, s.socket.id).catch(e => console.error('[pendingReward]', e));
+    }
   });
 
   // ── a Страх run held across a disconnect ─────────────────────────────────
