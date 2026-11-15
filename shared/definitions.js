@@ -2048,8 +2048,8 @@ const DUNGEON_BOSS_ATK_RANGE = 240;
 // Ближний бой (CHAR_DEF[..].atkType === 'melee': Танк, Рыцарь Смерти, Рунный
 // боец, Ассасин) должен подойти к Владыке вплотную, поэтому против его
 // обычных ударов их защита считается ×DUNGEON_BOSS_MELEE_DEF_MULT (Room.js,
-// удар монстра). Массовый удар (DUNGEON_BOSS_SLAM) идёт мимо защиты, его это
-// не касается.
+// удар монстра). Массовый удар (DUNGEON_BOSS_SLAM) идёт мимо защиты — для
+// ближнего боя у него свой, меньший процент (meleeMinPct/meleeMaxPct).
 const DUNGEON_BOSS_MELEE_DEF_MULT = 4;
 // Очки опыта клану того, кто добил Владыку Подземелья (как WORLD_BOSS_CLAN_XP
 // у Владыки Мира), источник 'dungeon_boss' во «Вкладе».
@@ -2060,8 +2060,9 @@ const DUNGEON_BOSS_STAR_SHARDS = [50, 300];
 // everyMinMs-everyMaxMs под ним появляется красный круг радиуса r, который
 // наполняется windupMs; кто к концу остался внутри — теряет от minPct до
 // maxPct максимального здоровья. Пока круг наполняется, босс стоит на месте
-// и обычными ударами не бьёт.
-const DUNGEON_BOSS_SLAM = { r: 200, windupMs: 2500, everyMinMs: 10000, everyMaxMs: 15000, minPct: 0.9, maxPct: 1.0 };
+// и обычными ударами не бьёт. Ближний бой (atkType 'melee') вынужден стоять
+// вплотную, поэтому теряет меньше — от meleeMinPct до meleeMaxPct.
+const DUNGEON_BOSS_SLAM = { r: 200, windupMs: 2500, everyMinMs: 10000, everyMaxMs: 15000, minPct: 0.9, maxPct: 1.0, meleeMinPct: 0.3, meleeMaxPct: 0.5 };
 // Размер этажа в тайлах.
 const WORLD_W = 150;
 const WORLD_H = 110;

@@ -2047,7 +2047,8 @@ class Room {
   // Раз в everyMin-everyMax мс под боссом появляется круг радиуса r: всем на
   // этаже уходит 'bossSlam' (где и сколько наполняется), клиенты рисуют
   // наполняющийся красный круг. Через windupMs — удар: каждый живой игрок,
-  // стоящий в круге, теряет minPct-maxPct максимального здоровья (мимо
+  // стоящий в круге, теряет minPct-maxPct максимального здоровья (ближний
+  // бой — meleeMinPct-meleeMaxPct; мимо
   // защиты: от такого удара не закрыться, только отойти), и всем — 'bossSlamHit'.
   // Возвращает true, пока круг наполняется: в это время босс стоит.
   _bossSlamTick(e, now) {
@@ -2072,7 +2073,10 @@ class Room {
       const dx = p.x - e._slamX, dy = p.y - e._slamY;
       if (dx * dx + dy * dy > r2) continue;
       const max = this._maxHpOf(p) || p.maxHp || 0;
-      const dmg = Math.max(1, Math.round(max * (S.minPct + Math.random() * (S.maxPct - S.minPct))));
+      // Ближний бой стоит вплотную — ему свой, меньший процент.
+      const melee = _charDef(p.type)?.atkType === 'melee' && S.meleeMinPct != null;
+      const lo = melee ? S.meleeMinPct : S.minPct, hi = melee ? S.meleeMaxPct : S.maxPct;
+      const dmg = Math.max(1, Math.round(max * (lo + Math.random() * (hi - lo))));
       p.hp = Math.max(0, p.hp - dmg);
       const sock = this._socketFor(p);
       if (sock) sock.emit('playerHurt', { id: p.socketId, hp: p.hp, dmg, atkId: e.id });
