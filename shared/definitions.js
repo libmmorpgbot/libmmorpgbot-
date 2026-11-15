@@ -2050,6 +2050,12 @@ const DUNGEON_BOSS_ATK_RANGE = 240;
 const DUNGEON_BOSS_CLAN_XP = 2000;
 // Звёздные осколки (star_shard) — с каждого убийства, случайно от и до.
 const DUNGEON_BOSS_STAR_SHARDS = [50, 300];
+// Массовый удар Владыки Подземелья (Room.js, _bossSlamTick): каждые
+// everyMinMs-everyMaxMs под ним появляется красный круг радиуса r, который
+// наполняется windupMs; кто к концу остался внутри — теряет от minPct до
+// maxPct максимального здоровья. Пока круг наполняется, босс стоит на месте
+// и обычными ударами не бьёт.
+const DUNGEON_BOSS_SLAM = { r: 200, windupMs: 2500, everyMinMs: 10000, everyMaxMs: 15000, minPct: 0.9, maxPct: 1.0 };
 // Размер этажа в тайлах.
 const WORLD_W = 150;
 const WORLD_H = 110;
@@ -5303,7 +5309,7 @@ if (typeof module !== 'undefined') module.exports = {
   FARM2_UNIQUE_WEAPON_CHANCE,
   DUNGEON_CLASSES, DUNGEON_ROOM, DUNGEON_ROOM_COUNT, DUNGEON_PACK_SIZE, DUNGEON_MOBS_PER_ROOM, DUNGEON_STUB,
   DUNGEON_ENTRY_LEVEL, DUNGEON_LVL, DUNGEON_LICH, DUNGEON_SPECIES, DUNGEON_SCROLL_CHANCE,
-  DUNGEON_BOSS_MULT, DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_NAME, DUNGEON_BOSS_ATK_DIV, DUNGEON_BOSS_HP_MULT, DUNGEON_BOSS_ATK_RANGE, DUNGEON_BOSS_CLAN_XP, DUNGEON_BOSS_STAR_SHARDS, dungeonBossNextSpawnAt,
+  DUNGEON_BOSS_MULT, DUNGEON_BOSS_UNIQUE_SET_CHANCE, DUNGEON_BOSS_NAME, DUNGEON_BOSS_ATK_DIV, DUNGEON_BOSS_HP_MULT, DUNGEON_BOSS_ATK_RANGE, DUNGEON_BOSS_CLAN_XP, DUNGEON_BOSS_STAR_SHARDS, DUNGEON_BOSS_SLAM, dungeonBossNextSpawnAt,
   CLASS_GEAR_SALVAGE_RECIPES, CLAN_MAX_MEMBERS, CLAN_DESC_MAX_CHARS,
   CLASS_CHANGE_FIRST_NEXUM, CLASS_CHANGE_GRAM,
   craftResultEnhance,

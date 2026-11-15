@@ -1825,8 +1825,63 @@ function _drawAoeBloodwave(g, x, y, R, p, color, color2) {
   g.lineStyle(0);
 }
 
+// ── Массовый удар босса (Room.js, _bossSlamTick) ───────────────────────
+// Сервер присылает 'bossSlam' { x, y, r, ms } в момент начала: под боссом
+// круг, который за ms наполняется красным от центра к краю. Когда он полон,
+// приходит 'bossSlamHit' — удар (pixiBossSlamHit).
+const _bossSlams = [];
+function pixiBossSlam(d) {
+  if (!d || !Number.isFinite(d.x)) return;
+  for (let i = _bossSlams.length - 1; i >= 0; i--) if (_bossSlams[i].id === d.id) _bossSlams.splice(i, 1);
+  _bossSlams.push({ id: d.id, x: d.x, y: d.y, r: d.r || 200, ms: d.ms || 2500, t0: performance.now() });
+}
+function pixiBossSlamHit(d) {
+  if (!d) return;
+  for (let i = _bossSlams.length - 1; i >= 0; i--) if (_bossSlams[i].id === d.id) _bossSlams.splice(i, 1);
+  if (typeof spawnAOE === 'function') {
+    spawnAOE(d.x, d.y, d.r, 'shockwave', '#ff3030');
+    spawnAOE(d.x, d.y, d.r * 0.6, 'flash', '#ffb070');
+  }
+  if (typeof spawnBurst === 'function') spawnBurst(d.x, d.y, '#ff5040', 24);
+  if (typeof camShake === 'function' && typeof player !== 'undefined' && player) {
+    const near = Math.hypot(player.x - d.x, player.y - d.y) < d.r * 1.8;
+    if (near) camShake(9, 0.45);
+  }
+}
+function pixiBossSlamsClear() { _bossSlams.length = 0; }
+function _drawBossSlams(g) {
+  const now = performance.now();
+  for (let i = _bossSlams.length - 1; i >= 0; i--) {
+    const s = _bossSlams[i];
+    const k = (now - s.t0) / s.ms;
+    // Подстраховка: удар не пришёл (обрыв связи) — круг не висит вечно.
+    if (k > 1.6) { _bossSlams.splice(i, 1); continue; }
+    if (s.x < _vL - s.r || s.x > _vR + s.r || s.y < _vT - s.r || s.y > _vB + s.r) continue;
+    const kk = Math.min(1, Math.max(0, k));
+    // Под конец — тревожное мигание.
+    const blink = kk > 0.75 ? 0.8 + 0.2 * Math.sin(now / 45) : 1;
+    // Вся опасная зона — слабой заливкой, чтобы было видно, куда отходить.
+    g.beginFill(0xff1a1a, 0.13); g.drawCircle(s.x, s.y, s.r); g.endFill();
+    // Наполнение от центра.
+    g.beginFill(0xff2a2a, (0.25 + 0.3 * kk) * blink); g.drawCircle(s.x, s.y, s.r * kk); g.endFill();
+    // Кромка наполнения.
+    g.lineStyle(2, 0xffb0a0, 0.8 * blink); g.drawCircle(s.x, s.y, s.r * kk);
+    // Граница зоны — толстая, с бегущими засечками.
+    g.lineStyle(3.5, 0xff3030, 0.95); g.drawCircle(s.x, s.y, s.r);
+    g.lineStyle(2, 0xff7a6a, 0.9);
+    const n = 24, rot = now / 900;
+    for (let j = 0; j < n; j++) {
+      const a = rot + j * Math.PI * 2 / n;
+      g.moveTo(s.x + Math.cos(a) * (s.r - 9), s.y + Math.sin(a) * (s.r - 9));
+      g.lineTo(s.x + Math.cos(a) * (s.r + 3), s.y + Math.sin(a) * (s.r + 3));
+    }
+    g.lineStyle(0);
+  }
+}
+
 function _updateAoeRings() {
   _aoeGfx.clear();
+  _drawBossSlams(_aoeGfx);
   aoeRings.forEach(ring => {
     // A ring is up to 48 seeded jagged segments (fissure/frost). Off screen it
     // is 48 segments of nothing. The radius is added to the margin so a ring

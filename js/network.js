@@ -1189,6 +1189,7 @@ function netConnect(onReady) {
     // The tile raster is a pure function of the grid, so it only needs
     // rebuilding when the grid did (see _resumeSameFloor above).
     if (!_resumeSameFloor) buildTileCanvas();
+    if (typeof pixiBossSlamsClear === 'function') pixiBossSlamsClear();
     projs = []; otherProjs = []; drops = []; particles = []; dmgNums = []; aoeRings = []; if (typeof fxParts !== 'undefined') { fxParts = []; fxEmitters = []; }
     _stickerFx.forEach(s => s.el && s.el.remove()); _stickerFx = [];
     // Event-boss ground loot and the map panel's dot cache are both scoped to
@@ -1965,6 +1966,10 @@ function netConnect(onReady) {
       if (cp != null && maxCp) { _hitOp.cp = cp; _hitOp.maxCp = maxCp; _hitOp._cpAt = Date.now(); }
     }
   });
+
+  // Массовый удар босса (Владыка Подземелья, Room.js _bossSlamTick).
+  socket.on('bossSlam', d => { if (typeof pixiBossSlam === 'function') pixiBossSlam(d); });
+  socket.on('bossSlamHit', d => { if (typeof pixiBossSlamHit === 'function') pixiBossSlamHit(d); });
 
   socket.on('enemyCC', ({ enemyId, enemyIds, type, duration }) => {
     function _applyCC(id) {

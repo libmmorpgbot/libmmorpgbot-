@@ -2005,6 +2005,7 @@ class Room {
     e.x = e.spawnX; e.y = e.spawnY;
     e.aggro = false; e.atkTimer = 1 + Math.random(); e.hurtTimer = 0;
     e.stunTimer = 0; e.slowTimer = 0; e.defDownTimer = 0; e._atkSlowUntil = 0;
+    e._slamAt = 0; e._slamNext = 0;
     e._shp = -1;
     delete e.respawnTimer;
     delete e._respawnAt;
@@ -2025,6 +2026,46 @@ class Room {
     this._reviveBossIfDue(boss);
     if (this._onBossDeath) this._onBossDeath(arm, now);
     return { revived: true };
+  }
+
+  // ── Массовый удар босса (e.slam, DUNGEON_BOSS_SLAM) ────────────────────
+  // Раз в everyMin-everyMax мс под боссом появляется круг радиуса r: всем на
+  // этаже уходит 'bossSlam' (где и сколько наполняется), клиенты рисуют
+  // наполняющийся красный круг. Через windupMs — удар: каждый живой игрок,
+  // стоящий в круге, теряет minPct-maxPct максимального здоровья (мимо
+  // защиты: от такого удара не закрыться, только отойти), и всем — 'bossSlamHit'.
+  // Возвращает true, пока круг наполняется: в это время босс стоит.
+  _bossSlamTick(e, now) {
+    const S = e.slam;
+    const nextIn = () => S.everyMinMs + Math.random() * (S.everyMaxMs - S.everyMinMs);
+    // Круг, который начался давно и не разрешился (босс отвлёкся, ушёл
+    // домой, умер), не бьёт задним числом.
+    if (e._slamAt && now > e._slamAt + 1000) e._slamAt = 0;
+    if (!e._slamNext) { e._slamNext = now + nextIn(); return false; }
+    const floorIo = this.io.to(`floor_${this.floor}`);
+    if (!e._slamAt) {
+      if (now < e._slamNext) return false;
+      e._slamAt = now + S.windupMs;
+      e._slamX = e.x; e._slamY = e.y;
+      floorIo.emit('bossSlam', { id: e.id, x: e._slamX, y: e._slamY, r: S.r, ms: S.windupMs });
+      return true;
+    }
+    if (now < e._slamAt) return true;
+    const r2 = S.r * S.r;
+    for (const p of this.players.values()) {
+      if (!(p.hp > 0)) continue;
+      const dx = p.x - e._slamX, dy = p.y - e._slamY;
+      if (dx * dx + dy * dy > r2) continue;
+      const max = this._maxHpOf(p) || p.maxHp || 0;
+      const dmg = Math.max(1, Math.round(max * (S.minPct + Math.random() * (S.maxPct - S.minPct))));
+      p.hp = Math.max(0, p.hp - dmg);
+      const sock = this._socketFor(p);
+      if (sock) sock.emit('playerHurt', { id: p.socketId, hp: p.hp, dmg, atkId: e.id });
+    }
+    floorIo.emit('bossSlamHit', { id: e.id, x: e._slamX, y: e._slamY, r: S.r });
+    e._slamAt = 0;
+    e._slamNext = now + nextIn();
+    return false;
   }
 
   // One boss per corridor (arm) — alive or, once dead, the timestamp it
@@ -2565,6 +2606,9 @@ class Room {
       // set — see trialSpawnMonsters' own comment for why atk:0 alone isn't
       // enough.
       if (e.aggro && !e.trialHarmless) {
+        // Массовый удар (Владыка Подземелья): пока круг наполняется, босс
+        // стоит и не бьёт обычными ударами.
+        if (e.slam && this._bossSlamTick(e, now)) return;
         // `stationary` holds an enemy on its spawn point while leaving the
         // rest of its behaviour alone — it still aggros, still swings at
         // anyone who steps into reach. Used by the tower's boss (see

@@ -4147,6 +4147,31 @@ function drawMiniMapPanel() {
     const ex = mmX + (e.x / TILE - winTx) * mmSc, ey = mmY + (e.y / TILE - winTy) * mmSc;
     ctx.fillText('💀', ex, ey);
   });
+  // Радиус АВТО (_autoLeashR, js/game.js): включено — яркий круг вокруг
+  // точки, где стоит АВТО, и сама точка; выключено (или открыт ползунок) —
+  // бледный круг вокруг игрока, чтобы было видно, что попадёт в зону.
+  if (typeof _autoLeashZone === 'function' && _autoLeashZone() && typeof _autoLeashR === 'function') {
+    const on = typeof _autoLeashOn === 'function' && _autoLeashOn();
+    const preview = typeof _autoRadiusPreview !== 'undefined' && _autoRadiusPreview;
+    const a = on && typeof _autoAnchorPt === 'function' ? _autoAnchorPt() : p;
+    const ax = mmX + (a.x / TILE - winTx) * mmSc, ay = mmY + (a.y / TILE - winTy) * mmSc;
+    const ar = _autoLeashR() / TILE * mmSc;
+    if (on || preview) {
+      ctx.fillStyle = 'rgba(141,238,70,0.10)';
+      ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(141,238,70,0.85)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.stroke();
+      if (on) {
+        ctx.fillStyle = 'rgba(141,238,70,0.9)';
+        ctx.beginPath(); ctx.arc(ax, ay, 1.8, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(141,238,70,0.35)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(ax, ay, ar, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
   // Телепорты: светящееся кольцо с точкой. Пад за краем окна прижимаем к
   // краю стрелкой-точкой — видно, куда идти к выходу.
   if (typeof minimapPads === 'function') {
