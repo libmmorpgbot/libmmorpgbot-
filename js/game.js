@@ -454,6 +454,25 @@ function _inAutoLeash(x, y, size) {
   const r = _autoLeashR() + (size || 0);
   return dx * dx + dy * dy <= r * r;
 }
+// Фильтр «только монстры своей комнаты» (_getRoomAt) — против того, чтобы
+// авто убегало в соседнюю комнату. Но на открытых картах «комнаты» — это
+// невидимые квадраты вокруг спотов, и игрок между двумя пачками стоит в
+// квадрате одной, а бьёт его другая: та для автоцели не существовала, и АВТО
+// ждало респавна «своих», пока чужие его били. Монстр, который уже в бою
+// рядом с игроком или достаёт до него, — цель, в каком бы квадрате ни стоял.
+const _ROOM_EXEMPT_R = 300;
+function _roomExempt(e) {
+  const d = Math.hypot(e.x - player.x, e.y - player.y);
+  if (e.aggro && d < _ROOM_EXEMPT_R) return true;
+  const reach = ((player.charDef && player.charDef.atkRange) || 60) + (e.size || 0);
+  return d <= reach;
+}
+function _outsideRoom(e, room) {
+  if (!room || _roomExempt(e)) return false;
+  const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);
+  return etx < room.x || etx >= room.x + room.size || ety < room.y || ety >= room.y + room.size;
+}
+
 // Ближайший живой монстр внутри круга АВТО (те же отсевы, что у поиска
 // цели в блоке атаки, update()). Видимые — в первую очередь.
 // Нужен, чтобы новая цель бралась СРАЗУ после убийства, а не через целый
@@ -465,11 +484,7 @@ function _autoPickInLeash() {
   serverEnemies.forEach(e => {
     if ((e.hp || 0) <= 0 || _gwTowerUnselectable(e)) return;
     if (!_inAutoLeash(e.x, e.y, e.size)) return;
-    if (pRoom) {
-      const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);
-      if (etx < pRoom.x || etx >= pRoom.x + pRoom.size ||
-          ety < pRoom.y || ety >= pRoom.y + pRoom.size) return;
-    }
+    if (_outsideRoom(e, pRoom)) return;
     const los = hasLOS(player.x, player.y, e.x, e.y);
     if (bestLos && !los) return;
     const dx = e.x - player.x, dy = e.y - player.y, d2 = dx * dx + dy * dy;
@@ -954,11 +969,8 @@ function update(dt, realDt) {
         // АВТО в Мире — только внутри своего круга (см. _autoLeashR).
         if (_leash && !_inAutoLeash(e.x, e.y, e.size)) return;
         // When player is inside a room, only target enemies in that same room
-        if (_pRoom) {
-          const etx = Math.floor(e.x / TILE), ety = Math.floor(e.y / TILE);
-          if (etx < _pRoom.x || etx >= _pRoom.x + _pRoom.size ||
-              ety < _pRoom.y || ety >= _pRoom.y + _pRoom.size) return;
-        }
+        // (кроме тех, кто уже бьётся рядом — _outsideRoom/_roomExempt).
+        if (_outsideRoom(e, _pRoom)) return;
         const dx = e.x - player.x, dy = e.y - player.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < closestD2) { closestD2 = d2; closest = e; closestIsPlayer = false; }
@@ -994,12 +1006,8 @@ function update(dt, realDt) {
       const _pRoom = _getRoomAt(player.x, player.y);
       if (_pRoom) {
         const _lt = serverEnemiesMap.get(targetId);
-        if (_lt && (_lt.hp || 0) > 0) {
-          const etx = Math.floor(_lt.x / TILE), ety = Math.floor(_lt.y / TILE);
-          if (etx < _pRoom.x || etx >= _pRoom.x + _pRoom.size ||
-              ety < _pRoom.y || ety >= _pRoom.y + _pRoom.size) {
-            targetId = null; targetIsPlayer = false;
-          }
+        if (_lt && (_lt.hp || 0) > 0 && _outsideRoom(_lt, _pRoom)) {
+          targetId = null; targetIsPlayer = false;
         }
       }
     }

@@ -514,8 +514,18 @@ function _raceUnselectable(id) {
   return true;
 }
 
+// Кнопка фокуса: первое нажатие — ближайший монстр; быстрые повторные (в
+// пределах _CYCLE_REPEAT_MS) листают дальше по расстоянию. Раньше каждое
+// нажатие брало «следующего после текущей цели», и если цель осталась от
+// прошлой пачки, следующей по списку оказывалась ещё более дальняя группа —
+// «подбежал к пачке, нажал фокус, выбрал дальних».
+const _CYCLE_REPEAT_MS = 1500;
+let _cycleLastAt = 0;
 function cycleTarget() {
   if (!player) return;
+  const _now = Date.now();
+  const _repeat = _now - _cycleLastAt < _CYCLE_REPEAT_MS;
+  _cycleLastAt = _now;
   const isOnline = !!(socket?.connected);
   const activeEnemies = serverEnemies; // see the comment on the identical fallback in js/ui.js's drawTargetFrame()
   const candidates = [];
@@ -535,8 +545,14 @@ function cycleTarget() {
   }
   candidates.sort((a, b) => a.d - b.d);
   if (candidates.length === 0) { targetId = null; targetIsPlayer = false; _chaseArmed = false; return; }
-  const curIdx = candidates.findIndex(c => c.id === targetId && c.isPlayer === targetIsPlayer);
-  const next = candidates[(curIdx + 1) % candidates.length];
+  let next;
+  if (!_repeat) {
+    // Первое нажатие: ближайший монстр (игроки — только если монстров нет).
+    next = candidates.find(c => !c.isPlayer) || candidates[0];
+  } else {
+    const curIdx = candidates.findIndex(c => c.id === targetId && c.isPlayer === targetIsPlayer);
+    next = candidates[(curIdx + 1) % candidates.length];
+  }
   targetId = next.id;
   targetIsPlayer = next.isPlayer;
   _chaseArmed = false; // selecting a target this way is just aiming, not committing to chase it
