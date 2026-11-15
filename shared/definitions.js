@@ -4419,7 +4419,9 @@ const GRAM_PER_LEVEL = 0.0000001;
 const SEASON_TICKET_SEASON = 5;
 const SEASON_TICKET_END_AT = SEASON_END_AT;   // билет — до конца 5 сезона
 function seasonTicketPeriodOn(now = Date.now()) { return !SEASON_TICKET_END_AT || now < SEASON_TICKET_END_AT; }
-const SEASON_TICKET_GRAM_PRICE = 15;
+// 15 → 7.5 GRAM (14 ноября): цена снижена по просьбе владельца. Баланс GRAM —
+// numeric(24,8), так что дробная цена списывается точно.
+const SEASON_TICKET_GRAM_PRICE = 7.5;
 const SEASON_TICKET_XP_PCT = 200;      // x3 experience (+200%) — с 5-го сезона
 const SEASON_TICKET_DROP_PCT = 60;     // +60 to the bonus loot re-roll chance
 const SEASON_TICKET_LIBERTY_PCT = 100; // +100% (relative) to the Liberty drop chance — x2
