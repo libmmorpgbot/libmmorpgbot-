@@ -414,12 +414,17 @@ let _autoSkillTimer = 0;
 // монстром через всю карту (в рукаве вне комнаты ограничения нет вовсе).
 // Не работает в режимах, где авто обязано идти само: Кровавая Башня
 // (лабиринт), Страх/Кооп (волны по линии), Война гильдий, арены, турнир.
+// Круг работает ВЕЗДЕ, кроме мест, где АВТО обязано ходить само: лабиринт
+// Кровавой Башни (портал ищется по комнатам), дорожки Сотрудничества
+// (следующая волна — в соседней комнате) и Война гильдий (вышки далеко
+// друг от друга), плюс турнирная яма. Раньше список был обратным — «где
+// работает», — и в него не попали коридоры прокачки: после перехода на
+// открытые карты у них пустой corridorGates, и проверка его длины
+// выключала круг на всех уровнях 1-80.
 function _autoLeashZone() {
   const d = dungeon;
   if (!d) return false;
-  if (d.race10 || d.guildWar || d.coop || d.tournamentArena) return false;
-  return !!(d.openWorld || d.farmZone || d.farmZone2 || d.farmHigh || d.dungeonZone
-    || (d.corridorGates && d.corridorGates.length));
+  return !(d.race10 || d.guildWar || d.coop || d.tournamentArena);
 }
 function _autoLeashR() {
   const n = Number(player && player.autoRadius);
