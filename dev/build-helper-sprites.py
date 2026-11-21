@@ -38,8 +38,12 @@ from PIL import Image
 REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 CELL = 128          # сторона клетки в листе
 FRAMES = 8
-# FACING8_DIRS index k -> направление Flare: 0 W, 1 SW, 2 S, 3 SE, 4 E, 5 NE, 6 N, 7 NW
-FLARE_DIR = [(4 - k) % 8 for k in range(8)]
+# FACING8_DIRS index k -> направление Flare. Порядок у Flare (и у demon_0.png)
+# тот же, что у «Пограничья» (pmDir, js/pm-monsters.js): по часовой от запада —
+# 0 З, 1 СЗ, 2 С (спиной к нам), 3 СВ, 4 В, 5 ЮВ, 6 Ю (лицом к нам), 7 ЮЗ.
+# (Сначала здесь стоял обратный порядок — перед/спина и диагонали были
+# перепутаны, совпадали только «влево» и «вправо».)
+FLARE_DIR = [(k + 4) % 8 for k in range(8)]
 
 # helper id -> (вариант виверны, перекраска)
 # перекраска: None | ('hue', сдвиг 0..1, множитель насыщенности) | ('tint', '#rrggbb', сила 0..1)
@@ -67,8 +71,8 @@ HELPERS.update({
     'hl_seraph':  ('pm:skeleton_knight_boss',    ('tint', '#fff2a0', 0.65, 1.7)),
     'hl_kitsune': ('pm:antlion',                 ('tint', '#ff9ae6', 0.65, 1.8)),
 })
-# FACING8_DIRS index k -> направление атласа «Пограничья»
-PM_DIR = [(k + 4) % 8 for k in range(8)]
+# FACING8_DIRS index k -> направление атласа «Пограничья» (тот же порядок)
+PM_DIR = FLARE_DIR
 DEMON_CELL = 256
 DEMON_IDLE = [0, 1, 2, 3, 3, 2, 1, 0]
 

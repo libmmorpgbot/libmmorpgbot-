@@ -1153,10 +1153,10 @@ const _HLP_HEAD_Y = { fairy: -16, bird: -18, dragon: -22, fox: -20, seed: -20 };
 const _HLP_SHEET_IDS = new Set(['hl_sprout', 'hl_pebble', 'hl_bubble', 'hl_coin', 'hl_storm', 'hl_dragon', 'hl_spark', 'hl_ember',
   // остальные — перекрашенные монстры «Пограничья» (images/pm)
   'hl_firefly', 'hl_breeze', 'hl_moth', 'hl_leaf', 'hl_frost', 'hl_crystal', 'hl_phoenix', 'hl_void', 'hl_wisp', 'hl_seraph', 'hl_kitsune']);
-const _HLP_SHEET_VER = 1;
+const _HLP_SHEET_VER = 2;   // 2 — исправлены направления у дракончиков и бесов
 const _HLP_SHEET_CELL = 128;
 const _HLP_SHEET_FRAMES = 8;
-const _HLP_SHEET_FPS = 10;
+const _HLP_SHEET_FPS = 8;
 const _hlpSheets = new Map();   // id -> { img, ok, tries }
 
 function _hlpSheet(id) {
@@ -1179,25 +1179,36 @@ function _hlpSheet(id) {
   return s.ok ? s.img : null;
 }
 
-// dir — индекс FACING8_DIRS (0 вправо, 2 к зрителю, 4 влево, 6 от зрителя).
-// Рисует в текущей системе координат (сетка 128 с центром в нуле).
+// dir — направление в шагах FACING8_DIRS (0 вправо, 2 к зрителю, 4 влево,
+// 6 от зрителя), может быть дробным: на повороте два соседних направления
+// плавно перетекают друг в друга. Кадры тоже не щёлкают, а перетекают —
+// у листа всего 8 кадров на цикл. Рисует в текущей системе координат
+// (сетка 128 с центром в нуле).
 function _hlpDrawSheet(ctx, img, t, dir, dim) {
-  const fr = Math.floor(t * _HLP_SHEET_FPS) % _HLP_SHEET_FRAMES;
   const C = _HLP_SHEET_CELL, D = 142;
-  if (!dim) {
-    ctx.drawImage(img, fr * C, dir * C, C, C, -D / 2, -D / 2, D, D);
-    return;
-  }
+  const ph = ((t * _HLP_SHEET_FPS) % _HLP_SHEET_FRAMES + _HLP_SHEET_FRAMES) % _HLP_SHEET_FRAMES;
+  const fa = Math.floor(ph), fb = (fa + 1) % _HLP_SHEET_FRAMES, ff = ph - fa;
+  const dd = ((dir % 8) + 8) % 8;
+  const da = Math.floor(dd), db = (da + 1) % 8, df = dd - da;
+  const g = dim ? _hlpDimCanvas().getContext('2d') : ctx;
+  const x0 = dim ? 0 : -D / 2, sz = dim ? C : D;
+  if (dim) { g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, C, C); }
+  const row = (r, a) => {
+    if (a <= 0.02) return;
+    g.globalAlpha = a;
+    g.drawImage(img, fa * C, r * C, C, C, x0, x0, sz, sz);
+    if (ff > 0.02) { g.globalAlpha = a * ff; g.drawImage(img, fb * C, r * C, C, C, x0, x0, sz, sz); }
+  };
+  // Основное направление — целиком, соседнее — поверх, по доле поворота.
+  if (df < 0.5) { row(da, 1); row(db, df * 2 * 0.5); } else { row(db, 1); row(da, (1 - df) * 2 * 0.5); }
+  g.globalAlpha = 1;
+  if (!dim) return;
   // Затемнённый (ещё не открыт): силуэт без ctx.filter — его нет в Safari.
-  const cv = _hlpDimCanvas();
-  const c2 = cv.getContext('2d');
-  c2.globalCompositeOperation = 'source-over';
-  c2.clearRect(0, 0, C, C);
-  c2.drawImage(img, fr * C, dir * C, C, C, 0, 0, C, C);
-  c2.globalCompositeOperation = 'source-atop';
-  c2.fillStyle = 'rgba(40,40,46,0.88)';
-  c2.fillRect(0, 0, C, C);
-  ctx.drawImage(cv, -D / 2, -D / 2, D, D);
+  g.globalCompositeOperation = 'source-atop';
+  g.fillStyle = 'rgba(40,40,46,0.88)';
+  g.fillRect(0, 0, C, C);
+  g.globalCompositeOperation = 'source-over';
+  ctx.drawImage(_hlpDimCanvas(), -D / 2, -D / 2, D, D);
 }
 let _hlpDimCv = null;
 function _hlpDimCanvas() {
@@ -1217,7 +1228,8 @@ function helperDrawFrame(ctx, def, t, size, opts = {}) {
   const bob = Math.sin(t * 2.2 + def.id.length) * 3;
   const sheet = _hlpSheet(def.id);
   if (sheet) {
-    const dir = opts.dir != null ? ((opts.dir % 8) + 8) % 8 : (2 + Math.floor(t / 1.4)) % 8;
+    // В окне — медленный непрерывный поворот, показывающий все 8 сторон.
+    const dir = opts.dir != null ? opts.dir : 2 + t / 1.6;
     if (!opts.dim) _hlpBackGlow(ctx, L, t, tier);
     ctx.translate(0, bob);
     if (!opts.dim) _hlpOrbit(ctx, L, t, tier, false);

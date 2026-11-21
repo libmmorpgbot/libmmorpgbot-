@@ -3297,17 +3297,40 @@ function _updateHelperLayer(dt, ts) {
   const side = fx < -0.3 ? 1 : -1;  // с той стороны, куда игрок НЕ смотрит
   const tx = player.x - fx * 14 + side * 26;
   const ty = player.y - fy * 8 - 62;
-  if (!obj.st || Math.hypot(tx - obj.st.x, ty - obj.st.y) > _PET_SNAP_DIST) obj.st = { x: tx, y: ty };
-  const k = Math.min(1, dt * 4.5);
-  obj.st.x += (tx - obj.st.x) * k;
-  obj.st.y += (ty - obj.st.y) * k;
+  if (!obj.st || Math.hypot(tx - obj.st.x, ty - obj.st.y) > _PET_SNAP_DIST) obj.st = { x: tx, y: ty, vx: 0, vy: 0 };
+  // Пружина с критическим затуханием: помощник плавно разгоняется и плавно
+  // тормозит, без рывка, когда хозяин повернулся и точка у плеча
+  // перескочила на другую сторону. Шаг дробим — на просадке кадров
+  // пружина не раскачивается.
+  const W = 5.5;
+  let rest = Math.min(dt, 0.1);
+  while (rest > 0) {
+    const h = Math.min(rest, 1 / 120); rest -= h;
+    obj.st.vx += ((tx - obj.st.x) * W * W - 2 * W * obj.st.vx) * h;
+    obj.st.vy += ((ty - obj.st.y) * W * W - 2 * W * obj.st.vy) * h;
+    obj.st.x += obj.st.vx * h;
+    obj.st.y += obj.st.vy * h;
+  }
 
+  // Поворот — через промежуточные направления, как у игрока (smoothFacing8,
+  // js/utils.js), только медленнее; угол дробный — соседние
+  // направления в листе перетекают друг в друга.
+  const want = Math.max(0, FACING8_DIRS.indexOf(player.facing || 'front')) * Math.PI / 4;
+  if (obj.faceAng == null) obj.faceAng = want;
+  let dAng = want - obj.faceAng;
+  while (dAng > Math.PI) dAng -= 2 * Math.PI;
+  while (dAng < -Math.PI) dAng += 2 * Math.PI;
+  const turn = 7 * Math.min(dt, 0.1);   // рад/с; у игрока — 13
+  obj.faceAng += Math.abs(dAng) < turn ? dAng : Math.sign(dAng) * turn;
+  const dir = obj.faceAng / (Math.PI / 4);
+
+  // Помощник с листом — каждый кадр (там только drawImage), нарисованный
+  // кодом — не чаще 30 раз в секунду, как раньше.
+  const hasSheet = typeof _hlpSheet === 'function' && !!_hlpSheet(def.id);
   obj.drawAcc += dt;
-  if (obj.drawAcc >= 1 / 30) {
+  if (hasSheet || obj.drawAcc >= 1 / 30) {
     obj.drawAcc = 0;
-    // Помощник с 8-направленным листом смотрит туда же, куда хозяин.
-    const dir = (typeof FACING8_DIRS !== 'undefined') ? FACING8_DIRS.indexOf(player.facing) : -1;
-    helperDrawFrame(obj.ctx, def, ts / 1000, _HELPER_CV_PX, { dir: dir >= 0 ? dir : 2 });
+    helperDrawFrame(obj.ctx, def, ts / 1000, _HELPER_CV_PX, { dir });
     obj.tex.baseTexture.update();
   }
   obj.spr.visible = true;
