@@ -1144,12 +1144,13 @@ const _HLP_HEAD_Y = { fairy: -16, bird: -18, dragon: -22, fox: -20, seed: -20 };
 // opts.dim — силуэт ещё не открытого (тёмный и без эффектов).
 // ── 8-направленные листы ───────────────────────────────────────────────────
 // Часть помощников — не рисунок кодом, а готовые объёмные кадры: виверны из
-// игры Flare (CC-BY-SA 3.0, images/helpers/LICENSE.txt), перекрашенные под
+// игры Flare (CC-BY-SA 3.0) и бесы — демон umask007 (CC0); авторство —
+// images/helpers/LICENSE.txt. Перекрашены под
 // каждого (сборка — dev/build-helper-sprites.py). Лист — сетка клеток
 // _HLP_SHEET_CELL: строка = направление в порядке FACING8_DIRS (js/utils.js),
 // столбец = кадр парения. Лист грузится, только когда помощник впервые нужен
 // на экране; пока он не пришёл — рисуется прежний дракончик кодом.
-const _HLP_SHEET_IDS = new Set(['hl_sprout', 'hl_pebble', 'hl_bubble', 'hl_coin', 'hl_storm', 'hl_dragon']);
+const _HLP_SHEET_IDS = new Set(['hl_sprout', 'hl_pebble', 'hl_bubble', 'hl_coin', 'hl_storm', 'hl_dragon', 'hl_spark', 'hl_ember']);
 const _HLP_SHEET_VER = 1;
 const _HLP_SHEET_CELL = 128;
 const _HLP_SHEET_FRAMES = 8;

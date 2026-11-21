@@ -10,3 +10,8 @@ Changes: stance (hover) animation cut out of the atlas, baked-in shadow removed,
 frames re-packed into an 8 (directions) x 8 (frames) grid of 128 px cells,
 recolored per helper, 256-color palette. Under CC-BY-SA these derived sheets are
 also licensed CC-BY-SA 3.0. Build script: dev/build-helper-sprites.py
+
+Бесы (hl_spark, hl_ember) — demon by umask007 (http://opengameart.org/content/animated-daemon),
+Flare sprite sheets: https://opengameart.org/content/demon-flare-sprite-sheets
+License: CC0 (public domain). Idle animation cut out, shadow removed, re-packed
+into the same 8x8 grid; hl_ember hue-shifted toward orange.
