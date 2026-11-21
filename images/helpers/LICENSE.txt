@@ -15,3 +15,8 @@ also licensed CC-BY-SA 3.0. Build script: dev/build-helper-sprites.py
 Flare sprite sheets: https://opengameart.org/content/demon-flare-sprite-sheets
 License: CC0 (public domain). Idle animation cut out, shadow removed, re-packed
 into the same 8x8 grid; hl_ember hue-shifted toward orange.
+
+Остальные помощники (hl_firefly, hl_breeze, hl_moth, hl_leaf, hl_frost, hl_crystal,
+hl_phoenix, hl_void, hl_wisp, hl_seraph, hl_kitsune) — перекрашенные монстры
+«Пограничья» из самой игры (images/pm, кадры js/pm-data.js; условия — как у
+images/pm/README.txt): гоблины, скелеты, муравьи, некромант, Везувио.

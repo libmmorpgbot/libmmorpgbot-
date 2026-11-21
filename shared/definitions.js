@@ -5089,7 +5089,8 @@ function karmaDropChance(karma) {
 // складывали их ровно туда же, куда складывают снаряжение.
 //
 // `look` — только внешность (js/helpers.js рисует их сам; у дракончиков —
-// 8-направленные листы images/helpers/<id>.png, см. _HLP_SHEET_IDS):
+// у всех 8-направленные листы images/helpers/<id>.png, см. _HLP_SHEET_IDS;
+// рисунок кодом — только пока лист не загрузился):
 // тело, цвета, крылья и эффект, который помощник накладывает на хозяина.
 const HELPER_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 const HELPER_CRAFT_COST = { common: 1000, uncommon: 3000, rare: 5000, epic: 10000, legendary: 30000 };

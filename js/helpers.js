@@ -1150,7 +1150,9 @@ const _HLP_HEAD_Y = { fairy: -16, bird: -18, dragon: -22, fox: -20, seed: -20 };
 // _HLP_SHEET_CELL: строка = направление в порядке FACING8_DIRS (js/utils.js),
 // столбец = кадр парения. Лист грузится, только когда помощник впервые нужен
 // на экране; пока он не пришёл — рисуется прежний дракончик кодом.
-const _HLP_SHEET_IDS = new Set(['hl_sprout', 'hl_pebble', 'hl_bubble', 'hl_coin', 'hl_storm', 'hl_dragon', 'hl_spark', 'hl_ember']);
+const _HLP_SHEET_IDS = new Set(['hl_sprout', 'hl_pebble', 'hl_bubble', 'hl_coin', 'hl_storm', 'hl_dragon', 'hl_spark', 'hl_ember',
+  // остальные — перекрашенные монстры «Пограничья» (images/pm)
+  'hl_firefly', 'hl_breeze', 'hl_moth', 'hl_leaf', 'hl_frost', 'hl_crystal', 'hl_phoenix', 'hl_void', 'hl_wisp', 'hl_seraph', 'hl_kitsune']);
 const _HLP_SHEET_VER = 1;
 const _HLP_SHEET_CELL = 128;
 const _HLP_SHEET_FRAMES = 8;

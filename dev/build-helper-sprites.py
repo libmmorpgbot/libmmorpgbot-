@@ -21,6 +21,11 @@ https://opengameart.org/content/demon-flare-sprite-sheets, файл demon_0.png 
 42 столбца: idle 4, walk 9, attack1 5, attack2 5, cast 6, flinch 2, die 11.
 Берём idle (0–3) туда-обратно, чтобы вышло 8 кадров.
 
+Остальные помощники — монстры «Пограничья» из самой игры (images/pm/<вид>.webp,
+кадры — js/pm-data.js; набор передан владельцем проекта, см. images/pm/README.txt).
+Направления там по часовой: 0 З, 1 СЗ, 2 С (спиной), 3 СВ, 4 В, 5 ЮВ, 6 Ю (лицом),
+7 ЮЗ; кадр атласа = кадрАнимации*8 + направление. Берём стойку (stance).
+
 Запуск: python3 dev/build-helper-sprites.py /путь/к/flare-game /путь/к/demon_0.png
 """
 import colorsys
@@ -30,6 +35,7 @@ import sys
 
 from PIL import Image
 
+REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 CELL = 128          # сторона клетки в листе
 FRAMES = 8
 # FACING8_DIRS index k -> направление Flare: 0 W, 1 SW, 2 S, 3 SE, 4 E, 5 NE, 6 N, 7 NW
@@ -47,6 +53,22 @@ HELPERS = {
     'hl_spark':  ('demon',        None),
     'hl_ember':  ('demon',        ('hue', 0.07, 1.1)),
 }
+# Помощники из монстров «Пограничья»: ('pm:<вид>', перекраска)
+HELPERS.update({
+    'hl_firefly': ('pm:goblin',                  ('tint', '#ffe66b', 0.55)),
+    'hl_breeze':  ('pm:hobgoblin_archer',        ('tint', '#bfe8ff', 0.55)),
+    'hl_moth':    ('pm:skeleton_mage',           ('tint', '#c8bbff', 0.6, 1.3)),
+    'hl_leaf':    ('pm:hobgoblin',               ('tint', '#7fe06a', 0.5)),
+    'hl_frost':   ('pm:skeleton_archer',         ('tint', '#9fe4ff', 0.6)),
+    'hl_crystal': ('pm:vesuvvio',                ('tint', '#ff6ab0', 0.45, 1.9)),
+    'hl_phoenix': ('pm:fire_ant',                None),
+    'hl_void':    ('pm:necromancer',             ('tint', '#b45cff', 0.6, 2.6)),
+    'hl_wisp':    ('pm:skeleton_mage_high_boss', ('tint', '#6dffa4', 0.4)),
+    'hl_seraph':  ('pm:skeleton_knight_boss',    ('tint', '#fff2a0', 0.65, 1.7)),
+    'hl_kitsune': ('pm:antlion',                 ('tint', '#ff9ae6', 0.65, 1.8)),
+})
+# FACING8_DIRS index k -> направление атласа «Пограничья»
+PM_DIR = [(k + 4) % 8 for k in range(8)]
 DEMON_CELL = 256
 DEMON_IDLE = [0, 1, 2, 3, 3, 2, 1, 0]
 
@@ -79,6 +101,7 @@ def recolor(im, rc):
         h = rc[1].lstrip('#')
         tr, tg, tb = (int(h[i:i + 2], 16) for i in (0, 2, 4))
         k = rc[2]
+        gain = rc[3] if len(rc) > 3 else 1.0   # осветление тёмных исходников
     for y in range(im.height):
         for x in range(im.width):
             r, g, b, a = px[x, y]
@@ -92,11 +115,11 @@ def recolor(im, rc):
                 px[x, y] = (round(r2 * 255), round(g2 * 255), round(b2 * 255), a)
             else:
                 lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-                lum = min(1.0, lum * 1.35)
+                lum = min(1.0, lum * 1.35 * gain)
                 px[x, y] = (
-                    round(r * (1 - k) + tr * lum * k),
-                    round(g * (1 - k) + tg * lum * k),
-                    round(b * (1 - k) + tb * lum * k), a)
+                    min(255, round(r * gain * (1 - k) + tr * lum * k)),
+                    min(255, round(g * gain * (1 - k) + tg * lum * k)),
+                    min(255, round(b * gain * (1 - k) + tb * lum * k)), a)
     return im
 
 
@@ -111,9 +134,41 @@ def build_demon(path):
     return frames
 
 
+_PM_SPR = None
+
+
+def pm_spr():
+    global _PM_SPR
+    if _PM_SPR is None:
+        import json
+        js = open(os.path.join(REPO, 'js', 'pm-data.js')).read()
+        i = js.index('const PM_SPR = ') + len('const PM_SPR = ')
+        _PM_SPR, _ = json.JSONDecoder().raw_decode(js[i:])
+    return _PM_SPR
+
+
+def build_pm(kind):
+    d = pm_spr()[kind]
+    atlas = Image.open(os.path.join(REPO, 'images', 'pm', kind + '.webp')).convert('RGBA')
+    start, n, _ms, mode = d['an']['stance']
+    seq = list(range(n)) if mode == 'loop' else list(range(n)) + list(range(n - 1, -1, -1))
+    seq = [seq[round(j * len(seq) / FRAMES) % len(seq)] for j in range(FRAMES)]
+    f = d['f']
+    frames = {}
+    for k in range(8):
+        for i, a in enumerate(seq):
+            o = ((start + a) * 8 + PM_DIR[k]) * 6
+            x, y, w, h, ax, ay = f[o:o + 6]
+            c = strip_shadow(atlas.crop((int(x), int(y), int(x + w), int(y + h))))
+            frames[(k, i)] = (c, round(ax), round(ay))
+    return frames
+
+
 def build_variant(root, v, demon_path=None):
     if v == 'demon':
         frames = build_demon(demon_path)
+    elif v.startswith('pm:'):
+        frames = build_pm(v[3:])
     else:
         frames = None
     if frames is not None:
@@ -127,7 +182,10 @@ def build_variant(root, v, demon_path=None):
         side = max(x1 - x0, y1 - y0)
         # Клиент рисует клетку чуть крупнее (D=142 на сетке 128, js/helpers.js);
         # у демона крылья раскрыты на всю ширину рамки — запас, чтобы не резало.
-        return frames, (CELL - 4) / side * 0.88, (x0 + x1) / 2, (y0 + y1) / 2
+        sc = (CELL - 4) / side * 0.88
+        if v.startswith('pm:'):
+            sc = min(sc, 1.5)   # атласы уже уменьшены — сильнее растянешь, будет мыло
+        return frames, sc, (x0 + x1) / 2, (y0 + y1) / 2
     fr = parse(os.path.join(root, f'mods/fantasycore/animations/enemies/{v}.txt'), 'stance')
     atlas = Image.open(os.path.join(root, f'mods/fantasycore/images/enemies/{v}/{v}_stance.png')).convert('RGBA')
     frames = {}
