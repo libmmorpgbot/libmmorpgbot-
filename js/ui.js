@@ -12604,6 +12604,52 @@ function _renderLangPicker() {
   `;
 }
 
+// Сортировка списка друзей: 'lvl' — по уровню, 'bonus' — по доходу (GRAM);
+// повторный клик по той же кнопке меняет направление. null — порядок сервера.
+let _refSort = { key: null, desc: true };
+
+function _refSortedFriends() {
+  const list = _refFriendsList.slice();
+  const { key, desc } = _refSort;
+  if (!key) return list;
+  const val = f => Number(f[key]) || 0;
+  list.sort((a, b) => (desc ? val(b) - val(a) : val(a) - val(b)));
+  return list;
+}
+
+function _refSortBtnsHtml() {
+  const btn = (key, label) => {
+    const on = _refSort.key === key;
+    const arrow = on ? (_refSort.desc ? ' ▼' : ' ▲') : '';
+    return `<button onclick="_refSetSort('${key}')" style="padding:4px 8px;margin-left:4px;border-radius:8px;border:1px solid ${on ? '#89ba5f' : 'rgba(255,255,255,.15)'};background:${on ? 'rgba(137,186,95,.18)' : 'transparent'};color:${on ? '#89ba5f' : '#b8a888'};font-size:11px;font-weight:700;cursor:pointer">${label}${arrow}</button>`;
+  };
+  return btn('lvl', t('friendsSortLvl')) + btn('bonus', t('friendsSortIncome'));
+}
+
+function _refFriendsListHtml() {
+  const friends = _refSortedFriends();
+  if (friends.length === 0) return `<div class="ref-empty">${t('noFriendsInvitedHint')}<br><span style="font-size:12px">${t('sendLinkHint')}</span></div>`;
+  return friends.map(f => {
+    const init = _escHtml((f.username || '?')[0].toUpperCase());
+    return `<div class="ref-friend-row">
+              <div class="ref-friend-avatar">${init}</div>
+              <div class="ref-friend-name">@${f.username ? _escHtml(f.username) : t('playerFallbackLbl')}</div>
+              ${f.lvl ? `<div class="ref-friend-lvl">${t('levelAbbrev')} ${Number(f.lvl)}</div>` : ''}
+              <div class="ref-friend-bonus">+${(Number(f.bonus) || 0).toFixed(2)} GRAM</div>
+            </div>`;
+  }).join('');
+}
+
+// Перерисовывает только список и кнопки — без нового запроса рефералов.
+function _refSetSort(key) {
+  if (_refSort.key === key) _refSort.desc = !_refSort.desc;
+  else _refSort = { key, desc: true };
+  const list = document.getElementById('ref-friends-list');
+  const btns = document.getElementById('ref-sort-btns');
+  if (list) list.innerHTML = _refFriendsListHtml();
+  if (btns) btns.innerHTML = _refSortBtnsHtml();
+}
+
 function updateFriendsUI() {
   const el = document.getElementById('gram-body');
   if (!el) return;
@@ -12632,21 +12678,11 @@ function updateFriendsUI() {
       </div>
     </div>
 
-    <div class="gram-section-title" style="margin-bottom:8px">${t('friendsListHdr')}</div>
-    <div id="ref-friends-list">
-      ${friends.length === 0
-        ? `<div class="ref-empty">${t('noFriendsInvitedHint')}<br><span style="font-size:12px">${t('sendLinkHint')}</span></div>`
-        : friends.map(f => {
-            const init = _escHtml((f.username || '?')[0].toUpperCase());
-            return `<div class="ref-friend-row">
-              <div class="ref-friend-avatar">${init}</div>
-              <div class="ref-friend-name">@${f.username ? _escHtml(f.username) : t('playerFallbackLbl')}</div>
-              ${f.lvl ? `<div class="ref-friend-lvl">${t('levelAbbrev')} ${Number(f.lvl)}</div>` : ''}
-              <div class="ref-friend-bonus">+${(f.bonus || 0).toFixed(2)} GRAM</div>
-            </div>`;
-          }).join('')
-      }
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <div class="gram-section-title" style="margin:0;flex:1">${t('friendsListHdr')}</div>
+      <span id="ref-sort-btns">${_refSortBtnsHtml()}</span>
     </div>
+    <div id="ref-friends-list">${_refFriendsListHtml()}</div>
   `;
 
   if (typeof netGetReferrals === 'function') netGetReferrals();

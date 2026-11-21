@@ -1413,6 +1413,8 @@ Object.assign(I18N_UI, {
   refBonusHintFmt: { ru: 'За каждый депозит друга вы получаете {pct}', en: 'You get {pct} on every deposit a friend makes', uk: 'За кожен депозит друга ви отримуєте {pct}', es: 'Recibes {pct} en cada depósito de un amigo', tr: 'Bir arkadaşın her yatırımından {pct} kazanırsın', pt: 'Você recebe {pct} a cada depósito de um amigo' },
   friendsCountLbl: { ru: 'Друзей', en: 'Friends', uk: 'Друзів', es: 'Amigos', tr: 'Arkadaş', pt: 'Amigos' },
   gramReceivedLbl: { ru: 'GRAM получено', en: 'GRAM received', uk: 'GRAM отримано', es: 'GRAM recibido', tr: 'Alınan GRAM', pt: 'GRAM recebido' },
+  friendsSortLvl: { ru: 'Уровень', en: 'Level', uk: 'Рівень', es: 'Nivel', tr: 'Seviye', pt: 'Nível' },
+  friendsSortIncome: { ru: 'Доход', en: 'Income', uk: 'Дохід', es: 'Ingresos', tr: 'Gelir', pt: 'Renda' },
   friendsListHdr: { ru: 'Список друзей', en: 'Friends List', uk: 'Список друзів', es: 'Lista de Amigos', tr: 'Arkadaş Listesi', pt: 'Lista de Amigos' },
   noFriendsInvitedHint: { ru: 'Пока нет приглашённых друзей', en: 'No friends invited yet', uk: 'Поки немає запрошених друзів', es: 'Aún no hay amigos invitados', tr: 'Henüz davet edilen arkadaş yok', pt: 'Ainda não há amigos convidados' },
   sendLinkHint: { ru: 'Отправьте ссылку и получайте бонусы', en: 'Send the link and earn bonuses', uk: 'Надішліть посилання та отримуйте бонуси', es: 'Envía el enlace y gana bonos', tr: 'Bağlantıyı gönder ve bonus kazan', pt: 'Envie o link e ganhe bônus' },
