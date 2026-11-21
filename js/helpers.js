@@ -1142,6 +1142,68 @@ const _HLP_OWN_HEADWEAR = new Set(['drake', 'succubus', 'sprite', 'imp']);
 const _HLP_HEAD_Y = { fairy: -16, bird: -18, dragon: -22, fox: -20, seed: -20 };
 
 // opts.dim — силуэт ещё не открытого (тёмный и без эффектов).
+// ── 8-направленные листы ───────────────────────────────────────────────────
+// Часть помощников — не рисунок кодом, а готовые объёмные кадры: виверны из
+// игры Flare (CC-BY-SA 3.0, images/helpers/LICENSE.txt), перекрашенные под
+// каждого (сборка — dev/build-helper-sprites.py). Лист — сетка клеток
+// _HLP_SHEET_CELL: строка = направление в порядке FACING8_DIRS (js/utils.js),
+// столбец = кадр парения. Лист грузится, только когда помощник впервые нужен
+// на экране; пока он не пришёл — рисуется прежний дракончик кодом.
+const _HLP_SHEET_IDS = new Set(['hl_sprout', 'hl_pebble', 'hl_bubble', 'hl_coin', 'hl_storm', 'hl_dragon']);
+const _HLP_SHEET_VER = 1;
+const _HLP_SHEET_CELL = 128;
+const _HLP_SHEET_FRAMES = 8;
+const _HLP_SHEET_FPS = 10;
+const _hlpSheets = new Map();   // id -> { img, ok, tries }
+
+function _hlpSheet(id) {
+  if (!_HLP_SHEET_IDS.has(id) || typeof Image === 'undefined') return null;
+  let s = _hlpSheets.get(id);
+  if (!s) {
+    s = { img: new Image(), ok: false, tries: 0 };
+    _hlpSheets.set(id, s);
+    s.img.onload = () => {
+      s.ok = true;
+      // Значок, растрированный до прихода листа, — ещё старый рисунок.
+      if (typeof _hlpIconCache !== 'undefined') _hlpIconCache.delete(id);
+    };
+    s.img.onerror = () => {
+      // Одна повторная попытка позже; дальше — рисунок кодом навсегда.
+      if (++s.tries < 2) setTimeout(() => { s.img.src = `images/helpers/${id}.png?v=${_HLP_SHEET_VER}&retry=${s.tries}`; }, 4000);
+    };
+    s.img.src = `images/helpers/${id}.png?v=${_HLP_SHEET_VER}`;
+  }
+  return s.ok ? s.img : null;
+}
+
+// dir — индекс FACING8_DIRS (0 вправо, 2 к зрителю, 4 влево, 6 от зрителя).
+// Рисует в текущей системе координат (сетка 128 с центром в нуле).
+function _hlpDrawSheet(ctx, img, t, dir, dim) {
+  const fr = Math.floor(t * _HLP_SHEET_FPS) % _HLP_SHEET_FRAMES;
+  const C = _HLP_SHEET_CELL, D = 142;
+  if (!dim) {
+    ctx.drawImage(img, fr * C, dir * C, C, C, -D / 2, -D / 2, D, D);
+    return;
+  }
+  // Затемнённый (ещё не открыт): силуэт без ctx.filter — его нет в Safari.
+  const cv = _hlpDimCanvas();
+  const c2 = cv.getContext('2d');
+  c2.globalCompositeOperation = 'source-over';
+  c2.clearRect(0, 0, C, C);
+  c2.drawImage(img, fr * C, dir * C, C, C, 0, 0, C, C);
+  c2.globalCompositeOperation = 'source-atop';
+  c2.fillStyle = 'rgba(40,40,46,0.88)';
+  c2.fillRect(0, 0, C, C);
+  ctx.drawImage(cv, -D / 2, -D / 2, D, D);
+}
+let _hlpDimCv = null;
+function _hlpDimCanvas() {
+  if (!_hlpDimCv) { _hlpDimCv = document.createElement('canvas'); _hlpDimCv.width = _hlpDimCv.height = _HLP_SHEET_CELL; }
+  return _hlpDimCv;
+}
+
+// opts.dir — направление (индекс FACING8_DIRS) для помощников с листом; без
+// него помощник в окне медленно поворачивается, показывая все 8 сторон.
 function helperDrawFrame(ctx, def, t, size, opts = {}) {
   if (!def) return;
   const L = def.look, tier = _hlpTier(def);
@@ -1150,6 +1212,17 @@ function helperDrawFrame(ctx, def, t, size, opts = {}) {
   ctx.translate(size / 2, size / 2);
   ctx.scale(size / 128, size / 128);
   const bob = Math.sin(t * 2.2 + def.id.length) * 3;
+  const sheet = _hlpSheet(def.id);
+  if (sheet) {
+    const dir = opts.dir != null ? ((opts.dir % 8) + 8) % 8 : (2 + Math.floor(t / 1.4)) % 8;
+    if (!opts.dim) _hlpBackGlow(ctx, L, t, tier);
+    ctx.translate(0, bob);
+    if (!opts.dim) _hlpOrbit(ctx, L, t, tier, false);
+    _hlpDrawSheet(ctx, sheet, opts.dim ? t * 0.3 : t, dir, !!opts.dim);
+    if (!opts.dim) { _hlpOrbit(ctx, L, t, tier, true); _hlpTwinkles(ctx, L, t, tier); }
+    ctx.restore();
+    return;
+  }
   if (opts.dim) {
     ctx.filter = 'grayscale(1) brightness(0.35)';
     ctx.translate(0, bob);
@@ -1397,10 +1470,12 @@ function helperIconUrl(id) {
   cv.width = cv.height = 96;
   const ctx = cv.getContext('2d');
   if (!ctx) return null;
-  helperDrawFrame(ctx, def, 0.8, 96);
+  helperDrawFrame(ctx, def, 0.8, 96, { dir: 1 });
   let url;
   try { url = cv.toDataURL('image/png'); } catch { url = null; }
-  _hlpIconCache.set(id, url);
+  // Лист ещё грузится — рисунок кодом не запоминаем, при следующей отрисовке
+  // окна значок возьмётся уже из листа.
+  if (!_HLP_SHEET_IDS.has(id) || _hlpSheet(id)) _hlpIconCache.set(id, url);
   return url;
 }
 function _hlpIconImg(id, px, dim) {

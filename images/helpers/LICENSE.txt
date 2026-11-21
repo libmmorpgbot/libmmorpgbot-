@@ -1,0 +1,12 @@
+Помощники-дракончики (hl_sprout, hl_pebble, hl_bubble, hl_coin, hl_storm, hl_dragon)
+— перекрашенные виверны из игры Flare (https://github.com/flareteam/flare-game,
+mods/fantasycore/images/enemies/wyvern*).
+
+Wyvern: model and animations by Clint Bellanger, diffuse texture by Justin Nichol.
+https://opengameart.org/content/wyvern-1
+License: CC-BY-SA 3.0 — https://creativecommons.org/licenses/by-sa/3.0/
+
+Changes: stance (hover) animation cut out of the atlas, baked-in shadow removed,
+frames re-packed into an 8 (directions) x 8 (frames) grid of 128 px cells,
+recolored per helper, 256-color palette. Under CC-BY-SA these derived sheets are
+also licensed CC-BY-SA 3.0. Build script: dev/build-helper-sprites.py

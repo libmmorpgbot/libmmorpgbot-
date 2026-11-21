@@ -3305,7 +3305,9 @@ function _updateHelperLayer(dt, ts) {
   obj.drawAcc += dt;
   if (obj.drawAcc >= 1 / 30) {
     obj.drawAcc = 0;
-    helperDrawFrame(obj.ctx, def, ts / 1000, _HELPER_CV_PX);
+    // Помощник с 8-направленным листом смотрит туда же, куда хозяин.
+    const dir = (typeof FACING8_DIRS !== 'undefined') ? FACING8_DIRS.indexOf(player.facing) : -1;
+    helperDrawFrame(obj.ctx, def, ts / 1000, _HELPER_CV_PX, { dir: dir >= 0 ? dir : 2 });
     obj.tex.baseTexture.update();
   }
   obj.spr.visible = true;
