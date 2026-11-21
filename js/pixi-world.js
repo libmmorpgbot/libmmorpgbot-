@@ -1286,8 +1286,12 @@ function _pmUpdateEnemy(e, obj, dt, ds) {
   // Какая анимация: смерть > удар > попадание > бег > стойка.
   let key = 'stance';
   if (dead) key = 'die';
-  else if (e.atkAnimTimer > 0 && !obj._pmWasAtk) { key = 'atk'; obj._pmAtkT = 0; }
+  // Новый удар — новый замах: по счётчику ударов из сети (_atkSwing,
+  // js/network.js), а фронт таймера — запасной путь. Иначе у быстрых
+  // монстров (личи Подземелья) замах был только первый.
+  else if (e.atkAnimTimer > 0 && (!obj._pmWasAtk || (e._atkSwing || 0) !== (obj._pmSwing || 0))) { key = 'atk'; obj._pmAtkT = 0; }
   obj._pmWasAtk = !dead && e.atkAnimTimer > 0;
+  obj._pmSwing = e._atkSwing || 0;
   if (!dead) {
     if (obj._pmAtkT != null && obj._pmAtkT < an.atk[2] / 1000) key = 'atk';
     else if ((e.hurtTimer || 0) > 0.15) key = 'hit';

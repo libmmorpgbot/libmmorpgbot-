@@ -1656,6 +1656,14 @@ function netConnect(onReady) {
         if (se.atkAnimTimer > 0) {
           ex.atkAnimTimer = se.atkAnimTimer;
           ex._atkDone = false;
+          // Сервер шлёт atkAnimTimer > 0 только в тик самого удара
+          // (_atkPulse, server/game/Room.js), поэтому каждый такой пакет — это
+          // ровно один новый удар. Счётчик нужен анимации (_pmUpdateEnemy,
+          // js/pixi-world.js): у тех, кто бьёт чаще, чем гаснет таймер
+          // анимации (личи Подземелья — каждые ~0.4 с при таймере 0.9 с),
+          // таймер не падает до нуля между ударами, и по одному его фронту
+          // удар проигрывался только первый раз.
+          ex._atkSwing = (ex._atkSwing || 0) + 1;
           // Face the victim — the server always strikes the closest player,
           // so reconstruct that choice client-side (self + visible others)
           let tx, ty, best = Infinity;
