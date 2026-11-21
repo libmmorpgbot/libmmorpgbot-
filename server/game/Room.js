@@ -2592,7 +2592,8 @@ class Room {
       // most expensive call in this loop off every already-chasing enemy,
       // every tick — which in a busy arm is most of them.
       //
-      // farmZone/farmHigh/farmZone2 are excluded from this self-pull trigger
+      // farmZone/farmZone2 are excluded from this self-pull trigger (farmHigh —
+      // «Фарм зона 2» у игроков — больше нет: она агрессивная)
       // explicitly rather than via aggroR:0 — zeroing aggroR used to also
       // zero the de-aggro leash below (aggroR * 2.2), which reset aggro back
       // to false the very next tick after attackEnemy/skillAttackEnemy set
@@ -2600,19 +2601,15 @@ class Room {
       // never actually swing back. It keeps a normal aggroR purely for that
       // leash distance. farmZone2's own monsters stand in packs
       // (packMateIds, generateFarmZone2) that wake together on a hit
-      // instead — see _wakePack — and (unlike the other two) DO wake on
-      // proximity too: Фарм-зона 2 is aggressive.
+      // instead — see _wakePack — but never wake on proximity alone.
       // `passive` — лоу-споты Мира (generateWorld): та же логика, пачка
       // просыпается только от удара.
       // Удар по монстру (attackEnemy ставит aggro) прерывает возврат домой;
       // сам по себе идущий домой не оглядывается, как в «Пепельном крае».
       if (e.aggro && e._returning) e._returning = false;
-      // Фарм-зона 2 — агрессивная: монстр сам бросается на подошедшего и
-      // поднимает за собой всю свою пачку (_wakePack).
-      if (!e.aggro && !e._returning && !e.farmZone && !e.farmHigh && !e.passive && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) {
-        e.aggro = true;
-        if (e.farmZone2) this._wakePack(e);
-      }
+      // Фарм зона 2 (farmHigh, вместе с её сезонным крылом) — агрессивная:
+      // монстр сам бросается на подошедшего, как в открытом мире.
+      if (!e.aggro && !e._returning && !e.farmZone && !e.farmZone2 && !e.passive && !e.trialHarmless && closestD < e.aggroR && this._hasLOS(e.x, e.y, closest.x, closest.y)) e.aggro = true;
       // Same immediate-teleport-home as above: the closest remaining player
       // isn't necessarily near THIS enemy (they could be dead here and the
       // "closest" is someone else across the floor) — de-aggroing shouldn't

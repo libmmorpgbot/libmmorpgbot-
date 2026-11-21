@@ -787,8 +787,7 @@ function generateWorld() {
 // into two short branches, one north to room A and one south to room B,
 // each identical. Every monster is baked in at world-gen exactly like the
 // original Фарм-зона's own generator, standing in FARM2_PACK_SIZE clusters
-// (packMateIds below) rather than scattered individually — AGGRESSIVE now
-// (self-pulls on proximity and wakes its whole pack, Room.js); formerly passive like the
+// (packMateIds below) rather than scattered individually — passive like the
 // original zone's own monsters (never self-pulls on proximity, see Room.js's
 // tick-loop comment), but a hit on any one member wakes the whole pack
 // (Room.js's _wakePack) — and running full (non-halved) monsterStatsAtLevel()
@@ -1892,8 +1891,9 @@ function _farmMob(o) {
       xp: xpAtLevel(lvl) * o.xpMult, gold: goldAtLevel(lvl),
       x: ex, y: ey, spawnX: ex, spawnY: ey,
       atkTimer: 1 + rng(),
-      // Сами не бросаются (Room.js исключает фарм-зоны из самоагра), но
-      // отвечают на удар; aggroR — поводок отхода.
+      // Фарм-зона (farmZone) сама не бросается (Room.js исключает её из
+      // самоагра), Фарм зона 2 (farmHigh) — бросается на подошедшего ближе
+      // aggroR; aggroR же — поводок отхода.
       aggro: false, aggroR: 175 + rng() * 55,
     };
   };
