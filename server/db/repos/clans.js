@@ -306,6 +306,25 @@ async function transferLeadership(db, leaderId, clanId, newLeaderId) {
   return true;
 }
 
+// The same hand-over, done by an operator from the admin panel — for a clan
+// whose leader is gone or asked support to do it. No "who is asking" check,
+// the admin guard is that; everything else (clan row lock, demote-then-
+// promote order, target must already be a member) is identical to the above.
+// Returns the previous leader's player id (null for a leaderless clan).
+async function adminSetLeader(db, clanId, newLeaderId) {
+  const { rows: c } = await query(db, 'SELECT id FROM clans WHERE id = $1 FOR UPDATE', [clanId]);
+  if (!c.length) err('no_clan', 'Клан не найден');
+  const { rows } = await query(db,
+    'SELECT role FROM clan_members WHERE clan_id = $1 AND player_id = $2', [clanId, newLeaderId]);
+  if (!rows.length) err('not_member', 'Игрок не состоит в этом клане');
+  if (rows[0].role === 'leader') err('already', 'Игрок уже лидер этого клана');
+
+  const { rows: prev } = await query(db,
+    `UPDATE clan_members SET role = 'member' WHERE clan_id = $1 AND role = 'leader' RETURNING player_id`, [clanId]);
+  await query(db, `UPDATE clan_members SET role = 'leader' WHERE clan_id = $1 AND player_id = $2`, [clanId, newLeaderId]);
+  return prev.length ? Number(prev[0].player_id) : null;
+}
+
 // ── xp ──────────────────────────────────────────────────────────────────────
 // Убийства опыта клану больше НЕ дают — решение владельца: прогресс клана
 // растёт только от пожертвований участников (donate ниже, CLAN_DONATIONS в
@@ -1077,7 +1096,7 @@ module.exports = {
   dataView, storageView, activityView, memberDaysIn, canUseStorage,
   claimAll, allocationIdFor,
   create, apply, accept, decline, kick, leave, disband, setDescription,
-  transferLeadership,
+  transferLeadership, adminSetLeader,
   addXp, addBonusXp, refreshMembersBm, deposit, depositAll, allocate, claim, cancelAllocation, unlockStorage,
   nexumReady, treasuryCredit, giveNexum,
   donationsReady, donationState, donate, syncLevels,

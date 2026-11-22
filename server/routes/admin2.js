@@ -25,6 +25,7 @@ const { query, tx, hasColumn } = require('../db');
 const money = require('../db/repos/money');
 const items = require('../db/repos/items');
 const players = require('../db/repos/players');
+const clans = require('../db/repos/clans');
 const progression = require('../db/repos/progression');
 const market = require('../db/repos/market');
 const plog = require('../db/repos/playerlog');
@@ -855,6 +856,56 @@ module.exports = function registerAdminRoutes(app, deps) {
       if (!rowCount) return deny(res, req, 404, 'Клан не найден');
       await adminAuth.audit(who(req), 'clan_delete', { meta: { by: who(req), clanId: id } });
       res.json({ ok: true });
+    } catch (e) { fail(res, e, req); }
+  });
+
+  // Who is in a clan — for the «Сменить лидера» picker.
+  app.get('/admin/clan/:id/members', guard, async (req, res) => {
+    try {
+      const { rows } = await query(null, `
+        SELECT m.player_id, m.role, m.joined_at, p.telegram_id, p.username, p.bm
+          FROM clan_members m JOIN players p ON p.id = m.player_id
+         WHERE m.clan_id = $1 ORDER BY (m.role = 'leader') DESC, p.bm DESC`, [int(req.params.id)]);
+      res.json({
+        members: rows.map(r => ({
+          playerId: Number(r.player_id), telegramId: r.telegram_id, username: r.username,
+          role: r.role, bm: r.bm || 0, joinedAt: r.joined_at,
+        })),
+      });
+    } catch (e) { fail(res, e, req); }
+  });
+
+  // Hand a clan to another of its members — the operator's version of the
+  // in-game «Сделать лидером», for when the leader can't or won't press it.
+  app.post('/admin/clan/:id/leader', guard, csrf, async (req, res) => {
+    try {
+      const clanId = int(req.params.id);
+      const playerId = int((req.body || {}).playerId);
+      if (!clanId || !playerId) return deny(res, req, 400, 'Не указан клан или игрок');
+      let prevId;
+      try {
+        prevId = await tx(t => clans.adminSetLeader(t, clanId, playerId));
+      } catch (e) {
+        if (e instanceof clans.ClanError) return deny(res, req, 400, e.userMessage);
+        throw e;
+      }
+      await adminAuth.audit(who(req), 'clan_set_leader',
+        { refType: 'clan', refId: String(clanId), meta: { by: who(req), clanId, newLeader: playerId, prevLeader: prevId } });
+
+      // Everyone in the clan who is online sees the new crown now, not on
+      // their next panel open — same as the in-game transfer pushes.
+      const { rows: mem } = await query(null,
+        'SELECT player_id FROM clan_members WHERE clan_id = $1', [clanId]);
+      const ids = new Set(mem.map(r => Number(r.player_id)));
+      for (const sock of io.sockets.sockets.values()) {
+        const sess = sock.data && sock.data.session;
+        if (!sess || !ids.has(Number(sess.playerId))) continue;
+        try {
+          if (typeof sess.refreshClan === 'function') await sess.refreshClan();
+          sock.emit('clanData', await clans.dataView(null, clanId, Number(sess.playerId)));
+        } catch (e) { console.warn('[admin] clan leader push:', e.message); }
+      }
+      res.json({ ok: true, prevLeader: prevId });
     } catch (e) { fail(res, e, req); }
   });
 
